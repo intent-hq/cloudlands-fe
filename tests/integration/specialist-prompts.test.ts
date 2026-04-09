@@ -143,8 +143,8 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('formatSpecialistsForPrompt', () => {
-    it('should format specialists table correctly', () => {
-      const formatted = formatSpecialistsForPrompt();
+    it('should format specialists table correctly', async () => {
+      const formatted = await formatSpecialistsForPrompt();
 
       expect(formatted).toContain('## Agent Specialists');
       expect(formatted).toContain('Implementor');
@@ -156,8 +156,8 @@ describe('Specialist Prompts Verification', () => {
       expect(formatted).toContain('spec-writer');
     });
 
-    it('should include usage examples', () => {
-      const formatted = formatSpecialistsForPrompt();
+    it('should include usage examples', async () => {
+      const formatted = await formatSpecialistsForPrompt();
 
       expect(formatted).toContain('delegate_task');
       expect(formatted).toContain('specialist=');

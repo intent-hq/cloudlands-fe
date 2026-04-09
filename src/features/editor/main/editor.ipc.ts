@@ -84,6 +84,7 @@ export function setupEditorIPC() {
   ipcMain.handle(EDITOR_INTEGRATION_CHANNELS.SAVE, async (_, { path: filePath, content }) => {
     try {
       await fs.writeFile(filePath, content, 'utf-8');
+
       return { success: true, data: undefined };
     } catch (error) {
       return { success: false, error: (error as Error).message };

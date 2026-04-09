@@ -2205,6 +2205,12 @@ export const FileOpenSchema = z.object({
 
 export const SpecialistIdSchema = z.object({
   id: z.string().min(1, 'Specialist ID is required'),
+  scope: z.enum(['user', 'project']).optional(),
+  workspacePath: z.string().optional(),
+});
+
+export const SpecialistListSchema = z.object({
+  workspacePath: z.string().optional(),
 });
 
 export const SpecialistWriteSchema = z.object({
@@ -2216,7 +2222,12 @@ export const SpecialistWriteSchema = z.object({
   modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
   roleReminder: z.string().optional(),
   behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
-});
+  scope: z.enum(['user', 'project']).optional(),
+  workspacePath: z.string().optional(),
+}).refine(
+  (data) => data.scope !== 'project' || !!data.workspacePath,
+  { message: 'workspacePath is required when scope is "project"', path: ['workspacePath'] }
+);
 
 export const SpecialistExportBuiltinSchema = z.object({
   id: z.string().min(1, 'Built-in specialist ID is required'),

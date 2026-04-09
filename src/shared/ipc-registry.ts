@@ -766,6 +766,7 @@ export const IPC_CHANNELS = {
     GET_FOLDER_PATH: 'specialists:get-folder-path',
     EXPORT_BUILTIN: 'specialists:export-builtin',
     FILE_EXISTS: 'specialists:file-exists',
+    FILES_CHANGED: 'specialists:files-changed',
   },
 
   // Config Rules
@@ -1280,6 +1281,8 @@ export const EVENT_CHANNELS = [
   'script:output',
   'script:error',
   'script:url-detected',
+  // Specialist file watcher events (main → renderer)
+  'specialists:files-changed',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

@@ -43,12 +43,17 @@
   // Local editable copy of the value
   let localValue = $state(value);
   let saveStatus = $state<'idle' | 'saving' | 'saved'>('idle');
+  let isFocused = $state(false);
   let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
   let savedStatusTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Sync local value when prop changes (e.g., after reset)
+  // Sync local value when prop changes (e.g., after reset).
+  // Guard: skip while focused to avoid clobbering in-progress edits
+  // and losing scroll position when the save round-trips through Redux.
   $effect(() => {
-    localValue = value;
+    if (!isFocused) {
+      localValue = value;
+    }
   });
 
   const hasChanges = $derived(localValue !== originalValue);
@@ -109,11 +114,6 @@
       save();
     }
   }
-
-  function autoResize(textarea: HTMLTextAreaElement) {
-    textarea.style.height = 'auto';
-    textarea.style.height = textarea.scrollHeight + 'px';
-  }
 </script>
 
 <div class="h-full flex flex-col gap-2 {className}">
@@ -144,11 +144,10 @@
   <div class="relative grow min-h-0 flex flex-col">
     <Textarea
       bind:value={localValue}
-      oninput={(e) => {
-        handleInput();
-        autoResize(e.currentTarget);
-      }}
+      oninput={() => handleInput()}
       onkeydown={handleKeyDown}
+      onfocus={() => (isFocused = true)}
+      onblur={() => (isFocused = false)}
       {placeholder}
       rows={minRows}
       noFocusStyle
@@ -178,6 +177,13 @@
 </div>
 
 <style>
+  /* Textarea should fill its container and scroll internally, not expand */
+  .grow :global(textarea) {
+    height: 100%;
+    resize: none;
+    overflow-y: auto;
+  }
+
   /* Warning color fallback if not defined in theme */
   .text-warning {
     color: hsl(38, 92%, 50%);

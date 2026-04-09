@@ -1,8 +1,25 @@
-import { call, put } from "typed-redux-saga";
+import { call, put, select } from "typed-redux-saga";
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import type { Specialist } from "$lib/constants/specialists";
-import { setBundledSpecialists, setBundledSpecialistsLoaded, setCustomSpecialists, setCustomSpecialistsLoaded, setFileSpecialists, setFileSpecialistsLoaded, setUserOverrides, setOverridesLoaded, setSpecialistsFolderPath, setProviderModelOverrides, SPECIALISTS_OVERRIDES_KEY, CUSTOM_SPECIALISTS_KEY, PROVIDER_MODEL_OVERRIDES_KEY, type FileSpecialist, } from "../specialists-slice";
+import { selectActiveWorkspace } from "$lib/store/slices/workspace/workspace-selectors";
+import {
+    setBundledSpecialists,
+    setBundledSpecialistsLoaded,
+    setCustomSpecialistsLoaded,
+    setFileSpecialists,
+    setFileSpecialistsLoaded,
+    setOverridesLoaded,
+    setSpecialistsFolderPath,
+    setProviderModelOverrides,
+    PROVIDER_MODEL_OVERRIDES_KEY,
+    type FileSpecialist,
+} from "../specialists-slice";
+
+function getActiveWorkspacePath(state: any): string | undefined {
+    const workspace = selectActiveWorkspace.select(state);
+    return workspace?.worktreePath ?? workspace?.repositoryPath ?? workspace?.path;
+}
 function* loadBundledSpecialists() {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
@@ -30,40 +47,12 @@ function* loadBundledSpecialists() {
         yield* put(setBundledSpecialistsLoaded(true));
     }
 }
-function* loadOverrides() {
-    try {
-        if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], 'settings:get', { key: SPECIALISTS_OVERRIDES_KEY });
-            if (result?.success && result.data) {
-                yield* put(setUserOverrides(result.data));
-            }
-        }
-    }
-    catch {
-    }
-    finally {
-        yield* put(setOverridesLoaded(true));
-    }
-}
-function* loadCustomSpecialists() {
-    try {
-        if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], 'settings:get', { key: CUSTOM_SPECIALISTS_KEY });
-            if (result?.success && result.data) {
-                yield* put(setCustomSpecialists(result.data));
-            }
-        }
-    }
-    catch {
-    }
-    finally {
-        yield* put(setCustomSpecialistsLoaded(true));
-    }
-}
+
 function* loadFileSpecialistsData() {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.LIST_FILES, {});
+            const workspacePath: string | undefined = yield* select(getActiveWorkspacePath);
+            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.LIST_FILES, { workspacePath });
             if (result?.success && result.data) {
                 const { specialists, errors } = result.data;
                 const fileSpecs: FileSpecialist[] = specialists.map((s: any) => ({
@@ -76,7 +65,7 @@ function* loadFileSpecialistsData() {
                     behaviorPrompt: s.behaviorPrompt,
                     roleReminder: s.frontmatter.roleReminder,
                     filePath: s.filePath,
-                    source: 'file' as const,
+                    source: s.source,
                 }));
                 yield* put(setFileSpecialists(fileSpecs));
                 if (errors.length > 0) {
@@ -110,8 +99,10 @@ function* loadProviderModelOverridesCache() {
 }
 export function* initSaga() {
     yield* call(loadBundledSpecialists);
-    yield* call(loadOverrides);
-    yield* call(loadCustomSpecialists);
+    // Wave 2: Overrides and custom specialists are no longer loaded from electron-store.
+    // They are now fully file-based. Mark them as loaded immediately.
+    yield* put(setOverridesLoaded(true));
+    yield* put(setCustomSpecialistsLoaded(true));
     yield* call(loadFileSpecialistsData);
     yield* call(loadFolderPath);
     yield* call(loadProviderModelOverridesCache);

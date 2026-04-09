@@ -12,6 +12,7 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import {
   EmptySchema,
   SpecialistIdSchema,
+  SpecialistListSchema,
   SpecialistWriteSchema,
   SpecialistExportBuiltinSchema,
 } from '../../../main/ipc-schemas';
@@ -20,6 +21,7 @@ import {
   getSpecialistsDirectory,
   ensureSpecialistsDirectory,
   loadSpecialistFiles,
+  loadProjectSpecialistFiles,
   loadSpecialistFile,
   loadBundledSpecialistFiles,
   writeSpecialistFile,
@@ -27,6 +29,8 @@ import {
   specialistFileExists,
 } from './specialist-file-loader';
 import { refreshSpecialistsFromFiles } from '../../agent/main/specialists.service';
+import { mergeSpecialistsByPriority } from '../../../shared/specialist-file-types';
+import { startSpecialistFileWatcher } from './specialist-file-watcher';
 
 const logger = new Logger('SpecialistsIPC');
 
@@ -36,15 +40,28 @@ const logger = new Logger('SpecialistsIPC');
 export function setupSpecialistsIPC(): void {
   logger.info('Setting up specialists IPC handlers');
 
-  // List user specialist files (from ~/.augment/specialists/)
+  // List file-based specialists (project + user, with project overriding user)
   ipcMain.handle(
     SPECIALISTS_CHANNELS.LIST_FILES,
     createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
+      SpecialistListSchema,
+      async (_event: IpcMainInvokeEvent, validated: z.infer<typeof SpecialistListSchema>) => {
         try {
-          const result = await loadSpecialistFiles();
-          return { success: true, data: result };
+          const [projectResult, userResult] = await Promise.all([
+            loadProjectSpecialistFiles(validated.workspacePath),
+            loadSpecialistFiles(),
+          ]);
+
+          return {
+            success: true,
+            data: {
+              specialists: mergeSpecialistsByPriority(
+                userResult.specialists,
+                projectResult.specialists,
+              ),
+              errors: [...projectResult.errors, ...userResult.errors],
+            },
+          };
         } catch (error) {
           return {
             success: false,
@@ -76,41 +93,28 @@ export function setupSpecialistsIPC(): void {
     ),
   );
 
-  // List all specialists (bundled + user files, with user overriding bundled)
+  // List all specialists (bundled + user files + project files, with higher-priority sources winning)
   ipcMain.handle(
     SPECIALISTS_CHANNELS.LIST_ALL,
     createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
+      SpecialistListSchema,
+      async (_event: IpcMainInvokeEvent, validated: z.infer<typeof SpecialistListSchema>) => {
         try {
-          const [bundledResult, userResult] = await Promise.all([
+          const [bundledResult, userResult, projectResult] = await Promise.all([
             loadBundledSpecialistFiles(),
             loadSpecialistFiles(),
+            loadProjectSpecialistFiles(validated.workspacePath),
           ]);
-
-          // Merge with user files taking priority
-          const seen = new Set<string>();
-          const specialists = [];
-
-          // User files first (highest priority)
-          for (const spec of userResult.specialists) {
-            seen.add(spec.id);
-            specialists.push({ ...spec, source: 'file' as const });
-          }
-
-          // Bundled specialists (skip if overridden)
-          for (const spec of bundledResult.specialists) {
-            if (!seen.has(spec.id)) {
-              seen.add(spec.id);
-              specialists.push({ ...spec, source: 'bundled' as const });
-            }
-          }
 
           return {
             success: true,
             data: {
-              specialists,
-              errors: [...bundledResult.errors, ...userResult.errors],
+              specialists: mergeSpecialistsByPriority(
+                bundledResult.specialists,
+                userResult.specialists,
+                projectResult.specialists,
+              ),
+              errors: [...bundledResult.errors, ...userResult.errors, ...projectResult.errors],
             },
           };
         } catch (error) {
@@ -131,7 +135,11 @@ export function setupSpecialistsIPC(): void {
       SpecialistIdSchema,
       async (_event: IpcMainInvokeEvent, validated: z.infer<typeof SpecialistIdSchema>) => {
         try {
-          const specialist = await loadSpecialistFile(validated.id);
+          const specialist = await loadSpecialistFile(
+            validated.id,
+            validated.scope,
+            validated.workspacePath,
+          );
           if (!specialist) {
             return { success: false, error: 'Specialist file not found' };
           }
@@ -156,7 +164,9 @@ export function setupSpecialistsIPC(): void {
         try {
           const result = await writeSpecialistFile(validated);
           // Invalidate the backend cache so agents see the updated specialist immediately
-          await refreshSpecialistsFromFiles();
+          await refreshSpecialistsFromFiles(
+            validated.scope === 'project' ? validated.workspacePath : undefined,
+          );
           return result;
         } catch (error) {
           return {
@@ -176,9 +186,15 @@ export function setupSpecialistsIPC(): void {
       SpecialistIdSchema,
       async (_event: IpcMainInvokeEvent, validated: z.infer<typeof SpecialistIdSchema>) => {
         try {
-          const result = await deleteSpecialistFile(validated.id);
+          const result = await deleteSpecialistFile(
+            validated.id,
+            validated.scope,
+            validated.workspacePath,
+          );
           // Invalidate the backend cache so agents see the deletion immediately
-          await refreshSpecialistsFromFiles();
+          await refreshSpecialistsFromFiles(
+            validated.scope === 'project' ? validated.workspacePath : undefined,
+          );
           return result;
         } catch (error) {
           return {
@@ -289,7 +305,11 @@ export function setupSpecialistsIPC(): void {
       SpecialistIdSchema,
       async (_event: IpcMainInvokeEvent, validated: z.infer<typeof SpecialistIdSchema>) => {
         try {
-          const exists = await specialistFileExists(validated.id);
+          const exists = await specialistFileExists(
+            validated.id,
+            validated.scope,
+            validated.workspacePath,
+          );
           return { success: true, data: exists };
         } catch (error) {
           return {
@@ -303,4 +323,16 @@ export function setupSpecialistsIPC(): void {
   );
 
   logger.info('Specialists IPC handlers registered');
+
+  // Start watching user specialists directory immediately.
+  // Project watcher will be updated when a workspace is mounted.
+  startSpecialistFileWatcher(undefined, () => {
+    // Specialist file changes are global — broadcast to all windows
+    const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
+      sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
+    };
+    sendToWorkspaceWindows(undefined, 'specialists:files-changed', {});
+  }).catch((error) => {
+    logger.error('Failed to start specialist file watcher', error as Error);
+  });
 }

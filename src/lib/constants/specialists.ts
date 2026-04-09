@@ -1,4 +1,5 @@
 import type { ModelTier } from '$shared/config/provider-config';
+import type { SpecialistSource } from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */
 export type BuiltinSpecialistId =
@@ -41,6 +42,11 @@ export interface Specialist {
    * Should be 1-2 sentences focusing on what the specialist MUST NOT do.
    */
   roleReminder?: string;
+  /**
+   * Where this specialist was loaded from (project file, user file, bundled, etc.).
+   * Undefined for hardcoded fallback specialists.
+   */
+  source?: SpecialistSource;
   /**
    * Default agent type for agents created with this specialist.
    * Controls which instruction set (agent loop) the agent uses.

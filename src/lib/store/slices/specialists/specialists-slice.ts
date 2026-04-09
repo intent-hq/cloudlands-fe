@@ -7,6 +7,7 @@ import {
   updateItem,
   type Collection,
 } from "../../utils/collection-utils";
+import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
 
 // ============================================================================
 // Types (re-exported for consumers)
@@ -34,11 +35,30 @@ export interface FileSpecialist {
   description: string;
   codingAgent?: string;
   model: string;
-  modelTier?: 'fast' | 'balanced' | 'smart';
+  modelTier?: ModelTier;
   behaviorPrompt: string;
   roleReminder?: string;
   filePath: string;
-  source: 'file';
+  source: SpecialistFileScope;
+}
+
+export interface FileSpecialistWritePayload {
+  id: string;
+  name: string;
+  description: string;
+  codingAgent?: string;
+  model?: string;
+  modelTier?: ModelTier;
+  roleReminder?: string;
+  behaviorPrompt: string;
+  scope?: SpecialistFileScope;
+  workspacePath?: string;
+}
+
+export interface FileSpecialistReference {
+  id: string;
+  scope?: SpecialistFileScope;
+  workspacePath?: string;
 }
 
 // ============================================================================
@@ -102,36 +122,49 @@ export const setBundledSpecialistsLoaded = createAction<[loaded: boolean]>("spec
 export const setSpecialistsFolderPath = createAction<[path: string | null]>("specialists/setSpecialistsFolderPath");
 export const setProviderModelOverrides = createAction<[overrides: Record<string, Record<string, string>>]>("specialists/setProviderModelOverrides");
 
-// Model override actions
+// ── DEPRECATED (Wave 2) ───────────────────────────────────────────────
+// Override actions are deprecated. Overrides are now persisted as user
+// specialist files (~/.augment/specialists/{id}.md) via saveFileSpecialist.
+// These actions still update in-memory state for backward compatibility
+// but are no longer persisted to electron-store.
+/** @deprecated Use saveFileSpecialist instead */
 export const setModelOverride = createAction<[specialistId: string, model: string]>("specialists/setModelOverride");
+/** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearModelOverride = createAction<[specialistId: string]>("specialists/clearModelOverride");
+/** @deprecated Use saveFileSpecialist for each specialist instead */
 export const setBulkModelOverrides = createAction<[overrides: Record<string, string>]>("specialists/setBulkModelOverrides");
-
-// Behavior prompt override actions
+/** @deprecated Use saveFileSpecialist instead */
 export const setBehaviorPromptOverride = createAction<[specialistId: string, prompt: string]>("specialists/setBehaviorPromptOverride");
+/** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearBehaviorPromptOverride = createAction<[specialistId: string]>("specialists/clearBehaviorPromptOverride");
-
-// Coding agent override actions
+/** @deprecated Use saveFileSpecialist instead */
 export const setCodingAgentOverride = createAction<[specialistId: string, codingAgent: string]>("specialists/setCodingAgentOverride");
+/** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearCodingAgentOverride = createAction<[specialistId: string]>("specialists/clearCodingAgentOverride");
-
-// Bulk override actions
+/** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearAllOverrides = createAction<[specialistId: string]>("specialists/clearAllOverrides");
+/** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const resetAllOverrides = createAction("specialists/resetAllOverrides");
 
-// Custom specialist actions
+// ── DEPRECATED (Wave 2): Custom specialist actions ────────────────────
+// Custom specialists are now created/updated/deleted via file-based
+// actions (saveFileSpecialist, deleteFileSpecialist). These are kept
+// for the reducer but no UI code should dispatch them.
+/** @deprecated Use saveFileSpecialist instead */
 export const createCustomSpecialist = createAction<[specialist: Omit<CustomSpecialist, 'id'>], [specialist: Omit<CustomSpecialist, 'id'>, id: string]>(
   "specialists/createCustomSpecialist",
   (specialist) => [specialist, `custom-${Date.now()}`]
 );
+/** @deprecated Use saveFileSpecialist instead */
 export const updateCustomSpecialist = createAction<[specialistId: string, updates: Partial<Omit<CustomSpecialist, 'id'>>]>("specialists/updateCustomSpecialist");
+/** @deprecated Use deleteFileSpecialist instead */
 export const deleteCustomSpecialist = createAction<[specialistId: string]>("specialists/deleteCustomSpecialist");
 
 // Saga trigger actions
 export const switchModelOverridesForProvider = createAction<[newProviderId: string, previousProviderId: string]>("specialists/switchModelOverridesForProvider");
 export const exportBuiltinToFile = createAction<[specialistId: string]>("specialists/exportBuiltinToFile");
-export const saveFileSpecialist = createAction<[specialist: { id: string; name: string; description: string; codingAgent?: string; model?: string; modelTier?: 'fast' | 'balanced' | 'smart'; roleReminder?: string; behaviorPrompt: string }]>("specialists/saveFileSpecialist");
-export const deleteFileSpecialist = createAction<[specialistId: string]>("specialists/deleteFileSpecialist");
+export const saveFileSpecialist = createAction<[specialist: FileSpecialistWritePayload]>("specialists/saveFileSpecialist");
+export const deleteFileSpecialist = createAction<[specialist: FileSpecialistReference]>("specialists/deleteFileSpecialist");
 export const openSpecialistsFolder = createAction("specialists/openSpecialistsFolder");
 export const loadFileSpecialists = createAction("specialists/loadFileSpecialists");
 

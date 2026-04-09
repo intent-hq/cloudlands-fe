@@ -55,15 +55,14 @@ export function filterSpecialistsByGitHubAuth(specialists: Specialist[], isGitHu
 }
 // ============================================================================
 // Derived: merged specialists list
-// Priority: file > bundled > custom > hardcoded SPECIALISTS (last resort)
+// Priority: file (project > user) > bundled > hardcoded SPECIALISTS (last resort)
 // ============================================================================
 export const selectSpecialists = createSelector((state): Specialist[] => {
     const fileSpecialists = getItems(state.specialists.fileSpecialists);
     const bundledSpecialists = state.specialists.bundledSpecialists;
-    const customSpecialists = getItems(state.specialists.customSpecialists);
     const seen = new Set<string>();
     const result: Specialist[] = [];
-    // File-based specialists first (highest priority)
+    // File-based specialists first (highest priority — includes project + user files)
     for (const file of fileSpecialists) {
         if (!seen.has(file.id) && selectIsSpecialistVisible.select(state, file.id)) {
             seen.add(file.id);
@@ -77,6 +76,7 @@ export const selectSpecialists = createSelector((state): Specialist[] => {
                 defaultModelTier: effectiveTier,
                 defaultBehaviorPrompt: file.behaviorPrompt,
                 roleReminder: file.roleReminder,
+                source: file.source,
             });
         }
     }
@@ -87,24 +87,8 @@ export const selectSpecialists = createSelector((state): Specialist[] => {
             result.push(specialist);
         }
     }
-    // Electron-store custom specialists (skip if ID conflicts)
-    for (const custom of customSpecialists) {
-        if (!seen.has(custom.id) && selectIsSpecialistVisible.select(state, custom.id)) {
-            seen.add(custom.id);
-            result.push({
-                id: custom.id,
-                name: custom.name,
-                description: custom.description,
-                codingAgent: custom.codingAgent,
-                defaultModel: custom.model,
-                defaultModelTier: undefined,
-                defaultBehaviorPrompt: custom.behaviorPrompt,
-                roleReminder: custom.roleReminder,
-            });
-        }
-        else if (seen.has(custom.id)) {
-        }
-    }
+    // Wave 2: Electron-store custom specialists are no longer included.
+    // They should have been migrated to files on startup.
     // Last resort fallback: hardcoded SPECIALISTS
     for (const specialist of SPECIALISTS) {
         if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
@@ -112,10 +96,30 @@ export const selectSpecialists = createSelector((state): Specialist[] => {
             result.push(specialist);
         }
     }
-    if (result.length > 0 &&
-        fileSpecialists.length === 0 &&
-        bundledSpecialists.length === 0) {
+
+    // Stable sort: bundled specialists in their original order first,
+    // then custom (user/project) specialists sorted alphabetically by name.
+    // This prevents the list from reordering when a specialist is re-saved.
+    const bundledOrder = new Map<string, number>();
+    // Build order from bundled + hardcoded fallback (both represent "built-in" order)
+    for (const s of bundledSpecialists) {
+        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
     }
+    for (const s of SPECIALISTS) {
+        if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+    }
+
+    result.sort((a, b) => {
+        const aIsBuiltIn = bundledOrder.has(a.id);
+        const bIsBuiltIn = bundledOrder.has(b.id);
+        // Built-in specialists come first, in their original order
+        if (aIsBuiltIn && bIsBuiltIn) return bundledOrder.get(a.id)! - bundledOrder.get(b.id)!;
+        if (aIsBuiltIn && !bIsBuiltIn) return -1;
+        if (!aIsBuiltIn && bIsBuiltIn) return 1;
+        // Custom specialists sorted alphabetically by name
+        return a.name.localeCompare(b.name);
+    });
+
     return result;
 });
 // ============================================================================
@@ -126,19 +130,15 @@ export const selectSpecialistById = createSelector((state, specialistId: string)
     id: string;
     name: string;
     description: string;
-    source: 'file' | 'builtin' | 'custom';
+    source: FileSpecialist['source'] | 'builtin';
 } | null => {
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (file) {
-        return { id: file.id, name: file.name, description: file.description, source: 'file' };
+        return { id: file.id, name: file.name, description: file.description, source: file.source };
     }
     const bundled = state.specialists.bundledSpecialists.find((s: Specialist) => s.id === specialistId);
     if (bundled) {
         return { id: bundled.id, name: bundled.name, description: bundled.description, source: 'builtin' };
-    }
-    const custom = getItem(state.specialists.customSpecialists, specialistId);
-    if (custom) {
-        return { id: custom.id, name: custom.name, description: custom.description, source: 'custom' };
     }
     return null;
 });
@@ -146,16 +146,14 @@ export const selectSpecialistById = createSelector((state, specialistId: string)
 export const selectSpecialistName = createSelector((state, specialistId: string): string | null => {
     return selectSpecialistById.select(state, specialistId)?.name ?? null;
 });
-/** Get the effective model for a specialist (override or default) */
+/** Get the effective model for a specialist (file override → bundled default → tier resolution) */
 export const selectEffectiveModel = createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
         return '';
-    // Check for user override first
-    const override = state.specialists.userOverrides.modelOverrides[specialistId];
-    if (override)
-        return override;
+    // Wave 2: File specialists already have the correct model baked in.
+    // No need to check userOverrides — they're deprecated.
     // Resolve the model tier to an actual model ID for the active provider
     if (specialist.defaultModelTier) {
         const providerId = selectEffectiveCodingAgent.select(state, specialistId);
@@ -184,14 +182,14 @@ export const selectResolvedDefaultModel = createSelector((state, specialistId: s
     }
     return specialist.defaultModel ?? '';
 });
-/** Get the effective behavior prompt for a specialist */
+/** Get the effective behavior prompt for a specialist (file override → bundled default) */
 export const selectEffectiveBehaviorPrompt = createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
         return '';
-    const override = state.specialists.userOverrides.behaviorPromptOverrides[specialistId];
-    return override || specialist.defaultBehaviorPrompt;
+    // Wave 2: File specialists already have the correct prompt baked in.
+    return specialist.defaultBehaviorPrompt;
 });
 /** Check if a specialist is built-in (bundled) */
 export const selectIsBuiltIn = createSelector((state, specialistId: string): boolean => {
@@ -201,15 +199,29 @@ export const selectIsBuiltIn = createSelector((state, specialistId: string): boo
 export const selectIsFileBased = createSelector((state, specialistId: string): boolean => {
     return !!getItem(state.specialists.fileSpecialists, specialistId);
 });
-/** Check if a specialist has any overrides */
+/** Check if a built-in specialist has been overridden by a user file */
 export const selectHasOverrides = createSelector((state, specialistId: string): boolean => {
-    return (!!state.specialists.userOverrides.codingAgentOverrides?.[specialistId] ||
-        !!state.specialists.userOverrides.modelOverrides?.[specialistId] ||
-        !!state.specialists.userOverrides.behaviorPromptOverrides?.[specialistId]);
+    const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
+    if (!isBuiltIn) return false;
+    const file = getItem(state.specialists.fileSpecialists, specialistId);
+    return !!file && file.source === 'user';
 });
 /** Get a file specialist by ID */
 export const selectGetFileSpecialist = createSelector((state, specialistId: string): FileSpecialist | undefined => {
     return getItem(state.specialists.fileSpecialists, specialistId);
+});
+export const selectSpecialistSourceLabel = createSelector((state, specialistId: string): 'Project' | 'User' | 'Built-in' | null => {
+    const file = getItem(state.specialists.fileSpecialists, specialistId);
+    if (file?.source === 'project') {
+        return 'Project';
+    }
+    if (file?.source === 'user') {
+        return 'User';
+    }
+    if (state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId)) {
+        return 'Built-in';
+    }
+    return null;
 });
 /** Get the on-disk file path for a specialist */
 export const selectSpecialistFilePath = createSelector((state, specialistId: string): string | undefined => {
@@ -223,11 +235,12 @@ export const selectSpecialistFilePath = createSelector((state, specialistId: str
         }).filePath;
     return undefined;
 });
-/** Get the effective coding agent for a specialist (override → specialist default → active provider) */
+/** Get the effective coding agent for a specialist (file value → bundled default → active provider) */
 export const selectEffectiveCodingAgent = createSelector((state, specialistId: string): string => {
-    const override = state.specialists.userOverrides.codingAgentOverrides?.[specialistId];
-    if (override)
-        return override;
+    // Wave 2: File specialists already have the correct codingAgent baked in.
+    // Check file specialist first, then fall back to bundled/hardcoded.
+    const file = getItem(state.specialists.fileSpecialists, specialistId);
+    if (file?.codingAgent) return file.codingAgent;
     return selectResolvedDefaultCodingAgent.select(state, specialistId);
 });
 /** Get the resolved default coding agent for a specialist (specialist default → active provider) */

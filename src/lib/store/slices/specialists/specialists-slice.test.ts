@@ -180,7 +180,7 @@ describe("specialistsReducer", () => {
           model: "opus4.5",
           behaviorPrompt: "You are a specialist",
           filePath: "/path/to/specialist.md",
-          source: "file",
+          source: "user",
         },
       ];
       const state = specialistsReducer(initialState, setFileSpecialists(fileSpecs));
@@ -198,7 +198,7 @@ describe("specialistsReducer", () => {
           model: "opus4.5",
           behaviorPrompt: "Original prompt",
           filePath: "/path/to/specialist.md",
-          source: "file",
+          source: "user",
         },
       ];
       let state = specialistsReducer(initialState, setFileSpecialists(initialFileSpecs));
@@ -215,7 +215,7 @@ describe("specialistsReducer", () => {
           model: "opus4.5",
           behaviorPrompt: "Updated prompt",
           filePath: "/path/to/specialist.md",
-          source: "file",
+          source: "user",
         },
       ];
       state = specialistsReducer(state, setFileSpecialists(reloadedSpecs));

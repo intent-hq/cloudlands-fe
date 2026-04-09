@@ -371,7 +371,19 @@
         content: fileContent,
         workspaceId,
       });
-      if (result.success) originalFileContent = fileContent;
+      if (result.success) {
+        originalFileContent = fileContent;
+        // Emit file:changed for listeners like specialist reload saga
+        window.dispatchEvent(
+          new CustomEvent('file:changed', {
+            detail: {
+              workspaceId,
+              files: [fileAbsolutePath],
+              type: 'change',
+            },
+          }),
+        );
+      }
     } catch (err) {
       logger.error('[FileTabType] Error saving file', { filePath: fileAbsolutePath, error: err });
     } finally {

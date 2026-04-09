@@ -29,6 +29,7 @@ import {
   type SpecialistFile,
   type SpecialistFileFrontmatter,
   type SpecialistFilesResult,
+  type SpecialistFileScope,
   type SpecialistSource,
   type ModelTier,
   SPECIALISTS_FOLDER,
@@ -49,6 +50,10 @@ const logger = new Logger('SpecialistFileLoader');
  */
 export function getSpecialistsDirectory(): string {
   return path.join(getSafeHomeDir(), '.augment', SPECIALISTS_FOLDER);
+}
+
+export function getProjectSpecialistsDirectory(workspacePath: string): string {
+  return path.join(workspacePath, '.augment', SPECIALISTS_FOLDER);
 }
 
 /**
@@ -93,6 +98,93 @@ export async function ensureSpecialistsDirectory(): Promise<string> {
   } catch (error) {
     logger.error('Failed to create specialists directory', error as Error);
     throw error;
+  }
+}
+
+export async function ensureProjectSpecialistsDirectory(workspacePath: string): Promise<string> {
+  const dir = getProjectSpecialistsDirectory(workspacePath);
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  } catch (error) {
+    logger.error('Failed to create project specialists directory', error as Error, { workspacePath });
+    throw error;
+  }
+}
+
+function getDirectoryForScope(scope: SpecialistFileScope, workspacePath?: string): string {
+  if (scope === 'project') {
+    if (!workspacePath) {
+      throw new Error('workspacePath is required for project-level specialists');
+    }
+    return getProjectSpecialistsDirectory(workspacePath);
+  }
+
+  return getSpecialistsDirectory();
+}
+
+async function loadSpecialistFilesFromDirectory(
+  dir: string,
+  source: SpecialistSource,
+  options?: {
+    missingMessage?: string;
+    missingLevel?: 'debug' | 'warn';
+    missingContext?: Record<string, unknown>;
+  },
+): Promise<SpecialistFilesResult> {
+  const result: SpecialistFilesResult = {
+    specialists: [],
+    errors: [],
+  };
+
+  if (!(await fileExists(dir))) {
+    const message = options?.missingMessage ?? 'Specialists directory does not exist';
+    const context = { dir, ...(options?.missingContext ?? {}) };
+    if (options?.missingLevel === 'warn') {
+      logger.warn(message, context);
+    } else {
+      logger.debug(message, context);
+    }
+    return result;
+  }
+
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const mdFiles = entries.filter(
+      (entry) =>
+        entry.isFile() && SPECIALIST_FILE_EXTENSIONS.some((ext) => entry.name.endsWith(ext)),
+    );
+
+    await Promise.all(
+      mdFiles.map(async (entry) => {
+        const filePath = path.join(dir, entry.name);
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          const parsed = parseSpecialistFile(filePath, content, source);
+
+          if ('error' in parsed) {
+            result.errors.push({ filePath, error: parsed.error });
+          } else {
+            result.specialists.push(parsed);
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          result.errors.push({ filePath, error: errorMessage });
+          logger.error(`Failed to load specialist file: ${filePath}`, error as Error);
+        }
+      }),
+    );
+
+    logger.info(`Loaded ${result.specialists.length} specialists from files`, {
+      directory: dir,
+      source,
+      errors: result.errors.length,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error('Failed to read specialists directory', error as Error, { dir, source });
+    return result;
   }
 }
 
@@ -228,24 +320,33 @@ function parseFrontmatter(content: string): {
 export function parseSpecialistFile(
   filePath: string,
   content: string,
-  source: SpecialistSource = 'file',
+  source: SpecialistSource = 'user',
 ): SpecialistFile | { error: string } {
   const id = filenameToSpecialistId(path.basename(filePath));
 
   const parsed = parseFrontmatter(content);
+
+  // Derive name from filename (e.g., "my-cool-specialist.md" -> "my-cool-specialist")
+  const nameFromFilename = path.basename(filePath).replace(/\.[^.]+$/, '');
+
+  // When no frontmatter is found, treat the entire content as the behavior prompt
   if (!parsed) {
-    return { error: 'No valid YAML frontmatter found' };
+    const specialistFrontmatter: SpecialistFileFrontmatter = {
+      name: nameFromFilename,
+      description: '',
+    };
+
+    return {
+      id,
+      filePath,
+      frontmatter: specialistFrontmatter,
+      behaviorPrompt: content.trim(),
+      rawContent: content,
+      source,
+    };
   }
 
   const { frontmatter, body } = parsed;
-
-  // Validate required fields
-  if (!frontmatter.name) {
-    return { error: 'Missing required field: name' };
-  }
-  if (!frontmatter.description) {
-    return { error: 'Missing required field: description' };
-  }
 
   // Validate modelTier if present
   const validModelTiers = ['fast', 'balanced', 'smart'];
@@ -257,8 +358,8 @@ export function parseSpecialistFile(
   }
 
   const specialistFrontmatter: SpecialistFileFrontmatter = {
-    name: frontmatter.name,
-    description: frontmatter.description,
+    name: frontmatter.name || nameFromFilename,
+    description: frontmatter.description || '',
     codingAgent: frontmatter.codingAgent,
     model: frontmatter.model,
     modelTier: modelTier as ModelTier | undefined,
@@ -280,57 +381,22 @@ export function parseSpecialistFile(
  * Load all specialist files from the specialists directory
  */
 export async function loadSpecialistFiles(): Promise<SpecialistFilesResult> {
-  const result: SpecialistFilesResult = {
-    specialists: [],
-    errors: [],
-  };
+  return loadSpecialistFilesFromDirectory(getSpecialistsDirectory(), 'user', {
+    missingMessage: 'User specialists directory does not exist',
+  });
+}
 
-  const dir = getSpecialistsDirectory();
-
-  // Check if directory exists
-  if (!(await fileExists(dir))) {
-    logger.debug('Specialists directory does not exist', { dir });
-    return result;
+export async function loadProjectSpecialistFiles(
+  workspacePath?: string,
+): Promise<SpecialistFilesResult> {
+  if (!workspacePath) {
+    return { specialists: [], errors: [] };
   }
 
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const mdFiles = entries.filter(
-      (entry) =>
-        entry.isFile() && SPECIALIST_FILE_EXTENSIONS.some((ext) => entry.name.endsWith(ext)),
-    );
-
-    // Load all files in parallel
-    const loadPromises = mdFiles.map(async (entry) => {
-      const filePath = path.join(dir, entry.name);
-      try {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const parsed = parseSpecialistFile(filePath, content);
-
-        if ('error' in parsed) {
-          result.errors.push({ filePath, error: parsed.error });
-        } else {
-          result.specialists.push(parsed);
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        result.errors.push({ filePath, error: errorMessage });
-        logger.error(`Failed to load specialist file: ${filePath}`, error as Error);
-      }
-    });
-
-    await Promise.all(loadPromises);
-
-    logger.info(`Loaded ${result.specialists.length} specialists from files`, {
-      directory: dir,
-      errors: result.errors.length,
-    });
-
-    return result;
-  } catch (error) {
-    logger.error('Failed to read specialists directory', error as Error);
-    return result;
-  }
+  return loadSpecialistFilesFromDirectory(getProjectSpecialistsDirectory(workspacePath), 'project', {
+    missingMessage: 'Project specialists directory does not exist',
+    missingContext: { workspacePath },
+  });
 }
 
 /**
@@ -338,11 +404,6 @@ export async function loadSpecialistFiles(): Promise<SpecialistFilesResult> {
  * These are read from the resources/specialists directory
  */
 export async function loadBundledSpecialistFiles(): Promise<SpecialistFilesResult> {
-  const result: SpecialistFilesResult = {
-    specialists: [],
-    errors: [],
-  };
-
   const dir = getBundledSpecialistsDirectory();
   logger.debug('Loading bundled specialists', {
     directory: dir,
@@ -350,66 +411,25 @@ export async function loadBundledSpecialistFiles(): Promise<SpecialistFilesResul
     isDev: !app.isPackaged,
   });
 
-  // Check if directory exists
-  if (!(await fileExists(dir))) {
-    // Use warn level since missing bundled specialists is unexpected and will cause
-    // issues like specialists not being found (e.g., "spec-writer not found")
-    logger.warn(
-      'Bundled specialists directory does not exist - specialists will not be available',
-      {
-        dir,
-        __dirname,
-        hint: 'Ensure resources/specialists/ exists relative to the app root',
-      },
-    );
-    return result;
-  }
-
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const mdFiles = entries.filter(
-      (entry) =>
-        entry.isFile() && SPECIALIST_FILE_EXTENSIONS.some((ext) => entry.name.endsWith(ext)),
-    );
-
-    // Load all files in parallel
-    const loadPromises = mdFiles.map(async (entry) => {
-      const filePath = path.join(dir, entry.name);
-      try {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const parsed = parseSpecialistFile(filePath, content, 'bundled');
-
-        if ('error' in parsed) {
-          result.errors.push({ filePath, error: parsed.error });
-        } else {
-          result.specialists.push(parsed);
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        result.errors.push({ filePath, error: errorMessage });
-        logger.error(`Failed to load bundled specialist file: ${filePath}`, error as Error);
-      }
-    });
-
-    await Promise.all(loadPromises);
-
-    logger.info(`Loaded ${result.specialists.length} bundled specialists`, {
-      directory: dir,
-      errors: result.errors.length,
-    });
-
-    return result;
-  } catch (error) {
-    logger.error('Failed to read bundled specialists directory', error as Error);
-    return result;
-  }
+  return loadSpecialistFilesFromDirectory(dir, 'bundled', {
+    missingLevel: 'warn',
+    missingMessage: 'Bundled specialists directory does not exist - specialists will not be available',
+    missingContext: {
+      __dirname,
+      hint: 'Ensure resources/specialists/ exists relative to the app root',
+    },
+  });
 }
 
 /**
  * Load a single specialist file by ID
  */
-export async function loadSpecialistFile(id: string): Promise<SpecialistFile | null> {
-  const dir = getSpecialistsDirectory();
+export async function loadSpecialistFile(
+  id: string,
+  scope: SpecialistFileScope = 'user',
+  workspacePath?: string,
+): Promise<SpecialistFile | null> {
+  const dir = getDirectoryForScope(scope, workspacePath);
   const filename = specialistIdToFilename(id);
   const filePath = path.join(dir, filename);
 
@@ -419,7 +439,7 @@ export async function loadSpecialistFile(id: string): Promise<SpecialistFile | n
 
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = parseSpecialistFile(filePath, content);
+    const parsed = parseSpecialistFile(filePath, content, scope);
 
     if ('error' in parsed) {
       logger.error(`Failed to parse specialist file: ${filePath}`, { error: parsed.error });
@@ -455,14 +475,19 @@ export async function writeSpecialistFile(specialist: {
   description: string;
   codingAgent?: string;
   model?: string;
-  modelTier?: string;
+  modelTier?: ModelTier;
   roleReminder?: string;
   behaviorPrompt: string;
+  scope?: SpecialistFileScope;
+  workspacePath?: string;
 }): Promise<{ success: boolean; filePath?: string; error?: string }> {
   try {
-    await ensureSpecialistsDirectory();
+    const scope = specialist.scope ?? 'user';
+    const dir =
+      scope === 'project'
+        ? await ensureProjectSpecialistsDirectory(specialist.workspacePath!)
+        : await ensureSpecialistsDirectory();
 
-    const dir = getSpecialistsDirectory();
     const filename = specialistIdToFilename(specialist.id);
     const filePath = path.join(dir, filename);
 
@@ -505,8 +530,10 @@ export async function writeSpecialistFile(specialist: {
  */
 export async function deleteSpecialistFile(
   id: string,
+  scope: SpecialistFileScope = 'user',
+  workspacePath?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const dir = getSpecialistsDirectory();
+  const dir = getDirectoryForScope(scope, workspacePath);
   const filename = specialistIdToFilename(id);
   const filePath = path.join(dir, filename);
 
@@ -528,8 +555,12 @@ export async function deleteSpecialistFile(
 /**
  * Check if a specialist file exists
  */
-export async function specialistFileExists(id: string): Promise<boolean> {
-  const dir = getSpecialistsDirectory();
+export async function specialistFileExists(
+  id: string,
+  scope: SpecialistFileScope = 'user',
+  workspacePath?: string,
+): Promise<boolean> {
+  const dir = getDirectoryForScope(scope, workspacePath);
   const filename = specialistIdToFilename(id);
   const filePath = path.join(dir, filename);
   return fileExists(filePath);

@@ -4,8 +4,7 @@
   import { cn } from '$lib/utils';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
-  import { selectSpecialists, selectEffectiveBehaviorPrompt, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectSpecialists, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
@@ -31,11 +30,6 @@
     if (!specialistId) return null;
     return $specialists$.find((s) => s.id === specialistId) || null;
   });
-
-  // Get effective behavior prompt (with user overrides)
-  function getEffectiveBehaviorPrompt(specialistId: string): string {
-    return selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), specialistId);
-  }
 
   // Navigate to settings with specialist expanded
   async function openSpecialistSettings(specialistId?: string) {
@@ -66,7 +60,7 @@
 
   // The behavior prompt or description to show
   const displayPrompt = $derived(
-    specialistInfo ? getEffectiveBehaviorPrompt(specialistInfo.id) : generalDescription,
+    specialistInfo ? (specialistInfo.defaultBehaviorPrompt || '') : generalDescription,
   );
 </script>
 
@@ -167,6 +161,19 @@
       </button>
     {/if}
   </div>
+
+  <!-- Source Label -->
+  {#if specialistInfo?.source}
+    <p class="text-xs text-muted-foreground mb-2">
+      {#if specialistInfo.source === 'project'}
+        📁 Project specialist
+      {:else if specialistInfo.source === 'user'}
+        👤 User specialist
+      {:else if specialistInfo.source === 'bundled'}
+        📦 Built-in specialist
+      {/if}
+    </p>
+  {/if}
 
   <!-- Customize Button (only for specialists) -->
   {#if specialistInfo}

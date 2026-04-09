@@ -24,11 +24,12 @@ import {
 } from '$shared/config/provider-config';
 import {
   loadSpecialistFiles,
+  loadProjectSpecialistFiles,
   loadBundledSpecialistFiles,
   migrateCustomSpecialistsFromStore,
   migrateOverridesFromStore,
 } from '../../specialists/main/specialist-file-loader';
-import type { SpecialistFile } from '../../../shared/specialist-file-types';
+import { mergeSpecialistsByPriority, type SpecialistFile } from '../../../shared/specialist-file-types';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
 
@@ -37,10 +38,8 @@ const logger = new Logger('SpecialistsService');
 // Cached GitHub auth status for synchronous filtering
 let isGitHubAuthenticated = false;
 
-// Storage keys - must match frontend store
-const CUSTOM_SPECIALISTS_KEY = 'custom-specialists';
-const SPECIALISTS_OVERRIDES_KEY = 'specialists-overrides';
-
+// Wave 2: CustomSpecialist type retained for migration compatibility only.
+// All active specialist resolution now goes through file-based system.
 export interface CustomSpecialist {
   id: string;
   name: string;
@@ -87,8 +86,25 @@ let settingsStore: SettingsStoreInterface | null = null;
 let initPromise: Promise<void> | null = null;
 
 // Cache for file-based specialists (refreshed on demand)
-// This includes both bundled specialists and user file-based specialists
-let fileSpecialistsCache: SpecialistFile[] = [];
+// Each workspace can have its own effective set because project specialists are repo-local.
+const DEFAULT_FILE_CACHE_KEY = '__default__';
+const fileSpecialistsCache = new Map<string, SpecialistFile[]>();
+const fileSpecialistsCacheTimes = new Map<string, number>();
+const FILE_CACHE_TTL_MS = 5000; // 5 second cache for file-based specialists
+
+// In-flight promise to prevent concurrent cache refreshes (race condition fix)
+const refreshInFlight = new Map<string, Promise<void>>();
+
+function getFileCacheKey(workspacePath?: string): string {
+  return workspacePath || DEFAULT_FILE_CACHE_KEY;
+}
+
+function getCachedFileSpecialists(workspacePath?: string): SpecialistFile[] {
+  const cacheKey = getFileCacheKey(workspacePath);
+  return fileSpecialistsCache.get(cacheKey) ?? fileSpecialistsCache.get(DEFAULT_FILE_CACHE_KEY) ?? [];
+}
+
+
 
 /**
  * Initialize the settings store (call once during app startup)
@@ -152,36 +168,32 @@ export async function refreshGitHubAuthStatus(): Promise<void> {
  * Loads both bundled specialists and user file-based specialists.
  * User file-based specialists override bundled specialists with the same ID.
  */
-async function refreshFileSpecialistsCache(): Promise<void> {
+async function refreshFileSpecialistsCache(workspacePath?: string): Promise<void> {
   try {
-    // Load bundled specialists first (from resources/specialists/)
-    const bundledResult = await loadBundledSpecialistFiles();
+    const [bundledResult, userResult, projectResult] = await Promise.all([
+      loadBundledSpecialistFiles(),
+      loadSpecialistFiles(),
+      loadProjectSpecialistFiles(workspacePath),
+    ]);
 
-    // Load user file-based specialists (from ~/.augment/specialists/)
-    const userResult = await loadSpecialistFiles();
+    const mergedSpecialists = mergeSpecialistsByPriority(
+      bundledResult.specialists,
+      userResult.specialists,
+      projectResult.specialists,
+    );
 
-    // Merge with user files taking priority over bundled
-    const specialistsById = new Map<string, SpecialistFile>();
+    const cacheKey = getFileCacheKey(workspacePath);
+    fileSpecialistsCache.set(cacheKey, mergedSpecialists);
+    fileSpecialistsCacheTimes.set(cacheKey, Date.now());
 
-    // Add bundled specialists first
-    for (const specialist of bundledResult.specialists) {
-      specialistsById.set(specialist.id, specialist);
-    }
-
-    // User specialists override bundled ones with the same ID
-    for (const specialist of userResult.specialists) {
-      specialistsById.set(specialist.id, specialist);
-    }
-
-    fileSpecialistsCache = Array.from(specialistsById.values());
-
-    const allErrors = [...bundledResult.errors, ...userResult.errors];
+    const allErrors = [...bundledResult.errors, ...userResult.errors, ...projectResult.errors];
     if (allErrors.length > 0) {
       logger.warn(`Errors loading specialist files: ${allErrors.map((e) => e.error).join(', ')}`);
     }
 
     logger.info(
-      `Loaded specialists: ${bundledResult.specialists.length} bundled, ${userResult.specialists.length} user files, ${fileSpecialistsCache.length} total`,
+      `Loaded specialists: ${bundledResult.specialists.length} bundled, ${userResult.specialists.length} user files, ${projectResult.specialists.length} project files, ${mergedSpecialists.length} total`,
+      { workspacePath },
     );
   } catch (error) {
     logger.error('Failed to refresh file specialists cache', error as Error);
@@ -189,142 +201,58 @@ async function refreshFileSpecialistsCache(): Promise<void> {
 }
 
 /**
+ * Get file-based specialists (with caching)
+ * Uses in-flight promise tracking to prevent concurrent cache refreshes.
+ */
+async function getFileSpecialists(workspacePath?: string): Promise<SpecialistFile[]> {
+  const cacheKey = getFileCacheKey(workspacePath);
+  const cacheTime = fileSpecialistsCacheTimes.get(cacheKey) ?? 0;
+  const now = Date.now();
+  if (now - cacheTime > FILE_CACHE_TTL_MS) {
+    if (!refreshInFlight.has(cacheKey)) {
+      refreshInFlight.set(cacheKey, refreshFileSpecialistsCache(workspacePath).finally(() => {
+        refreshInFlight.delete(cacheKey);
+      }));
+    }
+    await refreshInFlight.get(cacheKey);
+  }
+  return getCachedFileSpecialists(workspacePath);
+}
+
+/**
  * Find a file-based specialist by ID (synchronous, uses cache)
  */
-function findFileSpecialistSync(specialistId: string): SpecialistFile | undefined {
-  return fileSpecialistsCache.find((s) => s.id === specialistId);
+function findFileSpecialistSync(
+  specialistId: string,
+  workspacePath?: string,
+): SpecialistFile | undefined {
+  return getCachedFileSpecialists(workspacePath).find((s) => s.id === specialistId);
 }
 
 /**
  * Force refresh the file specialists cache.
  * Useful when files have been modified externally.
  */
-export async function refreshSpecialistsFromFiles(): Promise<void> {
-  await refreshFileSpecialistsCache();
+export async function refreshSpecialistsFromFiles(workspacePath?: string): Promise<void> {
+  if (!workspacePath) {
+    fileSpecialistsCache.clear();
+    fileSpecialistsCacheTimes.clear();
+    refreshInFlight.clear();
+    await refreshFileSpecialistsCache();
+    return;
+  }
+
+  const cacheKey = getFileCacheKey(workspacePath);
+  fileSpecialistsCache.delete(cacheKey);
+  fileSpecialistsCacheTimes.delete(cacheKey);
+  refreshInFlight.delete(cacheKey);
+  await refreshFileSpecialistsCache(workspacePath);
 }
 
-/**
- * Check if the store is initialized.
- * Logs a warning if not - this indicates initSpecialistsService() wasn't awaited during startup.
- */
-function checkStoreInitialized(): boolean {
-  if (!settingsStore) {
-    logger.warn(
-      'Settings store not initialized when reading specialist config. ' +
-        'Ensure initSpecialistsService() is awaited during app startup before workspace creation.',
-    );
-    return false;
-  }
-  return true;
-}
-
-/**
- * Get custom specialists from electron-store
- */
-function getCustomSpecialists(): CustomSpecialist[] {
-  // Check store is initialized - if not, we can't read custom specialists
-  if (!checkStoreInitialized() || !settingsStore) {
-    return [];
-  }
-
-  try {
-    const custom = settingsStore.get(CUSTOM_SPECIALISTS_KEY);
-    if (Array.isArray(custom)) {
-      return custom as CustomSpecialist[];
-    }
-  } catch (error) {
-    logger.error('Failed to read custom specialists', error as Error);
-  }
-
-  return [];
-}
-
-/**
- * Get user overrides for a specialist from electron-store settings.
- * These overrides are set by the frontend UI and stored in electron-store
- * under the 'specialists-overrides' key.
- */
-function getUserOverrides(specialistId: string): {
-  codingAgent?: string;
-  model?: string;
-  behaviorPrompt?: string;
-} {
-  if (!settingsStore) return {};
-  try {
-    const overrides = settingsStore.get(SPECIALISTS_OVERRIDES_KEY) as
-      | {
-          codingAgentOverrides?: Record<string, string>;
-          modelOverrides?: Record<string, string>;
-          behaviorPromptOverrides?: Record<string, string>;
-        }
-      | undefined;
-    return {
-      codingAgent: overrides?.codingAgentOverrides?.[specialistId] || undefined,
-      model: overrides?.modelOverrides?.[specialistId] || undefined,
-      behaviorPrompt: overrides?.behaviorPromptOverrides?.[specialistId] || undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Apply user overrides from electron-store settings if they exist.
- * User overrides take highest priority — they represent explicit user choices
- * from the specialist settings UI.
- * Coding-agent overrides re-resolve provider-aware defaults unless the user also
- * picked an explicit model override.
- * When a model override is applied, modelTier is cleared to prevent downstream
- * re-resolution via tier-based logic (e.g., in resolveModelForProvider).
- */
-function applyUserOverrides(specialist: EffectiveSpecialist): EffectiveSpecialist {
-  const overrides = getUserOverrides(specialist.id);
-  let result = specialist;
-
-  if (overrides.codingAgent && overrides.codingAgent !== result.codingAgent) {
-    logger.info('Applying user coding agent override from settings', {
-      specialistId: specialist.id,
-      originalCodingAgent: specialist.codingAgent,
-      overrideCodingAgent: overrides.codingAgent,
-    });
-    result = {
-      ...result,
-      codingAgent: overrides.codingAgent,
-      model:
-        !overrides.model && result.modelTier && overrides.codingAgent in PROVIDER_MODEL_TIERS
-          ? getDefaultModelForProvider(overrides.codingAgent, result.modelTier)
-          : result.model,
-    };
-  }
-
-  if (overrides.model) {
-    logger.info('Applying user model override from settings', {
-      specialistId: specialist.id,
-      originalModel: specialist.model,
-      overrideModel: overrides.model,
-    });
-    result = {
-      ...result,
-      model: overrides.model,
-      modelTier: undefined, // Don't re-resolve via tier when user explicitly set a model
-    };
-  }
-
-  if (overrides.behaviorPrompt) {
-    logger.info('Applying user behavior prompt override from settings', {
-      specialistId: specialist.id,
-      originalPromptLength: specialist.behaviorPrompt?.length || 0,
-      overridePromptLength: overrides.behaviorPrompt.length,
-    });
-    result = {
-      ...result,
-      behaviorPrompt: overrides.behaviorPrompt,
-      isCustomized: true,
-    };
-  }
-
-  return result;
-}
+// Wave 2: checkStoreInitialized, getCustomSpecialists, getUserOverrides, and
+// applyUserOverrides have been removed. All specialist resolution now goes
+// through the file-based system. The electron-store is only used for
+// one-time migration during initSpecialistsService().
 
 function resolveSpecialistCodingAgent(
   explicitCodingAgent: string | undefined,
@@ -334,14 +262,15 @@ function resolveSpecialistCodingAgent(
 }
 
 /**
- * Get the effective configuration for a specialist (with user overrides applied)
- * Priority order:
- * 1. User overrides from settings UI (specialists-overrides: codingAgent + model + behaviorPrompt) - highest priority
- * 2. User file-based specialists (~/.augment/specialists/*.md)
- * 3. Bundled specialists (resources/specialists/*.md)
- * 4. Custom specialists from electron-store (deprecated, migrated to files)
+ * Get the effective configuration for a specialist.
+ * Priority order (Wave 2 — fully file-based):
+ * 1. Project-level files (<repo>/.augment/specialists/*.md) — highest
+ * 2. User-level files (~/.augment/specialists/*.md)
+ * 3. Bundled files (resources/specialists/*.md)
+ * 4. Hardcoded SPECIALISTS array (last-resort fallback)
  *
- * Note: Bundled specialists are included in the file cache alongside user files.
+ * Note: User files that override a bundled specialist (same ID) already have
+ * overrides baked in — no separate override layer needed.
  *
  * @param specialistId - The specialist ID to look up
  * @param providerId - Optional fallback coding agent used when the specialist does not specify one.
@@ -349,83 +278,44 @@ function resolveSpecialistCodingAgent(
 export function getEffectiveSpecialist(
   specialistId: string,
   providerId?: string,
+  workspacePath?: string,
 ): EffectiveSpecialist | null {
-  // File-based specialists include both user and bundled specialists
-  // User files take priority over bundled (handled by the cache refresh logic)
-  const fileSpecialist = findFileSpecialistSync(specialistId);
+  // File-based specialists include project, user, and bundled specialists.
+  // The cache already merges them with the correct priority.
+  const fileSpecialist = findFileSpecialistSync(specialistId, workspacePath);
   if (fileSpecialist) {
     const codingAgent = resolveSpecialistCodingAgent(fileSpecialist.frontmatter.codingAgent, providerId);
     const hasExplicitModel = !!fileSpecialist.frontmatter.model;
     const hasExplicitTier = !!fileSpecialist.frontmatter.modelTier;
     let resolvedModel = fileSpecialist.frontmatter.model || '';
 
-    // Determine the effective tier for downstream re-resolution.
-    // Priority: explicit modelTier > reverse-mapped from explicit model > 'balanced' default
     const tier: ModelTier | undefined =
       fileSpecialist.frontmatter.modelTier ||
       (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
       'balanced';
 
-    // Only override the model via tier-based resolution when:
-    // 1. The specialist has an explicit modelTier (user wants provider-aware resolution), OR
-    // 2. The specialist has NO explicit model (need a default — without this, empty string
-    //    cascades to DEFAULT_AGENT_MODEL gpt5.4)
-    // When the user explicitly set `model` without `modelTier`, respect their choice.
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
-        // Only resolve tiers for providers with known tier mappings.
-        // Providers with dynamic model lists (e.g. opencode) would produce
-        // invalid model IDs — leave resolvedModel empty so downstream
-        // consumers can resolve via the specialist's modelTier field.
         if (codingAgent in PROVIDER_MODEL_TIERS) {
           resolvedModel = getDefaultModelForProvider(codingAgent, tier);
         }
       }
     }
 
-    return applyUserOverrides({
+    return {
       id: fileSpecialist.id,
       name: fileSpecialist.frontmatter.name,
       description: fileSpecialist.frontmatter.description,
       codingAgent,
       model: resolvedModel,
-      // Only propagate modelTier when it should drive downstream resolution:
-      // - explicit modelTier from frontmatter, OR
-      // - no explicit model (tier was used to provide a default).
-      // When the user set an explicit model without modelTier, leave modelTier undefined
-      // so downstream consumers (workspace.service.ts, agent-interaction-tools.ts) use
-      // the explicit model directly instead of overriding it via tier-based resolution.
       modelTier: hasExplicitTier || !hasExplicitModel ? tier : undefined,
       behaviorPrompt: fileSpecialist.behaviorPrompt,
-      isCustomized: fileSpecialist.source === 'file', // Only user files are considered customized
+      isCustomized: fileSpecialist.source !== 'bundled',
       roleReminder: fileSpecialist.frontmatter.roleReminder,
-    });
-  }
-
-  // Legacy: check custom specialists from electron-store
-  // These should have been migrated to files, but keeping for backward compatibility
-  const customSpecialists = getCustomSpecialists();
-  const custom = customSpecialists.find((s) => s.id === specialistId);
-  if (custom) {
-    const codingAgent = resolveSpecialistCodingAgent(custom.codingAgent, providerId);
-    // Try to determine tier from the legacy custom specialist's model
-    const customTier = custom.model ? getModelTierFromModel(custom.model, codingAgent) : 'balanced';
-    return applyUserOverrides({
-      id: custom.id,
-      name: custom.name,
-      description: custom.description,
-      codingAgent,
-      model: custom.model,
-      modelTier: customTier,
-      behaviorPrompt: custom.behaviorPrompt,
-      isCustomized: true,
-      roleReminder: custom.roleReminder,
-    });
+    };
   }
 
   // Last resort fallback: hardcoded SPECIALISTS array from constants
-  // This ensures built-in specialists are ALWAYS available even if file loading
-  // completely fails (e.g., stale build, missing directory, permission error).
   const hardcoded = getSpecialistById(specialistId);
   if (hardcoded) {
     logger.warn(
@@ -442,7 +332,7 @@ export function getEffectiveSpecialist(
         resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
     }
-    return applyUserOverrides({
+    return {
       id: hardcoded.id,
       name: hardcoded.name,
       description: hardcoded.description,
@@ -452,26 +342,23 @@ export function getEffectiveSpecialist(
       behaviorPrompt: hardcoded.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: hardcoded.roleReminder,
-    });
+    };
   }
 
   return null;
 }
 
 /**
- * Get all specialists with effective configurations
- * Includes file-based specialists (user + bundled) and electron-store custom specialists.
- * User file-based specialists override bundled specialists with the same ID.
+ * Get all specialists with effective configurations (Wave 2 — fully file-based).
+ * Includes file-based specialists (project + user + bundled) with hardcoded fallback.
  *
  * @param providerId - Optional fallback coding agent used when a specialist does not specify one.
  */
-export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecialist[] {
-  // Track IDs we've already seen (user file-based takes priority)
+export function getAllEffectiveSpecialists(providerId?: string, workspacePath?: string): EffectiveSpecialist[] {
   const seenIds = new Set<string>();
 
-  // File-based specialists include both user and bundled
-  // The cache already has the correct priority (user overrides bundled)
-  const fileEffective: EffectiveSpecialist[] = fileSpecialistsCache.map((file) => {
+  // File-based specialists (project > user > bundled, already merged in cache)
+  const fileEffective: EffectiveSpecialist[] = getCachedFileSpecialists(workspacePath).map((file) => {
     seenIds.add(file.id);
 
     const codingAgent = resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId);
@@ -479,14 +366,11 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     const hasExplicitTier = !!file.frontmatter.modelTier;
     let resolvedModel = file.frontmatter.model || '';
 
-    // Determine the effective tier for downstream re-resolution.
     const tier: ModelTier | undefined =
       file.frontmatter.modelTier ||
       (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
       'balanced';
 
-    // Only override model via tier when user specified modelTier or has no explicit model.
-    // Respect explicit model values from user specialist files.
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
         if (codingAgent in PROVIDER_MODEL_TIERS) {
@@ -495,44 +379,20 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
       }
     }
 
-    return applyUserOverrides({
+    return {
       id: file.id,
       name: file.frontmatter.name,
       description: file.frontmatter.description,
       codingAgent,
       model: resolvedModel,
-      // Only propagate modelTier when it should drive downstream resolution
       modelTier: hasExplicitTier || !hasExplicitModel ? tier : undefined,
       behaviorPrompt: file.behaviorPrompt,
-      isCustomized: file.source === 'file', // Only user files are considered customized
+      isCustomized: file.source !== 'bundled',
       roleReminder: file.frontmatter.roleReminder,
-    });
+    };
   });
 
-  // Legacy: get custom specialists from electron-store (skipping those overridden)
-  // These should have been migrated to files, but keeping for backward compatibility
-  const customSpecialists = getCustomSpecialists();
-  const customEffective: EffectiveSpecialist[] = customSpecialists
-    .filter((custom) => !seenIds.has(custom.id))
-    .map((custom) => {
-      seenIds.add(custom.id);
-      const codingAgent = resolveSpecialistCodingAgent(custom.codingAgent, providerId);
-      const customTier = custom.model ? getModelTierFromModel(custom.model, codingAgent) : 'balanced';
-      return applyUserOverrides({
-        id: custom.id,
-        name: custom.name,
-        description: custom.description,
-        codingAgent,
-        model: custom.model,
-        modelTier: customTier,
-        behaviorPrompt: custom.behaviorPrompt,
-        isCustomized: true,
-        roleReminder: custom.roleReminder,
-      });
-    });
-
   // Last resort fallback: include any hardcoded SPECIALISTS not already covered
-  // This ensures built-in specialists are ALWAYS available even if file loading fails
   const hardcodedFallback: EffectiveSpecialist[] = SPECIALISTS.filter(
     (s) => !seenIds.has(s.id),
   ).map((s) => {
@@ -547,7 +407,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
         resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
     }
-    return applyUserOverrides({
+    return {
       id: s.id,
       name: s.name,
       description: s.description,
@@ -557,7 +417,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
       behaviorPrompt: s.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: s.roleReminder,
-    });
+    };
   });
 
   if (hardcodedFallback.length > 0) {
@@ -567,7 +427,7 @@ export function getAllEffectiveSpecialists(providerId?: string): EffectiveSpecia
     );
   }
 
-  const allSpecialists = [...fileEffective, ...customEffective, ...hardcodedFallback];
+  const allSpecialists = [...fileEffective, ...hardcodedFallback];
 
   let filtered = allSpecialists;
 
@@ -691,6 +551,7 @@ export interface ResolvedSpecialistConfig {
 export function resolveSpecialistForAgent(
   specialistId: string,
   providerId?: string,
+  workspacePath?: string,
 ): ResolvedSpecialistConfig | null {
   // Gate ralph specialist behind feature flag
   if (specialistId === 'ralph' && !featureCodesService.isFeatureEnabled('ralph-agent')) {
@@ -704,12 +565,13 @@ export function resolveSpecialistForAgent(
     return null;
   }
 
-  const specialist = getEffectiveSpecialist(specialistId, providerId);
+  const specialist = getEffectiveSpecialist(specialistId, providerId, workspacePath);
   if (!specialist) {
     logger.warn('resolveSpecialistForAgent: specialist not found', {
       specialistId,
-      fileCacheSize: fileSpecialistsCache.length,
-      fileCacheIds: fileSpecialistsCache.map((s) => s.id),
+      fileCacheSize: getCachedFileSpecialists(workspacePath).length,
+      fileCacheIds: getCachedFileSpecialists(workspacePath).map((s) => s.id),
+      workspacePath,
     });
     return null;
   }
@@ -724,15 +586,14 @@ export function resolveSpecialistForAgent(
     behaviorPromptLength: specialist.behaviorPrompt?.length || 0,
     hasRoleReminder: !!roleReminder,
     isCustomized: specialist.isCustomized,
-    source: fileSpecialistsCache.find((s) => s.id === specialistId)
+    source: getCachedFileSpecialists(workspacePath).find((s) => s.id === specialistId)
       ? 'file-cache'
-      : getSpecialistById(specialistId)
-        ? 'hardcoded-fallback'
-        : 'electron-store',
+      : 'hardcoded-fallback',
+    workspacePath,
   });
 
   // Resolve defaultAgentType from file frontmatter or hardcoded specialist
-  const fileSpec = fileSpecialistsCache.find((s) => s.id === specialistId);
+  const fileSpec = getCachedFileSpecialists(workspacePath).find((s) => s.id === specialistId);
   const defaultAgentType =
     fileSpec?.frontmatter.agentType || getSpecialistById(specialistId)?.defaultAgentType;
 
@@ -753,8 +614,9 @@ export function resolveSpecialistForAgent(
  * Shows capability tier (fast/balanced/smart) instead of concrete model IDs
  * so the prompt is provider-agnostic.
  */
-export function formatSpecialistsForPrompt(): string {
-  const specialists = getAllEffectiveSpecialists();
+export async function formatSpecialistsForPrompt(workspacePath?: string): Promise<string> {
+  await getFileSpecialists(workspacePath);
+  const specialists = getAllEffectiveSpecialists(undefined, workspacePath);
 
   const rows = specialists
     .map(

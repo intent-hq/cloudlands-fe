@@ -456,7 +456,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
 
       // Layer 3.7: Specialist configuration (dynamic, from user settings)
       try {
-        const specialistsPrompt = formatSpecialistsForPrompt();
+        const specialistsPrompt = await formatSpecialistsForPrompt(config.workspacePath);
         if (specialistsPrompt) {
           parts.push({
             name: 'specialists',

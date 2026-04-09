@@ -1,16 +1,19 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faGear } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGear, faArrowUpRightFromSquare, faPencil } from '@fortawesome/free-solid-svg-icons';
   import {
     filterSpecialistsByGitHubAuth,
     selectSpecialists,
     selectIsBuiltIn,
     selectHasOverrides,
+    selectSpecialistSourceLabel,
     selectUserOverrides,
   } from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openSpecialistsFolder } from '$lib/store/slices/specialists/specialists-slice';
+  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
 
   // View type definition
   export type AIBehaviorView =
@@ -78,13 +81,27 @@
   <!-- Specialists section - scrollable with max height -->
   <div class="specialist-section mt-4 overflow-y-auto border-b-accent-foreground">
     <div
-      class="px-3 py-1.5 text-ui font-semibold text-muted-foreground uppercase tracking-wider"
+      class="px-3 py-1.5 flex items-center justify-between"
     >
-      Specialists
+      <span class="text-ui font-semibold text-muted-foreground uppercase tracking-wider">
+        Specialists
+      </span>
+      <Tooltip content="Open specialists folder" side="right" delayDuration={300}>
+        <button
+          type="button"
+          onclick={() => dispatch(openSpecialistsFolder())}
+          class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+          aria-label="Open specialists folder in file manager"
+        >
+          <Fa icon={faArrowUpRightFromSquare} size="xs" />
+        </button>
+      </Tooltip>
     </div>
+
     {#each visibleSpecialists as specialist (specialist.id)}
       {@const isBuiltIn = selectIsBuiltIn.select(getReduxStore().getState(), specialist.id)}
       {@const hasOverrides = selectHasOverrides.select(getReduxStore().getState(), specialist.id)}
+      {@const sourceLabel = selectSpecialistSourceLabel.select(getReduxStore().getState(), specialist.id)}
       {@const isCustomized = isBuiltIn && hasOverrides}
 
       <button
@@ -104,26 +121,30 @@
           {/if}
         </div>
 
-        <!-- Name and badges -->
+        <!-- Name, path, and badges -->
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5">
             <span class="text-sm truncate">{specialist.name}</span>
-            {#if isCustomized}
-              <span
-                class="text-ui px-1 py-0.5 rounded bg-primary/15 text-primary font-medium shrink-0"
+            {#if sourceLabel === 'Project'}
+              <Tooltip
+                content="Project specialists are shared with your team via Git."
+                side="right"
+                delayDuration={400}
               >
-                Modified
-              </span>
-            {/if}
-            {#if !isBuiltIn}
-              <span
-                class="text-ui px-1 py-0.5 rounded bg-warning/15 text-warning font-medium shrink-0"
-              >
-                Custom
-              </span>
+                <span
+                  class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
+                >
+                  Project
+                </span>
+              </Tooltip>
             {/if}
           </div>
         </div>
+        {#if isCustomized}
+          <span class="text-primary shrink-0" title="Modified">
+            <Fa icon={faPencil} class="w-2.5 h-2.5" />
+          </span>
+        {/if}
       </button>
     {/each}
     <!-- <div style="height: 2000px;">Mock spacer</div> -->
@@ -147,13 +168,6 @@
 </div>
 
 <style>
-  /* Warning color fallback */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
-  }
-  .bg-warning\/15 {
-    background-color: hsla(38, 92%, 50%, 0.15);
-  }
   .specialist-section {
     max-height: calc(100vh - 25rem);
   }

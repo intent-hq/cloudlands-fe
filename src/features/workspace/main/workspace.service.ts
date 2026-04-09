@@ -58,7 +58,7 @@ import type {
 import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
 import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { agentPersistence } from '../../agent/main/agent-persistence';
-import { resolveSpecialistForAgent } from '../../agent/main/specialists.service';
+import { refreshSpecialistsFromFiles, resolveSpecialistForAgent } from '../../agent/main/specialists.service';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { workspaceCreated, workspaceUpdated, workspaceDeleting, workspaceDeleted, workspaceArchived } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
@@ -1550,8 +1550,15 @@ task:
         // Get the explicitly selected provider (auggie, claude-code, codex)
         const provider = (request.initialAgent as any).provider;
 
+        const specialistPath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
+        if (specialist) {
+          await refreshSpecialistsFromFiles(specialistPath);
+        }
+
         // Use centralized resolver for specialist config (single source of truth)
-        const resolved = specialist ? resolveSpecialistForAgent(specialist, provider) : null;
+        const resolved = specialist
+          ? resolveSpecialistForAgent(specialist, provider, specialistPath)
+          : null;
 
         // Use specialist defaults, but allow explicit overrides from the request
         // PRIORITY: passed behaviorPrompt > specialist config behaviorPrompt

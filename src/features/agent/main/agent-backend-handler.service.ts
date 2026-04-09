@@ -1240,7 +1240,7 @@ export class AgentBackendHandler {
             loadResult.data.metadata?.agentType || loadResult.data.config?.agentType;
           // Get behavior prompt from specialist config if available
           // Priority: request (for specialist changes before first message) > metadata > config
-          const agentBehaviorPrompt =
+          let agentBehaviorPrompt =
             extendedRequest.behaviorPrompt ||
             loadResult.data.metadata?.behaviorPrompt ||
             loadResult.data.config?.behaviorPrompt;
@@ -1256,14 +1256,24 @@ export class AgentBackendHandler {
           let agentSpecialistName: string | undefined =
             loadResult.data.metadata?.specialistName || loadResult.data.config?.specialistName;
 
+          // Ensure specialist file cache is fresh for this workspace
+          if (agentSpecialist && workspacePath) {
+            const { refreshSpecialistsFromFiles } = await import('./specialists.service');
+            await refreshSpecialistsFromFiles(workspacePath);
+          }
+
           // Use centralized resolver for any missing fields (handles legacy agents without stored fields)
           if (agentSpecialist && (!agentRoleReminder || !agentSpecialistName)) {
             try {
               const { resolveSpecialistForAgent } = await import('./specialists.service');
-              const resolved = resolveSpecialistForAgent(agentSpecialist);
+              const resolved = resolveSpecialistForAgent(agentSpecialist, undefined, workspacePath);
               if (resolved) {
                 agentRoleReminder = agentRoleReminder || resolved.roleReminder;
                 agentSpecialistName = agentSpecialistName || resolved.specialistName;
+                // Use main-process resolved behaviorPrompt as source of truth
+                // The main process has correctly merged specialist data (project > user)
+                // while the renderer may have stale data
+                agentBehaviorPrompt = resolved.behaviorPrompt || agentBehaviorPrompt;
                 logger.info('Resolved specialist config for persistence-loaded agent', {
                   specialistId: agentSpecialist,
                   specialistName: agentSpecialistName,
@@ -1289,7 +1299,10 @@ export class AgentBackendHandler {
           // This handles the case where user changes specialist after agent creation but before sending.
           // Note: We check for behaviorPrompt in request even if agentType is not set (use 'chat' as default)
           const effectiveAgentType = agentType || 'chat';
-          const needsRebuild = extendedRequest.behaviorPrompt && !loadResult.data.messages?.length;
+          const currentSystemPrompt = loadResult.data.systemPrompt || '';
+
+          const needsRebuild = agentBehaviorPrompt &&
+            !currentSystemPrompt.includes('<specialist_role>');
 
           logger.info(
             `Checking if system prompt rebuild is needed: hasRequestBehaviorPrompt=${!!extendedRequest.behaviorPrompt}, requestBehaviorPromptLength=${extendedRequest.behaviorPrompt?.length || 0}, agentType=${agentType}, effectiveAgentType=${effectiveAgentType}, messageCount=${loadResult.data.messages?.length || 0}, needsRebuild=${needsRebuild}, hasSystemPrompt=${!!systemPrompt}, systemPromptLength=${systemPrompt?.length || 0}`,
@@ -1317,6 +1330,9 @@ export class AgentBackendHandler {
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
               autoCommitEnabled: isAutoCommitEnabled2(request.workspaceId),
             });
+
+            // Update the loaded data so the rebuilt prompt is used downstream
+            loadResult.data.systemPrompt = systemPrompt;
 
             logger.info('System prompt built from agentType', {
               agentId: request.agentId,
@@ -1940,6 +1956,7 @@ export class AgentBackendHandler {
             }
           }
         }
+
       }
 
       // Build messages array - include existing conversation history

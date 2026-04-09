@@ -420,6 +420,18 @@ export function setupFileIPC() {
             // PERF: Changed from INFO to DEBUG - called for every file write
             logger.debug('File written successfully', { filePath: expandedPath });
 
+            // Refresh backend specialist cache immediately for specialist file saves
+            if (expandedPath.includes('.augment/specialists/') && expandedPath.endsWith('.md')) {
+              try {
+                const { refreshSpecialistsFromFiles } = await import('../../agent/main/specialists.service');
+                const specialistDirIndex = expandedPath.indexOf('.augment/specialists/');
+                const workspacePath = specialistDirIndex > 0 ? expandedPath.substring(0, specialistDirIndex) : undefined;
+                await refreshSpecialistsFromFiles(workspacePath);
+              } catch (e) {
+                logger.warn('Failed to refresh specialist cache after file save', { error: (e as Error).message });
+              }
+            }
+
             // Track file creation if this is a new file
             if (!fileExisted && validated.workspaceId) {
               trackMain('Created File', {

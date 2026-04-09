@@ -12,7 +12,9 @@ import {
   selectSpecialistsFolderPath,
   selectHasOverrides,
   selectEffectiveCodingAgent,
+  selectSpecialistSourceLabel,
 } from "./specialists-selectors";
+import { createCollection } from "../../utils/collection-utils";
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";
@@ -112,6 +114,56 @@ describe("specialists selectors", () => {
     });
   });
 
+  describe("source labels", () => {
+    it("should label project and user file specialists distinctly", () => {
+      const state = mockState({
+        fileSpecialists: createCollection("id", [
+          {
+            id: "repo-spec",
+            name: "Repo Specialist",
+            description: "project-level",
+            model: "",
+            behaviorPrompt: "prompt",
+            filePath: "/repo/.augment/specialists/repo-spec.md",
+            source: "project",
+          },
+          {
+            id: "user-spec",
+            name: "User Specialist",
+            description: "user-level",
+            model: "",
+            behaviorPrompt: "prompt",
+            filePath: "/Users/test/.augment/specialists/user-spec.md",
+            source: "user",
+          },
+        ]),
+      });
+
+      expect(selectSpecialistSourceLabel.select(state, "repo-spec")).toBe("Project");
+      expect(selectSpecialistSourceLabel.select(state, "user-spec")).toBe("User");
+    });
+
+    it("should fall back to built-in label (legacy custom no longer tracked)", () => {
+      const state = mockState({
+        bundledSpecialists: [SPECIALISTS[0]],
+        customSpecialists: createCollection("id", [
+          {
+            id: "legacy-custom",
+            name: "Legacy Custom",
+            description: "legacy",
+            model: "gpt-4",
+            behaviorPrompt: "prompt",
+          },
+        ]),
+      });
+
+      expect(selectSpecialistSourceLabel.select(state, SPECIALISTS[0].id)).toBe("Built-in");
+      // Wave 2: legacy custom specialists are no longer given a source label
+      // They should have been migrated to files on startup
+      expect(selectSpecialistSourceLabel.select(state, "legacy-custom")).toBe(null);
+    });
+  });
+
   describe("loaded flag selectors", () => {
     it("selectOverridesLoaded should return false initially", () => {
       expect(selectOverridesLoaded.select(mockState())).toBe(false);
@@ -142,6 +194,81 @@ describe("specialists selectors", () => {
     it("should return path when set", () => {
       const state = mockState({ specialistsFolderPath: "/path/to/specialists" });
       expect(selectSpecialistsFolderPath.select(state)).toBe("/path/to/specialists");
+    });
+  });
+
+  describe("selectSpecialists sort order", () => {
+    it("should place bundled specialists first in their original order, then custom alphabetically", () => {
+      // Use ALL bundled specialists so the SPECIALISTS fallback doesn't add extras
+      const bundled = SPECIALISTS;
+      const state = mockState({
+        bundledSpecialists: bundled,
+        fileSpecialists: createCollection("id", [
+          {
+            id: "zebra-custom",
+            name: "Zebra Custom",
+            description: "Z specialist",
+            model: "gpt-4",
+            behaviorPrompt: "prompt",
+            filePath: "/Users/test/.augment/specialists/zebra-custom.md",
+            source: "user" as const,
+          },
+          {
+            id: "alpha-custom",
+            name: "Alpha Custom",
+            description: "A specialist",
+            model: "gpt-4",
+            behaviorPrompt: "prompt",
+            filePath: "/Users/test/.augment/specialists/alpha-custom.md",
+            source: "user" as const,
+          },
+        ]),
+      });
+
+      const ids = selectSpecialists.select(state).map((s) => s.id);
+      // Bundled first in original order (spec-writer, implementor, verifier, ...)
+      expect(ids[0]).toBe("spec-writer");
+      expect(ids[1]).toBe("implementor");
+      expect(ids[2]).toBe("verifier");
+      // Custom at the end, sorted alphabetically by name
+      const customIds = ids.filter((id) => id === "alpha-custom" || id === "zebra-custom");
+      expect(customIds).toEqual(["alpha-custom", "zebra-custom"]);
+    });
+
+    it("should keep bundled order stable when a file overrides a bundled specialist", () => {
+      const bundled = SPECIALISTS;
+      const state = mockState({
+        bundledSpecialists: bundled,
+        fileSpecialists: createCollection("id", [
+          // Override implementor (bundled) + add a custom one
+          {
+            id: "implementor",
+            name: "Implementor",
+            description: "overridden",
+            model: "gpt-4",
+            behaviorPrompt: "custom prompt",
+            filePath: "/Users/test/.augment/specialists/implementor.md",
+            source: "user" as const,
+          },
+          {
+            id: "my-custom",
+            name: "My Custom",
+            description: "custom",
+            model: "gpt-4",
+            behaviorPrompt: "prompt",
+            filePath: "/Users/test/.augment/specialists/my-custom.md",
+            source: "user" as const,
+          },
+        ]),
+      });
+
+      const ids = selectSpecialists.select(state).map((s) => s.id);
+      // Bundled order preserved even though implementor was overridden by file
+      expect(ids[0]).toBe("spec-writer");
+      expect(ids[1]).toBe("implementor");
+      expect(ids[2]).toBe("verifier");
+      // Custom at the very end (after all bundled/hardcoded)
+      expect(ids[ids.length - 1]).toBe("my-custom");
     });
   });
 

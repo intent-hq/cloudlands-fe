@@ -17,11 +17,14 @@ import {
   parseSpecialistFile,
   writeSpecialistFile,
   loadSpecialistFile,
+  loadProjectSpecialistFiles,
   migrateCustomSpecialistsFromStore,
   migrateOverridesFromStore,
   getBundledSpecialistsDirectory,
+  getProjectSpecialistsDirectory,
   getSpecialistsDirectory,
 } from '../specialist-file-loader';
+import { generateUniqueSpecialistId, sanitizeSpecialistId } from '../../../../shared/specialist-file-types';
 
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,
@@ -128,8 +131,8 @@ Body content`;
     });
   });
 
-  describe('Missing required fields', () => {
-    it('should error on missing name', () => {
+  describe('Missing optional fields', () => {
+    it('should derive name from filename when name is missing', () => {
       const content = `---
 description: "A specialist"
 ---
@@ -137,13 +140,15 @@ description: "A specialist"
 Body`;
 
       const result = parseSpecialistFile('/path/to/missing-name.md', content);
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain('Missing required field: name');
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('missing-name');
+        expect(result.frontmatter.description).toBe('A specialist');
+        expect(result.behaviorPrompt).toBe('Body');
       }
     });
 
-    it('should error on missing description', () => {
+    it('should use empty description when description is missing', () => {
       const content = `---
 name: "Test"
 ---
@@ -151,9 +156,11 @@ name: "Test"
 Body`;
 
       const result = parseSpecialistFile('/path/to/missing-desc.md', content);
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain('Missing required field: description');
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('Test');
+        expect(result.frontmatter.description).toBe('');
+        expect(result.behaviorPrompt).toBe('Body');
       }
     });
   });
@@ -192,17 +199,20 @@ Body`;
   });
 
   describe('Malformed frontmatter', () => {
-    it('should error on no frontmatter', () => {
+    it('should handle no frontmatter by using entire content as behaviorPrompt', () => {
       const content = `Just some content without frontmatter`;
 
       const result = parseSpecialistFile('/path/to/no-fm.md', content);
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain('No valid YAML frontmatter found');
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.id).toBe('no-fm');
+        expect(result.frontmatter.name).toBe('no-fm');
+        expect(result.frontmatter.description).toBe('');
+        expect(result.behaviorPrompt).toBe('Just some content without frontmatter');
       }
     });
 
-    it('should error on missing closing ---', () => {
+    it('should handle missing closing --- as content without frontmatter', () => {
       const content = `---
 name: "Test"
 description: "A test"
@@ -210,19 +220,32 @@ description: "A test"
 Body content`;
 
       const result = parseSpecialistFile('/path/to/no-close.md', content);
-      expect('error' in result).toBe(true);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('no-close');
+        expect(result.behaviorPrompt).toContain('name: "Test"');
+      }
     });
 
-    it('should error on empty file', () => {
+    it('should handle empty file as specialist with empty behaviorPrompt', () => {
       const result = parseSpecialistFile('/path/to/empty.md', '');
-      expect('error' in result).toBe(true);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('empty');
+        expect(result.frontmatter.description).toBe('');
+        expect(result.behaviorPrompt).toBe('');
+      }
     });
 
-    it('should error on only opening ---', () => {
+    it('should handle only opening --- as content without frontmatter', () => {
       const content = `---`;
 
       const result = parseSpecialistFile('/path/to/only-open.md', content);
-      expect('error' in result).toBe(true);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('only-open');
+        expect(result.behaviorPrompt).toBe('---');
+      }
     });
   });
 
@@ -363,7 +386,7 @@ Body`;
   });
 
   describe('Source parameter', () => {
-    it('should set source to file by default', () => {
+    it('should set source to user by default', () => {
       const content = `---
 name: "Test"
 description: "A test"
@@ -374,7 +397,22 @@ Body`;
       const result = parseSpecialistFile('/path/to/test.md', content);
       expect('error' in result).toBe(false);
       if (!('error' in result)) {
-        expect(result.source).toBe('file');
+        expect(result.source).toBe('user');
+      }
+    });
+
+    it('should respect project source', () => {
+      const content = `---
+name: "Test"
+description: "A test"
+---
+
+Body`;
+
+      const result = parseSpecialistFile('/path/to/test.md', content, 'project');
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.source).toBe('project');
       }
     });
 
@@ -413,6 +451,27 @@ Body`;
       expect(loaded?.frontmatter.modelTier).toBe('fast');
       expect(loaded?.frontmatter.roleReminder).toBe('Stay focused.');
       expect(loaded?.behaviorPrompt).toBe('Round-trip prompt');
+    });
+
+    it('should write and load project-level specialists from the workspace path', async () => {
+      const workspacePath = path.join(TEST_HOME, 'repo-a');
+
+      await writeSpecialistFile({
+        id: 'repo-specialist',
+        name: 'Repo Specialist',
+        description: 'Project-scoped specialist',
+        behaviorPrompt: 'Project prompt',
+        scope: 'project',
+        workspacePath,
+      });
+
+      const loaded = await loadSpecialistFile('repo-specialist', 'project', workspacePath);
+      const projectList = await loadProjectSpecialistFiles(workspacePath);
+
+      expect(loaded?.source).toBe('project');
+      expect(loaded?.behaviorPrompt).toBe('Project prompt');
+      expect(projectList.specialists.map((specialist) => specialist.id)).toContain('repo-specialist');
+      expect(projectList.specialists[0]?.filePath).toContain(getProjectSpecialistsDirectory(workspacePath));
     });
 
     it('should migrate custom specialists with and without codingAgent', async () => {
@@ -489,6 +548,25 @@ Bundled prompt`,
       } finally {
         await fs.rm(bundledPath, { force: true });
       }
+    });
+  });
+
+  describe('Specialist ID generation', () => {
+    it('should normalize unicode names and provide a fallback slug', () => {
+      expect(sanitizeSpecialistId('Spécialïst Déjà Vu')).toBe('specialist-deja-vu');
+      expect(sanitizeSpecialistId('!!!', { fallback: 'specialist' })).toBe('specialist');
+    });
+
+    it('should generate unique IDs when collisions already exist', () => {
+      expect(generateUniqueSpecialistId('Tech Spec Writer', ['tech-spec-writer'])).toBe(
+        'tech-spec-writer-2',
+      );
+      expect(
+        generateUniqueSpecialistId('Tech Spec Writer', [
+          'tech-spec-writer',
+          'tech-spec-writer-2',
+        ]),
+      ).toBe('tech-spec-writer-3');
     });
   });
 });

@@ -535,6 +535,19 @@ export function setupWorkspaceIPC(): void {
             });
           }
 
+          // Stop project specialist file watcher
+          try {
+            const { updateProjectWatcher } = await import(
+              '../../specialists/main/specialist-file-watcher'
+            );
+            await updateProjectWatcher(undefined);
+            logger.info('[WorkspaceIPC] Stopped project specialist file watcher', { workspaceId: id });
+          } catch (error) {
+            logger.warn('[WorkspaceIPC] Failed to stop project specialist file watcher', error as Error, {
+              workspaceId: id,
+            });
+          }
+
           // Clean up any pre-warmed agent providers (no-op if none exist)
           // NOTE: Agent pre-warming is currently disabled, but we keep cleanup for safety
           try {
@@ -1150,6 +1163,26 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
+              // Start watching project specialist files for live reload
+              const specialistWatcherPromise = (async () => {
+                try {
+                  const specialistWorktreePath = workspace.worktreePath || workspace.repositoryPath;
+                  if (specialistWorktreePath) {
+                    const { updateProjectWatcher } = await import(
+                      '../../specialists/main/specialist-file-watcher'
+                    );
+                    await updateProjectWatcher(specialistWorktreePath);
+                    logger.info('[WorkspaceIPC] Started project specialist file watcher', {
+                      workspaceId: id,
+                    });
+                  }
+                } catch (error) {
+                  logger.warn('[WorkspaceIPC] Failed to start specialist file watcher', error as Error, {
+                    workspaceId: id,
+                  });
+                }
+              })();
+
               // Wait for ALL to complete in parallel
               await Promise.all([
                 gitIntegrationPromise,
@@ -1157,6 +1190,7 @@ export function setupWorkspaceIPC(): void {
                 cacheWarmingPromise,
                 notificationServicePromise,
                 scriptsInitPromise,
+                specialistWatcherPromise,
               ]);
 
               logger.info('[WorkspaceIPC] Background initialization complete', {

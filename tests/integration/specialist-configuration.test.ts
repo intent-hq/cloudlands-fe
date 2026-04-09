@@ -24,7 +24,7 @@ import {
   getModelTierFromModel,
   getDefaultProviderId,
 } from '../../src/shared/config/provider-config';
-import { writeSpecialistFile } from '../../src/features/specialists/main/specialist-file-loader';
+import { writeSpecialistFile, ensureSpecialistsDirectory } from '../../src/features/specialists/main/specialist-file-loader';
 import {
   initSpecialistsService,
   refreshSpecialistsFromFiles,
@@ -408,7 +408,9 @@ describe('Specialist Configuration', () => {
       expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'fast'));
     });
 
-    it('falls back legacy custom specialists without codingAgent to the caller coding agent', () => {
+    // Wave 2: Legacy custom specialists from electron-store are no longer resolved.
+    // They should have been migrated to files on startup.
+    it('does not resolve legacy custom specialists from electron-store (Wave 2)', () => {
       mockSettingsData['custom-specialists'] = [
         {
           id: 'legacy-custom',
@@ -420,36 +422,13 @@ describe('Specialist Configuration', () => {
       ];
 
       const resolved = resolveSpecialistForAgent('legacy-custom', 'codex');
-
-      expect(resolved).not.toBeNull();
-      expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.model).toBe('sonnet4.5');
-      expect(resolved?.modelTier).toBe('balanced');
+      // Legacy custom specialists are no longer loaded from electron-store
+      expect(resolved).toBeNull();
     });
 
-    it('falls back legacy custom specialists without codingAgent to the global default provider when no caller provider is supplied', () => {
-      const defaultProvider = getDefaultProviderId();
-      const defaultBalancedModel = getDefaultModelForProvider(defaultProvider, 'balanced');
-
-      mockSettingsData['custom-specialists'] = [
-        {
-          id: 'legacy-default-provider-custom',
-          name: 'Legacy Default Provider Custom',
-          description: 'Legacy specialist that should inherit the global default provider',
-          model: defaultBalancedModel,
-          behaviorPrompt: 'Legacy custom prompt',
-        },
-      ];
-
-      const resolved = resolveSpecialistForAgent('legacy-default-provider-custom');
-
-      expect(resolved).not.toBeNull();
-      expect(resolved?.codingAgent).toBe(defaultProvider);
-      expect(resolved?.model).toBe(defaultBalancedModel);
-      expect(resolved?.modelTier).toBe('balanced');
-    });
-
-    it('applies codingAgent overrides from settings and re-resolves tier-based models', () => {
+    // Wave 2: Electron-store overrides are no longer applied.
+    // Overrides are now file-based (user specialist files override bundled).
+    it('does not apply electron-store overrides (Wave 2)', () => {
       mockSettingsData['specialists-overrides'] = {
         codingAgentOverrides: {
           implementor: 'codex',
@@ -459,26 +438,31 @@ describe('Specialist Configuration', () => {
       const resolved = resolveSpecialistForAgent('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
-      expect(resolved?.codingAgent).toBe('codex');
+      // Override from electron-store is no longer applied
+      expect(resolved?.codingAgent).toBe('auggie');
       expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+      expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'smart'));
     });
 
-    it('applies codingAgent and model overrides together from settings', () => {
-      mockSettingsData['specialists-overrides'] = {
-        codingAgentOverrides: {
-          verifier: 'codex',
-        },
-        modelOverrides: {
-          verifier: 'codex:gpt-5-codex',
-        },
-      };
+    it('resolves file-based specialist overrides correctly', async () => {
+      // Write a user file that overrides the bundled implementor specialist
+      await ensureSpecialistsDirectory();
+      await writeSpecialistFile({
+        id: 'implementor',
+        name: 'Implementor',
+        description: 'Custom override',
+        codingAgent: 'codex',
+        modelTier: 'smart',
+        behaviorPrompt: 'Custom prompt.',
+      });
+      await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('verifier', 'auggie');
+      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
-      expect(resolved?.model).toBe('codex:gpt-5-codex');
+      expect(resolved?.modelTier).toBe('smart');
+      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
     });
   });
 });

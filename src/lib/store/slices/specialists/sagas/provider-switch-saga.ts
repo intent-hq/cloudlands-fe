@@ -1,7 +1,7 @@
 import { call, put, takeEvery } from "typed-redux-saga";
 import { setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { selectUserOverrides, selectProviderModelOverrides } from "../specialists-selectors";
-import { switchModelOverridesForProvider, setUserOverrides, setProviderModelOverrides, PROVIDER_MODEL_OVERRIDES_KEY, SPECIALISTS_OVERRIDES_KEY, type SpecialistOverrides, } from "../specialists-slice";
+import { switchModelOverridesForProvider, setUserOverrides, setProviderModelOverrides, PROVIDER_MODEL_OVERRIDES_KEY, type SpecialistOverrides, } from "../specialists-slice";
 function* handleSwitchModelOverrides(action: ReturnType<typeof switchModelOverridesForProvider>) {
     const [newProviderId, previousProviderId] = action.payload;
     // Read current state
@@ -33,21 +33,8 @@ function* handleSwitchModelOverrides(action: ReturnType<typeof switchModelOverri
         modelOverrides: newModelOverrides,
         behaviorPromptOverrides: { ...overrides.behaviorPromptOverrides },
     }));
-    // Save the updated overrides to electron-store
-    try {
-        if (typeof window !== "undefined" && window.electronAPI) {
-            yield* call([window.electronAPI, window.electronAPI.invoke], 'settings:set', {
-                key: SPECIALISTS_OVERRIDES_KEY,
-                value: {
-                    codingAgentOverrides: { ...overrides.codingAgentOverrides },
-                    modelOverrides: newModelOverrides,
-                    behaviorPromptOverrides: { ...overrides.behaviorPromptOverrides },
-                },
-            });
-        }
-    }
-    catch {
-    }
+    // Wave 2: No longer persisting overrides to electron-store.
+    // Provider model overrides are cached in localStorage only.
 }
 export function* providerSwitchSaga() {
     yield* takeEvery(switchModelOverridesForProvider, handleSwitchModelOverrides);

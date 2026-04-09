@@ -22,12 +22,15 @@
 
 /**
  * Source of a specialist definition
+ * - 'project': Repo-local file in <repo>/.augment/specialists/
+ * - 'user': User-defined file in ~/.augment/specialists/
  * - 'bundled': Ships with the app (in resources/specialists/)
- * - 'file': User-defined file in ~/.augment/specialists/
  * - 'builtin': Legacy hardcoded specialists (fallback only)
  * - 'electron-store': Custom specialists stored in electron-store (legacy)
  */
-export type SpecialistSource = 'bundled' | 'file' | 'builtin' | 'electron-store';
+export type SpecialistSource = 'project' | 'user' | 'bundled' | 'builtin' | 'electron-store';
+
+export type SpecialistFileScope = Extract<SpecialistSource, 'project' | 'user'>;
 
 /**
  * Model tier for provider-aware model resolution
@@ -152,17 +155,48 @@ export const SPECIALIST_FILE_EXTENSIONS = ['.md'];
 export const DEFAULT_SPECIALIST_MODEL = 'sonnet4.5';
 
 /**
- * Sanitize a string to be used as a specialist ID
- * Converts to lowercase, replaces spaces with hyphens, removes special chars
+ * Sanitize a string to be used as a specialist ID.
+ * Normalizes diacritics, strips unsafe characters, and collapses separators.
  */
-export function sanitizeSpecialistId(name: string): string {
-  return name
+export function sanitizeSpecialistId(
+  name: string,
+  options?: {
+    fallback?: string;
+  },
+): string {
+  const sanitized = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+
+  return sanitized || options?.fallback || '';
+}
+
+export function generateUniqueSpecialistId(
+  name: string,
+  existingIds: Iterable<string>,
+  options?: {
+    fallback?: string;
+  },
+): string {
+  const baseId = sanitizeSpecialistId(name, { fallback: options?.fallback ?? 'specialist' });
+  const seenIds = existingIds instanceof Set ? existingIds : new Set(existingIds);
+
+  if (!seenIds.has(baseId)) {
+    return baseId;
+  }
+
+  let suffix = 2;
+  while (seenIds.has(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseId}-${suffix}`;
 }
 
 /**
@@ -183,4 +217,20 @@ export function filenameToSpecialistId(filename: string): string {
     }
   }
   return filename;
+}
+
+
+/**
+ * Merge multiple specialist lists by priority (last list wins for duplicate IDs).
+ * Used to combine bundled, user, and project specialist lists where higher-priority
+ * sources should override lower-priority ones for the same specialist ID.
+ */
+export function mergeSpecialistsByPriority<T extends { id: string }>(...specialistLists: T[][]): T[] {
+  const specialistsById = new Map<string, T>();
+  for (const specialists of specialistLists) {
+    for (const specialist of specialists) {
+      specialistsById.set(specialist.id, specialist);
+    }
+  }
+  return Array.from(specialistsById.values());
 }

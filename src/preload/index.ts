@@ -547,6 +547,7 @@ const ALLOWED_CHANNELS = [
   "specialists:get-folder-path",
   "specialists:export-builtin",
   "specialists:file-exists",
+  "specialists:files-changed",
   "config:getAll",
   "repo-config:read",
   "repo-config:write",
@@ -884,7 +885,8 @@ const ALLOWED_CHANNELS = [
   "script:stopped",
   "script:output",
   "script:error",
-  "script:url-detected"
+  "script:url-detected",
+  "specialists:files-changed"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -1052,7 +1054,8 @@ const EVENT_CHANNELS = [
   "script:stopped",
   "script:output",
   "script:error",
-  "script:url-detected"
+  "script:url-detected",
+  "specialists:files-changed"
 ];
 
 /**

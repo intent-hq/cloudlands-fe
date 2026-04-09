@@ -11,7 +11,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
-  import Header from '../ui/Header.svelte';
+
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
 
@@ -187,8 +187,10 @@
 <div class="h-full flex flex-col gap-4">
   <div class="flex items-start justify-between gap-4 shrink-0">
     <div>
-      <Header size={3}>Agent Instructions</Header>
-      <p class="text-subtle mt-2">Custom instructions that will be included for all agents.</p>
+      <h2 class="text-sm font-medium text-foreground">Agent instructions</h2>
+      <p class="text-sm text-muted-foreground mt-1">
+        Custom instructions that will be included for all agents.
+      </p>
     </div>
 
     {#if hasChanges}
