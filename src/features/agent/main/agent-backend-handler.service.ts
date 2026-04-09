@@ -492,6 +492,28 @@ export class AgentBackendHandler {
   }
 
   /**
+   * Get the set of workspace IDs that currently have active agent providers.
+   * Used by the memory monitor to identify orphaned workspaces (providers running
+   * with no open window) so it can stop them to free memory.
+   */
+  getWorkspaceIdsWithProviders(): Set<string> {
+    const wsIds = new Set<string>();
+    // Primary source: streamWorkspaceIds is always populated when a provider streams
+    for (const [, wsId] of this.streamWorkspaceIds) {
+      wsIds.add(wsId);
+    }
+    // Fallback: check provider config for providers that exist but haven't streamed yet.
+    // Uses the same (provider as any)?.config?.workspaceId cast as stopProvidersForWorkspace().
+    for (const [, provider] of this.providers) {
+      const wsId = (provider as any)?.config?.workspaceId;
+      if (typeof wsId === 'string' && wsId.length > 0) {
+        wsIds.add(wsId);
+      }
+    }
+    return wsIds;
+  }
+
+  /**
    * Estimate the size of content blocks in KB for memory instrumentation.
    */
   private estimateContentSizeKB(contentBlocks: any[] | undefined): number {

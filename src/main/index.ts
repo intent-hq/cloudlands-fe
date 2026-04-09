@@ -1577,6 +1577,41 @@ app.whenReady().then(async () => {
         })
         .catch(() => {});
 
+      // Stop agent providers for workspaces that have no open windows.
+      // These agents are streaming into the void (producing "no windows found"
+      // warnings) and accumulating memory with no user benefit. Their session
+      // data is persisted to disk, so they can be resumed when the user returns.
+      Promise.all([
+        import('../features/agent/main/agent-backend-handler.service'),
+        import('../features/system/main/system.ipc'),
+      ])
+        .then(([{ agentBackendHandler }, { getAllOpenWorkspaceIds }]) => {
+          const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
+          const providerWorkspaceIds = agentBackendHandler.getWorkspaceIdsWithProviders();
+          const orphanedWorkspaceIds = [...providerWorkspaceIds].filter(
+            (wsId) => !openWorkspaceIds.has(wsId),
+          );
+          if (orphanedWorkspaceIds.length > 0) {
+            logger.info('Stopping orphaned agent providers (no open window)', {
+              orphanedWorkspaceIds,
+              openWorkspaceIds: [...openWorkspaceIds],
+            });
+            for (const wsId of orphanedWorkspaceIds) {
+              agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
+                logger.warn('Failed to stop orphaned providers', {
+                  workspaceId: wsId,
+                  error: err.message,
+                });
+              });
+            }
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warn('Failed to run orphaned agent provider cleanup', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+
       // On critical pressure, evict cached MCP servers to free memory.
       // These will be lazily re-created on next tool call.
       if (forceGC && httpMcpServer) {
