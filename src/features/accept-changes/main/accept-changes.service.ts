@@ -50,6 +50,75 @@ const logger = new Logger('AcceptChangesService');
 /** Pattern for safe git ref names — disallows leading dash to prevent option injection */
 const SAFE_REF_PATTERN = /^[a-zA-Z0-9._\/][a-zA-Z0-9._\-\/]*$/;
 
+/**
+ * Characters that are dangerous in shell contexts.
+ * Reject any URL containing these to prevent command injection,
+ * especially for remote workspaces where execGitCommand shells the string via RPC.
+ */
+const SHELL_UNSAFE_CHARS = /[\s;|&`$(){}[\]!#~<>'"\\]/;
+
+/**
+ * Strict allowlist for git remote URLs.
+ * Accepts only well-known git URL schemes to prevent command injection.
+ * - https:// and http:// protocol URLs
+ * - git@<host>:<path> SSH shorthand (e.g., git@github.com:user/repo.git)
+ * - ssh:// protocol URLs
+ * - git:// protocol URLs
+ *
+ * Additionally rejects URLs containing shell-unsafe characters (spaces, semicolons,
+ * backticks, etc.) since remote workspaces interpolate the URL into a shell string.
+ */
+const VALID_GIT_URL_PATTERNS = [
+  /^https?:\/\/.+/,          // HTTPS/HTTP URLs
+  /^git@[\w.\-]+:.+/,        // SSH shorthand (git@host:path)
+  /^ssh:\/\/.+/,             // SSH protocol URLs
+  /^git:\/\/.+/,             // Git protocol URLs
+];
+
+/**
+ * Validate that a URL matches one of the allowed git remote URL patterns
+ * and does not contain shell-unsafe characters.
+ * Defense-in-depth against injection since URLs may be interpolated into shell commands.
+ */
+export function isValidGitRemoteUrl(url: string): boolean {
+  if (SHELL_UNSAFE_CHARS.test(url)) {
+    return false;
+  }
+  return VALID_GIT_URL_PATTERNS.some((pattern) => pattern.test(url));
+}
+
+/**
+ * Translate raw git init/config/commit errors into actionable user-facing messages.
+ */
+function toActionableGitInitError(rawMessage: string, worktreePath: string): string {
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('enoent') || lower.includes('no such file or directory')) {
+    if (lower.includes('git')) {
+      return 'Git is not installed or not found in PATH. Please install Git and try again.';
+    }
+    return `Directory not found: ${worktreePath}. Please ensure the workspace directory exists.`;
+  }
+  if (lower.includes('eacces') || lower.includes('permission denied')) {
+    return `Permission denied when initializing git in ${worktreePath}. Check directory permissions.`;
+  }
+  return `Failed to initialize git repository: ${rawMessage}`;
+}
+
+/**
+ * Translate raw git remote add errors into actionable user-facing messages.
+ */
+function toActionableRemoteAddError(rawMessage: string, url: string): string {
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('already exists')) {
+    return `A remote named "origin" already exists. Remove it first or use a different name.`;
+  }
+  if (lower.includes('enoent') || lower.includes('not found')) {
+    return 'Git is not installed or not found in PATH. Please install Git and try again.';
+  }
+  return `Failed to add remote "${url}": ${rawMessage}`;
+}
+
+
 interface KeychainConsentDecision {
   shouldProceed: boolean;
   gitPolicy?: GitEnvPolicy;
@@ -435,7 +504,9 @@ export class AcceptChangesService {
 
   /**
    * Add a git remote to the workspace repository.
-   * Runs `git remote add origin <url>`, clears the status cache, and returns updated status.
+   * If the directory is not a git repo, initializes one first.
+   * Validates the URL against a strict allowlist, then runs `git remote add origin <url>`.
+   * Uses execFileAsync for local workspaces to avoid shell injection.
    */
   async addRemote(
     workspaceId: WorkspaceId,
@@ -457,18 +528,129 @@ export class AcceptChangesService {
       throw new Error('Remote URL cannot be empty');
     }
 
-    // Add the remote
-    await this.execGitCommand(
-      workspaceId,
-      `git remote add origin ${trimmedUrl}`,
-      worktreePath,
-    );
+    // Validate URL against strict allowlist (defense-in-depth against injection)
+    if (!isValidGitRemoteUrl(trimmedUrl)) {
+      throw new Error(
+        'Invalid remote URL. Accepted formats: https://, http://, git@host:path, ssh://, or git://',
+      );
+    }
+
+    // Check if the directory is a git repo (use command, not filesystem check —
+    // worktrees use a .git file, not a directory)
+    let isGitRepo = false;
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['rev-parse', '--is-inside-work-tree'],
+        { cwd: worktreePath },
+      );
+      isGitRepo = stdout.trim() === 'true';
+    } catch {
+      // Not a git repo — will initialize below
+      isGitRepo = false;
+    }
+
+    // Auto-initialize git if not a repo
+    if (!isGitRepo) {
+      logger.info('Directory is not a git repo, initializing', { workspaceId, worktreePath });
+
+      try {
+        // Initialize with 'main' as default branch, then rename if workspace expects a different branch
+        const desiredBranch = workspace.branch || 'main';
+        await execFileAsync('git', ['init', '-b', 'main'], { cwd: worktreePath });
+
+        // Configure git user (try global config first, fall back to defaults)
+        // Follows the same pattern as initializeNewRepository in workspace.service.ts
+        let userName = 'Intent';
+        let userEmail = 'intent@local';
+        try {
+          const { stdout: globalName } = await execFileAsync(
+            'git',
+            ['config', '--global', 'user.name'],
+            { cwd: worktreePath },
+          );
+          if (globalName.trim()) userName = globalName.trim();
+        } catch {
+          // No global config, use default
+        }
+        try {
+          const { stdout: globalEmail } = await execFileAsync(
+            'git',
+            ['config', '--global', 'user.email'],
+            { cwd: worktreePath },
+          );
+          if (globalEmail.trim()) userEmail = globalEmail.trim();
+        } catch {
+          // No global config, use default
+        }
+        await execFileAsync('git', ['config', 'user.name', userName], { cwd: worktreePath });
+        await execFileAsync('git', ['config', 'user.email', userEmail], { cwd: worktreePath });
+
+        // Create initial empty commit so HEAD is not unborn
+        // (unborn HEAD causes issues in downstream getWorkspaceGitStatus calls)
+        await execFileAsync(
+          'git',
+          ['commit', '--allow-empty', '-m', 'Initial commit'],
+          { cwd: worktreePath },
+        );
+
+        // Rename branch to match workspace.branch if it differs from 'main'.
+        // fetchWorkspaceGitStatus and downstream push/PR/merge flows use workspace.branch,
+        // so the actual git branch must match to avoid "unknown revision" errors.
+        if (desiredBranch !== 'main' && SAFE_REF_PATTERN.test(desiredBranch)) {
+          await execFileAsync(
+            'git',
+            ['branch', '-m', 'main', desiredBranch],
+            { cwd: worktreePath },
+          );
+          logger.info('Renamed initial branch to match workspace', {
+            workspaceId,
+            branch: desiredBranch,
+          });
+        }
+
+        logger.info('Git repository initialized', { workspaceId, worktreePath });
+      } catch (initError) {
+        const msg = initError instanceof Error ? initError.message : String(initError);
+        logger.error('Failed to initialize git repository', { workspaceId, worktreePath, error: msg });
+        throw new Error(toActionableGitInitError(msg, worktreePath));
+      }
+    }
+
+    // Add the remote — use execFileAsync for local workspaces (defense-in-depth, no shell)
+    try {
+      const gitInfo = await getWorkspaceGitInfo(workspaceId);
+      if (gitInfo?.isRemote) {
+        // Remote workspace — must use execGitCommand (RPC-based)
+        await this.execGitCommand(
+          workspaceId,
+          `git remote add origin ${trimmedUrl}`,
+          worktreePath,
+        );
+      } else {
+        // Local workspace — use execFileAsync to avoid shell interpretation
+        await execFileAsync(
+          'git',
+          ['remote', 'add', 'origin', trimmedUrl],
+          { cwd: worktreePath },
+        );
+      }
+    } catch (addError) {
+      const msg = addError instanceof Error ? addError.message : String(addError);
+      logger.error('Failed to add git remote', { workspaceId, remoteUrl: trimmedUrl, error: msg });
+      throw new Error(toActionableRemoteAddError(msg, trimmedUrl));
+    }
 
     logger.info('Added git remote', { workspaceId, remoteUrl: trimmedUrl });
 
     // Clear cache so the next status fetch picks up the new remote
     this.clearGitStatusCache(workspaceId);
     gitService.clearStatusCache(workspaceId);
+
+    // Emit git:status-changed so renderer panels refresh (same pattern as git-watcher and agent-commit)
+    mainDispatch(gitStatusChanged({
+      workspaceId,
+    }));
 
     // Return fresh status
     return this.getWorkspaceGitStatus(workspaceId);

@@ -2138,7 +2138,7 @@
                     <input
                       type="text"
                       class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-                      placeholder="https://github.com/user/repo.git"
+                      placeholder="https://github.com/user/repo.git or git@github.com:user/repo.git"
                       bind:value={connectRemoteUrl}
                       onkeydown={(e) => {
                         if (e.key === 'Enter') {

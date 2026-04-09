@@ -110,6 +110,22 @@ vi.mock('../../events/main/unified-event-bus', () => ({
   unifiedEventBus: { emitDomainEvent: vi.fn(), emit: vi.fn() },
 }));
 
+const mockMainDispatch = vi.fn();
+vi.mock('../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: (...args: any[]) => mockMainDispatch(...args),
+}));
+
+vi.mock('../../../store/main/slices/git-events/git-events-slice', () => ({
+  gitAuthRequired: vi.fn((...args: any[]) => ({ type: 'gitAuthRequired', payload: args })),
+  gitCommitCreated: vi.fn((...args: any[]) => ({ type: 'gitCommitCreated', payload: args })),
+  githubAuthRequired: vi.fn((...args: any[]) => ({ type: 'githubAuthRequired', payload: args })),
+  gitStatusChanged: vi.fn((...args: any[]) => ({ type: 'gitStatusChanged', payload: args })),
+}));
+
+vi.mock('../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice', () => ({
+  workspaceUpdated: vi.fn((...args: any[]) => ({ type: 'workspaceUpdated', payload: args })),
+}));
+
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
     info() {}
@@ -135,7 +151,7 @@ vi.mock('../../workspace/main/provenance/attribution-engine', () => ({
   }),
 }));
 
-import { AcceptChangesService } from '../main/accept-changes.service';
+import { AcceptChangesService, isValidGitRemoteUrl } from '../main/accept-changes.service';
 
 describe('AcceptChangesService.exportFiles', () => {
   let service: AcceptChangesService;
@@ -953,5 +969,247 @@ describe('AcceptChangesService.execute - merge flow calls detectMergeConflicts a
     expect(fetchIndex).toBeGreaterThanOrEqual(0);
     expect(mergeTreeIndex).toBeGreaterThanOrEqual(0);
     expect(fetchIndex).toBeLessThan(mergeTreeIndex);
+  });
+});
+
+describe('isValidGitRemoteUrl', () => {
+  it.each([
+    ['https://github.com/user/repo.git', true],
+    ['https://github.com/user/repo', true],
+    ['http://gitlab.example.com/user/repo.git', true],
+    ['git@github.com:user/repo.git', true],
+    ['git@gitlab.example.com:group/subgroup/repo.git', true],
+    ['ssh://git@github.com/user/repo.git', true],
+    ['git://github.com/user/repo.git', true],
+  ])('should accept valid URL: %s', (url, expected) => {
+    expect(isValidGitRemoteUrl(url)).toBe(expected);
+  });
+
+  it.each([
+    ['', false],
+    ['not-a-url', false],
+    ['file:///tmp/repo', false],
+    ['/tmp/local-path', false],
+    ['$(malicious-command)', false],
+    ['https://', false],
+    ['; rm -rf /', false],
+    ['ftp://example.com/repo', false],
+    ['javascript:alert(1)', false],
+    // Shell-unsafe characters rejected for remote workspace safety
+    ['https://github.com/user/repo.git --upload-pack=evil', false],
+    ['https://example.com/repo;id', false],
+    ['https://example.com/repo|cat', false],
+    ["https://example.com/repo'inject", false],
+  ])('should reject invalid URL: %s', (url, expected) => {
+    expect(isValidGitRemoteUrl(url)).toBe(expected);
+  });
+});
+
+describe('AcceptChangesService.addRemote', () => {
+  let service: AcceptChangesService;
+  const workspaceId = 'test-workspace-id' as WorkspaceId;
+  const testWorkspace: Partial<Workspace> = {
+    id: workspaceId,
+    title: 'Test Workspace',
+    worktreePath: '/source/worktree',
+    branch: 'feature-branch',
+    baseRef: 'main',
+    status: WorkspaceStatus.Active,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new AcceptChangesService();
+    mockFindById.mockResolvedValue(testWorkspace);
+    mockGitServiceGetStatus.mockResolvedValue({ ok: true, data: { files: [] } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should reject invalid remote URLs', async () => {
+    await expect(
+      service.addRemote(workspaceId, '; rm -rf /'),
+    ).rejects.toThrow('Invalid remote URL');
+  });
+
+  it('should reject empty remote URLs', async () => {
+    await expect(
+      service.addRemote(workspaceId, '  '),
+    ).rejects.toThrow('Remote URL cannot be empty');
+  });
+
+  // Helper to set up standard mocks for addRemote tests
+  function setupAddRemoteMocks(isGitRepo: boolean) {
+    mockExecFileAsync.mockImplementation(async (file: string, args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) {
+        if (!isGitRepo) throw new Error('fatal: not a git repository');
+        return { stdout: 'true', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    mockExecAsync.mockImplementation(async (command: string) => {
+      if (command.includes('git remote get-url')) {
+        return { stdout: 'https://github.com/user/repo.git', stderr: '' };
+      }
+      if (command.includes('git rev-list')) {
+        return { stdout: '0\t0', stderr: '' };
+      }
+      if (command.includes('git branch -r')) {
+        return { stdout: 'origin/main', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+  }
+
+  it('should auto-initialize git when directory is not a git repo', async () => {
+    setupAddRemoteMocks(false);
+
+    await service.addRemote(workspaceId, 'https://github.com/user/repo.git');
+
+    // Verify git init was called
+    const initCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'init',
+    );
+    expect(initCall).toBeDefined();
+    expect(initCall?.[1]).toContain('-b');
+    expect(initCall?.[1]).toContain('main');
+
+    // Verify initial commit was created
+    const commitCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'commit',
+    );
+    expect(commitCall).toBeDefined();
+    expect(commitCall?.[1]).toContain('--allow-empty');
+
+    // Verify git remote add was called via execFileAsync (not execAsync)
+    const remoteAddCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'remote' && call[1]?.[1] === 'add',
+    );
+    expect(remoteAddCall).toBeDefined();
+    expect(remoteAddCall?.[1]).toContain('https://github.com/user/repo.git');
+  });
+
+  it('should rename branch to match workspace.branch after auto-init', async () => {
+    // workspace.branch is 'feature-branch' (from testWorkspace), not 'main'
+    setupAddRemoteMocks(false);
+
+    await service.addRemote(workspaceId, 'https://github.com/user/repo.git');
+
+    // Verify branch rename was called: git branch -m main feature-branch
+    const branchRenameCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'branch' && call[1]?.[1] === '-m',
+    );
+    expect(branchRenameCall).toBeDefined();
+    expect(branchRenameCall?.[1]).toEqual(['branch', '-m', 'main', 'feature-branch']);
+  });
+
+  it('should NOT rename branch when workspace.branch is main', async () => {
+    mockFindById.mockResolvedValue({ ...testWorkspace, branch: 'main' });
+    setupAddRemoteMocks(false);
+
+    await service.addRemote(workspaceId, 'https://github.com/user/repo.git');
+
+    // Verify NO branch rename was called
+    const branchRenameCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'branch' && call[1]?.[1] === '-m',
+    );
+    expect(branchRenameCall).toBeUndefined();
+  });
+
+  it('should emit gitStatusChanged after adding remote', async () => {
+    setupAddRemoteMocks(true);
+
+    await service.addRemote(workspaceId, 'git@github.com:user/repo.git');
+
+    // Verify mainDispatch was called with gitStatusChanged
+    expect(mockMainDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'gitStatusChanged' }),
+    );
+  });
+
+  it('should use execFileAsync for local workspace remote add (not shell)', async () => {
+    setupAddRemoteMocks(true);
+
+    await service.addRemote(workspaceId, 'git@github.com:user/repo.git');
+
+    // Verify execFileAsync was used for remote add (safe, no shell)
+    const remoteAddCall = mockExecFileAsync.mock.calls.find(
+      (call) => call[0] === 'git' && call[1]?.[0] === 'remote' && call[1]?.[1] === 'add',
+    );
+    expect(remoteAddCall).toBeDefined();
+    expect(remoteAddCall?.[1]).toEqual(['remote', 'add', 'origin', 'git@github.com:user/repo.git']);
+  });
+
+  it('should throw actionable error when git is not installed (init path)', async () => {
+    mockExecFileAsync.mockImplementation(async (file: string, args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) {
+        throw new Error('fatal: not a git repository');
+      }
+      // git init fails with ENOENT (git binary not found)
+      if (args[0] === 'init') {
+        const err = new Error('spawn git ENOENT') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    await expect(
+      service.addRemote(workspaceId, 'https://github.com/user/repo.git'),
+    ).rejects.toThrow('Git is not installed or not found in PATH');
+  });
+
+  it('should throw actionable error when workspace directory does not exist', async () => {
+    mockExecFileAsync.mockImplementation(async (file: string, args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) {
+        throw new Error('fatal: not a git repository');
+      }
+      if (args[0] === 'init') {
+        throw new Error('no such file or directory: /source/worktree');
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    await expect(
+      service.addRemote(workspaceId, 'https://github.com/user/repo.git'),
+    ).rejects.toThrow('Directory not found');
+  });
+
+  it('should throw actionable error when remote already exists', async () => {
+    setupAddRemoteMocks(true);
+
+    // Override to make remote add fail
+    mockExecFileAsync.mockImplementation(async (file: string, args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) {
+        return { stdout: 'true', stderr: '' };
+      }
+      if (args[0] === 'remote' && args[1] === 'add') {
+        throw new Error('error: remote origin already exists.');
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    await expect(
+      service.addRemote(workspaceId, 'https://github.com/user/repo.git'),
+    ).rejects.toThrow('A remote named "origin" already exists');
+  });
+
+  it('should throw actionable error on init commit failure', async () => {
+    mockExecFileAsync.mockImplementation(async (file: string, args: string[]) => {
+      if (args.includes('--is-inside-work-tree')) {
+        throw new Error('fatal: not a git repository');
+      }
+      if (args[0] === 'commit') {
+        throw new Error('error: could not commit');
+      }
+      return { stdout: '', stderr: '' };
+    });
+
+    await expect(
+      service.addRemote(workspaceId, 'https://github.com/user/repo.git'),
+    ).rejects.toThrow('Failed to initialize git repository: error: could not commit');
   });
 });
