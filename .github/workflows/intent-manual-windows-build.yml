@@ -171,5 +171,5 @@ jobs:
             dist-electron/*.exe
             dist-electron/*.exe.blockmap
             dist-electron/latest.yml
-          retention-days: 7
+          retention-days: 30
           if-no-files-found: warn
