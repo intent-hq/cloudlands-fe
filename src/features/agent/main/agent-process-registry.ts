@@ -7,6 +7,8 @@
  * actively streaming, the spawn is queued until a slot opens.
  */
 
+import * as os from 'os';
+
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('AgentProcessRegistry');
@@ -15,10 +17,30 @@ const logger = new Logger('AgentProcessRegistry');
 // Configuration
 // ---------------------------------------------------------------------------
 
+const GB = 1024 ** 3;
+
+/**
+ * Compute the maximum number of concurrent agent processes based on total
+ * system RAM. Lower-memory machines get a tighter cap so the app doesn't
+ * overwhelm the system.
+ */
+export function computeProcessCap(totalMemoryBytes: number): number {
+  if (totalMemoryBytes <= 8 * GB) return 4;
+  if (totalMemoryBytes <= 16 * GB) return 8;
+  if (totalMemoryBytes <= 32 * GB) return 20;
+  if (totalMemoryBytes <= 64 * GB) return 30;
+  return 100;
+}
+
 export const PROCESS_CAP_CONFIG = {
-  /** Maximum number of concurrent auggie child processes. */
-  MAX_CONCURRENT_PROCESSES: 30,
-} as const;
+  /** Maximum number of concurrent auggie child processes (computed from system RAM). */
+  MAX_CONCURRENT_PROCESSES: computeProcessCap(os.totalmem()),
+};
+
+logger.info('Process cap initialized', {
+  totalMemoryGB: Math.round(os.totalmem() / GB),
+  maxConcurrentProcesses: PROCESS_CAP_CONFIG.MAX_CONCURRENT_PROCESSES,
+});
 
 // ---------------------------------------------------------------------------
 // Types

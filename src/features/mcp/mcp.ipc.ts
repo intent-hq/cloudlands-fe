@@ -18,6 +18,7 @@ import {
 import { Logger } from '$shared/logger';
 import { MCP_CHANNELS } from '$shared/ipc/channels';
 import { createWorkspaceId, isValidWorkspaceId } from '$shared/types/branded-ids';
+import { AgentStatus } from '$shared/types/agent.types';
 import { workspaceService } from '../workspace/main/workspace.service';
 import { IPCRateLimiter } from '../ipc/ipc-validation';
 import { createSafeValidatedHandler } from '../../main/ipc-validation-middleware';
@@ -32,8 +33,14 @@ import {
 // Logger instance
 const logger = new Logger('MCP-IPC');
 
+// Grace period to protect workspaces whose agents may have been evicted from memory
+const MCP_GRACE_PERIOD_MS = 5 * 60 * 1000;
+
 // Track active workspaces
 const activeWorkspaces = new Set<string>();
+
+// Track last tool-call timestamp per workspace (guards against premature shutdown)
+const workspaceLastToolCall = new Map<string, number>();
 
 // Map optimistic workspace IDs to real workspace IDs
 const workspaceIdMap = new Map<string, string>();
@@ -171,6 +178,9 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             activeWorkspaces.add(effectiveWorkspaceId);
           }
 
+          // Record tool-call activity for grace-period shutdown guard
+          workspaceLastToolCall.set(effectiveWorkspaceId, Date.now());
+
           // Map old tool names to new ones for backward compatibility
           let mappedToolName = validated.toolName;
           if (validated.toolName === 'add_spec_comment') {
@@ -207,6 +217,9 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             success: false,
             error: error instanceof Error ? error.message : String(error),
           };
+        } finally {
+          // Update timestamp on completion so long-running calls keep grace period alive
+          workspaceLastToolCall.set(effectiveWorkspaceId, Date.now());
         }
       },
       MCP_CHANNELS.CALL_TOOL,
@@ -219,20 +232,20 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
     createSafeValidatedHandler(
       McpListToolsSchema,
       async (_, validated) => {
+        const effectiveWorkspaceId =
+          workspaceIdMap.get(validated.workspaceId) || validated.workspaceId;
+
+        if (
+          validated.workspaceId.startsWith('optimistic-') &&
+          effectiveWorkspaceId === validated.workspaceId
+        ) {
+          return {
+            success: false,
+            error: 'Workspace is still being created. Please retry shortly.',
+          };
+        }
+
         try {
-          const effectiveWorkspaceId =
-            workspaceIdMap.get(validated.workspaceId) || validated.workspaceId;
-
-          if (
-            validated.workspaceId.startsWith('optimistic-') &&
-            effectiveWorkspaceId === validated.workspaceId
-          ) {
-            return {
-              success: false,
-              error: 'Workspace is still being created. Please retry shortly.',
-            };
-          }
-
           // Ensure servers are started for this workspace
           if (!activeWorkspaces.has(effectiveWorkspaceId)) {
             const workspacePath = await resolveWorkspacePathForMcp(effectiveWorkspaceId);
@@ -240,6 +253,9 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             await startWorkspaceServers(effectiveWorkspaceId, workspacePath);
             activeWorkspaces.add(effectiveWorkspaceId);
           }
+
+          // Record tool-call activity for grace-period shutdown guard
+          workspaceLastToolCall.set(effectiveWorkspaceId, Date.now());
 
           // Get available tools from the hub
           const tools = [];
@@ -294,6 +310,9 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
             success: false,
             error: (error as Error).message,
           };
+        } finally {
+          // Update timestamp on completion so long-running calls keep grace period alive
+          workspaceLastToolCall.set(effectiveWorkspaceId, Date.now());
         }
       },
       MCP_CHANNELS.LIST_TOOLS,
@@ -358,6 +377,74 @@ export async function setupMCPIPC(mainWindow?: BrowserWindow) {
   );
 
   logger.debug('MCP IPC handlers setup complete');
+}
+
+/**
+ * Stop MCP servers for workspaces that are no longer active.
+ * Skips workspaces that still have running agents.
+ *
+ * @param activeWorkspaceId - The workspace the user just switched to (keep its servers)
+ */
+export async function stopInactiveWorkspaceServers(activeWorkspaceId: string): Promise<void> {
+  const otherIds = [...activeWorkspaces].filter((id) => id !== activeWorkspaceId);
+  if (otherIds.length === 0) return;
+
+  logger.info('Checking MCP servers for inactive workspaces', {
+    activeWorkspaceId,
+    candidates: otherIds,
+  });
+
+  // Lazy-import to avoid circular deps (this file is loaded early)
+  const { ConsolidatedBackendService } = await import(
+    '../../features/agent/main/consolidated-backend.service'
+  );
+  const consolidatedBackend = ConsolidatedBackendService.getInstance();
+
+  await Promise.all(
+    otherIds.map(async (workspaceId) => {
+      try {
+        // Grace-period guard: skip shutdown if a tool was called recently.
+        // This protects against evictLRUSessions() removing active agents
+        // from memory, which would cause listAgents() to return 0.
+        const lastCall = workspaceLastToolCall.get(workspaceId);
+        if (lastCall !== undefined && Date.now() - lastCall < MCP_GRACE_PERIOD_MS) {
+          logger.info('Skipping MCP server stop — workspace has recent tool activity', {
+            workspaceId,
+            msSinceLastCall: Date.now() - lastCall,
+          });
+          return;
+        }
+
+        const agents = await consolidatedBackend.listAgents(workspaceId);
+        const runningAgents = agents.filter(
+          (a) =>
+            a.status === AgentStatus.Active ||
+            a.status === AgentStatus.Processing ||
+            a.status === AgentStatus.Pending ||
+            a.isProcessing ||
+            a.isStreaming,
+        );
+
+        if (runningAgents.length > 0) {
+          logger.info('Skipping MCP server stop — workspace has running agents', {
+            workspaceId,
+            runningAgentCount: runningAgents.length,
+          });
+          return;
+        }
+
+        logger.info('Stopping MCP servers for inactive workspace', { workspaceId });
+        await stopWorkspaceServers(workspaceId);
+        activeWorkspaces.delete(workspaceId);
+        workspaceLastToolCall.delete(workspaceId);
+      } catch (error) {
+        logger.warn('Failed to stop MCP servers for inactive workspace', {
+          workspaceId,
+          error: (error as Error).message,
+        });
+      }
+    }),
+  );
 }
 
 /**
