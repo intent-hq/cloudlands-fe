@@ -1591,7 +1591,7 @@
                     // IMPORTANT: Since the message was already sent, streaming should be in progress.
                     // Dispatch chatSendStarted to set streaming state in Redux immediately
                     // so the StreamingStatus indicator shows right away.
-                    getReduxStore().dispatch(chatSendStarted(agentId));
+                    getReduxStore().dispatch(chatSendStarted(agentId, workspace.id));
 
                     // Clear the prompt, images, and context refs from config now that we've displayed them
                     config.prompt = null;
@@ -3560,6 +3560,7 @@
                 {/if}
               {/each}
             {/each}
+
           </div>
         {/if}
       {/if}

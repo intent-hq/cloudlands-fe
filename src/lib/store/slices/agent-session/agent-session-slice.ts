@@ -303,6 +303,17 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       return state;
     }
 
+    // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
+    // created by chatSendStarted before the full session loaded from disk.
+    if (existing) {
+      if (existing.isStreaming && finalSession.isStreaming === undefined) {
+        finalSession.isStreaming = true;
+      }
+      if (existing.isProcessing && finalSession.isProcessing === undefined) {
+        finalSession.isProcessing = true;
+      }
+    }
+
     let next = setSession(state, agentId, finalSession);
     next = registerInWorkspaceIndex(next, agentId, wsId);
     return next;
@@ -379,6 +390,19 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       const finalSession: AgentSession = { ...normalized, messages: deduped };
       const agentId = String(normalized.id);
       const wsId = String(session.workspaceId);
+
+      // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
+      // created by chatSendStarted before the full session loaded from disk.
+      const existing = getSession(next, agentId);
+      if (existing) {
+        if (existing.isStreaming && finalSession.isStreaming === undefined) {
+          finalSession.isStreaming = true;
+        }
+        if (existing.isProcessing && finalSession.isProcessing === undefined) {
+          finalSession.isProcessing = true;
+        }
+      }
+
       next = setSession(next, agentId, finalSession);
       next = registerInWorkspaceIndex(next, agentId, wsId);
     }
@@ -410,6 +434,17 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
     if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
       return state;
+    }
+
+    // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
+    // created by chatSendStarted before the full session loaded from disk.
+    if (existing) {
+      if (existing.isStreaming && finalSession.isStreaming === undefined) {
+        finalSession.isStreaming = true;
+      }
+      if (existing.isProcessing && finalSession.isProcessing === undefined) {
+        finalSession.isProcessing = true;
+      }
     }
 
     let next = setSession(state, agentId, finalSession);
@@ -465,9 +500,31 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   // Cross-slice: handle chat-state actions for isStreaming/isProcessing
   // agent-session is the single source of truth for these flags.
   // -----------------------------------------------------------------------
-  .with(chatSendStarted, (state, { payload: { agentId } }) =>
-    updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
-  )
+  .with(chatSendStarted, (state, { payload: { agentId, wsId, timestamp } }) => {
+    const existing = getSession(state, agentId);
+    if (existing) {
+      return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
+    }
+    // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
+    // Create a minimal placeholder so the UI can show the processing indicator immediately.
+    // The full session will be populated when upsertSession/upsertAgentSession arrives.
+    const now = new Date(timestamp).toISOString();
+    const placeholder: AgentSession = {
+      id: agentId as AgentSession['id'],
+      backendSessionId: null,
+      workspaceId: wsId as AgentSession['workspaceId'],
+      name: '',
+      status: 'active' as any,
+      messages: [],
+      isStreaming: true,
+      isProcessing: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    let next = setSession(state, agentId, placeholder);
+    next = registerInWorkspaceIndex(next, agentId, wsId);
+    return next;
+  })
   .with(chatSendFailed, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
   )

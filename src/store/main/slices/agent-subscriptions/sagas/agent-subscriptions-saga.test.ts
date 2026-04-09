@@ -786,6 +786,48 @@ describe("handleValidateSubscriptions", () => {
       .put(requestPersist(WS))
       .run();
   });
+
+  it("passes wsId to isAgentSessionActive for correct workspace path resolution", () => {
+    const ws: WorkspaceSubscriptionState = {
+      subscriptions: {
+        "sub-1": {
+          id: "sub-1",
+          agentId: "agent-1",
+          agentName: "Agent",
+          workspaceId: WS,
+          filter: {},
+          createdAt: new Date().toISOString(),
+        },
+      },
+      agentQueues: {},
+      agentStatuses: {},
+      delegationGroups: {},
+      firedOneShotSubscriptions: [],
+      deliveryStats: {
+        totalDeliveries: 0,
+        successfulDeliveries: 0,
+        failedDeliveries: 0,
+        timeoutDeliveries: 0,
+        droppedEvents: 0,
+        lastDeliveryTime: null,
+        lastFailureTime: null,
+      },
+      deletedAgents: {},
+      version: 0,
+    };
+    const action = requestValidateSubscriptions(WS);
+
+    return expectSaga(handleValidateSubscriptions, action)
+      .provide([
+        [matchers.select(selectWorkspaceSubscriptionState.select, WS), ws],
+        // Verify the call receives both agentId AND wsId
+        [matchers.call(isAgentSessionActive, "agent-1", WS), true],
+      ])
+      // Agent is active so no removals should happen
+      .not.put.actionType(removeAllSubscriptions.type)
+      .not.put.actionType(bumpVersion.type)
+      .run();
+  });
 });
 
 // ---------------------------------------------------------------------------

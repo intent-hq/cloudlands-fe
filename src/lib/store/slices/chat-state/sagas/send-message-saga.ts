@@ -97,7 +97,7 @@ function* handleSendPath(
   const { text, serializedContextItems, workspaceContextStr, noteIds } = payload;
 
   // --- Dispatch chatSendStarted immediately so loading UI appears right away ---
-  yield* put(chatSendStarted(agentId));
+  yield* put(chatSendStarted(agentId, wsId));
 
   // --- Rebind wait ---
   const isRebinding = yield* selectChatIsRebinding.effect(agentId);

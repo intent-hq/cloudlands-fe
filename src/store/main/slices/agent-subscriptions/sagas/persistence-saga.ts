@@ -26,7 +26,7 @@ import {
 } from "../agent-subscriptions-slice";
 import { selectWorkspaceSubscriptionState } from "../agent-subscriptions-selectors";
 import type { WorkspaceSubscriptionState } from "../types";
-import { requestPersist, requestRestore } from "./saga-actions";
+import { requestPersist, requestRestore, requestValidateSubscriptions } from "./saga-actions";
 import { WorkspaceConfig } from "$shared/main/config";
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,9 @@ export function* handleRestore(action: ReturnType<typeof requestRestore>) {
 
   yield* put(setSubscriptionsSnapshot(wsId, snapshot as any));
   yield* put(bumpVersion(wsId));
+
+  // Validate restored subscriptions — removes entries for deleted agents
+  yield* put(requestValidateSubscriptions(wsId));
 }
 
 // ---------------------------------------------------------------------------

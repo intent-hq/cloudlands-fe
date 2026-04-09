@@ -71,13 +71,14 @@ export function* handleEvictStaleAgents(
  */
 export async function isAgentSessionActive(
   agentId: string,
+  wsId: string,
 ): Promise<boolean> {
   try {
     const { agentPersistence } = await import(
       "../../../../../features/agent/main/agent-persistence"
     );
     // loadAgent needs branded types but accepts plain strings at runtime
-    const result = await agentPersistence.loadAgent(agentId as any, "" as any);
+    const result = await agentPersistence.loadAgent(agentId as any, wsId as any);
     return result.success && result.data != null;
   } catch {
     // If we can't check, assume it's active to be safe
@@ -100,7 +101,7 @@ export function* handleValidateSubscriptions(
 
   let removed = 0;
   for (const agentId of agentIds) {
-    const isActive: boolean = yield* call(isAgentSessionActive, agentId);
+    const isActive: boolean = yield* call(isAgentSessionActive, agentId, wsId);
     if (!isActive) {
       yield* put(removeAllSubscriptions(wsId, agentId));
       yield* put(clearAgentQueue(wsId, agentId));

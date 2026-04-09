@@ -52,6 +52,7 @@ import {
 } from "./delivery-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
 import { handlePersist, handleRestore, getSubscriptionsFilePath, writeSubscriptions, readSubscriptions } from "./persistence-saga";
+import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
@@ -166,6 +167,7 @@ describe("handleRestore", () => {
       .provide([
         [matchers.call.fn(getSubscriptionsFilePath), filePath],
         [matchers.call.fn(readSubscriptions), diskData],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
       .put(
         setSubscriptionsSnapshot(WS, {
@@ -194,6 +196,7 @@ describe("handleRestore", () => {
         } as any)
       )
       .put(bumpVersion(WS))
+      .put(requestValidateSubscriptions(WS))
       .run();
   });
 
@@ -217,6 +220,7 @@ describe("handleRestore", () => {
       .provide([
         [matchers.call.fn(getSubscriptionsFilePath), filePath],
         [matchers.call.fn(readSubscriptions), diskData],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
       .put(
         setSubscriptionsSnapshot(WS, {
@@ -241,6 +245,7 @@ describe("handleRestore", () => {
         } as any)
       )
       .put(bumpVersion(WS))
+      .put(requestValidateSubscriptions(WS))
       .run();
   });
 
@@ -284,6 +289,7 @@ describe("handleRestore", () => {
       .provide([
         [matchers.call.fn(getSubscriptionsFilePath), filePath],
         [matchers.call.fn(readSubscriptions), diskData],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
       .run();
 
@@ -319,6 +325,7 @@ describe("handleRestore", () => {
       .provide([
         [matchers.call.fn(getSubscriptionsFilePath), filePath],
         [matchers.call.fn(readSubscriptions), diskData],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
       .run();
 
@@ -337,6 +344,37 @@ describe("handleRestore", () => {
     expect(g1.events).toEqual([]);
     expect(g1.delivered).toBe(false);
     expect(Object.keys(snapshot.delegationGroups)).toEqual(["g1"]);
+  });
+
+  it("dispatches requestValidateSubscriptions after restore (regression)", async () => {
+    // This test verifies the subscription restore fix:
+    // Before the fix, handleRestore did NOT dispatch requestValidateSubscriptions,
+    // so stale subscriptions lingered. bumpVersion triggers
+    // agent:subscriptions-changed via the ipc-bridge-saga, which the renderer
+    // already handles correctly.
+    const diskData = {
+      subscriptions: [
+        {
+          id: "sub-1",
+          agentId: AGENT,
+          agentName: "Agent 1",
+          workspaceId: WS,
+          filter: { eventTypes: ["agent:idle"] },
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const action = requestRestore(WS);
+
+    await expectSaga(handleRestore, action)
+      .provide([
+        [matchers.call.fn(getSubscriptionsFilePath), filePath],
+        [matchers.call.fn(readSubscriptions), diskData],
+      ])
+      .put(bumpVersion(WS))
+      .put(requestValidateSubscriptions(WS))
+      .run();
   });
 });
 

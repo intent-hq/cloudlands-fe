@@ -20,7 +20,10 @@ import {
   removeWorkspaceSessions,
   clearAllSessions,
 } from "./agent-session-slice";
-import { removeAgentMessage, setAgentStreaming } from "../workspace-agents/workspace-agents-slice";
+import { removeAgentMessage, setAgentStreaming, upsertAgentSession } from "../workspace-agents/workspace-agents-slice";
+import {
+  chatSendStarted,
+} from "../chat-state/chat-state-slice";
 import {
   selectAgentSession,
   selectAgentMessages,
@@ -249,6 +252,59 @@ describe("agent-session-slice reducer", () => {
       expect(state.agentIdsByWorkspace["ws-1"]).toEqual(["a1"]);
       expect(state.agentIdsByWorkspace["ws-2"]).toEqual(["a2"]);
     });
+
+    it("preserves isStreaming/isProcessing flags from placeholder when incoming omits them", () => {
+      // Simulate: chatSendStarted creates placeholder with flags=true
+      let state = agentSessionReducer(initialState, chatSendStarted("a1", "ws-1"));
+      expect(state.byAgentId["a1"].isStreaming).toBe(true);
+      expect(state.byAgentId["a1"].isProcessing).toBe(true);
+
+      // bulkUpsertSessions arrives with disk data that omits the flags (undefined)
+      const diskSession = makeSession("a1", "ws-1", {
+        name: "Loaded Agent",
+      });
+      // Remove the flags so they are undefined (not explicitly false)
+      delete (diskSession as any).isStreaming;
+      delete (diskSession as any).isProcessing;
+      state = agentSessionReducer(state, bulkUpsertSessions([diskSession]));
+
+      // Flags should be preserved from the placeholder
+      expect(state.byAgentId["a1"].isStreaming).toBe(true);
+      expect(state.byAgentId["a1"].isProcessing).toBe(true);
+      // But real session data should be applied
+      expect(state.byAgentId["a1"].name).toBe("Loaded Agent");
+    });
+
+    it("respects explicit false flags from incoming session over placeholder", () => {
+      // Simulate: chatSendStarted creates placeholder with flags=true
+      let state = agentSessionReducer(initialState, chatSendStarted("a1", "ws-1"));
+      expect(state.byAgentId["a1"].isStreaming).toBe(true);
+      expect(state.byAgentId["a1"].isProcessing).toBe(true);
+
+      // bulkUpsertSessions arrives with explicit false (e.g. safety timeout clearing stale state)
+      const diskSession = makeSession("a1", "ws-1", {
+        isStreaming: false,
+        isProcessing: false,
+        name: "Loaded Agent",
+      });
+      state = agentSessionReducer(state, bulkUpsertSessions([diskSession]));
+
+      // Explicit false should win over placeholder's true
+      expect(state.byAgentId["a1"].isStreaming).toBe(false);
+      expect(state.byAgentId["a1"].isProcessing).toBe(false);
+      expect(state.byAgentId["a1"].name).toBe("Loaded Agent");
+    });
+
+    it("does NOT force flags true when existing session had them false", () => {
+      const existing = makeSession("a1", "ws-1", { isStreaming: false, isProcessing: false });
+      let state = agentSessionReducer(initialState, upsertSession(existing));
+
+      const incoming = makeSession("a1", "ws-1", { isStreaming: false, isProcessing: false, name: "Updated" });
+      state = agentSessionReducer(state, bulkUpsertSessions([incoming]));
+
+      expect(state.byAgentId["a1"].isStreaming).toBeFalsy();
+      expect(state.byAgentId["a1"].isProcessing).toBeFalsy();
+    });
   });
 
   describe("removeWorkspaceSessions", () => {
@@ -413,5 +469,100 @@ describe("setAgentStreaming (cross-slice action — single source of truth)", ()
     const state = agentSessionReducer(initialState, upsertSession(session));
     const next = agentSessionReducer(state, setAgentStreaming("ws-1", "a1", true));
     expect(next).toBe(state);
+  });
+});
+
+
+// ===========================================================================
+// Regression: chatSendStarted placeholder session for restored workspaces
+// ===========================================================================
+
+describe("chatSendStarted — placeholder session (restored workspace regression)", () => {
+  it("creates a placeholder session with isProcessing=true when no session exists", () => {
+    // Before the fix, chatSendStarted was a no-op when the session didn't exist.
+    // In a restored workspace, the session hasn't loaded from disk yet when the
+    // user sends a message, so the UI had no loading indicator.
+    const state = agentSessionReducer(initialState, chatSendStarted("agent-new", "ws-1"));
+
+    const session = state.byAgentId["agent-new"];
+    expect(session).toBeDefined();
+    expect(session.isProcessing).toBe(true);
+    expect(session.isStreaming).toBe(true);
+    expect(session.messages).toEqual([]);
+    expect(session.workspaceId).toBe("ws-1");
+    // Placeholder should be registered in workspace index
+    expect(state.agentIdsByWorkspace["ws-1"]).toContain("agent-new");
+  });
+
+  it("sets isProcessing and isStreaming on an existing session", () => {
+    const existing = makeSession("a1", "ws-1", { isProcessing: false, isStreaming: false });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatSendStarted("a1", "ws-1"));
+
+    expect(state.byAgentId["a1"].isProcessing).toBe(true);
+    expect(state.byAgentId["a1"].isStreaming).toBe(true);
+  });
+});
+
+
+// ===========================================================================
+// Regression: upsertAgentSession preserves in-flight flags from placeholder
+// ===========================================================================
+
+describe("upsertAgentSession — preserves isProcessing/isStreaming from placeholder (regression)", () => {
+  it("preserves isProcessing=true from placeholder when incoming session omits flags", () => {
+    // Simulate the restored workspace flow:
+    // 1. chatSendStarted creates a placeholder with isProcessing=true
+    // 2. The full session loads from disk without flag fields (undefined)
+    // The fix ensures the flags are preserved so the UI keeps showing the indicator.
+    let state = agentSessionReducer(initialState, chatSendStarted("a1", "ws-1"));
+    expect(state.byAgentId["a1"].isProcessing).toBe(true);
+    expect(state.byAgentId["a1"].isStreaming).toBe(true);
+
+    // upsertAgentSession arrives with the real session (flags omitted / undefined)
+    const realSession = makeSession("a1", "ws-1", {
+      name: "Real Agent",
+    });
+    delete (realSession as any).isProcessing;
+    delete (realSession as any).isStreaming;
+    state = agentSessionReducer(state, upsertAgentSession("ws-1", realSession));
+
+    // Flags should be preserved from the placeholder
+    expect(state.byAgentId["a1"].isProcessing).toBe(true);
+    expect(state.byAgentId["a1"].isStreaming).toBe(true);
+    // But the real session data should be applied
+    expect(state.byAgentId["a1"].name).toBe("Real Agent");
+  });
+
+  it("respects explicit false flags over placeholder flags", () => {
+    // Safety timeout or explicit clear should win over placeholder flags
+    let state = agentSessionReducer(initialState, chatSendStarted("a1", "ws-1"));
+    expect(state.byAgentId["a1"].isProcessing).toBe(true);
+    expect(state.byAgentId["a1"].isStreaming).toBe(true);
+
+    const realSession = makeSession("a1", "ws-1", {
+      isProcessing: false,
+      isStreaming: false,
+      name: "Real Agent",
+    });
+    state = agentSessionReducer(state, upsertAgentSession("ws-1", realSession));
+
+    // Explicit false should win
+    expect(state.byAgentId["a1"].isProcessing).toBe(false);
+    expect(state.byAgentId["a1"].isStreaming).toBe(false);
+    expect(state.byAgentId["a1"].name).toBe("Real Agent");
+  });
+
+  it("does NOT force flags true when placeholder had them false", () => {
+    // If the existing session doesn't have the flags set, don't force them
+    const existing = makeSession("a1", "ws-1", { isProcessing: false, isStreaming: false });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    const incoming = makeSession("a1", "ws-1", { isProcessing: false, isStreaming: false, name: "Updated" });
+    state = agentSessionReducer(state, upsertAgentSession("ws-1", incoming));
+
+    expect(state.byAgentId["a1"].isProcessing).toBeFalsy();
+    expect(state.byAgentId["a1"].isStreaming).toBeFalsy();
   });
 });
