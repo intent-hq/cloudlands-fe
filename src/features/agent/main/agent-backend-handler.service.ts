@@ -150,6 +150,10 @@ export class AgentBackendHandler {
   private streamSessionIds = new Map<string, string>();
   /** @property {Map<string, string>} streamWorkspaceIds - Map of agentId to workspaceId for stream tracking */
   private streamWorkspaceIds = new Map<string, string>();
+  /** @property {Map<string, number>} streamGenerations - Monotonic counter per agent to detect stale stream cleanup.
+   *  Incremented each time a new stream starts for an agent. Stale cleanup callbacks compare their
+   *  captured generation against the current value to avoid erasing a newer stream's tracking state. */
+  private streamGenerations = new Map<string, number>();
   /** @property {Map<string, number>} streamWindowIds - Map of agentId to window ID for targeted stream delivery */
   private streamWindowIds = new Map<string, number>();
   /** @property {Map<string, QueuedMessage[]>} messageQueues - Queued messages per agent */
@@ -1136,6 +1140,7 @@ export class AgentBackendHandler {
         this.streamSessionIds.delete(request.agentId);
         this.streamWorkspaceIds.delete(request.agentId);
         this.streamWindowIds.delete(request.agentId);
+        this.streamGenerations.delete(request.agentId);
         provider = undefined;
       }
 
@@ -2536,6 +2541,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
 
       // Track stream start time, sessionId, workspaceId, and sender window ID
+      // Increment stream generation so stale cleanup callbacks (from interrupted streams)
+      // can detect they belong to an older generation and skip map deletions.
+      const streamGeneration = (this.streamGenerations.get(request.agentId) || 0) + 1;
+      this.streamGenerations.set(request.agentId, streamGeneration);
       this.streamStartTimes.set(request.agentId, Date.now());
       this.streamSessionIds.set(request.agentId, request.sessionId);
       this.streamWorkspaceIds.set(request.agentId, request.workspaceId);
@@ -2972,7 +2981,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                 });
 
                 // Clean up current stream resources so a new stream can start
-                this.cleanupStreamResources(request.agentId);
+                this.cleanupStreamResources(request.agentId, streamGeneration);
                 this.completedStreams.delete(request.agentId);
 
                 // Remove the empty streaming message from backend session to avoid
@@ -3039,6 +3048,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                       autoContinueAgentId,
                       autoContinueWorkspaceId,
                       'auto-continue-failed',
+                      streamGeneration,
                     );
 
                     // Emit agent:idle so the agent doesn't stay permanently stuck
@@ -3201,7 +3211,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // processNextQueuedMessage fires, the queued message gets deferred
           // ("Stream already active") and may never be sent. By finalizing first,
           // the queue gets priority over event-triggered streams.
-          this.finalizeStream(request.agentId, request.workspaceId, 'complete');
+          this.finalizeStream(request.agentId, request.workspaceId, 'complete', streamGeneration);
 
           // Track definitive agent outcome (backend ground truth)
           trackMain('Agent Outcome', {
@@ -3338,7 +3348,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           if (isInterruption) {
             // Interruption: just clean up resources. The new message's stream takes over;
             // queue advancement is not needed (and would be harmful).
-            this.cleanupStreamResources(request.agentId);
+            this.cleanupStreamResources(request.agentId, streamGeneration);
           } else {
             // Real error: clean up resources AND advance the queue.
             // Mark that onError handled the failure so the outer catch doesn't double-emit.
@@ -3359,7 +3369,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             // IMPORTANT: finalizeStream MUST run BEFORE emitAgentFailedEvent (same as onComplete).
             // emitAgentFailedEvent can trigger event subscription delivery which starts
             // a new stream, racing with queued message processing.
-            this.finalizeStream(request.agentId, request.workspaceId, 'error');
+            this.finalizeStream(request.agentId, request.workspaceId, 'error', streamGeneration);
             // emitAgentFailedEvent coordinates setAgentStatus('failed') + event emission
             // in a single async chain for guaranteed ordering.
             this.emitAgentFailedEvent(
@@ -4690,9 +4700,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * @param agentId  - The agent whose stream just ended
    * @param workspaceId - Must be captured BEFORE cleanup (cleanup deletes it from streamWorkspaceIds)
    * @param reason   - Human-readable label for logging (e.g. 'complete', 'error', 'timeout')
+   * @param generation - Optional stream generation token (passed through to cleanupStreamResources)
    */
-  private finalizeStream(agentId: string, workspaceId: string, reason: string): void {
-    this.cleanupStreamResources(agentId);
+  private finalizeStream(agentId: string, workspaceId: string, reason: string, generation?: number): void {
+    this.cleanupStreamResources(agentId, generation);
 
     // CRITICAL: Clear pendingBackendDeliveries BEFORE any async work that could trigger
     // a new delivery (e.g., emitAgentIdleEvent → watchAgentIdleForDelivery → requestDeliverQueuedEvents
@@ -4753,9 +4764,28 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    *
    * Use `finalizeStream` instead for terminal stream outcomes (success, error,
    * timeout, window closure) so the queue invariant is enforced automatically.
+   *
+   * @param agentId - The agent whose stream resources to clean up
+   * @param generation - Optional stream generation token. When provided, cleanup is
+   *   skipped if a newer stream has started (prevents stale interrupted-stream cleanup
+   *   from erasing a newer stream's tracking state).
    */
-  private cleanupStreamResources(agentId: string): void {
-    logger.debug('Cleaning up stream resources', { agentId });
+  private cleanupStreamResources(agentId: string, generation?: number): void {
+    // Generation guard: if a newer stream has started, this cleanup belongs to a stale
+    // stream. Skip it to avoid erasing the newer stream's tracking maps.
+    if (generation !== undefined) {
+      const currentGeneration = this.streamGenerations.get(agentId) || 0;
+      if (generation < currentGeneration) {
+        logger.info('Skipping stale stream cleanup (generation mismatch)', {
+          agentId,
+          cleanupGeneration: generation,
+          currentGeneration,
+        });
+        return;
+      }
+    }
+
+    logger.debug('Cleaning up stream resources', { agentId, generation });
 
     // Clear health check interval
     const healthCheck = this.streamHealthChecks.get(agentId);
@@ -4828,6 +4858,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.streamSessionIds.delete(agentId);
     this.streamWorkspaceIds.delete(agentId);
     this.streamWindowIds.delete(agentId);
+    this.streamGenerations.delete(agentId);
 
     // Health check interval
     const healthCheck = this.streamHealthChecks.get(agentId);
@@ -5545,6 +5576,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       this.streamSessionIds.delete(sessionId);
       this.streamWorkspaceIds.delete(sessionId);
       this.streamWindowIds.delete(sessionId);
+      this.streamGenerations.delete(sessionId);
       existingProvider = undefined;
     }
 
@@ -7275,6 +7307,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.streamSessionIds.clear();
     this.streamWorkspaceIds.clear();
     this.streamWindowIds.clear();
+    this.streamGenerations.clear();
 
     // Clear IPC heartbeat tracking
     this.lastPongTimes.clear();

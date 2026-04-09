@@ -1082,7 +1082,8 @@ export class ACPProvider extends BaseAgentProvider {
       hasReceivedFirstChunk?: boolean; // Track if we've received the first chunk
       lastActivityTime?: number; // Track last activity for stall detection
       streamStartTime?: number; // Track stream start time for metrics
-      chunksReceived?: number; // Count chunks for metrics
+      chunksReceived?: number; // Count chunks for metrics (only session/update notifications)
+      hasReceivedActivity?: boolean; // Broad activity signal (any agent activity: session/update, ACP requests, permissions)
       processedChunkIds?: Set<string>; // Track processed chunks to avoid duplicates
       completeSent?: boolean; // Track if we've already sent a complete message
       streamGeneration?: number; // Track which generation this stream belongs to
@@ -4406,6 +4407,7 @@ export class ACPProvider extends BaseAgentProvider {
               'Cannot send auto-approved permission response to agent - agent not available',
             );
           }
+          this.recordStreamingActivity();
           return;
         }
 
@@ -4477,10 +4479,12 @@ export class ACPProvider extends BaseAgentProvider {
         if (!this.writeToAgent(`${responseStr}\n`)) {
           logger.warn('Cannot send permission response to agent - agent not available');
         }
+        this.recordStreamingActivity();
         return;
       }
 
       // Handle as a regular message through ACP server
+      // This includes fs/read_text_file, fs/write_text_file, tools/call, etc.
       const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
       const response = await this.acpServer?.handleMessage(messageStr);
       if (response) {
@@ -4488,6 +4492,13 @@ export class ACPProvider extends BaseAgentProvider {
         if (!this.writeToAgent(`${response}\n`)) {
           logger.warn('Cannot send response to agent - agent not available');
         }
+
+        // CRITICAL FIX: Track ACP server requests as streaming activity.
+        // When the agent sends fs/write_text_file, fs/read_text_file, or other ACP
+        // requests, it is actively working but NOT sending session/update notifications.
+        // Without this, post-interrupt stuck detection sees chunksReceived=0 and falsely
+        // restarts the agent even though it's busy executing file operations.
+        this.recordStreamingActivity();
       }
     } catch (error) {
       logger.error('Failed to handle agent message', error as Error);
@@ -4519,18 +4530,11 @@ export class ACPProvider extends BaseAgentProvider {
 
         await this.streamingHandler.handleSessionUpdate(params);
 
-        // CRITICAL FIX: Update lastActivityTime for stall detection
-        // The streamingCallbacks map has its own lastActivityTime that must be updated
-        // whenever we receive streaming activity, otherwise checkForStalledStreams()
-        // cannot properly detect truly stalled streams
-        const callbackSessionId = this.frontendSessionId || this.sessionId;
-        if (callbackSessionId) {
-          const callbacks = this.streamingCallbacks.get(callbackSessionId);
-          if (callbacks) {
-            callbacks.lastActivityTime = Date.now();
-            callbacks.chunksReceived = (callbacks.chunksReceived || 0) + 1;
-          }
-        }
+        // Update activity tracking for stall detection and post-interrupt stuck detection
+        // Use recordStreamChunk() here because session/update notifications indicate actual
+        // stream content — the normal-timeout heuristic relies on chunksReceived to decide
+        // if the stream completed via session/update.
+        this.recordStreamChunk();
       } catch (error: any) {
         logger.error('Error in streaming handler', {
           error: error.message,
@@ -4551,6 +4555,49 @@ export class ACPProvider extends BaseAgentProvider {
       sessionId: params?.sessionId,
       updateType: sessionUpdate?.sessionUpdate,
     });
+  }
+
+  /**
+   * Record broad streaming activity for post-interrupt stuck detection.
+   * Called whenever any meaningful agent activity is observed:
+   * - ACP server requests (fs/read_text_file, fs/write_text_file, etc.)
+   * - Permission requests (auto-approved or user-responded)
+   *
+   * Sets hasReceivedActivity=true so post-interrupt stuck detection recognizes
+   * agents doing tool/file work as active, not stuck.
+   * Does NOT increment chunksReceived — that field is reserved for session/update
+   * notifications so the normal-timeout heuristic can distinguish "stream completed
+   * via session/update" from "agent did file ops but stream never started".
+   */
+  private recordStreamingActivity(): void {
+    const callbackSessionId = this.frontendSessionId || this.sessionId;
+    if (callbackSessionId) {
+      const callbacks = this.streamingCallbacks.get(callbackSessionId);
+      if (callbacks) {
+        callbacks.lastActivityTime = Date.now();
+        callbacks.hasReceivedActivity = true;
+      }
+    }
+  }
+
+  /**
+   * Record a session/update chunk for both activity tracking and the normal-timeout
+   * completion heuristic. Only called from the session/update notification path.
+   *
+   * Increments chunksReceived (used by the normal prompt-response timeout to decide
+   * "stream probably completed via session/update — silently resolve") AND sets
+   * hasReceivedActivity (used by post-interrupt stuck detection).
+   */
+  private recordStreamChunk(): void {
+    const callbackSessionId = this.frontendSessionId || this.sessionId;
+    if (callbackSessionId) {
+      const callbacks = this.streamingCallbacks.get(callbackSessionId);
+      if (callbacks) {
+        callbacks.lastActivityTime = Date.now();
+        callbacks.chunksReceived = (callbacks.chunksReceived || 0) + 1;
+        callbacks.hasReceivedActivity = true;
+      }
+    }
   }
 
   private async initializeProtocol(): Promise<void> {
@@ -7334,6 +7381,7 @@ export class ACPProvider extends BaseAgentProvider {
         lastActivityTime: Date.now(),
         streamStartTime: Date.now(),
         chunksReceived: 0,
+        hasReceivedActivity: false,
         processedChunkIds: new Set(),
         // Track which generation this stream belongs to - used to reject stale cancelled responses
         streamGeneration: this.streamGeneration,
@@ -7715,12 +7763,15 @@ export class ACPProvider extends BaseAgentProvider {
               }
 
               const callbacks = this.streamingCallbacks.get(callbackSessionId);
-              // BUGFIX: Check chunksReceived instead of lastActivityTime.
-              // lastActivityTime is initialized to Date.now() at stream setup (line ~6309),
-              // which is always AFTER lastInterruptTime, making this check always true
-              // even when no actual streaming content has been received.
-              // chunksReceived is only incremented when real content arrives.
-              const hasReceivedActivity = (callbacks?.chunksReceived ?? 0) > 0;
+              // Check hasReceivedActivity as a broad activity signal.
+              // hasReceivedActivity is set by recordStreamingActivity() for ANY meaningful
+              // agent activity: session/update notifications (text, tool_call, tool_call_update),
+              // ACP server requests (fs/read_text_file, fs/write_text_file), and permission
+              // requests. This prevents false "stuck" restarts when the agent is actively
+              // doing tool/file work without producing text output.
+              // NOTE: This is separate from chunksReceived which only tracks session/update
+              // notifications and is used by the normal prompt-response timeout heuristic.
+              const hasReceivedActivity = callbacks?.hasReceivedActivity ?? false;
 
               if (!hasReceivedActivity) {
                 logger.warn(

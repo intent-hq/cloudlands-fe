@@ -51,6 +51,7 @@ describe('pendingBackendDeliveries safety timeout', () => {
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
     handler.streamWindowIds = new Map();
+    handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();
     handler.lastPongTimes = new Map();
     handler.lastPingSentTimes = new Map();
