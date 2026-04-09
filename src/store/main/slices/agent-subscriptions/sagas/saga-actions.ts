@@ -31,21 +31,7 @@ export const requestDelegationGroupDelivery = createAction<
   [wsId: string, groupId: string]
 >("agentSubscriptions/saga/requestDelegationGroupDelivery");
 
-// ---------------------------------------------------------------------------
-// Persistence triggers
-// ---------------------------------------------------------------------------
-
-/** Request a debounced persist of subscription state to disk. */
-export const requestPersist = createAction<[wsId: string]>(
-  "agentSubscriptions/saga/requestPersist"
-);
-
-/** Request restoration of subscriptions from disk for a workspace. */
-export const requestRestore = createAction<[wsId: string]>(
-  "agentSubscriptions/saga/requestRestore"
-);
-
-/** Request async validation of restored subscriptions against agent persistence. */
+/** Request async validation of subscriptions against agent persistence. */
 export const requestValidateSubscriptions = createAction<[wsId: string]>(
   "agentSubscriptions/saga/requestValidateSubscriptions"
 );

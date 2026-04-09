@@ -69,8 +69,6 @@ import {
   requestDeliverEvents,
   requestDeliverQueuedEvents,
   requestDelegationGroupDelivery,
-  requestPersist,
-  requestRestore,
   requestEvictStaleAgents,
   requestValidateSubscriptions,
 } from "./saga-actions";
@@ -86,7 +84,6 @@ import {
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
-import { handlePersist, handleRestore, getSubscriptionsFilePath, writeSubscriptions, readSubscriptions } from "./persistence-saga";
 import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker, processingOneShots } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
@@ -608,13 +605,22 @@ describe("handleDelegationGroupDelivery", () => {
       .run();
   });
 
-  it("cleans up after delivery even when delivery fails", () => {
+  it("re-enqueues events when delivery fails so they are not lost", () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
+
+    // Use a tracker with identifiable events so we can verify re-enqueue
+    const trackerWithEvents = {
+      ...tracker,
+      events: [
+        { id: "evt-1", type: "agent:completed", data: {}, timestamp: new Date().toISOString(), workspaceId: WS } as unknown as Record<string, unknown>,
+        { id: "evt-2", type: "agent:idle", data: {}, timestamp: new Date().toISOString(), workspaceId: WS } as unknown as Record<string, unknown>,
+      ],
+    };
 
     return expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return tracker;
+          if (effect.selector === selectDelegationGroup.select) return trackerWithEvents;
           if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
@@ -633,10 +639,11 @@ describe("handleDelegationGroupDelivery", () => {
       .put(markDelegationDelivered(WS, "group-1"))
       .call.fn(handleDeliverEvents)
       .put.actionType(recordDeliveryFailure.type)
+      // Events should be re-enqueued to the parent agent's queue
+      .put.actionType(enqueueEvent.type)
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
       .put(bumpVersion(WS))
-      .put(requestPersist(WS))
       .run({ timeout: 10000 });
   });
 
@@ -689,7 +696,6 @@ describe("handleDelegationGroupDelivery", () => {
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
       .put(bumpVersion(WS))
-      .put(requestPersist(WS))
       .not.call.fn(handleDeliverEvents)
       .run({ timeout: 10000 });
 
@@ -738,7 +744,6 @@ describe("handleEvictStaleAgents", () => {
       .put(clearAgentQueue(WS, "agent-old"))
       .not.put(evictDeletedAgent(WS, "agent-new"))
       .put(bumpVersion(WS))
-      .put(requestPersist(WS))
       .run();
   });
 });
@@ -783,7 +788,6 @@ describe("handleValidateSubscriptions", () => {
       .put(clearAgentQueue(WS, "dead-agent"))
       .put.actionType(markAgentDeleted.type)
       .put(bumpVersion(WS))
-      .put(requestPersist(WS))
       .run();
   });
 

@@ -19,7 +19,6 @@ import {
 import {
   requestEvictStaleAgents,
   requestValidateSubscriptions,
-  requestPersist,
 } from "./saga-actions";
 
 // ---------------------------------------------------------------------------
@@ -57,7 +56,6 @@ export function* handleEvictStaleAgents(
 
   if (evicted > 0) {
     yield* put(bumpVersion(wsId));
-    yield* put(requestPersist(wsId));
   }
 }
 
@@ -112,7 +110,6 @@ export function* handleValidateSubscriptions(
 
   if (removed > 0) {
     yield* put(bumpVersion(wsId));
-    yield* put(requestPersist(wsId));
   }
 }
 

@@ -18,7 +18,6 @@ import { Logger } from '../../../shared/logger';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { workspaceFileChanges } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { agentSessionUpdated } from '../../../store/main/slices/agent-events/agent-events-slice';
-import { requestRestore } from '../../../store/main/slices/agent-subscriptions/sagas/saga-actions';
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';
@@ -1194,11 +1193,6 @@ export function setupWorkspaceIPC(): void {
           // Use void to explicitly indicate we're not awaiting this
           void monitoringAndGitPromise;
           void ensureSpecPromise;
-
-          // Restore persisted agent subscriptions from disk.
-          // This triggers handleRestore in persistence-saga which also
-          // validates stale subscriptions and emits agent:subscriptions-restored.
-          mainDispatch(requestRestore(id));
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,

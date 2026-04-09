@@ -18,6 +18,7 @@ import {
   removeDelegationGroup,
   removeSubscription,
   bumpVersion,
+  enqueueEvent,
 } from "../agent-subscriptions-slice";
 import {
   selectDelegationGroup,
@@ -27,7 +28,7 @@ import {
 import {
   requestDelegationGroupDelivery,
   requestDeliverEvents,
-  requestPersist,
+  requestDeliverQueuedEvents,
 } from "./saga-actions";
 import { handleDeliverEvents } from "./delivery-saga";
 
@@ -71,7 +72,7 @@ export function* handleDelegationGroupDelivery(
   );
   if (!isComplete) return;
 
-  logger.debug(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
+  logger.info(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
 
   // Mark as delivered to prevent re-entry
   yield* put(markDelegationDelivered(wsId, groupId));
@@ -135,7 +136,7 @@ function* deliverWithRetry(
   // Call delivery directly so we block until it completes (or fails).
   // This ensures cleanup only happens after the delivery attempt finishes.
   try {
-    logger.debug(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=deliver`);
+    logger.info(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=deliver`);
     yield* call(
       handleDeliverEvents,
       requestDeliverEvents(wsId, agentId, events),
@@ -144,15 +145,40 @@ function* deliverWithRetry(
     logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver error=${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // SAFETY NET: Re-enqueue events to the parent agent's queue so they survive
+  // cleanup. If handleDeliverEvents succeeded, the delivery dedup cache
+  // (filterAlreadyDelivered) will skip these on the next attempt. If it failed
+  // (all retries exhausted, timeout, transient error), the events will be
+  // retried via watchAgentIdleForDelivery or periodicQueueSweep.
+  //
+  // Without this, a failed delegation group delivery permanently loses the
+  // events — the subscription and group are removed below, and there is no
+  // other recovery path. This was the root cause of coordinators not being
+  // woken when their delegated agents completed while the workspace was in
+  // the background.
+  logger.info(`[subscriptions] re-enqueue-safety subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=re-enqueue`);
+  for (const event of events) {
+    yield* put(enqueueEvent(wsId, agentId, {
+      event,
+      priority: "high",
+      queuedAt: new Date().toISOString(),
+      oneShot: false,
+    }));
+  }
+
   // Clean up delegation group and subscription regardless of delivery outcome
   // to prevent permanent stuck state
-  logger.debug(`[subscriptions] cleanup subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=cleanup`);
+  logger.info(`[subscriptions] cleanup subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=cleanup`);
   yield* put(removeDelegationGroup(wsId, groupId));
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
   }
   yield* put(bumpVersion(wsId));
-  yield* put(requestPersist(wsId));
+
+  // Trigger delivery of the re-enqueued events. If the agent is idle,
+  // watchAgentIdleForDelivery won't fire (it reacts to setAgentStatus
+  // transitions, not current state), so we dispatch manually.
+  yield* put(requestDeliverQueuedEvents(wsId, agentId));
 }
 
 function* pollAndDeliver(
@@ -183,15 +209,28 @@ function* pollAndDeliver(
     }
   }
 
-  // Budget exhausted — log warning and clean up to prevent lingering UI
+  // Budget exhausted — re-enqueue events then clean up
   const totalWaitSeconds = (MAX_BUSY_POLL_ATTEMPTS * BUSY_POLL_INTERVAL_MS) / 1000;
   logger.warn(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver status=timeout totalWaitSeconds=${totalWaitSeconds}`);
+
+  // Re-enqueue events so they are not permanently lost
+  for (const event of events) {
+    yield* put(enqueueEvent(wsId, agentId, {
+      event,
+      priority: "high",
+      queuedAt: new Date().toISOString(),
+      oneShot: false,
+    }));
+  }
+
   yield* put(removeDelegationGroup(wsId, groupId));
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
   }
   yield* put(bumpVersion(wsId));
-  yield* put(requestPersist(wsId));
+
+  // Trigger delivery attempt for re-enqueued events
+  yield* put(requestDeliverQueuedEvents(wsId, agentId));
 }
 
 

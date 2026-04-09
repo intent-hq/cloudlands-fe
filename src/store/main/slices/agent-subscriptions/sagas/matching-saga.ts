@@ -257,7 +257,12 @@ export function* handleMatchEvent(
     wsId,
   );
 
-  if (subscriptions.length === 0) return;
+  if (subscriptions.length === 0) {
+    if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
+      logger.info(`[subscriptions] no-subscriptions eventType=${event.type} actor=${event.actor?.id?.substring(0, 20)} wsId=${wsId}`);
+    }
+    return;
+  }
 
   for (const sub of subscriptions) {
     // Skip subscriptions belonging to deleted agents
@@ -298,7 +303,7 @@ export function* handleMatchEvent(
 
     // --- Matched! Route the event. ---
     const eventId = (event as any).id as string | undefined;
-    logger.debug(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
+    logger.info(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
     // 1. Delegation group routing
@@ -308,7 +313,7 @@ export function* handleMatchEvent(
 
       // Append every matched event to the group tracker so it is
       // available when handleDelegationGroupDelivery delivers to the parent.
-      logger.debug(`[subscriptions] enqueue-delegation subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} groupId=${groupId} step=enqueue`);
+      logger.info(`[subscriptions] enqueue-delegation subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} groupId=${groupId} step=enqueue`);
       yield* put(appendDelegationGroupEvent(wsId, groupId, event));
 
       if (actorId) {

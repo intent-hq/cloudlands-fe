@@ -14,8 +14,11 @@ function isDelayEffect(effect: { fn?: { name?: string }; args?: unknown[] }): bo
 
 import {
   addSubscription,
+  appendDelegationGroupEvent,
   clearAgentQueue,
   enqueueEvent,
+  markDelegationAgentCompleted,
+  recordDeliveryFailure,
   recordDeliverySuccess,
   bumpVersion,
   markDelegationDelivered,
@@ -653,6 +656,192 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
   });
 });
 
+// ---------------------------------------------------------------------------
+// E2E: No-window delegation group wakeup regression test
+// Reproduces the exact bug where delegation group delivery fails because no
+// window is viewing the workspace. Before the fix, events were permanently
+// lost because deliverWithRetry cleaned up the subscription/group without
+// any re-enqueue path. The fix adds a safety-net re-enqueue so the events
+// survive and are delivered once the window becomes available.
+// ---------------------------------------------------------------------------
+
+describe("E2E: no-window delegation group wakeup (regression)", () => {
+  const COORDINATOR = "agent-coordinator";
+  const IMPL_A = "agent-impl-a";
+  const IMPL_B = "agent-impl-b";
+
+  afterEach(() => {
+    clearDeliveryDedupCache();
+  });
+
+  it("re-enqueues delegation events when delivery fails (no window), then delivers on retry", async () => {
+    // --- Setup: delegation group with two implementors, both completed ---
+    const delegTracker: DelegationGroupTrackerRecord = {
+      groupId: "deleg-nowin",
+      parentAgentId: COORDINATOR,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: [IMPL_A, IMPL_B],
+      completedAgentIds: [IMPL_A, IMPL_B],
+      deletedAgentIds: [],
+      events: [
+        { id: "ev-a", type: "agent:idle", actor: { type: "agent", id: IMPL_A }, data: {}, timestamp: new Date().toISOString() } as unknown as Record<string, unknown>,
+        { id: "ev-b", type: "agent:idle", actor: { type: "agent", id: IMPL_B }, data: {}, timestamp: new Date().toISOString() } as unknown as Record<string, unknown>,
+      ],
+      subscriptionId: "sub-deleg-nowin",
+      delivered: false,
+    };
+
+    // Step 1: Delegation group completes but handleDeliverEvents fails
+    // (simulates no window viewing the workspace — all retries exhausted)
+    let deliveryAttempted = false;
+
+    await expectSaga(
+      handleDelegationGroupDelivery,
+      requestDelegationGroupDelivery(WS, "deleg-nowin"),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectDelegationGroup.select) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectAgentStatus.select) return "idle";
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Delegation complete";
+          // Simulate delivery failure — no window viewing workspace
+          if (effect.fn === sendBackendMessage) {
+            deliveryAttempted = true;
+            return { success: false, error: "No active window for workspace" };
+          }
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      // Delegation marked delivered (prevents re-entry)
+      .put(markDelegationDelivered(WS, "deleg-nowin"))
+      // handleDeliverEvents was attempted
+      .call.fn(handleDeliverEvents)
+      // CRITICAL: events are re-enqueued with high priority (safety net)
+      .put.actionType(enqueueEvent.type)
+      // Group and subscription cleaned up
+      .put(removeDelegationGroup(WS, "deleg-nowin"))
+      .put(removeSubscription(WS, "sub-deleg-nowin"))
+      .put(bumpVersion(WS))
+      // Trigger delivery of re-enqueued events
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+
+    expect(deliveryAttempted).toBe(true);
+
+    // Step 2: Queued events survive and are delivered on retry
+    // (simulates window becoming available / queued delivery triggered)
+    const requeuedEvents = delegTracker.events.map((e) => ({
+      ...e,
+      metadata: {
+        delegationGroupId: "deleg-nowin",
+        completionStatus: "completed",
+        deletedAgentCount: 0,
+      },
+    }));
+
+    const queue: QueuedEventRecord[] = requeuedEvents.map((e) => ({
+      event: e as unknown as WorkspaceEvent,
+      priority: "high" as const,
+      queuedAt: new Date().toISOString(),
+      oneShot: false,
+    }));
+
+    // handleDeliverQueuedEvents dequeues and dispatches requestDeliverEvents
+    await expectSaga(handleDeliverQueuedEvents, requestDeliverQueuedEvents(WS, COORDINATOR))
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentQueue.select, WS, COORDINATOR), queue],
+      ])
+      .put(clearAgentQueue(WS, COORDINATOR))
+      .put.actionType(requestDeliverEvents.type)
+      .run();
+
+    // Step 3: The retry delivery succeeds
+    let retryDeliverySucceeded = false;
+
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, requeuedEvents as unknown as WorkspaceEvent[]),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Delegation complete";
+          if (effect.fn === sendBackendMessage) {
+            retryDeliverySucceeded = true;
+            return { success: true };
+          }
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    expect(retryDeliverySucceeded).toBe(true);
+  });
+
+  it("dedup cache prevents double delivery when re-enqueued events are retried after success", async () => {
+    // Simulate: first delivery succeeds AND events are re-enqueued (safety net).
+    // The second delivery attempt should be skipped by the dedup cache.
+    const events = [
+      makeEvent("ev-dedup-1", "agent:idle"),
+      makeEvent("ev-dedup-2", "agent:idle"),
+    ];
+
+    // Step 1: First delivery succeeds (populates dedup cache)
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, events),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Event notification";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    // Step 2: Second delivery with same event IDs should be skipped entirely
+    // (filterAlreadyDelivered removes all events, saga returns early)
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, events),
+    )
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      // Should NOT attempt delivery again
+      .not.put.actionType(recordDeliverySuccess.type)
+      .not.put.actionType(recordDeliveryFailure.type)
+      .run();
+  });
+});
+
 describe("periodicQueueSweep — stale 'responding' recovery", () => {
   const WS = "ws-sweep";
   const COORDINATOR = "agent-coordinator";
@@ -759,5 +948,291 @@ describe("periodicQueueSweep — stale 'responding' recovery", () => {
       })
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .run({ timeout: 500 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E2E: No-window subscription matching → delivery retry → wakeup
+// Covers the full path from handleMatchEvent through delivery failure
+// (no window viewing workspace) to eventual successful retry with
+// agent:woken-by-subscription evidence and no duplicate deliveries.
+// ---------------------------------------------------------------------------
+
+describe("E2E: no-window subscription matching with wakeup verification", () => {
+  const COORDINATOR = "agent-coordinator";
+  const IMPLEMENTOR = "agent-implementor";
+
+  afterEach(() => {
+    clearDeliveryDedupCache();
+  });
+
+  /**
+   * Non-delegation (oneShot) path: handleMatchEvent enqueues when no window
+   * is available, delivery fails with retries exhausted, events survive in
+   * the queue, and a subsequent delivery succeeds with woken-by-subscription.
+   */
+  it("matching enqueues event, delivery fails (no window), retry succeeds with woken-by-subscription", async () => {
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-nowin",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [IMPLEMENTOR],
+        oneShot: true,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const event = makeEvent("ev-nowin-1", "agent:idle");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "agent", id: IMPLEMENTOR };
+
+    // Step 1: handleMatchEvent matches and enqueues the event
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectIsOneShotFired.select, WS, "sub-nowin"), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .put(markOneShotFired(WS, "sub-nowin"))
+      .put(removeSubscription(WS, "sub-nowin"))
+      .put(bumpVersion(WS))
+      .run();
+
+    // Step 2: Queued event delivery proceeds but backend delivery fails
+    // (no window viewing the workspace — all 3 retries exhausted)
+    const queue: QueuedEventRecord[] = [
+      {
+        event,
+        priority: "normal",
+        queuedAt: new Date().toISOString(),
+        subscriptionId: "sub-nowin",
+        oneShot: true,
+      },
+    ];
+
+    await expectSaga(handleDeliverQueuedEvents, requestDeliverQueuedEvents(WS, COORDINATOR))
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentQueue.select, WS, COORDINATOR), queue],
+      ])
+      .put(clearAgentQueue(WS, COORDINATOR))
+      .put.actionType(requestDeliverEvents.type)
+      .run();
+
+    // Step 3: handleDeliverEvents fails all retries (simulating no window)
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, [event]),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Agent completed";
+          if (effect.fn === sendBackendMessage) {
+            return { success: false, error: "No active window for workspace" };
+          }
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      // All retries exhausted → failure recorded
+      .put.actionType(recordDeliveryFailure.type)
+      .not.put.actionType(recordDeliverySuccess.type)
+      .run({ timeout: 5000 });
+
+    // Step 4: The event must survive. Simulate window becoming available
+    // and a sweep or idle trigger re-delivering. This time delivery succeeds.
+    let wokeBySubscription = false;
+
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, [event]),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Agent completed";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) {
+            // Capture the woken-by-subscription event
+            if (effect.args?.[0] === "agent:woken-by-subscription") {
+              wokeBySubscription = true;
+            }
+            return undefined;
+          }
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    expect(wokeBySubscription).toBe(true);
+
+    // Step 5: A duplicate delivery with the same event IDs is skipped
+    // (dedup cache populated by successful delivery in step 4)
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, [event]),
+    )
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      .not.put.actionType(recordDeliverySuccess.type)
+      .not.put.actionType(recordDeliveryFailure.type)
+      .run();
+  });
+
+  /**
+   * Delegation path: handleMatchEvent routes to delegation group, delivery
+   * fails (no window), events are re-enqueued by delegation-group-saga's
+   * safety net, and retry succeeds with agent:woken-by-subscription.
+   */
+  it("delegation match → no-window failure → re-enqueue → retry with woken-by-subscription", async () => {
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-deleg-nowin",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:*"],
+        actorIds: [IMPLEMENTOR],
+        delegationGroup: {
+          groupId: "deleg-match-nowin",
+          awaitMode: "all",
+          expectedAgentIds: [IMPLEMENTOR],
+        },
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const event = makeEvent("ev-deleg-match-1", "agent:idle");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "agent", id: IMPLEMENTOR };
+
+    // Step 1: handleMatchEvent matches and routes to delegation group
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      .put(appendDelegationGroupEvent(WS, "deleg-match-nowin", event))
+      .put(markDelegationAgentCompleted(WS, "deleg-match-nowin", IMPLEMENTOR))
+      .run();
+
+    // Step 2: Delegation group completes, delivery fails (no window)
+    const delegTracker: DelegationGroupTrackerRecord = {
+      groupId: "deleg-match-nowin",
+      parentAgentId: COORDINATOR,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: [IMPLEMENTOR],
+      completedAgentIds: [IMPLEMENTOR],
+      deletedAgentIds: [],
+      events: [event as unknown as Record<string, unknown>],
+      subscriptionId: "sub-deleg-nowin",
+      delivered: false,
+    };
+
+    await expectSaga(
+      handleDelegationGroupDelivery,
+      requestDelegationGroupDelivery(WS, "deleg-match-nowin"),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectDelegationGroup.select) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectAgentStatus.select) return "idle";
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Delegation complete";
+          if (effect.fn === sendBackendMessage) {
+            return { success: false, error: "No active window for workspace" };
+          }
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      .put(markDelegationDelivered(WS, "deleg-match-nowin"))
+      .call.fn(handleDeliverEvents)
+      // Safety net re-enqueues events
+      .put.actionType(enqueueEvent.type)
+      // Group and subscription cleaned up
+      .put(removeDelegationGroup(WS, "deleg-match-nowin"))
+      .put(removeSubscription(WS, "sub-deleg-nowin"))
+      .put(bumpVersion(WS))
+      // Delivery of re-enqueued events triggered
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+
+    // Step 3: Re-enqueued events are delivered successfully
+    const requeuedEvent = {
+      ...event,
+      metadata: {
+        delegationGroupId: "deleg-match-nowin",
+        completionStatus: "completed",
+        deletedAgentCount: 0,
+      },
+    } as unknown as WorkspaceEvent;
+
+    let wokeBySubscription = false;
+
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, [requeuedEvent]),
+    )
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Delegation complete";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) {
+            if (effect.args?.[0] === "agent:woken-by-subscription") {
+              wokeBySubscription = true;
+            }
+            return undefined;
+          }
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    expect(wokeBySubscription).toBe(true);
+
+    // Step 4: No duplicate delivery for same event IDs
+    await expectSaga(
+      handleDeliverEvents,
+      requestDeliverEvents(WS, COORDINATOR, [requeuedEvent]),
+    )
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      .not.put.actionType(recordDeliverySuccess.type)
+      .not.put.actionType(recordDeliveryFailure.type)
+      .run();
   });
 });

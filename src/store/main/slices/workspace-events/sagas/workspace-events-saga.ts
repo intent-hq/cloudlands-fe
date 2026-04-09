@@ -42,13 +42,13 @@ function* handleDedupGate(action: ReturnType<typeof emitWorkspaceEvent>) {
 
   if (isDuplicateEvent(event, eventTimestampMs)) {
     if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
-      logger.debug(`DEDUPLICATED ${event.type} from actor=${event.actor?.id?.substring(0, 20)}`);
+      logger.info(`DEDUPLICATED ${event.type} from actor=${event.actor?.id?.substring(0, 20)}`);
     }
     return; // duplicate — skip all downstream processing
   }
 
   if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
-    logger.debug(`ACCEPTED ${event.type} from actor=${event.actor?.id?.substring(0, 20)} wsId=${event.workspaceId}`);
+    logger.info(`ACCEPTED ${event.type} from actor=${event.actor?.id?.substring(0, 20)} wsId=${event.workspaceId}`);
   }
 
   // Not a duplicate — dispatch accepted action for downstream sagas + reducer
