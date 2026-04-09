@@ -158,6 +158,19 @@ export const selectAllWorkspaceIds = createSelector(
 );
 
 // ---------------------------------------------------------------------------
+// Raw (uncached) subscription read — used by matching saga to avoid stale
+// reads caused by createCachedSelector proxy interactions.
+// ---------------------------------------------------------------------------
+
+export function selectAllSubscriptionsRaw(state: MainStoreState, wsId: string): AgentSubscriptionRecord[] {
+  const slice = (state as any).agentSubscriptions;
+  if (!slice) return [];
+  const ws = slice.byWorkspaceId[wsId];
+  if (!ws) return [];
+  return Object.values(ws.subscriptions);
+}
+
+// ---------------------------------------------------------------------------
 // Delivery stats
 // ---------------------------------------------------------------------------
 

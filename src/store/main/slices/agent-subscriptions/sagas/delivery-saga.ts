@@ -10,14 +10,20 @@
 
 import { call, fork, join, put, select, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
+import type { AgentSubscriptionRecord, AgentStatus } from "../types";
 import { Logger } from "../../../../../shared/logger";
 import {
+  appendDelegationGroupEvent,
   clearAgentQueue,
   enqueueEvent,
+  markDelegationAgentCompleted,
+  markDelegationAgentDeleted,
+  markOneShotFired,
   recordDeliveryFailure,
   recordDeliverySuccess,
   recordDeliveryTimeout,
   recordDroppedEvents,
+  removeSubscription,
   setAgentStatus,
   bumpVersion,
   type QueuedEventRecord,
@@ -424,7 +430,31 @@ export function* watchAgentIdleForDelivery() {
 // Periodic queue sweep — self-healing fallback
 // ---------------------------------------------------------------------------
 
-const SWEEP_INTERVAL_MS = 30_000;
+const SWEEP_INTERVAL_MS = 15_000;
+
+/**
+ * Tracks which subscription+actor combos have already had catch-up events
+ * enqueued by the subscription-aware sweep.  The value is the matched event
+ * type string (e.g. "agent:idle").  If the watched agent's status hasn't
+ * changed since the last sweep, the same event type will be seen and the
+ * catch-up is suppressed.  When the status changes (different event type),
+ * the entry is updated and a new catch-up is allowed.
+ *
+ * Key format: `${subscriptionId}:${actorId}`
+ *
+ * Exported for testing only.
+ */
+export const sweepCatchUpSeen = new Map<string, string>();
+
+/** Remove all entries from sweepCatchUpSeen whose key starts with the given subscription ID. */
+function purgeSweepCatchUpForSubscription(subscriptionId: string): void {
+  const prefix = `${subscriptionId}:`;
+  for (const key of sweepCatchUpSeen.keys()) {
+    if (key.startsWith(prefix)) {
+      sweepCatchUpSeen.delete(key);
+    }
+  }
+}
 
 /**
  * How long an agent can sit in "responding" status with queued events before
@@ -491,6 +521,140 @@ export function* periodicQueueSweep() {
             }
           }
         }
+      }
+
+      // -----------------------------------------------------------------
+      // Subscription-aware sweep: detect missed matches where an event
+      // was never enqueued (matching saga failure).  This is a self-
+      // healing fallback — if everything works correctly, this never
+      // fires.
+      // -----------------------------------------------------------------
+      const STATUS_TO_EVENT_TYPE: Partial<Record<AgentStatus, string>> = {
+        idle: "agent:idle",
+        failed: "agent:failed",
+        completed: "agent:completed",
+      };
+
+      const subscriptions = Object.values(wsState.subscriptions) as AgentSubscriptionRecord[];
+      for (const sub of subscriptions) {
+        const filter = sub.filter;
+
+        // Only check subscriptions watching specific agents
+        if (!filter.actorIds?.length) continue;
+        if (!filter.eventTypes?.length) continue;
+
+        // Only enqueue if the subscriber has an empty queue and is idle
+        const subscriberQueue = wsState.agentQueues[sub.agentId];
+        if (subscriberQueue && subscriberQueue.length > 0) continue;
+        const subscriberStatus = wsState.agentStatuses[sub.agentId] ?? "idle";
+        if (subscriberStatus !== "idle") continue;
+
+        for (const actorId of filter.actorIds) {
+          const isDeleted = actorId in wsState.deletedAgents;
+          const status = wsState.agentStatuses[actorId];
+
+          const matchingEventType = isDeleted
+            ? "agent:deleted"
+            : status
+              ? STATUS_TO_EVENT_TYPE[status]
+              : undefined;
+          if (!matchingEventType) continue;
+
+          // Check if this event type matches the subscription's filter
+          // (supports wildcards like "agent:*")
+          const typeMatches = filter.eventTypes.some((filterType) => {
+            if (filterType.endsWith(":*")) {
+              const prefix = filterType.slice(0, -1);
+              return matchingEventType.startsWith(prefix);
+            }
+            return filterType === matchingEventType;
+          });
+          if (!typeMatches) continue;
+
+          // --- Duplicate-suppression guard ---
+          // Skip if the watched agent's status hasn't changed since the
+          // last sweep (same event type recorded for this sub+actor pair).
+          const dedupeKey = `${sub.id}:${actorId}`;
+          const previousEventType = sweepCatchUpSeen.get(dedupeKey);
+          if (previousEventType === matchingEventType) {
+            logger.debug(
+              `[subscriptions] sweep-catchup SUPPRESSED (duplicate) subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType}`,
+            );
+            continue;
+          }
+
+          logger.warn(
+            `[subscriptions] sweep-catchup subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType} step=sweep reason=missed-match`,
+          );
+
+          // Synthesize a catch-up event (same shape as matching-saga)
+          const catchUpEvent = {
+            id: `catchup_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            workspaceId: wsId,
+            timestamp: new Date().toISOString(),
+            type: matchingEventType,
+            actor: { type: "agent", id: actorId },
+            data: {
+              agentId: actorId,
+              agentName: "",
+              reason: "stream_complete",
+              catchUp: true,
+            },
+          } as unknown as WorkspaceEvent;
+
+          // Record the matched event type so subsequent sweeps skip it
+          // until the agent's status actually changes.
+          sweepCatchUpSeen.set(dedupeKey, matchingEventType);
+
+          if (filter.delegationGroup) {
+            // Route through delegation group delivery path
+            const groupId = filter.delegationGroup.groupId;
+            yield* put(appendDelegationGroupEvent(wsId, groupId, catchUpEvent));
+            if (matchingEventType === "agent:deleted") {
+              yield* put(markDelegationAgentDeleted(wsId, groupId, actorId));
+            } else {
+              yield* put(markDelegationAgentCompleted(wsId, groupId, actorId));
+            }
+            // delegation-group-saga watches these actions and triggers delivery
+          } else {
+            yield* put(enqueueEvent(wsId, sub.agentId, {
+              event: catchUpEvent,
+              queuedAt: new Date().toISOString(),
+              priority: "high",
+              oneShot: false,
+            }));
+            yield* put(requestDeliverQueuedEvents(wsId, sub.agentId));
+
+            // Clean up oneShot subscriptions after enqueuing (same as matching-saga)
+            if (filter.oneShot) {
+              logger.debug(
+                `[subscriptions] sweep-catchup cleanup subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} step=cleanup reason=oneShot`,
+              );
+              yield* put(markOneShotFired(wsId, sub.id));
+              yield* put(removeSubscription(wsId, sub.id));
+              yield* put(bumpVersion(wsId));
+              purgeSweepCatchUpForSubscription(sub.id);
+              break; // subscription removed, stop iterating actorIds
+            }
+          }
+        }
+      }
+    }
+
+    // Prune sweepCatchUpSeen entries whose subscriptionId no longer exists
+    // in any workspace's subscriptions.  This prevents indefinite accumulation
+    // for subscriptions that have been removed.
+    const allActiveSubIds = new Set<string>();
+    for (const wsId of workspaceIds) {
+      const wsState2 = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+      for (const subId of Object.keys(wsState2.subscriptions)) {
+        allActiveSubIds.add(subId);
+      }
+    }
+    for (const key of sweepCatchUpSeen.keys()) {
+      const subId = key.split(":")[0];
+      if (!allActiveSubIds.has(subId)) {
+        sweepCatchUpSeen.delete(key);
       }
     }
   }

@@ -24,7 +24,7 @@ import {
 import {
   selectAgentQueueLength,
   selectAgentStatus,
-  selectAllSubscriptions,
+  selectAllSubscriptionsRaw,
   selectDelegationGroup,
   selectIsAgentDeleted,
   selectIsOneShotFired,
@@ -242,6 +242,14 @@ const INTERNAL_OBSERVABILITY_EVENTS = new Set([
   "agent:delivery-confirmed",
 ]);
 
+/** Agent lifecycle event types that warrant WARN-level diagnostic logging. */
+const AGENT_LIFECYCLE_EVENTS = new Set([
+  "agent:idle",
+  "agent:failed",
+  "agent:completed",
+  "agent:deleted",
+]);
+
 export function* handleMatchEvent(
   action: ReturnType<typeof workspaceEventAccepted>,
 ) {
@@ -252,14 +260,26 @@ export function* handleMatchEvent(
   // Guard against feedback loops from internally-emitted observability events
   if (INTERNAL_OBSERVABILITY_EVENTS.has(event.type)) return;
 
+  const isAgentLifecycle = AGENT_LIFECYCLE_EVENTS.has(event.type);
+
+  if (isAgentLifecycle) {
+    logger.warn(`[subscriptions] handleMatchEvent entry eventType=${event.type} actor=${event.actor?.id} wsId=${wsId}`);
+  }
+
+  // Track oneShot IDs claimed during this invocation so we can release them
+  // if the code throws before reaching the normal cleanup path.
+  const claimedOneShotIds = new Set<string>();
+
+  try {
+
   const subscriptions: AgentSubscriptionRecord[] = yield* select(
-    selectAllSubscriptions.select,
+    selectAllSubscriptionsRaw,
     wsId,
   );
 
   if (subscriptions.length === 0) {
-    if (event.type === "agent:idle" || event.type === "agent:completed" || event.type === "agent:failed") {
-      logger.info(`[subscriptions] no-subscriptions eventType=${event.type} actor=${event.actor?.id?.substring(0, 20)} wsId=${wsId}`);
+    if (isAgentLifecycle) {
+      logger.warn(`[subscriptions] no-subscriptions eventType=${event.type} actor=${event.actor?.id?.substring(0, 20)} wsId=${wsId}`);
     }
     return;
   }
@@ -271,7 +291,12 @@ export function* handleMatchEvent(
       wsId,
       sub.agentId,
     );
-    if (isDeleted) continue;
+    if (isDeleted) {
+      if (isAgentLifecycle) {
+        logger.warn(`[subscriptions] skip-deleted subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
+      }
+      continue;
+    }
 
     // Check filter match (synchronous — no yield points, so no interleaving)
     if (!matchesFilter(event, sub.filter)) continue;
@@ -284,19 +309,29 @@ export function* handleMatchEvent(
     // Placed AFTER matchesFilter (which is sync) so we only claim the oneShot
     // when the event actually matches, avoiding permanent lockout on non-matches.
     if (sub.filter.oneShot) {
-      if (processingOneShots.has(sub.id)) continue;
+      if (processingOneShots.has(sub.id)) {
+        if (isAgentLifecycle) {
+          logger.warn(`[subscriptions] skip-oneshot-processing subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
+        }
+        continue;
+      }
       // Claim this oneShot synchronously BEFORE the yield* select below.
       // Without this, two concurrent forks (from takeEvery) could both pass
       // the has() check, both observe isFired=false from the selector, and
       // both proceed to deliver the same oneShot event.
       processingOneShots.add(sub.id);
+      claimedOneShotIds.add(sub.id);
       const isFired: boolean = yield* select(
         selectIsOneShotFired.select,
         wsId,
         sub.id,
       );
       if (isFired) {
+        if (isAgentLifecycle) {
+          logger.warn(`[subscriptions] skip-oneshot-fired subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
+        }
         processingOneShots.delete(sub.id);
+        claimedOneShotIds.delete(sub.id);
         continue;
       }
     }
@@ -411,6 +446,16 @@ export function* handleMatchEvent(
       yield* put(removeSubscription(wsId, sub.id));
       yield* put(bumpVersion(wsId));
       processingOneShots.delete(sub.id);
+      claimedOneShotIds.delete(sub.id);
+    }
+  }
+  } catch (error) {
+    logger.error(`[subscriptions] handleMatchEvent crashed eventType=${event.type} workspaceId=${wsId}`, { error });
+  } finally {
+    // Release any oneShot claims that weren't cleaned up before the throw
+    // or on saga cancellation.
+    for (const id of claimedOneShotIds) {
+      processingOneShots.delete(id);
     }
   }
 }

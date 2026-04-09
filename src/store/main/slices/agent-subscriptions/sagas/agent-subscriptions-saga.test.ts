@@ -29,11 +29,8 @@ async function flushMicrotasks() {
 
 // typed-redux-saga not used directly in tests but needed for type context
 import {
-  addSubscription,
-  appendDelegationGroupEvent,
   clearAgentQueue,
   enqueueEvent,
-  markDelegationAgentCompleted,
   recordDeliveryFailure,
   recordDeliverySuccess,
   recordDeliveryTimeout,
@@ -43,11 +40,9 @@ import {
   markOneShotFired,
   removeDelegationGroup,
   removeSubscription,
-  setAgentStatus,
   markAgentDeleted,
   evictDeletedAgent,
   removeAllSubscriptions,
-  setSubscriptionsSnapshot,
   emptyWorkspaceSubscriptionState,
   type QueuedEventRecord,
   type DelegationGroupTrackerRecord,
@@ -57,8 +52,7 @@ import {
   selectAgentQueue,
   selectAgentQueueLength,
   selectAgentStatus,
-  selectAllSubscriptions,
-  selectAllWorkspaceIds,
+  selectAllSubscriptionsRaw,
   selectIsAgentDeleted,
   selectIsOneShotFired,
   selectDelegationGroup,
@@ -75,16 +69,16 @@ import {
 import {
   handleDeliverEvents,
   handleDeliverQueuedEvents,
-  watchAgentIdleForDelivery,
   periodicQueueSweep,
   formatNotification,
   sendBackendMessage,
   clearDeliveryDedupCache,
+  sweepCatchUpSeen,
 } from "./delivery-saga";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
-import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker, processingOneShots } from "./matching-saga";
+import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";
@@ -334,7 +328,7 @@ describe("handleDeliverEvents", () => {
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
-        race(_effect, _next) {
+        race() {
           return { result: undefined, timeout: true };
         },
       })
@@ -857,7 +851,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -874,7 +868,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "responding"],
       ])
@@ -901,7 +895,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
       ])
       // Should NOT enqueue because delivery-confirmed is internal
       .not.put.actionType("agentSubscriptions/enqueueEvent")
@@ -919,7 +913,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
       ])
       .not.put.actionType("agentSubscriptions/enqueueEvent")
       .run();
@@ -936,7 +930,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -962,7 +956,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
       ])
       .not.put.actionType("agentSubscriptions/enqueueEvent")
       .not.put(requestDeliverQueuedEvents(WS, AGENT))
@@ -987,7 +981,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action1)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectIsOneShotFired.select, WS, sub.id), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
@@ -1024,6 +1018,48 @@ describe("handleMatchEvent", () => {
     expect(processingOneShots.has(sub.id)).toBe(false);
   });
 
+  it("processingOneShots is cleaned up when handleMatchEvent throws after claiming a oneShot", () => {
+    const sub = makeSub({
+      filter: { eventTypes: ["file:*"], oneShot: true },
+    });
+
+    const event = makeEvent("e1", "file:changed");
+    (event as any).workspaceId = WS;
+    const action = workspaceEventAccepted(event);
+
+    processingOneShots.clear();
+
+    // Use a dynamic provider to throw when the saga selects agentStatus,
+    // which happens after processingOneShots.add(sub.id).
+    return expectSaga(handleMatchEvent, action)
+      .provide({
+        select(effect, next) {
+          // selectAllSubscriptionsRaw
+          if (effect.args?.length === 2 && effect.args[0] === selectAllSubscriptionsRaw && effect.args[1] === WS) {
+            return [sub];
+          }
+          // selectIsAgentDeleted
+          if (effect.args?.[0] === selectIsAgentDeleted.select && effect.args?.[1] === WS && effect.args?.[2] === AGENT) {
+            return false;
+          }
+          // selectIsOneShotFired
+          if (effect.args?.[0] === selectIsOneShotFired.select && effect.args?.[1] === WS && effect.args?.[2] === sub.id) {
+            return false;
+          }
+          // selectAgentStatus — throw to simulate a crash
+          if (effect.args?.[0] === selectAgentStatus.select) {
+            throw new Error("simulated crash");
+          }
+          return next();
+        },
+      })
+      .run()
+      .then(() => {
+        // The oneShot claim must have been released despite the error
+        expect(processingOneShots.has(sub.id)).toBe(false);
+      });
+  });
+
   // -------------------------------------------------------------------------
   // dataMatchers filtering
   // -------------------------------------------------------------------------
@@ -1042,7 +1078,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1064,7 +1100,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1086,7 +1122,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1108,7 +1144,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1130,7 +1166,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1158,7 +1194,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1186,7 +1222,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1211,7 +1247,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1233,11 +1269,101 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
       .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .run();
+  });
+
+  // -------------------------------------------------------------------------
+  // Regression: stale cached selector after subscription turnover
+  // -------------------------------------------------------------------------
+
+  it("regression: handles subscription turnover without stale cache (selector bypass)", async () => {
+    // This test reproduces the production bug where:
+    // 1. Sub1 matches an event and is removed (oneShot cleanup)
+    // 2. Sub2 is created for a different actor
+    // 3. The next event should match sub2, but a cached selector would return
+    //    stale empty results because it tracked paths for sub1 (now removed).
+    //
+    // With the uncached selectAllSubscriptionsRaw, each call re-reads the
+    // slice state, so sub2 is always visible.
+
+    const COORDINATOR = "agent-coordinator";
+    const IMPLEMENTOR = "agent-implementor";
+    const VERIFIER = "agent-verifier";
+
+    const sub1: AgentSubscriptionRecord = {
+      id: "sub-1",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [IMPLEMENTOR],
+        oneShot: true,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    // --- Step 1: event from IMPLEMENTOR matches sub1 (oneShot) ---
+    const event1 = makeEvent("e1", "agent:idle");
+    (event1 as any).workspaceId = WS;
+    (event1 as any).actor = { type: "agent", id: IMPLEMENTOR };
+    const action1 = workspaceEventAccepted(event1);
+
+    await expectSaga(handleMatchEvent, action1)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub1]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectIsOneShotFired.select, WS, sub1.id), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      // Sub1 matches — event is enqueued
+      .put.actionType("agentSubscriptions/enqueueEvent")
+      // oneShot cleanup fires
+      .put(markOneShotFired(WS, sub1.id))
+      .put(removeSubscription(WS, sub1.id))
+      .put(bumpVersion(WS))
+      .run();
+
+    // --- Step 2: sub1 is gone, sub2 now exists for VERIFIER ---
+    const sub2: AgentSubscriptionRecord = {
+      id: "sub-2",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [VERIFIER],
+        oneShot: true,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const event2 = makeEvent("e2", "agent:idle");
+    (event2 as any).workspaceId = WS;
+    (event2 as any).actor = { type: "agent", id: VERIFIER };
+    const action2 = workspaceEventAccepted(event2);
+
+    // With a cached selector this would return [] (stale cache from sub1's
+    // removal). With selectAllSubscriptionsRaw it correctly returns [sub2].
+    await expectSaga(handleMatchEvent, action2)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub2]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectIsOneShotFired.select, WS, sub2.id), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      // Sub2 must match — this is the critical assertion.
+      // With the old cached selectAllSubscriptions, the provider would need
+      // to return [] to simulate the stale cache, and this .put would fail.
+      .put.actionType("agentSubscriptions/enqueueEvent")
+      .put(markOneShotFired(WS, sub2.id))
+      .put(removeSubscription(WS, sub2.id))
+      .put(bumpVersion(WS))
       .run();
   });
 });
@@ -1271,7 +1397,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1291,7 +1417,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 3],
@@ -1311,7 +1437,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 2],
@@ -1331,7 +1457,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 2],
@@ -1352,7 +1478,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 3],
@@ -1370,7 +1496,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1392,3 +1518,126 @@ describe("handleMatchEvent — batching", () => {
   });
 });
 
+
+
+// ---------------------------------------------------------------------------
+// Subscription-aware sweep fallback (periodicQueueSweep)
+// ---------------------------------------------------------------------------
+
+describe("periodicQueueSweep — subscription-aware sweep", () => {
+  const WATCHED_AGENT = "agent-watched";
+  const SUBSCRIBER = "agent-subscriber";
+
+  const makeSweepSub = (overrides: Partial<AgentSubscriptionRecord> = {}): AgentSubscriptionRecord => ({
+    id: "sub-sweep-1",
+    agentId: SUBSCRIBER,
+    agentName: "Subscriber",
+    workspaceId: WS,
+    filter: {
+      eventTypes: ["agent:idle"],
+      actorIds: [WATCHED_AGENT],
+    },
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  });
+
+  /**
+   * Provider factory matching the pattern from the lifecycle tests.
+   * First delay resolves so one iteration runs; subsequent delays block
+   * forever so the saga parks cleanly until the test timeout fires.
+   */
+  function makeSweepProvider(wsState: WorkspaceSubscriptionState) {
+    let delayCount = 0;
+    return {
+      call(effect: any, next: () => any) {
+        if (isDelayEffect(effect)) {
+          delayCount++;
+          if (delayCount > 1) return new Promise(() => {}); // block forever
+          return undefined; // resolve first delay
+        }
+        return next();
+      },
+      select(effect: any, next: () => any) {
+        // selectAllWorkspaceIds — no args
+        if (effect.args?.length === 0) return [WS];
+        // selectWorkspaceSubscriptionState — single wsId arg
+        if (effect.args?.[0] === WS && effect.args?.length === 1) return wsState;
+        return next();
+      },
+    };
+  }
+
+  afterEach(() => {
+    sweepCatchUpSeen.clear();
+  });
+
+  it("oneShot sweep catch-up enqueues event AND performs cleanup (markOneShotFired + removeSubscription + bumpVersion)", () => {
+    const sub = makeSweepSub({
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        oneShot: true,
+      },
+    });
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [sub.id]: sub },
+      agentStatuses: { [WATCHED_AGENT]: "idle", [SUBSCRIBER]: "idle" },
+    };
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
+      .put(markOneShotFired(WS, sub.id))
+      .put(removeSubscription(WS, sub.id))
+      .put(bumpVersion(WS))
+      .run({ silenceTimeout: true });
+  });
+
+  it("duplicate suppression prevents re-enqueuing the same catch-up on subsequent sweeps", () => {
+    const sub = makeSweepSub();
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [sub.id]: sub },
+      agentStatuses: { [WATCHED_AGENT]: "idle", [SUBSCRIBER]: "idle" },
+    };
+
+    // Pre-populate the dedup guard as if the previous sweep already fired
+    const dedupeKey = `${sub.id}:${WATCHED_AGENT}`;
+    sweepCatchUpSeen.set(dedupeKey, "agent:idle");
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      // Should NOT enqueue because the dedup guard suppresses it
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
+      .run({ silenceTimeout: true });
+  });
+
+  it("skips subscriptions with delegationGroup set", () => {
+    const sub = makeSweepSub({
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        delegationGroup: "group-1",
+      },
+    });
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [sub.id]: sub },
+      agentStatuses: { [WATCHED_AGENT]: "idle", [SUBSCRIBER]: "idle" },
+    };
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      // Delegation group subs should be completely skipped
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
+      .not.put.actionType(markOneShotFired.type)
+      .run({ silenceTimeout: true });
+  });
+});
