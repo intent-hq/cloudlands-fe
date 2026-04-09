@@ -20,7 +20,7 @@
     providerId: string;
     /** Provider display name */
     providerName: string;
-    /** CLI command name (e.g., 'auggie', 'claude-code-acp') */
+    /** CLI command name (e.g., 'auggie', 'claude-agent-acp') */
     cliCommand: string;
     /** Current configured path (empty if auto-detected) */
     configuredPath?: string;

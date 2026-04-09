@@ -61,7 +61,7 @@ describe('claude-code-resolver', () => {
       expect(result).not.toBeNull();
       expect(result!.usesNpx).toBe(true);
       expect(result!.command).toBe('/usr/local/bin/npx');
-      expect(result!.argsPrefix).toContain('@zed-industries/claude-agent-acp');
+      expect(result!.argsPrefix).toContain('@agentclientprotocol/claude-agent-acp');
     });
 
     it('returns null when neither direct binary nor npx is available', async () => {
@@ -76,7 +76,7 @@ describe('claude-code-resolver', () => {
   });
 
   describe('package name verification (regression guard)', () => {
-    it('npx fallback uses new package name @zed-industries/claude-agent-acp', async () => {
+    it('npx fallback uses new package name @agentclientprotocol/claude-agent-acp', async () => {
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         if (name === 'npx') return '/usr/local/bin/npx';
@@ -85,9 +85,10 @@ describe('claude-code-resolver', () => {
 
       const result = await resolveClaudeCodeCommand();
       expect(result).not.toBeNull();
-      expect(result!.argsPrefix).toContain('@zed-industries/claude-agent-acp');
-      // Must NOT reference the deprecated package name
+      expect(result!.argsPrefix).toContain('@agentclientprotocol/claude-agent-acp');
+      // Must NOT reference deprecated package names
       expect(result!.argsPrefix.join(' ')).not.toContain('claude-code-acp');
+      expect(result!.argsPrefix.join(' ')).not.toContain('@zed-industries/');
     });
   });
 

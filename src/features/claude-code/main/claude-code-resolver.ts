@@ -194,7 +194,7 @@ export async function resolveClaudeCodeCommand(): Promise<ClaudeCodeResolvedComm
   if (npxPath) {
     return {
       command: npxPath,
-      argsPrefix: ['-y', '@zed-industries/claude-agent-acp'],
+      argsPrefix: ['-y', '@agentclientprotocol/claude-agent-acp'],
       usesNpx: true,
     };
   }

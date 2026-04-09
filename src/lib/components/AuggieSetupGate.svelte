@@ -667,7 +667,7 @@
         id: 'claude-code',
         name: ACP_PROVIDERS['claude-code'].displayName,
         command: ACP_PROVIDERS['claude-code'].command,
-        installCommand: 'npm install -g @anthropic-ai/claude-code-acp',
+        installCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
         description: "Anthropic's Claude Code as an ACP agent",
         available: providerAvailability?.providers.claudeCode.available ?? false,
         requiresAuth: false,
