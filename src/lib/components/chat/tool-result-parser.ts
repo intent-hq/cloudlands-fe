@@ -293,6 +293,16 @@ export function parseToolResult(
   const resultText = extractResultText(result);
   const name = (toolName || '').toLowerCase();
 
+  // ── workspace_api (consolidated workspace MCP tool) ──
+  // Detect by name or input shape (code + summary), then route based on ws.* API calls in code
+  const isWorkspaceApi =
+    name.includes('workspace_api') ||
+    name.includes('workspace-mcp') ||
+    (typeof input.code === 'string' && typeof input.summary === 'string');
+  if (isWorkspaceApi && typeof input.code === 'string') {
+    return parseWorkspaceApiResult(input, resultText);
+  }
+
   // ── Workspace info tools (BEFORE 'view' check to prevent view_workspace misrouting) ──
   if (
     name.includes('view_workspace') ||
@@ -583,6 +593,114 @@ export function parseToolResult(
   }
 
   return { type: 'unknown', content: undefined };
+}
+
+/**
+ * Parse workspace_api tool results by detecting the ws.* namespace in the code field.
+ * Routes to appropriate result types for richer display.
+ */
+function parseWorkspaceApiResult(
+  input: Record<string, any>,
+  resultText: string | null,
+): ParsedToolResult {
+  const code = input.code as string;
+  // Match ws.<namespace>.method() to determine the operation type
+  const wsMatch = code.match(
+    /ws\.(note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\.(\w+)/,
+  );
+  if (!wsMatch) {
+    // No recognizable ws.* call — show as confirmation with content
+    return { type: 'confirmation' as const, content: resultText || undefined };
+  }
+
+  const [, namespace, method] = wsMatch;
+
+  switch (namespace) {
+    case 'note':
+      if (method === 'read' || method === 'readAsset') {
+        return parseNoteReadResult(input, resultText);
+      }
+      if (method === 'list') {
+        return parseNoteListResult(input, resultText);
+      }
+      if (method === 'listTasks') {
+        return { type: 'note-view' as const, content: resultText || undefined };
+      }
+      if (method === 'create' || method === 'delete') {
+        return { type: 'confirmation' as const, content: resultText || undefined };
+      }
+      // edit, editLines, setContent, add, updateMetadata
+      return parseNoteUpdateResult(input, resultText);
+
+    case 'comment':
+      if (method === 'list' || method === 'getThread') {
+        return parseCommentListResult(input, resultText);
+      }
+      return parseCommentAddResult(input, resultText);
+
+    case 'task':
+      if (method === 'getMyTask') {
+        return parseTaskResult(input, resultText);
+      }
+      if (method === 'updateStatus' || method === 'updateNoteStatus' || method === 'update') {
+        return parseTaskUpdateResult(input, resultText);
+      }
+      // markAsTask, convertBlocks, createPrerequisite, assignAgent
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
+    case 'agent':
+      if (method === 'create' || method === 'wakeOrCreate') {
+        return parseAgentCreationResult(input, resultText);
+      }
+      if (method === 'delegate') {
+        return parseDelegateTaskResult(input, resultText);
+      }
+      if (method === 'send' || method === 'sendToTask') {
+        return parseAgentMessageResult(input, resultText);
+      }
+      if (method === 'list') {
+        return parseAgentListResult(input, resultText);
+      }
+      if (method === 'status') {
+        return parseAgentStatusResult(input, resultText);
+      }
+      if (method === 'reportToParent') {
+        return parseAgentReportResult(input, resultText);
+      }
+      if (method === 'readConversation') {
+        return { type: 'note-view' as const, content: resultText || undefined };
+      }
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
+    case 'git':
+      return parseGitResult(method, input, resultText);
+
+    case 'pr':
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
+    case 'file':
+      if (method === 'read') {
+        return parseViewResult(input, resultText);
+      }
+      if (method === 'list') {
+        return parseDirectoryListingResult(input, resultText);
+      }
+      // write, delete, mkdir, rename
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
+    case 'script':
+      if (method === 'run' || method === 'output') {
+        return parseTerminalResult(input, resultText);
+      }
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
+    case 'browser':
+      return parseBrowserResult(input, resultText);
+
+    default:
+      // workspace, event, terminal, primitive, crossWorkspace
+      return { type: 'confirmation' as const, content: resultText || undefined };
+  }
 }
 
 /**

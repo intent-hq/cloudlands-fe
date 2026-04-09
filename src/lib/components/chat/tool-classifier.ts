@@ -414,6 +414,46 @@ export function getContextEngineSource(toolName: string | undefined | null): str
 }
 
 /**
+ * Classify workspace_api code into a specific tool category based on the ws.* API calls.
+ * Parses the code field to detect which workspace subsystem is being used.
+ */
+function classifyWorkspaceApiCode(code: string): ToolCategory {
+  if (!code) return 'workspace';
+  // Match ws.<namespace>.method() patterns
+  const wsMatch = code.match(/ws\.(note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\./);
+  if (!wsMatch) return 'workspace';
+  switch (wsMatch[1]) {
+    case 'note':
+    case 'comment':
+      return 'note';
+    case 'task':
+      return 'task';
+    case 'agent':
+      return 'agent';
+    case 'git':
+    case 'pr':
+      return 'api';
+    case 'browser':
+      return 'browser';
+    case 'terminal':
+    case 'script':
+      return 'terminal';
+    case 'file':
+      // Detect read vs write from method name
+      if (/ws\.file\.(read|list)/.test(code)) return 'file-read';
+      if (/ws\.file\.(write|mkdir|rename)/.test(code)) return 'file-write';
+      if (/ws\.file\.delete/.test(code)) return 'file-delete';
+      return 'workspace';
+    case 'event':
+    case 'workspace':
+    case 'primitive':
+    case 'crossWorkspace':
+    default:
+      return 'workspace';
+  }
+}
+
+/**
  * Detect if a tool name is a pre-formatted display name and infer the actual tool type.
  * Returns the inferred tool type or null if it's an actual tool name.
  */
@@ -686,9 +726,11 @@ function classifyToolInner(
     const isRawName = !acpTitle || cleanToolName(acpTitle).toLowerCase() === 'workspace_api';
     const label = isRawName ? summary || acpTitle : acpTitle || summary;
     if (label) {
+      // Detect specific operation type from the code field for richer display
+      const wsCategory = classifyWorkspaceApiCode(typeof input.code === 'string' ? input.code : '');
       return {
-        category: 'workspace',
-        icon: CATEGORY_ICONS.workspace,
+        category: wsCategory,
+        icon: CATEGORY_ICONS[wsCategory],
         verb: label,
         subject: null,
         path: null,

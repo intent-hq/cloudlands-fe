@@ -617,7 +617,7 @@ describe('tool-classifier', () => {
         _acpTitle: 'mcp__workspace-mcp__workspace_api',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('List task notes from spec');
     });
 
@@ -628,7 +628,7 @@ describe('tool-classifier', () => {
         _acpTitle: 'workspace_api',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('Reading spec note');
     });
 
@@ -639,7 +639,7 @@ describe('tool-classifier', () => {
         _acpTitle: 'Read spec note',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('Read spec note');
     });
 
@@ -649,7 +649,7 @@ describe('tool-classifier', () => {
         summary: 'Reading spec note',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('Reading spec note');
     });
 
@@ -660,7 +660,7 @@ describe('tool-classifier', () => {
         _acpTitle: 'workspace-mcp_workspace_api',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('Reading spec note');
     });
 
@@ -671,8 +671,98 @@ describe('tool-classifier', () => {
         _acpTitle: '//local/mcp/workspace_api',
       });
 
-      expect(result.category).toBe('workspace');
+      expect(result.category).toBe('note');
       expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('should classify ws.task code as task category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.task.updateStatus("abc", "Fix bug", "done")',
+        summary: 'Mark task done',
+      });
+
+      expect(result.category).toBe('task');
+      expect(result.verb).toBe('Mark task done');
+    });
+
+    it('should classify ws.agent code as agent category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.agent.create("implementor", "Build feature")',
+        summary: 'Create implementor agent',
+      });
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).toBe('Create implementor agent');
+    });
+
+    it('should classify ws.git code as api category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.git.status()',
+        summary: 'Check git status',
+      });
+
+      expect(result.category).toBe('api');
+      expect(result.verb).toBe('Check git status');
+    });
+
+    it('should classify ws.file.read as file-read category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.file.read("src/index.ts")',
+        summary: 'Read src/index.ts',
+      });
+
+      expect(result.category).toBe('file-read');
+      expect(result.verb).toBe('Read src/index.ts');
+    });
+
+    it('should classify ws.file.write as file-write category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.file.write("src/new.ts", content)',
+        summary: 'Write src/new.ts',
+      });
+
+      expect(result.category).toBe('file-write');
+      expect(result.verb).toBe('Write src/new.ts');
+    });
+
+    it('should classify ws.workspace code as workspace category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.workspace.info()',
+        summary: 'Get workspace info',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Get workspace info');
+    });
+
+    it('should classify ws.comment code as note category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.comment.add("note-1", { searchContext: "foo", commentTarget: "bar", comment: "test" })',
+        summary: 'Add comment on note',
+      });
+
+      expect(result.category).toBe('note');
+      expect(result.verb).toBe('Add comment on note');
+    });
+
+    it('should classify ws.script code as terminal category', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return await ws.script.run("build")',
+        summary: 'Run build script',
+      });
+
+      expect(result.category).toBe('terminal');
+      expect(result.verb).toBe('Run build script');
+    });
+
+    it('should fall back to workspace for code without ws. calls', () => {
+      const result = classifyTool('workspace_api', {
+        code: 'return { hello: "world" }',
+        summary: 'Return hello world',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Return hello world');
     });
   });
 });
