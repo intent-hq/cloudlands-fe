@@ -56,6 +56,25 @@ export function clearEventStoreCache(): void {
   eventStoreCache.clear();
 }
 
+/**
+ * Remove and dispose a single workspace's EventStore from the cache.
+ * Calls EventStore.dispose() first to flush pending writes and clear timers,
+ * then deletes the entry so the GC can reclaim the events + indexes.
+ *
+ * Call this from workspace close / delete / archive handlers.
+ */
+export async function deleteEventStoreForWorkspace(workspaceId: string): Promise<void> {
+  const store = eventStoreCache.get(workspaceId);
+  if (!store) return;
+
+  // EventStore.dispose() flushes pending events to disk and clears debounce timers
+  if (typeof store.dispose === "function") {
+    await store.dispose();
+  }
+
+  eventStoreCache.delete(workspaceId);
+}
+
 // ---------------------------------------------------------------------------
 // Saga handlers
 // ---------------------------------------------------------------------------

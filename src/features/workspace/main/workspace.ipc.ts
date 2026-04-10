@@ -39,6 +39,7 @@ import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-prov
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { notesService } from '../../notes/main/notes.service';
+import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
 import { createHash } from 'crypto';
 import * as path from 'path';
 
@@ -608,6 +609,16 @@ export function setupWorkspaceIPC(): void {
             }
           } catch (error) {
             logger.debug('[WorkspaceIPC] HTTP MCP bridge cache cleanup failed', { error });
+          }
+
+          // Clean up cached EventStore (flush pending writes, free events + indexes)
+          try {
+            await deleteEventStoreForWorkspace(id);
+            logger.debug('[WorkspaceIPC] EventStore cache cleanup', { workspaceId: id });
+          } catch (error) {
+            logger.warn('[WorkspaceIPC] Failed to cleanup EventStore cache', error as Error, {
+              workspaceId: id,
+            });
           }
 
           return resultToCommandResponse({ ok: true, data: null });
@@ -1451,6 +1462,16 @@ export function setupWorkspaceIPC(): void {
           logger.debug('HTTP MCP bridge cache cleanup failed before delete', { error });
         }
 
+        // Clean up cached EventStore (flush pending writes, free events + indexes)
+        try {
+          await deleteEventStoreForWorkspace(validatedId);
+          logger.debug('EventStore cache cleanup before delete', { workspaceId: validatedId });
+        } catch (error) {
+          logger.warn('Failed to cleanup EventStore cache before delete', error as Error, {
+            workspaceId: validatedId,
+          });
+        }
+
         const result = await protocolAdapter.deleteWorkspace(validatedId);
         logger.debug('Delete result', { workspaceId: validatedId, result });
 
@@ -1516,6 +1537,18 @@ export function setupWorkspaceIPC(): void {
               workspaceId: validatedId,
             });
           }
+        }
+
+        // Clean up cached EventStore (flush pending writes, free events + indexes)
+        try {
+          await deleteEventStoreForWorkspace(validatedId);
+          logger.debug('EventStore cache cleanup for archived workspace', {
+            workspaceId: validatedId,
+          });
+        } catch (error) {
+          logger.warn('Failed to cleanup EventStore cache during archive', error as Error, {
+            workspaceId: validatedId,
+          });
         }
 
         const result = await protocolAdapter.archiveWorkspace(validatedId);
