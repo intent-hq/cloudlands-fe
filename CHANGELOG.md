@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Project-level custom specialists now load reliably, live-reload when you save changes, and show where each specialist comes from (project, user, or built-in).
+- Workspace API tool calls now show rich previews in chat so you can see what workspace actions agents are performing.
+- Major memory and resource improvements — idle agent processes and MCP servers are reclaimed under memory pressure, keeping things snappy on long sessions.
+- Agent streaming overhaul — fixed a batch of issues that caused stuck "Thinking" states, lost messages, and infinite loops during multi-agent work.
+- Fixes: agent-to-agent messages failing during interrupts, delegation events dropped on delivery failure, workspace disappearing after cleanup, panels not restoring on workspace re-open, model reverting when editing earlier messages, workspace list showing duplicate groups, notes not updating after task changes.
+
 ## 0.2.37
 
 - Archive and delete workspaces directly from the sidebar context menu.
