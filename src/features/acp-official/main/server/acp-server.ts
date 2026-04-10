@@ -526,6 +526,8 @@ export class ACPServer extends EventEmitter {
    */
   async dispose(): Promise<void> {
     await this.terminalHandler.dispose();
+    this.sessionManager.clearAllSessions();
+    permissionManager.clearDecisions();
     this.removeAllListeners();
   }
 }

@@ -142,7 +142,12 @@ export class PermissionManager extends EventEmitter {
       remember,
     };
 
-    // Store decision
+    // Store decision temporarily for event delivery, then evict immediately.
+    // Eviction strategy: per-request. The decisions Map is never queried by key
+    // after storage — decision delivery uses EventEmitter, and getStatistics()
+    // only reads .size. Deleting after emission prevents unbounded growth while
+    // preserving the emit contract. If historical decision logging is needed in
+    // the future, add a bounded ring buffer or external persistence instead.
     this.decisions.set(requestId, decision);
     this.pendingRequests.delete(requestId);
 
@@ -156,9 +161,24 @@ export class PermissionManager extends EventEmitter {
       });
     }
 
-    // Emit decision event
-    this.emit(`permission:decision:${requestId}`, decision);
-    this.emit('permission:decided', decision);
+    // Emit decision events, then evict from the Map.
+    // Each emit is wrapped individually so a throwing listener on the per-request
+    // event can't prevent the 'permission:decided' broadcast (and vice-versa).
+    // The per-request event (`permission:decision:${requestId}`) is what resolves
+    // the promise inside requestPermission(), so it must fire reliably.
+    try {
+      this.emit(`permission:decision:${requestId}`, decision);
+    } catch (err) {
+      logger.error('Listener error on permission:decision event', { requestId, error: err });
+    }
+    try {
+      this.emit('permission:decided', decision);
+    } catch (err) {
+      logger.error('Listener error on permission:decided event', { requestId, error: err });
+    }
+
+    // Per-request eviction: remove decision now that all listeners have been notified
+    this.decisions.delete(requestId);
 
     logger.info('Permission decision made', {
       requestId,
@@ -232,6 +252,18 @@ export class PermissionManager extends EventEmitter {
     this.saveRules().catch((error) => {
       logger.error('Failed to save rules after adding', error as Error);
     });
+  }
+
+  /**
+   * Clear all stored decisions. Called as belt-and-suspenders cleanup alongside
+   * per-request eviction, e.g. on AcpServer.dispose().
+   */
+  clearDecisions(): void {
+    const count = this.decisions.size;
+    this.decisions.clear();
+    if (count > 0) {
+      logger.info(`Cleared ${count} permission decisions`);
+    }
   }
 
   /**
