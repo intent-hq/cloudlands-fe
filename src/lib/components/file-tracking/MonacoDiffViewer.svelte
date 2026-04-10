@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * MonacoDiffViewer - Monaco-based diff viewer with git integration
    *

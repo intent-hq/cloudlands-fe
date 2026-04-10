@@ -193,6 +193,7 @@
 </script>
 
 <script lang="ts">
+/* eslint-disable max-lines */
   import { onMount, onDestroy, untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';

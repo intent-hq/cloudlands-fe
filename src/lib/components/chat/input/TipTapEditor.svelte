@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { onMount, onDestroy } from 'svelte';
   import { mount, unmount } from 'svelte';
   import { Editor } from '@tiptap/core';

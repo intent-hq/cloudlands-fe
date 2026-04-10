@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * UnifiedDiffViewer - Monaco-based editable diff viewer
    *

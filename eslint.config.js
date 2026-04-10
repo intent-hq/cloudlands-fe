@@ -205,6 +205,7 @@ export default [
       '@typescript-eslint/no-unused-vars': 'error',
       'unused-imports/no-unused-imports': 'error',
       'intent/selector-lifecycle': 'warn',
+      'max-lines': ['error', { max: 1200 }],
     },
   },
 ];

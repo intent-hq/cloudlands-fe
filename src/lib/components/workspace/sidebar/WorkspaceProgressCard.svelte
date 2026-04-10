@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { slide } from 'svelte/transition';
   import type { Note } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';

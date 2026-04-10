@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import type { FileNode } from '$shared/types';
   import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';

@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';

@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { onMount, tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';

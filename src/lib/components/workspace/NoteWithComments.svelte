@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import CommentDialog from '$lib/components/tiptap/CommentDialog.svelte';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';

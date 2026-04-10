@@ -1,8 +1,6 @@
 src/lib/components/agent-overview/AgentNodeCard.svelte:69
 src/lib/components/agent-overview/AgentNodeCard.svelte:76
-src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte:1525
+src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte:1526
 src/lib/components/modals/Modal.svelte:71
-src/lib/components/modals/NewSpaceModal.svelte:82
-src/routes/observability/+page.svelte:702
 src/routes/workspace/[id]/terminal-test/+page.svelte:36
 src/routes/workspace/[id]/terminal-test/+page.svelte:43

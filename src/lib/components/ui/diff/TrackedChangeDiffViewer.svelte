@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * TrackedChangeDiffViewer - Diff viewer for TrackedChange objects with hunk staging
    *

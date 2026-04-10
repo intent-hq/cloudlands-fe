@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * Workspace Detail Page - Unified State Version
    *

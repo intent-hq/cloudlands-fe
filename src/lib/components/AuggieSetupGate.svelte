@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';

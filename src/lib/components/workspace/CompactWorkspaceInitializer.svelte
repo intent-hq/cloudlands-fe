@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { untrack } from 'svelte';
   import {
     type InitialRepoInfo,

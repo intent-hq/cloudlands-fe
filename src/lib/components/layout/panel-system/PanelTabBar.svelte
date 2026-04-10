@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * PanelTabBar - Compact header bar for a panel
    *

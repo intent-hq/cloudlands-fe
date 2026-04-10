@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * TreeCanvas - Canvas-based tree visualization for better performance
    * Uses caching for instant re-loads

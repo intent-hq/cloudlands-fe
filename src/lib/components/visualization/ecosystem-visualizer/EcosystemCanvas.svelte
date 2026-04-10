@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * EcosystemCanvas - Canvas-based organic visualization
    * Uses force simulation for layout and smooth blob shapes for folders

@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
    * Shows the git workflow as a vertical timeline: Unstaged → Staged → Commits → PRs

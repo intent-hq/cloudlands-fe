@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * ChangeTimeline - Main timeline component
    * Shows changes organized by location: local, branch, remote branch, trunk

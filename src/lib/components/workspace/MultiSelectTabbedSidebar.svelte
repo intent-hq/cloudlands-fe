@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   import { goto } from '$app/navigation';
   import { addContextItem } from '$lib/store/slices/context/context-slice';
   import { v4 as uuidv4 } from 'uuid';

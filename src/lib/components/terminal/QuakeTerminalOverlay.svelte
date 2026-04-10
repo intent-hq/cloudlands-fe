@@ -1,4 +1,5 @@
 <script lang="ts">
+/* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
    *

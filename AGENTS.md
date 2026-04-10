@@ -32,6 +32,7 @@ src/
 | agents | docs/AGENT_ARCHITECTURE.md |
 | state/store | docs/STATE_MANAGEMENT.md, src/lib/store/docs/ |
 | UI components | docs/COMPONENT_RESPONSIBILITIES.md |
+| component design | docs/COMPONENTS_DESIGN.md |
 | panels/layout | docs/panel-system-refactoring.md, docs/proposals/PANEL_TAB_UX_SPEC.md |
 | PR descriptions | docs/PR_DESCRIPTION_GUIDE.md |
 | browser/CDP | docs/BROWSER_PANEL_SPEC.md, docs/CDP_MCP_TOOLS.md |
