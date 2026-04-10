@@ -6,7 +6,7 @@
  * from the old `AgentEventSubscriptionService.createEventDeliveryCallback()`.
  */
 
-import { cancel, cancelled, delay, fork, put, select, takeEvery } from "typed-redux-saga";
+import { cancel, cancelled, delay, fork, put, select, take, takeEvery } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
@@ -31,6 +31,7 @@ import {
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import { requestDeliverQueuedEvents } from "./saga-actions";
+import { buildSweepCatchUpEventId, recordDeliveredEventIds, sweepCatchUpSeen } from "./delivery-saga";
 import { Logger } from "../../../../../shared/logger";
 const logger = new Logger("MatchingSaga");
 import type {
@@ -341,6 +342,25 @@ export function* handleMatchEvent(
     logger.info(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
+    // --- Sweep catch-up dedup guard (consume-once) ---
+    // If the periodic sweep already delivered a catch-up for this exact
+    // subscription+actor+eventType combo, skip delivery of the real event
+    // to prevent double-waking the subscriber.  The sweepCatchUpSeen set
+    // is populated by periodicQueueSweep after it enqueues a synthetic
+    // catch-up.  The entry is consumed (deleted) here so that only the
+    // immediate real event is suppressed — future state transitions for
+    // the same agent (e.g. idle → busy → idle) will be delivered normally.
+    if (!filter.delegationGroup && filter.actorIds?.length && event.actor?.id) {
+      const sweepDedupeKey = `${sub.id}:${event.actor.id}:${event.type}`;
+      if (sweepCatchUpSeen.has(sweepDedupeKey)) {
+        sweepCatchUpSeen.delete(sweepDedupeKey); // consume-once: allow future transitions
+        logger.info(
+          `[subscriptions] skip-sweep-already-delivered subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=skip reason=sweep-catchup-already-fired`,
+        );
+        continue;
+      }
+    }
+
     // 1. Delegation group routing
     if (filter.delegationGroup) {
       const groupId = filter.delegationGroup.groupId;
@@ -376,6 +396,14 @@ export function* handleMatchEvent(
     };
     logger.debug(`[subscriptions] enqueue subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} step=enqueue`);
     yield* put(enqueueEvent(wsId, sub.agentId, queuedEvent));
+
+    // Cross-record the deterministic sweep-catchup ID in the dedup cache
+    // so that if the periodic sweep also fires for this same subscription+
+    // actor combo, the catch-up event will be filtered out as a duplicate.
+    if (filter.actorIds?.length && event.actor?.id) {
+      const sweepCatchUpId = buildSweepCatchUpEventId(sub.id, event.actor.id, event.type);
+      recordDeliveredEventIds(sub.agentId, [sweepCatchUpId]);
+    }
 
     // If the agent is already idle, trigger delivery — respecting
     // batchWindow / batchMaxEvents when configured.
@@ -612,6 +640,13 @@ export function* matchingSaga() {
   try {
     yield* takeEvery(workspaceEventAccepted, handleMatchEvent);
     yield* takeEvery(addSubscription, handleNewSubscriptionCatchUp);
+
+    // Block indefinitely so the crash-recovery wrapper in
+    // agentSubscriptionsSaga only restarts when this saga actually throws.
+    // Without this, matchingSaga returns immediately after the non-blocking
+    // takeEvery registrations, causing the while(true) wrapper to re-register
+    // duplicate watchers every ~1 second.
+    yield* take("@@matching-saga/NEVER_RESOLVE");
   } finally {
     if (yield* cancelled()) {
       // Cancel any pending batch flush timers and clear the map

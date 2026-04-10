@@ -147,7 +147,8 @@ function recordDeliveredEventIds(agentId: string, eventIds: string[]): void {
   }
 }
 
-function filterAlreadyDelivered(agentId: string, events: WorkspaceEvent[]): WorkspaceEvent[] {
+/** @internal — exported for tests */
+export function filterAlreadyDelivered(agentId: string, events: WorkspaceEvent[]): WorkspaceEvent[] {
   const agentCache = recentlyDelivered.get(agentId);
   if (!agentCache || agentCache.size === 0) return events;
 
@@ -170,6 +171,23 @@ function filterAlreadyDelivered(agentId: string, events: WorkspaceEvent[]): Work
 export function clearDeliveryDedupCache(): void {
   recentlyDelivered.clear();
 }
+
+/**
+ * Build a deterministic event ID for sweep catch-up events.
+ * Using a deterministic ID (rather than a random one) allows the dedup cache
+ * to suppress duplicate deliveries when both the sweep and the real event
+ * fire for the same subscription+actor+eventType combo.
+ */
+export function buildSweepCatchUpEventId(subscriptionId: string, actorId: string, eventType: string): string {
+  return `sweep-catchup:${subscriptionId}:${actorId}:${eventType}`;
+}
+
+/**
+ * Record a delivered event ID in the dedup cache for a specific agent.
+ * Exposed so that the matching saga can cross-record deterministic sweep-catchup
+ * IDs when delivering real events, preventing double-delivery.
+ */
+export { recordDeliveredEventIds };
 
 function* sendBackendMessageWithLateSuccessDedup(
   agentId: string,
@@ -433,18 +451,26 @@ export function* watchAgentIdleForDelivery() {
 const SWEEP_INTERVAL_MS = 15_000;
 
 /**
- * Tracks which subscription+actor combos have already had catch-up events
- * enqueued by the subscription-aware sweep.  The value is the matched event
- * type string (e.g. "agent:idle").  If the watched agent's status hasn't
- * changed since the last sweep, the same event type will be seen and the
- * catch-up is suppressed.  When the status changes (different event type),
- * the entry is updated and a new catch-up is allowed.
+ * Tracks which subscription+actor+eventType combos have already had catch-up
+ * events enqueued by the subscription-aware sweep.
  *
- * Key format: `${subscriptionId}:${actorId}`
+ * **Consume-once semantics**: when the matching saga's dedup guard in
+ * `handleMatchEvent` suppresses a real event because a sweep catch-up was
+ * already delivered, it *deletes* the entry from this set.  This ensures
+ * only the immediate real event is suppressed — future state transitions
+ * for the same agent (e.g. idle → busy → idle) are delivered normally.
+ * The sweep re-adds the key on each cycle if the condition still holds,
+ * so the sweep's own duplicate check remains unaffected.
+ *
+ * Key format: `${subscriptionId}:${actorId}:${eventType}`
+ *
+ * Including the event type in the key prevents collisions when a subscription
+ * watches multiple event types for the same actor (e.g. both agent:idle and
+ * agent:deleted).
  *
  * Exported for testing only.
  */
-export const sweepCatchUpSeen = new Map<string, string>();
+export const sweepCatchUpSeen = new Set<string>();
 
 /** Remove all entries from sweepCatchUpSeen whose key starts with the given subscription ID. */
 function purgeSweepCatchUpForSubscription(subscriptionId: string): void {
@@ -572,11 +598,10 @@ export function* periodicQueueSweep() {
           if (!typeMatches) continue;
 
           // --- Duplicate-suppression guard ---
-          // Skip if the watched agent's status hasn't changed since the
-          // last sweep (same event type recorded for this sub+actor pair).
-          const dedupeKey = `${sub.id}:${actorId}`;
-          const previousEventType = sweepCatchUpSeen.get(dedupeKey);
-          if (previousEventType === matchingEventType) {
+          // Skip if a catch-up for this exact sub+actor+eventType combo
+          // was already enqueued by a previous sweep.
+          const dedupeKey = `${sub.id}:${actorId}:${matchingEventType}`;
+          if (sweepCatchUpSeen.has(dedupeKey)) {
             logger.debug(
               `[subscriptions] sweep-catchup SUPPRESSED (duplicate) subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType}`,
             );
@@ -587,9 +612,12 @@ export function* periodicQueueSweep() {
             `[subscriptions] sweep-catchup subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType} step=sweep reason=missed-match`,
           );
 
-          // Synthesize a catch-up event (same shape as matching-saga)
+          // Synthesize a catch-up event (same shape as matching-saga).
+          // Use a deterministic ID so the dedup cache can link this catch-up
+          // with the real event delivered by handleMatchEvent, preventing
+          // double-delivery for non-oneShot subscriptions.
           const catchUpEvent = {
-            id: `catchup_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            id: buildSweepCatchUpEventId(sub.id, actorId, matchingEventType),
             workspaceId: wsId,
             timestamp: new Date().toISOString(),
             type: matchingEventType,
@@ -602,9 +630,8 @@ export function* periodicQueueSweep() {
             },
           } as unknown as WorkspaceEvent;
 
-          // Record the matched event type so subsequent sweeps skip it
-          // until the agent's status actually changes.
-          sweepCatchUpSeen.set(dedupeKey, matchingEventType);
+          // Record this combo so subsequent sweeps skip it.
+          sweepCatchUpSeen.add(dedupeKey);
 
           if (filter.delegationGroup) {
             // Route through delegation group delivery path

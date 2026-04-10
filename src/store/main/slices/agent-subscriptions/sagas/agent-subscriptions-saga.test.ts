@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
+import { call } from "typed-redux-saga";
 
 /**
  * Helper to detect redux-saga `delay()` effects inside expectSaga call providers.
@@ -74,11 +75,14 @@ import {
   sendBackendMessage,
   clearDeliveryDedupCache,
   sweepCatchUpSeen,
+  buildSweepCatchUpEventId,
+  recordDeliveredEventIds,
+  filterAlreadyDelivered,
 } from "./delivery-saga";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
-import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots } from "./matching-saga";
+import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots, matchingSaga } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";
@@ -1606,8 +1610,8 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
     };
 
     // Pre-populate the dedup guard as if the previous sweep already fired
-    const dedupeKey = `${sub.id}:${WATCHED_AGENT}`;
-    sweepCatchUpSeen.set(dedupeKey, "agent:idle");
+    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    sweepCatchUpSeen.add(dedupeKey);
 
     return expectSaga(periodicQueueSweep)
       .provide(makeSweepProvider(wsState))
@@ -1639,5 +1643,288 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
       .not.put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
       .not.put.actionType(markOneShotFired.type)
       .run({ silenceTimeout: true });
+  });
+  it("non-oneShot sweep catch-up uses a deterministic event ID", () => {
+    const sub = makeSweepSub(); // non-oneShot by default
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [sub.id]: sub },
+      agentStatuses: { [WATCHED_AGENT]: "idle", [SUBSCRIBER]: "idle" },
+    };
+
+    // Capture the enqueued event via a custom provider that intercepts put effects
+    let capturedEventId: string | undefined;
+    const baseProvider = makeSweepProvider(wsState);
+
+    return expectSaga(periodicQueueSweep)
+      .provide({
+        call: baseProvider.call,
+        select: baseProvider.select,
+        put(effect: any, next: () => any) {
+          // Intercept enqueueEvent dispatches to capture the event ID
+          if (effect.action?.type === enqueueEvent.type) {
+            const [, , queuedRecord] = effect.action.payload;
+            capturedEventId = queuedRecord?.event?.id;
+          }
+          return next();
+        },
+      })
+      .put.actionType(enqueueEvent.type)
+      .run({ silenceTimeout: true })
+      .then(() => {
+        expect(capturedEventId).toBe(buildSweepCatchUpEventId(sub.id, WATCHED_AGENT, "agent:idle"));
+        expect(capturedEventId).not.toMatch(/^catchup_/); // not the old random format
+      });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Regression: sweep catch-up double-delivery for non-oneShot subscriptions
+// (PR #461 follow-up)
+// ---------------------------------------------------------------------------
+
+describe("sweep catch-up double-delivery prevention", () => {
+  const WATCHED_AGENT = "agent-watched";
+  const COORDINATOR = "agent-coordinator";
+
+  afterEach(() => {
+    sweepCatchUpSeen.clear();
+    clearDeliveryDedupCache();
+  });
+
+  it("handleMatchEvent skips delivery when sweep catch-up already fired for same sub+actor+eventType", () => {
+    // Scenario: the sweep fires FIRST and records the sub+actor entry in
+    // sweepCatchUpSeen. Then the real agent:idle event arrives via
+    // handleMatchEvent. It should detect the sweep already handled this
+    // combo and skip enqueuing.
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-coordinator",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        // non-oneShot (default)
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    // Simulate the sweep having already fired for this combo
+    sweepCatchUpSeen.add(`${sub.id}:${WATCHED_AGENT}:agent:idle`);
+
+    // Now the real event arrives
+    const realEvent = makeEvent("real-idle-123", "agent:idle");
+    (realEvent as any).workspaceId = WS;
+    (realEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+    const action = workspaceEventAccepted(realEvent);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      // Should NOT enqueue because the sweep already handled it
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+  });
+
+  it("handleMatchEvent records deterministic sweep-catchup ID in dedup cache when real event fires first", () => {
+    // Scenario: the real event fires FIRST via handleMatchEvent. It should
+    // record the deterministic sweep-catchup ID in the delivery dedup cache
+    // so that if the sweep later fires, filterAlreadyDelivered suppresses it.
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-coordinator",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const realEvent = makeEvent("real-idle-456", "agent:idle");
+    (realEvent as any).workspaceId = WS;
+    (realEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+    const action = workspaceEventAccepted(realEvent);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run()
+      .then(() => {
+        // Verify the deterministic sweep-catchup ID was recorded in the dedup cache.
+        // Create a synthetic event with the deterministic ID and check if
+        // filterAlreadyDelivered suppresses it.
+        const deterministicId = buildSweepCatchUpEventId(sub.id, WATCHED_AGENT, "agent:idle");
+        const syntheticEvent = { id: deterministicId } as any;
+        const filtered = filterAlreadyDelivered(COORDINATOR, [syntheticEvent]);
+        expect(filtered).toHaveLength(0); // should be filtered out
+      });
+  });
+
+  it("sweep dedup guard does NOT suppress handleMatchEvent for events without actorIds in filter", () => {
+    // Non-actor-specific subscriptions should not be affected by the sweep dedup
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-general",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["file:changed"],
+        // no actorIds
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const event = makeEvent("e1", "file:changed");
+    (event as any).workspaceId = WS;
+    const action = workspaceEventAccepted(event);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .run();
+  });
+
+  it("sweep dedup key includes event type — multi-eventType subscription does not collide", () => {
+    // Regression: when a subscription watches both agent:idle and agent:deleted
+    // for the same actor, the sweep should record separate keys for each event
+    // type.  Previously the key was `sub:actor` and a single value was stored,
+    // causing one event type to overwrite the other.
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-multi",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle", "agent:deleted"],
+        actorIds: [WATCHED_AGENT],
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    // Simulate sweep having fired for agent:idle
+    sweepCatchUpSeen.add(`${sub.id}:${WATCHED_AGENT}:agent:idle`);
+
+    // A real agent:deleted event should NOT be suppressed — different event type
+    const deletedEvent = makeEvent("real-deleted-789", "agent:deleted");
+    (deletedEvent as any).workspaceId = WS;
+    (deletedEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+    const action = workspaceEventAccepted(deletedEvent);
+
+    return expectSaga(handleMatchEvent, action)
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      // Should enqueue because agent:deleted is a different event type than agent:idle
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+  });
+
+  it("consume-once: sweep dedup key is deleted after suppressing one real event, allowing future transitions", async () => {
+    // Regression: sweepCatchUpSeen entries must be consumed (deleted) when
+    // they suppress a real event.  Otherwise, if the watched agent goes
+    // busy and then idle again, the second idle transition would be
+    // permanently suppressed.
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-coordinator",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+
+    // 1. Sweep fires and records the catch-up
+    sweepCatchUpSeen.add(dedupeKey);
+
+    // 2. First real agent:idle arrives — should be suppressed (consume-once)
+    const firstIdle = makeEvent("real-idle-first", "agent:idle");
+    (firstIdle as any).workspaceId = WS;
+    (firstIdle as any).actor = { type: "agent", id: WATCHED_AGENT };
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(firstIdle))
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+
+    // The key should have been consumed (deleted)
+    expect(sweepCatchUpSeen.has(dedupeKey)).toBe(false);
+
+    // 3. Agent goes busy then idle again — second real agent:idle arrives
+    //    This should NOT be suppressed because the dedup key was consumed.
+    const secondIdle = makeEvent("real-idle-second", "agent:idle");
+    (secondIdle as any).workspaceId = WS;
+    (secondIdle as any).actor = { type: "agent", id: WATCHED_AGENT };
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(secondIdle))
+      .provide([
+        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Regression: matchingSaga must block indefinitely (PR #461 follow-up)
+// ---------------------------------------------------------------------------
+
+describe("matchingSaga blocking behavior", () => {
+  it("does not return after registering takeEvery watchers", async () => {
+    // matchingSaga registers takeEvery watchers (non-blocking) and then must
+    // block indefinitely. If it returns, the crash-recovery wrapper in
+    // agentSubscriptionsSaga would loop and re-register duplicate watchers.
+    //
+    // Strategy: run the saga in the crash-recovery wrapper pattern and verify
+    // it does NOT loop (i.e., the "restarting" log never fires).
+    let loopCount = 0;
+
+    function* testWrapper() {
+      while (true) {
+        yield* call(matchingSaga);
+        // If we get here, matchingSaga returned — that's the bug.
+        loopCount++;
+        break; // Don't actually loop in test
+      }
+    }
+
+    await expectSaga(testWrapper)
+      .run({ timeout: 200, silenceTimeout: true });
+
+    expect(loopCount).toBe(0);
   });
 });
