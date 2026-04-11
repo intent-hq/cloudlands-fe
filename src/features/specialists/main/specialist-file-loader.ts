@@ -591,11 +591,7 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
     const CUSTOM_SPECIALISTS_KEY = 'custom-specialists';
     const MIGRATION_COMPLETE_KEY = 'specialists-migration-complete';
 
-    // Check if migration already completed
-    if (settingsStore.get(MIGRATION_COMPLETE_KEY)) {
-      logger.debug('Specialist migration already completed');
-      return result;
-    }
+    const migrationAlreadyComplete = !!settingsStore.get(MIGRATION_COMPLETE_KEY);
 
     // Get custom specialists from store
     const customSpecialists = settingsStore.get(CUSTOM_SPECIALISTS_KEY) as
@@ -611,17 +607,28 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
       | undefined;
 
     if (!customSpecialists || !Array.isArray(customSpecialists) || customSpecialists.length === 0) {
-      logger.debug('No custom specialists to migrate');
-      settingsStore.set(MIGRATION_COMPLETE_KEY, true);
+      if (!migrationAlreadyComplete) {
+        logger.debug('No custom specialists to migrate');
+        settingsStore.set(MIGRATION_COMPLETE_KEY, true);
+      }
       return result;
     }
 
-    logger.info(`Migrating ${customSpecialists.length} custom specialists to file-based system`);
+    if (migrationAlreadyComplete) {
+      logger.info(
+        `Migration flag is set but ${customSpecialists.length} specialist(s) found in electron-store — checking for post-migration stragglers`,
+      );
+    } else {
+      logger.info(`Migrating ${customSpecialists.length} custom specialists to file-based system`);
+    }
 
     // Ensure the specialists directory exists
     await ensureSpecialistsDirectory();
 
-    for (const specialist of customSpecialists) {
+    const migratedIndices: number[] = [];
+
+    for (let i = 0; i < customSpecialists.length; i++) {
+      const specialist = customSpecialists[i];
       try {
         // Sanitize the ID to ensure valid filename (legacy IDs may have special characters)
         const safeId = sanitizeSpecialistId(specialist.id);
@@ -636,6 +643,7 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
             `Skipping migration for ${specialist.id} -> ${safeId} - file already exists`,
           );
           result.skipped++;
+          migratedIndices.push(i);
           continue;
         }
 
@@ -653,6 +661,7 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
         if (writeResult.success) {
           logger.info(`Migrated specialist: ${specialist.name} (${specialist.id} -> ${safeId})`);
           result.migrated++;
+          migratedIndices.push(i);
         } else {
           result.errors.push(`Failed to migrate ${specialist.id}: ${writeResult.error}`);
         }
@@ -663,10 +672,21 @@ export async function migrateCustomSpecialistsFromStore(): Promise<{
       }
     }
 
-    // Mark migration as complete and clear the old data
-    if (result.errors.length === 0) {
+    // Clean up: remove successfully migrated entries from the store
+    if (migratedIndices.length === customSpecialists.length) {
+      // All specialists are now on disk — clear the array entirely
       settingsStore.delete(CUSTOM_SPECIALISTS_KEY);
+    } else if (migratedIndices.length > 0) {
+      // Some remain due to errors — keep only the un-migrated ones
+      const remaining = customSpecialists.filter((_, idx) => !migratedIndices.includes(idx));
+      settingsStore.set(CUSTOM_SPECIALISTS_KEY, remaining);
+    }
+
+    if (!migrationAlreadyComplete) {
       settingsStore.set(MIGRATION_COMPLETE_KEY, true);
+    }
+
+    if (result.errors.length === 0) {
       logger.info(`Migration complete: ${result.migrated} migrated, ${result.skipped} skipped`);
     } else {
       logger.warn(
