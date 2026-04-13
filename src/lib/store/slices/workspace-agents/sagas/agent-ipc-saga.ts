@@ -149,7 +149,18 @@ export function* watchPrepareHandlerSaga() {
       logger.info("Backend requested stream handler preparation", { agentId, workspaceId });
 
       try {
-        yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+        // When a wakeMessage is present (backend-initiated wake-up after delegation
+        // completion), force a fresh stream handler. The previous turn's restored handler
+        // may still be registered (its 'complete' handler resets buffers but does NOT call
+        // cleanupStreamHandler). Reusing it causes ensureStreamHandler to return
+        // { created: false } and skip the delayed agent:session-updated dispatch, leading
+        // to timing mismatches between the IPC handler and ChatService that produce
+        // duplicate assistant messages in the UI.
+        // This matches the pattern used by watchQueueProcessingSaga.
+        yield* call([agentService, agentService.ensureStreamHandler], agentId, {
+          workspaceId,
+          forceReregister: !!wakeMessage,
+        });
 
         const prepareWsId = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
         if (!prepareWsId) throw new Error(`Cannot prepare handler without workspaceId: ${agentId}`);

@@ -5878,6 +5878,31 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             agentId: sessionId,
             messageCount: messagesWithWake.length,
           });
+
+          // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+          // page refresh. Without this, the wake message only exists in memory until
+          // onComplete runs, and can be lost if the frontend saves a stale session.
+          agentPersistence.saveAgent(agentSession).then((saveResult) => {
+            if (saveResult.success) {
+              logger.info('Backend-initiated message: persisted wake message to disk (no-provider path)', {
+                agentId: sessionId,
+                wakeMessageId,
+                messageCount: messagesWithWake.length,
+              });
+            } else {
+              logger.warn('Backend-initiated message: failed to persist wake message (no-provider path)', {
+                agentId: sessionId,
+                wakeMessageId,
+                error: saveResult.error,
+              });
+            }
+          }).catch((error) => {
+            logger.error('Backend-initiated message: unhandled error persisting wake message (no-provider path)', {
+              agentId: sessionId,
+              wakeMessageId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
         }
 
         backend.emit('agent:created', {
@@ -6056,6 +6081,33 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           agentId: sessionId,
           wakeMessageId,
           messageCount: existingSession.messages.length,
+        });
+
+        // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+        // page refresh and is not overwritten by stale frontend saves.
+        // Without this, the wake message only exists in memory until onComplete runs,
+        // and frontend saves during streaming can overwrite it via the merge logic
+        // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
+        agentPersistence.saveAgent(existingSession).then((saveResult) => {
+          if (saveResult.success) {
+            logger.info('Backend-initiated message: persisted wake message to disk immediately', {
+              agentId: sessionId,
+              wakeMessageId,
+              messageCount: existingSession.messages.length,
+            });
+          } else {
+            logger.warn('Backend-initiated message: failed to persist wake message to disk', {
+              agentId: sessionId,
+              wakeMessageId,
+              error: saveResult.error,
+            });
+          }
+        }).catch((error) => {
+          logger.error('Backend-initiated message: unhandled error persisting wake message to disk', {
+            agentId: sessionId,
+            wakeMessageId,
+            error: error instanceof Error ? error.message : String(error),
+          });
         });
       } else {
         logger.warn('Backend-initiated message: no session available to add wake message', {

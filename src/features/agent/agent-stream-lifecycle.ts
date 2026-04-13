@@ -562,6 +562,12 @@ export function registerStreamHandlerForSession(
           dispatchStreamEvent(handlerSessionId, 'end', { type: 'end', message: null });
           window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
         }
+
+        // Reset accumulated state after stream completion so that if this
+        // handler is reused for a subsequent stream (e.g., wake-up after
+        // delegation), old content does not leak into the new response.
+        textBuffer = '';
+        orderedItems = [];
       } else if (data.type === 'status') {
         dispatchStreamEvent(handlerSessionId, 'status', {
           type: 'status', statusData: data.data, streamId: data.streamId, sessionId: handlerSessionId,

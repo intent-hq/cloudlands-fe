@@ -298,10 +298,35 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Check if already in memory
       if (this.sessions.has(agentId)) {
+        const existingRecord = this.sessions.get(agentId)!;
+        const existingMessages = existingRecord.session.messages || [];
+        const incomingMessages = agentSession.messages || [];
+
+        // If the incoming session has more messages (e.g., frontend saved a user message
+        // to disk that the backend doesn't have yet), update the in-memory session's messages.
+        // This fixes the coordinator agent bug where:
+        // 1. handleCreateAgent creates session with empty messages (no initialMessage for coordinator)
+        // 2. Frontend adds user message to Redux and saves to disk
+        // 3. handleSendMessage loads from persistence (has user message) and calls resumeSession
+        // 4. resumeSession was returning early with the stale empty-messages session
+        // 5. skipUserMessage=true prevented re-adding, so backend session never got the user message
+        // 6. onComplete saved backend session (missing user message) → overwrote frontend's save
+        if (incomingMessages.length > existingMessages.length) {
+          existingRecord.session.messages = [...incomingMessages];
+          existingRecord.messageCount = incomingMessages.length;
+          existingRecord.lastActivity = new Date();
+          existingRecord.session.updatedAt = new Date().toISOString();
+          logger.info('Updated in-memory session with newer messages from persistence', {
+            agentId,
+            previousMessageCount: existingMessages.length,
+            newMessageCount: incomingMessages.length,
+          });
+        }
+
         logger.info('Agent already in memory', { agentId });
         return {
           success: true,
-          agent: this.sessions.get(agentId)!.session,
+          agent: existingRecord.session,
         };
       }
 
