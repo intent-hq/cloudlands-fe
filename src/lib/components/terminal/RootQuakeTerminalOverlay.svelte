@@ -19,6 +19,7 @@
    * - Drag-to-resize handle
    * - Keyboard shortcuts (Cmd+J / Ctrl+J to toggle)
    */
+  import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
@@ -90,7 +91,8 @@
     if (term.customName) return term.customName;
     const lastCommand = terminalHistoryTracker.getLastCommand(term.id);
     if (lastCommand) {
-      return lastCommand.length > 20 ? lastCommand.slice(0, 20) + '…' : lastCommand;
+      const sanitized = sanitizeCommandForDisplay(lastCommand);
+      return sanitized.length > 20 ? sanitized.slice(0, 20) + '…' : sanitized;
     }
     return term.name || 'Terminal';
   }

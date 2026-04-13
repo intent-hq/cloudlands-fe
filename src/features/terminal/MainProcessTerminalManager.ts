@@ -13,6 +13,7 @@
 import type { IPty } from 'node-pty';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { Logger } from '../../shared/logger';
+import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -224,7 +225,7 @@ export class ProfessionalTerminal extends EventEmitter {
       cwd: this.cwd,
       title: this.title,
       isExecutingCommand: this.isExecutingCommand,
-      currentCommand: this.currentCommand,
+      currentCommand: sanitizeCommandForDisplay(this.currentCommand),
     };
   }
 

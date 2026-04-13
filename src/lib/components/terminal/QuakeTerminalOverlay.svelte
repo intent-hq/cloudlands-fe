@@ -12,6 +12,7 @@
    * - Double-click to rename tabs
    * - Persisted height and custom names
    */
+  import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
   import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
@@ -394,8 +395,8 @@
     if (term.customName) return term.customName;
     const lastCommand = terminalHistoryTracker.getLastCommand(term.id);
     if (lastCommand) {
-      // Truncate long commands
-      return lastCommand.length > 20 ? lastCommand.slice(0, 20) + '…' : lastCommand;
+      const sanitized = sanitizeCommandForDisplay(lastCommand);
+      return sanitized.length > 20 ? sanitized.slice(0, 20) + '…' : sanitized;
     }
     return term.name || 'Terminal';
   }

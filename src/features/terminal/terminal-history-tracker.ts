@@ -6,6 +6,7 @@
 
 import { writable, type Writable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
+import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 
 const logger = createLogger('TerminalHistoryTracker');
 
@@ -76,13 +77,14 @@ class TerminalHistoryTracker {
    */
   onCommandStart(terminalId: string, workspaceId: string, command: string): void {
     const history = this.getOrCreateHistory(terminalId, workspaceId);
-    history.currentCommand = command;
+    const sanitized = sanitizeCommandForDisplay(command);
+    history.currentCommand = sanitized;
     history.currentOutput = '';
     history.isExecuting = true;
     // Also update lastCommand immediately so hover card shows it
-    history.lastCommand = command;
+    history.lastCommand = sanitized;
     this.notifyUpdate();
-    logger.debug(`Command started for terminal ${terminalId}: ${command}`);
+    logger.debug(`Command started for terminal ${terminalId}: ${sanitized}`);
   }
 
   /**
@@ -107,9 +109,10 @@ class TerminalHistoryTracker {
     const history = this.getOrCreateHistory(terminalId, workspaceId);
 
     if (history.currentCommand) {
+      const sanitizedCommand = sanitizeCommandForDisplay(history.currentCommand);
       // Add to command history
       const command: TerminalCommand = {
-        command: history.currentCommand,
+        command: sanitizedCommand,
         timestamp: Date.now(),
         output: history.currentOutput,
       };
@@ -122,13 +125,13 @@ class TerminalHistoryTracker {
       }
 
       // Update last command/output
-      history.lastCommand = history.currentCommand;
+      history.lastCommand = sanitizedCommand;
       history.lastOutput = history.currentOutput;
 
       // Save to localStorage
       this.saveHistory(terminalId, history);
 
-      logger.debug(`Command finished for terminal ${terminalId}: ${history.currentCommand}`);
+      logger.debug(`Command finished for terminal ${terminalId}: ${sanitizedCommand}`);
     }
 
     history.currentCommand = undefined;
@@ -167,8 +170,13 @@ class TerminalHistoryTracker {
       const data = {
         terminalId: history.terminalId,
         workspaceId: history.workspaceId,
-        commands: history.commands.slice(-5), // Only save last 5 commands
-        lastCommand: history.lastCommand,
+        commands: history.commands.slice(-5).map((cmd) => ({
+          ...cmd,
+          command: sanitizeCommandForDisplay(cmd.command),
+        })),
+        lastCommand: history.lastCommand
+          ? sanitizeCommandForDisplay(history.lastCommand)
+          : undefined,
         lastOutput: history.lastOutput?.substring(0, 200), // Limit output size
       };
       localStorage.setItem(key, JSON.stringify(data));

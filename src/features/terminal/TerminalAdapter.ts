@@ -17,6 +17,7 @@ import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
+import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 
 const logger = new Logger('TerminalAdapter');
 
@@ -598,7 +599,7 @@ export class TerminalAdapter {
     // Handle command executed (from backend, e.g., setup script)
     const handleCommandExecuted = (data: { terminalId: string; command: string }) => {
       if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        logger.debug(`[TerminalAdapter] Backend command executed: ${data.command}`);
+        logger.debug(`[TerminalAdapter] Backend command executed: ${sanitizeCommandForDisplay(data.command)}`);
         // Track the command in history
         terminalHistoryTracker.onCommandStart(this.terminalId, this.workspaceId, data.command);
         this.isExecuting = true;
@@ -954,12 +955,12 @@ export class TerminalAdapter {
         // This helps filter out false positives from malformed escape code stripping
         const looksLikeCommand = /^[a-zA-Z0-9.\/~]/.test(command);
         if (command.length > 0 && !this.isExecuting && looksLikeCommand) {
-          logger.info(`[TerminalAdapter] Detected command from output: ${command}`);
+          logger.info(`[TerminalAdapter] Detected command from output: ${sanitizeCommandForDisplay(command)}`);
           terminalHistoryTracker.onCommandStart(this.terminalId, this.workspaceId, command);
           this.isExecuting = true;
           this.callbacks.onCommandStart?.();
         } else if (command.length > 0 && !looksLikeCommand) {
-          logger.debug(`[TerminalAdapter] Skipping suspicious command detection: ${command}`);
+          logger.debug(`[TerminalAdapter] Skipping suspicious command detection: ${sanitizeCommandForDisplay(command)}`);
         }
       }
 
@@ -972,7 +973,7 @@ export class TerminalAdapter {
           this.isExecuting = false;
           this.callbacks.onCommandFinished?.();
           terminalHistoryTracker.onCommandFinish(this.terminalId, this.workspaceId);
-          logger.debug(`[TerminalAdapter] Command finished, prompt detected: ${cleanLine}`);
+          logger.debug(`[TerminalAdapter] Command finished, prompt detected: ${sanitizeCommandForDisplay(cleanLine)}`);
         }
         this.isAtPrompt = true;
         this.commandBuffer = '';
@@ -1163,7 +1164,7 @@ export class TerminalAdapter {
         );
         // Mark as executing so we know to finish tracking when prompt appears
         this.isExecuting = true;
-        logger.debug(`Command executed: ${command}${xtermCommand ? ' (from xterm buffer)' : ' (from keystroke buffer)'}`);
+        logger.debug(`Command executed: ${sanitizeCommandForDisplay(command)}${xtermCommand ? ' (from xterm buffer)' : ' (from keystroke buffer)'}`);
       }
       // Clear the command buffer
       this.commandBuffer = '';
