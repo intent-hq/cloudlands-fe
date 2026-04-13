@@ -597,6 +597,26 @@ export function* periodicQueueSweep() {
           });
           if (!typeMatches) continue;
 
+          // --- Delegation group guard ---
+          // If this subscription is part of a delegation group and the
+          // actor is already tracked as completed or deleted in the group
+          // tracker, there is nothing to catch up — skip it.
+          if (filter.delegationGroup) {
+            const groupId = filter.delegationGroup.groupId;
+            const tracker = wsState.delegationGroups[groupId];
+            // Skip if tracker was already cleaned up (group delivered) OR actor is already tracked
+            if (
+              !tracker ||
+              tracker.completedAgentIds.includes(actorId) ||
+              tracker.deletedAgentIds.includes(actorId)
+            ) {
+              logger.debug(
+                `[subscriptions] sweep-catchup SKIPPED (delegation-group-tracked) subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} groupId=${groupId} matchedEventType=${matchingEventType} trackerExists=${!!tracker}`,
+              );
+              continue;
+            }
+          }
+
           // --- Duplicate-suppression guard ---
           // Skip if a catch-up for this exact sub+actor+eventType combo
           // was already enqueued by a previous sweep.

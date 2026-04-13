@@ -31,6 +31,7 @@ import {
   requestDeliverQueuedEvents,
 } from "./saga-actions";
 import { handleDeliverEvents } from "./delivery-saga";
+import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,7 +73,7 @@ export function* handleDelegationGroupDelivery(
   );
   if (!isComplete) return;
 
-  logger.info(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
+  logger.warn(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
 
   // Mark as delivered to prevent re-entry
   yield* put(markDelegationDelivered(wsId, groupId));
@@ -136,13 +137,31 @@ function* deliverWithRetry(
   // Call delivery directly so we block until it completes (or fails).
   // This ensures cleanup only happens after the delivery attempt finishes.
   try {
-    logger.info(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=deliver`);
+    logger.warn(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=deliver`);
     yield* call(
       handleDeliverEvents,
       requestDeliverEvents(wsId, agentId, events),
     );
   } catch (err) {
     logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver error=${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Emit agent:woken-by-subscription for delegation group deliveries.
+  // This is intentionally outside the delivery try/catch so that a failure
+  // to emit the wake event does not trigger re-enqueue of already-delivered events.
+  try {
+    const eventTypes = [...new Set(events.map((e) => e.type))];
+    yield* call(dispatchWorkspaceEvent, "agent:woken-by-subscription", wsId, {
+      type: "agent",
+      id: agentId,
+    }, {
+      agentId,
+      groupId,
+      eventCount: events.length,
+      eventTypes,
+    });
+  } catch (err) {
+    logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=wake-event error=${err instanceof Error ? err.message : String(err)}`);
   }
 
   // SAFETY NET: Re-enqueue events to the parent agent's queue so they survive
@@ -156,7 +175,7 @@ function* deliverWithRetry(
   // other recovery path. This was the root cause of coordinators not being
   // woken when their delegated agents completed while the workspace was in
   // the background.
-  logger.info(`[subscriptions] re-enqueue-safety subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=re-enqueue`);
+  logger.warn(`[subscriptions] re-enqueue-safety subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} eventCount=${events.length} step=re-enqueue`);
   for (const event of events) {
     yield* put(enqueueEvent(wsId, agentId, {
       event,
@@ -168,7 +187,7 @@ function* deliverWithRetry(
 
   // Clean up delegation group and subscription regardless of delivery outcome
   // to prevent permanent stuck state
-  logger.info(`[subscriptions] cleanup subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=cleanup`);
+  logger.warn(`[subscriptions] cleanup subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=cleanup`);
   yield* put(removeDelegationGroup(wsId, groupId));
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
@@ -241,6 +260,10 @@ function* pollAndDeliver(
 export function* watchDelegationAgentCompleted() {
   yield* takeEvery(markDelegationAgentCompleted, function* (action) {
     const [wsId, groupId] = action.payload;
+    // Bump version so the IPC bridge emits agent:subscriptions-changed,
+    // allowing the renderer to refresh delegation group progress (e.g. 1/4 → 2/4)
+    // even before the group is fully complete.
+    yield* put(bumpVersion(wsId));
     yield* put(requestDelegationGroupDelivery(wsId, groupId));
   });
 }

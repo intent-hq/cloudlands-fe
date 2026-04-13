@@ -339,7 +339,8 @@ export function* handleMatchEvent(
 
     // --- Matched! Route the event. ---
     const eventId = (event as any).id as string | undefined;
-    logger.info(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
+    const logMatch = isAgentLifecycle ? logger.warn.bind(logger) : logger.info.bind(logger);
+    logMatch(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
     // --- Sweep catch-up dedup guard (consume-once) ---
@@ -354,7 +355,8 @@ export function* handleMatchEvent(
       const sweepDedupeKey = `${sub.id}:${event.actor.id}:${event.type}`;
       if (sweepCatchUpSeen.has(sweepDedupeKey)) {
         sweepCatchUpSeen.delete(sweepDedupeKey); // consume-once: allow future transitions
-        logger.info(
+        const logSweepSkip = isAgentLifecycle ? logger.warn.bind(logger) : logger.info.bind(logger);
+        logSweepSkip(
           `[subscriptions] skip-sweep-already-delivered subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=skip reason=sweep-catchup-already-fired`,
         );
         continue;
@@ -368,7 +370,8 @@ export function* handleMatchEvent(
 
       // Append every matched event to the group tracker so it is
       // available when handleDelegationGroupDelivery delivers to the parent.
-      logger.info(`[subscriptions] enqueue-delegation subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} groupId=${groupId} step=enqueue`);
+      const logDelegation = isAgentLifecycle ? logger.warn.bind(logger) : logger.info.bind(logger);
+      logDelegation(`[subscriptions] enqueue-delegation subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} groupId=${groupId} step=enqueue`);
       yield* put(appendDelegationGroupEvent(wsId, groupId, event));
 
       if (actorId) {
@@ -378,6 +381,14 @@ export function* handleMatchEvent(
           yield* put(markDelegationAgentCompleted(wsId, groupId, actorId));
         }
       }
+      // Cross-record the deterministic sweep-catchup ID so the periodic
+      // sweep does not re-deliver events the matching saga already routed
+      // through the delegation group path.
+      if (filter.actorIds?.length && event.actor?.id) {
+        const sweepCatchUpId = buildSweepCatchUpEventId(sub.id, event.actor.id, event.type);
+        recordDeliveredEventIds(sub.agentId, [sweepCatchUpId]);
+      }
+
       // Delegation group delivery is handled by delegation-group-saga
       // which watches both markDelegationAgentCompleted and markDelegationAgentDeleted.
       continue;
