@@ -60,10 +60,11 @@ function* handleQueuePath(
   agentId: string,
   payload: SendMessagePayload,
   wsId: string,
+  reason?: string,
 ): SagaGenerator<void> {
   const { text, serializedContextItems, imageBlocks } = payload;
 
-  logger.info('Agent is streaming, queueing message', { agentId });
+  logger.info(reason ?? 'Agent is streaming, queueing message', { agentId });
 
   const result = yield* call(
     unifiedOrchestrator.queueMessage.bind(unifiedOrchestrator),
@@ -261,18 +262,8 @@ function* handleSendMessage(
     }
   }
 
-  // --- Send path: guard against concurrent sends for the same agent ---
-  if (activeSends.has(agentId)) {
-    logger.warn('Dropping concurrent sendMessage — send already in flight', { agentId });
-    return;
-  }
-
-  activeSends.add(agentId);
-  try {
-    yield* call(handleSendPath, wsId, agentId, payload);
-  } finally {
-    activeSends.delete(agentId);
-  }
+  // --- Send path (concurrency guard is in watchSendMessage) ---
+  yield* call(handleSendPath, wsId, agentId, payload);
 }
 
 // ============================================================================
@@ -281,14 +272,32 @@ function* handleSendMessage(
 
 /**
  * Tracks whether a send operation is in-flight for a given agentId.
- * The guard is checked inside handleSendMessage only for the **send path**,
- * not the queue path. This allows multiple messages to be queued while an
- * agent is streaming, while still preventing concurrent sends.
+ * If a sendMessage arrives while one is already running for the same agent,
+ * the message is queued (routed to handleQueuePath) so it can be processed
+ * once the current send completes.
  */
 const activeSends = new Set<string>();
 
+/** @internal Exposed for test cleanup only — do not use in production code. */
+export function _resetActiveSendsForTest(): void {
+  activeSends.clear();
+}
+
 export function* watchSendMessage(): SagaGenerator<void> {
   yield* takeEvery(sendMessage, function* (action: ReturnType<typeof sendMessage>) {
-    yield* call(handleSendMessage, action);
+    const { agentId, payload } = action.payload;
+    const wsId = payload.wsId;
+
+    if (activeSends.has(agentId)) {
+      yield* call(handleQueuePath, agentId, payload, wsId, 'Send already in flight, queueing message');
+      return;
+    }
+
+    activeSends.add(agentId);
+    try {
+      yield* call(handleSendMessage, action);
+    } finally {
+      activeSends.delete(agentId);
+    }
   });
 }

@@ -35,15 +35,16 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-// Hoisted logger mock so tests can assert on logger.warn calls
-const { mockLoggerWarn } = vi.hoisted(() => ({
+// Hoisted logger mocks so tests can assert on logger calls
+const { mockLoggerWarn, mockLoggerInfo } = vi.hoisted(() => ({
   mockLoggerWarn: vi.fn(),
+  mockLoggerInfo: vi.fn(),
 }));
 
 // Mock client logger
 vi.mock("$lib/utils/client-logger", () => ({
   createLogger: () => ({
-    info: vi.fn(),
+    info: mockLoggerInfo,
     warn: mockLoggerWarn,
     error: vi.fn(),
     debug: vi.fn(),
@@ -222,8 +223,10 @@ describe("send-message-saga", () => {
     mockQueueMessage.mockResolvedValue({ success: true });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
+    const { _resetActiveSendsForTest } = await import("./send-message-saga");
+    _resetActiveSendsForTest();
   });
 
   // Helper to run the saga with a sendMessage action
@@ -492,15 +495,10 @@ describe("send-message-saga", () => {
   });
 
   // ========================================================================
-  // Test 7: Concurrent send guard drops duplicate sends (send path only)
-  //
-  // IMPORTANT: The activeSends guard only applies to the **send path**.
-  // Queue-path messages (when agent is streaming/processing) bypass this
-  // guard entirely, allowing multiple messages to be queued concurrently.
-  // See regression test below: "allows multiple queue-path messages".
+  // Test 7: Concurrent send guard queues duplicate sends
   // ========================================================================
   describe("concurrent send guard", () => {
-    it("drops a second send-path sendMessage for the same agent while the first is in-flight", async () => {
+    it("queues a second sendMessage for the same agent while the first is in-flight", async () => {
       // Make sendMessage hang so the first send stays in-flight
       let resolveSend!: () => void;
       mockSendMessage.mockImplementation(
@@ -532,20 +530,23 @@ describe("send-message-saga", () => {
       channel.put(makeSendAction({ text: "Second message" }));
       await vi.advanceTimersByTimeAsync(0);
 
-      // Only one chatSendStarted should have been dispatched
+      // Only one chatSendStarted should have been dispatched (the queued path skips it)
       const sendStartedActions = dispatched.filter(
         (a) => a.type === chatSendStarted.type,
       );
       expect(sendStartedActions).toHaveLength(1);
 
-      // chatService.sendMessage should have been called exactly once
+      // chatService.sendMessage should have been called exactly once (queued path uses queueMessage)
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
 
-      // The concurrent-send warning should have been logged
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "Dropping concurrent sendMessage — send already in flight",
+      // The queueing info log should have been emitted
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Send already in flight, queueing message",
         expect.objectContaining({ agentId: AGENT_ID }),
       );
+
+      // The queued message should have been routed to queueMessage
+      expect(mockQueueMessage).toHaveBeenCalled();
 
       // Resolve the pending send to clean up
       resolveSend();
