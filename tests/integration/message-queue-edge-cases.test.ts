@@ -16,12 +16,16 @@ interface MockQueueHandler {
   messageQueues: Map<string, Array<{ id: string; content: string; position: number }>>;
   processingQueue: Set<string>;
   interruptedAgents: Set<string>;
+  interruptedAgentTimeouts: Map<string, ReturnType<typeof setTimeout>>;
   streamStartTimes: Map<string, number>;
+  streamWorkspaceIds: Map<string, string>;
   processNextQueuedMessage: (agentId: string, workspaceId: string) => Promise<void>;
   handleStopSession: (agentId: string) => Promise<void>;
   handleSendMessage: (agentId: string) => void;
   queueMessage: (agentId: string, content: string) => { id: string };
   removeQueuedMessage: (agentId: string, messageId: string) => void;
+  startInterruptedAgentSafetyTimeout: (agentId: string) => void;
+  cancelInterruptedAgentSafetyTimeout: (agentId: string) => void;
 }
 
 describe('Message Queue Edge Cases', () => {
@@ -35,7 +39,9 @@ describe('Message Queue Edge Cases', () => {
       messageQueues: new Map(),
       processingQueue: new Set(),
       interruptedAgents: new Set(),
+      interruptedAgentTimeouts: new Map(),
       streamStartTimes: new Map(),
+      streamWorkspaceIds: new Map(),
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async processNextQueuedMessage(agentId: string, _workspaceId: string) {
@@ -83,12 +89,41 @@ describe('Message Queue Edge Cases', () => {
       async handleStopSession(agentId: string) {
         // Mark as interrupted BEFORE doing anything else
         this.interruptedAgents.add(agentId);
+        // Start safety timeout (mirrors real implementation)
+        this.startInterruptedAgentSafetyTimeout(agentId);
       },
 
       handleSendMessage(agentId: string) {
         // Clear the interrupted flag when a new message is actually sent
         // This mirrors the real handleSendMessage behavior
         this.interruptedAgents.delete(agentId);
+        this.cancelInterruptedAgentSafetyTimeout(agentId);
+      },
+
+      startInterruptedAgentSafetyTimeout(agentId: string) {
+        this.cancelInterruptedAgentSafetyTimeout(agentId);
+        const timeout = setTimeout(() => {
+          if (this.interruptedAgents.has(agentId)) {
+            this.interruptedAgents.delete(agentId);
+            this.interruptedAgentTimeouts.delete(agentId);
+            // Resume queue processing
+            const workspaceId = this.streamWorkspaceIds.get(agentId);
+            if (workspaceId) {
+              this.processNextQueuedMessage(agentId, workspaceId).catch(() => {});
+            }
+          } else {
+            this.interruptedAgentTimeouts.delete(agentId);
+          }
+        }, 30_000);
+        this.interruptedAgentTimeouts.set(agentId, timeout);
+      },
+
+      cancelInterruptedAgentSafetyTimeout(agentId: string) {
+        const timeout = this.interruptedAgentTimeouts.get(agentId);
+        if (timeout) {
+          clearTimeout(timeout);
+          this.interruptedAgentTimeouts.delete(agentId);
+        }
       },
 
       queueMessage(agentId: string, content: string) {
@@ -119,7 +154,13 @@ describe('Message Queue Edge Cases', () => {
   });
 
   afterEach(() => {
+    // Clean up any pending safety timeouts
+    for (const timeout of handler.interruptedAgentTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    handler.interruptedAgentTimeouts.clear();
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   describe('Send Now - Interrupt Handling', () => {
@@ -501,6 +542,127 @@ describe('Message Queue Edge Cases', () => {
       expect(processedMessages.length).toBe(0);
       expect(handler.messageQueues.get(agentId)?.length).toBe(1);
       expect(handler.interruptedAgents.has(agentId)).toBe(true);
+    });
+  });
+
+  describe('InterruptedAgents Safety Timeout', () => {
+    it('should start a safety timeout when interruptedAgents flag is set', async () => {
+      const agentId = 'agent_1';
+
+      await handler.handleStopSession(agentId);
+
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+      expect(handler.interruptedAgentTimeouts.has(agentId)).toBe(true);
+    });
+
+    it('should cancel the safety timeout when flag is cleared via handleSendMessage', async () => {
+      const agentId = 'agent_1';
+
+      await handler.handleStopSession(agentId);
+      expect(handler.interruptedAgentTimeouts.has(agentId)).toBe(true);
+
+      handler.handleSendMessage(agentId);
+
+      expect(handler.interruptedAgents.has(agentId)).toBe(false);
+      expect(handler.interruptedAgentTimeouts.has(agentId)).toBe(false);
+    });
+
+    it('should auto-clear the flag after 30 seconds if not cleared normally', async () => {
+      vi.useFakeTimers();
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      handler.streamWorkspaceIds.set(agentId, workspaceId);
+      handler.queueMessage(agentId, 'Stuck message');
+
+      // Manually set the flag and start the timeout (simulating handleStopSession with fake timers)
+      handler.interruptedAgents.add(agentId);
+      handler.startInterruptedAgentSafetyTimeout(agentId);
+
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+
+      // Advance time to just before the timeout
+      vi.advanceTimersByTime(29_999);
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+
+      // Advance past the timeout
+      vi.advanceTimersByTime(2);
+      expect(handler.interruptedAgents.has(agentId)).toBe(false);
+      expect(handler.interruptedAgentTimeouts.has(agentId)).toBe(false);
+    });
+
+    it('should resume queue processing after safety timeout clears the flag', async () => {
+      vi.useFakeTimers();
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      handler.streamWorkspaceIds.set(agentId, workspaceId);
+      handler.queueMessage(agentId, 'Should be processed after timeout');
+
+      handler.interruptedAgents.add(agentId);
+      handler.startInterruptedAgentSafetyTimeout(agentId);
+
+      // Queue processing should be blocked
+      await handler.processNextQueuedMessage(agentId, workspaceId);
+      expect(processedMessages.length).toBe(0);
+
+      // Advance past the safety timeout
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      // The timeout callback should have cleared the flag and triggered processNextQueuedMessage
+      expect(handler.interruptedAgents.has(agentId)).toBe(false);
+      expect(processedMessages.length).toBe(1);
+      expect(handler.messageQueues.get(agentId)?.length).toBe(0);
+    });
+
+    it('should not trigger unnecessary retries when flag is cleared normally before timeout', async () => {
+      vi.useFakeTimers();
+      const agentId = 'agent_1';
+      const workspaceId = 'workspace_1';
+
+      handler.streamWorkspaceIds.set(agentId, workspaceId);
+      handler.queueMessage(agentId, 'Message');
+
+      handler.interruptedAgents.add(agentId);
+      handler.startInterruptedAgentSafetyTimeout(agentId);
+
+      // Clear the flag normally (simulates handleSendMessage path)
+      handler.handleSendMessage(agentId);
+      expect(handler.interruptedAgentTimeouts.has(agentId)).toBe(false);
+
+      // Advance past where the timeout would have fired
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      // No automatic processing should have happened from the timeout
+      // (only if processNextQueuedMessage was called explicitly would it process)
+      expect(processedMessages.length).toBe(0);
+    });
+
+    it('should replace existing timeout when interrupted again', async () => {
+      vi.useFakeTimers();
+      const agentId = 'agent_1';
+
+      handler.interruptedAgents.add(agentId);
+      handler.startInterruptedAgentSafetyTimeout(agentId);
+
+      const firstTimeout = handler.interruptedAgentTimeouts.get(agentId);
+
+      // Advance 15 seconds
+      vi.advanceTimersByTime(15_000);
+
+      // Start a new timeout (simulates a second interrupt)
+      handler.startInterruptedAgentSafetyTimeout(agentId);
+
+      const secondTimeout = handler.interruptedAgentTimeouts.get(agentId);
+      expect(secondTimeout).not.toBe(firstTimeout);
+
+      // Advance another 20 seconds (past original 30s, but only 20s into new timeout)
+      vi.advanceTimersByTime(20_000);
+      expect(handler.interruptedAgents.has(agentId)).toBe(true);
+
+      // Advance to 30s after second timeout start
+      vi.advanceTimersByTime(10_001);
+      expect(handler.interruptedAgents.has(agentId)).toBe(false);
     });
   });
 });

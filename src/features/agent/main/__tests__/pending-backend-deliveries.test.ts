@@ -62,9 +62,12 @@ describe('pendingBackendDeliveries safety timeout', () => {
     handler.pendingBackendDeliveryTimeouts = new Map();
     handler.activeSessions = new Map();
     handler.interruptedAgents = new Set();
+    handler.interruptedAgentTimeouts = new Map();
     handler.completedStreams = new Map();
     handler.pendingHandlerReady = new Map();
     handler.emptyResponseRetries = new Map();
+    handler.queueAgentWorkspaceIds = new Map();
+    handler.queueWatchdogInterval = null;
     return handler;
   }
 

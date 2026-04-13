@@ -176,6 +176,10 @@ export class AgentBackendHandler {
   private static readonly PENDING_DELIVERY_TIMEOUT_MS = 5 * 60 * 1000;
   /** @property {Set<string>} interruptedAgents - Agents that were intentionally interrupted (skip auto queue processing) */
   private interruptedAgents = new Set<string>();
+  /** @property {Map<string, NodeJS.Timeout>} interruptedAgentTimeouts - Safety timeouts that auto-clear interruptedAgents flags after INTERRUPTED_AGENT_TIMEOUT_MS */
+  private interruptedAgentTimeouts = new Map<string, NodeJS.Timeout>();
+  /** Safety timeout duration for interruptedAgents (30 seconds). If the flag isn't cleared within this time, it's auto-cleared to prevent permanent queue blocking. */
+  private static readonly INTERRUPTED_AGENT_TIMEOUT_MS = 30_000;
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
   private completedStreams = new Map<string, Set<string>>();
   /** @property {Map<string, { resolve: () => void, reject: (err: Error) => void }>} pendingHandlerReady - Promises waiting for frontend handler ready signal */
@@ -199,6 +203,15 @@ export class AgentBackendHandler {
 
   /** @property {Map<string, number>} emptyResponseRetries - Track consecutive empty end_turn responses per agent for auto-continue */
   private emptyResponseRetries = new Map<string, number>();
+
+  /** @property {NodeJS.Timeout | null} queueWatchdogInterval - Periodic timer that detects stuck queues */
+  private queueWatchdogInterval: NodeJS.Timeout | null = null;
+  /** @property {Map<string, string>} queueAgentWorkspaceIds - Track workspaceId for agents with queued messages */
+  private queueAgentWorkspaceIds = new Map<string, string>();
+  /** Watchdog check interval (30 seconds) */
+  private static readonly QUEUE_WATCHDOG_INTERVAL_MS = 30_000;
+  /** Minimum age before a queued message is considered stuck (10 seconds) */
+  private static readonly QUEUE_STUCK_THRESHOLD_MS = 10_000;
 
   /**
    * Registers an event listener for cleanup tracking.
@@ -1106,6 +1119,7 @@ export class AgentBackendHandler {
           agentId: request.agentId,
         });
         this.interruptedAgents.delete(request.agentId);
+        this.cancelInterruptedAgentSafetyTimeout(request.agentId);
       }
 
       // Get or create provider for this agent
@@ -3722,6 +3736,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // when the user clicks "Send now" on a specific queued message
       this.interruptedAgents.add(agentId);
 
+      // Start a safety timeout to auto-clear the interrupted flag.
+      // If the flag isn't cleared within 30 seconds (e.g., handleSendMessage never fires),
+      // clear it automatically to prevent permanent queue blocking.
+      this.startInterruptedAgentSafetyTimeout(agentId);
+
       // First, interrupt the ACP provider directly (it's stored in this.providers, not in ConsolidatedBackend)
       const provider = this.providers.get(agentId);
       if (provider && typeof provider.interrupt === 'function') {
@@ -4720,6 +4739,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * @param generation - Optional stream generation token (passed through to cleanupStreamResources)
    */
   private finalizeStream(agentId: string, workspaceId: string, reason: string, generation?: number): void {
+    // Persist workspace ID for queue watchdog before stream resources are cleaned up
+    if (workspaceId && this.messageQueues.has(agentId)) {
+      this.queueAgentWorkspaceIds.set(agentId, workspaceId);
+    }
+
     this.cleanupStreamResources(agentId, generation);
 
     // CRITICAL: Clear pendingBackendDeliveries BEFORE any async work that could trigger
@@ -4892,6 +4916,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.messageQueues.delete(agentId);
     this.processingQueue.delete(agentId);
     this.pendingQueueProcessing.delete(agentId);
+    this.queueAgentWorkspaceIds.delete(agentId);
+    this.stopQueueWatchdogIfEmpty();
 
     // Backend delivery tracking
     this.pendingBackendDeliveries.delete(agentId);
@@ -4904,6 +4930,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // Agent state tracking
     this.activeSessions.delete(agentId);
     this.interruptedAgents.delete(agentId);
+    this.cancelInterruptedAgentSafetyTimeout(agentId);
     this.completedStreams.delete(agentId);
     this.pendingHandlerReady.delete(agentId);
     this.emptyResponseRetries.delete(agentId);
@@ -5387,6 +5414,59 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     if (this.interruptedAgents.has(agentId)) {
       logger.info('Clearing interruptedAgents flag via clearInterruptedFlag', { agentId });
       this.interruptedAgents.delete(agentId);
+      this.cancelInterruptedAgentSafetyTimeout(agentId);
+    }
+  }
+
+  /**
+   * Start a safety timeout that auto-clears the interruptedAgents flag after
+   * INTERRUPTED_AGENT_TIMEOUT_MS. This prevents the flag from getting permanently
+   * stuck if the expected clear path (handleSendMessage / clearInterruptedFlag)
+   * never fires. When the timeout fires, it also triggers processNextQueuedMessage
+   * to resume queue processing.
+   */
+  private startInterruptedAgentSafetyTimeout(agentId: string): void {
+    // Cancel any existing timeout for this agent first
+    this.cancelInterruptedAgentSafetyTimeout(agentId);
+
+    const timeout = setTimeout(() => {
+      if (this.interruptedAgents.has(agentId)) {
+        logger.warn(
+          'Safety timeout: auto-clearing interruptedAgents flag that was not cleared within expected time',
+          { agentId, timeoutMs: AgentBackendHandler.INTERRUPTED_AGENT_TIMEOUT_MS },
+        );
+        this.interruptedAgents.delete(agentId);
+        this.interruptedAgentTimeouts.delete(agentId);
+
+        // Resume queue processing now that the flag is cleared.
+        // Fall back to queueAgentWorkspaceIds since streamWorkspaceIds may have
+        // been cleaned up by cleanupStreamResources() before this timeout fires.
+        const workspaceId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+        if (workspaceId) {
+          this.processNextQueuedMessage(agentId, workspaceId).catch((err) => {
+            logger.error('Error processing queue after interruptedAgents safety timeout', {
+              agentId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+      } else {
+        // Flag was already cleared by normal path; just clean up the timeout entry
+        this.interruptedAgentTimeouts.delete(agentId);
+      }
+    }, AgentBackendHandler.INTERRUPTED_AGENT_TIMEOUT_MS);
+
+    this.interruptedAgentTimeouts.set(agentId, timeout);
+  }
+
+  /**
+   * Cancel the safety timeout for interruptedAgents, if one is pending.
+   */
+  private cancelInterruptedAgentSafetyTimeout(agentId: string): void {
+    const timeout = this.interruptedAgentTimeouts.get(agentId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.interruptedAgentTimeouts.delete(agentId);
     }
   }
 
@@ -6388,6 +6468,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       queue.push(queuedMessage);
       this.messageQueues.set(agentId, queue);
 
+      // Track workspace ID for this agent so the watchdog can process stuck queues
+      const workspaceId = this.streamWorkspaceIds.get(agentId);
+      if (workspaceId) {
+        this.queueAgentWorkspaceIds.set(agentId, workspaceId);
+      }
+
+      // Start the watchdog if this is the first queued message across all agents
+      this.startQueueWatchdog();
+
       logger.info('Message queued', {
         agentId,
         messageId: queuedMessage.id,
@@ -6482,6 +6571,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         { agentId, queue },
         this.getWorkspaceWindowsForAgent(agentId),
       );
+
+      // Stop the watchdog if all queues are now empty
+      this.stopQueueWatchdogIfEmpty();
 
       return { success: true };
     } catch (error) {
@@ -6739,6 +6831,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         messageId: nextMessage.id,
         remainingInQueue: queue.length,
       });
+
+      // Stop the watchdog if all queues are now empty
+      this.stopQueueWatchdogIfEmpty();
     } catch (error) {
       // FIX: Re-add the message to the front of the queue so it can be retried.
       // The message was removed above before attempting to send, so we must restore it.
@@ -6774,6 +6869,86 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     } finally {
       this.processingQueue.delete(agentId);
     }
+  }
+
+  /**
+   * Start the queue watchdog timer if not already running.
+   * The watchdog periodically checks for stuck queues and triggers reprocessing.
+   */
+  private startQueueWatchdog(): void {
+    if (this.queueWatchdogInterval) {
+      return; // Already running
+    }
+
+    this.queueWatchdogInterval = setInterval(() => {
+      for (const [agentId, queue] of this.messageQueues) {
+        if (!queue || queue.length === 0) {
+          continue;
+        }
+
+        // Skip if a stream is active, currently processing, or interrupted
+        if (this.streamStartTimes.has(agentId)) continue;
+        if (this.processingQueue.has(agentId)) continue;
+        if (this.interruptedAgents.has(agentId)) continue;
+        if (this.pendingQueueProcessing.has(agentId)) continue;
+
+        // Check if the oldest message has been queued long enough to be considered stuck
+        const oldestMessage = queue[0];
+        const queuedAt = new Date(oldestMessage.queuedAt).getTime();
+        const ageMs = Date.now() - queuedAt;
+
+        if (ageMs < AgentBackendHandler.QUEUE_STUCK_THRESHOLD_MS) {
+          continue;
+        }
+
+        const workspaceId = this.queueAgentWorkspaceIds.get(agentId);
+        if (!workspaceId) {
+          logger.warn('Queue watchdog: no workspaceId for stuck queue, skipping', {
+            agentId,
+            queueLength: queue.length,
+            oldestMessageAgeMs: ageMs,
+          });
+          continue;
+        }
+
+        logger.warn('Queue watchdog: recovering stuck queue', {
+          agentId,
+          queueLength: queue.length,
+          oldestMessageId: oldestMessage.id,
+          oldestMessageAgeMs: ageMs,
+          oldestMessageQueuedAt: oldestMessage.queuedAt,
+        });
+
+        this.processNextQueuedMessage(agentId, workspaceId).catch((error) => {
+          logger.error('Queue watchdog: failed to recover stuck queue', {
+            agentId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    }, AgentBackendHandler.QUEUE_WATCHDOG_INTERVAL_MS);
+
+    logger.info('Queue watchdog started');
+  }
+
+  /**
+   * Stop the queue watchdog timer if all queues are empty.
+   */
+  private stopQueueWatchdogIfEmpty(): void {
+    if (!this.queueWatchdogInterval) {
+      return;
+    }
+
+    // Check if any queue still has messages
+    for (const [, queue] of this.messageQueues) {
+      if (queue && queue.length > 0) {
+        return; // Still have messages, keep watchdog running
+      }
+    }
+
+    clearInterval(this.queueWatchdogInterval);
+    this.queueWatchdogInterval = null;
+    logger.info('Queue watchdog stopped — all queues empty');
   }
 
   /**
@@ -7318,6 +7493,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.messageQueues.clear();
     this.processingQueue.clear();
     this.interruptedAgents.clear();
+    this.queueAgentWorkspaceIds.clear();
+
+    // Stop queue watchdog
+    if (this.queueWatchdogInterval) {
+      clearInterval(this.queueWatchdogInterval);
+      this.queueWatchdogInterval = null;
+    }
+
+    // Clear interruptedAgents safety timeouts
+    for (const timeout of this.interruptedAgentTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.interruptedAgentTimeouts.clear();
 
     // Clear stream tracking maps
     this.streamStartTimes.clear();

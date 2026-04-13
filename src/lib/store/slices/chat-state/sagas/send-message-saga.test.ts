@@ -492,10 +492,15 @@ describe("send-message-saga", () => {
   });
 
   // ========================================================================
-  // Test 7: Concurrent send guard drops duplicate sends
+  // Test 7: Concurrent send guard drops duplicate sends (send path only)
+  //
+  // IMPORTANT: The activeSends guard only applies to the **send path**.
+  // Queue-path messages (when agent is streaming/processing) bypass this
+  // guard entirely, allowing multiple messages to be queued concurrently.
+  // See regression test below: "allows multiple queue-path messages".
   // ========================================================================
   describe("concurrent send guard", () => {
-    it("drops a second sendMessage for the same agent while the first is in-flight", async () => {
+    it("drops a second send-path sendMessage for the same agent while the first is in-flight", async () => {
       // Make sendMessage hang so the first send stays in-flight
       let resolveSend!: () => void;
       mockSendMessage.mockImplementation(
@@ -629,6 +634,148 @@ describe("send-message-saga", () => {
       const guardFailed = d2.find((a) => a.type === chatSendFailed.type);
       expect(guardFailed).toBeDefined();
       expect(guardFailed.payload[1]).toBe(''); // empty = no error banner
+    });
+  });
+
+  // ========================================================================
+  // Regression test: activeSends guard must NOT block queue-path messages
+  // Root cause #6 — the activeSends Set was previously checked for ALL
+  // messages, which meant the second and third queued messages were silently
+  // dropped when the agent was streaming.
+  // ========================================================================
+  describe("activeSends guard does not block queue-path messages (root cause #6)", () => {
+    it("allows multiple queue-path messages while agent is streaming", async () => {
+      // Set agent as streaming so all messages take the queue path
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: true,
+        isProcessing: false,
+      });
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      // Dispatch 3 sendMessage actions while agent is streaming
+      channel.put(makeSendAction({ text: "Message 1" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      channel.put(makeSendAction({ text: "Message 2" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      channel.put(makeSendAction({ text: "Message 3" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // All 3 should have called queueMessage — none should be dropped
+      expect(mockQueueMessage).toHaveBeenCalledTimes(3);
+
+      // No chatSendStarted should have been dispatched (queue path skips it)
+      const sendStartedActions = dispatched.filter(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedActions).toHaveLength(0);
+
+      // No concurrent-send warning should have been logged
+      expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+        "Dropping concurrent sendMessage — send already in flight",
+        expect.anything(),
+      );
+    });
+  });
+
+  // ========================================================================
+  // Regression test: skipQueueCheck forces the send path
+  // Root cause #5 — the "Send now" action from the queue UI sets
+  // skipQueueCheck=true to bypass the isStreaming/isProcessing check.
+  // Without this flag, the message would be re-queued instead of sent.
+  // ========================================================================
+  describe("skipQueueCheck forces send path (root cause #5)", () => {
+    it("skipQueueCheck forces send path even when agent is streaming", async () => {
+      // Agent is streaming — normally this would trigger the queue path
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: true,
+        isProcessing: false,
+      });
+
+      const { dispatched } = await runSendMessageSaga({ skipQueueCheck: true });
+
+      // Should take the send path: chatSendStarted dispatched
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedAction).toBeDefined();
+
+      // Should NOT have queued the message
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+
+      // chatService.sendMessage should have been called (send path)
+      expect(mockSendMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe("send now with image blocks (regression)", () => {
+    it("forwards imageBlocks as contextItems when sending a queued message via skipQueueCheck", async () => {
+      const imageBlocks = [
+        { type: "image" as const, data: "base64data1", mimeType: "image/png" },
+        { type: "image" as const, data: "base64data2", mimeType: "image/jpeg" },
+      ];
+
+      await runSendMessageSaga({
+        skipQueueCheck: true,
+        imageBlocks,
+      });
+
+      // chatService.sendMessage should have been called with image data in contextItems
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const options = mockSendMessage.mock.calls[0][3];
+      expect(options.contextItems).toBeDefined();
+      expect(options.contextItems.length).toBe(2);
+      expect(options.contextItems[0]).toMatchObject({
+        imageData: "base64data1",
+        imageMimeType: "image/png",
+      });
+      expect(options.contextItems[1]).toMatchObject({
+        imageData: "base64data2",
+        imageMimeType: "image/jpeg",
+      });
+    });
+
+    it("merges imageBlocks with existing serializedContextItems", async () => {
+      const existingItem = { id: "ctx-1", type: "file", label: "test.ts" };
+      const imageBlocks = [
+        { type: "image" as const, data: "imgdata", mimeType: "image/png" },
+      ];
+
+      await runSendMessageSaga({
+        skipQueueCheck: true,
+        serializedContextItems: [existingItem],
+        imageBlocks,
+      });
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const options = mockSendMessage.mock.calls[0][3];
+      expect(options.contextItems).toBeDefined();
+      // Should have both the existing context item and the image
+      expect(options.contextItems.length).toBe(2);
+      expect(options.contextItems[0]).toMatchObject({ id: "ctx-1" });
+      expect(options.contextItems[1]).toMatchObject({
+        imageData: "imgdata",
+        imageMimeType: "image/png",
+      });
     });
   });
 });

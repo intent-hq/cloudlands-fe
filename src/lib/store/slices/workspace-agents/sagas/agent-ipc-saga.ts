@@ -319,52 +319,94 @@ function* handleExistingSessionUpdate(
 // 5. agent:queue:processing — queued message handling
 // ============================================================================
 
+const QUEUE_SESSION_RETRY_ATTEMPTS = 3;
+const QUEUE_SESSION_RETRY_DELAY_MS = 200;
+
+/** Exported for testing */
+export type QueueProcessingData = {
+  agentId: string; messageId: string; content: string;
+  contextItems?: Array<{ id: string; type: string; label?: string; content?: string; path?: string }>;
+};
+
+export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator<void> {
+  const { agentId, messageId, content, contextItems } = data;
+  logger.debug("Queue processing event received", { agentId, messageId });
+
+  // Retry session lookup — the session may still be loading
+  let session: AgentSession | undefined;
+  for (let attempt = 1; attempt <= QUEUE_SESSION_RETRY_ATTEMPTS; attempt++) {
+    session = yield* select(selectAgentById.select, agentId);
+    if (session) break;
+    if (attempt < QUEUE_SESSION_RETRY_ATTEMPTS) {
+      logger.debug("Session not found, retrying", { agentId, attempt, maxAttempts: QUEUE_SESSION_RETRY_ATTEMPTS });
+      yield* delay(QUEUE_SESSION_RETRY_DELAY_MS);
+    }
+  }
+
+  if (!session) {
+    logger.error("No session found for queued message after retries — sending handler-ready so backend proceeds", {
+      agentId, messageId, attempts: QUEUE_SESSION_RETRY_ATTEMPTS,
+    });
+    // Still signal backend so the message is at least persisted server-side
+    if (typeof window !== "undefined" && window.electronAPI) {
+      window.electronAPI.send("agent:handler-ready", { agentId });
+    }
+    return;
+  }
+
+  // Use session.workspaceId — the agent's workspace, not the currently-viewed one
+  const wsId = session.workspaceId;
+  if (!wsId) {
+    logger.error("Session has no workspaceId for queued message — sending handler-ready so backend proceeds", { agentId, messageId });
+    if (typeof window !== "undefined" && window.electronAPI) {
+      window.electronAPI.send("agent:handler-ready", { agentId });
+    }
+    return;
+  }
+
+  // Add user message to session
+  const userMessage: AgentMessage = {
+    id: messageId,
+    role: "user",
+    contentBlocks: [{ type: "text", text: content }],
+    timestamp: new Date().toISOString(),
+    metadata: { contextItems: contextItems || [] },
+  };
+  yield* put(addAgentSessionMessage(agentId, userMessage));
+  yield* put(addAgentMessage(wsId, agentId, userMessage));
+
+  // Set streaming state
+  yield* put(setAgentStreaming(wsId, agentId, true));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+  }
+
+  // Persist the queued user message immediately
+  try {
+    yield* call([agentService, agentService.saveSession], agentId, wsId, true);
+  } catch (error) {
+    logger.error("Failed to persist queued user message", { agentId, messageId, error });
+  }
+
+  // Re-register stream handler with forceReregister, but always signal backend
+  // even if handler registration fails — otherwise the backend waits forever.
+  try {
+    yield* call([agentService, agentService.ensureStreamHandler], agentId, { forceReregister: true });
+  } catch (error) {
+    logger.error("Failed to re-register stream handler for queued message", { agentId, messageId, error });
+  } finally {
+    // Signal backend we're ready
+    if (typeof window !== "undefined" && window.electronAPI) {
+      window.electronAPI.send("agent:handler-ready", { agentId });
+    }
+  }
+}
+
 export function* watchQueueProcessingSaga() {
-  yield* takeEveryFromElectronChannel<{
-    agentId: string; messageId: string; content: string; contextItems?: Array<{ id: string; type: string; label?: string; content?: string; path?: string }>;
-  }>(
+  yield* takeEveryFromElectronChannel<QueueProcessingData>(
     ec("agent:queue:processing"),
     function* (data) {
-      const { agentId, messageId, content, contextItems } = data;
-      logger.debug("Queue processing event received", { agentId, messageId });
-
-      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
-      if (!wsId) { logger.warn("No workspace ID for queued message", { agentId }); return; }
-
-      const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
-      if (!session) { logger.warn("No session for queued message", { agentId }); return; }
-
-      // Add user message to session
-      const userMessage: AgentMessage = {
-        id: messageId,
-        role: "user",
-        contentBlocks: [{ type: "text", text: content }],
-        timestamp: new Date().toISOString(),
-        metadata: { contextItems: contextItems || [] },
-      };
-      yield* put(addAgentSessionMessage(agentId, userMessage));
-      yield* put(addAgentMessage(session.workspaceId || wsId, agentId, userMessage));
-
-      // Set streaming state
-      yield* put(setAgentStreaming(session.workspaceId || wsId, agentId, true));
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
-      }
-
-      // Persist the queued user message immediately
-      try {
-        yield* call([agentService, agentService.saveSession], agentId, session.workspaceId || wsId, true);
-      } catch (error) {
-        logger.error("Failed to persist queued user message", { agentId, messageId, error });
-      }
-
-      // Re-register stream handler with forceReregister
-      yield* call([agentService, agentService.ensureStreamHandler], agentId, { forceReregister: true });
-
-      // Signal backend we're ready
-      if (typeof window !== "undefined" && window.electronAPI) {
-        window.electronAPI.send("agent:handler-ready", { agentId });
-      }
+      yield* call(handleQueueProcessing, data);
     },
   );
 }
@@ -373,33 +415,50 @@ export function* watchQueueProcessingSaga() {
 // 6. agent:queue:processing-cancelled — undo queue processing effects
 // ============================================================================
 
+export function* handleQueueCancelled(data: { agentId: string; messageId: string }): SagaGenerator<void> {
+  const { agentId, messageId } = data;
+  logger.warn("Queue processing cancelled, cleaning up", { agentId, messageId });
+
+  // Look up the session to get its workspaceId — don't rely on the active workspace
+  const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
+
+  // Always remove from agent-session state (only needs agentId + messageId)
+  yield* put(removeAgentSessionMessage(agentId, messageId));
+
+  // Remove from workspace-agents state if we can resolve a workspaceId
+  // Fallback chain: session.workspaceId → activeWorkspaceId → skip cleanup with warning
+  let wsId = session?.workspaceId;
+  if (!wsId) {
+    const activeWsId = yield* select(selectActiveWorkspaceId.select);
+    if (activeWsId) {
+      logger.info("Queue cancellation: using active workspace as fallback", { agentId, messageId, activeWsId });
+      wsId = activeWsId;
+    }
+  }
+
+  if (wsId) {
+    yield* put(removeAgentMessage(wsId, agentId, messageId));
+    try {
+      yield* call([agentService, agentService.saveSession], agentId, wsId, true);
+    } catch (error) {
+      logger.error("Failed to persist queue cancellation cleanup", { agentId, error });
+    }
+  } else {
+    logger.warn("No workspaceId available for queue cancellation — session message removed but workspace state may be stale", { agentId, messageId });
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+  }
+
+  yield* call([agentService, agentService.clearPendingStreamRegistration], agentId);
+}
+
 export function* watchQueueCancelledSaga() {
   yield* takeEveryFromElectronChannel<{ agentId: string; messageId: string }>(
     ec("agent:queue:processing-cancelled"),
     function* (data) {
-      const { agentId, messageId } = data;
-      logger.warn("Queue processing cancelled, cleaning up", { agentId, messageId });
-
-      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
-      if (!wsId) return;
-
-      const session: AgentSession | undefined = yield* select(selectAgentById.select, agentId);
-      if (session) {
-        // Use atomic remove actions to avoid TOCTOU race
-        // (messages could be added between read and dispatch with the old approach)
-        yield* put(removeAgentSessionMessage(agentId, messageId));
-        yield* put(removeAgentMessage(session.workspaceId || wsId, agentId, messageId));
-        try {
-          yield* call([agentService, agentService.saveSession], agentId, session.workspaceId || wsId, true);
-        } catch (error) {
-          logger.error("Failed to persist queue cancellation cleanup", { agentId, error });
-        }
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
-        }
-      }
-
-      yield* call([agentService, agentService.clearPendingStreamRegistration], agentId);
+      yield* call(handleQueueCancelled, data);
     },
   );
 }

@@ -2281,57 +2281,34 @@
       return;
     }
 
-    // Stop current streaming
+    // Stop current streaming (fire-and-forget — the saga handles the wait)
     if (chatState.isStreaming || chatState.isProcessing) {
       try {
         await chatService.stopChat(agentId);
-        // Wait for the interrupt to fully complete (isInterrupting becomes false)
-        const maxWaitMs = 500;
-        const pollIntervalMs = 25;
-        let waited = 0;
-        while (waited < maxWaitMs) {
-          const state = chatService.getState(agentId);
-          if (!state.isInterrupting) {
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-          waited += pollIntervalMs;
-        }
       } catch (error) {
         logger.error('Failed to stop chat before sending queued message', error);
       }
     }
 
-    // Send the queued message
-    try {
-      // Include noteIds if the current context is a note - this allows agents to "see" images in notes
-      const noteIds = currentMainPanelContext?.noteId
-        ? [currentMainPanelContext.noteId]
-        : undefined;
-      // Pass agentId to ensure message goes to the correct agent
-      // Convert queued image blocks to context items so they are sent to the agent
-      const imageContextItems = message.imageBlocks?.map((block, index) => ({
-        id: `queued-image-${index}`,
-        type: 'file' as const,
-        label: `Image ${index + 1}`,
-        imageData: block.data,
-        imageMimeType: block.mimeType,
-      }));
-      const queuedContextItems = imageContextItems?.length ? imageContextItems : undefined;
-      await chatService.sendMessage(message.content, workspace, agentId, {
+    // Dispatch through the send-message saga with skipQueueCheck so the message
+    // is never re-queued even if the interrupt hasn't fully cleared yet.
+    const noteIds = currentMainPanelContext?.noteId
+      ? [currentMainPanelContext.noteId]
+      : undefined;
+
+    multiPanelDispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text: message.content,
         noteIds,
-        agentId,
-        contextItems: queuedContextItems,
-      });
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
-      const isInterrupted = errorMessage.includes('Agent interrupted');
-      if (!isInterrupted) {
-        logger.error('Failed to send queued message', error);
-        toast.error(cleanErrorMessage(errorMessage));
-      }
-    }
+        imageBlocks: message.imageBlocks,
+        skipQueueCheck: true,
+      }),
+    );
+
+    shouldFollowBottom = true;
+    isScrollUnlocked = false;
+    if (scrollContainer) scrollToBottomUtil(scrollContainer);
   }
 
   // Build workspace context string for agent messages

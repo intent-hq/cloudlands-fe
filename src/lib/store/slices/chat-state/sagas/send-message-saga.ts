@@ -94,7 +94,7 @@ function* handleSendPath(
   agentId: string,
   payload: SendMessagePayload,
 ): SagaGenerator<void> {
-  const { text, serializedContextItems, workspaceContextStr, noteIds } = payload;
+  const { text, serializedContextItems, workspaceContextStr, noteIds, imageBlocks } = payload;
 
   // --- Dispatch chatSendStarted immediately so loading UI appears right away ---
   yield* put(chatSendStarted(agentId, wsId));
@@ -183,6 +183,22 @@ function* handleSendPath(
     yield* put(clearChatDraft(wsId, agentId));
     yield* put(uncheckAllSelections());
 
+    // Convert imageBlocks back to contextItems format if present (for "Send now" flow)
+    const imageContextItems =
+      imageBlocks?.map((block, index) => ({
+        id: `queued-image-${index}`,
+        type: 'file' as const,
+        label: `Image ${index + 1}`,
+        imageData: block.data,
+        imageMimeType: block.mimeType,
+      })) ?? [];
+
+    // Merge serialized context items with image blocks
+    const allContextItems = [
+      ...(serializedContextItems ?? []),
+      ...imageContextItems,
+    ];
+
     yield* call(
       chatService.sendMessage.bind(chatService),
       messageWithContext,
@@ -191,7 +207,7 @@ function* handleSendPath(
       {
         // serializedContextItems have File objects stripped (serialized to base64 data),
         // so they satisfy ContextItem at runtime even though the `file` property is absent.
-        contextItems: serializedContextItems as SendMessageOptions['contextItems'],
+        contextItems: allContextItems.length > 0 ? (allContextItems as SendMessageOptions['contextItems']) : undefined,
         noteIds,
         agentId,
       },
@@ -239,13 +255,24 @@ function* handleSendMessage(
     const shouldQueue = isProcessing || isStreaming;
 
     if (shouldQueue) {
+      // Queue path: no concurrency guard needed — multiple messages can be queued
       yield* call(handleQueuePath, agentId, payload, wsId);
       return;
     }
   }
 
-  // --- Send path ---
-  yield* call(handleSendPath, wsId, agentId, payload);
+  // --- Send path: guard against concurrent sends for the same agent ---
+  if (activeSends.has(agentId)) {
+    logger.warn('Dropping concurrent sendMessage — send already in flight', { agentId });
+    return;
+  }
+
+  activeSends.add(agentId);
+  try {
+    yield* call(handleSendPath, wsId, agentId, payload);
+  } finally {
+    activeSends.delete(agentId);
+  }
 }
 
 // ============================================================================
@@ -254,26 +281,14 @@ function* handleSendMessage(
 
 /**
  * Tracks whether a send operation is in-flight for a given agentId.
- * If a sendMessage arrives while one is already running for the same agent,
- * it is dropped (takeLeading semantics per key) to prevent conversation
- * state corruption or duplicate sends.
+ * The guard is checked inside handleSendMessage only for the **send path**,
+ * not the queue path. This allows multiple messages to be queued while an
+ * agent is streaming, while still preventing concurrent sends.
  */
 const activeSends = new Set<string>();
 
 export function* watchSendMessage(): SagaGenerator<void> {
   yield* takeEvery(sendMessage, function* (action: ReturnType<typeof sendMessage>) {
-    const { agentId } = action.payload;
-
-    if (activeSends.has(agentId)) {
-      logger.warn('Dropping concurrent sendMessage — send already in flight', { agentId });
-      return;
-    }
-
-    activeSends.add(agentId);
-    try {
-      yield* call(handleSendMessage, action);
-    } finally {
-      activeSends.delete(agentId);
-    }
+    yield* call(handleSendMessage, action);
   });
 }
