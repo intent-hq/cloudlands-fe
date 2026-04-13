@@ -2,6 +2,12 @@ name: Intent - Alpha Release
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: false
+        default: 'main'
+        type: string
 
 permissions:
   contents: write
@@ -17,10 +23,10 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout main
+      - name: Checkout branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.branch || 'main' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,7 +48,7 @@ jobs:
           echo "base=$BASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "alpha=$ALPHA_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v${ALPHA_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Nightly version: $ALPHA_VERSION (base: $BASE_VERSION)"
+          echo "Alpha version: $ALPHA_VERSION (base: $BASE_VERSION)"
 
       - name: Set alpha version
         run: npm run version:set -- ${{ steps.version.outputs.alpha }}
@@ -86,21 +92,36 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.AUGMENT_INTENT_APPLE_TEAM_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload build artifacts
+        if: inputs.branch != 'main' && inputs.branch != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: intent-alpha-${{ steps.version.outputs.alpha }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+          retention-days: 14
+
+
       - name: Setup Google Cloud SDK
+        if: inputs.branch == 'main' || inputs.branch == ''
         uses: google-github-actions/setup-gcloud@v2
         with:
           version: 'latest'
 
       - name: Authenticate with GCP
+        if: inputs.branch == 'main' || inputs.branch == ''
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
 
       - name: Rename update manifest for auto-update compatibility
+        if: inputs.branch == 'main' || inputs.branch == ''
         run: mv dist-electron/alpha-mac.yml dist-electron/latest-mac.yml
 
       - name: Upload to GCP alpha channel
+        if: inputs.branch == 'main' || inputs.branch == ''
         run: bash scripts/upload-release-gcp.sh alpha
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.alpha }}
@@ -110,6 +131,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
 
       - name: Create and push git tag
+        if: inputs.branch == 'main' || inputs.branch == ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -122,12 +144,23 @@ jobs:
         run: |
           ALPHA_VERSION="${{ steps.version.outputs.alpha }}"
           TAG="${{ steps.version.outputs.tag }}"
-          echo "## Nightly Alpha Build" >> "$GITHUB_STEP_SUMMARY"
+          BRANCH="${{ inputs.branch || 'main' }}"
+          echo "## Alpha Build" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Version:** $ALPHA_VERSION" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Tag:** \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Channel:** alpha" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Branch:** \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BRANCH" = "main" ]; then
+            echo "**Tag:** \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Channel:** alpha" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Channel:** none (branch build only)" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "**Base version:** ${{ steps.version.outputs.base }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
-          echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/alpha/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BRANCH" = "main" ]; then
+            echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+            echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/alpha/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Artifacts" >> "$GITHUB_STEP_SUMMARY"
+            echo "Download the build from the workflow artifacts above." >> "$GITHUB_STEP_SUMMARY"
+          fi
