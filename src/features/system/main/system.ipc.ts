@@ -5,6 +5,7 @@
  */
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { collectOpenWorkspaceIds } from './window-workspace-tracking';
 import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
@@ -151,28 +152,17 @@ export function getOpenWorkspaceTabsForFocusedWindow(): string[] {
 
 /**
  * Get all workspace IDs that have an open Electron window.
- * Iterates windowWorkspaceIds, filters out stale/destroyed windows,
- * cleans up stale entries, and returns unique workspace IDs.
+ * Includes both the currently viewed workspace per window AND all workspace
+ * tabs open in each window. This ensures that workspaces open in background
+ * tabs (with running agents) are not treated as orphaned during memory cleanup.
  */
 export function getAllOpenWorkspaceIds(): string[] {
-  const workspaceIds = new Set<string>();
-  const staleWindowIds: number[] = [];
-
-  for (const [windowId, wsId] of windowWorkspaceIds) {
-    const win = BrowserWindow.fromId(windowId);
-    if (win && !win.isDestroyed()) {
-      workspaceIds.add(wsId);
-    } else {
-      staleWindowIds.push(windowId);
-    }
-  }
-
-  // Clean up stale entries
-  for (const windowId of staleWindowIds) {
-    windowWorkspaceIds.delete(windowId);
-  }
-
-  return [...workspaceIds];
+  return collectOpenWorkspaceIds(windowWorkspaceIds, windowOpenWorkspaceTabs, {
+    isAlive(windowId: number) {
+      const win = BrowserWindow.fromId(windowId);
+      return !!win && !win.isDestroyed();
+    },
+  });
 }
 
 /**
