@@ -106,7 +106,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
 
   const autoConvertTaskBlocks = async (noteId: string, content: string) => {
     if (!content || !hasTaskBlocks(content)) {
-      return { convertedCount: 0, createdNoteIds: [] as string[] };
+      return { convertedCount: 0, createdNoteIds: [] as string[], updatedContent: null as string | null };
     }
 
     try {
@@ -121,7 +121,21 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
       });
     }
 
-    return { convertedCount: 0, createdNoteIds: [] as string[] };
+    return { convertedCount: 0, createdNoteIds: [] as string[], updatedContent: null as string | null };
+  };
+
+  const emitWithTaskBlockGuard = async (noteId: string, content: string, note: any) => {
+    const contentHasTaskBlocks = hasTaskBlocks(content);
+    if (!contentHasTaskBlocks) {
+      emitContentUpdate(noteId, content, note);
+    }
+    const conversion = await autoConvertTaskBlocks(noteId, content);
+    // If we skipped the initial emit because of task blocks, but the service
+    // didn't actually modify the content, emit now as fallback
+    if (contentHasTaskBlocks && conversion.updatedContent == null) {
+      emitContentUpdate(noteId, content, note);
+    }
+    return conversion;
   };
 
   const normalizeTags = (tags?: string | string[]) => {
@@ -618,8 +632,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           const note = await manager.updateNote(workspaceId, id, { content: cleanContent });
           if (!note) throw new Error(`Note not found: ${id}`);
 
-          emitContentUpdate(id, cleanContent, toFrontendNote(note));
-          const conversion = await autoConvertTaskBlocks(id, cleanContent);
+          const conversion = await emitWithTaskBlockGuard(id, cleanContent, toFrontendNote(note));
 
           return {
             ok: true,
@@ -673,8 +686,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
         return withProvenance('note add', async () => {
           const note = await manager.updateNote(workspaceId, id, { content: newContent });
           if (!note) throw new Error(`Failed to update note: ${id}`);
-          emitContentUpdate(id, newContent, note);
-          const conversion = await autoConvertTaskBlocks(id, newContent);
+          const conversion = await emitWithTaskBlockGuard(id, newContent, note);
           return {
             ok: true,
             noteId: note.id,
@@ -721,8 +733,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
         return withProvenance('note edit', async () => {
           const note = await manager.updateNote(workspaceId, id, { content: newContent });
           if (!note) throw new Error(`Failed to update note: ${id}`);
-          emitContentUpdate(id, newContent, note);
-          const conversion = await autoConvertTaskBlocks(id, newContent);
+          const conversion = await emitWithTaskBlockGuard(id, newContent, note);
           return {
             ok: true,
             noteId: note.id,
@@ -768,8 +779,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
         return withProvenance('note line edit', async () => {
           const note = await manager.updateNote(workspaceId, id, { content: newContent });
           if (!note) throw new Error(`Failed to update note: ${id}`);
-          emitContentUpdate(id, newContent, note);
-          const conversion = await autoConvertTaskBlocks(id, newContent);
+          const conversion = await emitWithTaskBlockGuard(id, newContent, note);
           return {
             ok: true,
             noteId: note.id,

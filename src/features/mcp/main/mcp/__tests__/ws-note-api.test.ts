@@ -154,13 +154,13 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
     tool = new WorkspaceJsApiTool('/tmp/test', 'ws-1', mockWM);
   });
 
-  it('auto-converts task blocks in content', async () => {
+  it('auto-converts task blocks in content and skips pre-conversion emit', async () => {
     const taskContent = '@@@task\n# Task\nDesc\n@@@';
     mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content: taskContent, tags: [] });
     (hasTaskBlocks as any).mockReturnValue(true);
     (notesService.convertTaskBlocks as any).mockResolvedValue({
       ok: true,
-      data: { convertedCount: 1, createdNoteIds: ['t1'] },
+      data: { convertedCount: 1, createdNoteIds: ['t1'], updatedContent: '- [ ] [Task](intent://local/task/t1)' },
     });
 
     const result = await tool.execute(
@@ -172,6 +172,47 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
     expect(parsed.convertedCount).toBe(1);
     expect(parsed.createdTaskNoteIds).toEqual(['t1']);
     expect(hasTaskBlocks).toHaveBeenCalled();
+    // Pre-conversion emit should NOT have been called when task blocks are present
+    // (autoConvertTaskBlocks handles its own emit with post-conversion content)
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
+  it('emits content update immediately when no task blocks', async () => {
+    const plainContent = '# Just a note\nNo task blocks here.';
+    mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content: plainContent, tags: [] });
+    (hasTaskBlocks as any).mockReturnValue(false);
+
+    const result = await tool.execute(
+      makeCall(`return await ws.note.setContent("spec", ${JSON.stringify(plainContent)})`),
+    );
+
+    expect(result.isError).toBe(false);
+    // When there are no task blocks, sendToWorkspaceWindows should be called for the content update
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith('ws-1', 'note:updated', expect.objectContaining({
+      noteId: 'spec',
+      content: plainContent,
+    }));
+  });
+
+  it('emits fallback content update when task blocks present but conversion finds none', async () => {
+    const content = '@@@task\ninvalid block\n@@@';
+    mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content, tags: [] });
+    (hasTaskBlocks as any).mockReturnValue(true);
+    (notesService.convertTaskBlocks as any).mockResolvedValue({
+      ok: true,
+      data: { convertedCount: 0, createdNoteIds: [], updatedContent: null },
+    });
+
+    const result = await tool.execute(
+      makeCall(`return await ws.note.setContent("spec", ${JSON.stringify(content)})`),
+    );
+
+    expect(result.isError).toBe(false);
+    // Fallback: emit should fire because conversion didn't actually convert anything
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith('ws-1', 'note:updated', expect.objectContaining({
+      noteId: 'spec',
+      content,
+    }));
   });
 });
 

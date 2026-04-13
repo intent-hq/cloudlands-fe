@@ -526,53 +526,33 @@
   // Reactive selector subscriptions at component init time
 
   let currentNoteContent = $derived.by(() => {
-    const updateVersion = externalUpdateVersion;
-    // Read notesVersion via reactive selector to ensure reactivity when store is updated
-    const workspaceId = workspace?.id;
+    // Secondary trigger: externalUpdateVersion forces re-eval as a fallback
+    void externalUpdateVersion;
 
-    if (!noteId || !workspaceId) {
-      const fallback = content || '';
-      if (fallback !== lastDerivedContent) {
-        logger.debug('[NoteWithComments] Derived content fallback - missing note/workspace', {
+    // Primary reactivity: derive from the reactive selector
+    if (currentNote && currentNote.workspaceId === workspace?.id) {
+      const derived = currentNote.content || '';
+      if (derived !== lastDerivedContent) {
+        logger.debug('[NoteWithComments] Derived note content updated', {
           noteId,
-          hasWorkspace: !!workspaceId,
-          fallbackLength: fallback.length,
-          updateVersion,
+          length: derived.length,
         });
-        lastDerivedContent = fallback;
+        lastDerivedContent = derived;
       }
-      return fallback;
+      return derived;
     }
 
-    const note = selectNoteById.select(getReduxStore().getState(), workspaceId, noteId);
-
-    if (!note || note.workspaceId !== workspaceId) {
-      const fallback = content || '';
-      if (fallback !== lastDerivedContent) {
-        logger.debug(
-          '[NoteWithComments] Derived content fallback - note missing or workspace mismatch',
-          {
-            noteId,
-            hasNote: !!note,
-            fallbackLength: fallback.length,
-            updateVersion,
-          },
-        );
-        lastDerivedContent = fallback;
-      }
-      return fallback;
-    }
-
-    const derived = note.content || '';
-    if (derived !== lastDerivedContent) {
-      logger.debug('[NoteWithComments] Derived note content updated', {
+    // Fallback for when note isn't in store yet
+    const fallback = content || '';
+    if (fallback !== lastDerivedContent) {
+      logger.debug('[NoteWithComments] Derived content fallback', {
         noteId,
-        length: derived.length,
-        updateVersion,
+        hasCurrentNote: !!currentNote,
+        fallbackLength: fallback.length,
       });
-      lastDerivedContent = derived;
+      lastDerivedContent = fallback;
     }
-    return derived;
+    return fallback;
   });
 
   // Check if there are any active comments to display
