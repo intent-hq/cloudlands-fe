@@ -60,8 +60,6 @@ export interface ChatAgentState {
   isRebinding: boolean;
   /** Timestamp of the last message send (for rate limiting) */
   lastMessageTime: number;
-  /** Recent send keys for idempotency / deduplication */
-  recentSendKeys: string[];
   /** Timestamp of the last chunk received (for reconciliation skip logic) */
   lastChunkReceivedAt: number;
 }
@@ -124,10 +122,6 @@ export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
 
 /** Minimum time between messages in ms (rate limiting) */
 export const MIN_MESSAGE_SEND_INTERVAL = 100;
-
-/** Auto-expire send keys after this duration so legitimate resends work */
-export const SEND_KEY_TTL_MS = 5000;
-
 
 /** Stream timeout constant — re-exported from shared config for saga use */
 export { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';

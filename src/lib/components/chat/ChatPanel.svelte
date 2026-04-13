@@ -294,7 +294,6 @@
         trackedWorkspaceId: null,
         isRebinding: false,
         lastMessageTime: 0,
-        recentSendKeys: [],
         lastChunkReceivedAt: 0,
       };
     }

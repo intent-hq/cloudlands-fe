@@ -40,11 +40,7 @@ import {
   chatReset,
   chatInterrupted,
   streamStatusReceived,
-  addSendKey,
-  removeSendKey,
-  clearSendKeys,
 } from '../chat-state-slice';
-import { SEND_KEY_TTL_MS } from '../chat-state-types';
 import {
   selectChatIsProcessing,
   selectChatAgentState,
@@ -344,34 +340,7 @@ function* watchClearStorage(): SagaGenerator<void> {
   );
 }
 
-// ============================================================================
-// Send Key Expiry Saga
-// ============================================================================
 
-/**
- * When a send key is added, fork a timer that removes it after TTL.
- * On stream completion/error/reset, all send keys are cleared in the reducer,
- * and any outstanding expiry forks are effectively no-ops (removeSendKey on
- * a key that doesn't exist returns same state reference).
- */
-function* watchSendKeyExpiry(): SagaGenerator<void> {
-  yield* takeEvery(addSendKey, function* (action) {
-    const [agentId, key] = action.payload;
-    yield* delay(SEND_KEY_TTL_MS);
-    yield* put(removeSendKey(agentId, key));
-  });
-}
-
-/** Clear send keys on stream completion, error, stop, reset, or interruption */
-function* watchClearSendKeys(): SagaGenerator<void> {
-  yield* takeEvery(
-    [streamCompleted, streamErrored, chatStopCompleted, chatReset, chatInterrupted],
-    function* (action) {
-      const [agentId] = action.payload;
-      yield* put(clearSendKeys(agentId));
-    },
-  );
-}
 
 // ============================================================================
 // Agent / Workspace Cleanup
@@ -423,8 +392,6 @@ export function* chatStateSaga(): SagaGenerator<void> {
   yield* fork(watchClearStorage);
   yield* fork(watchSendMessage);
   yield* fork(initializeChatSaga);
-  yield* fork(watchSendKeyExpiry);
-  yield* fork(watchClearSendKeys);
   yield* fork(chatLifecycleSaga);
   yield* fork(watchAgentRemoved);
   yield* fork(watchWorkspaceUnmountedForCleanup);

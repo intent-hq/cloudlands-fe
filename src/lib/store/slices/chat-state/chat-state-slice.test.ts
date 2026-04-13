@@ -31,9 +31,6 @@ import {
   chatRebindEnded,
   chatTrackedWorkspaceSet,
   streamStatusReceived,
-  addSendKey,
-  removeSendKey,
-  clearSendKeys,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
@@ -43,7 +40,6 @@ import {
   selectChatIsStalled,
   selectChatStreamingContent,
   selectChatLastMessageTime,
-  selectChatRecentSendKeys,
 } from './chat-state-selectors';
 
 const AGENT = 'agent-1';
@@ -343,41 +339,5 @@ describe('chatState selectors', () => {
     expect(selectChatLastMessageTime.select(asStoreState(initialState), AGENT)).toBe(0);
   });
 
-  it('selectChatRecentSendKeys returns empty array by default', () => {
-    expect(selectChatRecentSendKeys.select(asStoreState(initialState), AGENT)).toEqual([]);
-  });
-
-
 });
 
-describe('rate limiting actions', () => {
-  it('addSendKey adds a key', () => {
-    const s = chatStateReducer(initialState, addSendKey(AGENT, 'k1'));
-    expect(selectChatRecentSendKeys.select(asStoreState(s), AGENT)).toEqual(['k1']);
-  });
-
-  it('addSendKey is idempotent for the same key', () => {
-    const s = chatStateReducer(initialState, addSendKey(AGENT, 'k1'));
-    const s2 = chatStateReducer(s, addSendKey(AGENT, 'k1'));
-    expect(s2).toBe(s); // same reference — no change
-  });
-
-  it('removeSendKey removes a key', () => {
-    let s = chatStateReducer(initialState, addSendKey(AGENT, 'k1'));
-    s = chatStateReducer(s, addSendKey(AGENT, 'k2'));
-    s = chatStateReducer(s, removeSendKey(AGENT, 'k1'));
-    expect(selectChatRecentSendKeys.select(asStoreState(s), AGENT)).toEqual(['k2']);
-  });
-
-  it('removeSendKey returns same ref for nonexistent key', () => {
-    const s = chatStateReducer(initialState, removeSendKey(AGENT, 'nope'));
-    expect(s).toBe(initialState);
-  });
-
-  it('clearSendKeys removes all keys', () => {
-    let s = chatStateReducer(initialState, addSendKey(AGENT, 'a'));
-    s = chatStateReducer(s, addSendKey(AGENT, 'b'));
-    s = chatStateReducer(s, clearSendKeys(AGENT));
-    expect(selectChatRecentSendKeys.select(asStoreState(s), AGENT)).toEqual([]);
-  });
-});

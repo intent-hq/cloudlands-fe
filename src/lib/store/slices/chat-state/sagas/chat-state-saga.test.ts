@@ -108,96 +108,10 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
 }));
 
 import {
-  addSendKey,
-  removeSendKey,
-  clearSendKeys,
-  streamCompleted,
   chatSendStarted,
   chatStuckStateCleared,
 } from "../chat-state-slice";
-import { SEND_KEY_TTL_MS, STATE_RECONCILIATION_INTERVAL_MS } from "../chat-state-types";
-
-describe("chat-state-saga: send key expiry", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("removes a send key after TTL expires", async () => {
-    // Dynamic import after mocks are in place
-    const { chatStateSaga } = await import("./chat-state-saga");
-
-    const dispatched: any[] = [];
-    const channel = stdChannel();
-    const agentId = "agent-1";
-    const key = "send-key-1";
-
-    runSaga(
-      {
-        channel,
-        dispatch: (action: any) => {
-          dispatched.push(action);
-          channel.put(action);
-        },
-        getState: () => ({
-          chatState: { byAgentId: {} },
-        }),
-      },
-      chatStateSaga,
-    );
-
-    // Dispatch addSendKey
-    channel.put(addSendKey(agentId, key));
-
-    // Advance time past TTL
-    await vi.advanceTimersByTimeAsync(SEND_KEY_TTL_MS + 100);
-
-    const removeActions = dispatched.filter(
-      (a) => a.type === removeSendKey.type,
-    );
-    expect(removeActions.length).toBeGreaterThanOrEqual(1);
-    expect(removeActions[0].payload).toEqual([agentId, key]);
-  });
-
-  it("clears send keys on streamCompleted", async () => {
-    const { chatStateSaga } = await import("./chat-state-saga");
-
-    const dispatched: any[] = [];
-    const channel = stdChannel();
-
-    runSaga(
-      {
-        channel,
-        dispatch: (action: any) => {
-          dispatched.push(action);
-          channel.put(action);
-        },
-        getState: () => ({
-          chatState: { byAgentId: {} },
-        }),
-      },
-      chatStateSaga,
-    );
-
-    channel.put(
-      streamCompleted("agent-1", {
-        lastAttemptedMessage: null,
-        modelUnavailable: null,
-      }),
-    );
-
-    await vi.advanceTimersByTimeAsync(0);
-
-    const clearActions = dispatched.filter(
-      (a) => a.type === clearSendKeys.type,
-    );
-    expect(clearActions.length).toBeGreaterThanOrEqual(1);
-    expect(clearActions[0].payload).toEqual(["agent-1"]);
-  });
-});
+import { STATE_RECONCILIATION_INTERVAL_MS } from "../chat-state-types";
 
 
 

@@ -117,11 +117,7 @@ export const selectChatLastMessageTime = createSelector(
     getAgentChatState(state, agentId).lastMessageTime,
 );
 
-/** Select recent send keys (for idempotency deduplication) */
-export const selectChatRecentSendKeys = createSelector(
-  (state, agentId: string): string[] =>
-    getAgentChatState(state, agentId).recentSendKeys,
-);
+
 
 /** Select last chunk received at timestamp (for reconciliation skip logic) */
 export const selectChatLastChunkReceivedAt = createSelector(

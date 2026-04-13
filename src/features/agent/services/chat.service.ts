@@ -156,10 +156,7 @@ export class ChatService implements IDisposable {
   // to prevent agents from appearing stuck when backend stops responding
   private readonly STREAM_TIMEOUT_MS = AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS;
   private lastMessageTime = 0; // Track last message send time for rate limiting
-  // Idempotency: prevent duplicate sends from double-clicks or rapid retries
-  private recentSendKeys = new Set<string>();
-  private sendKeyTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private static readonly SEND_KEY_TTL_MS = 5000; // Auto-expire keys after 5 seconds
+
   private connectionHandler: ((e: Event) => void) | null = null;
   private disposed = false;
 
@@ -1481,8 +1478,8 @@ export class ChatService implements IDisposable {
       throw new Error('Message cannot be empty');
     }
 
-    // Normalize: trim whitespace/newlines so that sendKey and the downstream
-    // agentService.sendMessage all use the same canonical form.
+    // Normalize: trim whitespace/newlines so that the downstream
+    // agentService.sendMessage uses a canonical form.
     message = message?.trim() ?? '';
 
     // Check message length (only if message is provided)
@@ -1560,24 +1557,6 @@ export class ChatService implements IDisposable {
       throw new MessageGuardError('Message sent too quickly, please wait a moment');
     }
     this.lastMessageTime = now;
-
-    // Idempotency check: prevent duplicate sends from double-clicks
-    // FIX: Same as rate limiter — throw instead of silent return to avoid stuck state.
-    const sendKey = `${session.id}:${message}:${Math.floor(now / 1000)}`;
-    if (this.recentSendKeys.has(sendKey)) {
-      logger.warn('Duplicate message send detected (idempotency), rejecting', {
-        sessionId: session.id,
-        messageLength: message.length,
-      });
-      throw new MessageGuardError('Duplicate message detected');
-    }
-    this.recentSendKeys.add(sendKey);
-    // Auto-expire the key after TTL so legitimate resends work
-    const timer = setTimeout(() => {
-      this.recentSendKeys.delete(sendKey);
-      this.sendKeyTimers.delete(sendKey);
-    }, ChatService.SEND_KEY_TTL_MS);
-    this.sendKeyTimers.set(sendKey, timer);
 
     logger.info('Sending message', {
       sessionId: session.id,
@@ -1733,14 +1712,6 @@ export class ChatService implements IDisposable {
       } catch (error) {
         logger.error('Failed to activate agent on first message', error as Error);
 
-        // Clean up idempotency entry so an immediate retry isn't suppressed as a duplicate.
-        this.recentSendKeys.delete(sendKey);
-        const activationSendKeyTimer = this.sendKeyTimers.get(sendKey);
-        if (activationSendKeyTimer) {
-          clearTimeout(activationSendKeyTimer);
-          this.sendKeyTimers.delete(sendKey);
-        }
-
         const errorMsg = error instanceof Error ? error.message : 'Failed to activate agent';
         this.reduxDispatch(chatSendFailed(agentId, errorMsg));
         throw error;
@@ -1823,16 +1794,6 @@ export class ChatService implements IDisposable {
 
     } catch (error) {
       logger.error('Failed to send message', error as Error);
-
-      // Clear idempotency key so retries aren't silently ignored.
-      // Without this, a transient failure would leave the sendKey in the set,
-      // causing retries within the TTL to be dropped as "duplicates".
-      this.recentSendKeys.delete(sendKey);
-      const sendKeyTimer = this.sendKeyTimers.get(sendKey);
-      if (sendKeyTimer) {
-        clearTimeout(sendKeyTimer);
-        this.sendKeyTimers.delete(sendKey);
-      }
 
       const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
       const isInterrupted = errorMessage.includes('Agent interrupted');
@@ -3061,9 +3022,6 @@ export class ChatService implements IDisposable {
       this.localStreamingContent = '';
       this.pendingStreamingContent = null;
 
-      // Clear idempotency keys so user can resend after stream completes (e.g., after error)
-      this.clearSendKeys();
-
       // Finalize the streaming message by removing the isStreaming flag
       let updatedMessages = existingMessages;
 
@@ -3186,9 +3144,6 @@ export class ChatService implements IDisposable {
       // Reset local accumulator on error to prevent stale data in next stream
       this.localStreamingContent = '';
       this.pendingStreamingContent = null;
-
-      // Clear idempotency keys so user can resend after error
-      this.clearSendKeys();
 
       // Clear status events storage on error - events are transient per-stream
       this.clearStatusEventsStorage(agentId);
@@ -3679,17 +3634,7 @@ export class ChatService implements IDisposable {
     // caller (ChatServiceManager) which knows the agentId.
   }
 
-  /**
-   * Clear all idempotency send keys and their expiry timers.
-   * Called on stream completion/error so the user can resend.
-   */
-  private clearSendKeys(): void {
-    for (const timer of this.sendKeyTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.recentSendKeys.clear();
-    this.sendKeyTimers.clear();
-  }
+
 
   /**
    * Dispose of all resources and cleanup
@@ -3711,9 +3656,6 @@ export class ChatService implements IDisposable {
       this.chunkUpdateRafId = null;
     }
     this.pendingStreamingContent = null;
-
-    // Clean up idempotency keys
-    this.clearSendKeys();
 
     // Clean up visibility change handler
     if (this.visibilityChangeHandler) {

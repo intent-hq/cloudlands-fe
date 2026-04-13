@@ -29,7 +29,6 @@ export const emptyChatAgentState: ChatAgentState = {
   trackedWorkspaceId: null,
   isRebinding: false,
   lastMessageTime: 0,
-  recentSendKeys: [],
   lastChunkReceivedAt: 0,
 };
 
@@ -233,23 +232,6 @@ export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsI
   'chatState/trackedWorkspaceSet',
 );
 
-// --- Rate limiting actions ---
-
-/** Add a send key for idempotency deduplication */
-export const addSendKey = createAction<[agentId: string, key: string]>(
-  'chatState/addSendKey',
-);
-
-/** Remove a send key after TTL expiry */
-export const removeSendKey = createAction<[agentId: string, key: string]>(
-  'chatState/removeSendKey',
-);
-
-/** Clear all send keys and reset lastMessageTime (stream completion/error) */
-export const clearSendKeys = createAction<[agentId: string]>(
-  'chatState/clearSendKeys',
-);
-
 // --- Initialize chat saga trigger (no reducer state change) ---
 
 /** Trigger the initialize-chat saga. Dispatched from ChatPanel to start chat initialization. */
@@ -445,19 +427,3 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     const { [agentId]: _, ...restAgents } = state.byAgentId;
     return { ...state, byAgentId: restAgents };
   })
-  .with(addSendKey, (state, { payload: [agentId, key] }) => {
-    const agent = getAgent(state, agentId);
-    if (agent.recentSendKeys.includes(key)) return state;
-    return updateAgent(state, agentId, {
-      recentSendKeys: [...agent.recentSendKeys, key],
-    });
-  })
-  .with(removeSendKey, (state, { payload: [agentId, key] }) => {
-    const agent = getAgent(state, agentId);
-    const filtered = agent.recentSendKeys.filter((k) => k !== key);
-    if (filtered.length === agent.recentSendKeys.length) return state;
-    return updateAgent(state, agentId, { recentSendKeys: filtered });
-  })
-  .with(clearSendKeys, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { recentSendKeys: [] }),
-  );

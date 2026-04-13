@@ -46,10 +46,7 @@ import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-reco
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { PendingEventQueue } from './utils/pending-event-queue';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
-import {
-  requestDeduplicator,
-  generateMessageKey,
-} from './browser/services/request-deduplicator.service';
+
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { newAssistantMessage } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
 import * as streamRegistry from './utils/stream-handler-registry';
@@ -938,172 +935,143 @@ export async function sendMessage(
           getReduxStore().dispatch(upsertAgentSession(workspace.id, existingSession));
         }
 
-        // Generate deduplication key for this message
-        const dedupeKey = generateMessageKey(agentId, content, options.contextReferences);
+        {
+            // --- Session get/activate (runs once, outside retry boundary) ---
+            let session = getAgentSession(workspace.id, agentId);
 
-        // Clear dedup cache for regenerate/edit flows to prevent stale cached results
-        // from blocking the new request (the same message content produces the same key,
-        // so a regenerate within the TTL window would silently return the cached void result
-        // without actually sending to the backend, leaving the UI stuck on "thinking")
-        if (options.resetHistory) {
-          requestDeduplicator.clearKey(dedupeKey);
-        }
+            if (!session) {
+              const resumedSession = await resumeSession(agentId, workspace);
+              if (!resumedSession) {
+                throw new Error(`Session not found: ${agentId}`);
+              }
+              // Ensure isStreaming has a default value
+              session = {
+                ...resumedSession,
+                isStreaming: resumedSession.isStreaming ?? false,
+              };
+            } else {
+              // Ensure isStreaming has a default value for existing session
+              if (session.isStreaming === undefined) {
+                session = { ...session, isStreaming: false };
+              }
+            }
 
-        // Use request deduplicator to prevent duplicate messages
-        await requestDeduplicator.deduplicate(
-          dedupeKey,
-          async () => {
-            // Use error recovery for message sending
+            // Activate pending session if needed
+            // Skip activation if agent already has a backendSessionId or is already active
+            const needsActivation =
+              session &&
+              (session.status === 'pending' || !session.id) &&
+              !session.backendSessionId &&
+              session.activationState !== AgentActivationState.ACTIVE &&
+              session.activationState !== AgentActivationState.ACTIVATING;
+
+            if (needsActivation) {
+              // Check if this is an optimistic workspace or workspace is not ready
+              const isOptimisticWorkspace = workspace.id.startsWith('optimistic-');
+              const hasWorkspacePath =
+                workspace.worktreePath || workspace.repositoryPath || workspace.path;
+
+              if (!isOptimisticWorkspace && hasWorkspacePath) {
+                logger.info('Activating pending session in sendMessage', {
+                  agentId,
+                  status: session.status,
+                  activationState: session.activationState,
+                  hasBackendSessionId: !!session.backendSessionId,
+                });
+                // Activate for real workspaces with paths
+                const activatedSession = await agentIpcProxy.activateAgent(
+                  agentId,
+                  workspace,
+                );
+                if (activatedSession) {
+                  session = activatedSession;
+                }
+              } else {
+                logger.warn('Cannot activate agent - workspace not ready', {
+                  agentId,
+                  workspaceId: workspace.id,
+                  isOptimistic: isOptimisticWorkspace,
+                  hasWorktreePath: !!workspace.worktreePath,
+                  hasRepositoryPath: !!workspace.repositoryPath,
+                  hasPath: !!workspace.path,
+                });
+                throw new Error(
+                  'Space not ready for agent activation. Please wait for space to load.',
+                );
+              }
+            } else if (
+              session &&
+              session.status === 'pending' &&
+              session.backendSessionId
+            ) {
+              // Agent was already activated but status wasn't updated - fix it
+              logger.info('Fixing status for already-activated session', {
+                agentId,
+                backendSessionId: session.backendSessionId,
+                activationState: session.activationState,
+              });
+              session = {
+                ...session,
+                status: AgentStatus.Active,
+                activationState: AgentActivationState.ACTIVE,
+              };
+              getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
+            }
+
+            if (!session) {
+              throw new Error(`Failed to get or create session for agent ${agentId}`);
+            }
+
+            // Add to store after validation
+            getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
+
+            // --- User message dispatch (runs once, outside retry boundary) ---
+            // This ensures user message appears exactly once regardless of retries.
+            const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
+            if (options.imageBlocks) {
+              for (const img of options.imageBlocks) {
+                userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
+              }
+            }
+            if (options.fileBlocks) {
+              for (const file of options.fileBlocks) {
+                userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
+              }
+            }
+            const userMessage: AgentMessage = {
+              id: createMessageId(uuidv4()),
+              role: 'user',
+              contentBlocks: userContentBlocks,
+              timestamp: new Date().toISOString(),
+              metadata: options.contextReferences?.length
+                ? { contextReferences: options.contextReferences }
+                : {},
+            };
+
+            getReduxStore().dispatch(addAgentMessage(workspace.id, session.id, userMessage));
+            // Set streaming flag BEFORE dispatching session-updated event so handlers see isStreaming=true
+            getReduxStore().dispatch(setAgentStreaming(workspace.id, session.id, true));
+            window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+
+            try {
+
+            // Save the session immediately after adding the user message
+            // This ensures the message persists even if the app crashes or refreshes
+            // For edit/regenerate flows (resetHistory), allow truncation since messages
+            // were intentionally removed before this save
+            await saveSession(agentId, workspace.id, true, {
+              allowTruncation: options.resetHistory,
+            });
+
+            // --- Retry boundary: only wraps stream setup + backend send ---
             const result = await errorRecovery.executeWithRecovery(
               async () =>
                 errorBoundary.wrap(
                   async () => {
-                    // Get or activate session
+                    // Re-read session from store (guaranteed to exist after activation above)
                     let session = getAgentSession(workspace.id, agentId);
-
                     if (!session) {
-                      const resumedSession = await resumeSession(agentId, workspace);
-                      if (!resumedSession) {
-                        throw new Error(`Session not found: ${agentId}`);
-                      }
-                      // Ensure isStreaming has a default value
-                      session = {
-                        ...resumedSession,
-                        isStreaming: resumedSession.isStreaming ?? false,
-                      };
-                    } else {
-                      // Ensure isStreaming has a default value for existing session
-                      if (session.isStreaming === undefined) {
-                        session = { ...session, isStreaming: false };
-                      }
-                    }
-
-                    // Activate pending session if needed
-                    // Skip activation if agent already has a backendSessionId or is already active
-                    const needsActivation =
-                      session &&
-                      (session.status === 'pending' || !session.id) &&
-                      !session.backendSessionId &&
-                      session.activationState !== AgentActivationState.ACTIVE &&
-                      session.activationState !== AgentActivationState.ACTIVATING;
-
-                    if (needsActivation) {
-                      // Check if this is an optimistic workspace or workspace is not ready
-                      const isOptimisticWorkspace = workspace.id.startsWith('optimistic-');
-                      const hasWorkspacePath =
-                        workspace.worktreePath || workspace.repositoryPath || workspace.path;
-
-                      if (!isOptimisticWorkspace && hasWorkspacePath) {
-                        logger.info('Activating pending session in sendMessage', {
-                          agentId,
-                          status: session.status,
-                          activationState: session.activationState,
-                          hasBackendSessionId: !!session.backendSessionId,
-                        });
-                        // Activate for real workspaces with paths
-                        const activatedSession = await agentIpcProxy.activateAgent(
-                          agentId,
-                          workspace,
-                        );
-                        if (activatedSession) {
-                          session = activatedSession;
-                        }
-                      } else {
-                        logger.warn('Cannot activate agent - workspace not ready', {
-                          agentId,
-                          workspaceId: workspace.id,
-                          isOptimistic: isOptimisticWorkspace,
-                          hasWorktreePath: !!workspace.worktreePath,
-                          hasRepositoryPath: !!workspace.repositoryPath,
-                          hasPath: !!workspace.path,
-                        });
-                        throw new Error(
-                          'Space not ready for agent activation. Please wait for space to load.',
-                        );
-                      }
-                    } else if (
-                      session &&
-                      session.status === 'pending' &&
-                      session.backendSessionId
-                    ) {
-                      // Agent was already activated but status wasn't updated - fix it
-                      logger.info('Fixing status for already-activated session', {
-                        agentId,
-                        backendSessionId: session.backendSessionId,
-                        activationState: session.activationState,
-                      });
-                      session = {
-                        ...session,
-                        status: AgentStatus.Active,
-                        activationState: AgentActivationState.ACTIVE,
-                      };
-                      getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
-                    }
-
-                    if (!session) {
-                      throw new Error(`Failed to get or create session for agent ${agentId}`);
-                    }
-
-                    // Add to store after validation
-                    getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
-
-                    // Check if this user message already exists in recent messages
-                    // Look through all messages (not just the last one) because an assistant
-                    // message may have been added after the user message during streaming
-                    const recentMessages = session.messages?.slice(-5) || [];
-                    const incomingImageCount = options.imageBlocks?.length || 0;
-                    const incomingFileCount = options.fileBlocks?.length || 0;
-                    const existingUserMessage = recentMessages.find((msg: AgentMessage) => {
-                      if (msg.role !== 'user') return false;
-                      const msgText = msg.contentBlocks?.find((b) => b.type === 'text')?.text;
-                      // Compare both text AND attachment counts to avoid false dedup
-                      // of different image-only messages (where text is both "")
-                      const msgImageCount = msg.contentBlocks?.filter((b) => b.type === 'image')?.length || 0;
-                      const msgFileCount = msg.contentBlocks?.filter((b) => b.type === 'file')?.length || 0;
-                      return msgText === content && msgImageCount === incomingImageCount && msgFileCount === incomingFileCount;
-                    });
-
-                    if (!existingUserMessage) {
-                      // Add user message only if not already present
-                      // Include image and file blocks alongside text so the UI shows attachments
-                      const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
-                      if (options.imageBlocks) {
-                        for (const img of options.imageBlocks) {
-                          userContentBlocks.push({ type: 'image' as const, data: img.data, mimeType: img.mimeType });
-                        }
-                      }
-                      if (options.fileBlocks) {
-                        for (const file of options.fileBlocks) {
-                          userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
-                        }
-                      }
-                      const userMessage: AgentMessage = {
-                        id: createMessageId(uuidv4()),
-                        role: 'user',
-                        contentBlocks: userContentBlocks,
-                        timestamp: new Date().toISOString(),
-                        metadata: options.contextReferences?.length
-                          ? { contextReferences: options.contextReferences }
-                          : {},
-                      };
-
-                      getReduxStore().dispatch(addAgentMessage(workspace.id, session.id, userMessage));
-                      // Set streaming flag BEFORE dispatching session-updated event so handlers see isStreaming=true
-                      getReduxStore().dispatch(setAgentStreaming(workspace.id, session.id, true));
-                      window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
-
-                      // Save the session immediately after adding the user message
-                      // This ensures the message persists even if the app crashes or refreshes
-                      // For edit/regenerate flows (resetHistory), allow truncation since messages
-                      // were intentionally removed before this save
-                      await saveSession(agentId, workspace.id, true, {
-                        allowTruncation: options.resetHistory,
-                      });
-                    } else {
-                      // Remove the optimistic flag from the existing message if present
-                      if (existingUserMessage.metadata) {
-                        delete (existingUserMessage.metadata as any).optimistic;
-                      }
+                      throw new Error(`Failed to get session for agent ${agentId}`);
                     }
 
                     // Clear isStreaming flag on ALL old assistant messages
@@ -2225,9 +2193,14 @@ export async function sendMessage(
               // from the error boundary service
               throw result.error || new Error('Something went wrong. Please try again.');
             }
-          },
-          { ttl: 3000 }, // Cache for 3 seconds to prevent rapid duplicate messages
-        );
+            } catch (streamingError) {
+              // If saveSession or any pre-retry-boundary code throws after
+              // setAgentStreaming(true), reset the streaming flag so the UI
+              // doesn't stay stuck on "Thinking…" until the safety detector fires.
+              getReduxStore().dispatch(setAgentStreaming(workspace.id, session.id, false));
+              throw streamingError;
+            }
+        }
       },
       {
         memoize: false, // Don't memoize message sending
