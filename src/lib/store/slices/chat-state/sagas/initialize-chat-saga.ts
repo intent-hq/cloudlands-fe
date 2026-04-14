@@ -29,6 +29,7 @@ import {
 import type { Task } from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
 import { agentService } from '$features/agent/agent-ipc-bridge';
+import { persistenceService } from '$features/agent/browser/index';
 import { getChatService } from '$features/agent/services/chat.service';
 import {
   selectAgentById,
@@ -242,23 +243,52 @@ function* handleInitializeChat(
       }
     }
 
-    // If still no messages but session exists, try disk reload
-    if (messages.length === 0 && session) {
-      const workspace = yield* selectWorkspaceById.effect(wsId);
-      if (workspace) {
-        try {
-          const restored: AgentSession | null = yield* call(
-            [agentService, agentService.restoreSession],
-            agentId,
-            workspace,
-          );
-          if (restored?.messages && restored.messages.length > 0) {
-            messages = restored.messages;
+    // When not streaming, check disk for messages the frontend may be missing.
+    // The in-memory Redux state can become stale when the backend persists messages
+    // directly (e.g., sub-agent delegation, subscription wake-ups) without the
+    // frontend ever receiving them via IPC events.
+    // We use persistenceService.loadSession with bypassCache (a fresh disk read
+    // with no Redux side effects) rather than agentService.restoreSession which
+    // dispatches actions like setActiveAgentId and may trigger backend activation.
+    // bypassCache is critical: the renderer-side PersistenceService has a 5s TTL
+    // cache that could return stale data, defeating the purpose of the merge.
+    if (session && !hasActiveStream) {
+      try {
+        const diskSession: AgentSession | null = yield* call(
+          [persistenceService, persistenceService.loadSession],
+          agentId,
+          wsId,
+          { bypassCache: true },
+        );
+        if (diskSession?.messages && diskSession.messages.length > 0) {
+          if (messages.length === 0) {
+            // No in-memory messages — use disk messages directly
+            messages = diskSession.messages;
             session = { ...session, messages };
+          } else {
+            // Check if disk has messages the frontend is missing
+            const inMemoryIds = new Set(messages.map((m) => m.id));
+            const missingFromDisk = diskSession.messages.filter(
+              (m) => !inMemoryIds.has(m.id),
+            );
+            if (missingFromDisk.length > 0) {
+              logger.info('Merging disk messages missing from in-memory state', {
+                agentId,
+                inMemoryCount: messages.length,
+                diskCount: diskSession.messages.length,
+                missingCount: missingFromDisk.length,
+              });
+              // Use disk message order as canonical, then append any in-memory-only
+              // messages (e.g., optimistic sends not yet persisted to disk)
+              const diskIds = new Set(diskSession.messages.map((m) => m.id));
+              const inMemoryOnly = messages.filter((m) => !diskIds.has(m.id));
+              messages = [...diskSession.messages, ...inMemoryOnly];
+              session = { ...session, messages };
+            }
           }
-        } catch (err) {
-          logger.warn('Failed to restore messages from disk', { agentId, error: err });
         }
+      } catch (err) {
+        logger.warn('Failed to load messages from disk for merge', { agentId, error: err });
       }
     }
 

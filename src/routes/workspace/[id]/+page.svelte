@@ -47,6 +47,7 @@
   } from '$lib/store/slices/file-tracking/file-tracking-selectors';
   import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/file-tracking/file-tracking-slice';
   import {
+    selectActiveWorkspaceId,
     selectWorkspaceById,
     selectWorkspaceIsEmpty,
     selectWorkspaceActivePullRequest,
@@ -287,7 +288,14 @@
     if (workspaceId === 'new') {
       dispatch(clearActiveWorkspace());
     } else if (workspaceId) {
-      dispatch(setActiveWorkspaceId(workspaceId));
+      // Guard: only dispatch when the active workspace ID differs to prevent
+      // redundant dispatches that cascade through Redux middleware/sagas and
+      // trigger Svelte's effect_update_depth_exceeded error.
+      untrack(() => {
+        if (selectActiveWorkspaceId.select(getReduxStore().getState()) !== workspaceId) {
+          dispatch(setActiveWorkspaceId(workspaceId));
+        }
+      });
     }
   });
 

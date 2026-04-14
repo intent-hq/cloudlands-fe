@@ -595,7 +595,7 @@ export class PersistenceService {
     }
   }
 
-  async loadSession(agentId: string, workspaceId?: string) {
+  async loadSession(agentId: string, workspaceId?: string, options?: { bypassCache?: boolean }) {
     // Validate agentId
     if (!agentId) {
       agentProxiesLogger.warn('loadSession called with empty agentId');
@@ -613,9 +613,11 @@ export class PersistenceService {
     const plainWorkspaceId = String(workspaceId);
     const cacheKey = `${plainWorkspaceId || 'unknown'}/${plainAgentId}`;
 
-    // Check for in-flight request (dedupe concurrent calls)
+    const bypassCache = options?.bypassCache === true;
+
+    // Check for in-flight request (dedupe concurrent calls) — still dedupe even when bypassing cache
     const cached = this.loadSessionCache.get(cacheKey);
-    if (cached?.promise) {
+    if (!bypassCache && cached?.promise) {
       agentProxiesLogger.debug('Waiting for in-flight loadSession request', {
         agentId: plainAgentId,
         workspaceId: plainWorkspaceId,
@@ -623,9 +625,9 @@ export class PersistenceService {
       return cached.promise;
     }
 
-    // Check for cached data that's still fresh
+    // Check for cached data that's still fresh (skip when bypassing cache)
     const now = Date.now();
-    if (cached && now - cached.timestamp < this.LOAD_SESSION_CACHE_TTL_MS) {
+    if (!bypassCache && cached && now - cached.timestamp < this.LOAD_SESSION_CACHE_TTL_MS) {
       agentProxiesLogger.debug('Returning cached loadSession data', {
         agentId: plainAgentId,
         workspaceId: plainWorkspaceId,
