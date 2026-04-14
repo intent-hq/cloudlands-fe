@@ -1076,6 +1076,10 @@ export class ACPProvider extends BaseAgentProvider {
       onComplete?: (message: StreamMessage) => void;
       onError?: (error: Error) => void;
       onToolCall?: (toolCall: StreamToolCall) => void;
+      // Direct reference to the promise resolver — used by onCleanup to resolve
+      // the streamMessage promise when the done notification arrives before the
+      // JSON-RPC response's handleStreamCompletion timer fires.
+      resolveStream?: () => void;
       // Remove accumulatedContent - let SessionManager handle accumulation
       contentBlocks: ContentBlock[];
       // IMMEDIATE MODE: No buffering for snappy UI
@@ -7287,11 +7291,49 @@ export class ACPProvider extends BaseAgentProvider {
       onComplete: options?.onComplete,
       onError: options?.onError,
       onCleanup: (sessionId: string) => {
-        // Clean up the streamingCallbacks entry when the streaming done event completes
-        // This ensures the stopReason-based handleStreamCompletion() becomes a no-op
-        // The sessionId is passed directly from BackendStreamManager (frontendSessionId || sessionId)
-        // so we don't need to read mutable provider state here
+        // The done notification triggers this cleanup via completeStream().
+        // A race exists with handleStreamCompletion() (fired 100ms after the
+        // JSON-RPC response): if we delete the streamingCallbacks entry here
+        // before that timer fires, resolveStream() is never called and the
+        // streamMessage() promise hangs — blocking all follow-up messages.
+        //
+        // Fix: resolve the stream promise and run the same cleanups that
+        // the normal onComplete path does. Calling resolve() on an
+        // already-resolved promise is a no-op, so this is safe regardless
+        // of ordering.
         if (sessionId) {
+          const callbacks = this.streamingCallbacks.get(sessionId);
+
+          // Guard against a late done-notification from a previous stream
+          // resolving/cleaning up callbacks that belong to a newer stream.
+          if (
+            callbacks &&
+            callbacks.streamGeneration !== undefined &&
+            callbacks.streamGeneration !== this.streamGeneration
+          ) {
+            logger.warn('Ignoring stale onCleanup from previous stream generation', {
+              sessionId,
+              callbackGeneration: callbacks.streamGeneration,
+              currentGeneration: this.streamGeneration,
+            });
+            return;
+          }
+
+          if (callbacks?.resolveStream) {
+            if (this.retryInProgress) {
+              logger.debug('Skipping resolveStream in onCleanup — retry in progress', {
+                sessionId,
+              });
+            } else {
+              this.pendingRetry = undefined;
+              this.sessionRecoveryAttempts = 0;
+              this.contextTooLargeRecoveryCount = 0;
+              this.transientRetryAttempts = 0;
+              this.currentStreamingRequestId = null;
+
+              callbacks.resolveStream();
+            }
+          }
           this.cleanupStreamingCallback(sessionId);
           logger.debug('Cleaned up streamingCallbacks from onCleanup callback', {
             sessionId,
@@ -7374,6 +7416,7 @@ export class ACPProvider extends BaseAgentProvider {
           rejectStream(error);
         },
         onToolCall: options?.onToolCall,
+        resolveStream,
         // Removed accumulatedContent - SessionManager handles accumulation
         contentBlocks: [],
         // IMMEDIATE MODE: No buffering for snappy UI
