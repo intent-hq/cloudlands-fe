@@ -35,7 +35,10 @@
   import NoteCodeChangesCard from '$lib/components/workspace/NoteCodeChangesCard.svelte';
   import type { Workspace } from '$shared/types';
   import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-  import { runExternalContentUpdateEffect } from './note-with-comments/external-update-effect';
+  import {
+    runExternalContentUpdateEffect,
+    shouldSafetyNetTrigger,
+  } from './note-with-comments/external-update-effect';
   import { applyExternalUpdateHtmlToEditorPreservingCursor } from './note-with-comments/external-update-editor';
   import {
     destroyAndClearCommentManagerV2,
@@ -61,6 +64,7 @@
   const reduxDispatch = getDispatch();
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import { isSpecNote } from '$shared/constants/notes';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -519,9 +523,16 @@
   // Reactive note content - this will update when the store changes
   let lastDerivedContent: string | null = null;
 
+  // Writable stores mirror prop values so the Redux selector re-evaluates
+  // when workspace.id or noteId changes (same pattern as file-tree-view / AgentSubscriptions).
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  const noteIdStore = writable(noteId ?? '');
+  $effect(() => { workspaceIdStore.set(workspace?.id ?? ''); });
+  $effect(() => { noteIdStore.set(noteId ?? ''); });
+
   // Get the current note for task metadata (reactive via Redux selector)
-  const currentNote$ = workspace?.id && noteId ? selectNoteById(workspace.id, noteId) : null;
-  const currentNote = $derived(currentNote$ ? ($currentNote$ ?? null) : null);
+  const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
+  const currentNote = $derived($currentNote$ ?? null);
 
   // Reactive selector subscriptions at component init time
 
@@ -920,10 +931,11 @@
     // Initialize last known content
     lastKnownContent = goalContent;
 
-    logger.debug('[NoteWithComments] Initializing editor', {
+    logger.info('[NoteWithComments] initializeEditor: resolving goalContent', {
       noteId,
       workspaceId: workspace?.id,
       goalContentLength: goalContent.length,
+      source: goalContent === content ? 'content-prop' : 'redux-store',
       hasElement: !!element,
     });
 
@@ -1230,6 +1242,11 @@
   let lastNoteId: string | undefined = undefined;
   let lastSaveTimestamp: string | null = null; // Track when last save happened
 
+  // Non-reactive dedupe guard for the safety-net effect.
+  // Tracks the last Redux content snapshot that was already synced to externalUpdateVersion,
+  // so the effect doesn't re-fire after its own increment.
+  let lastSafetyNetSyncedContent: string | undefined = undefined;
+
   // Debounce reinitialize to prevent rapid successive calls
   let reinitializeTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -1255,6 +1272,7 @@
       lastNoteId = currentNoteId;
       lastKnownContent = '';
       hasUserEditedSinceLastSave = false;
+      lastSafetyNetSyncedContent = undefined;
 
       // Clear comments from previous note and reset decorations immediately
       reduxDispatch(clearCommentsAction());
@@ -1395,6 +1413,40 @@
       createTextSelection: TextSelection.create,
       logger,
     });
+  });
+
+  // Safety-net effect: If the CustomEvent mechanism fails to fire,
+  // this watches Redux content directly and queues the existing
+  // external-update pipeline by incrementing externalUpdateVersion.
+  $effect(() => {
+    // Read currentNoteContent reactively — this is $derived from the Redux selector
+    const reduxContent = currentNoteContent;
+    // Also track note identity so we reset when switching notes
+    const currentId = noteId;
+
+    if (
+      shouldSafetyNetTrigger({
+        reduxContent,
+        lastKnownContent,
+        lastSafetyNetSyncedContent,
+        isInitialized,
+        isUserTyping,
+        hasUserEditedSinceLastSave,
+        isUpdatingFromExternal,
+      })
+    ) {
+      logger.info('[NoteWithComments] Safety-net: Redux content diverged from lastKnownContent', {
+        noteId: currentId,
+        reduxContentLength: reduxContent?.length ?? 0,
+        lastKnownContentLength: lastKnownContent?.length ?? 0,
+      });
+
+      // Record what we synced so we don't re-fire for the same snapshot
+      lastSafetyNetSyncedContent = reduxContent;
+
+      // Queue the existing external-update pipeline
+      externalUpdateVersion = externalUpdateVersion + 1;
+    }
   });
 
   // // Watch for editable prop changes and update editor
@@ -1625,7 +1677,14 @@
             // Since externalUpdateVersion may not have been incremented (subscription not ready),
             // we need to manually trigger an update check
             const storeContent = currentNoteContent;
-            if (storeContent && storeContent !== lastKnownContent) {
+            logger.info('[NoteWithComments] Post-init check', {
+              noteId,
+              storeContentLength: storeContent?.length ?? 0,
+              lastKnownContentLength: lastKnownContent?.length ?? 0,
+              storeContentIsUndefined: storeContent === undefined,
+              contentsDiffer: storeContent !== lastKnownContent,
+            });
+            if (storeContent !== undefined && storeContent !== lastKnownContent) {
               logger.info(
                 '[NoteWithComments] Store content differs after init, triggering update',
                 {
@@ -1637,6 +1696,39 @@
               // Increment to trigger the external update effect
               externalUpdateVersion = externalUpdateVersion + 1;
             }
+
+            // Delayed re-check: catches the case where loadWorkspaceNotesSucceeded fires
+            // AFTER initializeEditor completes. Redux state may not be populated yet at
+            // the instant we check above, so we try again after a short delay.
+            const initNoteId = noteId;
+            setTimeout(() => {
+              if (isComponentDestroyed) return;
+              if (noteId !== initNoteId) return; // Note switched, skip
+              const delayedContent = currentNoteContent;
+              logger.info('[NoteWithComments] Delayed re-check (500ms post-init)', {
+                noteId,
+                delayedContentLength: delayedContent?.length ?? 0,
+                lastKnownContentLength: lastKnownContent?.length ?? 0,
+                delayedContentIsUndefined: delayedContent === undefined,
+                contentsDiffer: delayedContent !== lastKnownContent,
+              });
+              if (
+                delayedContent !== undefined &&
+                delayedContent !== lastKnownContent &&
+                !isUserTyping &&
+                !hasUserEditedSinceLastSave
+              ) {
+                logger.info(
+                  '[NoteWithComments] Delayed re-check: content diverged, triggering update',
+                  {
+                    noteId,
+                    delayedContentLength: delayedContent.length,
+                    lastKnownContentLength: lastKnownContent?.length ?? 0,
+                  },
+                );
+                externalUpdateVersion = externalUpdateVersion + 1;
+              }
+            }, 500);
           });
         })
         .catch((err) => {

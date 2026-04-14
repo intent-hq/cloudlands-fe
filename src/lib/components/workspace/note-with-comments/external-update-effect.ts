@@ -9,6 +9,47 @@ import {
 import type { LoggerLike } from './logger.types';
 import { restoreTaskAgentAssociations } from './task-item-utils';
 
+/**
+ * Determines whether the safety-net effect should trigger an externalUpdateVersion
+ * increment. This is extracted for testability — the actual $effect in the component
+ * calls this and increments when it returns true.
+ *
+ * Returns `true` when Redux content diverges from lastKnownContent and all guards pass.
+ */
+export function shouldSafetyNetTrigger({
+  reduxContent,
+  lastKnownContent,
+  lastSafetyNetSyncedContent,
+  isInitialized,
+  isUserTyping,
+  hasUserEditedSinceLastSave,
+  isUpdatingFromExternal,
+}: {
+  reduxContent: string | undefined;
+  lastKnownContent: string;
+  lastSafetyNetSyncedContent: string | undefined;
+  isInitialized: boolean;
+  isUserTyping: boolean;
+  hasUserEditedSinceLastSave: boolean;
+  isUpdatingFromExternal: boolean;
+}): boolean {
+  if (reduxContent === undefined) {
+    return false;
+  }
+  if (!isInitialized || isUserTyping || hasUserEditedSinceLastSave) {
+    return false;
+  }
+  if (isUpdatingFromExternal) {
+    return false;
+  }
+  // Dedupe: already synced this exact snapshot
+  if (reduxContent === lastSafetyNetSyncedContent) {
+    return false;
+  }
+  // Empty string is a valid content value — use strict inequality
+  return reduxContent !== lastKnownContent;
+}
+
 export type ProcessMarkdownToHTMLLike = (
   markdown: string,
   opts: {

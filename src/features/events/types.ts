@@ -1094,6 +1094,8 @@ export interface NoteUpdatedPayload {
     content?: string;
     title?: string;
   };
+  /** Origin of the update — "agent" for agent-driven changes, "external" otherwise. */
+  source?: 'agent' | 'external';
 }
 
 /**

@@ -31,9 +31,10 @@ vi.mock("../../workspace-lifecycle/workspace-lifecycle-slice", () => ({
   }), { type: "workspace-lifecycle/workspaceUnmounted", toString: () => "workspace-lifecycle/workspaceUnmounted" }),
 }));
 
-const { takeEveryFromListenSyncMock, notesIpcMock } = vi.hoisted(() => ({
+const { takeEveryFromListenSyncMock, notesIpcMock, dispatchContentUpdateEventMock } = vi.hoisted(() => ({
   takeEveryFromListenSyncMock: vi.fn(function* () {}),
   notesIpcMock: vi.fn(),
+  dispatchContentUpdateEventMock: vi.fn(),
 }));
 
 vi.mock("$lib/store/utils/ipc-channel", () => ({
@@ -42,6 +43,10 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 
 vi.mock("./notes-ipc", () => ({
   notesIpc: notesIpcMock,
+}));
+
+vi.mock("./dispatch-content-update-event", () => ({
+  dispatchContentUpdateEvent: dispatchContentUpdateEventMock,
 }));
 
 import {
@@ -97,6 +102,7 @@ describe("workspaceNotesSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notesIpcMock.mockReset();
+    dispatchContentUpdateEventMock.mockReset();
     _resetNoteUpdateSequence();
   });
 
@@ -306,6 +312,109 @@ describe("workspaceNotesSaga", () => {
     expect(handler.next({ ok: true, data: fetchedNote })).toEqual({
       value: sagaEffects.put(applyNoteUpdated("ws-1", "note-1", fetchedNote)),
       done: false,
+    });
+  });
+
+  // ===========================================================================
+  // Regression: dispatchContentUpdateEvent fires for every applyNoteUpdated path
+  // ===========================================================================
+
+  describe("dispatchContentUpdateEvent firing", () => {
+    it("fires content update event on full-note fast path with default source", () => {
+      watchNoteUpdatedSaga().next();
+
+      const note = mockNote("note-1");
+      const handler = getListenSyncHandler("note:updated")({
+        workspaceId: "ws-1",
+        noteId: "note-1",
+        note,
+      });
+
+      // PUT applyNoteUpdated
+      handler.next();
+      // Generator should now be done (the dispatchContentUpdateEvent is a plain call, not a yield)
+      expect(handler.next().done).toBe(true);
+      expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+        "note-1", note.content, "external", "ws-1",
+      );
+    });
+
+    it("fires content update event on full-note path with source=agent", () => {
+      watchNoteUpdatedSaga().next();
+
+      const note = mockNote("note-1");
+      const handler = getListenSyncHandler("note:updated")({
+        workspaceId: "ws-1",
+        noteId: "note-1",
+        note,
+        source: "agent",
+      });
+
+      handler.next();
+      handler.next();
+      expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+        "note-1", note.content, "agent", "ws-1",
+      );
+    });
+
+    it("fires content update event on content-merge fast path", () => {
+      watchNoteUpdatedSaga().next();
+
+      const existingNote = mockNote("note-1");
+      const handler = getListenSyncHandler("note:updated")({
+        workspaceId: "ws-1",
+        noteId: "note-1",
+        content: "Merged content",
+        source: "agent",
+      });
+
+      // SELECT for existing note
+      handler.next();
+      // Provide existing note → PUT applyNoteUpdated
+      handler.next(existingNote);
+      // Done
+      expect(handler.next().done).toBe(true);
+      expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+        "note-1", "Merged content", "agent", "ws-1",
+      );
+    });
+
+    it("fires content update event on IPC fallback path", () => {
+      watchNoteUpdatedSaga().next();
+
+      const handler = getListenSyncHandler("note:updated")({
+        workspaceId: "ws-1",
+        noteId: "note-1",
+      });
+
+      // CALL to notesIpc
+      handler.next();
+      const fetchedNote = mockNote("note-1");
+      // PUT applyNoteUpdated
+      handler.next({ ok: true, data: fetchedNote });
+      // Done
+      expect(handler.next().done).toBe(true);
+      expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+        "note-1", fetchedNote.content, "external", "ws-1",
+      );
+    });
+
+    it("passes source=agent through to IPC fallback path", () => {
+      watchNoteUpdatedSaga().next();
+
+      const handler = getListenSyncHandler("note:updated")({
+        workspaceId: "ws-1",
+        noteId: "note-1",
+        source: "agent",
+      });
+
+      handler.next();
+      const fetchedNote = mockNote("note-1");
+      handler.next({ ok: true, data: fetchedNote });
+      handler.next();
+      expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+        "note-1", fetchedNote.content, "agent", "ws-1",
+      );
     });
   });
 });

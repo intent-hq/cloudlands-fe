@@ -1,4 +1,4 @@
-import { END, eventChannel, type EventChannel } from "redux-saga";
+import { END, eventChannel, buffers, type EventChannel } from "redux-saga";
 import type { NotUndefined } from "@redux-saga/types";
 import { listenSync } from "$lib/electron-bridge";
 import type { WindowEventName } from "$lib/utils/window-events";
@@ -84,6 +84,10 @@ export function* takeEveryFromWindowEvent<T extends object>(
  * }
  */
 export function createListenSyncChannel<T extends NotUndefined>(eventName: ElectronEventName): EventChannel<T> {
+  // Use an expanding buffer so IPC events arriving while the saga handler
+  // is yielded (processing a previous event) are queued instead of dropped.
+  // The default buffer is buffers.none() which silently drops events when
+  // no take() is pending — causing lost updates (e.g. converted task content).
   return eventChannel<T>((emitter) => {
     if (typeof window === "undefined" || !window.electronAPI) {
       emitter(END as any);
@@ -97,7 +101,7 @@ export function createListenSyncChannel<T extends NotUndefined>(eventName: Elect
     // Return the unsubscribe function — called when channel.close() is invoked
     // or when the saga using this channel is cancelled
     return cleanup;
-  });
+  }, buffers.expanding<T>());
 }
 
 export function* takeEveryFromListenSync<T extends NotUndefined>(

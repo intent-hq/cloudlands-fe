@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { runExternalContentUpdateEffect } from '../external-update-effect';
+import {
+  runExternalContentUpdateEffect,
+  shouldSafetyNetTrigger,
+} from '../external-update-effect';
 
 function createMockEditor({
   initialHtml,
@@ -203,5 +206,84 @@ describe('external-update-effect', () => {
       reason: 'external-update',
       updateVersion: 3,
     });
+  });
+});
+
+describe('shouldSafetyNetTrigger', () => {
+  const baseArgs = {
+    reduxContent: 'new content',
+    lastKnownContent: 'old content',
+    lastSafetyNetSyncedContent: undefined as string | undefined,
+    isInitialized: true,
+    isUserTyping: false,
+    hasUserEditedSinceLastSave: false,
+    isUpdatingFromExternal: false,
+  };
+
+  it('returns true when Redux content diverges from lastKnownContent (missed CustomEvent path)', () => {
+    // Regression: If the CustomEvent never fires but Redux content changed,
+    // the safety-net should trigger an update.
+    expect(shouldSafetyNetTrigger(baseArgs)).toBe(true);
+  });
+
+  it('returns false when reduxContent is undefined (init race)', () => {
+    expect(shouldSafetyNetTrigger({ ...baseArgs, reduxContent: undefined })).toBe(false);
+  });
+
+  it('returns false when not initialized', () => {
+    expect(shouldSafetyNetTrigger({ ...baseArgs, isInitialized: false })).toBe(false);
+  });
+
+  it('returns false when user is typing', () => {
+    expect(shouldSafetyNetTrigger({ ...baseArgs, isUserTyping: true })).toBe(false);
+  });
+
+  it('returns false when user has edited since last save', () => {
+    expect(shouldSafetyNetTrigger({ ...baseArgs, hasUserEditedSinceLastSave: true })).toBe(false);
+  });
+
+  it('returns false when an external update is in progress', () => {
+    expect(shouldSafetyNetTrigger({ ...baseArgs, isUpdatingFromExternal: true })).toBe(false);
+  });
+
+  it('returns false when content matches lastKnownContent (no divergence)', () => {
+    expect(
+      shouldSafetyNetTrigger({ ...baseArgs, reduxContent: 'old content', lastKnownContent: 'old content' }),
+    ).toBe(false);
+  });
+
+  it('does not loop when the same content snapshot was already synced (dedupe guard)', () => {
+    // Regression: After the safety-net increments externalUpdateVersion for content "X",
+    // lastSafetyNetSyncedContent becomes "X". The effect re-runs (because externalUpdateVersion
+    // changed), but should NOT trigger again for the same content.
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        reduxContent: 'new content',
+        lastSafetyNetSyncedContent: 'new content',
+      }),
+    ).toBe(false);
+  });
+
+  it('treats empty-string content as a real update', () => {
+    // Empty string is valid content — the safety-net must not ignore it.
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        reduxContent: '',
+        lastKnownContent: 'old content',
+        lastSafetyNetSyncedContent: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it('treats empty-string to empty-string as no divergence', () => {
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        reduxContent: '',
+        lastKnownContent: '',
+      }),
+    ).toBe(false);
   });
 });

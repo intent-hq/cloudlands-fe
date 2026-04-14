@@ -93,6 +93,15 @@ export function* handleInitializeNotes(action: ReturnType<typeof initializeNotes
         notes = [...notes, createPlaceholderSpec(workspaceId)];
       }
 
+      // Log spec content for debugging first-load race condition
+      const specNote = notes.find((n) => n.id === SPEC_NOTE_ID);
+      logger.info("handleInitializeNotes: dispatching loadWorkspaceNotesSucceeded", {
+        workspaceId,
+        noteCount: notes.length,
+        specFound: !!specNote,
+        specContentLength: specNote?.content?.length ?? 0,
+      });
+
       yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
 
       // Auto-select spec if no selection
@@ -445,24 +454,10 @@ export function* handleExternalNoteUpdateSaga(action: ReturnType<typeof handleEx
   }
 }
 
-/**
- * Dispatch a window CustomEvent for editor content synchronization.
- * Replaces the old callback-based contentUpdateCallbacks system.
- */
-function dispatchContentUpdateEvent(
-  noteId: string,
-  content: string,
-  source: "agent" | "external",
-  workspaceId: string,
-) {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent("note-content-update", {
-        detail: { noteId, content, source, workspaceId },
-      }),
-    );
-  }
-}
+// Re-export for backward compatibility; the canonical definition lives in
+// dispatch-content-update-event.ts so both this saga and workspace-notes-saga
+// can share it without circular imports.
+import { dispatchContentUpdateEvent } from "./dispatch-content-update-event";
 
 // ============================================================================
 // Restore note version

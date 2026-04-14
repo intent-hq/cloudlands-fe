@@ -26,6 +26,7 @@ import {
   refreshWorkspaceNotesRequested,
   setWorkspaceNotesLoading,
 } from "../workspace-notes-slice";
+import { dispatchContentUpdateEvent } from "./dispatch-content-update-event";
 
 const TASK_STATUSES: TaskStatus[] = [
   "not_started",
@@ -45,6 +46,7 @@ type NoteCreatedEventPayload = NoteCreatedPayload & { note?: Note };
 type NoteUpdatedEventPayload = NoteUpdatedPayload & {
   note?: Note;
   data?: { noteId?: string };
+  // source is already on NoteUpdatedPayload; redeclared here for clarity
 };
 
 function normalizeWorkspaceIds(workspaceIds: string[]): string[] {
@@ -189,11 +191,19 @@ export function* watchNoteUpdatedSaga() {
 
     const key = makeNoteKey(data.workspaceId, noteId);
     const timestamp = Date.now();
+    const source = data.source ?? "external";
 
-    // Fast path: use the full note from the event payload if available
+    const hasTaskBlock = (c: string) => c.includes("@@@task") || c.includes("```task");
+
+    // Fast path: use the full note from the event payload if available.
+    // Skip if the content still has unconverted task blocks — a follow-up
+    // event with converted content will arrive shortly and we don't want
+    // to overwrite already-converted content with raw @@@task blocks.
     if (isFullNote(data.note)) {
+      if (hasTaskBlock(data.note.content ?? "")) return;
       if (isNewerUpdate(key, timestamp)) {
         yield* put(applyNoteUpdated(data.workspaceId, noteId, data.note));
+        dispatchContentUpdateEvent(noteId, data.note.content, source, data.workspaceId);
       }
       return;
     }
@@ -204,6 +214,9 @@ export function* watchNoteUpdatedSaga() {
     // and post-conversion) both trigger IPC fetches that resolve out of order.
     const eventContent = data.content ?? data.changes?.content;
     if (eventContent !== undefined) {
+      // Skip raw content that still has unconverted task blocks —
+      // the conversion will emit a clean version shortly.
+      if (hasTaskBlock(eventContent)) return;
       const existingNote: Note | undefined = yield* select(
         selectNoteById.select,
         data.workspaceId,
@@ -213,6 +226,7 @@ export function* watchNoteUpdatedSaga() {
         if (isNewerUpdate(key, timestamp)) {
           const mergedNote: Note = { ...existingNote, content: eventContent, updatedAt: new Date().toISOString() };
           yield* put(applyNoteUpdated(data.workspaceId, noteId, mergedNote));
+          dispatchContentUpdateEvent(noteId, eventContent, source, data.workspaceId);
         }
         return;
       }
@@ -226,6 +240,7 @@ export function* watchNoteUpdatedSaga() {
     if (result.ok && result.data && isFullNote(result.data)) {
       if (isNewerUpdate(key, timestamp)) {
         yield* put(applyNoteUpdated(data.workspaceId, noteId, result.data));
+        dispatchContentUpdateEvent(noteId, result.data.content, source, data.workspaceId);
       }
     }
   });
