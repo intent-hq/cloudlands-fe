@@ -433,6 +433,30 @@ export async function stopInactiveWorkspaceServers(activeWorkspaceId: string): P
           return;
         }
 
+        // Check if any agents have active subscriptions (e.g., coordinator waiting for sub-agents)
+        try {
+          const { getMainState } = await import('../../store/main/redux-store-bridge');
+          const { selectAllSubscriptions } = await import(
+            '../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors'
+          );
+          const state = getMainState();
+          const subscriptions = selectAllSubscriptions.select(state, workspaceId);
+          if (subscriptions.length > 0) {
+            logger.info('Skipping MCP server stop — workspace has active agent subscriptions', {
+              workspaceId,
+              subscriptionCount: subscriptions.length,
+            });
+            return;
+          }
+        } catch (err) {
+          // If we can't check subscriptions, err on the side of caution and don't stop
+          logger.warn('Failed to check agent subscriptions — skipping MCP server stop for safety', {
+            workspaceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
+
         logger.info('Stopping MCP servers for inactive workspace', { workspaceId });
         await stopWorkspaceServers(workspaceId);
         activeWorkspaces.delete(workspaceId);

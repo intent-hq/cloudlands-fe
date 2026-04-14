@@ -1581,6 +1581,8 @@ app.whenReady().then(async () => {
       // These agents are streaming into the void (producing "no windows found"
       // warnings) and accumulating memory with no user benefit. Their session
       // data is persisted to disk, so they can be resumed when the user returns.
+      // IMPORTANT: Skip workspaces with active agents (streaming or pending requests)
+      // to avoid killing agents that are doing real background work.
       Promise.all([
         import('../features/agent/main/agent-backend-handler.service'),
         import('../features/system/main/system.ipc'),
@@ -1591,12 +1593,25 @@ app.whenReady().then(async () => {
           const orphanedWorkspaceIds = [...providerWorkspaceIds].filter(
             (wsId) => !openWorkspaceIds.has(wsId),
           );
-          if (orphanedWorkspaceIds.length > 0) {
-            logger.info('Stopping orphaned agent providers (no open window)', {
-              orphanedWorkspaceIds,
+
+          // Filter out workspaces with active agents doing real work
+          const safeToCleanup = orphanedWorkspaceIds.filter((wsId) => {
+            const hasActive = agentBackendHandler.hasActiveAgentsInWorkspace(wsId);
+            if (hasActive) {
+              logger.info('Skipping orphaned workspace cleanup — has active agents', {
+                workspaceId: wsId,
+              });
+            }
+            return !hasActive;
+          });
+
+          if (safeToCleanup.length > 0) {
+            logger.info('Stopping orphaned agent providers (no open window, no active work)', {
+              safeToCleanup,
+              skippedWithActiveAgents: orphanedWorkspaceIds.length - safeToCleanup.length,
               openWorkspaceIds: [...openWorkspaceIds],
             });
-            for (const wsId of orphanedWorkspaceIds) {
+            for (const wsId of safeToCleanup) {
               agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
                 logger.warn('Failed to stop orphaned providers', {
                   workspaceId: wsId,

@@ -24,6 +24,7 @@ import {
   selectDelegationGroup,
   selectIsAgentDeleted,
 } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import { notifyPendingWorkClearedForAgent } from '../../agent/main/agent-process-registry';
 
 // Re-export types that consumers need
 export type { AgentEventFilter, AgentSubscriptionRecord } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
@@ -114,6 +115,24 @@ export function agentUnsubscribe(
     { agentId: sub.agentId, agentName: sub.agentName, subscriptionId, reason, groupId },
   )));
   logger.info('Agent unsubscribed', { subscriptionId, agentId: sub.agentId, reason, groupId });
+
+  // If agent has no remaining subscriptions, notify process registry
+  // so queued spawns waiting for a slot can re-evaluate
+  try {
+    const remaining = selectAgentSubscriptions.select(getMainState(), workspaceId, sub.agentId);
+    if (remaining.length === 0) {
+      notifyPendingWorkClearedForAgent(sub.agentId);
+    }
+  } catch (err) {
+    // If we can't check remaining subscriptions, notify anyway to be safe
+    // (false positive wake-up is harmless, missed wake-up blocks spawns)
+    logger.warn('Failed to check remaining subscriptions after unsubscribe', {
+      agentId: sub.agentId,
+      subscriptionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    notifyPendingWorkClearedForAgent(sub.agentId);
+  }
   return true;
 }
 
@@ -124,6 +143,7 @@ export function agentUnsubscribeAll(workspaceId: string, agentId: string): numbe
   if (count > 0) {
     mainDispatch(removeAllSubscriptions(workspaceId, agentId));
     mainDispatch(bumpVersion(workspaceId));
+    notifyPendingWorkClearedForAgent(agentId);
   }
   return count;
 }

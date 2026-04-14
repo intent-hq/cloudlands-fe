@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   collectOpenWorkspaceIds,
+  collectWindowIdsForWorkspace,
   type WindowChecker,
 } from '../window-workspace-tracking';
 
@@ -116,5 +117,134 @@ describe('collectOpenWorkspaceIds', () => {
 
     expect(windowOpenWorkspaceTabs.has(1)).toBe(true);
     expect(windowOpenWorkspaceTabs.has(2)).toBe(false);
+  });
+});
+
+describe('collectWindowIdsForWorkspace', () => {
+  let windowWorkspaceIds: Map<number, string>;
+  let windowOpenWorkspaceTabs: Map<number, string[]>;
+  let aliveWindows: Set<number>;
+  let checker: WindowChecker;
+
+  beforeEach(() => {
+    windowWorkspaceIds = new Map();
+    windowOpenWorkspaceTabs = new Map();
+    aliveWindows = new Set();
+    checker = { isAlive: (id) => aliveWindows.has(id) };
+  });
+
+  it('returns window ID when workspace is actively viewed', () => {
+    windowWorkspaceIds.set(1, 'ws-A');
+    aliveWindows.add(1);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-A',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([1]);
+  });
+
+  it('returns window ID when workspace is in background tabs (the bug fix)', () => {
+    // Window 1 is viewing ws-A, but has ws-B open in background tab
+    windowWorkspaceIds.set(1, 'ws-A');
+    windowOpenWorkspaceTabs.set(1, ['ws-A', 'ws-B', 'ws-C']);
+    aliveWindows.add(1);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-B',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([1]);
+  });
+
+  it('returns empty array when workspace is not open anywhere', () => {
+    windowWorkspaceIds.set(1, 'ws-A');
+    windowOpenWorkspaceTabs.set(1, ['ws-A']);
+    aliveWindows.add(1);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-nonexistent',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('does not include destroyed windows', () => {
+    windowWorkspaceIds.set(1, 'ws-A');
+    windowWorkspaceIds.set(2, 'ws-A');
+    aliveWindows.add(1); // window 2 is NOT alive
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-A',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([1]);
+  });
+
+  it('returns multiple windows when workspace is open in several', () => {
+    // ws-B is active in window 1, in background tab in window 2
+    windowWorkspaceIds.set(1, 'ws-B');
+    windowWorkspaceIds.set(2, 'ws-A');
+    windowOpenWorkspaceTabs.set(2, ['ws-A', 'ws-B']);
+    aliveWindows.add(1);
+    aliveWindows.add(2);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-B',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result.sort()).toEqual([1, 2]);
+  });
+
+  it('cleans up stale entries from destroyed windows', () => {
+    windowWorkspaceIds.set(1, 'ws-A');
+    windowWorkspaceIds.set(2, 'ws-B');
+    windowOpenWorkspaceTabs.set(2, ['ws-B']);
+    aliveWindows.add(1); // window 2 is NOT alive
+
+    collectWindowIdsForWorkspace('ws-A', windowWorkspaceIds, windowOpenWorkspaceTabs, checker);
+
+    expect(windowWorkspaceIds.has(2)).toBe(false);
+    expect(windowOpenWorkspaceTabs.has(2)).toBe(false);
+  });
+
+  it('includes window when workspace is only in tabs (no active workspace)', () => {
+    // Window navigated to home/settings — no windowWorkspaceIds entry,
+    // but ws-A is still in the tab bar
+    windowOpenWorkspaceTabs.set(1, ['ws-A', 'ws-B']);
+    aliveWindows.add(1);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-A',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([1]);
+  });
+
+  it('does not duplicate window ID when workspace is both active and in tabs', () => {
+    // ws-A is both the active workspace AND in the tabs list
+    windowWorkspaceIds.set(1, 'ws-A');
+    windowOpenWorkspaceTabs.set(1, ['ws-A', 'ws-B']);
+    aliveWindows.add(1);
+
+    const result = collectWindowIdsForWorkspace(
+      'ws-A',
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+    );
+    expect(result).toEqual([1]);
   });
 });

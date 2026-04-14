@@ -192,6 +192,15 @@ export function notifyPendingWorkCleared(pid: number): void {
   }
 }
 
+/** Find a process entry by agentId and notify that its pending work may have cleared. */
+export function notifyPendingWorkClearedForAgent(agentId: string): void {
+  for (const [pid, entry] of registry) {
+    if (entry.agentId === agentId) {
+      notifyPendingWorkCleared(pid);
+    }
+  }
+}
+
 /**
  * Evict idle processes in LRU order to reclaim memory.
  *

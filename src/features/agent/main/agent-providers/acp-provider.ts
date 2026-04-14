@@ -36,7 +36,8 @@ import {
   extractACPToolCalls,
   parseACPMessage,
 } from '../../../acp-official/parsers/acp-message-parser';
-import { mainDispatch } from '../../../../store/main/redux-store-bridge';
+import { mainDispatch, getMainState } from '../../../../store/main/redux-store-bridge';
+import { selectAgentSubscriptions } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import { agentAuthRequired, agentPlanRequired } from '../../../../store/main/slices/agent-events/agent-events-slice';
 import {
   normalizeMcpServers,
@@ -2741,7 +2742,32 @@ export class ACPProvider extends BaseAgentProvider {
         lastActiveTimestamp: Date.now(),
         isActive: false,
         kill: () => this.stopAgentProcess(),
-        hasPendingWork: () => this.pendingRequests.size > 0,
+        hasPendingWork: () => {
+          // Check pending requests first (cheap)
+          if (this.pendingRequests.size > 0) {
+            return true;
+          }
+          // Check if agent has active subscriptions (coordinator waiting for sub-agents)
+          // This prevents eviction of coordinators that are idle but waiting for delegated work
+          if (this.config.workspaceId) {
+            try {
+              const state = getMainState();
+              const subs = selectAgentSubscriptions.select(state, this.config.workspaceId, this.config.agentId);
+              if (subs.length > 0) {
+                return true;
+              }
+            } catch (err) {
+              logger.warn('Failed to check agent subscriptions for hasPendingWork', {
+                agentId: this.config.agentId,
+                workspaceId: this.config.workspaceId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              // Return true on failure - false positive is harmless, false negative kills coordinator
+              return true;
+            }
+          }
+          return false;
+        },
       });
     }
 

@@ -41,6 +41,8 @@ import { resolveStreamingConfig, DEFAULT_PROFILE } from '$lib/store/slices/strea
 import { agentPersistence } from './agent-persistence';
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { trackMain } from '$lib/services/analytics/main';
+import { getMainState } from '../../../store/main/redux-store-bridge';
+import { selectAgentSubscriptions } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 
 const logger = new Logger('AgentBackendHandler');
 
@@ -319,6 +321,22 @@ export class AgentBackendHandler {
     const idleThreshold = now - this.PROVIDER_IDLE_TIMEOUT_MS;
     const providersToCleanup: string[] = [];
 
+    // Lazy-load subscription selectors for checking active subscriptions
+    let mainStateGetter: (() => any) | undefined;
+    let agentSubsSelector: { select: (state: any, wsId: string, agentId: string) => any[] } | undefined;
+    try {
+      const storeModule = await import('../../../store/main/redux-store-bridge');
+      const selectorsModule = await import('../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+      mainStateGetter = storeModule.getMainState;
+      agentSubsSelector = selectorsModule.selectAgentSubscriptions;
+    } catch (err) {
+      logger.warn('Failed to load subscription selectors for idle cleanup', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Can't check subscriptions - bail out entirely to avoid killing coordinators
+      return;
+    }
+
     // Find idle providers
     for (const [agentId, lastUsed] of this.providerLastUsed.entries()) {
       if (lastUsed < idleThreshold) {
@@ -336,6 +354,35 @@ export class AgentBackendHandler {
             });
             continue;
           }
+
+          // CRITICAL: Skip agents that have active subscriptions!
+          // Coordinators waiting for sub-agent events appear idle but are logically active.
+          // Cleaning them up would orphan the sub-agents and lose delegation results.
+          if (mainStateGetter && agentSubsSelector) {
+            const workspaceId = this.streamWorkspaceIds.get(agentId) || (this.providers.get(agentId) as any)?.config?.workspaceId;
+            if (workspaceId) {
+              try {
+                const state = mainStateGetter();
+                const subs = agentSubsSelector.select(state, workspaceId, agentId);
+                if (subs.length > 0) {
+                  logger.debug('Skipping cleanup of provider with active subscriptions', {
+                    agentId,
+                    lastUsed,
+                    subscriptionCount: subs.length,
+                  });
+                  continue;
+                }
+              } catch (err) {
+                logger.warn('Failed to check agent subscriptions during idle cleanup', {
+                  agentId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+                // Treat subscription-check failures as "active" - skip cleanup when state is unknown
+                continue;
+              }
+            }
+          }
+
           providersToCleanup.push(agentId);
         }
       }
@@ -528,6 +575,98 @@ export class AgentBackendHandler {
       }
     }
     return wsIds;
+  }
+
+  /**
+   * Check if a workspace has any agents with active work (streaming or pending requests).
+   * Used by the memory cleanup to avoid killing providers that are actively working.
+   *
+   * @param workspaceId - The workspace ID to check
+   * @returns true if any agent in the workspace has active streams or pending requests
+   */
+  hasActiveAgentsInWorkspace(workspaceId: string): boolean {
+    // Find all agents that belong to this workspace (same logic as stopProvidersForWorkspace)
+    const agentsInWorkspace: string[] = [];
+
+    // Check streamWorkspaceIds
+    for (const [agentId, wsId] of this.streamWorkspaceIds) {
+      if (wsId === workspaceId) {
+        agentsInWorkspace.push(agentId);
+      }
+    }
+
+    // Also check providers directly by their config.workspaceId
+    for (const [agentId, provider] of this.providers) {
+      if (!agentsInWorkspace.includes(agentId)) {
+        const providerWorkspaceId = (provider as any)?.config?.workspaceId;
+        if (providerWorkspaceId === workspaceId) {
+          agentsInWorkspace.push(agentId);
+        }
+      }
+    }
+
+    // Check if any agent has active work
+    for (const agentId of agentsInWorkspace) {
+      const provider = this.providers.get(agentId);
+      if (!provider) continue;
+
+      // Check for active streaming callbacks
+      const streamingCallbacks = (provider as any)?.streamingCallbacks;
+      if (streamingCallbacks?.size > 0) {
+        logger.debug('hasActiveAgentsInWorkspace: agent has active streams', {
+          workspaceId,
+          agentId,
+          activeStreams: streamingCallbacks.size,
+        });
+        return true;
+      }
+
+      // Check for active stream via streamStartTimes (primary stream tracking)
+      if (this.streamStartTimes.has(agentId)) {
+        logger.debug('hasActiveAgentsInWorkspace: agent has active stream (streamStartTimes)', {
+          workspaceId,
+          agentId,
+          streamStartTime: this.streamStartTimes.get(agentId),
+        });
+        return true;
+      }
+
+      // Check for pending JSON-RPC requests
+      const pendingRequests = (provider as any)?.pendingRequests;
+      if (pendingRequests?.size > 0) {
+        logger.debug('hasActiveAgentsInWorkspace: agent has pending requests', {
+          workspaceId,
+          agentId,
+          pendingRequests: pendingRequests.size,
+        });
+        return true;
+      }
+
+      // Check for active subscriptions (coordinator waiting for sub-agents)
+      try {
+        const state = getMainState();
+        const subs = selectAgentSubscriptions.select(state, workspaceId, agentId);
+        if (subs.length > 0) {
+          logger.debug('hasActiveAgentsInWorkspace: agent has active subscriptions', {
+            workspaceId,
+            agentId,
+            subscriptionCount: subs.length,
+          });
+          return true;
+        }
+      } catch (err) {
+        // If we can't check subscriptions, assume active for safety
+        // (false positive is harmless, false negative can kill a coordinator)
+        logger.warn('hasActiveAgentsInWorkspace: failed to check subscriptions, assuming active', {
+          workspaceId,
+          agentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

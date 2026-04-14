@@ -5,7 +5,10 @@
  */
 
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
-import { collectOpenWorkspaceIds } from './window-workspace-tracking';
+import {
+  collectOpenWorkspaceIds,
+  collectWindowIdsForWorkspace,
+} from './window-workspace-tracking';
 import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
@@ -189,29 +192,21 @@ export function getWindowIdForWorkspace(workspaceId: string): number | undefined
 /**
  * Get ALL Electron window IDs for a given workspace ID.
  * Multiple windows can view the same workspace simultaneously.
- * Returns an empty array if no windows are viewing the workspace.
+ * Includes windows where the workspace is in background tabs, not just actively viewed.
+ * Returns an empty array if no windows have the workspace open.
  */
 export function getWindowIdsForWorkspace(workspaceId: string): number[] {
-  const windowIds: number[] = [];
-  const staleIds: number[] = [];
-
-  for (const [windowId, wsId] of windowWorkspaceIds) {
-    if (wsId === workspaceId) {
-      const win = BrowserWindow.fromId(windowId);
-      if (win && !win.isDestroyed()) {
-        windowIds.push(windowId);
-      } else {
-        staleIds.push(windowId);
-      }
-    }
-  }
-
-  // Clean up stale entries
-  for (const id of staleIds) {
-    windowWorkspaceIds.delete(id);
-  }
-
-  return windowIds;
+  return collectWindowIdsForWorkspace(
+    workspaceId,
+    windowWorkspaceIds,
+    windowOpenWorkspaceTabs,
+    {
+      isAlive(windowId: number) {
+        const win = BrowserWindow.fromId(windowId);
+        return !!win && !win.isDestroyed();
+      },
+    },
+  );
 }
 
 /**

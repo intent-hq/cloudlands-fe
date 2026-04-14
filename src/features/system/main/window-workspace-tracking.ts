@@ -61,3 +61,53 @@ export function collectOpenWorkspaceIds(
 
   return [...workspaceIds];
 }
+
+/**
+ * Collect all window IDs that have a specific workspace open — either as the
+ * actively viewed workspace or in that window's tab bar.
+ *
+ * Any windowId that fails the `isAlive` check is removed from **both** maps
+ * as a side-effect (stale-entry cleanup).
+ */
+export function collectWindowIdsForWorkspace(
+  workspaceId: string,
+  windowWorkspaceIds: Map<number, string>,
+  windowOpenWorkspaceTabs: Map<number, string[]>,
+  checker: WindowChecker,
+): number[] {
+  const matchingWindowIds: number[] = [];
+  const staleWindowIds: number[] = [];
+
+  // Collect all window IDs that appear in either map
+  const allWindowIds = new Set<number>([
+    ...windowWorkspaceIds.keys(),
+    ...windowOpenWorkspaceTabs.keys(),
+  ]);
+
+  for (const windowId of allWindowIds) {
+    if (checker.isAlive(windowId)) {
+      // Check if this window has the workspace as the active workspace
+      const activeWsId = windowWorkspaceIds.get(windowId);
+      if (activeWsId === workspaceId) {
+        matchingWindowIds.push(windowId);
+        continue; // Already matched, no need to check tabs
+      }
+
+      // Check if this window has the workspace in its tab bar
+      const openTabs = windowOpenWorkspaceTabs.get(windowId);
+      if (openTabs?.includes(workspaceId)) {
+        matchingWindowIds.push(windowId);
+      }
+    } else {
+      staleWindowIds.push(windowId);
+    }
+  }
+
+  // Clean up stale entries
+  for (const windowId of staleWindowIds) {
+    windowWorkspaceIds.delete(windowId);
+    windowOpenWorkspaceTabs.delete(windowId);
+  }
+
+  return matchingWindowIds;
+}
