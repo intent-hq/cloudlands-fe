@@ -8,4 +8,5 @@ export const GITHUB_AUTH_CHANNELS = {
   GET_AUTH_STATE: 'github-auth:get-auth-state',
   GET_STATUS: 'github-auth:get-status',
   LIST_REPOS: 'github-auth:list-repos',
+  SEARCH_REPOS: 'github-auth:search-repos',
 } as const;

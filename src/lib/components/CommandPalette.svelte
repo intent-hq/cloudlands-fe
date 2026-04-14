@@ -22,6 +22,7 @@
     faCodeBranch,
     faPlus,
     faGlobe,
+    faPlay,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -32,6 +33,8 @@
   import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import { resetOnboarding } from '$lib/store/slices/onboarding/onboarding-slice';
+  import { setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import {
     type WorkspaceObject,
     type WorkspaceObjectType,
@@ -43,9 +46,7 @@
     recordMRUItem,
     buildRecentItems,
   } from '$lib/store/slices/command-palette/command-palette-utils';
-  import {
-    computeResults,
-  } from '$lib/store/slices/command-palette/command-palette-results';
+  import { computeResults } from '$lib/store/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
@@ -125,6 +126,7 @@
     { id: 'new-note', label: 'New Note', icon: faFileAlt },
     { id: 'new-file', label: 'New File', icon: faFile, shortcut: '⌘N' },
     { id: 'open-url', label: 'Open URL in Browser', icon: faGlobe },
+    { id: 'show-onboarding', label: 'Show Onboarding', icon: faPlay },
   ];
 
   // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
@@ -194,9 +196,9 @@
     // Load notes from Redux store
     // Use untrack to read stores and update state to avoid triggering this effect
     untrack(() => {
-      const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId).filter(
-        (n) => !n.isArchived,
-      );
+      const allNotes = selectAllNotes
+        .select(getReduxStore().getState(), wsId)
+        .filter((n) => !n.isArchived);
       notes = allNotes
         .map((n) => ({
           id: n.id,
@@ -326,21 +328,23 @@
       const q = (pattern || '').trim();
       if (q) {
         const mru = getMRUMap();
-        return (mapped as any[])
-          .map((m: any) => ({
-            ...m,
-            _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
-            _mru: m.path ? mru.get(m.path) || 0 : 0,
-          }))
-          .filter((m: any) => m._score !== -Infinity)
-          .sort(
-            (a: any, b: any) =>
-              (b._score as number) - (a._score as number) ||
-              (b._mru as number) - (a._mru as number),
-          )
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          .map(({ _score, _mru, ...rest }: any) => rest)
-          .slice(0, 8);
+        return (
+          (mapped as any[])
+            .map((m: any) => ({
+              ...m,
+              _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
+              _mru: m.path ? mru.get(m.path) || 0 : 0,
+            }))
+            .filter((m: any) => m._score !== -Infinity)
+            .sort(
+              (a: any, b: any) =>
+                (b._score as number) - (a._score as number) ||
+                (b._mru as number) - (a._mru as number),
+            )
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            .map(({ _score, _mru, ...rest }: any) => rest)
+            .slice(0, 8)
+        );
       } else {
         return rankByMRU(mapped).slice(0, 8);
       }
@@ -750,7 +754,7 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+        reduxDispatch(setShowCreateModal(true));
         return true;
       case 'settings':
         navigateToSettings();
@@ -816,6 +820,10 @@
             new CustomEvent('workspace:open-browser-url', { detail: { url: 'about:blank' } }),
           );
         }
+        return true;
+      case 'show-onboarding':
+        reduxDispatch(resetOnboarding());
+        goto('/workspace/new');
         return true;
       default:
         return true;

@@ -582,8 +582,9 @@ export class UnifiedAgentFactory {
       // Handle both cases: when there's a message, or when there are only context references
       const hasInitialMessage = !!normalized.initialMessage?.trim();
       const hasContextReferences = (normalized.contextReferences?.length ?? 0) > 0;
+      const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
 
-      if ((hasInitialMessage || hasContextReferences) && !isBackend) {
+      if ((hasInitialMessage || hasContextReferences || hasImageBlocks) && !isBackend) {
         const store = await getReduxStoreInstance();
         const actions = await getReduxActions();
         const selectors = await getReduxSelectors();
@@ -598,7 +599,10 @@ export class UnifiedAgentFactory {
           const userMessage = {
             id: createMessageId(`msg_${uuidv4()}`),
             role: 'user' as const,
-            contentBlocks: [{ type: 'text' as const, text: messageText }],
+            contentBlocks: [
+              ...(messageText ? [{ type: 'text' as const, text: messageText }] : []),
+              ...(normalized.imageBlocks || []),
+            ],
             timestamp: new Date().toISOString(),
             // Include contextReferences in metadata so they display as pills in ChatMessage
             metadata: hasContextReferences
@@ -639,7 +643,7 @@ export class UnifiedAgentFactory {
       }
 
       // Step 11: Send initial message if provided (or if there are context references)
-      if (hasInitialMessage || hasContextReferences) {
+      if (hasInitialMessage || hasContextReferences || hasImageBlocks) {
         // Build the message to send - use text if provided, otherwise generate placeholder
         let messageToSend = normalized.initialMessage?.trim() || '';
         if (!messageToSend && hasContextReferences) {
@@ -655,11 +659,14 @@ export class UnifiedAgentFactory {
         // Send initial message asynchronously so drawer can open immediately
         // Don't await - let it run in the background
         // The ChatPanel will set up streaming handlers immediately on mount
-        this.sendInitialMessage(agent, messageToSend, normalized.contextReferences).catch(
-          (error) => {
-            logger.error('Failed to send initial message', error);
-          },
-        );
+        this.sendInitialMessage(
+          agent,
+          messageToSend,
+          normalized.contextReferences,
+          normalized.imageBlocks,
+        ).catch((error) => {
+          logger.error('Failed to send initial message', error);
+        });
       }
 
       // Calculate total metrics
@@ -753,6 +760,7 @@ export class UnifiedAgentFactory {
       provider: config.provider, // Preserve provider for propagation to session
       initialMessage: config.initialMessage,
       contextReferences: config.contextReferences || [],
+      imageBlocks: config.imageBlocks || [],
       metadata: config.metadata || {},
       source: config.source || 'api',
       agentType: config.agentType,
@@ -849,6 +857,7 @@ export class UnifiedAgentFactory {
     agent: AgentSession,
     message: string,
     contextReferences?: any[],
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
   ): Promise<void> {
     logger.info('sendInitialMessage called', {
       agentId: agent?.id,
@@ -867,7 +876,7 @@ export class UnifiedAgentFactory {
       return;
     }
 
-    if (!message || message.trim().length === 0) {
+    if ((!message || message.trim().length === 0) && !imageBlocks?.length) {
       logger.warn('Empty initial message, skipping', { agentId: agent.id });
       return;
     }
@@ -928,6 +937,7 @@ export class UnifiedAgentFactory {
         agentName: agent.name,
         systemPrompt: agent.systemPrompt || '',
         contextReferences: contextReferences || [],
+        imageBlocks,
       };
 
       logger.info('Sending initial message to backend', {

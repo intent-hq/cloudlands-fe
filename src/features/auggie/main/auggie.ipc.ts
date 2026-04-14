@@ -978,22 +978,6 @@ export function setupAuggieIPC() {
         logger.debug('Session check failed during auggie status', { error: sessionError });
       }
 
-      // If still unauthenticated, try a lightweight whoami check
-      if (!status.authenticated) {
-        try {
-          const { stdout } = await executeAuggieCommand('whoami', { timeout: 8000 });
-          const identity = (stdout || '').trim();
-          if (identity) {
-            status.authenticated = true;
-            status.authDetails = `Authenticated as ${identity}`;
-          }
-        } catch (authError) {
-          logger.info('Auggie auth check failed (likely needs login)', {
-            error: (authError as Error).message,
-          });
-        }
-      }
-
       return {
         success: true,
         data: status,

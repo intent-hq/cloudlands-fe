@@ -9,6 +9,10 @@ function getActiveWs(state: StoreState) {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
 }
 
+function getWsById(state: StoreState, wsId: string) {
+  return state.terminals.workspaces[wsId] || emptyWorkspaceState;
+}
+
 export const selectIsTerminalOverlayOpen = createSelector((state) => {
   return getActiveWs(state).isOpen;
 });
@@ -23,6 +27,18 @@ export const selectActiveTerminalId = createSelector((state) => {
 
 export const selectTerminals = createSelector((state) => {
   return getItems(getActiveWs(state).terminals);
+});
+
+export const selectIsTerminalOverlayOpenForWorkspace = createSelector((state, wsId: string) => {
+  return getWsById(state, wsId).isOpen;
+});
+
+export const selectActiveTerminalIdForWorkspace = createSelector((state, wsId: string) => {
+  return getWsById(state, wsId).activeTerminalId;
+});
+
+export const selectTerminalsForWorkspace = createSelector((state, wsId: string) => {
+  return getItems(getWsById(state, wsId).terminals);
 });
 
 /** Select only user-created terminals, filtering out agent terminals (IDs starting with "agent-") */

@@ -92,11 +92,7 @@ function getPRDetailsCacheKey(owner: string, repo: string, number: number): stri
   return `${owner}/${repo}/${number}`;
 }
 
-function getCachedPRDetails(
-  owner: string,
-  repo: string,
-  number: number,
-): GithubPullRequest | null {
+function getCachedPRDetails(owner: string, repo: string, number: number): GithubPullRequest | null {
   const key = getPRDetailsCacheKey(owner, repo, number);
   const cached = prDetailsCache.get(key);
   if (cached && Date.now() - cached.timestamp < PR_DETAILS_CACHE_DURATION_MS) {
@@ -244,7 +240,7 @@ export class AugmentApiClient {
         oauthUrl = await this.getGitHubOAuthUrl();
         logger.debug('Fetched OAuth URL (DIAGNOSTIC)', {
           hasUrl: !!oauthUrl,
-          urlPrefix: oauthUrl ? `${oauthUrl.substring(0, 50)  }...` : 'none',
+          urlPrefix: oauthUrl ? `${oauthUrl.substring(0, 50)}...` : 'none',
         });
       }
 
@@ -569,6 +565,168 @@ export class AugmentApiClient {
   }
 
   /**
+   * Translate raw user input into a GitHub `/search/repositories` query.
+   *
+   * GitHub's search endpoint does not interpret `/` as an `owner/name`
+   * separator — a raw `facebook/react` gets tokenized as two unrelated
+   * words and returns almost nothing useful. This helper rewrites common
+   * input shapes into proper search syntax so autocomplete-style queries
+   * return the result the user expects:
+   *
+   *   `facebook/react`    → `react user:facebook`  (exact repo + siblings,
+   *                                                 sorted by stars puts
+   *                                                 the exact match first)
+   *   `facebook/re`       → `re user:facebook`     (partial name autocomplete
+   *                                                 within an owner)
+   *   `facebook/`         → `user:facebook`         (browse all of an owner)
+   *   `/react`            → `react`                 (bare name part)
+   *   `react`             → `react`                 (unchanged global search)
+   *
+   * Using `name user:owner` instead of `repo:owner/name` is deliberate:
+   * `repo:` only returns the exact match (useless for partial queries),
+   * while `name user:owner` works for both complete and partial inputs
+   * and still surfaces the exact match at the top via star-sort.
+   */
+  private buildRepoSearchQuery(input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+
+    const slashIdx = trimmed.indexOf('/');
+    if (slashIdx === -1) return trimmed;
+
+    const owner = trimmed.slice(0, slashIdx).trim();
+    const name = trimmed.slice(slashIdx + 1).trim();
+
+    if (owner && name) return `${name} user:${owner}`;
+    if (owner) return `user:${owner}`;
+    if (name) return name;
+    return '';
+  }
+
+  /**
+   * Search GitHub repositories globally via the github-api remote tool.
+   *
+   * Hits `/search/repositories?q=<query>` and normalizes the YAML response
+   * into `GithubRepo[]`. Returns the top-N matches sorted by star count so
+   * the UI sees well-known repos first. An empty or whitespace-only query
+   * short-circuits to an empty array without a network call. Raw input is
+   * translated into GitHub search syntax via `buildRepoSearchQuery` so
+   * `owner/name` patterns actually return the right repo.
+   */
+  async searchGitHubRepos(query: string, options?: { per_page?: number }): Promise<GithubRepo[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    const searchQuery = this.buildRepoSearchQuery(trimmed);
+    if (!searchQuery) return [];
+
+    const params = new URLSearchParams();
+    params.set('q', searchQuery);
+    params.set('per_page', String(options?.per_page ?? 20));
+    params.set('sort', 'stars');
+    params.set('order', 'desc');
+
+    const path = `/search/repositories?${params.toString()}`;
+    const toolInput = {
+      summary: `Search GitHub repositories matching "${trimmed}"`,
+      method: 'GET',
+      path,
+      details: true,
+    };
+
+    logger.info('Searching GitHub repos via remote tool', {
+      rawQuery: trimmed,
+      searchQuery,
+      path,
+    });
+
+    try {
+      const response = await this.callEndpoint<{
+        tool_output: string;
+        tool_result_message: string;
+        status: number;
+      }>('agents/run-remote-tool', {
+        tool_name: 'github-api',
+        tool_input_json: JSON.stringify(toolInput),
+        tool_id: 8, // GITHUB_API = 8
+      });
+
+      if (response.status !== 1) {
+        const errorMessage =
+          response.tool_output || response.tool_result_message || 'Unknown error';
+        logger.error('Search repos remote tool failed', {
+          status: response.status,
+          output: errorMessage,
+        });
+        throw new Error(`GitHub search error: ${errorMessage}`);
+      }
+
+      return this.parseYamlRepoSearchResults(response.tool_output);
+    } catch (error) {
+      logger.error('Failed to search GitHub repos via remote tool', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Parse the YAML response from `/search/repositories` into `GithubRepo[]`.
+   * The GitHub API wraps results under an `items:` key; we also tolerate a
+   * bare array in case the remote tool normalizes the envelope away.
+   */
+  private parseYamlRepoSearchResults(yamlOutput: string): GithubRepo[] {
+    if (!yamlOutput || yamlOutput.trim() === '' || yamlOutput.trim() === '[]') {
+      return [];
+    }
+
+    try {
+      const parsed = yaml.load(yamlOutput);
+
+      let items: unknown[] = [];
+      if (isPlainObject(parsed) && Array.isArray(parsed.items)) {
+        items = parsed.items;
+      } else if (Array.isArray(parsed)) {
+        items = parsed;
+      }
+
+      const repos: GithubRepo[] = [];
+      for (const item of items) {
+        if (!isPlainObject(item)) continue;
+
+        // Prefer `full_name` which is always "owner/name"; fall back to
+        // a nested `owner.login` + top-level `name` pair.
+        let owner = '';
+        let name = '';
+        const fullName = typeof item.full_name === 'string' ? item.full_name : '';
+        if (fullName && fullName.includes('/')) {
+          const slash = fullName.indexOf('/');
+          owner = fullName.slice(0, slash);
+          name = fullName.slice(slash + 1);
+        } else {
+          const ownerObj = isPlainObject(item.owner) ? item.owner : undefined;
+          if (ownerObj && typeof ownerObj.login === 'string') owner = ownerObj.login;
+          if (typeof item.name === 'string') name = item.name;
+        }
+        if (!owner || !name) continue;
+
+        repos.push({
+          owner,
+          name,
+          html_url: typeof item.html_url === 'string' ? item.html_url : undefined,
+          created_at: normalizeToString(item.created_at),
+          updated_at: normalizeToString(item.updated_at),
+          default_branch: typeof item.default_branch === 'string' ? item.default_branch : undefined,
+        });
+      }
+
+      logger.info('Parsed GitHub repo search results', { count: repos.length });
+      return repos;
+    } catch (error) {
+      logger.error('Failed to parse YAML repo search results', error as Error);
+      return [];
+    }
+  }
+
+  /**
    * Get a GitHub repository
    */
   async getGitHubRepo(owner: string, name: string): Promise<GithubRepo | null> {
@@ -740,7 +898,6 @@ export class AugmentApiClient {
       const user = (parsed.user as Record<string, unknown>) || {};
       const head = (parsed.head as Record<string, unknown>) || {};
       const base = (parsed.base as Record<string, unknown>) || {};
-
 
       // Convert to GithubPullRequest format
       const pr: GithubPullRequest = {
@@ -1250,8 +1407,7 @@ export class AugmentApiClient {
             break;
           case 'login':
             // User login - set as author
-            if (!currentItem.user)
-              currentItem.user = { login: '', avatar_url: '', html_url: '' };
+            if (!currentItem.user) currentItem.user = { login: '', avatar_url: '', html_url: '' };
             currentItem.user.login = trimmedValue;
             break;
         }
@@ -1748,10 +1904,22 @@ export class AugmentApiClient {
         avatar_url: ((parsed.user as Record<string, unknown>)?.avatar_url as string) || '',
         html_url: ((parsed.user as Record<string, unknown>)?.html_url as string) || '',
       },
-      head_ref: ((parsed.head as Record<string, unknown>)?.ref as string) || (parsed.head_ref as string) || '',
-      base_ref: ((parsed.base as Record<string, unknown>)?.ref as string) || (parsed.base_ref as string) || '',
-      head_sha: ((parsed.head as Record<string, unknown>)?.sha as string) || (parsed.head_sha as string) || '',
-      base_sha: ((parsed.base as Record<string, unknown>)?.sha as string) || (parsed.base_sha as string) || '',
+      head_ref:
+        ((parsed.head as Record<string, unknown>)?.ref as string) ||
+        (parsed.head_ref as string) ||
+        '',
+      base_ref:
+        ((parsed.base as Record<string, unknown>)?.ref as string) ||
+        (parsed.base_ref as string) ||
+        '',
+      head_sha:
+        ((parsed.head as Record<string, unknown>)?.sha as string) ||
+        (parsed.head_sha as string) ||
+        '',
+      base_sha:
+        ((parsed.base as Record<string, unknown>)?.sha as string) ||
+        (parsed.base_sha as string) ||
+        '',
       merged: !!isMerged,
       draft: (parsed.draft as boolean) || false,
       mergeable: parsed.mergeable != null ? (parsed.mergeable as boolean) : undefined,

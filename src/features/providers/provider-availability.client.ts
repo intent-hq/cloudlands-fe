@@ -18,6 +18,12 @@ export interface ProviderStatus {
   available: boolean;
   /** Whether the user is authenticated with this provider. undefined = unknown/not checked. */
   authenticated?: boolean;
+  /**
+   * Human-readable auth detail extracted from the provider's CLI (e.g. the user's
+   * email or username). Populated on a best-effort basis — may be undefined even
+   * when `authenticated` is true if the CLI did not surface a recognisable identity.
+   */
+  authDetails?: string;
   error?: string;
 }
 
@@ -85,10 +91,11 @@ export async function getProviderAvailability(
       try {
         const { ACP_PROVIDERS } = await import('$shared/config/provider-config');
         const visibleIds = Object.keys(ACP_PROVIDERS).filter(
-          id => !cachedResult!.hiddenProviders!.includes(id)
+          (id) => !cachedResult!.hiddenProviders!.includes(id),
         );
         const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
-        const { validateActiveProvider } = await import('$lib/store/slices/provider-settings/provider-settings-slice');
+        const { validateActiveProvider } =
+          await import('$lib/store/slices/provider-settings/provider-settings-slice');
         getReduxDispatch()(validateActiveProvider(visibleIds));
       } catch (e) {
         // Non-critical — store validation is best-effort
@@ -163,4 +170,3 @@ function getDefaultResult(): ProviderAvailabilityResult {
     hiddenProviders: [],
   };
 }
-

@@ -129,7 +129,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     BranchSelector: LogLevel.WARN,
     ChatPanel: LogLevel.WARN,
     ChatService: LogLevel.WARN,
-    CompactWorkspaceInitializer: LogLevel.WARN,
     NoteWithComments: LogLevel.WARN,
     PanelLayoutManager: LogLevel.WARN,
     PanelContentRenderer: LogLevel.WARN,

@@ -44,7 +44,6 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
-  selectShowProviderPanel,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from "./user-preferences-selectors";
@@ -337,16 +336,5 @@ describe("userPreferencesReducer", () => {
       expect(selectNotificationVolume.select(state)).toBe(0.25);
     });
 
-    it("derives provider panel visibility from provider setup state", () => {
-      expect(selectShowProviderPanel.select(state)).toBe(false);
-      expect(
-        selectShowProviderPanel.select({
-          userPreferences: {
-            ...initialState,
-            hasCompletedProviderSetup: false,
-          },
-        } as any)
-      ).toBe(true);
-    });
   });
 });

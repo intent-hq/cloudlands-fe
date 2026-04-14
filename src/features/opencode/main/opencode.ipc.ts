@@ -15,6 +15,7 @@ const logger = new Logger('OpenCodeIPC');
 
 // Common paths to look for opencode
 const OPENCODE_PATHS = [
+  path.join(os.homedir(), '.opencode/bin/opencode'),
   '/usr/local/bin/opencode',
   '/usr/bin/opencode',
   '/opt/homebrew/bin/opencode',
@@ -22,12 +23,14 @@ const OPENCODE_PATHS = [
   path.join(os.homedir(), '.bun/bin/opencode'),
   path.join(os.homedir(), '.npm-global/bin/opencode'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
+      ]
+    : []),
 ];
 
 let cachedOpencodePath: string | null = null;
@@ -101,7 +104,8 @@ async function executeOpencodeCommand(
         (acc, k) => {
           // Mask API keys for security
           const val = envRecord[k] || '';
-          acc[k] = val.length > 8 ? `${val.substring(0, 4)}...${val.substring(val.length - 4)}` : val;
+          acc[k] =
+            val.length > 8 ? `${val.substring(0, 4)}...${val.substring(val.length - 4)}` : val;
           return acc;
         },
         {} as Record<string, string>,
@@ -177,10 +181,9 @@ export function setupOpencodeIPC() {
       const opencodePath = await findOpencodePath();
       logger.info('Getting models from opencode CLI', { opencodePath });
       // Try with debug logging to see what opencode is doing
-      const { stdout, stderr } = await executeOpencodeCommand(
-        ['models', '--log-level', 'DEBUG'],
-        { timeout: 10000 },
-      );
+      const { stdout, stderr } = await executeOpencodeCommand(['models', '--log-level', 'DEBUG'], {
+        timeout: 10000,
+      });
 
       // Debug: Log raw output to see exactly what opencode returns
       const lines = stdout.split('\n');
@@ -252,8 +255,6 @@ function formatModelLabel(provider: string, modelId: string): string {
   // Capitalize provider name
   const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
   // Clean up model ID for display
-  const modelLabel = modelId
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, (l) => l.toUpperCase());
+  const modelLabel = modelId.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   return `${providerLabel} ${modelLabel}`;
 }

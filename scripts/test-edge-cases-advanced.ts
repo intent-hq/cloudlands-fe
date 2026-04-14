@@ -129,11 +129,11 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for try-catch around sessionStorage
-          const initPath = path.join(__dirname, '../src/lib/components/workspace/WorkspaceInitializer.svelte');
+          const initPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
           const initContent = await fs.readFile(initPath, 'utf-8');
 
           if (!initContent.includes('try') || !initContent.includes('sessionStorage')) {
-            issues.push('WorkspaceInitializer may not handle sessionStorage errors');
+            issues.push('CompactWorkspaceInitializer may not handle sessionStorage errors');
           }
 
           const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');

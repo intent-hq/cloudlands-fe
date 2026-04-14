@@ -32,6 +32,8 @@ import { releaseNotesReducer } from "./slices/release-notes/release-notes-slice"
 import { skillsReducer } from "./slices/skills/skills-slice";
 import { workspaceReducer } from "./slices/workspace/workspace-slice";
 import { githubAuthReducer } from "./slices/github-auth/github-auth-slice";
+import { githubReposReducer } from "./slices/github-repos/github-repos-slice";
+import { githubRepoSearchReducer } from "./slices/github-repo-search/github-repo-search-slice";
 import { linearAuthReducer } from "./slices/linear-auth/linear-auth-slice";
 import { browserReducer } from "./slices/browser/browser-slice";
 import { sentryAuthReducer } from "./slices/sentry-auth/sentry-auth-slice";
@@ -58,6 +60,8 @@ import { chatStateReducer } from "./slices/chat-state/chat-state-slice";
 import { fileExplorerReducer } from "./slices/file-explorer/file-explorer-slice";
 import { agentSessionReducer } from "./slices/agent-session/agent-session-slice";
 import { agentSubscriptionUIReducer } from "./slices/agent-subscription-ui/agent-subscription-ui-slice";
+import { onboardingReducer } from "./slices/onboarding/onboarding-slice";
+import { agentAvailabilityReducer } from "./slices/agent-availability/agent-availability-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -94,6 +98,8 @@ export const reducers = {
   workspace: workspaceReducer,
   skills: skillsReducer,
   githubAuth: githubAuthReducer,
+  githubRepos: githubReposReducer,
+  githubRepoSearch: githubRepoSearchReducer,
   linearAuth: linearAuthReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
@@ -120,5 +126,7 @@ export const reducers = {
   fileExplorer: fileExplorerReducer,
   agentSessions: agentSessionReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
+  onboarding: onboardingReducer,
+  agentAvailability: agentAvailabilityReducer,
 } as const;
 

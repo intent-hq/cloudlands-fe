@@ -80,4 +80,22 @@ export function setupGitHubAuthIPC(): void {
       return { success: false, error: (error as Error).message };
     }
   });
+
+  // Global GitHub repo search (hits /search/repositories via remote tool)
+  ipcMain.handle(
+    GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
+    async (_event, { query }: { query: string }) => {
+      try {
+        logger.info('IPC: Searching GitHub repos', { query });
+        const repos = await augmentApiClient.searchGitHubRepos(query);
+        logger.info('IPC: Got search results', { count: repos.length });
+        return { success: true, data: repos };
+      } catch (error) {
+        logger.error('IPC: Failed to search GitHub repos', error as Error, {
+          errorMessage: (error as Error).message,
+        });
+        return { success: false, error: (error as Error).message };
+      }
+    },
+  );
 }

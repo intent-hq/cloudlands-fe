@@ -623,8 +623,7 @@
 
   const shouldPauseStatusRefresh = $derived(actionInProgress || authInProgress || showManualAuth);
 
-  // DEPRECATED: Blocking behavior removed in Phase 2 of optional Auggie onboarding.
-  // Provider status is now shown inline on the homepage via ProviderStatusPanel.
+  // DEPRECATED: Blocking behavior removed — provider setup is handled in onboarding.
   // Users can create workspaces even without providers (with a warning).
   // Keeping this component for now in case we need the auth flow logic elsewhere.
   const shouldBlock = $derived.by(() => {

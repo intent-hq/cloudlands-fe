@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Test page for RichTextarea component (used in CompactWorkspaceInitializer)
+   * Test page for RichTextarea component in a compact layout.
    * Tests mention dropdown positioning and functionality
    */
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';

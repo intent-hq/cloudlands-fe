@@ -26,6 +26,7 @@ export const initialState: SidebarNavState = {
   panelItem: null,
   panelWidth: 288,
   onboardingActive: false,
+  showCreateModal: false,
   draftPrompt: "",
   allSpacesViewMode: "recent",
   pinnedWorkspaceIds: [],
@@ -56,6 +57,9 @@ export const setPanelWidth = createAction<[width: number]>("sidebarNav/setPanelW
 
 // Onboarding
 export const setOnboardingActive = createAction<[active: boolean]>("sidebarNav/setOnboardingActive");
+
+// Create modal
+export const setShowCreateModal = createAction<[show: boolean]>("sidebarNav/setShowCreateModal");
 
 // View mode
 export const setAllSpacesViewMode = createAction<[mode: AllSpacesViewMode]>("sidebarNav/setAllSpacesViewMode");
@@ -108,6 +112,10 @@ export const sidebarNavReducer = cardPinnedPreference.register(
   .with(setOnboardingActive, (state, { payload: [active] }) => ({
     ...state,
     onboardingActive: active,
+  }))
+  .with(setShowCreateModal, (state, { payload: [show] }) => ({
+    ...state,
+    showCreateModal: show,
   }))
   .with(setAllSpacesViewMode, (state, { payload: [mode] }) => ({
     ...state,

@@ -100,6 +100,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCodeBranch: { iconName: 'code-branch' },
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
+  faPlay: { iconName: 'play' },
 }));
 
 import CommandPalette from './CommandPalette.svelte';
@@ -117,7 +118,6 @@ const reduxActions = [
 // Actions that still use window events
 const windowEventActions = [
   { label: 'File', eventType: 'app:new-file' },
-  { label: 'Workspace', eventType: 'app:open-new-space-modal' },
 ] as const;
 
 describe('CommandPalette new actions', () => {

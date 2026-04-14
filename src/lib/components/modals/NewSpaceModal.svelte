@@ -9,15 +9,13 @@
   import { fade, fly } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
-  import type { InitialRepoInfo } from '$lib/components/workspace/initializer/initial-repo-utils';
 
   interface Props {
     open?: boolean;
-    initialRepo?: InitialRepoInfo;
     onClose?: () => void;
   }
 
-  let { open = $bindable(false), initialRepo, onClose }: Props = $props();
+  let { open = $bindable(false), onClose }: Props = $props();
 
   let isExpanded = $state(true);
   let initializerRef: CompactWorkspaceInitializer | null = $state(null);
@@ -94,7 +92,6 @@
         <CompactWorkspaceInitializer
           bind:this={initializerRef}
           bind:isExpanded
-          {initialRepo}
           oncreate={close}
         />
       </div>

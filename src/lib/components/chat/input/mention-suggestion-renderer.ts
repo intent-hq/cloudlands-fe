@@ -88,7 +88,7 @@ class MentionSuggestionRenderer {
       return container as HTMLElement;
     }
 
-    // Try to find .rich-textarea (CompactWorkspaceInitializer case)
+    // Try to find .rich-textarea (legacy/standalone rich-textarea case)
     container = this.editorElement.closest('.rich-textarea');
     if (container) {
       logger.info('[MentionSuggestionRenderer] Found .rich-textarea');

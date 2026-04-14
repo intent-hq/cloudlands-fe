@@ -373,7 +373,7 @@
     savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? true,
   );
   // Track which provider the user selected for the initial agent
-  // Priority: active provider store (set via ProviderStatusPanel) takes precedence since it's the user's explicit choice
+  // Priority: active provider store takes precedence since it's the user's explicit choice
   let selectedProvider = $state<string>($activeProviderId$ ?? 'auggie');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()

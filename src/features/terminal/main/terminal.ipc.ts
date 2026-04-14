@@ -413,7 +413,7 @@ function ensureDirectoryExists(dirPath: string): string | null {
       return null;
     }
     return dirPath;
-  } catch  {
+  } catch {
     // Directory doesn't exist, try to create it
     try {
       fs.mkdirSync(dirPath, { recursive: true });
@@ -545,11 +545,13 @@ export function registerTerminalHandlers() {
               });
 
               terminal.on('exit', ({ exitCode }: { exitCode: number }) => {
-                mainDispatch(terminalProfessionalExit({
-                  terminalId,
-                  exitCode,
-                  signal: null,
-                }));
+                mainDispatch(
+                  terminalProfessionalExit({
+                    terminalId,
+                    exitCode,
+                    signal: null,
+                  }),
+                );
               });
 
               terminal.on('error', (error: Error) => {
@@ -626,18 +628,22 @@ export function registerTerminalHandlers() {
                   logger.info(
                     `[Terminal] Remote data for terminal ${terminalId}: ${data.length} bytes`,
                   );
-                  mainDispatch(terminalProfessionalData({
-                    terminalId,
-                    data,
-                  }));
+                  mainDispatch(
+                    terminalProfessionalData({
+                      terminalId,
+                      data,
+                    }),
+                  );
                 },
                 onExit: (code: number) => {
                   logger.info(`[Terminal] Remote terminal ${terminalId} exited with code ${code}`);
-                  mainDispatch(terminalProfessionalExit({
-                    terminalId,
-                    exitCode: code,
-                    signal: null,
-                  }));
+                  mainDispatch(
+                    terminalProfessionalExit({
+                      terminalId,
+                      exitCode: code,
+                      signal: null,
+                    }),
+                  );
                   remoteShellSessions.delete(terminalId);
                 },
                 onError: (error: Error) => {
@@ -775,7 +781,7 @@ export function registerTerminalHandlers() {
                   }
                 }
               }
-            } catch  {
+            } catch {
               // Directory doesn't exist or can't be read
             }
           }
@@ -1012,47 +1018,59 @@ export function registerTerminalHandlers() {
             logger.info(
               `[Terminal] Sending data to renderer for terminal ${terminalId}: ${data.length} bytes, first 50 chars: ${data.substring(0, 50).replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`,
             );
-            mainDispatch(terminalProfessionalData({
-              terminalId,
-              data,
-            }));
+            mainDispatch(
+              terminalProfessionalData({
+                terminalId,
+                data,
+              }),
+            );
           });
 
           // The shell will automatically show its prompt when it starts
           // No need to send an initial newline
 
           terminal.on('exit', ({ exitCode, signal }: any) => {
-            mainDispatch(terminalProfessionalExit({
-              terminalId,
-              exitCode,
-              signal,
-            }));
+            mainDispatch(
+              terminalProfessionalExit({
+                terminalId,
+                exitCode,
+                signal,
+              }),
+            );
           });
 
           terminal.on('command:start', () => {
-            mainDispatch(terminalProfessionalCommandStart({
-              terminalId,
-            }));
+            mainDispatch(
+              terminalProfessionalCommandStart({
+                terminalId,
+              }),
+            );
           });
 
           terminal.on('command:executed', (command: string) => {
-            mainDispatch(terminalProfessionalCommandExecuted({
-              terminalId,
-              command,
-            }));
+            mainDispatch(
+              terminalProfessionalCommandExecuted({
+                terminalId,
+                command,
+              }),
+            );
           });
 
           terminal.on('command:finished', () => {
-            mainDispatch(terminalProfessionalCommandFinished({
-              terminalId,
-            }));
+            mainDispatch(
+              terminalProfessionalCommandFinished({
+                terminalId,
+              }),
+            );
           });
 
           terminal.on('cwd:changed', (cwd: string) => {
-            mainDispatch(terminalProfessionalCwdChanged({
-              terminalId,
-              cwd,
-            }));
+            mainDispatch(
+              terminalProfessionalCwdChanged({
+                terminalId,
+                cwd,
+              }),
+            );
           });
 
           logger.info(`[Terminal] Terminal created with ID: ${terminalId}`);
@@ -1141,7 +1159,9 @@ export function registerTerminalHandlers() {
 
           // Guard: skip write if terminal is disposed or being disposed (AUGMENT-INTENT-9)
           if (!terminal.isAlive) {
-            logger.warn(`[Terminal] Skipping write to terminal ${terminalId} - terminal is disposed or disposing`);
+            logger.warn(
+              `[Terminal] Skipping write to terminal ${terminalId} - terminal is disposed or disposing`,
+            );
             return { success: false, error: 'Terminal is disposed or disposing' };
           }
 
@@ -1197,7 +1217,9 @@ export function registerTerminalHandlers() {
 
           // Guard: skip resize if terminal is disposed or being disposed (AUGMENT-INTENT-9)
           if (!terminal.isAlive) {
-            logger.warn(`[Terminal] Skipping resize for terminal ${terminalId} - terminal is disposed or disposing`);
+            logger.warn(
+              `[Terminal] Skipping resize for terminal ${terminalId} - terminal is disposed or disposing`,
+            );
             return { success: false, error: 'Terminal is disposed or disposing' };
           }
 
@@ -1247,7 +1269,10 @@ export function registerTerminalHandlers() {
           const terminal = terminalManager.getTerminal(terminalId);
 
           if (!terminal) {
-            throw new Error(`Terminal not found: ${terminalId}`);
+            return {
+              success: false,
+              error: `Terminal not found: ${terminalId}`,
+            };
           }
 
           return {
@@ -1341,7 +1366,9 @@ export function registerTerminalHandlers() {
 
           // Guard: skip refresh if terminal is disposed or being disposed (AUGMENT-INTENT-9)
           if (!terminal.isAlive) {
-            logger.warn(`[Terminal] Skipping refresh for terminal ${terminalId} - terminal is disposed or disposing`);
+            logger.warn(
+              `[Terminal] Skipping refresh for terminal ${terminalId} - terminal is disposed or disposing`,
+            );
             return { success: false, error: 'Terminal is disposed or disposing' };
           }
 
@@ -1410,22 +1437,32 @@ export function registerTerminalHandlers() {
       TerminalCreateWithCommandSchema,
       async (_, validated) => {
         try {
-          const { workspaceId, command, cwd, title, env: customEnv } = validated;
+          const { workspaceId, command, cwd, title, env: customEnv, pasteOnly } = validated;
 
           // Get workspace path and scope info
           let workingDir = cwd;
           if (!workingDir) {
-            // Try to get workspace path from workspace service
-            const workspaceInfo = await getWorkspaceInfo(workspaceId);
-            if (workspaceInfo.workspacePath) {
-              workingDir = workspaceInfo.workspacePath;
-              // Apply scope if present
-              if (workspaceInfo.scope) {
-                workingDir = path.join(workingDir, workspaceInfo.scope);
+            if (workspaceId === '__root__') {
+              // Root-context terminals (e.g., from the onboarding / welcome
+              // screen before any workspace exists) are not tied to a
+              // workspace record. Use the user's home directory as the
+              // working directory and skip the workspace lookup entirely —
+              // getWorkspaceInfo() would retry for several seconds before
+              // returning an empty result.
+              workingDir = os.homedir();
+            } else {
+              // Try to get workspace path from workspace service
+              const workspaceInfo = await getWorkspaceInfo(workspaceId);
+              if (workspaceInfo.workspacePath) {
+                workingDir = workspaceInfo.workspacePath;
+                // Apply scope if present
+                if (workspaceInfo.scope) {
+                  workingDir = path.join(workingDir, workspaceInfo.scope);
+                }
               }
-            }
-            if (!workingDir) {
-              workingDir = WorkspaceConfig.paths.workspace(workspaceId);
+              if (!workingDir) {
+                workingDir = WorkspaceConfig.paths.workspace(workspaceId);
+              }
             }
           }
           const validatedWorkingDir = ensureDirectoryExists(workingDir);
@@ -1450,6 +1487,7 @@ export function registerTerminalHandlers() {
             cwd: validatedWorkingDir,
             title: title || `Command: ${command.substring(0, 30)}`,
             initialCommand: command,
+            pasteOnly,
             env: customEnv,
           });
 
@@ -1555,10 +1593,12 @@ export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promi
     try {
       const terminalId = terminal.getInfo().id;
       await terminalManager.disposeTerminal(terminalId);
-      mainDispatch(terminalDisposed({
-        terminalId,
-        workspaceId,
-      }));
+      mainDispatch(
+        terminalDisposed({
+          terminalId,
+          workspaceId,
+        }),
+      );
       cleaned++;
     } catch (error) {
       failed++;
@@ -1575,10 +1615,12 @@ export async function cleanupWorkspaceTerminals(workspaceId: WorkspaceId): Promi
       session.close();
       await sshManager.disconnect(session.connectionId);
       remoteShellSessions.delete(terminalId);
-      mainDispatch(terminalDisposed({
-        terminalId,
-        workspaceId,
-      }));
+      mainDispatch(
+        terminalDisposed({
+          terminalId,
+          workspaceId,
+        }),
+      );
       cleaned++;
     } catch (error) {
       failed++;
@@ -1599,16 +1641,32 @@ export async function createTerminalFromBackend(options: {
   cwd: string;
   title?: string;
   initialCommand?: string;
+  /**
+   * When `true`, the `initialCommand` is typed into the PTY prompt but
+   * NOT executed — no trailing carriage return is sent. Used by the
+   * onboarding provider cards so users can review the command (e.g.
+   * `npm install -g …`) before pressing Enter.
+   */
+  pasteOnly?: boolean;
   env?: Record<string, string>;
 }): Promise<{ terminalId: string; success: boolean; error?: string }> {
-  const { workspaceId, cwd, title, initialCommand, env: customEnv } = options;
+  const { workspaceId, cwd, title, initialCommand, pasteOnly, env: customEnv } = options;
 
   try {
     // Generate terminal ID
     const terminalId = `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-    // Get workspace info (includes remote status and workspace path)
-    const workspaceInfo = await getWorkspaceInfo(workspaceId);
+    // Get workspace info (includes remote status and workspace path).
+    // Root-context terminals (workspaceId === '__root__') are never tied to
+    // a workspace record and are never remote, so skip the lookup — otherwise
+    // getWorkspaceInfo() would spend several seconds retrying before returning
+    // an empty result.
+    const workspaceInfo: {
+      isRemote: boolean;
+      sshConfig?: SSHConnectionConfig;
+      workspacePath?: string;
+      scope?: string;
+    } = workspaceId === '__root__' ? { isRemote: false } : await getWorkspaceInfo(workspaceId);
 
     if (workspaceInfo.isRemote && workspaceInfo.sshConfig) {
       // Create remote terminal
@@ -1642,11 +1700,13 @@ export async function createTerminalFromBackend(options: {
             mainDispatch(terminalProfessionalData({ terminalId, data }));
           },
           onExit: (code: number) => {
-            mainDispatch(terminalProfessionalExit({
-              terminalId,
-              exitCode: code,
-              signal: null,
-            }));
+            mainDispatch(
+              terminalProfessionalExit({
+                terminalId,
+                exitCode: code,
+                signal: null,
+              }),
+            );
             remoteShellSessions.delete(terminalId);
           },
           onError: (error: Error) => {
@@ -1667,14 +1727,16 @@ export async function createTerminalFromBackend(options: {
         });
 
         // Emit event to notify frontend about the new terminal
-        mainDispatch(terminalCreated({
-          terminalId,
-          workspaceId,
-          title: title || 'Remote Terminal',
-          cwd: terminalCwd,
-          createdAt: new Date().toISOString(),
-          background: !!initialCommand,
-        }));
+        mainDispatch(
+          terminalCreated({
+            terminalId,
+            workspaceId,
+            title: title || 'Remote Terminal',
+            cwd: terminalCwd,
+            createdAt: new Date().toISOString(),
+            background: !!initialCommand,
+          }),
+        );
 
         logger.info('[Terminal] Backend remote terminal created', {
           terminalId,
@@ -1725,10 +1787,12 @@ export async function createTerminalFromBackend(options: {
                 });
               }
 
-              mainDispatch(terminalProfessionalCommandExecuted({
-                terminalId,
-                command: 'Setup script (installing dependencies)',
-              }));
+              mainDispatch(
+                terminalProfessionalCommandExecuted({
+                  terminalId,
+                  command: 'Setup script (installing dependencies)',
+                }),
+              );
             } catch (error) {
               logger.error('[Terminal] Failed to execute remote setup script via exec channel', {
                 terminalId,
@@ -1836,22 +1900,65 @@ export async function createTerminalFromBackend(options: {
     });
 
     terminal.on('exit', ({ exitCode }: { exitCode: number }) => {
-      mainDispatch(terminalProfessionalExit({
-        terminalId,
-        exitCode,
-        signal: null,
-      }));
+      mainDispatch(
+        terminalProfessionalExit({
+          terminalId,
+          exitCode,
+          signal: null,
+        }),
+      );
+    });
+
+    // Forward shell-integration command lifecycle events so consumers like
+    // the onboarding AgentGrid can auto-refresh provider availability when
+    // an install command finishes. Mirrors the forwarding set up in the
+    // `terminal:professional:create` handler. Requires the user's shell to
+    // emit OSC 633 markers — otherwise these silently never fire.
+    terminal.on('command:start', () => {
+      mainDispatch(
+        terminalProfessionalCommandStart({
+          terminalId,
+        }),
+      );
+    });
+
+    terminal.on('command:executed', (command: string) => {
+      mainDispatch(
+        terminalProfessionalCommandExecuted({
+          terminalId,
+          command,
+        }),
+      );
+    });
+
+    terminal.on('command:finished', () => {
+      mainDispatch(
+        terminalProfessionalCommandFinished({
+          terminalId,
+        }),
+      );
+    });
+
+    terminal.on('cwd:changed', (cwd: string) => {
+      mainDispatch(
+        terminalProfessionalCwdChanged({
+          terminalId,
+          cwd,
+        }),
+      );
     });
 
     // Emit event to notify frontend about the new terminal
-    mainDispatch(terminalCreated({
-      terminalId,
-      workspaceId,
-      title: title || 'Terminal',
-      cwd: workingDir,
-      createdAt: new Date().toISOString(),
-      background: !!initialCommand,
-    }));
+    mainDispatch(
+      terminalCreated({
+        terminalId,
+        workspaceId,
+        title: title || 'Terminal',
+        cwd: workingDir,
+        createdAt: new Date().toISOString(),
+        background: !!initialCommand,
+      }),
+    );
 
     logger.info('[Terminal] Backend terminal created', {
       terminalId,
@@ -1859,61 +1966,82 @@ export async function createTerminalFromBackend(options: {
       cwd: workingDir,
     });
 
-    // If there's an initial command (setup script), save it to a temp file and execute
+    // If there's an initial command, either type it at the prompt
+    // (`pasteOnly`) or save it to a temp script file and execute it.
     if (initialCommand) {
-      setTimeout(async () => {
-        try {
-          const isWindows = process.platform === 'win32';
-          // Create a temporary script file
-          const scriptDir = path.join(os.tmpdir(), 'workspaces-scripts');
-          await fsPromises.mkdir(scriptDir, { recursive: true }).catch(() => {});
-          const scriptExt = isWindows ? '.ps1' : '.sh';
-          const scriptPath = path.join(scriptDir, `setup-${terminalId}${scriptExt}`);
-
-          // Write the script to the file (skip mode on Windows — irrelevant)
-          if (isWindows) {
-            await fsPromises.writeFile(scriptPath, initialCommand);
-          } else {
-            await fsPromises.writeFile(scriptPath, initialCommand, { mode: 0o755 });
+      if (pasteOnly) {
+        // Paste-only mode: write the command text to the PTY WITHOUT a
+        // trailing carriage return so it appears at the shell prompt and
+        // the user must press Enter themselves. Used by the onboarding
+        // provider cards so users can review install commands before
+        // running them. We still wait briefly for the shell to render
+        // its initial prompt, otherwise the text can end up ahead of it.
+        setTimeout(() => {
+          try {
+            terminal.write(initialCommand);
+            logger.info('[Terminal] Pasted command at prompt (not executed)', {
+              terminalId,
+              length: initialCommand.length,
+            });
+          } catch (error) {
+            logger.error('[Terminal] Failed to paste command:', error as Error);
           }
+        }, 500);
+      } else {
+        setTimeout(async () => {
+          try {
+            const isWindows = process.platform === 'win32';
+            // Create a temporary script file
+            const scriptDir = path.join(os.tmpdir(), 'workspaces-scripts');
+            await fsPromises.mkdir(scriptDir, { recursive: true }).catch(() => {});
+            const scriptExt = isWindows ? '.ps1' : '.sh';
+            const scriptPath = path.join(scriptDir, `setup-${terminalId}${scriptExt}`);
 
-          // Execute the script with the platform-appropriate shell
-          const command = isWindows
-            ? `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`
-            : `bash "${scriptPath}"`;
-          terminal.write(`${command}\r`);
-          logger.info('[Terminal] Executing setup script', { terminalId, scriptPath });
-
-          // Notify frontend that a command was executed so it can track it
-          mainDispatch(terminalProfessionalCommandExecuted({
-            terminalId,
-            command: 'Setup script (installing dependencies)',
-          }));
-
-          // Clean up the script file after a delay (give it time to execute)
-          setTimeout(async () => {
-            try {
-              await fsPromises.unlink(scriptPath);
-            } catch {
-              // Ignore cleanup errors
+            // Write the script to the file (skip mode on Windows — irrelevant)
+            if (isWindows) {
+              await fsPromises.writeFile(scriptPath, initialCommand);
+            } else {
+              await fsPromises.writeFile(scriptPath, initialCommand, { mode: 0o755 });
             }
-          }, 60000); // Clean up after 1 minute
-        } catch (error) {
-          logger.error('[Terminal] Failed to execute setup script:', error as Error);
-          // Fallback: try to execute inline
-          if (process.platform === 'win32') {
-            // Pipe the script to PowerShell via stdin
-            terminal.write(
-              `powershell -ExecutionPolicy Bypass -Command "${initialCommand.replace(/"/g, '\\"')}"\r`,
+
+            // Execute the script with the platform-appropriate shell
+            const command = isWindows
+              ? `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`
+              : `bash "${scriptPath}"`;
+            terminal.write(`${command}\r`);
+            logger.info('[Terminal] Executing setup script', { terminalId, scriptPath });
+
+            // Notify frontend that a command was executed so it can track it
+            mainDispatch(
+              terminalProfessionalCommandExecuted({
+                terminalId,
+                command: 'Setup script (installing dependencies)',
+              }),
             );
-          } else {
-            // Fallback: try to execute inline with heredoc
-            terminal.write(
-              `bash << 'SETUP_SCRIPT_EOF'\n${initialCommand}\nSETUP_SCRIPT_EOF\r`,
-            );
+
+            // Clean up the script file after a delay (give it time to execute)
+            setTimeout(async () => {
+              try {
+                await fsPromises.unlink(scriptPath);
+              } catch {
+                // Ignore cleanup errors
+              }
+            }, 60000); // Clean up after 1 minute
+          } catch (error) {
+            logger.error('[Terminal] Failed to execute setup script:', error as Error);
+            // Fallback: try to execute inline
+            if (process.platform === 'win32') {
+              // Pipe the script to PowerShell via stdin
+              terminal.write(
+                `powershell -ExecutionPolicy Bypass -Command "${initialCommand.replace(/"/g, '\\"')}"\r`,
+              );
+            } else {
+              // Fallback: try to execute inline with heredoc
+              terminal.write(`bash << 'SETUP_SCRIPT_EOF'\n${initialCommand}\nSETUP_SCRIPT_EOF\r`);
+            }
           }
-        }
-      }, 500);
+        }, 500);
+      }
     }
 
     return { terminalId, success: true };

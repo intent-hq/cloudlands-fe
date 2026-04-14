@@ -11,6 +11,7 @@ import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary'
 
 // Common paths to look for opencode
 const OPENCODE_PATHS = [
+  path.join(os.homedir(), '.opencode/bin/opencode'),
   '/usr/local/bin/opencode',
   '/usr/bin/opencode',
   '/opt/homebrew/bin/opencode',
@@ -18,12 +19,14 @@ const OPENCODE_PATHS = [
   path.join(os.homedir(), '.bun/bin/opencode'),
   path.join(os.homedir(), '.npm-global/bin/opencode'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
+      ]
+    : []),
 ];
 
 // Common paths to look for npx (fallback runner)
@@ -39,12 +42,14 @@ const NPX_PATHS = [
   path.join(os.homedir(), '.asdf/shims/npx'),
   path.join(os.homedir(), '.npm-global/bin/npx'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'npx.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'npx.exe'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'npx.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'npx.exe'),
+      ]
+    : []),
 ];
 
 let cachedOpenCodePath: string | null = null;

@@ -70,6 +70,7 @@ export namespace AgentIpc {
     rules?: string; // DEPRECATED: Kept for IPC backward compat, but IGNORED by backend
     initialMessage?: string;
     contextReferences?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     metadata?: Record<string, any>;
     workspaceContext?: {
       openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;

@@ -31,7 +31,10 @@ import {
   getOpenCodePath,
   isOpenCodeInstalled,
 } from '../../opencode/main/opencode-resolver';
-import type { ProviderAvailabilityResult, ProviderStatus } from '$shared/types/provider-availability';
+import type {
+  ProviderAvailabilityResult,
+  ProviderStatus,
+} from '$shared/types/provider-availability';
 
 export type { ProviderAvailabilityResult, ProviderStatus };
 
@@ -196,6 +199,147 @@ async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
 /** Auth check timeout in ms */
 const AUTH_CHECK_TIMEOUT_MS = 5000;
 
+async function checkAuggieAuth(cliPath: string | null): Promise<boolean | undefined> {
+  if (!cliPath) return undefined;
+
+  return new Promise((resolve) => {
+    try {
+      let settled = false;
+      const settle = (value: boolean | undefined) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+
+      const child = spawn(cliPath, ['model', 'list'], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: AUTH_CHECK_TIMEOUT_MS,
+      });
+
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      const timeoutId = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          // Process may have already exited
+        }
+        settle(undefined);
+      }, AUTH_CHECK_TIMEOUT_MS);
+
+      child.on('error', () => {
+        clearTimeout(timeoutId);
+        settle(undefined);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timeoutId);
+        const output = `${stdout}\n${stderr}`;
+        const isUnauthenticated =
+          /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
+            output,
+          );
+        if (isUnauthenticated) {
+          settle(false);
+          return;
+        }
+        if (code === 0) {
+          settle(true);
+          return;
+        }
+        settle(undefined);
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+/**
+ * OpenCode has no single "am I logged in" signal: credentials may come from
+ * `opencode auth login`, env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_PROFILE, etc.),
+ * or a project .env file. `opencode models` is the readiness gate — it returns
+ * a non-empty list of `provider/model` lines only when at least one provider
+ * is credentialed from any of those sources.
+ *
+ * Timeout matches the existing OPENCODE_CHANNELS.GET_MODELS IPC (10s), since
+ * `opencode models` can be slower than a simple auth file read.
+ */
+const OPENCODE_READY_TIMEOUT_MS = 10000;
+
+async function checkOpenCodeReady(cliPath: string | null): Promise<boolean | undefined> {
+  if (!cliPath) return undefined;
+
+  return new Promise((resolve) => {
+    try {
+      let settled = false;
+      const settle = (value: boolean | undefined) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+
+      const child = spawn(cliPath, ['models'], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: OPENCODE_READY_TIMEOUT_MS,
+      });
+
+      let stdout = '';
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+      // Drain stderr to prevent backpressure from blocking the process
+      child.stderr.resume();
+
+      const timeoutId = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          // Process may have already exited
+        }
+        settle(undefined);
+      }, OPENCODE_READY_TIMEOUT_MS);
+
+      child.on('error', () => {
+        clearTimeout(timeoutId);
+        settle(undefined);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timeoutId);
+        // code is null when terminated by signal — treat as unknown
+        if (code === null) {
+          settle(undefined);
+          return;
+        }
+        if (code !== 0) {
+          settle(false);
+          return;
+        }
+        // Ready iff at least one line matches the `provider/model` format
+        const hasModel = stdout.split('\n').some((line) => {
+          const trimmed = line.trim();
+          return trimmed.length > 0 && trimmed.includes('/') && !trimmed.startsWith('#');
+        });
+        settle(hasModel);
+      });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
 /**
  * Check if a provider's CLI is authenticated by running its auth check command.
  * Returns true if authenticated, false if not, undefined if check failed/timed out.
@@ -261,6 +405,7 @@ async function checkProviderAuth(
           settle(false);
           return;
         }
+
         if (validateOutput) {
           settle(validateOutput(stdout));
         } else if (requireNonEmptyOutput) {
@@ -290,7 +435,10 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       continue;
     }
     // Check feature code gating
-    if (config.requiresFeatureCode && !featureCodesService.isFeatureEnabled(config.requiresFeatureCode)) {
+    if (
+      config.requiresFeatureCode &&
+      !featureCodesService.isFeatureEnabled(config.requiresFeatureCode)
+    ) {
       hiddenProviders.push(providerId);
     }
   }
@@ -319,34 +467,37 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       checkOpenCodeAvailability(),
     ]);
 
-  // Run auth checks in parallel for all available providers
-  if (claudeCodeResult.available || codexResult.available || opencodeResult.available) {
-    const [claudeCodePath, codexPath, opencodePath] = await Promise.all([
+  // Run auth checks in parallel for available providers.
+  // Auggie uses `model list`; model listing is the stable auth gate.
+  if (
+    auggieResult.available ||
+    claudeCodeResult.available ||
+    codexResult.available ||
+    opencodeResult.available
+  ) {
+    const [auggiePath, claudeCodePath, codexPath, opencodePath] = await Promise.all([
+      auggieResult.available ? findAuggiePathAsync() : Promise.resolve(null),
       claudeCodeResult.available ? getClaudeCodePath() : Promise.resolve(null),
       codexResult.available ? getCodexPath() : Promise.resolve(null),
       opencodeResult.available ? getOpenCodePath() : Promise.resolve(null),
     ]);
 
-    const [claudeAuth, codexAuth, opencodeAuth] = await Promise.all([
+    const [auggieAuth, claudeAuth, codexAuth, opencodeAuth] = await Promise.all([
+      auggieResult.available ? checkAuggieAuth(auggiePath) : Promise.resolve(undefined),
       claudeCodeResult.available
         ? checkProviderAuth(claudeCodePath, ACP_PROVIDERS['claude-code'].authCheckArgs ?? [])
         : Promise.resolve(undefined),
       codexResult.available
         ? checkProviderAuth(codexPath, ACP_PROVIDERS.codex.authCheckArgs ?? [])
         : Promise.resolve(undefined),
-      // `opencode auth list` always exits 0 — we parse stdout for "0 credentials"
-      // to distinguish logged-in from logged-out. This is brittle (depends on CLI
-      // output format) but best-effort; on failure we return undefined (no indicator).
-      opencodeResult.available
-        ? checkProviderAuth(
-            opencodePath,
-            ACP_PROVIDERS.opencode.authCheckArgs ?? [],
-            false,
-            (stdout) => !stdout.includes('0 credentials'),
-          )
-        : Promise.resolve(undefined),
+      // OpenCode has no stable `am I logged in?` signal — credentials can come
+      // from auth.json, env vars, or a project .env. `opencode models` is the
+      // readiness gate: it returns at least one `provider/model` line only when
+      // some provider is usable. On failure we return undefined (no indicator).
+      opencodeResult.available ? checkOpenCodeReady(opencodePath) : Promise.resolve(undefined),
     ]);
 
+    auggieResult.authenticated = auggieAuth;
     claudeCodeResult.authenticated = claudeAuth;
     codexResult.authenticated = codexAuth;
     opencodeResult.authenticated = opencodeAuth;
@@ -376,6 +527,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     codex: codexResult.available,
     cortex: cortexResult.available,
     opencode: opencodeResult.available,
+    auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
     opencodeAuth: opencodeResult.authenticated,
@@ -431,6 +583,85 @@ export function setupProviderAvailabilityIPC(): void {
       };
     }
   });
+
+  ipcMain.handle(
+    PROVIDERS_CHANNELS.CHECK_SINGLE,
+    async (
+      _event: Electron.IpcMainInvokeEvent,
+      request: string | { providerId: string },
+    ) => {
+      const providerId = typeof request === 'string' ? request : request.providerId;
+      try {
+        let status: ProviderStatus;
+        let authenticated: boolean | undefined;
+
+        switch (providerId) {
+          case 'auggie':
+            status = await checkAuggieAvailability();
+            if (status.available) {
+              const auggiePath = await findAuggiePathAsync();
+              authenticated = await checkAuggieAuth(auggiePath);
+            }
+            break;
+          case 'claude-code':
+            clearClaudeCodeCache();
+            status = await checkClaudeCodeAvailability();
+            if (status.available) {
+              const claudePath = await getClaudeCodePath();
+              authenticated = await checkProviderAuth(
+                claudePath,
+                ACP_PROVIDERS['claude-code'].authCheckArgs ?? [],
+              );
+            }
+            break;
+          case 'codex':
+            clearCodexCache();
+            status = await checkCodexAvailability();
+            if (status.available) {
+              const codexPath = await getCodexPath();
+              authenticated = await checkProviderAuth(
+                codexPath,
+                ACP_PROVIDERS.codex.authCheckArgs ?? [],
+              );
+            }
+            break;
+          case 'cortex': {
+            const isHidden =
+              ACP_PROVIDERS.cortex.requiresFeatureCode &&
+              !featureCodesService.isFeatureEnabled(ACP_PROVIDERS.cortex.requiresFeatureCode);
+            if (isHidden) {
+              status = { available: false };
+            } else {
+              clearCortexCache();
+              status = await checkCortexAvailability();
+            }
+            break;
+          }
+          case 'opencode':
+            clearOpenCodeCache();
+            status = await checkOpenCodeAvailability();
+            if (status.available) {
+              const opencodePath = await getOpenCodePath();
+              authenticated = await checkOpenCodeReady(opencodePath);
+            }
+            break;
+          default:
+            return { success: false, providerId, error: `Unknown provider: ${providerId}` };
+        }
+
+        if (status.available) {
+          status.authenticated = status.authenticated ?? authenticated;
+        }
+
+        return { success: true, providerId, data: status };
+      } catch (error) {
+        logger.error(`Failed to check single provider ${providerId}`, {
+          error: (error as Error).message,
+        });
+        return { success: false, providerId, error: (error as Error).message };
+      }
+    },
+  );
 
   ipcMain.handle(PROVIDERS_CHANNELS.GET_PATHS, async () => {
     try {

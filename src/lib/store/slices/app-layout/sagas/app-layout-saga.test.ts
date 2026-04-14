@@ -133,7 +133,6 @@ vi.mock("./dock-navigation-saga", () => ({
   watchDockNavigationForWorkspaceSaga: createDockNavigationWatcherMock,
 }));
 
-import { openNewSpaceModal } from "../../global-modals/global-modals-slice";
 import {
   focusPanel as focusPanelAction,
   setActiveTab as setActiveTabAction,
@@ -145,6 +144,7 @@ import {
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
+import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import {
   appLayoutSaga,
@@ -154,7 +154,7 @@ import {
   watchMenuNewAgentSaga,
   watchNavigateSaga,
   watchNavigateToSettingsSaga,
-  watchOpenNewSpaceModalSaga,
+  watchOpenNewSpaceOnboardingSaga,
   watchWorkspaceCreateForRepoSaga,
   watchMenuNewBrowserSaga,
   watchMenuZoomInSaga,
@@ -197,6 +197,7 @@ function getElectronHandler(eventName: string) {
 describe("appLayoutSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     vi.stubGlobal("window", windowStub as unknown as Window & typeof globalThis);
     windowStub.location.pathname = "/";
     reduxState.workspace.activeWorkspaceId = "ws-current";
@@ -282,7 +283,7 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchOpenNewSpaceModalSaga),
+      value: sagaEffects.fork(watchOpenNewSpaceOnboardingSaga),
       done: false,
     });
     expect(iterator.next()).toEqual({
@@ -555,7 +556,7 @@ describe("appLayoutSaga", () => {
     );
   });
 
-  it("opens the new space modal instead of navigating for /?create=true", () => {
+  it("navigates to new onboarding for /?create=true", () => {
     const iterator = watchNavigateSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
@@ -563,7 +564,7 @@ describe("appLayoutSaga", () => {
 
     const handler = getElectronHandler("navigate");
     expect(handler("/?create=true").next()).toEqual({
-      value: sagaEffects.put(openNewSpaceModal(undefined)),
+      value: sagaEffects.put(setShowCreateModal(true)),
       done: false,
     });
   });
@@ -714,7 +715,7 @@ describe("appLayoutSaga", () => {
     );
   });
 
-  it("opens the new space modal from workspace:create-for-repo with environment carry-over", () => {
+  it("navigates to onboarding from workspace:create-for-repo with environment carry-over", () => {
     const iterator = watchWorkspaceCreateForRepoSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
@@ -730,21 +731,20 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(handlerIterator.next(reduxState.workspace.workspaces.map["ws-current"])).toEqual({
-      value: sagaEffects.put(
-        openNewSpaceModal({
-          repoPath: "/repo/intent",
-          environmentType: "remote",
-          sshConfig: { host: "example.com" },
-          previousWorkspaceId: "ws-old",
-          previousWorkspaceTitle: "Old Space",
-        }),
-      ),
+      value: sagaEffects.put(setShowCreateModal(true)),
       done: false,
+    });
+    expect(JSON.parse(sessionStorage.getItem("workspace-prefill") ?? "{}")).toEqual({
+      repoPath: "/repo/intent",
+      environmentType: "remote",
+      sshConfig: { host: "example.com" },
+      previousWorkspaceId: "ws-old",
+      previousWorkspaceTitle: "Old Space",
     });
   });
 
-  it("opens the new space modal from app:open-new-space-modal", () => {
-    const iterator = watchOpenNewSpaceModalSaga();
+  it("navigates to onboarding from app:open-new-space-modal", () => {
+    const iterator = watchOpenNewSpaceOnboardingSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
 
@@ -758,14 +758,11 @@ describe("appLayoutSaga", () => {
         },
       }).next(),
     ).toEqual({
-      value: sagaEffects.put(
-        openNewSpaceModal({
-          repoPath: "/repo/intent",
-          owner: "augmentcode",
-          name: "intent",
-        }),
-      ),
+      value: sagaEffects.put(setShowCreateModal(true)),
       done: false,
+    });
+    expect(JSON.parse(sessionStorage.getItem("workspace-prefill") ?? "{}")).toEqual({
+      repoPath: "/repo/intent",
     });
   });
 

@@ -646,11 +646,16 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       // Create the agent session object
       // If there's an initial message, add it to the messages array so it's included in agent:created event
       const initialMessages: any[] = [];
-      if (config.initialMessage) {
+      if (config.initialMessage || config.imageBlocks?.length) {
         const userMessage = {
           id: `msg_${agentId}_${Date.now()}`,
           role: 'user' as const,
-          contentBlocks: [{ type: 'text' as const, text: config.initialMessage.trim() }],
+          contentBlocks: [
+            ...(config.initialMessage?.trim()
+              ? [{ type: 'text' as const, text: config.initialMessage.trim() }]
+              : []),
+            ...(config.imageBlocks || []),
+          ],
           timestamp: new Date().toISOString(),
         };
         initialMessages.push(userMessage);

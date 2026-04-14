@@ -252,11 +252,26 @@
     return '~/Developer';
   }
 
+  // Validate a project/folder name: reject path separators, traversal, null bytes, unsafe chars
+  function getProjectNameError(name: string): string | undefined {
+    if (!name || name.trim().length === 0) return undefined; // empty is handled elsewhere
+    const t = name.trim();
+    if (t.includes('/') || t.includes('\\')) return 'Name cannot contain path separators (/ or \\)';
+    if (t === '..' || t === '.' || /^\.+$/.test(t)) return "Name cannot be '.' or '..'";
+    if (t.includes('\0')) return 'Name cannot contain null characters';
+    if (/[<>:"|?*]/.test(t)) return 'Name contains invalid characters';
+    if (t.length > 255) return 'Name is too long (max 255 characters)';
+    return undefined;
+  }
+
+  // Derived validation error for new repo project name
+  const newRepoNameError = $derived(getProjectNameError(newRepoProjectName));
+
   // Computed full path for new repo
   const newRepoFullPath = $derived(
-    newRepoParentPath && newRepoProjectName
+    newRepoParentPath && newRepoProjectName && !newRepoNameError
       ? joinNativePath(newRepoParentPath, newRepoProjectName)
-      : newRepoParentPath || '',
+      : '',
   );
 
   // Track status of the new repo path (does it exist? is it a git repo?)
@@ -449,8 +464,8 @@
 
   // Load recent repositories on mount
   // NOTE: We intentionally do NOT restore the last selected repo here.
-  // That logic lives in CompactWorkspaceInitializer.onMount to avoid side effects
-  // when this component mounts/unmounts (e.g., during reset). This component should
+  // That logic lives in the parent flow to avoid side effects when this component
+  // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
   onMount(async () => {
     if (enableRemoteWorkspaces) {
@@ -1009,7 +1024,7 @@
 
   // Confirm and create the new repo selection
   function handleConfirmNewRepo() {
-    if (!newRepoParentPath || !newRepoProjectName) return;
+    if (!newRepoParentPath || !newRepoProjectName || newRepoNameError) return;
 
     const fullPath = joinNativePath(newRepoParentPath, newRepoProjectName);
     selectedValue = fullPath;
@@ -1384,8 +1399,13 @@
               noFocusStyle
             />
           </div>
-          <!-- Full path preview + status message + action button -->
-          {#if newRepoFullPath}
+          <!-- Validation error for project name -->
+          {#if newRepoNameError}
+            <div class="mt-2 px-1">
+              <span class="text-sm text-red-500">{newRepoNameError}</span>
+            </div>
+          {:else if newRepoFullPath}
+            <!-- Full path preview + status message + action button -->
             <div class="mt-2 px-1">
               <!-- Path preview -->
               <div class="text-sm text-subtle truncate mb-2">

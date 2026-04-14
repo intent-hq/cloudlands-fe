@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Modal - Reusable modal component matching the NewSpaceModal styling.
+   * Modal - Reusable modal component for compact confirmation-style dialogs.
    * Provides backdrop blur, fly transitions, header with title/close, and content area.
    */
   import { faXmark } from '@fortawesome/free-solid-svg-icons';

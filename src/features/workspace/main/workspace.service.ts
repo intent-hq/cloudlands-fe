@@ -58,9 +58,18 @@ import type {
 import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
 import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { agentPersistence } from '../../agent/main/agent-persistence';
-import { refreshSpecialistsFromFiles, resolveSpecialistForAgent } from '../../agent/main/specialists.service';
+import {
+  refreshSpecialistsFromFiles,
+  resolveSpecialistForAgent,
+} from '../../agent/main/specialists.service';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { workspaceCreated, workspaceUpdated, workspaceDeleting, workspaceDeleted, workspaceArchived } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
+import {
+  workspaceCreated,
+  workspaceUpdated,
+  workspaceDeleting,
+  workspaceDeleted,
+  workspaceArchived,
+} from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
 import type { NotesRepository } from '../../notes/main/notes.repository';
@@ -858,16 +867,14 @@ export class WorkspaceService {
       }
 
       // Skip repositoryPath validation when githubUrl is provided (path will be a GitHub shorthand)
-      if (
-        request.repositoryPath &&
-        !request.githubUrl &&
-        !validateRepositoryPath(request.repositoryPath)
-      ) {
-        return {
-          ok: false,
-          error:
-            'Invalid repository path. Path must be absolute and not contain suspicious patterns.',
-        };
+      if (request.repositoryPath && !request.githubUrl) {
+        const repoPathErrors = validateRepositoryPath(request.repositoryPath);
+        if (repoPathErrors.length > 0) {
+          return {
+            ok: false,
+            error: `Invalid repository path: ${repoPathErrors.join('. ')}`,
+          };
+        }
       }
 
       // Generate a friendly workspace ID FAST using local keyword extraction
@@ -1392,8 +1399,44 @@ task:
         } else {
           // Local workspace: use local git commands
 
-          // If this is a new repo, initialize it first
-          if (request.isNewRepo) {
+          // Guard: when creating a new project, the target directory must be
+          // absent or empty. Reject any existing non-empty directory — including
+          // git repos, which should be selected via the Local tab instead.
+          if (request.isNewRepo && effectiveRepositoryPath) {
+            try {
+              const stat = await fs.stat(effectiveRepositoryPath);
+              if (stat.isDirectory()) {
+                const entries = await fs.readdir(effectiveRepositoryPath);
+                if (entries.length > 0) {
+                  await this.repository.cleanup(id);
+                  return {
+                    ok: false,
+                    error:
+                      'Target directory already exists and is not empty. Please choose an empty or non-existent folder for a new project.',
+                  };
+                }
+              }
+            } catch {
+              // Directory doesn't exist yet — that's fine for new project creation
+            }
+          }
+
+          // If this is a new repo, or the path exists but isn't a git repo, initialize it
+          let needsInit = request.isNewRepo;
+          if (!needsInit && effectiveRepositoryPath) {
+            try {
+              await execFileAsync('git', ['rev-parse', '--git-dir'], {
+                cwd: effectiveRepositoryPath,
+              });
+            } catch {
+              // Not a git repo — auto-initialize
+              logger.info('Path is not a git repository, auto-initializing', {
+                repositoryPath: effectiveRepositoryPath,
+              });
+              needsInit = true;
+            }
+          }
+          if (needsInit) {
             logger.info('Initializing new repository', { repositoryPath: effectiveRepositoryPath });
             const initResult = await this.initializeNewRepository(effectiveRepositoryPath);
             if (!initResult.ok) {
@@ -1498,6 +1541,7 @@ task:
         worktreePath,
         scope: scope && scope !== '.' ? scope : undefined, // Store scope if provided and not "."
         skipWorktree: request.skipWorktree, // Store skipWorktree flag in metadata
+        setupScript: request.setupScript,
         isRemote, // Mark as remote workspace if applicable
         environmentConfig: request.environmentConfig, // Store environment config for remote workspaces
         tags: [],
@@ -1632,7 +1676,8 @@ task:
             behaviorPrompt: effectiveBehaviorPrompt, // Store behavior prompt from specialist
             roleReminder: effectiveRoleReminder, // Store role reminder for system prompt rebuilds
             specialistName: effectiveSpecialistName, // Store specialist name for prompt building
-            contextReferences: (request.initialAgent as any).contextReferences, // Store context references from compact initializer
+            contextReferences: (request.initialAgent as any).contextReferences, // Store context references from onboarding
+            imageBlocks: (request.initialAgent as any).imageBlocks,
             metadata: {
               ...request.initialAgent.metadata,
               isInitialAgent: true,
@@ -1658,6 +1703,7 @@ task:
           },
           // Store context references at top level for easy access
           contextReferences: (request.initialAgent as any).contextReferences,
+          imageBlocks: (request.initialAgent as any).imageBlocks,
         };
 
         // Use agentPersistence for consistent save path (atomic writes, cache invalidation,
@@ -1680,11 +1726,13 @@ task:
       }
 
       // Emit event
-      mainDispatch(workspaceCreated({
-        workspaceId: id,
-        workspace,
-        initialAgent: request.initialAgent,
-      }));
+      mainDispatch(
+        workspaceCreated({
+          workspaceId: id,
+          workspace,
+          initialAgent: request.initialAgent,
+        }),
+      );
 
       // Resolve effective setup script: request > repo config > none
       const effectiveSetupScript =
@@ -2400,7 +2448,10 @@ task:
               // - workspace.baseRef (workspace was created to review the PR)
               // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
               // (YAML parsing issue), skip validation to avoid incorrectly clearing legitimate PR links.
-              const branchMatches = !prDetail.sourceBranch || !updatedWorkspace.branch || prDetail.sourceBranch === updatedWorkspace.branch;
+              const branchMatches =
+                !prDetail.sourceBranch ||
+                !updatedWorkspace.branch ||
+                prDetail.sourceBranch === updatedWorkspace.branch;
               const baseRefMatches = prDetail.sourceBranch === updatedWorkspace.baseRef;
               if (!branchMatches && !baseRefMatches) {
                 logger.info(
@@ -2649,7 +2700,10 @@ task:
           // - workspace.baseRef (workspace was created to review the PR)
           // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
           // (YAML parsing issue), we can't validate, so we keep the PR.
-          const branchMatches = !prDetail.sourceBranch || !workspace.branch || prDetail.sourceBranch === workspace.branch;
+          const branchMatches =
+            !prDetail.sourceBranch ||
+            !workspace.branch ||
+            prDetail.sourceBranch === workspace.branch;
           const baseRefMatches = prDetail.sourceBranch === workspace.baseRef;
           if (!branchMatches && !baseRefMatches) {
             logger.info(
@@ -2961,10 +3015,12 @@ task:
       this.workspaceCache.delete(workspace.id);
 
       // Emit event
-      mainDispatch(workspaceUpdated({
-        workspaceId: workspace.id,
-        changes: request,
-      }));
+      mainDispatch(
+        workspaceUpdated({
+          workspaceId: workspace.id,
+          changes: request,
+        }),
+      );
 
       logger.info('Workspace updated', {
         workspaceId: workspace.id,
@@ -3087,10 +3143,12 @@ task:
       }
 
       // Emit event
-      mainDispatch(workspaceCreated({
-        workspaceId: newId,
-        workspace: newWorkspace,
-      }));
+      mainDispatch(
+        workspaceCreated({
+          workspaceId: newId,
+          workspace: newWorkspace,
+        }),
+      );
 
       logger.info('Workspace duplicated successfully', {
         sourceId: id,
@@ -3137,14 +3195,17 @@ task:
       if (trackingWorkspaceResult.ok) {
         workspaceTitle = trackingWorkspaceResult.data.title;
         ageInDays = Math.floor(
-          (Date.now() - new Date(trackingWorkspaceResult.data.createdAt).getTime()) / (1000 * 60 * 60 * 24),
+          (Date.now() - new Date(trackingWorkspaceResult.data.createdAt).getTime()) /
+            (1000 * 60 * 60 * 24),
         );
       }
 
       // Emit pre-delete event to allow cleanup
-      mainDispatch(workspaceDeleting({
-        workspaceId: id,
-      }));
+      mainDispatch(
+        workspaceDeleting({
+          workspaceId: id,
+        }),
+      );
 
       // Remove git worktree if it exists
       const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
@@ -3289,9 +3350,11 @@ task:
       await this.repository.delete(id);
 
       // Emit event
-      mainDispatch(workspaceDeleted({
-        workspaceId: id,
-      }));
+      mainDispatch(
+        workspaceDeleted({
+          workspaceId: id,
+        }),
+      );
 
       // Track workspace deletion
       trackMain('Deleted Workspace', {
@@ -3342,9 +3405,11 @@ task:
       this.workspaceCache.delete(id);
 
       // Emit event
-      mainDispatch(workspaceArchived({
-        workspaceId: id,
-      }));
+      mainDispatch(
+        workspaceArchived({
+          workspaceId: id,
+        }),
+      );
 
       logger.info('Workspace archived', { workspaceId: id });
 
@@ -3382,10 +3447,12 @@ task:
       this.workspaceCache.delete(id);
 
       // Emit event
-      mainDispatch(workspaceUpdated({
-        workspaceId: id,
-        changes: { archived: false },
-      }));
+      mainDispatch(
+        workspaceUpdated({
+          workspaceId: id,
+          changes: { archived: false },
+        }),
+      );
 
       logger.info('Workspace unarchived', { workspaceId: id });
 
@@ -3477,7 +3544,11 @@ task:
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || !WorkspaceConfig.isValidWorkspaceId(entry.name) || WorkspaceConfig.isVirtualWorkspace(entry.name)) {
+      if (
+        !entry.isDirectory() ||
+        !WorkspaceConfig.isValidWorkspaceId(entry.name) ||
+        WorkspaceConfig.isVirtualWorkspace(entry.name)
+      ) {
         continue;
       }
 
@@ -3656,10 +3727,13 @@ task:
         try {
           await this.repository.save(workspace);
         } catch (saveError) {
-          logger.warn('Failed to persist cleared worktree path during purge; leaving workspace intact', {
-            workspaceId: workspace.id,
-            error: this.extractErrorMessage(saveError),
-          });
+          logger.warn(
+            'Failed to persist cleared worktree path during purge; leaving workspace intact',
+            {
+              workspaceId: workspace.id,
+              error: this.extractErrorMessage(saveError),
+            },
+          );
         }
       };
 
@@ -3740,7 +3814,12 @@ task:
           await fs.access(metadataPath);
         } catch (error) {
           if (isErrnoCode(error, 'ENOENT')) {
-            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'missing metadata');
+            await removeOrphanWorkspace(
+              workspaceId,
+              workspacePath,
+              metadataPath,
+              'missing metadata',
+            );
           } else {
             logger.warn('Failed to access workspace metadata during purge, skipping workspace', {
               workspaceId,
@@ -3756,9 +3835,19 @@ task:
           workspace = JSON.parse(data) as Workspace;
         } catch (error) {
           if (isErrnoCode(error, 'ENOENT')) {
-            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'missing metadata');
+            await removeOrphanWorkspace(
+              workspaceId,
+              workspacePath,
+              metadataPath,
+              'missing metadata',
+            );
           } else if (error instanceof SyntaxError) {
-            await removeOrphanWorkspace(workspaceId, workspacePath, metadataPath, 'invalid metadata');
+            await removeOrphanWorkspace(
+              workspaceId,
+              workspacePath,
+              metadataPath,
+              'invalid metadata',
+            );
           } else {
             logger.warn('Failed to read workspace metadata during purge, skipping workspace', {
               workspaceId,
@@ -3801,11 +3890,14 @@ task:
               });
             } catch (error) {
               if (isErrnoCode(error, 'ENOENT')) {
-                logger.warn('Git was unavailable during workspace purge, leaving worktree path unchanged', {
-                  workspaceId,
-                  worktreePath: workspace.worktreePath,
-                  error: this.extractErrorMessage(error),
-                });
+                logger.warn(
+                  'Git was unavailable during workspace purge, leaving worktree path unchanged',
+                  {
+                    workspaceId,
+                    worktreePath: workspace.worktreePath,
+                    error: this.extractErrorMessage(error),
+                  },
+                );
               } else {
                 await clearWorktreePath(
                   workspace,
@@ -3822,11 +3914,14 @@ task:
                 error,
               );
             } else {
-              logger.warn('Failed to access workspace worktree path during purge, leaving worktree path unchanged', {
-                workspaceId,
-                worktreePath: workspace.worktreePath,
-                error: this.extractErrorMessage(error),
-              });
+              logger.warn(
+                'Failed to access workspace worktree path during purge, leaving worktree path unchanged',
+                {
+                  workspaceId,
+                  worktreePath: workspace.worktreePath,
+                  error: this.extractErrorMessage(error),
+                },
+              );
             }
           }
         }
@@ -3945,7 +4040,13 @@ task:
   }
 
   /** Handle note:created domain event (saga entry point). */
-  public onNoteCreated({ workspaceId, note }: { workspaceId: WorkspaceId; note?: { metadata?: any } }): void {
+  public onNoteCreated({
+    workspaceId,
+    note,
+  }: {
+    workspaceId: WorkspaceId;
+    note?: { metadata?: any };
+  }): void {
     if (!workspaceId) return;
     if (note?.metadata?.task || note == null) {
       this.invalidateWorkspaceSummaries(workspaceId, 'note-created');

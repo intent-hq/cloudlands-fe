@@ -4685,7 +4685,7 @@ export class ACPProvider extends BaseAgentProvider {
           providerHint =
             '\n\nTo use Claude Code in Intent, make sure:\n' +
             '1. The Claude CLI is installed (https://docs.anthropic.com/en/docs/claude-code/getting-started)\n' +
-            '2. You have authenticated with `claude login`\n' +
+            '2. You have authenticated with `claude auth login`\n' +
             '3. npx is available in your PATH';
         } else if (caps.id === 'codex') {
           providerHint =

@@ -410,7 +410,7 @@ export interface AnalyticsEvents {
   // ============================================
   // Setup Funnel Events
   // ============================================
-  // Fires when ProviderStatusPanel mounts (first-time user sees provider chooser)
+  // Fires when a first-time user begins provider setup
   'Started Setup': Record<string, never>;
   'Installed CLI': {
     auggie_version?: string;

@@ -1,18 +1,15 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import AugieSetupWizard from '$lib/components/chat/AugieSetupWizard.svelte';
   import PullRequestCreator from './PullRequestCreator.svelte';
   import type { Workspace } from '$shared/types';
 
   interface Props {
     workspace: Workspace | null;
-    showAugieSetupWizard?: boolean;
     showPRCreator?: boolean;
     showCreateAgentModal?: boolean;
     creatingAgent?: boolean;
     createAgentError?: string | null;
     showAuthHelper?: boolean;
-    onAugieSetupComplete?: () => void;
     onPRCreatorClose?: () => void;
     onPRCreated?: (pr: any) => void;
     onCreateAgent?: () => void;
@@ -22,13 +19,11 @@
 
   let {
     workspace,
-    showAugieSetupWizard = false,
     showPRCreator = false,
     showCreateAgentModal = false,
     creatingAgent = false,
     createAgentError = null,
     showAuthHelper = false,
-    onAugieSetupComplete,
     onPRCreatorClose,
     onPRCreated,
     onCreateAgent,
@@ -36,13 +31,6 @@
     onOpenSystemTerminal,
   }: Props = $props();
 </script>
-
-<!-- Auggie Setup Wizard Modal -->
-{#if showAugieSetupWizard && workspace}
-  <div class="absolute inset-0 z-50 flex items-center justify-center">
-    <AugieSetupWizard {workspace} onComplete={() => onAugieSetupComplete?.()} />
-  </div>
-{/if}
 
 <!-- Pull Request Creator -->
 {#if showPRCreator}

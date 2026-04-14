@@ -193,7 +193,7 @@
 </script>
 
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import { onMount, onDestroy, untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
@@ -203,13 +203,22 @@
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
   import { handleLink } from '$features/navigation/link-handler';
   import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.client';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import {
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+  } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import { startGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
+  import { selectLinearIsAuthenticating } from '$lib/store/slices/linear-auth/linear-auth-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { connectSentry } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  import {
+    selectSentryIsConnecting,
+    selectSentryError,
+  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
   import Header from '$lib/components/ui/Header.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
@@ -217,6 +226,15 @@
   const logger = createLogger('ContextPicker');
   const issueDispatch = getDispatch();
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const githubAuthIsAuthenticating$ = selectGitHubAuthIsAuthenticating();
+  const linearIsAuthenticating$ = selectLinearIsAuthenticating();
+  const sentryIsConnecting$ = selectSentryIsConnecting();
+  const sentryError$ = selectSentryError();
+
+  // Inline Sentry auth form state
+  let sentryShowForm = $state(false);
+  let sentryOrg = $state('');
+  let sentryToken = $state('');
 
   type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
 
@@ -264,6 +282,12 @@
     initiallyExpanded?: boolean;
     /** Hide the toggle button - useful when embedded in a portal */
     hideToggle?: boolean;
+    /** Lock to a specific source tab (hides the source tab bar) */
+    initialSource?: ContextSource;
+    /** Hide the internal source tabs when another parent surface manages source selection */
+    hideSourceTabs?: boolean;
+    /** Optional PR filter to apply when source is github-prs */
+    prFilter?: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
   }
 
   let {
@@ -272,12 +296,15 @@
     repositoryName,
     initiallyExpanded = false,
     hideToggle = false,
+    initialSource,
+    hideSourceTabs = false,
+    prFilter,
   }: Props = $props();
 
   // Panel state
   let isOpen = $state(initiallyExpanded);
   let searchQuery = $state('');
-  let activeSource = $state<ContextSource>('linear');
+  let activeSource = $state<ContextSource>(initialSource ?? 'linear');
 
   // Linear state - grouped by relationship
   let linearAssignedIssues = $state<LinearIssueResult[]>([]);
@@ -305,7 +332,7 @@
 
   // GitHub PR filter - uses GitHub search API @me filter
   let githubPRFilter = $state<'all' | 'assigned' | 'created' | 'review-requested' | 'involves'>(
-    'all',
+    prFilter ?? 'all',
   );
 
   // Tooltip state - track which tooltip is open to close on scroll or when another opens
@@ -492,6 +519,16 @@
     return false;
   });
 
+  // Check if a GitHub source is active but no repo has been provided. We use
+  // this to suppress the "No pull requests found for owner/repo" empty state
+  // (which would otherwise render as "No pull requests found for /" when the
+  // owner/repo are missing). The "Select a GitHub repository" hint below
+  // already handles this case more usefully.
+  const isFilteredByMissingGitHubRepo = $derived(
+    (activeSource === 'github-issues' || activeSource === 'github-prs') &&
+      (!repositoryOwner || !repositoryName),
+  );
+
   async function loadLinearIssues() {
     try {
       const linearAuthState = await linearAuthClient.getAuthState(true);
@@ -576,8 +613,12 @@
 
   async function loadGitHubIssues() {
     try {
-      logger.debug('Loading GitHub issues - initializing auth store');
-      issueDispatch(initializeGitHubAuth());
+      logger.debug('Loading GitHub issues - checking auth state');
+      // Read the current auth state without dispatching initializeGitHubAuth(),
+      // which would trigger a store update and re-trigger the $effect that calls
+      // this function, causing an infinite loop (effect_update_depth_exceeded).
+      // Auth initialization is handled by the components that manage GitHub auth
+      // (GitHubAuthBanner, GitHubAuthConnection, etc.).
       isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(getReduxStore().getState());
 
       logger.debug('GitHub auth state', {
@@ -1077,25 +1118,27 @@
         {#if isRefreshing}
           <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-ghost animate-spin" />
         {/if}
-        <!-- Source tabs with issue count -->
-        <div class="flex items-center gap-1 ml-auto">
-          {#each sources as source}
-            {@const count = getSourceCount(source.id)}
-            <button
-              type="button"
-              onclick={() => (activeSource = source.id)}
-              class="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {activeSource ===
-              source.id
-                ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:text-foreground'}"
-            >
-              {source.label}
-              {#if count > 0}
-                <span class="text-subtle">{count}</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
+        <!-- Source tabs with issue count (hidden when controlled externally) -->
+        {#if !hideSourceTabs}
+          <div class="flex items-center gap-1 ml-auto">
+            {#each sources as source}
+              {@const count = getSourceCount(source.id)}
+              <button
+                type="button"
+                onclick={() => (activeSource = source.id)}
+                class="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {activeSource ===
+                source.id
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'}"
+              >
+                {source.label}
+                {#if count > 0}
+                  <span class="text-subtle">{count}</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <!-- Subtle filter bar - only show when there are multiple options -->
@@ -1242,7 +1285,7 @@
               </div>
             {/each}
           </div>
-        {:else if !hasVisibleIssues && !isFilteredByUnauthenticatedSource()}
+        {:else if !hasVisibleIssues && !isFilteredByUnauthenticatedSource() && !isFilteredByMissingGitHubRepo}
           <div class="px-3 py-3 text-sm text-subtle text-center">
             {#if searchQuery}
               No issues match "{searchQuery}"
@@ -1250,7 +1293,8 @@
               No issues found for <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
-                    workspaceId: selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                    workspaceId:
+                      selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
@@ -1260,7 +1304,8 @@
               No pull requests found for <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
-                    workspaceId: selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                    workspaceId:
+                      selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
@@ -1275,10 +1320,7 @@
           {#if activeSource === 'linear'}
             <!-- Assigned to me -->
             {#if visibleLinearAssigned.length > 0}
-              <Header size={6} class="px-3 pt-2 pb-1"
-              >
-                Assigned to me
-              </Header>
+              <Header size={6} class="px-3 pt-2 pb-1">Assigned to me</Header>
               {#each visibleLinearAssigned as issue (issue.id)}
                 <TooltipRich
                   side="top"
@@ -1315,12 +1357,9 @@
                     <div class="space-y-2">
                       <div class="flex items-center gap-2">
                         <LinearIcon class="w-4 h-4 text-ghost shrink-0" />
-                        <span class="text-xs font-medium text-subtle"
-                          >{issue.identifier}</span
-                        >
+                        <span class="text-xs font-medium text-subtle">{issue.identifier}</span>
                         {#if issue.state}
-                          <span
-                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
+                          <span class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
                             >{issue.state}</span
                           >
                         {/if}
@@ -1331,9 +1370,7 @@
                           {issue.description}
                         </div>
                       {/if}
-                      <div
-                        class="flex items-center gap-2 text-xs text-subtle pt-1"
-                      >
+                      <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                         {#if issue.assignee}
                           <span>Assignee: {issue.assignee}</span>
                         {/if}
@@ -1349,10 +1386,7 @@
 
             <!-- Created by me -->
             {#if visibleLinearCreated.length > 0}
-              <Header size={6} class="px-3 pt-3 pb-1"
-              >
-                Created by me
-              </Header>
+              <Header size={6} class="px-3 pt-3 pb-1">Created by me</Header>
               {#each visibleLinearCreated as issue (issue.id)}
                 <TooltipRich
                   side="top"
@@ -1389,12 +1423,9 @@
                     <div class="space-y-2">
                       <div class="flex items-center gap-2">
                         <LinearIcon class="w-4 h-4 text-ghost shrink-0" />
-                        <span class="text-xs font-medium text-subtle"
-                          >{issue.identifier}</span
-                        >
+                        <span class="text-xs font-medium text-subtle">{issue.identifier}</span>
                         {#if issue.state}
-                          <span
-                            class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
+                          <span class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
                             >{issue.state}</span
                           >
                         {/if}
@@ -1405,9 +1436,7 @@
                           {issue.description}
                         </div>
                       {/if}
-                      <div
-                        class="flex items-center gap-2 text-xs text-subtle pt-1"
-                      >
+                      <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                         {#if issue.assignee}
                           <span>Assignee: {issue.assignee}</span>
                         {/if}
@@ -1435,9 +1464,7 @@
                 >{issue.title}</span
               >
               {#if sentryProjects.length > 1 && !selectedSentryProject}
-                <span class="text-xs text-subtle shrink-0"
-                  >{issue.projectName}</span
-                >
+                <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
               {/if}
               {#if issue.lastSeen}
                 <span class="text-xs text-subtle shrink-0"
@@ -1465,9 +1492,7 @@
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
                   <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-subtle shrink-0"
-                    >#{issue.number}</span
-                  >
+                  <span class="text-xs font-medium text-subtle shrink-0">#{issue.number}</span>
                   <span
                     class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground min-w-0"
                     >{issue.title}</span
@@ -1483,9 +1508,7 @@
                 <div class="space-y-2">
                   <div class="flex items-center gap-2">
                     <GitHubIcon class="w-4 h-4 text-ghost shrink-0" />
-                    <span class="text-xs font-medium text-subtle"
-                      >#{issue.number}</span
-                    >
+                    <span class="text-xs font-medium text-subtle">#{issue.number}</span>
                     {#if issue.state}
                       <span
                         class="text-xs px-1.5 py-0.5 rounded {issue.state === 'open'
@@ -1529,9 +1552,7 @@
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
                   <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-subtle shrink-0"
-                    >#{pr.number}</span
-                  >
+                  <span class="text-xs font-medium text-subtle shrink-0">#{pr.number}</span>
                   <span
                     class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground min-w-0"
                     >{pr.title}</span
@@ -1601,10 +1622,11 @@
             </div>
             <button
               type="button"
-              onclick={() => navigateToSettings({ hash: 'integrations' })}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
+              disabled={$linearIsAuthenticating$}
+              onclick={() => issueDispatch(startLinearAuth())}
+              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Settings
+              {$linearIsAuthenticating$ ? 'Connecting…' : 'Connect'}
             </button>
           </div>
         {/if}
@@ -1625,11 +1647,28 @@
             </div>
             <button
               type="button"
-              onclick={() => navigateToSettings({ hash: 'integrations' })}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
+              disabled={$githubAuthIsAuthenticating$}
+              onclick={() => issueDispatch(startGitHubAuth())}
+              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Settings
+              {$githubAuthIsAuthenticating$ ? 'Connecting…' : 'Connect'}
             </button>
+          </div>
+        {/if}
+        <!-- Show repository hint when authenticated but no repo selected -->
+        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
+          <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
+            Select a GitHub repository to see {activeSource === 'github-prs'
+              ? 'pull requests'
+              : 'issues'}
+          </div>
+        {/if}
+        <!-- Show repository hint when authenticated but no repo selected -->
+        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
+          <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
+            Select a GitHub repository to see {activeSource === 'github-prs'
+              ? 'pull requests'
+              : 'issues'}
           </div>
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
@@ -1643,21 +1682,71 @@
 
         <!-- Sentry auth status - only show when not authenticated -->
         {#if activeSource === 'sentry' && !isLoading && !isSentryAuthenticated}
-          <div
-            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border/20"
-            transition:slide={{ duration: 150 }}
-          >
-            <div class="flex items-center gap-2">
-              <SentryIcon class="w-3.5 h-3.5 text-ghost" />
-              <span class="text-subtle">Connect Sentry to see your issues</span>
-            </div>
-            <button
-              type="button"
-              onclick={() => navigateToSettings({ hash: 'integrations' })}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
-            >
-              Settings
-            </button>
+          <div class="border-t border-border/20" transition:slide={{ duration: 150 }}>
+            {#if !sentryShowForm}
+              <div class="flex items-center justify-between px-3 py-2 text-sm">
+                <div class="flex items-center gap-2">
+                  <SentryIcon class="w-3.5 h-3.5 text-ghost" />
+                  <span class="text-subtle">Connect Sentry to see your issues</span>
+                </div>
+                <button
+                  type="button"
+                  onclick={() => (sentryShowForm = true)}
+                  class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
+                >
+                  Connect
+                </button>
+              </div>
+            {:else}
+              <div class="px-3 py-2 space-y-2" transition:slide={{ duration: 150 }}>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="text"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    placeholder="Organization slug"
+                    bind:value={sentryOrg}
+                  />
+                  <input
+                    type="password"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    placeholder="API token (sntrys_…)"
+                    bind:value={sentryToken}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' && sentryOrg.trim() && sentryToken.trim()) {
+                        issueDispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={$sentryIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
+                    onclick={() =>
+                      issueDispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
+                    class="shrink-0 text-xs text-primary hover:text-primary/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {$sentryIsConnecting$ ? 'Connecting…' : 'Connect'}
+                  </button>
+                </div>
+                {#if $sentryError$}
+                  <p class="text-xs text-destructive">{$sentryError$}</p>
+                {/if}
+                <p class="text-xs text-subtle opacity-50">
+                  Create a token at
+                  <button
+                    type="button"
+                    onclick={() =>
+                      handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
+                        workspaceId:
+                          selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                      })}
+                    class="underline cursor-pointer hover:opacity-100"
+                  >
+                    sentry.io
+                  </button>
+                  with scopes: <span class="font-mono">org:read, project:read, event:read</span>
+                </p>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>

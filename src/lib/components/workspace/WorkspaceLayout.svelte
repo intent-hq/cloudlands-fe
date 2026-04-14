@@ -43,6 +43,9 @@
     // Which side the sidebar is on
     sidebarSide?: 'left' | 'right';
 
+    // Start with sidebar collapsed (width 0) — used for onboarding flow
+    startCollapsed?: boolean;
+
     // Allow additional props to pass through
     [key: string]: unknown;
   }
@@ -60,6 +63,7 @@
     sidebarDefaultExpandedWidth = 600,
     sidebarPercentageWeight = 0.5,
     sidebarSide = 'left',
+    startCollapsed = false,
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
@@ -87,6 +91,7 @@
         storageKey={sidebarStorageKey}
         expandedStorageKey={sidebarExpandedStorageKey}
         percentageWeight={sidebarPercentageWeight}
+        initiallyCollapsed={startCollapsed}
         className="flex-none h-full min-w-0 {sidebarSide === 'left'
           ? 'mr-auto ml-0'
           : 'ml-auto mr-0'}"

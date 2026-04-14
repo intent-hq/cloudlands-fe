@@ -142,14 +142,20 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     displayName: 'OpenCode',
     command: 'opencode',
     baseArgs: ['acp'],
-    supportsAuthenticate: false, // OpenCode manages its own auth
+    // OpenCode does not implement the ACP `authenticate` JSON-RPC method.
+    // User credentials are supplied via `opencode auth login`, env vars
+    // (ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_PROFILE, etc.), or a project .env file.
+    supportsAuthenticate: false,
     supportsSetMode: false,
     supportsMcpConfig: false,
     supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
     ipcChannelPrefix: 'opencode',
-    authCheckArgs: ['auth', 'list'],
+    // Readiness is verified by listing models: `opencode models` returns a
+    // non-empty list only when at least one provider is credentialed (from any
+    // source: auth.json, env vars, or .env).
+    authCheckArgs: ['models'],
     loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
 };

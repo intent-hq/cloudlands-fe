@@ -1,7 +1,5 @@
 <script lang="ts" module>
-  // Special workspace ID for root-level terminals (outside workspace context)
-  // Exported from module context so it can be imported by other files
-  export const ROOT_WORKSPACE_ID = '__root__';
+  export { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 </script>
 
 <script lang="ts">
@@ -23,12 +21,11 @@
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-    selectIsTerminalOverlayOpen,
+    selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
-    selectActiveTerminalId,
-    selectTerminals,
+    selectActiveTerminalIdForWorkspace,
+    selectTerminalsForWorkspace,
   } from '$lib/store/slices/terminals/terminals-selectors';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
@@ -57,17 +54,14 @@
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   // Store bindings
   const dispatch = getDispatch();
-  const isOpen = selectIsTerminalOverlayOpen();
+  const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
   const height = selectTerminalOverlayHeight();
-  const storeWorkspaceId = selectActiveWorkspaceId();
-  const activeTerminalId = selectActiveTerminalId();
-  const terminals = selectTerminals();
-
-  // Only show when store is bound to root workspace
-  const isRootContext = $derived($storeWorkspaceId === ROOT_WORKSPACE_ID);
+  const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
+  const terminals = selectTerminalsForWorkspace(ROOT_WORKSPACE_ID);
 
   // NOTE: We intentionally do NOT have an $effect here to sync workspace ID.
   // The workspace ID is set by the keyboard shortcut handler in +layout.svelte
@@ -278,25 +272,37 @@
   // Event Listeners
   // ============================================================================
 
-  // Listen for custom events from terminal adapter (when terminal has focus)
+  // Listen for custom events from terminal adapter (when terminal has focus).
+  // QuakeTerminalOverlay listens for the same events on `window`, so we must
+  // ignore events whose detail.workspaceId belongs to a workspace overlay;
+  // otherwise pressing Ctrl+` in a workspace terminal would also toggle this
+  // root overlay. Legacy callers that omit the detail are accepted only when
+  // we are not on a workspace page (mirrors the routing in +layout.svelte).
   $effect(() => {
     if (typeof window === 'undefined') return;
 
-    function handleToggle() {
-      // Only handle if we're in root context
-      if (isRootContext) {
-        dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
+    function isForRootOverlay(event: Event): boolean {
+      const detail = (event as CustomEvent<{ workspaceId?: string }>).detail;
+      if (detail && detail.workspaceId !== undefined) {
+        return detail.workspaceId === ROOT_WORKSPACE_ID;
       }
+      // No detail -> legacy caller. Only handle when not on a workspace page.
+      return !window.location.pathname.startsWith('/workspace/');
     }
 
-    function handleCreateNew() {
-      if (isRootContext) {
-        createNewTerminal();
-      }
+    function handleToggle(event: Event) {
+      if (!isForRootOverlay(event)) return;
+      dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
     }
 
-    function handleCloseActive() {
-      if (isRootContext && $activeTerminalId) {
+    function handleCreateNew(event: Event) {
+      if (!isForRootOverlay(event)) return;
+      createNewTerminal();
+    }
+
+    function handleCloseActive(event: Event) {
+      if (!isForRootOverlay(event)) return;
+      if ($activeTerminalId) {
         closeTerminal($activeTerminalId);
       }
     }
@@ -319,8 +325,8 @@
   function handleKeydown(event: KeyboardEvent) {
     const isMod = event.metaKey || event.ctrlKey;
 
-    // Only handle when in root context and terminal is open
-    if (!isRootContext || !$isOpen) return;
+    // Only handle when the root terminal overlay is open
+    if (!$isOpen) return;
 
     // Tab cycling shortcuts should only work when focus is in the terminal
     const isTerminalFocused = isFocusInTerminal(event.target as HTMLElement | null);
@@ -348,8 +354,8 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<!-- Only render when the overlay is open in root context (invisible when closed) -->
-{#if isRootContext && $isOpen && $activeTerminalId}
+<!-- Only render when the root overlay itself is open (invisible when closed) -->
+{#if $isOpen && $activeTerminalId}
   <!-- tabindex=-1 allows programmatic focus for keyboard shortcut routing -->
   <div
     bind:this={overlayContainer}

@@ -59,6 +59,7 @@ interface CreateAgentRequest {
   roleReminder?: string; // Critical constraints reminder for the specialist (injected at end of prompt for recency)
   initialMessage?: string;
   contextReferences?: any[];
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   metadata?: Record<string, any>;
   workspaceContext?: {
     openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;
@@ -1071,6 +1072,7 @@ export class AgentBackendHandler {
         id: request.agentId, // Pass the frontend-generated agent ID if provided
         initialMessage: request.initialMessage, // Pass initial message to backend
         contextReferences: request.contextReferences, // Pass context references
+        imageBlocks: request.imageBlocks,
       });
 
       if (!result.success || !result.agent) {
@@ -1122,10 +1124,10 @@ export class AgentBackendHandler {
       // We don't await this because LLM processing can take 30+ seconds
       // The caller (e.g., create_prerequisite MCP tool) just needs to know
       // the agent was created and started processing, not wait for completion
-      if (request.initialMessage) {
+      if (request.initialMessage || request.imageBlocks?.length) {
         logger.debug('[AgentBackendHandler] Starting initial message (async, non-blocking)', {
           agentId: agent.id,
-          messageLength: request.initialMessage.length,
+          messageLength: request.initialMessage?.length || 0,
         });
 
         // Use handleSendMessage directly since we're in the main process
@@ -1138,9 +1140,10 @@ export class AgentBackendHandler {
           agentId: agent.id,
           sessionId: agent.id,
           streamId: `${agent.id}:${Date.now()}`, // Unique per message turn
-          content: request.initialMessage,
+          content: request.initialMessage || '',
           workspaceId: request.workspaceId,
           contextReferences: request.contextReferences,
+          imageBlocks: request.imageBlocks,
           skipUserMessage: true, // Signal that user message is already added
           messages: agent.messages, // Pass the messages array with the user message already included
         })
@@ -5253,6 +5256,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         systemPrompt: config?.systemPrompt,
         initialMessage: config?.initialMessage,
         contextReferences: config?.contextReferences,
+        imageBlocks: config?.imageBlocks,
         metadata: config?.metadata,
         onBeforeStart: config?.onBeforeStart, // Pass pre-start hook for subscription setup
       });

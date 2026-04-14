@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { FirstVisitStateSchema } from '../shared/schemas';
+import { isValidWorkspaceId } from '../shared/types/branded-ids';
 
 // ============================================================================
 // Common Schemas
@@ -22,18 +23,11 @@ const UuidSchema = z.string().regex(UUID_PATTERN, 'Invalid UUID format');
 // 3. Legacy slug format: word-word-xxxx (e.g., "amber-forest-a7x2") for backward compatibility
 // 4. Legacy UUID format for backward compatibility
 // 5. Special __root__ ID for root-level terminals (outside workspace context)
-const WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}(-[0-9]+)?$/;
-const LEGACY_WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}-[a-z0-9]{4}$/;
-const ROOT_WORKSPACE_ID = '__root__';
 const WorkspaceIdSchema = z
   .string()
   .refine(
-    (id) =>
-      id === ROOT_WORKSPACE_ID ||
-      WORKSPACE_SLUG_PATTERN.test(id) ||
-      LEGACY_WORKSPACE_SLUG_PATTERN.test(id) ||
-      UUID_PATTERN.test(id),
-    'Invalid workspace ID format (expected slug like "amber-forest" or "amber-forest-2" or UUID)',
+    isValidWorkspaceId,
+    'Invalid workspace ID format (expected slug like "amber-forest" or "amber-forest-2", UUID, or __root__)',
   );
 const AgentIdSchema = z.string().min(1, 'Agent ID is required');
 const SessionIdSchema = z.string().min(1, 'Session ID is required');
@@ -99,6 +93,7 @@ export const WorkspaceCreateSchema = z.object({
       specialist: z.string().optional(), // Specialist or team coordinator ID (flexible to support any specialist)
       behaviorPrompt: z.string().optional(), // Custom behavior instructions (from team coordinator or specialist)
       contextReferences: z.array(z.any()).optional(),
+      imageBlocks: z.array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() })).optional(),
       metadata: z.record(z.any()).optional(),
     })
     .optional(),
@@ -1380,6 +1375,14 @@ export const TerminalCreateWithCommandSchema = z.object({
   cwd: z.string().optional(),
   title: z.string().optional(),
   env: z.record(z.string()).optional(),
+  /**
+   * When `true`, the command text is written to the PTY prompt but NOT
+   * executed — the trailing `\r` is skipped so the user has to press
+   * Enter themselves. Used by the onboarding install buttons so users can
+   * review the command (e.g. `npm install -g …`) before running it.
+   * Defaults to `false` (existing auto-run behavior).
+   */
+  pasteOnly: z.boolean().optional(),
 });
 
 // Legacy Terminal Schemas

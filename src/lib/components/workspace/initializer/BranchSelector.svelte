@@ -126,7 +126,10 @@
   // Notify parent when GitHub auth state changes (with previous-value guard)
   let lastNotifiedGithubAuth: GitHubAuthNeeded | null = null;
   $effect(() => {
-    if (typeof onGitHubAuthNeededChange === 'function' && githubAuthNeeded !== lastNotifiedGithubAuth) {
+    if (
+      typeof onGitHubAuthNeededChange === 'function' &&
+      githubAuthNeeded !== lastNotifiedGithubAuth
+    ) {
       lastNotifiedGithubAuth = githubAuthNeeded;
       try {
         onGitHubAuthNeededChange(githubAuthNeeded);
@@ -996,11 +999,13 @@
 
     try {
       const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-      const { initializeGitHubAuth, startGitHubAuth } = await import(
-        '$lib/store/slices/github-auth/github-auth-slice'
-      );
-      const { selectGitHubAuthIsAuthenticated, selectGitHubAuthIsAuthenticating, selectGitHubAuthError } =
-        await import('$lib/store/slices/github-auth/github-auth-selectors');
+      const { initializeGitHubAuth, startGitHubAuth } =
+        await import('$lib/store/slices/github-auth/github-auth-slice');
+      const {
+        selectGitHubAuthIsAuthenticated,
+        selectGitHubAuthIsAuthenticating,
+        selectGitHubAuthError,
+      } = await import('$lib/store/slices/github-auth/github-auth-selectors');
 
       const store = getReduxStore();
 
@@ -1315,7 +1320,7 @@
         </div>
       </Select.Trigger>
       <Select.Content
-        class="max-w-[400px] min-w-[400px] max-h-[600px] overflow-hidden flex flex-col"
+        class="max-w-[400px] min-w-[400px] max-h-[min(600px,calc(var(--radix-popper-available-height,100vh)-16px))] overflow-hidden flex flex-col"
         {dropUp}
         {portal}
       >

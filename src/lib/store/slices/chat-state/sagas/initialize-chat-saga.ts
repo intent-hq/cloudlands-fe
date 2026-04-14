@@ -13,20 +13,34 @@
  * 6. Set up instance-local state on ChatService (workspaceId, streaming content, DOM handlers)
  */
 
-import { call, cancel, delay, fork, join, put, race, select, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancel,
+  delay,
+  fork,
+  join,
+  put,
+  race,
+  select,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { Task } from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
 import { agentService } from '$features/agent/agent-ipc-bridge';
 import { getChatService } from '$features/agent/services/chat.service';
-import { selectAgentById } from '../../workspace-agents/workspace-agents-selectors';
+import {
+  selectAgentById,
+  selectIsInitialSpecWriteInProgress,
+} from '../../workspace-agents/workspace-agents-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { addAgent, upsertAgentSession } from '../../workspace-agents/workspace-agents-slice';
+import { initializeChatRequested, chatInitialized, chatInitFailed } from '../chat-state-slice';
 import {
-  initializeChatRequested,
-  chatInitialized,
-  chatInitFailed,
-} from '../chat-state-slice';
-import { upsertSession as upsertAgentSessionData, replaceMessages } from '../../agent-session/agent-session-slice';
+  upsertSession as upsertAgentSessionData,
+  replaceMessages,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
@@ -46,13 +60,16 @@ const logger = createLogger('InitializeChatSaga');
  */
 function* lookupSession(wsId: string, agentId: string): SagaGenerator<AgentSession | null> {
   // 1. Redux state
-  const session: AgentSession | undefined | null = yield* select(
-    (state) => selectAgentById.select(state, agentId),
+  const session: AgentSession | undefined | null = yield* select((state) =>
+    selectAgentById.select(state, agentId),
   );
   if (session) return session;
 
   // 2. agentService in-memory
-  const tempSession: AgentSession | null = yield* call([agentService, agentService.getSession], agentId);
+  const tempSession: AgentSession | null = yield* call(
+    [agentService, agentService.getSession],
+    agentId,
+  );
   if (tempSession) return tempSession;
 
   // 3. Disk restore
@@ -84,8 +101,8 @@ function* retryLookup(wsId: string, agentId: string): SagaGenerator<AgentSession
   for (const ms of retryDelays) {
     yield* delay(ms);
     // Check Redux
-    const session: AgentSession | undefined | null = yield* select(
-      (state) => selectAgentById.select(state, agentId),
+    const session: AgentSession | undefined | null = yield* select((state) =>
+      selectAgentById.select(state, agentId),
     );
     if (session) return session;
     // Fallback to agentService
@@ -162,9 +179,7 @@ function* handleInitializeChat(
 
       if (waitResult.agentAdded) {
         // Session appeared — re-lookup from Redux
-        session = yield* select(
-          (state) => selectAgentById.select(state, agentId) ?? null,
-        );
+        session = yield* select((state) => selectAgentById.select(state, agentId) ?? null);
       }
 
       if (!session) {
@@ -176,30 +191,25 @@ function* handleInitializeChat(
     }
 
     // Step 4: Load messages — resolve from multiple sources
-    const chatState = yield* select(
-      (state) => selectChatStateOrDefault.select(state, agentId),
-    );
+    const chatState = yield* select((state) => selectChatStateOrDefault.select(state, agentId));
     // Read messages from agent-session slice (canonical source)
-    const agentSessionMessages: AgentMessage[] = yield* select(
-      (state) => selectAgentMessages.select(state, agentId),
+    const agentSessionMessages: AgentMessage[] = yield* select((state) =>
+      selectAgentMessages.select(state, agentId),
     );
     // Read isStreaming from agent-session (single source of truth)
-    const sessionForStreamCheck = yield* select(
-      (state) => selectAgentById.select(state, agentId),
-    );
-    const hasActiveStream = (sessionForStreamCheck?.isStreaming ?? false) && agentSessionMessages.length > 0;
+    const sessionForStreamCheck = yield* select((state) => selectAgentById.select(state, agentId));
+    const hasActiveStream =
+      (sessionForStreamCheck?.isStreaming ?? false) && agentSessionMessages.length > 0;
 
     let messages: AgentMessage[] = [];
     if (hasActiveStream) {
       messages = agentSessionMessages;
     } else {
-      const reduxSession: AgentSession | undefined = yield* select(
-        (state) => selectAgentById.select(state, agentId),
+      const reduxSession: AgentSession | undefined = yield* select((state) =>
+        selectAgentById.select(state, agentId),
       );
       const reduxMessages =
-        reduxSession?.messages && Array.isArray(reduxSession.messages)
-          ? reduxSession.messages
-          : [];
+        reduxSession?.messages && Array.isArray(reduxSession.messages) ? reduxSession.messages : [];
 
       if (agentSessionMessages.length > 0 && agentSessionMessages.length > reduxMessages.length) {
         messages = agentSessionMessages;
@@ -223,8 +233,8 @@ function* handleInitializeChat(
       } else if (session.messages && Array.isArray(session.messages)) {
         messages = session.messages;
       } else {
-        const agent: AgentSession | undefined = yield* select(
-          (state) => selectAgentById.select(state, agentId),
+        const agent: AgentSession | undefined = yield* select((state) =>
+          selectAgentById.select(state, agentId),
         );
         if (agent?.messages) {
           messages = agent.messages;
@@ -254,8 +264,8 @@ function* handleInitializeChat(
 
     // Step 5: Determine streaming state
     let isCurrentlyStreaming = session?.isStreaming || false;
-    const agentFromStore: AgentSession | undefined = yield* select(
-      (state) => selectAgentById.select(state, agentId),
+    const agentFromStore: AgentSession | undefined = yield* select((state) =>
+      selectAgentById.select(state, agentId),
     );
     if (agentFromStore?.isStreaming) {
       isCurrentlyStreaming = true;
@@ -263,26 +273,34 @@ function* handleInitializeChat(
     if (hasActiveStream && !isCurrentlyStreaming) {
       isCurrentlyStreaming = true;
     }
+    // Fallback: if the initial spec-writer is actively writing, we know the
+    // agent IS streaming even if bulkUpsertSessions clobbered the flag with
+    // stale disk data before we could read it.
+    if (!isCurrentlyStreaming) {
+      const specWriteInProgress: boolean = yield* select((state) =>
+        selectIsInitialSpecWriteInProgress.select(state, wsId),
+      );
+      if (specWriteInProgress) {
+        isCurrentlyStreaming = true;
+      }
+    }
 
     // Step 6: Compute existing streaming content
     let existingStreamingContent = '';
-    const freshChatState = yield* select(
-      (state) => selectChatStateOrDefault.select(state, agentId),
+    const freshChatState = yield* select((state) =>
+      selectChatStateOrDefault.select(state, agentId),
     );
 
     // Check if Redux chat state already has streaming content (HMR case)
     const chatServiceInstance = yield* call(getChatService, agentId);
-    const instanceHasContent =
-      isCurrentlyStreaming && freshChatState.streamingContent?.length > 0;
+    const instanceHasContent = isCurrentlyStreaming && freshChatState.streamingContent?.length > 0;
 
     if (instanceHasContent) {
       existingStreamingContent = freshChatState.streamingContent;
     } else if (isCurrentlyStreaming && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage?.role === 'assistant' && lastMessage?.contentBlocks) {
-        const textBlocks = lastMessage.contentBlocks.filter(
-          (b: ContentBlock) => b.type === 'text',
-        );
+        const textBlocks = lastMessage.contentBlocks.filter((b: ContentBlock) => b.type === 'text');
         const lastTextBlock = textBlocks[textBlocks.length - 1];
         if (lastTextBlock && 'text' in lastTextBlock) {
           existingStreamingContent = (lastTextBlock as any).text || '';
@@ -334,7 +352,11 @@ function* handleInitializeChat(
 
     // Step 10: Set up DOM handlers for streaming
     if (session) {
-      yield* call([chatServiceInstance, chatServiceInstance.setupStreamingForSession], agentId, session.id);
+      yield* call(
+        [chatServiceInstance, chatServiceInstance.setupStreamingForSession],
+        agentId,
+        session.id,
+      );
     }
 
     logger.info('initializeChatRequested saga completed', {
@@ -362,30 +384,32 @@ function* handleInitializeChat(
 export function* initializeChatSaga(): SagaGenerator<void> {
   const runningTasks = new Map<string, Task>();
 
-  yield* takeEvery(initializeChatRequested, function* (action: ReturnType<typeof initializeChatRequested>) {
-    const agentId = action.payload.agentId;
+  yield* takeEvery(
+    initializeChatRequested,
+    function* (action: ReturnType<typeof initializeChatRequested>) {
+      const agentId = action.payload.agentId;
 
-    // Cancel any previous in-flight init for this specific agent
-    const existing = runningTasks.get(agentId);
-    if (existing) {
-      yield* cancel(existing);
-      runningTasks.delete(agentId);
-    }
-
-    const task = yield* fork(handleInitializeChat, action);
-    runningTasks.set(agentId, task);
-
-    // Fork a cleanup that removes the entry once the task finishes
-    yield* fork(function* () {
-      try {
-        yield* join(task);
-      } finally {
-        // Only delete if this is still the tracked task (not replaced by a newer one)
-        if (runningTasks.get(agentId) === task) {
-          runningTasks.delete(agentId);
-        }
+      // Cancel any previous in-flight init for this specific agent
+      const existing = runningTasks.get(agentId);
+      if (existing) {
+        yield* cancel(existing);
+        runningTasks.delete(agentId);
       }
-    });
-  });
-}
 
+      const task = yield* fork(handleInitializeChat, action);
+      runningTasks.set(agentId, task);
+
+      // Fork a cleanup that removes the entry once the task finishes
+      yield* fork(function* () {
+        try {
+          yield* join(task);
+        } finally {
+          // Only delete if this is still the tracked task (not replaced by a newer one)
+          if (runningTasks.get(agentId) === task) {
+            runningTasks.delete(agentId);
+          }
+        }
+      });
+    },
+  );
+}

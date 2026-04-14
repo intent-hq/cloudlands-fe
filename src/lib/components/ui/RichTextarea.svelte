@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * RichTextarea - A simple rich text input for workspace initializers
+   * RichTextarea - A simple rich text input for onboarding-style prompts
    * Supports @ mentions, images, and markdown without the full chat toolbar
    */
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
@@ -25,7 +25,7 @@
 
   let {
     value = $bindable(''),
-    placeholder = 'What would you like to work on?',
+    placeholder = '',
     disabled = false,
     workspace = null,
     repoPath,

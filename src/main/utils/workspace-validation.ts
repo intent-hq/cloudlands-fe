@@ -180,7 +180,70 @@ export function validateRepositoryPath(path: string): string[] {
     errors.push("Repository path cannot contain '..'");
   }
 
+  if (path && path.includes('\0')) {
+    errors.push('Repository path cannot contain null characters');
+  }
+
   return errors;
+}
+
+/**
+ * Validate a project/folder name used to construct a new-repo path.
+ * Rejects path separators, traversal patterns, null bytes, and OS-unsafe characters
+ * so that `join(parentDir, projectName)` cannot escape the parent.
+ *
+ * Returns an array of error strings (empty = valid).
+ */
+export function validateProjectName(name: string): string[] {
+  const errors: string[] = [];
+
+  if (!name || name.trim().length === 0) {
+    errors.push('Project name is required');
+    return errors;
+  }
+
+  const trimmed = name.trim();
+
+  // Reject path separators — the name must be a single directory component
+  if (trimmed.includes('/') || trimmed.includes('\\')) {
+    errors.push('Project name cannot contain path separators (/ or \\)');
+  }
+
+  // Reject directory traversal
+  if (trimmed === '..' || trimmed === '.') {
+    errors.push("Project name cannot be '.' or '..'");
+  }
+
+  // Reject null bytes
+  if (trimmed.includes('\0')) {
+    errors.push('Project name cannot contain null characters');
+  }
+
+  // Reject characters that are invalid on common file systems (Windows + macOS + Linux)
+  // < > : " | ? *  are invalid on Windows; \0 already checked above
+  if (/[<>:"|?*]/.test(trimmed)) {
+    errors.push('Project name contains invalid characters (<, >, :, ", |, ?, *)');
+  }
+
+  // Reject names that are only dots (e.g. "...", "....")
+  if (/^\.+$/.test(trimmed)) {
+    errors.push('Project name cannot consist only of dots');
+  }
+
+  // Length limit
+  if (trimmed.length > 255) {
+    errors.push('Project name is too long (max 255 characters)');
+  }
+
+  return errors;
+}
+
+/**
+ * Boolean helper for validateProjectName.
+ * Returns true when the name is safe to use as a single path component.
+ */
+export function isValidProjectName(name: string): boolean {
+  return validateProjectName(name).length === 0;
 }
 
 export function sanitizePath(inputPath: string): string {

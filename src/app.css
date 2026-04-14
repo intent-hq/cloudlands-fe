@@ -764,3 +764,7 @@ body.panel-resizing webview {
     transform: none;
   }
 }
+
+.placeholder-current::placeholder {
+  color: currentColor;
+}

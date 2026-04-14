@@ -358,6 +358,7 @@ export interface UnifiedAgentConfig {
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
   contextReferences?: any[];
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   metadata?: Record<string, any>;
   messages?: any[]; // For resuming existing sessions with message history
 

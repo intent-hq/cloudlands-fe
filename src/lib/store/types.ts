@@ -53,6 +53,8 @@ export type SagaName =
   | 'transientUiSaga'
   | 'skillsSaga'
   | 'githubAuthSaga'
+  | 'githubReposSaga'
+  | 'githubRepoSearchSaga'
   | 'linearAuthSaga'
   | 'sentryAuthSaga'
   | 'setupScriptsSaga'
@@ -74,7 +76,8 @@ export type SagaName =
   | 'fileExplorerSaga'
   | 'agentIpcSaga'
   | 'agentStreamSaga'
-  | 'agentSubscriptionUISaga';
+  | 'agentSubscriptionUISaga'
+  | 'agentAvailabilitySaga';
 
 // ============================================================================
 // Saga Status Types

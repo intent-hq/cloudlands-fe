@@ -7,11 +7,12 @@
    */
   import { faArrowRight, faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectDraftPrompt } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { closeAll, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { Workspace } from '$shared/types';
@@ -64,25 +65,23 @@
 
   function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }, event?: MouseEvent) {
     dispatch(closeAll(false));
+    if (initialRepo?.repoPath) {
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ repoPath: initialRepo.repoPath }),
+      );
+    }
 
     // Command-click (or Ctrl-click on non-Mac) opens in new window
     if (event?.metaKey || event?.ctrlKey) {
-      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
-        // Fallback to modal in current window if IPC fails
-        window.dispatchEvent(
-          new CustomEvent('app:open-new-space-modal', {
-            detail: initialRepo ? { initialRepo } : {},
-          }),
-        );
+      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/workspace/new' }).catch(() => {
+        // Fallback to navigation in current window if IPC fails
+        goto('/workspace/new');
       });
       return;
     }
 
-    window.dispatchEvent(
-      new CustomEvent('app:open-new-space-modal', {
-        detail: initialRepo ? { initialRepo } : {},
-      }),
-    );
+    dispatch(setShowCreateModal(true));
   }
 
   function openWithDraft() {
@@ -94,7 +93,7 @@
       );
     }
     dispatch(closeAll(false));
-    window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+    dispatch(setShowCreateModal(true));
   }
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {

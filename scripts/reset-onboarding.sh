@@ -38,6 +38,10 @@ restore_move() {
       [ -e "$item" ] || continue
       local base="$(basename "$item")"
       case "$base" in .|..) continue;; esac
+      # If both are directories, remove the (app-recreated) target first
+      if [ -d "$item" ] && [ -d "$dest/$base" ]; then
+        rm -rf "$dest/$base"
+      fi
       mv -f "$item" "$dest/"
     done
     rmdir "$src" 2>/dev/null || true

@@ -16,7 +16,7 @@
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { setPanelContext } from './panel-context';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
-  import { untrack, type Snippet } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -138,6 +138,21 @@
 
   // Get tabs that should be rendered (exist in panel AND are in cache)
   let tabsToRender = $derived(panel.tabs.filter((tab) => cachedTabIds.has(tab.id)));
+
+  // Detect fresh workspace creation for tab bar slide-down animation
+  let animateTabBar = $state(false);
+  onMount(() => {
+    const pendingKey = Object.keys(sessionStorage).find((k) =>
+      k.endsWith(':initial-agent-pending'),
+    );
+    if (pendingKey && sessionStorage.getItem(pendingKey)) {
+      animateTabBar = true;
+      // Clear after animation completes
+      setTimeout(() => {
+        animateTabBar = false;
+      }, 700);
+    }
+  });
 
   // Custom MIME type for tab drag (must match PanelTabBar)
   const TAB_DRAG_MIME = 'application/x-panel-tab';
@@ -270,6 +285,11 @@
     <!-- Drop zones overlay (positioned below tab bar) -->
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
     <!-- Tab Bar (shows group label and actions when focused) -->
+    <div
+      style={animateTabBar
+        ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
+        : ''}
+    >
     <PanelTabBar
       tabs={panel.tabs}
       activeTabId={panel.activeTabId}
@@ -296,6 +316,7 @@
       {onSplitHorizontal}
       {onSplitVertical}
     />
+    </div>
 
     <!-- Content Area -->
     <!--

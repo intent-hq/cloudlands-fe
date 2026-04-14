@@ -394,19 +394,36 @@ function ensureElectronBinary() {
  */
 function ensureNativeModules() {
   const rootDir = dirname(__dirname);
-  const sqliteDir = join(rootDir, 'node_modules', 'better-sqlite3');
-  const sqliteRelease = join(sqliteDir, 'build', 'Release', 'better_sqlite3.node');
+  const nativeModules = [
+    {
+      name: 'better-sqlite3',
+      hasBinary: (moduleDir) =>
+        existsSync(join(moduleDir, 'build', 'Release', 'better_sqlite3.node')) ||
+        directoryHasNodeBinary(join(moduleDir, 'lib', 'binding')) ||
+        directoryHasNodeBinary(join(moduleDir, 'compiled')),
+    },
+    {
+      name: 'node-pty',
+      hasBinary: (moduleDir) =>
+        existsSync(join(moduleDir, 'build', 'Release', 'pty.node')) ||
+        existsSync(join(moduleDir, 'build', 'Debug', 'pty.node')) ||
+        directoryHasNodeBinary(join(moduleDir, 'prebuilds')),
+    },
+  ];
 
-  // Heuristic: if release binary exists, assume rebuild already ran
-  const hasSqliteBinary =
-    existsSync(sqliteRelease) ||
-    directoryHasNodeBinary(join(sqliteDir, 'lib', 'binding')) ||
-    directoryHasNodeBinary(join(sqliteDir, 'compiled'));
+  const missingModules = nativeModules
+    .filter(({ name, hasBinary }) => {
+      const moduleDir = join(rootDir, 'node_modules', name);
+      return existsSync(moduleDir) && !hasBinary(moduleDir);
+    })
+    .map(({ name }) => name);
 
-  if (hasSqliteBinary) return;
+  if (missingModules.length === 0) return;
 
-  console.log('\n🔨 Native Electron binaries missing; rebuilding better-sqlite3/node-pty...\n');
-  const result = spawnSync('npx', ['@electron/rebuild', '-f', '-o', 'better-sqlite3,node-pty'], {
+  console.log(
+    `\n🔨 Native Electron binaries missing for ${missingModules.join(', ')}; rebuilding...\n`,
+  );
+  const result = spawnSync('npx', ['@electron/rebuild', '-f', '-o', missingModules.join(',')], {
     cwd: rootDir,
     stdio: 'inherit',
   });

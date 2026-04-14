@@ -1,11 +1,11 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   /**
    * ProviderSelector
    *
    * Settings panel for selecting which ACP provider to use.
-   * Self-contained component with inline rendering matching ProviderStatusPanel design
-   * so it can be independently tweaked for settings-specific needs.
+   * Self-contained component with inline rendering
+   * that can be independently tweaked for settings-specific needs.
    */
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';

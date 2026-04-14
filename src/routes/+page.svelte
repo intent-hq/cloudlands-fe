@@ -4,9 +4,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
-  import ProviderStatusPanel from '$lib/components/ProviderStatusPanel.svelte';
-  import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+
   import { loadKnownRepos } from '$lib/store/slices/known-repos/known-repos-slice';
   import {
     selectKnownRepos,
@@ -18,7 +16,6 @@
     selectWorkspaceLoading,
   } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    setHasCompletedProviderSetup,
     toggleGroupByRepo,
     toggleShowArchived,
   } from '$lib/store/slices/user-preferences/user-preferences-slice';
@@ -26,7 +23,6 @@
     selectGroupByRepo,
     selectHasCompletedProviderSetup,
     selectShowArchived,
-    selectShowProviderPanel,
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { clearHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-slice';
   import { selectHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-selectors';
@@ -148,14 +144,8 @@
   const showArchived = selectShowArchived();
   const groupByRepo = selectGroupByRepo();
   const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
-  const showProviderPanelPreference = selectShowProviderPanel();
   const nodeVersion = selectNodeVersion();
   const showNodeWarning = selectShowNodeWarning();
-
-  // True when the provider setup panel should be shown (first-time users with no workspaces).
-  // Wait for workspaces to load before deciding — avoids flashing the panel for users who have spaces.
-  // Only show after onboarding is complete.
-  const showProviderPanel = $derived($showProviderPanelPreference && isEmpty);
 
   let searchQuery = $state('');
   let searchExpanded = $state(false);
@@ -194,25 +184,15 @@
 <div class="h-full flex flex-col">
   <div
     class="home-layout flex-1 w-full min-h-0
-      {isEmpty || showProviderPanel || (!$workspaceHasLoaded && !$hasCompletedProviderSetup)
+      {isEmpty || (!$hasCompletedProviderSetup && !$workspaceHasLoaded)
       ? 'flex items-center justify-center overflow-auto px-[clamp(2rem,6.25rem,6%)]'
       : 'grid gap-15 lg:grid-cols-[minmax(40rem,1fr)_2fr] px-[clamp(2rem,6.25rem,6%)] lg:pl-[clamp(2rem,6.25rem,6%)] lg:pr-0'}"
   >
-    <!-- Wait for workspaces to load before rendering for users who haven't completed setup.
-         This prevents flashing onboarding/provider setup before we know if they're a new user.
-         The splash screen in app.html covers this loading period. -->
-    {#if !$workspaceHasLoaded && !$hasCompletedProviderSetup}
-      <!-- Empty: splash screen / bg-sidebar visible while workspaces load -->
-    {:else if showProviderPanel}
-      <div class="animate-entry" style="--entry-delay: 0ms">
-        <ProviderStatusPanel
-          onContinue={async (providerId) => {
-            dispatch(setActiveProvider(providerId));
-            dispatch(reloadModelsForProvider());
-            dispatch(setHasCompletedProviderSetup(true));
-          }}
-        />
-      </div>
+    <!-- Render nothing while workspaces are loading for users who haven't completed setup,
+         or when we know the layout will redirect to /workspace/new (no workspaces + no provider setup).
+         The splash screen in app.html covers the loading period. -->
+    {#if !$hasCompletedProviderSetup && (!$workspaceHasLoaded || isEmpty)}
+      <!-- Empty: splash / bg-sidebar visible while redirect to /workspace/new fires -->
     {:else}
       <!-- Empty state after provider setup, OR non-empty state: show workspace form -->
       <div
@@ -255,8 +235,8 @@
       </div>
     {/if}
 
-    <!-- Header + Controls Bar (hidden when empty, showing provider setup, onboarding, or still loading for new users) -->
-    {#if !isEmpty && !showProviderPanel && ($workspaceHasLoaded || $hasCompletedProviderSetup)}
+    <!-- Header + Controls Bar (hidden when empty or still loading for new users) -->
+    {#if !isEmpty && ($workspaceHasLoaded || $hasCompletedProviderSetup)}
       <div
         class="right-column animate-entry min-w-0 lg:pr-[clamp(2rem,6.25rem,6%)]"
         style="--entry-delay: 120ms"

@@ -38,15 +38,15 @@ class WorkspaceFlowIntegrationTest {
   private setupSteps() {
     this.steps = [
       {
-        name: 'Workspace Initializer Component',
+        name: 'Compact Workspace Initializer Component',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/lib/components/workspace/WorkspaceInitializer.svelte');
+          const filePath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
           const content = await fs.readFile(filePath, 'utf-8');
 
           // Check all critical elements
-          return content.includes('generateAgentId()') &&
+          return content.includes('unifiedIdService.generateAgentId()') &&
                  content.includes('initialAgent') &&
-                 content.includes('workspaceStore.create') &&
+                 content.includes('workspaceClient.create') &&
                  content.includes('sessionStorage.setItem');
         },
         critical: true,
@@ -59,7 +59,7 @@ class WorkspaceFlowIntegrationTest {
 
           return content.includes('request.initialAgent') &&
                  content.includes('AgentStatus.Pending') &&
-                 content.includes('workspace:created');
+                 content.includes('workspaceCreated({');
         },
         critical: true,
       },
@@ -70,7 +70,7 @@ class WorkspaceFlowIntegrationTest {
           const content = await fs.readFile(filePath, 'utf-8');
 
           return content.includes('workspace-initializer') &&
-                 content.includes('isInitialAgent') &&
+                 content.includes('metadata') &&
                  content.includes('createInBackend');
         },
         critical: true,
@@ -95,7 +95,7 @@ class WorkspaceFlowIntegrationTest {
 
           return content.includes('initialAgentId') &&
                  content.includes('isInitialAgent') &&
-                 content.includes('resumeSession');
+                 content.includes('restoreInitialAgent');
         },
         critical: true,
       },
@@ -105,9 +105,9 @@ class WorkspaceFlowIntegrationTest {
           const filePath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('agentService.getSession') &&
-                 content.includes('currentAgent.messages') &&
-                 content.includes('currentAgent.isStreaming');
+          return content.includes('initializeChatRequested') &&
+                 content.includes('chatState.messages') &&
+                 content.includes('chatState.isStreaming');
         },
         critical: true,
       },
@@ -123,26 +123,25 @@ class WorkspaceFlowIntegrationTest {
         critical: false,
       },
       {
-        name: 'Unified State Store',
+        name: 'Agent Session Redux State',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+          const filePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('existingAgent') &&
-                 content.includes('session.messages || existingAgent?.messages');
+          return content.includes('upsertAgentSession') &&
+                 content.includes('replaceAgentMessages') &&
+                 content.includes('setAgentStreaming');
         },
         critical: true,
       },
       {
-        name: 'Welcome Message Components',
+        name: 'Welcome Message Component',
         check: async () => {
-          const firstPath = path.join(__dirname, '../src/lib/components/chat/FirstAgentWelcome.svelte');
           const regularPath = path.join(__dirname, '../src/lib/components/chat/RegularAgentWelcome.svelte');
 
-          const firstExists = await fs.access(firstPath).then(() => true).catch(() => false);
           const regularExists = await fs.access(regularPath).then(() => true).catch(() => false);
 
-          return firstExists && regularExists;
+          return regularExists;
         },
         critical: false,
       },
@@ -150,7 +149,7 @@ class WorkspaceFlowIntegrationTest {
         name: 'Session Storage Integration',
         check: async () => {
           const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
-          const initPath = path.join(__dirname, '../src/lib/components/workspace/WorkspaceInitializer.svelte');
+          const initPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
 
           const pageContent = await fs.readFile(pagePath, 'utf-8');
           const initContent = await fs.readFile(initPath, 'utf-8');

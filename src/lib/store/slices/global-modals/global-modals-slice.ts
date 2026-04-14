@@ -11,17 +11,6 @@ export type GitCredentialsModalError = {
   rawError?: string;
 };
 
-export type NewSpaceInitialRepo = {
-  repoPath?: string;
-  isGithub?: boolean;
-  owner?: string;
-  name?: string;
-  environmentType?: string;
-  sshConfig?: unknown;
-  previousWorkspaceId?: string;
-  previousWorkspaceTitle?: string;
-};
-
 export type GitHubAuthModalState = {
   open: boolean;
   pendingAuth: GitHubAuthRequiredEvent | null;
@@ -34,15 +23,9 @@ export type GitCredentialsModalState = {
   shownForWorkspaceIds: Record<string, boolean>;
 };
 
-export type NewSpaceModalState = {
-  open: boolean;
-  initialRepo: NewSpaceInitialRepo | undefined;
-};
-
 export type GlobalModalsState = {
   githubAuth: GitHubAuthModalState;
   gitCredentials: GitCredentialsModalState;
-  newSpace: NewSpaceModalState;
 };
 
 export const initialState: GlobalModalsState = {
@@ -55,10 +38,6 @@ export const initialState: GlobalModalsState = {
     open: false,
     error: null,
     shownForWorkspaceIds: {},
-  },
-  newSpace: {
-    open: false,
-    initialRepo: undefined,
   },
 };
 
@@ -75,12 +54,6 @@ export const openGitCredentialsModal = createAction<[error: GitCredentialsModalE
 export const closeGitCredentialsModal = createAction(
   "globalModals/closeGitCredentialsModal"
 );
-
-export const openNewSpaceModal = createAction<[initialRepo: NewSpaceInitialRepo | undefined]>(
-  "globalModals/openNewSpaceModal"
-);
-
-export const closeNewSpaceModal = createAction("globalModals/closeNewSpaceModal");
 
 export const globalModalsReducer = createReducer<GlobalModalsState>(initialState)
   .with(openGitHubAuthModal, (state, { payload: [pendingAuth] }) => ({
@@ -119,19 +92,5 @@ export const globalModalsReducer = createReducer<GlobalModalsState>(initialState
       ...state.gitCredentials,
       open: false,
       error: null,
-    },
-  }))
-  .with(openNewSpaceModal, (state, { payload: [initialRepo] }) => ({
-    ...state,
-    newSpace: {
-      open: true,
-      initialRepo,
-    },
-  }))
-  .with(closeNewSpaceModal, (state) => ({
-    ...state,
-    newSpace: {
-      open: false,
-      initialRepo: undefined,
     },
   }));

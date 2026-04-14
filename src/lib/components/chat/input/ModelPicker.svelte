@@ -90,7 +90,7 @@
     showDefaultOption?: boolean;
     /** Update global model store when selection changes - opt-in for places that should affect the main chat model */
     updateGlobalStore?: boolean;
-    /** When true, silently falls back to a default model if the selected model is unavailable. Used by workspace initializer. */
+    /** When true, silently falls back to a default model if the selected model is unavailable. Used by onboarding. */
     silentFallback?: boolean;
   }
 
@@ -706,7 +706,7 @@
   }
 
   // Auto-fallback: When the selected model becomes unavailable, automatically switch to an available model.
-  // Only applies to pickers tied to an existing agent — the workspace initializer doesn't need this.
+  // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
     if (!isSelectedModelUnavailable) return;
@@ -776,7 +776,7 @@
 
   let silentRetryAttemptedForProvider: string | null = null;
 
-  // Silent fallback for workspace initializer (no agentId)
+  // Silent fallback for onboarding-style pickers (no agentId)
   // When a model doesn't exist, fall back to a same-provider model (with one retry)
   // Guard to prevent the retry fetch from re-firing indefinitely if the model
   // remains unavailable after the retry (e.g., provider ID normalization mismatch).

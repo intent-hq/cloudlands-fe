@@ -48,6 +48,7 @@
   } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 
   interface Props {
@@ -121,6 +122,8 @@
   // Check if we're on a workspace page
   const isWorkspacePage = $derived(page.url.pathname.startsWith('/workspace/'));
   const isHomePage = $derived(page.url.pathname === '/');
+  const onboardingActive$ = selectOnboardingActive();
+  const isWorkspaceVisible = $derived(isWorkspacePage && workspaceId && !$onboardingActive$);
 
   // Get workspace data
   const workspace = $derived(
@@ -251,7 +254,7 @@
   >
     <!-- Left column -->
     <div class="flex items-center min-w-0">
-      {#if !isHomePage && $sidebarSide$ === 'left'}
+      {#if isWorkspaceVisible && $sidebarSide$ === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>
@@ -269,8 +272,8 @@
       <PromotionalBanner />
     </div>
 
-    <!-- Center: Search bar (workspace pages only) -->
-    {#if isWorkspacePage && workspaceId}
+    <!-- Center: Search bar (workspace pages only, hidden during onboarding) -->
+    {#if isWorkspaceVisible}
       <div class="flex items-center justify-center px-4 gap-1" style="-webkit-app-region: no-drag">
         <!-- Search bar -->
         <button class="search-bar" onclick={handleSearchClick} type="button">
@@ -292,18 +295,18 @@
 
     <!-- Right column: Layout controls + sidebar toggle (when sidebar is on right) -->
     <div class="flex items-center justify-end pr-4 gap-1">
-      {#if isWorkspacePage && workspaceId && layoutManager}
+      {#if isWorkspaceVisible && layoutManager}
         <PanelLayoutControls
           layoutRoot={$layoutRoot$}
           canGoBack={$canGoBack$}
           canGoForward={$canGoForward$}
-          {workspaceId}
+          workspaceId={workspaceId!}
           onGoBack={() => layoutManager.goBack()}
           onGoForward={() => layoutManager.goForward()}
           onApplyPreset={handleApplyPreset}
         />
       {/if}
-      {#if !isHomePage && $sidebarSide$ === 'right'}
+      {#if isWorkspaceVisible && $sidebarSide$ === 'right'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
             <span>Sidebar</span>

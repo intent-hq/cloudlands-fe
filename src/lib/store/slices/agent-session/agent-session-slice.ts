@@ -1,7 +1,7 @@
-import type { AgentSession, AgentMessage, QueuedMessage } from "$shared/types";
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
-import type { AgentSessionState } from "./agent-session-types";
+import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
+import { createAction } from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
+import type { AgentSessionState } from './agent-session-types';
 import {
   upsertAgentSession,
   setAgentStreaming,
@@ -11,7 +11,7 @@ import {
   updateAgentMessage,
   updateAgentDigest,
   renameAgent,
-} from "../workspace-agents/workspace-agents-slice";
+} from '../workspace-agents/workspace-agents-slice';
 import {
   chatSendStarted,
   chatSendFailed,
@@ -25,7 +25,7 @@ import {
   streamCompleted,
   streamErrored,
   streamTimedOut,
-} from "../chat-state/chat-state-slice";
+} from '../chat-state/chat-state-slice';
 
 // ============================================================================
 // Constants
@@ -37,7 +37,7 @@ const MAX_MESSAGES_PER_AGENT = 500;
 // Normalization helpers (copied from workspace-agents-slice)
 // ============================================================================
 
-type AgentFileChange = NonNullable<AgentSession["fileChanges"]>[number];
+type AgentFileChange = NonNullable<AgentSession['fileChanges']>[number];
 
 function normalizeDateValue(value: Date | string | undefined): string | undefined {
   return value instanceof Date ? value.toISOString() : value;
@@ -176,10 +176,7 @@ function isSessionEquivalent(a: AgentSession, b: AgentSession): boolean {
   );
 }
 
-function removeFromWorkspaceIndex(
-  state: AgentSessionState,
-  agentId: string,
-): AgentSessionState {
+function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
   const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
   for (const wsId of Object.keys(agentIdsByWorkspace)) {
     const agents = agentIdsByWorkspace[wsId];
@@ -209,14 +206,10 @@ export const initialState: AgentSessionState = {
 // ============================================================================
 
 /** Upsert a session — normalize dates, dedup messages, prune to 500, register in workspace index */
-export const upsertSession = createAction<[session: AgentSession]>(
-  "agentSessions/upsertSession",
-);
+export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
 
 /** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
-export const removeSession = createAction<[agentId: string]>(
-  "agentSessions/removeSession",
-);
+export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
 
 /**
  * Set streaming flag for an agent.
@@ -225,63 +218,61 @@ export const removeSession = createAction<[agentId: string]>(
  * `setAgentStreaming` is dispatched. This action is kept for edge cases only.
  */
 export const setSessionStreaming = createAction<[agentId: string, isStreaming: boolean]>(
-  "agentSessions/setSessionStreaming",
+  'agentSessions/setSessionStreaming',
 );
 
 /** Add a single message (dedup, prune) */
 export const addMessage = createAction<[agentId: string, message: AgentMessage]>(
-  "agentSessions/addMessage",
+  'agentSessions/addMessage',
 );
 
 /** Update a single message by messageId */
 export const updateMessage = createAction<
   [agentId: string, messageId: string, updates: Partial<AgentMessage>]
->("agentSessions/updateMessage");
+>('agentSessions/updateMessage');
 
 /** Full replacement of messages (with dedup/prune) */
 export const replaceMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
-  "agentSessions/replaceMessages",
+  'agentSessions/replaceMessages',
 );
 
 /** Atomically remove a single message by ID */
 export const removeMessage = createAction<[agentId: string, messageId: string]>(
-  "agentSessions/removeMessage",
+  'agentSessions/removeMessage',
 );
 
 /** Non-message field updates */
 export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
-  "agentSessions/updateSession",
+  'agentSessions/updateSession',
 );
 
 /** Set queued messages for an agent */
 export const setQueuedMessages = createAction<[agentId: string, messages: QueuedMessage[]]>(
-  "agentSessions/setQueuedMessages",
+  'agentSessions/setQueuedMessages',
 );
 
 /** Update agent digest */
 export const updateDigest = createAction<[agentId: string, digest: string | null]>(
-  "agentSessions/updateDigest",
+  'agentSessions/updateDigest',
 );
 
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
-  "agentSessions/renameSession",
+  'agentSessions/renameSession',
 );
 
 /** Bulk upsert sessions (initial load / snapshot reconciliation) */
 export const bulkUpsertSessions = createAction<[sessions: AgentSession[]]>(
-  "agentSessions/bulkUpsertSessions",
+  'agentSessions/bulkUpsertSessions',
 );
 
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
-  "agentSessions/removeWorkspaceSessions",
+  'agentSessions/removeWorkspaceSessions',
 );
 
 /** Clear all sessions */
-export const clearAllSessions = createAction(
-  "agentSessions/clearAllSessions",
-);
+export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 
 // ============================================================================
 // Reducer
@@ -367,7 +358,10 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const { messages, ...otherUpdates } = updates;
     let merged: AgentSession = { ...session, ...otherUpdates };
     if (messages && Array.isArray(messages)) {
-      merged = { ...merged, messages: pruneMessages(deduplicateMessages(messages.map(normalizeAgentMessage))) };
+      merged = {
+        ...merged,
+        messages: pruneMessages(deduplicateMessages(messages.map(normalizeAgentMessage))),
+      };
     }
     return setSession(state, agentId, merged);
   })
@@ -391,14 +385,17 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       const agentId = String(normalized.id);
       const wsId = String(session.workspaceId);
 
-      // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
-      // created by chatSendStarted before the full session loaded from disk.
+      // Preserve in-flight isStreaming/isProcessing flags unconditionally.
+      // bulkUpsertSessions is used for disk reconciliation; disk data is always
+      // stale for ephemeral in-memory flags like streaming/processing state.
+      // The factory or saga sets these flags before the bulk upsert runs, so
+      // an incoming false from disk must never overwrite an active true.
       const existing = getSession(next, agentId);
       if (existing) {
-        if (existing.isStreaming && finalSession.isStreaming === undefined) {
+        if (existing.isStreaming) {
           finalSession.isStreaming = true;
         }
-        if (existing.isProcessing && finalSession.isProcessing === undefined) {
+        if (existing.isProcessing) {
           finalSession.isProcessing = true;
         }
       }
@@ -566,4 +563,3 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
   );
-

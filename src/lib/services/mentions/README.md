@@ -763,7 +763,7 @@ The test page provides:
 
 ### Compact Mode Testing
 
-Test the compact workspace initializer mention behavior:
+Test compact rich-text mention behavior:
 
 **URL**: `http://localhost:5177/test-mentions/compact`
 

@@ -44,6 +44,9 @@
     // Legacy prop - maps to percentageWeight: true = 1, false = 0
     usePercentage = undefined,
 
+    // Start collapsed (width = 0) without persisting to localStorage
+    initiallyCollapsed = false,
+
     children,
   }: {
     // Common props
@@ -80,6 +83,9 @@
 
     // Legacy prop for backwards compatibility
     usePercentage?: boolean;
+
+    // Start collapsed without persisting — used for routes like /workspace/new
+    initiallyCollapsed?: boolean;
 
     children?: any;
   } = $props();
@@ -201,12 +207,14 @@
   // Note: We intentionally capture orientation and default values at initialization.
   // These props are not expected to change during the component's lifecycle.
   // svelte-ignore state_referenced_locally
-  let panelWidth = $state(orientation === 'horizontal' ? getInitialWidth() : defaultWidth);
+  let panelWidth = $state(
+    initiallyCollapsed ? 0 : orientation === 'horizontal' ? getInitialWidth() : defaultWidth,
+  );
   // svelte-ignore state_referenced_locally
   let expandedWidth = $state(
     orientation === 'horizontal' ? getInitialExpandedWidth() : defaultExpandedWidth,
   );
-  let isCollapsed = $state(false);
+  let isCollapsed = $state(initiallyCollapsed);
 
   // State for vertical orientation - initialize with saved values
   // svelte-ignore state_referenced_locally
@@ -536,7 +544,7 @@
     }}
     class="relative shrink-0 {isResizing
       ? ''
-      : 'transition-[width] mx-auto duration-150 ease-out'} {actualWidth === 0
+      : 'transition-[width] mx-auto duration-300 ease-[cubic-bezier(0.33,1,0.68,1)]'} {actualWidth === 0
       ? 'overflow-hidden'
       : ''} {className}"
     style={doSkipResize
@@ -545,7 +553,7 @@
   >
     <!-- Panel content slot -->
     <div
-      class="h-full min-h-0 transition-opacity duration-150 ease-out {actualWidth === 0
+      class="h-full min-h-0 transition-opacity duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] {actualWidth === 0
         ? 'opacity-0'
         : 'opacity-100'}"
     >

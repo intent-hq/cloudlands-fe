@@ -44,10 +44,6 @@ export const selectHasCompletedProviderSetup = createSelector((state) => {
   return state.userPreferences.hasCompletedProviderSetup;
 });
 
-export const selectShowProviderPanel = createSelector((state) => {
-  return !state.userPreferences.hasCompletedProviderSetup;
-});
-
 export const selectCounterScale = createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

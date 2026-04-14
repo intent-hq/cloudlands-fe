@@ -32,7 +32,6 @@
   import {
     closeGitCredentialsModal,
     closeGitHubAuthModal,
-    closeNewSpaceModal,
   } from '$lib/store/slices/global-modals/global-modals-slice';
   import {
     selectGitCredentialsError,
@@ -58,9 +57,11 @@
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,
+    selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -78,13 +79,13 @@
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import RootQuakeTerminalOverlay, {
-    ROOT_WORKSPACE_ID,
-  } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
+  import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
+  import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
-  import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import { togglePanel } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { togglePanel, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import Store, { initStore } from '$lib/store/components/Store.svelte';
   const logger = createLogger('+layout');
 
@@ -95,10 +96,13 @@
   const workspaceItems = selectWorkspaceItems();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const workspaceLoading = selectWorkspaceLoading();
+  const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
+  const showCreateModal$ = selectShowCreateModal();
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -178,6 +182,21 @@
       untrack(() => {
         dispatch(cleanupInvalidWorkspaceTabs(validIds));
       });
+    }
+  });
+
+  // Redirect first-time users to the full onboarding experience.
+  // Once workspaces have loaded, if there are none and the user hasn't
+  // completed provider setup, send them to /workspace/new instead of
+  // showing the home page.  The splash screen covers the loading gap.
+  $effect(() => {
+    if (
+      $workspaceHasLoaded &&
+      $workspaceItems.length === 0 &&
+      !$hasCompletedProviderSetup &&
+      window.location.pathname === '/'
+    ) {
+      goto('/workspace/new');
     }
   });
 
@@ -588,7 +607,12 @@
       // which would incorrectly route the toggle to ROOT_WORKSPACE_ID.
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId =
-        isOnWorkspacePage && currentWorkspaceId ? currentWorkspaceId : ROOT_WORKSPACE_ID;
+        isOnWorkspacePage &&
+        currentWorkspaceId &&
+        currentWorkspaceId !== 'new' &&
+        isValidWorkspaceId(currentWorkspaceId)
+          ? currentWorkspaceId
+          : ROOT_WORKSPACE_ID;
       dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -956,11 +980,8 @@
               {@render children?.()}
             </div>
 
-            <!-- Root Quake Terminal Overlay (for non-workspace pages) -->
-            <!-- Only shown when not in a workspace context -->
-            {#if !$activeWorkspaceId}
-              <RootQuakeTerminalOverlay />
-            {/if}
+            <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
+            <RootQuakeTerminalOverlay />
           </main>
         </div>
       </ErrorBoundary>
@@ -1033,20 +1054,17 @@
       />
     {/if}
 
+    <!-- Create Workspace Modal (opened from sidebar nav + button) -->
+    <NewSpaceModal
+      open={$showCreateModal$}
+      onClose={() => dispatch(setShowCreateModal(false))}
+    />
+
     <!-- Release Notes Modal (shown after update) -->
     <ReleaseNotesModal
       open={$showReleaseNotesModal$}
       releaseNotes={$releaseNotes$}
       onClose={() => dispatch(closeReleaseNotesModal())}
-    />
-
-    <!-- New Workspace Modal -->
-    <NewSpaceModal
-      open={$globalModals.newSpace.open}
-      initialRepo={$globalModals.newSpace.initialRepo}
-      onClose={() => {
-        dispatch(closeNewSpaceModal());
-      }}
     />
 
     <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->

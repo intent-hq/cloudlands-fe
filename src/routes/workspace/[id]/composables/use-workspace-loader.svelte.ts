@@ -147,6 +147,12 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     workspaceState: WorkspacePageStateManager,
     state: WorkspacePageState | null,
   ) {
+    // Don't try to load the 'new' placeholder — it's the onboarding flow
+    if (workspaceId === 'new') {
+      logger.debug('Skipping load for onboarding placeholder workspace', { workspaceId });
+      return;
+    }
+
     // Check if this is an optimistic ID that's no longer in the manager
     if (workspaceId.startsWith('optimistic-')) {
       logger.warn(

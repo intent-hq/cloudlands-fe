@@ -5,17 +5,23 @@
   interface Props {
     providerId: string;
     class?: string;
+    size?: number;
   }
 
-
-  let { providerId, class: className = 'size-3.5' }: Props = $props();
+  let { providerId, class: className = 'size-3.5', size = 14 }: Props = $props();
 </script>
 
 <span class={cn('inline-flex shrink-0', className)}>
   {#if providerId === 'auggie'}
-    <Logo width={14} class="-mt-0.5" />
+    <Logo width={size} class="-mt-0.5" />
   {:else if providerId === 'claude-code'}
-    <svg class={className} viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 1200 1200"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <g id="g314">
         <path
           id="path147"
@@ -29,6 +35,8 @@
     <svg
       fill="currentColor"
       class={className}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       role="img"
       xmlns="http://www.w3.org/2000/svg"
@@ -38,7 +46,7 @@
       />
     </svg>
   {:else if providerId === 'opencode'}
-    <svg class={className} viewBox="0 0 300 300" fill="none"
+    <svg class={className} width={size} height={size} viewBox="0 0 300 300" fill="none"
       ><g transform="translate(30, 0)"
         ><g clip-path="url(#clip0_1401_86274)"
           ><mask
@@ -64,6 +72,8 @@
   {:else if providerId === 'cortex'}
     <svg
       class={className}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="currentColor"
       xmlns="http://www.w3.org/2000/svg"

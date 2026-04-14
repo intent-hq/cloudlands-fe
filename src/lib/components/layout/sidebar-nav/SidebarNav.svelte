@@ -26,7 +26,7 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveStreamsVersion, selectPanelItem, selectActiveCard, selectOnboardingActive, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
 
@@ -184,16 +184,15 @@
       }
     } else if (id === 'new-workspace') {
       dispatch(closeAll(false));
-      // Command-click (or Ctrl-click on non-Mac) opens new window on home
+      // Command-click (or Ctrl-click on non-Mac) opens in new window
       if (event?.metaKey || event?.ctrlKey) {
-        invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/' }).catch(() => {
-          // Fallback to modal in current window if IPC fails
-          window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+        invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/workspace/new' }).catch(() => {
+          // Fallback to navigation in current window if IPC fails
+          goto('/workspace/new');
         });
         return;
       }
-      // Normal click opens create modal
-      window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+      dispatch(setShowCreateModal(true));
     } else {
       // Toggle the persistent sidebar panel
       dispatch(togglePanel(id));

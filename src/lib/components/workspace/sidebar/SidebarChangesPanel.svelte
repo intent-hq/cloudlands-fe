@@ -3522,9 +3522,9 @@
       sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: repo }));
     }
 
-    // Navigate to home page with ?create=true to expand and focus the create form
-    const { goto } = await import('$app/navigation');
-    await goto('/?create=true');
+    // Open the create workspace modal
+    const { setShowCreateModal } = await import('$lib/store/slices/sidebar-nav/sidebar-nav-slice');
+    dispatch(setShowCreateModal(true));
   }
 
   // Reset workspace branch to trunk HEAD and continue working

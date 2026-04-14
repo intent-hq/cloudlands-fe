@@ -713,7 +713,7 @@ app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/?create=true');
+            focusedWindow.webContents.send('navigate', '/workspace/new');
           }
         },
       },
@@ -1373,7 +1373,7 @@ app.whenReady().then(async () => {
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupThirdPartySourcesIPC(); // Needed for sources:list
   setupEventsIPC(); // Needed for events:query
-  registerSetupScriptsHandlers(); // Needed for workspace initializer setup scripts
+  registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
   registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
   registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
   setupEditorIPC(); // Needed for ReferenceBlock "Open in Editor" button

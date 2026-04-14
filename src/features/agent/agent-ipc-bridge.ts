@@ -16,12 +16,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
-import type {
-  Workspace,
-  CommandResponse,
-  AgentMessage,
-  AgentSession,
-} from '$shared/types';
+import type { Workspace, CommandResponse, AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -39,14 +34,8 @@ import {
   selectAllWorkspaceAgents,
   selectActiveAgentId,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-import {
-  selectActiveWorkspaceId,
-} from '$lib/store/slices/workspace/workspace-selectors';
-import {
-  agentIpcProxy,
-  errorBoundary,
-  persistenceService,
-} from './browser';
+import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+import { agentIpcProxy, errorBoundary, persistenceService } from './browser';
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { performanceOptimizer } from '$features/agent/services/performance-optimizer';
 import { requestDeduplicator } from './browser/services/request-deduplicator.service';
@@ -125,8 +114,6 @@ export function getSession(agentId: string): AgentSession | null {
   return session ?? null;
 }
 
-
-
 /** Get all sessions for the current workspace. */
 export function getAllSessions(): AgentSession[] {
   const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined;
@@ -136,7 +123,10 @@ export function getAllSessions(): AgentSession[] {
 
 /** Get non-background sessions for a workspace. */
 export function getSessionsForWorkspace(workspaceId: string): AgentSession[] {
-  const allSessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId as any);
+  const allSessions = selectAllWorkspaceAgents.select(
+    getReduxStore().getState(),
+    workspaceId as any,
+  );
   return allSessions.filter((s: any) => {
     const isBackground = !!(s as any).isBackground || !!(s.metadata as any)?.isBackground;
     return !isBackground;
@@ -185,7 +175,9 @@ export function setActiveSession(agentId: string | null): void {
 
 /** Add a session to the Redux store. */
 export function addSession(session: AgentSession): void {
-  const wsId = session.workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
+  const wsId =
+    session.workspaceId ||
+    (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
   if (!wsId) return;
   getReduxStore().dispatch(upsertAgentSession(wsId, session));
 }
@@ -225,11 +217,16 @@ export async function saveSession(
   }
   if (!session.messages || session.messages.length === 0) {
     if (session.isProcessing || session.isStreaming) {
-      logger.error('Refusing to save session with no messages while processing/streaming', { agentId });
+      logger.error('Refusing to save session with no messages while processing/streaming', {
+        agentId,
+      });
       return;
     }
   }
-  await persistenceService.saveSession(session, workspaceId, { immediate, allowTruncation: options?.allowTruncation });
+  await persistenceService.saveSession(session, workspaceId, {
+    immediate,
+    allowTruncation: options?.allowTruncation,
+  });
 }
 
 /** Stop a streaming session. */
@@ -239,7 +236,9 @@ export async function stopSession(agentId: string): Promise<void> {
   if (!wsId) return;
   const tempSession = selectAgentById.select(getReduxStore().getState(), agentId);
   if (tempSession) {
-    getReduxStore().dispatch(setAgentStreaming(tempSession.workspaceId || wsId, tempSession.id, false));
+    getReduxStore().dispatch(
+      setAgentStreaming(tempSession.workspaceId || wsId, tempSession.id, false),
+    );
   }
   const session = selectAgentById.select(getReduxStore().getState(), agentId);
   if (session?.id) {
@@ -269,37 +268,67 @@ export async function softDeleteSession(agentId: string): Promise<AgentSession |
   getReduxStore().dispatch(removeAgent(session.workspaceId || wsId, agentId));
   agentAnalyticsState.delete(agentId);
   getReduxStore().dispatch(clearAgentUnread(agentId));
-  eventCollector.track(AgentEventType.SESSION_DELETED, { agentId, workspaceId: session.workspaceId, isSoftDelete: true });
+  eventCollector.track(AgentEventType.SESSION_DELETED, {
+    agentId,
+    workspaceId: session.workspaceId,
+    isSoftDelete: true,
+  });
   return session;
 }
 
 /** Delete a session permanently. */
 export async function deleteSession(agentId: string, workspaceId?: string): Promise<void> {
-  const wsId = workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
-  if (!wsId) { logger.warn('No workspace ID for deleteSession', { agentId }); return; }
+  const wsId =
+    workspaceId ||
+    (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
+  if (!wsId) {
+    logger.warn('No workspace ID for deleteSession', { agentId });
+    return;
+  }
   const session = selectAgentById.select(getReduxStore().getState(), agentId);
   if (session) await stopSession(agentId);
   const effectiveWorkspaceId = workspaceId || session?.workspaceId;
   if (effectiveWorkspaceId) {
-    const workspace = { id: effectiveWorkspaceId, title: '', branch: '', status: 'active', changesets: [], timeline: [], conversationInfo: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as unknown as Workspace;
+    const workspace = {
+      id: effectiveWorkspaceId,
+      title: '',
+      branch: '',
+      status: 'active',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as unknown as Workspace;
     await agentIpcProxy.deleteAgent(agentId, workspace);
   } else {
     await agentIpcProxy.deleteAgent(agentId);
   }
   if (session) {
     const wsIdForRemove = session.workspaceId || effectiveWorkspaceId || wsId;
-    if (!wsIdForRemove) throw new Error(`[AgentIpcBridge] Cannot remove session without workspaceId: ${agentId}`);
+    if (!wsIdForRemove)
+      throw new Error(`[AgentIpcBridge] Cannot remove session without workspaceId: ${agentId}`);
     getReduxStore().dispatch(removeAgent(wsIdForRemove, agentId));
   }
   agentAnalyticsState.delete(agentId);
   getReduxStore().dispatch(clearAgentUnread(agentId));
-  eventCollector.track(AgentEventType.SESSION_DELETED, { agentId, workspaceId: effectiveWorkspaceId || 'unknown' });
+  eventCollector.track(AgentEventType.SESSION_DELETED, {
+    agentId,
+    workspaceId: effectiveWorkspaceId || 'unknown',
+  });
 }
 
 /** Delete a session with undo support. */
-export async function deleteSessionWithUndo(opts: { agentId: string; workspaceId?: string; agentName?: string }): Promise<AgentSession | null> {
+export async function deleteSessionWithUndo(opts: {
+  agentId: string;
+  workspaceId?: string;
+  agentName?: string;
+}): Promise<AgentSession | null> {
   const saved = await softDeleteSession(opts.agentId);
-  if (!saved) { await deleteSession(opts.agentId, opts.workspaceId); return null; }
+  if (!saved) {
+    await deleteSession(opts.agentId, opts.workspaceId);
+    return null;
+  }
   const effectiveWsId = opts.workspaceId || saved.workspaceId;
   let undoClicked = false;
   const { toast } = await import('svelte-sonner');
@@ -312,7 +341,8 @@ export async function deleteSessionWithUndo(opts: { agentId: string; workspaceId
         undoClicked = true;
         pendingDeletions.delete(opts.agentId);
         const wsIdForUndo = saved.workspaceId || effectiveWsId;
-        if (!wsIdForUndo) throw new Error(`[AgentIpcBridge] Cannot undo delete without workspaceId`);
+        if (!wsIdForUndo)
+          throw new Error(`[AgentIpcBridge] Cannot undo delete without workspaceId`);
         getReduxStore().dispatch(upsertAgentSession(wsIdForUndo, saved));
         toast.dismiss(toastId);
       },
@@ -320,7 +350,13 @@ export async function deleteSessionWithUndo(opts: { agentId: string; workspaceId
   });
   const timeoutId = setTimeout(async () => {
     pendingDeletions.delete(opts.agentId);
-    if (!undoClicked) { try { await deleteSession(opts.agentId, effectiveWsId); } catch (e) { logger.error('Failed to permanently delete', { error: e }); } }
+    if (!undoClicked) {
+      try {
+        await deleteSession(opts.agentId, effectiveWsId);
+      } catch (e) {
+        logger.error('Failed to permanently delete', { error: e });
+      }
+    }
   }, 15000);
   pendingDeletions.set(opts.agentId, { timeoutId, workspaceId: effectiveWsId });
   return saved;
@@ -333,7 +369,11 @@ export async function flushPendingDeletions(workspaceId?: string): Promise<void>
   pendingDeletions.clear();
   for (const [agentId, { timeoutId, workspaceId: storedWsId }] of entries) {
     clearTimeout(timeoutId);
-    try { await deleteSession(agentId, workspaceId || storedWsId); } catch (e) { logger.error('Failed to delete during flush', { agentId, error: e }); }
+    try {
+      await deleteSession(agentId, workspaceId || storedWsId);
+    } catch (e) {
+      logger.error('Failed to delete during flush', { agentId, error: e });
+    }
   }
 }
 
@@ -354,7 +394,10 @@ export function extractPendingDeletions(): Array<{ agentId: string; workspaceId?
 // ---------------------------------------------------------------------------
 
 /** Activate a pending agent on the backend (with mutex). */
-export async function activateAgent(agentId: string, workspaceId: string): Promise<AgentSession | null> {
+export async function activateAgent(
+  agentId: string,
+  workspaceId: string,
+): Promise<AgentSession | null> {
   const currentSession = selectAgentById.select(getReduxStore().getState(), agentId);
   if (currentSession?.backendSessionId && currentSession.status === 'active') {
     return currentSession;
@@ -366,28 +409,56 @@ export async function activateAgent(agentId: string, workspaceId: string): Promi
   }
   const activationPromise = doActivateAgent(agentId, workspaceId, currentSession);
   activationMutex.set(agentId, activationPromise);
-  try { return await activationPromise; } finally { activationMutex.delete(agentId); }
+  try {
+    return await activationPromise;
+  } finally {
+    activationMutex.delete(agentId);
+  }
 }
 
 /** Internal activation with retry. */
-async function doActivateAgent(agentId: string, workspaceId: string, currentSession: AgentSession | undefined): Promise<AgentSession | null> {
+async function doActivateAgent(
+  agentId: string,
+  workspaceId: string,
+  currentSession: AgentSession | undefined,
+): Promise<AgentSession | null> {
   const maxRetries = 3;
   let lastError: Error | null = null;
   if (currentSession) {
-    getReduxStore().dispatch(upsertAgentSession(workspaceId, { ...currentSession, activationState: AgentActivationState.ACTIVATING, activationAttempts: (currentSession.activationAttempts || 0) + 1 }));
+    getReduxStore().dispatch(
+      upsertAgentSession(workspaceId, {
+        ...currentSession,
+        activationState: AgentActivationState.ACTIVATING,
+        activationAttempts: (currentSession.activationAttempts || 0) + 1,
+      }),
+    );
   }
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await invoke<any>('workspace:get', { id: workspaceId });
       const workspace = response?.data;
       if (!workspace) {
-        if (currentSession) getReduxStore().dispatch(upsertAgentSession(workspaceId, { ...currentSession, activationState: AgentActivationState.ERROR, lastActivationError: 'Space not found' }));
+        if (currentSession)
+          getReduxStore().dispatch(
+            upsertAgentSession(workspaceId, {
+              ...currentSession,
+              activationState: AgentActivationState.ERROR,
+              lastActivationError: 'Space not found',
+            }),
+          );
         return null;
       }
       const { agentIpcProxy: proxy } = await import('./browser/index');
-      const activatedSession = await proxy.activateAgent(agentId, workspace) as AgentSession | null;
+      const activatedSession = (await proxy.activateAgent(
+        agentId,
+        workspace,
+      )) as AgentSession | null;
       if (activatedSession) {
-        const finalSession = { ...activatedSession, activationState: AgentActivationState.ACTIVE, activationAttempts: (currentSession?.activationAttempts || 0) + 1 };
+        const finalSession = {
+          ...activatedSession,
+          activationState: AgentActivationState.ACTIVE,
+          activationAttempts: (currentSession?.activationAttempts || 0) + 1,
+        };
         if (!finalSession.workspaceId) finalSession.workspaceId = workspaceId as any;
         getReduxStore().dispatch(upsertAgentSession(workspaceId, finalSession));
         return finalSession;
@@ -395,11 +466,22 @@ async function doActivateAgent(agentId: string, workspaceId: string, currentSess
       return activatedSession;
     } catch (error) {
       lastError = error as Error;
-      logger.warn(`Failed to activate agent (attempt ${attempt + 1}/${maxRetries})`, { agentId, error: lastError.message });
-      if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+      logger.warn(`Failed to activate agent (attempt ${attempt + 1}/${maxRetries})`, {
+        agentId,
+        error: lastError.message,
+      });
+      if (attempt < maxRetries - 1)
+        await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
     }
   }
-  if (currentSession) getReduxStore().dispatch(upsertAgentSession(workspaceId, { ...currentSession, activationState: AgentActivationState.ERROR, lastActivationError: lastError?.message || 'Unknown error' }));
+  if (currentSession)
+    getReduxStore().dispatch(
+      upsertAgentSession(workspaceId, {
+        ...currentSession,
+        activationState: AgentActivationState.ERROR,
+        lastActivationError: lastError?.message || 'Unknown error',
+      }),
+    );
   return null;
 }
 
@@ -417,7 +499,9 @@ export async function activateInitialAgent(
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const promise = Promise.race([
     createFn(),
-    new Promise<null>((resolve) => { timeoutId = setTimeout(() => resolve(null), 60_000); }),
+    new Promise<null>((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), 60_000);
+    }),
   ]).finally(() => {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
     initialAgentActivationLocks.delete(key);
@@ -430,10 +514,17 @@ export async function activateInitialAgent(
 export async function createSession(
   workspace: Workspace,
   options: {
-    agentId?: string; name?: string; model?: string; provider?: string;
+    agentId?: string;
+    name?: string;
+    model?: string;
+    provider?: string;
     agentType?: import('$shared/types/agent.types').AgentTypeId;
-    initialMessage?: string; contextReferences?: any[]; behaviorPrompt?: string;
-    metadata?: any; isPending?: boolean;
+    initialMessage?: string;
+    contextReferences?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    behaviorPrompt?: string;
+    metadata?: any;
+    isPending?: boolean;
   } = {},
 ): Promise<AgentSession> {
   return performanceOptimizer.track(`createSession:${workspace.id}`, async () => {
@@ -457,9 +548,22 @@ export async function createSession(
 /** Internal: execute createSession (after dedup guard). */
 async function executeCreateSession(
   workspace: Workspace,
-  options: { agentId?: string; name?: string; model?: string; provider?: string; agentType?: any; initialMessage?: string; contextReferences?: any[]; behaviorPrompt?: string; metadata?: any; isPending?: boolean },
+  options: {
+    agentId?: string;
+    name?: string;
+    model?: string;
+    provider?: string;
+    agentType?: any;
+    initialMessage?: string;
+    contextReferences?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    behaviorPrompt?: string;
+    metadata?: any;
+    isPending?: boolean;
+  },
 ): Promise<AgentSession> {
   const createdSession = await agentFactory.createAgent(workspace, {
+    id: options.agentId, // Pass through so the factory reuses the caller-provided ID
     name: options.name || 'Agent',
     workspaceId: WorkspaceId(workspace.id),
     model: options.model,
@@ -467,6 +571,7 @@ async function executeCreateSession(
     agentType: options.agentType,
     initialMessage: options.initialMessage,
     contextReferences: options.contextReferences,
+    imageBlocks: options.imageBlocks,
     behaviorPrompt: options.behaviorPrompt,
     isBackground: options.metadata?.isBackground,
     metadata: options.metadata,
@@ -483,88 +588,153 @@ async function executeCreateSession(
   }
   getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
   getReduxStore().dispatch(setActiveAgentId(workspace.id, agentId));
-  eventCollector.track(AgentEventType.SESSION_CREATED, { agentId, workspaceId: workspace.id, model: session.model, isPending: !session.id });
+  eventCollector.track(AgentEventType.SESSION_CREATED, {
+    agentId,
+    workspaceId: workspace.id,
+    model: session.model,
+    isPending: !session.id,
+  });
   workspaceMetrics.incrementAgentCreated(workspace.id);
   return session;
 }
 
 /** Resume an existing session from disk. */
-export async function resumeSession(agentId: string, workspace: Workspace): Promise<AgentSession | null> {
-  return errorBoundary.wrap(async () => {
-    const plainAgentId = agentId ? String(agentId) : '';
-    if (!workspace) return null;
-    if (!workspace.id) return null;
-    let session = await persistenceService.loadSession(plainAgentId, workspace.id);
-    if (session && !session.workspaceId) session.workspaceId = workspace.id;
-    if (session?.messages) {
-      getReduxStore().dispatch(setDiskMessageCount(workspace.id as string, plainAgentId, session.messages.length));
-    }
-    if (session) {
-      if (!session.messages?.find((msg: any) => msg.isStreaming)) {
-        session.isStreaming = false;
+export async function resumeSession(
+  agentId: string,
+  workspace: Workspace,
+): Promise<AgentSession | null> {
+  return errorBoundary.wrap(
+    async () => {
+      const plainAgentId = agentId ? String(agentId) : '';
+      if (!workspace) return null;
+      if (!workspace.id) return null;
+      let session = await persistenceService.loadSession(plainAgentId, workspace.id);
+      if (session && !session.workspaceId) session.workspaceId = workspace.id;
+      if (session?.messages) {
+        getReduxStore().dispatch(
+          setDiskMessageCount(workspace.id as string, plainAgentId, session.messages.length),
+        );
       }
-      if (session.messages && session.messages.length > 0 && session.status === 'pending') {
-        session.status = 'active' as AgentStatus;
-        if (!session.backendSessionId) session.backendSessionId = session.id;
+      if (session) {
+        if (!session.messages?.find((msg: any) => msg.isStreaming)) {
+          session.isStreaming = false;
+        }
+        if (session.messages && session.messages.length > 0 && session.status === 'pending') {
+          session.status = 'active' as AgentStatus;
+          if (!session.backendSessionId) session.backendSessionId = session.id;
+        }
       }
-    }
-    if (!session) {
-      try {
-        const config = await persistenceService.loadAgentConfig(plainAgentId, workspace.id);
-        if (config) {
-          const isOptimistic = workspace.id.startsWith('optimistic-');
-          const hasPath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
-          if (!isOptimistic && hasPath) {
-            session = await agentIpcProxy.activateAgent(plainAgentId, workspace);
-            if (!session) {
-              session = { id: plainAgentId, sessionId: null, workspaceId: workspace.id, name: config.name || 'Agent', status: 'pending' as AgentStatus, messages: [], model: config.model || DEFAULT_AGENT_MODEL, createdAt: new Date(config.createdAt || Date.now()), updatedAt: new Date(config.updatedAt || Date.now()), metadata: config.metadata, isInitialAgent: config.metadata?.isInitialAgent || false, isPending: true } as any;
+      if (!session) {
+        try {
+          const config = await persistenceService.loadAgentConfig(plainAgentId, workspace.id);
+          if (config) {
+            const isOptimistic = workspace.id.startsWith('optimistic-');
+            const hasPath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
+            if (!isOptimistic && hasPath) {
+              session = await agentIpcProxy.activateAgent(plainAgentId, workspace);
+              if (!session) {
+                session = {
+                  id: plainAgentId,
+                  sessionId: null,
+                  workspaceId: workspace.id,
+                  name: config.name || 'Agent',
+                  status: 'pending' as AgentStatus,
+                  messages: [],
+                  model: config.model || DEFAULT_AGENT_MODEL,
+                  createdAt: new Date(config.createdAt || Date.now()),
+                  updatedAt: new Date(config.updatedAt || Date.now()),
+                  metadata: config.metadata,
+                  isInitialAgent: config.metadata?.isInitialAgent || false,
+                  isPending: true,
+                } as any;
+              }
+            } else {
+              session = {
+                id: plainAgentId,
+                sessionId: null,
+                workspaceId: workspace.id,
+                name: config.name || 'Agent',
+                status: 'pending' as AgentStatus,
+                messages: [],
+                model: config.model || DEFAULT_AGENT_MODEL,
+                createdAt: new Date(config.createdAt || Date.now()),
+                updatedAt: new Date(config.updatedAt || Date.now()),
+                metadata: config.metadata,
+                isInitialAgent: config.metadata?.isInitialAgent || false,
+                isPending: true,
+              } as any;
             }
           } else {
-            session = { id: plainAgentId, sessionId: null, workspaceId: workspace.id, name: config.name || 'Agent', status: 'pending' as AgentStatus, messages: [], model: config.model || DEFAULT_AGENT_MODEL, createdAt: new Date(config.createdAt || Date.now()), updatedAt: new Date(config.updatedAt || Date.now()), metadata: config.metadata, isInitialAgent: config.metadata?.isInitialAgent || false, isPending: true } as any;
+            return null;
           }
-        } else { return null; }
-      } catch { return null; }
-    }
-    // Preserve richer in-memory data
-    const existingSession = selectAgentById.select(getReduxStore().getState(), plainAgentId);
-    if (existingSession?.messages && session?.messages) {
-      const cmp = compareMessageCompleteness({ messages: existingSession.messages }, { messages: session.messages });
-      if (cmp > 0) session.messages = existingSession.messages;
-    }
-    getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
-    getReduxStore().dispatch(setActiveAgentId(workspace.id, plainAgentId));
-    return session;
-  }, 'resume session', { notify: false, fallback: null, context: { agentId, workspace: workspace?.id } });
+        } catch {
+          return null;
+        }
+      }
+      // Preserve richer in-memory data
+      const existingSession = selectAgentById.select(getReduxStore().getState(), plainAgentId);
+      if (existingSession?.messages && session?.messages) {
+        const cmp = compareMessageCompleteness(
+          { messages: existingSession.messages },
+          { messages: session.messages },
+        );
+        if (cmp > 0) session.messages = existingSession.messages;
+      }
+      getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
+      getReduxStore().dispatch(setActiveAgentId(workspace.id, plainAgentId));
+      return session;
+    },
+    'resume session',
+    { notify: false, fallback: null, context: { agentId, workspace: workspace?.id } },
+  );
 }
 
 /** Restore a session from disk (alias for resumeSession). */
-export async function restoreSession(agentId: string, workspace: Workspace): Promise<AgentSession | null> {
+export async function restoreSession(
+  agentId: string,
+  workspace: Workspace,
+): Promise<AgentSession | null> {
   const plainAgentId = agentId ? String(agentId) : '';
   return resumeSession(plainAgentId, workspace);
 }
 
 /** Restore a session from disk without backend activation. */
-export async function restoreSessionWithoutBackend(agentId: string, workspace: Workspace): Promise<AgentSession | null> {
+export async function restoreSessionWithoutBackend(
+  agentId: string,
+  workspace: Workspace,
+): Promise<AgentSession | null> {
   try {
     if (!agentId || !workspace) return null;
     const plainAgentId = agentId ? String(agentId) : '';
     let session = await persistenceService.loadSession(plainAgentId, workspace?.id);
     // Compare with in-memory data
-    const inMemoryAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspace.id);
+    const inMemoryAgents = selectAllWorkspaceAgents.select(
+      getReduxStore().getState(),
+      workspace.id,
+    );
     const inMemoryAgent = inMemoryAgents.find((a) => String(a.id) === plainAgentId);
     if (inMemoryAgent?.messages?.length) {
-      const cmp = compareMessageCompleteness({ messages: inMemoryAgent.messages }, { messages: session?.messages || [] });
+      const cmp = compareMessageCompleteness(
+        { messages: inMemoryAgent.messages },
+        { messages: session?.messages || [] },
+      );
       if (cmp > 0) session = inMemoryAgent;
     }
     if (session && !session.workspaceId) session.workspaceId = workspace.id;
     if (session?.messages) {
-      getReduxStore().dispatch(setDiskMessageCount(workspace.id as string, plainAgentId, session.messages.length));
+      getReduxStore().dispatch(
+        setDiskMessageCount(workspace.id as string, plainAgentId, session.messages.length),
+      );
     }
     if (session) {
       if (!session.messages?.find((msg: any) => msg.isStreaming)) session.isStreaming = false;
-      if (!session.isInitialAgent && session.metadata?.isInitialAgent) session.isInitialAgent = true;
+      if (!session.isInitialAgent && session.metadata?.isInitialAgent)
+        session.isInitialAgent = true;
       // Normalize stale active status
-      if ((session.status === AgentStatus.Active || session.status === AgentStatus.Processing) && !session.messages?.find((msg: any) => msg.isStreaming)) {
+      if (
+        (session.status === AgentStatus.Active || session.status === AgentStatus.Processing) &&
+        !session.messages?.find((msg: any) => msg.isStreaming)
+      ) {
         session.status = AgentStatus.Idle;
       }
       getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
@@ -574,7 +744,20 @@ export async function restoreSessionWithoutBackend(agentId: string, workspace: W
     if (!session) {
       const config = await persistenceService.loadAgentConfig(agentId, workspace.id);
       if (config) {
-        session = { id: plainAgentId, backendSessionId: null, workspaceId: workspace.id, name: config.name || 'Agent', status: 'pending' as AgentStatus, messages: [], model: config.model || DEFAULT_AGENT_MODEL, isStreaming: false, metadata: config.metadata, isInitialAgent: config.metadata?.isInitialAgent || false, createdAt: new Date(config.createdAt || Date.now()), updatedAt: new Date(config.updatedAt || Date.now()) } as any;
+        session = {
+          id: plainAgentId,
+          backendSessionId: null,
+          workspaceId: workspace.id,
+          name: config.name || 'Agent',
+          status: 'pending' as AgentStatus,
+          messages: [],
+          model: config.model || DEFAULT_AGENT_MODEL,
+          isStreaming: false,
+          metadata: config.metadata,
+          isInitialAgent: config.metadata?.isInitialAgent || false,
+          createdAt: new Date(config.createdAt || Date.now()),
+          updatedAt: new Date(config.updatedAt || Date.now()),
+        } as any;
         getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
         return session;
       }
@@ -587,7 +770,10 @@ export async function restoreSessionWithoutBackend(agentId: string, workspace: W
 }
 
 /** Restore a deleted session. */
-export async function restoreDeletedSession(sessionOrId: AgentSession | string, workspaceId?: string): Promise<AgentSession | null> {
+export async function restoreDeletedSession(
+  sessionOrId: AgentSession | string,
+  workspaceId?: string,
+): Promise<AgentSession | null> {
   if (typeof sessionOrId === 'string') {
     const session = await persistenceService.loadSession(sessionOrId, workspaceId);
     if (session && !session.workspaceId && workspaceId) session.workspaceId = workspaceId;
@@ -598,16 +784,27 @@ export async function restoreDeletedSession(sessionOrId: AgentSession | string, 
     }
     return session;
   }
-  const wsId = sessionOrId.workspaceId || workspaceId || (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
+  const wsId =
+    sessionOrId.workspaceId ||
+    workspaceId ||
+    (selectActiveWorkspaceId.select(getReduxStore().getState()) as string | undefined);
   if (!wsId) return sessionOrId;
   getReduxStore().dispatch(upsertAgentSession(wsId, sessionOrId));
   return sessionOrId;
 }
 
 /** Enhance a prompt using AI. */
-export async function enhancePrompt(prompt: string, workspace: Workspace, modelId?: string): Promise<string> {
+export async function enhancePrompt(
+  prompt: string,
+  workspace: Workspace,
+  modelId?: string,
+): Promise<string> {
   try {
-    const result = await invoke<CommandResponse<{ enhanced: string }>>('agent:enhance-prompt', { prompt, workspaceId: workspace.id, modelId: modelId || DEFAULT_AGENT_MODEL }) as CommandResponse<{ enhanced: string }>;
+    const result = (await invoke<CommandResponse<{ enhanced: string }>>('agent:enhance-prompt', {
+      prompt,
+      workspaceId: workspace.id,
+      modelId: modelId || DEFAULT_AGENT_MODEL,
+    })) as CommandResponse<{ enhanced: string }>;
     if (result?.success && result?.data?.enhanced) return result.data.enhanced;
     return prompt;
   } catch (error) {
@@ -619,7 +816,9 @@ export async function enhancePrompt(prompt: string, workspace: Workspace, modelI
 /** List all sessions for a workspace from backend. */
 export async function listSessions(workspaceId: string): Promise<AgentSession[]> {
   try {
-    const result = await invoke<CommandResponse<any[]>>('agent:list-sessions', { workspaceId }) as CommandResponse<any[]>;
+    const result = (await invoke<CommandResponse<any[]>>('agent:list-sessions', {
+      workspaceId,
+    })) as CommandResponse<any[]>;
     if (result?.success && Array.isArray(result.data)) {
       const sessions: AgentSession[] = [];
       for (const data of result.data) {
@@ -660,7 +859,10 @@ export function cleanup(): void {
  * Create agent for a workspace.
  * Thin wrapper around createSession with extra validation, Redux sync, and analytics.
  */
-export async function createAgent(workspace: Workspace, options?: any): Promise<AgentSession | null> {
+export async function createAgent(
+  workspace: Workspace,
+  options?: any,
+): Promise<AgentSession | null> {
   if (!workspace) {
     logger.error('Cannot create agent without workspace');
     return null;
@@ -671,7 +873,8 @@ export async function createAgent(workspace: Workspace, options?: any): Promise<
   }
 
   logger.info(`Creating agent via clean services for workspace ${workspace.id}`, {
-    workspaceName: workspace.name, options,
+    workspaceName: workspace.name,
+    options,
   });
 
   try {
@@ -692,7 +895,9 @@ export async function createAgent(workspace: Workspace, options?: any): Promise<
 
     if (session) {
       logger.info('Successfully created agent via clean services', {
-        agentId: session.id, workspaceId: session.workspaceId, name: session.name,
+        agentId: session.id,
+        workspaceId: session.workspaceId,
+        name: session.name,
       });
       getReduxStore().dispatch(upsertAgentSession(session.workspaceId || workspace.id, session));
       getReduxStore().dispatch(setActiveAgentId(session.workspaceId || workspace.id, session.id));
@@ -707,11 +912,12 @@ export async function createAgent(workspace: Workspace, options?: any): Promise<
 
     return session;
   } catch (error) {
-    logger.error('Failed to create agent for workspace', error as Error, { workspaceId: workspace.id });
+    logger.error('Failed to create agent for workspace', error as Error, {
+      workspaceId: workspace.id,
+    });
     throw error;
   }
 }
-
 
 // ---------------------------------------------------------------------------
 // Backward-compatible agentService object

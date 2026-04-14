@@ -107,4 +107,24 @@ export const githubAuthClient = {
       return [];
     }
   },
+
+  /**
+   * Global GitHub repository search. Returns `[]` on error so callers can
+   * render a safe empty state; the saga consumer wraps this with its own
+   * loading/error slice so the UI still surfaces failures.
+   */
+  async searchRepos(query: string): Promise<GithubRepo[]> {
+    try {
+      const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
+        GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
+        { query },
+      );
+      if (result.success && result.data) {
+        return result.data;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  },
 };

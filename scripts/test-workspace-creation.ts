@@ -39,23 +39,18 @@ class WorkspaceCreationTest {
     const warnings: string[] = [];
 
     try {
-      // Check WorkspaceInitializer component
-      const initializerPath = path.join(__dirname, '../src/lib/components/workspace/WorkspaceInitializer.svelte');
+      // Check active compact workspace initializer component
+      const initializerPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
       const initializerContent = await fs.readFile(initializerPath, 'utf-8');
 
       // Check for initial agent ID generation
-      if (!initializerContent.includes('generateAgentId()') && !initializerContent.includes('crypto.randomUUID()')) {
+      if (!initializerContent.includes('unifiedIdService.generateAgentId()')) {
         issues.push('Initial agent ID not generated properly');
       }
 
       // Check for initial agent configuration
       if (!initializerContent.includes('initialAgent')) {
         issues.push('Initial agent configuration not found');
-      }
-
-      // Check for workspace rules
-      if (!initializerContent.includes('newWorkspaceRules')) {
-        warnings.push('Workspace rules not configured for initial agent');
       }
 
       // Check workspace service
@@ -106,23 +101,18 @@ class WorkspaceCreationTest {
         issues.push('Agent factory does not handle workspace-initializer source');
       }
 
-      // Check for isInitialAgent flag
-      if (!factoryContent.includes('isInitialAgent')) {
-        issues.push('Agent factory does not set isInitialAgent flag');
-      }
-
-      // Check agent service
-      const servicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      // The initial-agent flag is set while persisting the pending initial agent config.
+      const servicePath = path.join(__dirname, '../src/features/workspace/main/workspace.service.ts');
       const serviceContent = await fs.readFile(servicePath, 'utf-8');
 
       // Check for initial agent metadata preservation
       if (!serviceContent.includes('isInitialAgent') || !serviceContent.includes('metadata')) {
-        issues.push('Agent service does not preserve isInitialAgent metadata');
+        issues.push('Workspace service does not preserve isInitialAgent metadata');
       }
 
       // Check for agent ID preservation
-      if (!serviceContent.includes('options.agentId')) {
-        issues.push('Agent service does not preserve pre-generated agent ID');
+      if (!serviceContent.includes('request.initialAgent.agentId')) {
+        issues.push('Workspace service does not preserve pre-generated agent ID');
       }
 
     } catch (error) {
@@ -202,18 +192,18 @@ class WorkspaceCreationTest {
       const chatPanelPath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
       const chatPanelContent = await fs.readFile(chatPanelPath, 'utf-8');
 
-      // Check for agent session restoration on mount
-      if (!chatPanelContent.includes('agentService.getSession')) {
-        issues.push('ChatPanel does not restore agent session on mount');
+      // Check for Redux-backed chat initialization on mount
+      if (!chatPanelContent.includes('initializeChatRequested')) {
+        issues.push('ChatPanel does not initialize chat state on mount');
       }
 
       // Check for streaming state restoration
-      if (!chatPanelContent.includes('currentAgent.isStreaming')) {
+      if (!chatPanelContent.includes('chatState.isStreaming')) {
         warnings.push('ChatPanel may not restore streaming state');
       }
 
       // Check for message persistence
-      if (!chatPanelContent.includes('currentAgent.messages')) {
+      if (!chatPanelContent.includes('chatState.messages')) {
         issues.push('ChatPanel does not restore messages on mount');
       }
 
@@ -260,18 +250,18 @@ class WorkspaceCreationTest {
         warnings.push('StreamingMessageContent may not clean up properly');
       }
 
-      // Check unified state store
-      const storePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+      // Check Redux session store
+      const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
       const storeContent = await fs.readFile(storePath, 'utf-8');
 
       // Check for state merging
-      if (!storeContent.includes('existingAgent') || !storeContent.includes('...existingAgent')) {
-        issues.push('Unified state store does not properly merge existing agent state');
+      if (!storeContent.includes('upsertAgentSession') || !storeContent.includes('existing')) {
+        issues.push('Agent session store does not properly merge existing agent state');
       }
 
       // Check for message preservation
-      if (!storeContent.includes('session.messages || existingAgent?.messages')) {
-        issues.push('Unified state store does not preserve messages during updates');
+      if (!storeContent.includes('replaceAgentMessages') || !storeContent.includes('deduplicateMessages')) {
+        issues.push('Agent session store does not preserve messages during updates');
       }
 
     } catch (error) {
@@ -287,25 +277,25 @@ class WorkspaceCreationTest {
   }
 
   /**
-   * Test welcome message display
+   * Test empty-chat welcome message display
    */
-  async testWelcomeMessage(): Promise<TestResult> {
+  async testEmptyChatWelcome(): Promise<TestResult> {
     const issues: string[] = [];
     const warnings: string[] = [];
 
     try {
-      // Check for FirstAgentWelcome component
-      const welcomePath = path.join(__dirname, '../src/lib/components/chat/FirstAgentWelcome.svelte');
+      // Check for the active empty-chat welcome component
+      const welcomePath = path.join(__dirname, '../src/lib/components/chat/RegularAgentWelcome.svelte');
       const welcomeExists = await fs.access(welcomePath).then(() => true).catch(() => false);
 
       if (!welcomeExists) {
-        issues.push('FirstAgentWelcome component not found');
+        issues.push('RegularAgentWelcome component not found');
       } else {
         const welcomeContent = await fs.readFile(welcomePath, 'utf-8');
 
         // Check for proper welcome message
-        if (!welcomeContent.includes('workspace')) {
-          warnings.push('FirstAgentWelcome may not show workspace-specific message');
+        if (!welcomeContent.includes('This agent has full workspace context')) {
+          warnings.push('RegularAgentWelcome may not show the expected empty-chat prompt');
         }
       }
 
@@ -313,7 +303,7 @@ class WorkspaceCreationTest {
       const chatPanelPath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
       const chatPanelContent = await fs.readFile(chatPanelPath, 'utf-8');
 
-      if (!chatPanelContent.includes('FirstAgentWelcome') && !chatPanelContent.includes('RegularAgentWelcome')) {
+      if (!chatPanelContent.includes('RegularAgentWelcome')) {
         issues.push('ChatPanel does not handle welcome messages');
       }
 
@@ -342,7 +332,7 @@ class WorkspaceCreationTest {
     this.results.push(await this.testAgentActivation());
     this.results.push(await this.testMessageSending());
     this.results.push(await this.testStreamingFunctionality());
-    this.results.push(await this.testWelcomeMessage());
+    this.results.push(await this.testEmptyChatWelcome());
 
     // Display results
     for (const result of this.results) {

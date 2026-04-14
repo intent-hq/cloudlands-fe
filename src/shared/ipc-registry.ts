@@ -43,6 +43,7 @@ export const IPC_CHANNELS = {
     GET_SETTINGS: 'workspace:get-settings',
     UPDATE_SETTINGS: 'workspace:update-settings',
     TRIGGER_CHECK: 'workspace:trigger-check',
+    DISCOVER_REPOS: 'workspace:discover-repos',
     LIST_FILES: 'workspace:list-files',
     TEST_WATCHER: 'workspace:test-watcher',
     FIND_REPOSITORIES: 'workspace:find-repositories',
@@ -282,6 +283,7 @@ export const IPC_CHANNELS = {
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
     GET_PATHS: 'providers:get-paths',
+    CHECK_SINGLE: 'providers:check-single',
   },
 
   // Third Party Sources
@@ -874,6 +876,8 @@ export const IPC_CHANNELS = {
     LOGOUT: 'github-auth:logout',
     GET_AUTH_STATE: 'github-auth:get-auth-state',
     GET_STATUS: 'github-auth:get-status',
+    LIST_REPOS: 'github-auth:list-repos',
+    SEARCH_REPOS: 'github-auth:search-repos',
   },
 
   // Linear Auth (via Augment API OAuth)

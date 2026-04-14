@@ -6,10 +6,7 @@
     selectIsReadyToInstall,
     selectAutoUpdateStatus,
   } from '$lib/store/slices/auto-update/auto-update-selectors';
-  import {
-    installUpdate,
-    simulateSetState,
-  } from '$lib/store/slices/auto-update/auto-update-slice';
+  import { installUpdate, simulateSetState } from '$lib/store/slices/auto-update/auto-update-slice';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -98,8 +95,6 @@
 
   // Current active tab - initialized from URL or default to Agents
   let activeTab = $state<SettingsTab>(getInitialTab());
-
-
 
   // Update URL when tab changes
   function setActiveTab(tab: SettingsTab) {
@@ -364,7 +359,7 @@
       {#if activeTab === 'accounts'}
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Model Providers
+            AI Coding CLIs
           </h2>
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
@@ -372,7 +367,7 @@
             </section>
           </div>
           <p class="text-xs text-subtle mt-2">
-            You can sign in or switch accounts using your model provider in the terminal.
+            You can sign in or switch accounts using your AI Coding CLI in the terminal.
           </p>
         </div>
 
@@ -543,10 +538,7 @@
                   </p>
                 </div>
                 <div class="w-[180px] flex-shrink-0">
-                  <Select.Root
-                    value={$codeFontFamily}
-                    onchange={handleCodeFontChange}
-                  >
+                  <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
                     <Select.Trigger>
                       <span class="truncate" style:font-family={$codeFontFamilyCSS}>
                         {$codeFontFamilyLabel}
@@ -617,21 +609,57 @@
                     <Button
                       variant="outline"
                       size="sm"
-                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: true, status: 'downloading', updateInfo: { version: '99.0.0', releaseDate: new Date().toISOString(), releaseNotes: 'Simulated' }, progress: { percent: 50, bytesPerSecond: 2500000, transferred: 25000000, total: 50000000 }, error: null }))}
+                      onclick={() =>
+                        settingsDispatch(
+                          simulateSetState({
+                            toastVisible: true,
+                            status: 'downloading',
+                            updateInfo: {
+                              version: '99.0.0',
+                              releaseDate: new Date().toISOString(),
+                              releaseNotes: 'Simulated',
+                            },
+                            progress: {
+                              percent: 50,
+                              bytesPerSecond: 2500000,
+                              transferred: 25000000,
+                              total: 50000000,
+                            },
+                            error: null,
+                          }),
+                        )}
                     >
                       Simulate Update Flow
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: true, status: 'not-available', currentVersion: '1.0.0-dev' }))}
+                      onclick={() =>
+                        settingsDispatch(
+                          simulateSetState({
+                            toastVisible: true,
+                            status: 'not-available',
+                            currentVersion: '1.0.0-dev',
+                          }),
+                        )}
                     >
                       Simulate No Update
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onclick={() => settingsDispatch(simulateSetState({ toastVisible: false, status: 'idle', currentVersion: '1.0.0-dev', updateInfo: null, progress: null, error: null, channel: 'stable' }))}
+                      onclick={() =>
+                        settingsDispatch(
+                          simulateSetState({
+                            toastVisible: false,
+                            status: 'idle',
+                            currentVersion: '1.0.0-dev',
+                            updateInfo: null,
+                            progress: null,
+                            error: null,
+                            channel: 'stable',
+                          }),
+                        )}
                     >
                       Reset
                     </Button>

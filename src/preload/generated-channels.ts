@@ -38,6 +38,7 @@ export const ALLOWED_CHANNELS = [
   'workspace:get-settings',
   'workspace:update-settings',
   'workspace:trigger-check',
+  'workspace:discover-repos',
   'agent:create',
   'agent:send-message',
   'agent:stop',

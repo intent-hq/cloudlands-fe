@@ -189,22 +189,6 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   // Give the home page components time to initialize
   await page.waitForTimeout(2_000);
 
-  // --- Handle first-run onboarding screen ("Choose your agent") ---
-  // On a fresh install with empty localStorage the app shows a ProviderStatusPanel
-  // instead of the normal home page.  Detect it and click through.
-  const onboardingHeading = page.locator('h1', { hasText: 'Choose your agent' });
-  const isOnboarding = await onboardingHeading.isVisible().catch(() => false);
-
-  if (isOnboarding) {
-    console.log('🆕 Onboarding screen detected — dismissing by clicking "Start using"');
-    const startBtn = page.locator('button', { hasText: 'Start using' }).first();
-    await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
-    await startBtn.click();
-    // Wait for the onboarding panel to disappear and the normal home page to load
-    await onboardingHeading.waitFor({ state: 'hidden', timeout: 10_000 });
-    console.log('✅ Onboarding dismissed');
-  }
-
   // --- Dismiss "Update check failed" toast if visible ---
   // The auto-updater may show an error toast that can interfere with UI interactions.
   try {
@@ -271,15 +255,15 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
 export interface CreateWorkspaceOptions {
   /** Absolute path to the git repo to use */
   repoPath: string;
-  /** Prompt text to type into the workspace initializer */
+  /** Prompt text to type into onboarding */
   prompt: string;
 }
 
 /**
- * Create a new workspace from the homepage using the CompactWorkspaceInitializer.
+ * Create a new workspace from the new onboarding flow.
  *
  * Strategy:
- *  1. Pre-seed localStorage with the repo path so CompactWorkspaceInitializer
+ *  1. Pre-seed sessionStorage/localStorage with the repo path so onboarding
  *     restores it on mount (no dropdown interaction needed)
  *  2. Mock electronAPI.invoke('dialog:open') as fallback (correct format)
  *  3. Focus the prompt textarea and type the prompt
@@ -292,40 +276,25 @@ export async function createWorkspaceWithPrompt(
 ): Promise<string> {
   const { repoPath, prompt } = options;
 
-  // Ensure we're on the home page before looking for the form
+  // Ensure we have a stable origin before seeding onboarding state.
   const baseUrl = await page.evaluate(() => window.location.origin);
   await page.goto(`${baseUrl}/`);
   await page.waitForLoadState('domcontentloaded');
 
-  // Clear ALL form-related localStorage keys to prevent stale state from a
-  // previous run.  CompactWorkspaceInitializer reads from TWO keys:
-  //   1. 'compact-workspace-initializer-state' (module-level, runs first)
-  //   2. 'workspace-initializer-last-repo' (onMount fallback, only if repoPath is empty)
-  // If key #1 has an old path the onMount fallback for key #2 never fires,
-  // so we must clear both and then seed both with the correct repo path.
+  // Clear form-related localStorage keys to prevent stale state from a
+  // previous run. The current onboarding flow reads workspace-prefill first,
+  // then falls back to workspace-initializer-last-repo.
   await page.evaluate((path) => {
     // Clear stale state
-    localStorage.removeItem('compact-workspace-initializer-state');
     localStorage.removeItem('workspace-initializer-last-repo');
+    localStorage.removeItem('onboarding-form-state');
 
     // Clear any saved prompt from a previous run so the editor starts empty.
-    // CompactWorkspaceInitializer restores `initialPrompt` from this
-    // sessionStorage key on mount, which causes duplicate text when
-    // keyboard.type() appends to the restored content.
-    sessionStorage.removeItem('compact-workspace-initializer-state-prompt');
+    sessionStorage.removeItem('onboarding-prompt');
 
-    // Seed key #1 — read at module scope by loadSavedFormState()
-    localStorage.setItem(
-      'compact-workspace-initializer-state',
-      JSON.stringify({
-        repoPath: path,
-        repoType: 'local',
-        isNewRepo: false,
-        isValidPath: true,
-      }),
-    );
+    sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: path, branch: 'main' }));
 
-    // Seed key #2 — read by onMount fallback
+    // Seed fallback read by ProjectPickerMessage.
     localStorage.setItem(
       'workspace-initializer-last-repo',
       JSON.stringify({
@@ -337,11 +306,33 @@ export async function createWorkspaceWithPrompt(
     );
   }, repoPath);
 
-  console.log(`📍 Seeded localStorage with repo path: ${repoPath}`);
+  console.log(`📍 Seeded onboarding prefill with repo path: ${repoPath}`);
 
-  // Reload so the component picks up the seeded localStorage values
-  await page.goto(`${baseUrl}/`);
+  await page.goto(`${baseUrl}/workspace/new`);
   await page.waitForLoadState('domcontentloaded');
+
+  const onboardingRoot = page.locator('[data-onboarding-step]').first();
+  await onboardingRoot.waitFor({ state: 'visible', timeout: 20_000 });
+
+  async function getOnboardingStep() {
+    return onboardingRoot.getAttribute('data-onboarding-step');
+  }
+
+  let onboardingStep = await getOnboardingStep();
+  if (onboardingStep === 'welcome') {
+    const letsGo = page.getByRole('button', { name: "Let's go" }).first();
+    await letsGo.waitFor({ state: 'visible', timeout: 20_000 });
+    await letsGo.click();
+    await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
+    onboardingStep = 'project';
+  }
+
+  if (onboardingStep === 'project') {
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Enter`);
+    await page.locator('[data-onboarding-step="configuring"]').waitFor({ timeout: 10_000 });
+  } else if (onboardingStep !== 'configuring') {
+    throw new Error(`Unexpected onboarding step before prompt entry: ${onboardingStep}`);
+  }
 
   // Mock the native folder picker dialog as a fallback in case the user
   // clicks the folder picker button. RepoSelector.svelte expects

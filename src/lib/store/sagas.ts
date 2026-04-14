@@ -38,6 +38,8 @@ import { transientUiSaga } from "./slices/transient-ui/sagas/transient-ui-saga";
 import { skillsSaga } from "./slices/skills/sagas/skills-saga";
 import { linearAuthSaga } from "./slices/linear-auth/sagas/linear-auth-saga";
 import { githubAuthSaga } from "./slices/github-auth/sagas/github-auth-saga";
+import { githubReposSaga } from "./slices/github-repos/sagas/github-repos-saga";
+import { githubRepoSearchSaga } from "./slices/github-repo-search/sagas/github-repo-search-saga";
 import { sentryAuthSaga } from "./slices/sentry-auth/sagas/sentry-auth-saga";
 import { contextSaga } from "./slices/context/sagas/context-saga";
 import { browserSaga } from "./slices/browser/sagas/browser-saga";
@@ -64,6 +66,7 @@ import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-sag
 import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
 import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
+import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 
 /**
  * All registered sagas.
@@ -110,6 +113,8 @@ export const sagas = {
   transientUiSaga,
   skillsSaga,
   githubAuthSaga,
+  githubReposSaga,
+  githubRepoSearchSaga,
   linearAuthSaga,
   sentryAuthSaga,
   setupScriptsSaga,
@@ -132,6 +137,7 @@ export const sagas = {
   agentIpcSaga,
   agentStreamSaga,
   agentSubscriptionUISaga,
+  agentAvailabilitySaga,
 } as const;
 
 // SagaName is defined in ./types.ts as an explicit string literal union to

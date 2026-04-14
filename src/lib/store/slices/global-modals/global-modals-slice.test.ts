@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   closeGitCredentialsModal,
   closeGitHubAuthModal,
-  closeNewSpaceModal,
   globalModalsReducer,
   initialState,
   openGitCredentialsModal,
   openGitHubAuthModal,
-  openNewSpaceModal,
 } from "./global-modals-slice";
 import {
   selectGitCredentialsError,
@@ -18,8 +16,6 @@ import {
   selectHasShownGitCredentialsModalForWorkspace,
   selectIsGitCredentialsModalOpen,
   selectIsGitHubAuthModalOpen,
-  selectIsNewSpaceModalOpen,
-  selectNewSpaceInitialRepo,
 } from "./global-modals-selectors";
 
 const pendingAuth = { reason: "create-pr" } as any;
@@ -31,8 +27,6 @@ const credentialsError = {
   cwd: "/repo",
   rawError: "fatal",
 };
-const initialRepo = { repoPath: "/repo", owner: "augmentcode", name: "intent" };
-
 describe("globalModalsReducer", () => {
   it("returns the initial state", () => {
     expect(globalModalsReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
@@ -64,14 +58,6 @@ describe("globalModalsReducer", () => {
     });
   });
 
-  it("opens and closes the new space modal", () => {
-    const opened = globalModalsReducer(initialState, openNewSpaceModal(initialRepo));
-    expect(opened.newSpace).toEqual({ open: true, initialRepo });
-
-    const closed = globalModalsReducer(opened, closeNewSpaceModal());
-    expect(closed.newSpace).toEqual({ open: false, initialRepo: undefined });
-  });
-
   it("replaces modal sub-state with the explicit set actions", () => {
     const githubState = { open: true, pendingAuth, modalKey: 3 };
     const gitCredentialsState = {
@@ -79,19 +65,13 @@ describe("globalModalsReducer", () => {
       error: credentialsError,
       shownForWorkspaceIds: { "ws-1": true, "ws-2": true },
     };
-    const newSpaceState = { open: true, initialRepo };
-
     const next = globalModalsReducer(
-      globalModalsReducer(
-        globalModalsReducer(initialState, openGitHubAuthModal(githubState.pendingAuth)),
-        openGitCredentialsModal(gitCredentialsState.error),
-      ),
-      openNewSpaceModal(newSpaceState.initialRepo),
+      globalModalsReducer(initialState, openGitHubAuthModal(githubState.pendingAuth)),
+      openGitCredentialsModal(gitCredentialsState.error),
     );
 
     expect(next.githubAuth.open).toBe(true);
     expect(next.gitCredentials.open).toBe(true);
-    expect(next.newSpace.open).toBe(true);
   });
 });
 
@@ -104,7 +84,6 @@ describe("global-modals selectors", () => {
         error: credentialsError,
         shownForWorkspaceIds: { "ws-1": true },
       },
-      newSpace: { open: true, initialRepo },
     },
   } as any;
 
@@ -116,8 +95,6 @@ describe("global-modals selectors", () => {
     expect(selectGitHubAuthModalKey.select(state)).toBe(2);
     expect(selectIsGitCredentialsModalOpen.select(state)).toBe(true);
     expect(selectGitCredentialsError.select(state)).toEqual(credentialsError);
-    expect(selectIsNewSpaceModalOpen.select(state)).toBe(true);
-    expect(selectNewSpaceInitialRepo.select(state)).toEqual(initialRepo);
   });
 
   it("tracks whether credentials have already been shown for a workspace", () => {

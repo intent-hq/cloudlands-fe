@@ -70,6 +70,7 @@ describe('Branded ID Types', () => {
     it('should validate WorkspaceId', () => {
       const uuid = uuidv4();
       expect(BrandedIds.isValidWorkspaceId(uuid)).toBe(true);
+      expect(BrandedIds.isValidWorkspaceId(BrandedIds.ROOT_WORKSPACE_ID)).toBe(true);
       expect(BrandedIds.isValidWorkspaceId('invalid')).toBe(false);
     });
 
@@ -119,6 +120,11 @@ describe('Branded ID Types', () => {
 
     it('should throw on invalid MessageId', () => {
       expect(() => BrandedIds.createMessageId('invalid')).toThrow();
+    });
+
+    it('should create root WorkspaceId for terminal context', () => {
+      const workspaceId = BrandedIds.createWorkspaceId(BrandedIds.ROOT_WORKSPACE_ID);
+      expect(workspaceId).toBe(BrandedIds.ROOT_WORKSPACE_ID);
     });
   });
 

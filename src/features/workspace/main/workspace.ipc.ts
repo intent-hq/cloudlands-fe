@@ -33,7 +33,14 @@ import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
 import { shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
-import { initRepoRegistry, getAllRepos, addRepo, removeRepo, syncRepos, clearRepos } from './repo-registry';
+import {
+  initRepoRegistry,
+  getAllRepos,
+  addRepo,
+  removeRepo,
+  syncRepos,
+  clearRepos,
+} from './repo-registry';
 import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
@@ -44,14 +51,13 @@ import { createHash } from 'crypto';
 import * as path from 'path';
 
 const require = createRequire(import.meta.url);
-import {
-  validateIPCString,
-} from '../../ipc/ipc-validation';
+import { validateIPCString } from '../../ipc/ipc-validation';
 import {
   isValidBranchName,
   getBranchNameValidationError,
 } from '../../../main/utils/workspace-validation';
 import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   createSafeValidatedHandler,
   registerValidationSchema,
@@ -153,10 +159,12 @@ export function initializeChangeDetectorManager() {
       const { workspaceId, diffChunk } = data;
 
       // Broadcast workspace:file-changes
-      mainDispatch(workspaceFileChanges({
-        workspaceId,
-        diffChunk,
-      }));
+      mainDispatch(
+        workspaceFileChanges({
+          workspaceId,
+          diffChunk,
+        }),
+      );
 
       // Also send to renderer processes for this workspace
       sendToWorkspaceWindows(workspaceId, 'workspace-changes', {
@@ -368,12 +376,13 @@ export function setupWorkspaceIPC(): void {
       async (event) => {
         // Determine workspace ID from the sender window
         const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        const workspaceId = senderWindow
-          ? getFocusedWindowWorkspaceId()
-          : undefined;
+        const workspaceId = senderWindow ? getFocusedWindowWorkspaceId() : undefined;
 
         if (!workspaceId) {
-          return resultToCommandResponse({ ok: false, error: 'No active workspace for this window' });
+          return resultToCommandResponse({
+            ok: false,
+            error: 'No active workspace for this window',
+          });
         }
 
         const workspace = await protocolAdapter.getWorkspace(workspaceId);
@@ -460,9 +469,8 @@ export function setupWorkspaceIPC(): void {
 
           // Stop file tracking storage cleanup timer
           try {
-            const { FileTrackingStorage } = await import(
-              '../../file-tracking/main/file-tracking-storage'
-            );
+            const { FileTrackingStorage } =
+              await import('../../file-tracking/main/file-tracking-storage');
             // Cleanup the specific workspace instance to stop cleanup timers
             FileTrackingStorage.cleanupWorkspace(id);
             logger.debug('[WorkspaceIPC] File tracking storage cleanup', { workspaceId: id });
@@ -474,9 +482,8 @@ export function setupWorkspaceIPC(): void {
 
           // Clean up file tracking service (force-save pending changes, stop timers, remove from cache)
           try {
-            const { cleanupGitIntegration } = await import(
-              '../../file-tracking/main/file-tracking.ipc'
-            );
+            const { cleanupGitIntegration } =
+              await import('../../file-tracking/main/file-tracking.ipc');
             await cleanupGitIntegration(id);
             logger.debug('[WorkspaceIPC] File tracking service cleanup', { workspaceId: id });
           } catch (error) {
@@ -561,9 +568,8 @@ export function setupWorkspaceIPC(): void {
 
           // Clean up notification service
           try {
-            const { disposeNotificationService } = await import(
-              '../../notifications/main/notification.service'
-            );
+            const { disposeNotificationService } =
+              await import('../../notifications/main/notification.service');
             disposeNotificationService(id);
             logger.debug('[WorkspaceIPC] Notification service cleanup', { workspaceId: id });
           } catch (error) {
@@ -730,9 +736,12 @@ export function setupWorkspaceIPC(): void {
               workspaceId: id,
             });
           } else if (isRemote) {
-            logger.info('[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)', {
-              workspaceId: id,
-            });
+            logger.info(
+              '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)',
+              {
+                workspaceId: id,
+              },
+            );
           }
 
           // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
@@ -909,12 +918,16 @@ export function setupWorkspaceIPC(): void {
                           content: markdownContent,
                           source: 'external',
                         });
-                        sendToWorkspaceWindows(workspace.id, `note:content-changed:${workspace.id}`, {
-                          noteId,
-                          content: markdownContent,
-                          source: 'external',
-                          workspaceId: workspace.id,
-                        });
+                        sendToWorkspaceWindows(
+                          workspace.id,
+                          `note:content-changed:${workspace.id}`,
+                          {
+                            noteId,
+                            content: markdownContent,
+                            source: 'external',
+                            workspaceId: workspace.id,
+                          },
+                        );
                       } catch (err) {
                         logger.warn('[WorkspaceIPC] Failed to read synced note for UI refresh', {
                           noteId,
@@ -925,10 +938,12 @@ export function setupWorkspaceIPC(): void {
 
                     // Handle agent list refresh
                     if (shouldRefreshAgents) {
-                      mainDispatch(agentSessionUpdated({
-                        workspaceId: workspace.id,
-                        sessionId: '',
-                      }));
+                      mainDispatch(
+                        agentSessionUpdated({
+                          workspaceId: workspace.id,
+                          sessionId: '',
+                        }),
+                      );
                     }
                   };
 
@@ -945,42 +960,52 @@ export function setupWorkspaceIPC(): void {
                     }, 500);
                   };
 
-                  syncService.on('sync:file-changed', ({ path: relativePath, action }: { path: string; action: string }) => {
-                    // ── Note files: notes/{noteId}.md ──
-                    if (relativePath.startsWith('notes/') && relativePath.endsWith('.md') && !relativePath.includes('.meta/')) {
-                      const noteId = relativePath.replace('notes/', '').replace('.md', '');
-                      if (action === 'delete') {
-                        pendingNoteDeletes.add(noteId);
-                        pendingNoteRefreshes.delete(noteId); // Don't refresh a deleted note
-                      } else {
-                        pendingNoteRefreshes.add(noteId);
-                        pendingNoteDeletes.delete(noteId); // Create/modify overrides pending delete
-                      }
-                      scheduleSyncFlush();
-                      return;
-                    }
-
-                    // ── Note metadata: notes/.meta/{noteId}.*.json ──
-                    // When task metadata, comments, etc. change, refresh the parent note
-                    if (relativePath.startsWith('notes/.meta/') && relativePath.endsWith('.json')) {
-                      const fileName = path.basename(relativePath);
-                      // Extract noteId: e.g. "abc-123.comments.json" → "abc-123"
-                      const dotIndex = fileName.indexOf('.');
-                      if (dotIndex > 0) {
-                        const noteId = fileName.substring(0, dotIndex);
-                        pendingNoteRefreshes.add(noteId);
+                  syncService.on(
+                    'sync:file-changed',
+                    ({ path: relativePath, action }: { path: string; action: string }) => {
+                      // ── Note files: notes/{noteId}.md ──
+                      if (
+                        relativePath.startsWith('notes/') &&
+                        relativePath.endsWith('.md') &&
+                        !relativePath.includes('.meta/')
+                      ) {
+                        const noteId = relativePath.replace('notes/', '').replace('.md', '');
+                        if (action === 'delete') {
+                          pendingNoteDeletes.add(noteId);
+                          pendingNoteRefreshes.delete(noteId); // Don't refresh a deleted note
+                        } else {
+                          pendingNoteRefreshes.add(noteId);
+                          pendingNoteDeletes.delete(noteId); // Create/modify overrides pending delete
+                        }
                         scheduleSyncFlush();
+                        return;
                       }
-                      return;
-                    }
 
-                    // ── Agent files: agents/{agentId}.json ──
-                    if (relativePath.startsWith('agents/') && relativePath.endsWith('.json')) {
-                      pendingAgentRefresh = true;
-                      scheduleSyncFlush();
-                      return;
-                    }
-                  });
+                      // ── Note metadata: notes/.meta/{noteId}.*.json ──
+                      // When task metadata, comments, etc. change, refresh the parent note
+                      if (
+                        relativePath.startsWith('notes/.meta/') &&
+                        relativePath.endsWith('.json')
+                      ) {
+                        const fileName = path.basename(relativePath);
+                        // Extract noteId: e.g. "abc-123.comments.json" → "abc-123"
+                        const dotIndex = fileName.indexOf('.');
+                        if (dotIndex > 0) {
+                          const noteId = fileName.substring(0, dotIndex);
+                          pendingNoteRefreshes.add(noteId);
+                          scheduleSyncFlush();
+                        }
+                        return;
+                      }
+
+                      // ── Agent files: agents/{agentId}.json ──
+                      if (relativePath.startsWith('agents/') && relativePath.endsWith('.json')) {
+                        pendingAgentRefresh = true;
+                        scheduleSyncFlush();
+                        return;
+                      }
+                    },
+                  );
 
                   // After a full sync completes, flush all pending events immediately
                   // to ensure the UI reflects the latest state.
@@ -1139,14 +1164,17 @@ export function setupWorkspaceIPC(): void {
               // Initialize workspace scripts: clean stale PIDs and start autoStart services
               const scriptsInitPromise = (async () => {
                 try {
-                  const { getScriptProcessManager } = await import(
-                    '../../scripts/main/script-process-manager'
-                  );
+                  const { getScriptProcessManager } =
+                    await import('../../scripts/main/script-process-manager');
                   const scriptsWorkspacePath = workspace.worktreePath || workspace.repositoryPath;
                   if (!scriptsWorkspacePath) return;
 
                   const scriptsMetadataPath = WorkspaceConfig.paths.metadata(id);
-                  const manager = getScriptProcessManager(id, scriptsWorkspacePath, scriptsMetadataPath);
+                  const manager = getScriptProcessManager(
+                    id,
+                    scriptsWorkspacePath,
+                    scriptsMetadataPath,
+                  );
 
                   // Clean up stale PIDs from previous sessions
                   manager.cleanupStalePids();
@@ -1227,7 +1255,9 @@ export function setupWorkspaceIPC(): void {
               await notesService.ensureSpecExists(id as WorkspaceId);
               logger.info('Ensured spec note exists for workspace', { workspaceId: id });
             } catch (error) {
-              logger.error('Failed to ensure spec note exists', error as Error, { workspaceId: id });
+              logger.error('Failed to ensure spec note exists', error as Error, {
+                workspaceId: id,
+              });
             }
           })();
 
@@ -1371,9 +1401,8 @@ export function setupWorkspaceIPC(): void {
 
         // Stop file tracking storage cleanup timer
         try {
-          const { FileTrackingStorage } = await import(
-            '../../file-tracking/main/file-tracking-storage'
-          );
+          const { FileTrackingStorage } =
+            await import('../../file-tracking/main/file-tracking-storage');
           FileTrackingStorage.cleanupWorkspace(validatedId);
           logger.debug('File tracking storage cleanup before delete', {
             workspaceId: validatedId,
@@ -1386,9 +1415,8 @@ export function setupWorkspaceIPC(): void {
 
         // Clean up file tracking service (force-save, stop timers, remove from cache)
         try {
-          const { cleanupGitIntegration } = await import(
-            '../../file-tracking/main/file-tracking.ipc'
-          );
+          const { cleanupGitIntegration } =
+            await import('../../file-tracking/main/file-tracking.ipc');
           await cleanupGitIntegration(validatedId);
           logger.debug('File tracking service cleanup before delete', {
             workspaceId: validatedId,
@@ -1410,9 +1438,8 @@ export function setupWorkspaceIPC(): void {
 
         // Clean up notification service
         try {
-          const { disposeNotificationService } = await import(
-            '../../notifications/main/notification.service'
-          );
+          const { disposeNotificationService } =
+            await import('../../notifications/main/notification.service');
           disposeNotificationService(validatedId);
           logger.debug('Notification service cleanup before delete', {
             workspaceId: validatedId,
@@ -1439,7 +1466,9 @@ export function setupWorkspaceIPC(): void {
         // Stop all running scripts and dispose ScriptProcessManager before delete
         try {
           await disposeScriptProcessManager(validatedId);
-          logger.debug('Script process manager disposed before delete', { workspaceId: validatedId });
+          logger.debug('Script process manager disposed before delete', {
+            workspaceId: validatedId,
+          });
         } catch (error) {
           logger.warn('Failed to dispose script process manager before delete', error as Error, {
             workspaceId: validatedId,
@@ -2076,8 +2105,7 @@ export function setupWorkspaceIPC(): void {
                   .filter((ws: any) => ws.repositoryPath)
                   .map((ws: any) => ({
                     path: ws.repositoryPath,
-                    name:
-                      ws.repositoryName || ws.repositoryPath.split('/').pop() || 'Unknown',
+                    name: ws.repositoryName || ws.repositoryPath.split('/').pop() || 'Unknown',
                     owner: ws.repositoryOwner,
                   }));
                 if (reposToSync.length > 0) {
@@ -2210,6 +2238,18 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
+  // Discover repos from editors, CLI agents, and filesystem
+  ipcMain.handle('workspace:discover-repos', async () => {
+    try {
+      const { discoverRepos } = await import('./repo-discovery.service');
+      const repos = await discoverRepos();
+      return { success: true, data: repos };
+    } catch (error) {
+      logger.error('Failed to discover repos', error as Error);
+      return { success: false, data: [] };
+    }
+  });
+
   // Get editor selection
   ipcMain.handle(
     EDITOR_CHANNELS.GET_SELECTION,
@@ -2297,6 +2337,10 @@ export function setupWorkspaceIPC(): void {
       async (_, validated) => {
         try {
           const { workspaceId, pattern, limit } = validated;
+
+          if (workspaceId === ROOT_WORKSPACE_ID || workspaceId === 'new') {
+            return { files: [], folders: [] };
+          }
 
           const { promises: fs } = require('fs');
           const path = require('path');
@@ -2909,9 +2953,8 @@ async function initializeGitIntegration(
   }
 
   // Create new git integration
-  const { GitIntegrationService } = await import(
-    '../../file-tracking/main/git-integration.service'
-  );
+  const { GitIntegrationService } =
+    await import('../../file-tracking/main/git-integration.service');
   const { FileTrackingService } = await import('../../file-tracking/main/file-tracking.service');
   const { gitService } = await import('../../git/main/git.service');
 

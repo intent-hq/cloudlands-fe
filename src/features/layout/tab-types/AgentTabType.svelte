@@ -11,7 +11,10 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { subscribeToAgent } from '$features/agent/browser';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentById,
+    selectInitialAgentId,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
@@ -51,6 +54,12 @@
 
   // Reactive store subscription for specialist names
   const specialists$ = selectSpecialists();
+
+  // Check if this agent is the initial workspace agent (created during onboarding)
+  const initialAgentId$ = selectInitialAgentId(workspaceId);
+  const isInitialWorkspaceAgent = $derived(
+    !!(workspaceId && tab.agentId && $initialAgentId$ === tab.agentId),
+  );
 
   // Get agent model from session, falling back to $workspace default
 
@@ -219,6 +228,7 @@
           {agentModel}
           {isActive}
           {isPanelFocused}
+          {isInitialWorkspaceAgent}
         />
       </div>
     {/key}

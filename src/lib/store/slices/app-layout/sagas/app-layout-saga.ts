@@ -4,7 +4,6 @@ import { selectFocusedPanelId, selectPanels, selectAllTabs, selectPanel } from "
 import { openTab, openTabInAdjacentOrSplit, closeActiveTab, reopenClosedTab, setActiveTab, focusPanel, selectPreviousTab, selectNextTab, updateTabBrowserUrl } from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { getFileExtension, track } from "$lib/services/analytics";
-import { openNewSpaceModal, type NewSpaceInitialRepo, } from "$lib/store/slices/global-modals/global-modals-slice";
 import { takeEveryFromElectronChannel, takeEveryFromWindowEvent, } from "$lib/store/utils/ipc-channel";
 import { isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
 import { watchDockNavigationForWorkspaceSaga } from "./dock-navigation-saga";
@@ -26,6 +25,7 @@ import { invoke } from "$lib/electron-bridge";
 import { selectActiveWorkspace, selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { selectNoteById } from "../../workspace-notes/workspace-notes-selectors";
 import { selectAgentById } from "../../workspace-agents/workspace-agents-selectors";
+import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
 const workspaceWindowTasks = new Map<string, Task[]>();
 type BrowserOpenTabEvent = {
     url: string;
@@ -37,8 +37,10 @@ type WorkspaceCreateForRepoEvent = {
     workspaceId?: string;
     workspaceTitle?: string;
 };
-type OpenNewSpaceModalEvent = {
-    initialRepo?: NewSpaceInitialRepo;
+type OpenNewSpaceOnboardingEvent = {
+    initialRepo?: {
+        repoPath?: string;
+    };
 };
 type WorkspaceShowAgentDetail = {
     agentId?: string;
@@ -293,8 +295,8 @@ export function* retroactiveAppLayoutMountCheckSaga() {
 }
 export function* watchNavigateSaga() {
     yield* takeEveryFromElectronChannel<string>("navigate", function* (path) {
-        if (path === "/?create=true") {
-            yield* put(openNewSpaceModal(undefined));
+        if (path === "/?create=true" || path === "/workspace/new") {
+            yield* put(setShowCreateModal(true));
             return;
         }
         yield* call(goto, path);
@@ -459,20 +461,24 @@ export function* watchMenuResetZoomSaga() {
 export function* watchWorkspaceCreateForRepoSaga() {
     yield* takeEveryFromWindowEvent<WorkspaceCreateForRepoEvent>("workspace:create-for-repo", function* (data) {
         const currentWorkspace = yield* selectActiveWorkspace.effect();
-        yield* put(openNewSpaceModal(data.repositoryPath
-            ? {
+        if (data.repositoryPath) {
+            sessionStorage.setItem("workspace-prefill", JSON.stringify({
                 repoPath: data.repositoryPath,
                 environmentType: currentWorkspace?.environmentConfig?.type,
                 sshConfig: currentWorkspace?.environmentConfig?.ssh,
                 previousWorkspaceId: data.workspaceId,
                 previousWorkspaceTitle: data.workspaceTitle,
-            }
-            : undefined));
+            }));
+        }
+        yield* put(setShowCreateModal(true));
     });
 }
-export function* watchOpenNewSpaceModalSaga() {
-    yield* takeEveryFromWindowEvent<OpenNewSpaceModalEvent>("app:open-new-space-modal", function* (data) {
-        yield* put(openNewSpaceModal(data.initialRepo));
+export function* watchOpenNewSpaceOnboardingSaga() {
+    yield* takeEveryFromWindowEvent<OpenNewSpaceOnboardingEvent>("app:open-new-space-modal", function* (data) {
+        if (data.initialRepo?.repoPath) {
+            sessionStorage.setItem("workspace-prefill", JSON.stringify({ repoPath: data.initialRepo.repoPath }));
+        }
+        yield* put(setShowCreateModal(true));
     });
 }
 /**
@@ -589,7 +595,7 @@ export function* appLayoutSaga() {
     yield* fork(watchMenuZoomOutSaga);
     yield* fork(watchMenuResetZoomSaga);
     yield* fork(watchWorkspaceCreateForRepoSaga);
-    yield* fork(watchOpenNewSpaceModalSaga);
+    yield* fork(watchOpenNewSpaceOnboardingSaga);
     yield* fork(watchWorkspaceWindowEventLifecyclesSaga);
     yield* fork(retroactiveAppLayoutMountCheckSaga);
     yield* fork(specPanelSaga);

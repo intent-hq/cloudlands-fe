@@ -443,10 +443,14 @@ export class TerminalAdapter {
 
       // Cmd+J (Mac) / Ctrl+J (Win/Linux) - toggle terminal overlay
       // Dispatch a custom event that the overlay can listen for, since xterm captures
-      // keyboard events before they can bubble to document-level handlers
+      // keyboard events before they can bubble to document-level handlers.
+      // Include workspaceId so only the matching overlay (workspace vs root) reacts —
+      // both are mounted simultaneously on workspace pages.
       if (isMod && event.key === 'j' && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:toggle-overlay'));
+          window.dispatchEvent(new CustomEvent('terminal:toggle-overlay', {
+            detail: { workspaceId: this.workspaceId },
+          }));
         }
         return false;
       }
@@ -467,7 +471,9 @@ export class TerminalAdapter {
       // instead of the default "new tab" behavior
       if (isMod && (event.key === 't' || event.key === 'T') && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:create-new'));
+          window.dispatchEvent(new CustomEvent('terminal:create-new', {
+            detail: { workspaceId: this.workspaceId },
+          }));
         }
         return false;
       }
@@ -475,7 +481,9 @@ export class TerminalAdapter {
       // Cmd+W (Mac) / Ctrl+W (Win/Linux) - close active terminal tab
       if (isMod && (event.key === 'w' || event.key === 'W') && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:close-active'));
+          window.dispatchEvent(new CustomEvent('terminal:close-active', {
+            detail: { workspaceId: this.workspaceId },
+          }));
         }
         return false;
       }
@@ -497,9 +505,13 @@ export class TerminalAdapter {
       ) {
         if (event.type === 'keydown') {
           if (event.shiftKey || event.key === '~') {
-            window.dispatchEvent(new CustomEvent('terminal:create-new'));
+            window.dispatchEvent(new CustomEvent('terminal:create-new', {
+              detail: { workspaceId: this.workspaceId },
+            }));
           } else {
-            window.dispatchEvent(new CustomEvent('terminal:toggle-overlay'));
+            window.dispatchEvent(new CustomEvent('terminal:toggle-overlay', {
+              detail: { workspaceId: this.workspaceId },
+            }));
           }
         }
         return false;

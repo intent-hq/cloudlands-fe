@@ -34,6 +34,7 @@
     type TerminalTab,
   } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';
@@ -90,6 +91,18 @@
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
+  const isRealWorkspace = $derived(
+    !!workspaceId &&
+      workspaceId !== 'new' &&
+      workspaceId !== ROOT_WORKSPACE_ID &&
+      !workspaceId.startsWith('optimistic-'),
+  );
+  // During onboarding (workspaceId === 'new') terminals are created under
+  // ROOT_WORKSPACE_ID ('__root__') on the main process side. Pass this
+  // effective ID to the Terminal component so it connects to the correct PTY.
+  const terminalWorkspaceId = $derived(
+    workspaceId === 'new' ? ROOT_WORKSPACE_ID : (workspaceId ?? ROOT_WORKSPACE_ID),
+  );
 
   // UI state
   let isResizing = $state(false);
@@ -313,11 +326,11 @@
 
   // Initialize scripts store at overlay level (persists across panel open/close)
   $effect(() => {
-    if (workspaceId) {
+    if (isRealWorkspace && workspaceId) {
       untrack(() => dispatch(initializeScripts(workspaceId)));
     }
     return () => {
-      if (workspaceId) dispatch(disposeScripts(workspaceId));
+      if (isRealWorkspace && workspaceId) dispatch(disposeScripts(workspaceId));
     };
   });
 
@@ -326,7 +339,7 @@
     if (typeof document === 'undefined') return;
 
     const scriptCount = $scriptEntries$.length;
-    const hasTerminals = workspaceId && ($terminals.length > 0 || scriptCount > 0);
+    const hasTerminals = isRealWorkspace && ($terminals.length > 0 || scriptCount > 0);
     const terminalIsOpen = $isOpen && $activeTerminalId;
     const terminalHeight = $height;
 
@@ -350,23 +363,37 @@
     };
   });
 
-  // Listen for custom events from terminal adapter (when terminal has focus)
+  // Listen for custom events from terminal adapter (when terminal has focus).
+  // RootQuakeTerminalOverlay listens for the same events on `window`, so we must
+  // ignore events whose detail.workspaceId belongs to a different overlay context;
+  // otherwise pressing Ctrl+` in a workspace terminal also toggles the root overlay.
   $effect(() => {
     if (typeof window === 'undefined') return;
 
-    const wsId = workspaceId;
+    const wsId = isRealWorkspace ? workspaceId : null;
+    if (!wsId) return;
 
-    function handleToggle() {
+    function isForThisWorkspace(event: Event): boolean {
+      const detail = (event as CustomEvent<{ workspaceId?: string }>).detail;
+      // Legacy callers without a detail target the workspace overlay by default.
+      if (!detail || detail.workspaceId === undefined) return true;
+      return detail.workspaceId === wsId;
+    }
+
+    function handleToggle(event: Event) {
+      if (!isForThisWorkspace(event)) return;
       if (wsId) {
         dispatch(toggleTerminalOverlay(wsId));
       }
     }
 
-    function handleCreateNew() {
+    function handleCreateNew(event: Event) {
+      if (!isForThisWorkspace(event)) return;
       createNewTerminal();
     }
 
-    function handleCloseActive() {
+    function handleCloseActive(event: Event) {
+      if (!isForThisWorkspace(event)) return;
       if ($activeTerminalId) {
         closeTerminal($activeTerminalId);
       }
@@ -672,7 +699,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if workspaceId}
+{#if isRealWorkspace && workspaceId}
   <!-- Terminal Overlay Container - rendered within layout's terminal-overlay-container -->
   <!-- tabindex=-1 allows programmatic focus for keyboard shortcut routing -->
   <div
@@ -926,19 +953,19 @@
               <!-- Terminal Content -->
               <div class="flex-1 overflow-hidden">
                 {#key $activeTerminalId}
-                  <Terminal terminalId={$activeTerminalId} {workspaceId} class="h-full w-full" />
+                  <Terminal terminalId={$activeTerminalId} workspaceId={terminalWorkspaceId} class="h-full w-full" />
                 {/key}
               </div>
             {/if}
 
             <!-- Setup Script Banner - horizontal bar at bottom -->
-            {#if workspaceId}
+            {#if isRealWorkspace}
               <SetupScriptBanner {workspaceId} />
             {/if}
           </div>
 
           <!-- Scripts Sidebar -->
-          {#if workspaceId}
+          {#if isRealWorkspace}
             <TerminalSidebar
               {workspaceId}
               {selectedScriptId}
@@ -1103,7 +1130,7 @@
 
       <!-- Right Actions -->
       <div class="flex items-center gap-1">
-        {#if $scriptEntries$.length === 0}
+        {#if isRealWorkspace && $scriptEntries$.length === 0}
           <Button
             variant="ghost-light"
             size="sm"
@@ -1119,6 +1146,7 @@
           </Button>
         {/if}
 
+        {#if isRealWorkspace}
         <TooltipRich
           side="top"
           align="end"
@@ -1197,6 +1225,7 @@
             </div>
           {/snippet}
         </TooltipRich>
+        {/if}
 
         <!-- Collapse/Expand Toggle -->
         <Button

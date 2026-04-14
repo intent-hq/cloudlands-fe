@@ -7,10 +7,7 @@
    */
 
   import { setContext } from 'svelte';
-  import {
-    getPanelLayoutManager,
-    type PanelTab,
-  } from '$features/layout/panel-layout-adapter';
+  import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
   import {
     createPanelKeyboardShortcuts,
     registerPanelKeyboardShortcuts,
@@ -28,7 +25,10 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { agentService } from '$features/agent/agent-ipc-bridge';
-  import { selectIsCollapsed, selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    selectIsCollapsed,
+    selectSidebarSide,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { NoteId } from '$shared/types/branded-ids';
   import { updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
@@ -82,11 +82,15 @@
 
   $effect(() => {
     if ($restoreStatus$ !== 'empty' || $allTabs$.length > 0) {
-      untrack(() => { emptyLayoutLoadingTimedOut = false; });
+      untrack(() => {
+        emptyLayoutLoadingTimedOut = false;
+      });
       return;
     }
 
-    untrack(() => { emptyLayoutLoadingTimedOut = false; });
+    untrack(() => {
+      emptyLayoutLoadingTimedOut = false;
+    });
 
     const timeoutId = window.setTimeout(() => {
       emptyLayoutLoadingTimedOut = true;
@@ -100,7 +104,7 @@
   const shouldRenderPanelContainer = $derived(
     $restoreStatus$ === 'restored' ||
       $restoreStatus$ === 'invalid' ||
-      ($restoreStatus$ === 'empty' && ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut))
+      ($restoreStatus$ === 'empty' && ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut)),
   );
 
   // Get or create the panel layout manager for this workspace (action methods only)
@@ -346,10 +350,12 @@
         oldName,
         newName,
         () => {
-          getReduxStore().dispatch(updateAgentSessionFields(agentId, {
-            name: newName,
-            nameExplicitlySet: true,
-          } as any));
+          getReduxStore().dispatch(
+            updateAgentSessionFields(agentId, {
+              name: newName,
+              nameExplicitlySet: true,
+            } as any),
+          );
           layoutManager.updateTabTitle(tab.id, newName);
           // Save the session to persist the name change
           agentService.saveSession(agentId, workspaceId, true);
@@ -357,10 +363,12 @@
         () => {
           // Undo: restore old name with nameExplicitlySet so persistence allows the
           // disk write (without it, the preservation logic blocks the revert).
-          getReduxStore().dispatch(updateAgentSessionFields(agentId, {
-            name: oldName,
-            nameExplicitlySet: true,
-          } as any));
+          getReduxStore().dispatch(
+            updateAgentSessionFields(agentId, {
+              name: oldName,
+              nameExplicitlySet: true,
+            } as any),
+          );
           layoutManager.updateTabTitle(tab.id, oldName);
           agentService.saveSession(agentId, workspaceId, true);
         },
@@ -587,10 +595,11 @@
       const panelIds = selectPanelIds.select(getReduxStore().getState(), workspaceId);
       if (panelIds.length > 1) {
         e.preventDefault();
-        const currentFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
-        const currentIndex = currentFocusedId
-          ? panelIds.indexOf(currentFocusedId)
-          : -1;
+        const currentFocusedId = selectFocusedPanelId.select(
+          getReduxStore().getState(),
+          workspaceId,
+        );
+        const currentIndex = currentFocusedId ? panelIds.indexOf(currentFocusedId) : -1;
 
         // Determine direction: ] or PageDown = next, [ or PageUp = previous
         const isNext = e.key === ']' || e.key === '}' || e.key === 'PageDown';
@@ -832,10 +841,7 @@
             // Create a new agent session first, then open the tab
             const agentName = tab.newAgentName || tab.title || `Agent ${panelIndex + 1}`;
             try {
-              const workspace = selectWorkspaceById.select(
-                getReduxStore().getState(),
-                workspaceId,
-              );
+              const workspace = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
               if (workspace) {
                 const newSession = await agentService.createSession(workspace, {
                   name: agentName,
@@ -1056,7 +1062,8 @@
     // Listen for browser tab list requests from main process
     const unsubBrowserListTabs = listenSync('browser:list-tabs-request', () => {
       // Collect all browser tabs from the panel layout
-      const browserTabs = selectAllTabs.select(getReduxStore().getState(), workspaceId)
+      const browserTabs = selectAllTabs
+        .select(getReduxStore().getState(), workspaceId)
         .filter((t) => t.type === 'browser')
         .map((t) => ({
           tabId: t.id,
@@ -1127,10 +1134,6 @@
         onCreateTerminal={handleCreateTerminal}
         {onOpenBrowser}
       />
-    {:else}
-      <div class="flex items-center justify-center h-full text-subtle">
-        <p>Loading layout...</p>
-      </div>
     {/if}
   </div>
 </div>

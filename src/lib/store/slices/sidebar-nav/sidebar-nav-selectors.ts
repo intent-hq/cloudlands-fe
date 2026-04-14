@@ -38,6 +38,10 @@ export const selectOnboardingActive = createSelector(
   (state) => state.sidebarNav.onboardingActive,
 );
 
+export const selectShowCreateModal = createSelector(
+  (state) => state.sidebarNav.showCreateModal,
+);
+
 export const selectDraftPrompt = createSelector(
   (state) => state.sidebarNav.draftPrompt,
 );

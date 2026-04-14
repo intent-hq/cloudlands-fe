@@ -221,6 +221,8 @@ export interface Workspace {
   worktreePath?: string;
   scope?: string; // Optional relative path within worktreePath (e.g., "apps/web")
   skipWorktree?: boolean; // If true, workspace was created without a git worktree
+  /** Shell script that was run during workspace creation */
+  setupScript?: string;
   isRemote?: boolean; // Added for remote workspace support
   diffs?: DiffChunk[];
   diffSummary?: WorkspaceDiffSummary;
@@ -301,7 +303,10 @@ export interface FirstVisitState {
 
 // FileChange is now defined in lib/store/slices/workspace/utils/change-detector.types.ts
 // Re-export for convenience
-import type { FileChange, FileChangeAction } from '../lib/store/slices/workspace/utils/change-detector.types';
+import type {
+  FileChange,
+  FileChangeAction,
+} from '../lib/store/slices/workspace/utils/change-detector.types';
 export type { FileChange, FileChangeAction };
 
 export interface ChangeSet {
@@ -1295,6 +1300,7 @@ export interface CreateWorkspaceRequest {
     behaviorPrompt?: string; // Custom behavior instructions (from team coordinator or specialist)
     provider?: string; // ACP provider ID (auggie, claude-code, codex)
     contextReferences?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     metadata?: Record<string, any>;
   };
   /** Linear issue to link to this workspace */

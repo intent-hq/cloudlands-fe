@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   /**
    * Workspace Detail Page - Unified State Version
    *
@@ -8,10 +8,10 @@
    */
 
   import { page } from '$app/state';
+
   import { onMount, onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import type { AgentSession } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { toast } from 'svelte-sonner';
 
@@ -54,6 +54,7 @@
   } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
+    clearActiveWorkspace,
     loadWorkspacesRequested,
     setActiveWorkspaceId,
     setWorkspaceEntity,
@@ -73,6 +74,7 @@
   import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { setOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
@@ -85,6 +87,9 @@
   import { PanelLayout } from '$lib/components/layout/panel-system';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
+  // Onboarding
+  import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
+
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
@@ -93,7 +98,6 @@
   import { selectSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { setSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
-    addAgent,
     createAgentRequested,
     createAgentWithSpecialistRequested,
     delegateTaskRequested,
@@ -108,7 +112,6 @@
     selectInitialAgentConfig,
     selectInitialAgentConfigProcessed,
     selectInitialAgentId,
-    selectAllWorkspaceAgents,
   } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
@@ -134,6 +137,17 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let draftPrompt = $state<string | null>(null);
 
+  // Fade-in transition for fresh workspace creation (crossfade with onboarding page)
+  // @ts-expect-error - Svelte 5 rune scoping issue
+  let isFreshCreation = $state(false);
+
+  // Crossfade transition state: onboardingHoldActive keeps onboarding visible
+  // during the fade-out after workspaceId changes from 'new' to a real ID.
+  // showOnboarding is derived after workspaceId is defined (see below).
+  // @ts-expect-error - Svelte 5 rune scoping issue
+  let onboardingHoldActive = $state(false);
+  // @ts-expect-error - Svelte 5 rune scoping issue
+  let onboardingFadingOut = $state(false);
   // Create file dialog state
   // @ts-expect-error - Svelte 5 rune scoping issue
   let createFileDialogOpen = $state(false);
@@ -187,6 +201,11 @@
   // page.params might be undefined during route transitions
   let workspaceId = $derived((page.params?.id as string) ?? '');
 
+  // Show the full-page workspace onboarding whenever the route is /workspace/new
+  // or while the crossfade hold is active after workspace creation.
+
+  const showOnboarding = $derived(workspaceId === 'new' || onboardingHoldActive);
+
   // Reactive writable store that mirrors workspaceId so the Redux selector
   // re-evaluates whenever the route param changes.
   const workspaceIdStore = writable(workspaceId);
@@ -217,8 +236,57 @@
     workspaceId === 'new' || workspaceId?.startsWith('optimistic-'),
   );
 
+  // ============================================================================
+  // Onboarding Derived State (needs workspaceId to be defined)
+  // ============================================================================
+  const isOnboarding = $derived(workspaceId === 'new');
+
+  // When workspaceId changes from 'new' to a real ID, start crossfade transition
   $effect(() => {
-    if (workspaceId) {
+    if (workspaceId !== 'new' && onboardingHoldActive) {
+      // Start fade-out animation on the onboarding content
+      onboardingFadingOut = true;
+      // After the collapse/fade animation completes, remove onboarding from DOM
+      setTimeout(() => {
+        onboardingHoldActive = false;
+        onboardingFadingOut = false;
+      }, 500);
+    }
+  });
+
+  // NOTE: No auto-advance past welcome step. Users should always see step 1
+  // and explicitly click to proceed, so they can review agent setup.
+
+  // Track previous showOnboarding state to detect onboarding→workspace transition
+  // @ts-expect-error - Svelte 5 rune scoping issue
+  let prevShowOnboarding = $state(true);
+
+  // Expand the sidebar when transitioning from onboarding to workspace.
+  // The sidebar starts collapsed (width 0) during onboarding via initiallyCollapsed.
+  // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
+  // the toggle event to animate it open after workspace creation.
+  $effect(() => {
+    if (prevShowOnboarding && !showOnboarding) {
+      // Onboarding just ended — expand sidebar with animation
+      window.dispatchEvent(
+        new CustomEvent('workspace:toggle-left-sidebar', {
+          detail: { collapsed: false, restoreWidth: 350 },
+        }),
+      );
+    }
+    prevShowOnboarding = showOnboarding;
+  });
+
+  // Hide the left nav bar and top bar workspace controls during onboarding
+  $effect(() => {
+    dispatch(setOnboardingActive(showOnboarding));
+    return () => dispatch(setOnboardingActive(false));
+  });
+
+  $effect(() => {
+    if (workspaceId === 'new') {
+      dispatch(clearActiveWorkspace());
+    } else if (workspaceId) {
       dispatch(setActiveWorkspaceId(workspaceId));
     }
   });
@@ -230,6 +298,13 @@
       logger.debug('Loading workspace store on mount');
       dispatch(loadWorkspacesRequested());
     }
+
+    // Detect fresh workspace creation for fade-in transition
+    const pendingKey = `workspace:${workspaceId}:initial-agent-pending`;
+    if (sessionStorage.getItem(pendingKey)) {
+      isFreshCreation = true;
+    }
+
   });
 
   // Create cleanup manager for this component
@@ -336,7 +411,6 @@
           preservedMainPanel: preservedData.mainPanel,
           isNewlyCreated: hasInitialAgent,
         });
-
       } catch (error) {
         logger.error('Failed to create workspace state for real workspace', {
           workspaceId: currentWorkspaceId,
@@ -383,7 +457,6 @@
           // Keep the old state if we can't create a new one
         }
       }
-
     } else if (!previousState) {
       // No previous state to dispose, create new state immediately
       if (currentWorkspaceId && !stateDisposing) {
@@ -532,7 +605,6 @@
     // Capture workspace ID and workspace reference at the start to avoid race conditions
     // during async execution where $workspace could become null or change
     const capturedWorkspaceId = $workspace?.id;
-    const capturedWorkspace = $workspace;
 
     // Read initialAgentConfigProcessed with untrack to avoid creating a reactive dependency
     // that would cause the effect to re-run when we set it to true
@@ -646,99 +718,24 @@
               );
             }
 
-            // For non-optimistic workspaces, create or resume the real agent now
-            if (!capturedWorkspaceId.startsWith('optimistic-')) {
-              logger.info('[WorkspacePage] Checking if agent exists for non-optimistic workspace', {
-                workspaceId: capturedWorkspaceId,
-                agentId,
-              });
+            // Agent activation is handled by the agent-loading-saga's restoreInitialAgent.
+            // Do NOT activate or create sessions here — it causes duplicate agent creation.
+            // The saga handles this correctly with proper race-condition guards.
 
-              // First check if the agent already exists
-              const existingSessions = agentService.getSessionsForWorkspace(capturedWorkspaceId);
-              const existingSession = existingSessions.find((s) => s.id === agentId);
-
-              if (existingSession) {
-                logger.info('[WorkspacePage] Agent already exists, using existing session', {
-                  agentId: existingSession.id,
-                  workspaceId: capturedWorkspaceId,
-                });
-
-                // Mark the session with the initial agent flags BEFORE adding to agents list
-                // This ensures the flags are present when the content IIFE re-evaluates
-                if (config.isInitialAgent) {
-                  (existingSession as any).isInitialAgent = true;
-                }
-                if (config.isFirstWorkspaceAgent) {
-                  (existingSession as any).isFirstWorkspaceAgent = true;
-                }
-
-                // Add to agents list if not already there
-                const currentAgents = selectAllWorkspaceAgents.select(
-                  getReduxStore().getState(),
-                  capturedWorkspaceId,
-                );
-
-                if (!currentAgents.find((a: AgentSession) => a?.id === agentId)) {
-                  dispatch(addAgent(capturedWorkspaceId, existingSession));
-                }
-              } else if (agentId && capturedWorkspace) {
-                // For initial agents from workspace creation, restore the existing pending agent
-                // instead of creating a new one
-                logger.info('[WorkspacePage] Restoring pending initial agent', {
-                  workspaceId: capturedWorkspaceId,
-                  agentId,
-                  isInitialAgent: config.isInitialAgent,
-                });
-
-                agentService
-                  .activateInitialAgent(agentId as string, capturedWorkspace, () =>
-                    agentService.restoreSession(agentId as string, capturedWorkspace),
-                  )
-                  .then((session) => {
-                    if (session) {
-                      logger.info('[WorkspacePage] Initial agent restored successfully', {
-                        agentId: session.id,
-                        workspaceId: capturedWorkspaceId,
-                        status: session.status,
-                      });
-
-                      // Mark the session with the initial agent flags
-                      if (config.isInitialAgent) {
-                        (session as any).isInitialAgent = true;
-                      }
-                      if (config.isFirstWorkspaceAgent) {
-                        (session as any).isFirstWorkspaceAgent = true;
-                      }
-
-                      // Add to agents list if not already there
-                      const currentAgents = selectAllWorkspaceAgents.select(
-                        getReduxStore().getState(),
-                        capturedWorkspaceId,
-                      );
-
-                      if (!currentAgents.find((a: AgentSession) => a?.id === agentId)) {
-                        dispatch(addAgent(capturedWorkspaceId, session));
-                      }
-                    } else {
-                      // If restore fails, DON'T create a new agent immediately.
-                      // The agent loader will handle this properly after loading from disk.
-                      // Creating a new session here would overwrite existing messages on disk.
-                      // See: https://github.com/augmentcode/augment/issues/XXXX
-                      logger.info(
-                        '[WorkspacePage] Restore returned null, deferring to agent loader',
-                        {
-                          agentId,
-                          workspaceId: capturedWorkspaceId,
-                        },
-                      );
-                      // The agent-loading-saga will handle restoring this agent
-                      // with its messages intact once the disk read completes.
-                    }
-                  })
-                  .catch((error) => {
-                    logger.error('[WorkspacePage] Failed to restore agent', { error });
-                  });
+            // Skip agent panel opening for onboarding-created workspaces — the saga
+            // handles everything. Opening the panel here too causes a duplicate agent.
+            const isOnboardingSource = config?.metadata?.source === 'onboarding';
+            if (isOnboardingSource) {
+              logger.info(
+                '[WorkspacePage] Skipping agent panel open for onboarding workspace — saga owns this',
+                { workspaceId: capturedWorkspaceId, agentId },
+              );
+              // Clean up pending markers — saga will pick up from Redux
+              if (!capturedWorkspaceId.startsWith('optimistic-')) {
+                dispatch(clearInitialAgentConfig(capturedWorkspaceId));
+                sessionStorage.removeItem(pendingAgentKey);
               }
+              return;
             }
 
             // Only open the drawer if it's not already open with different content
@@ -1109,9 +1106,6 @@
     },
   });
 
-  // ============================================================================
-  // Workspace Creation
-  // ============================================================================
 
   // ============================================================================
   // Cleanup
@@ -1152,10 +1146,14 @@
      Template - Using WorkspaceLayout with snippets
      ============================================================================ -->
 
+<svelte:head>
+  <title>{isOnboarding || showOnboarding ? 'New Space' : $workspace?.title || 'Space'}</title>
+</svelte:head>
+
 <!-- Sidebar Snippet -->
 {#snippet sidebarContent()}
-  {#if isCreatingWorkspace}
-    <!-- fake header to match the layout -->
+  {#if showOnboarding || isCreatingWorkspace}
+    <!-- Empty sidebar during onboarding and workspace creation -->
     <div class="flex items-center flex-none w-full"></div>
   {:else if !$workspace || isCreatingWorkspace}
     {#if isCreatingWorkspace || isInTransition}
@@ -1166,101 +1164,135 @@
       <SidebarSkeleton />
     {/if}
   {:else if sidebarState.useSleekSidebar}
-    <MultiSelectTabbedSidebar
-      workspaceId={$workspace?.id || workspaceId}
-      workspacePath={$workspace?.worktreePath ||
-        $workspace?.repositoryPath ||
-        $workspace?.path ||
-        ''}
-      notes={sidebarState.sidebarNotes}
-      notesLoading={sidebarState.sidebarNotesLoading}
-      selectedNoteId={state?.mainPanel?.type === 'notes'
-        ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
-        : null}
-      onOpenNote={handleOpenNote}
-      onOpenAgent={openAgent}
-      onCreateNote={handleCreateNote}
-      selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
-      onOpenFile={handleFileSelect}
-      onCreateFile={handleCreateFile}
-      onFileRenamed={handleFileRenamed}
-      unstagedChanges={sidebarState.sidebarUnstagedChanges}
-      stagedChanges={sidebarState.sidebarStagedChanges}
-      selectedChangeId={state?.mainPanel?.selectedChangeId}
-      activeFilePath={state?.mainPanel?.type === 'file-tracking-diff'
-        ? state?.mainPanel?.selectedTrackedChange?.relativePath ||
-          state?.mainPanel?.selectedFile ||
-          null
-        : null}
-      activeFileStaged={state?.mainPanel?.type === 'file-tracking-diff'
-        ? state?.mainPanel?.selectedTrackedChange?.stage === 'committed'
-          ? null // Don't highlight any file in sidebar for committed changes
-          : state?.mainPanel?.selectedTrackedChange?.stage === 'staged'
-        : null}
-      isAllChangesViewActive={state?.mainPanel?.type === 'local-changes'}
-      onOpenChange={sidebarState.handleOpenChange}
-      onStageChange={sidebarState.handleStageChange}
-      onUnstageChange={sidebarState.handleUnstageChange}
-      onRevertChange={sidebarState.handleRevertChange}
-      onAcceptChanges={sidebarState.handleAcceptChanges}
-      isAcceptChangesOpen={state?.mainPanel?.type === 'accept-changes'}
-      onOpenPR={sidebarState.handleOpenPR}
-      currentBranch={$gitBranch$ || ''}
-      unpushedCount={$gitAhead$ ?? 0}
-      isNewWorkspaceSession={$isNewWorkspaceSession$}
-      activePullRequest={$activePullRequest$}
-      commits={$sidebarCommits$}
-      recentActivity={sidebarState.recentActivityEvents}
-      onViewAllActivity={sidebarState.handleViewAllActivity}
-      onOpenActivityEvent={sidebarState.handleOpenActivityEvent}
-      onOpenDashboard={() => {
-        workspaceState?.setMainPanel('dashboard');
-      }}
-      onCreateAgentWithPrompt={handleCreateAgentWithPrompt}
-      onOpenUrl={handleOpenUrl}
-      isChangesLoading={!$ftIsInitialized$ || $ftLoading$}
-      activeItemId={state?.drawer?.itemId}
-      showOverview={state?.drawer?.type === 'overview'}
-      drawerOpen={state?.drawer?.open}
-      drawerType={state?.drawer?.type}
-      onSelectAgent={openAgent}
-      onShowAgent={openAgent}
-      onOpenTerminal={openTerminal}
-      onCreateTerminal={handleCreateTerminal}
-      onToggleOverview={() => {
-        workspaceState?.openDrawer('overview', 'overview');
-      }}
-      onCreateAgent={handleCreateAgent}
-      onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
-    />
+    <div
+      class="h-full"
+      style={isFreshCreation
+        ? 'animation: slideInFromLeft 500ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards; opacity: 0;'
+        : ''}
+    >
+      <MultiSelectTabbedSidebar
+        workspaceId={$workspace?.id || workspaceId}
+        workspacePath={$workspace?.worktreePath ||
+          $workspace?.repositoryPath ||
+          $workspace?.path ||
+          ''}
+        notes={sidebarState.sidebarNotes}
+        notesLoading={sidebarState.sidebarNotesLoading}
+        selectedNoteId={state?.mainPanel?.type === 'notes'
+          ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
+          : null}
+        onOpenNote={handleOpenNote}
+        onOpenAgent={openAgent}
+        onCreateNote={handleCreateNote}
+        selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
+        onOpenFile={handleFileSelect}
+        onCreateFile={handleCreateFile}
+        onFileRenamed={handleFileRenamed}
+        unstagedChanges={sidebarState.sidebarUnstagedChanges}
+        stagedChanges={sidebarState.sidebarStagedChanges}
+        selectedChangeId={state?.mainPanel?.selectedChangeId}
+        activeFilePath={state?.mainPanel?.type === 'file-tracking-diff'
+          ? state?.mainPanel?.selectedTrackedChange?.relativePath ||
+            state?.mainPanel?.selectedFile ||
+            null
+          : null}
+        activeFileStaged={state?.mainPanel?.type === 'file-tracking-diff'
+          ? state?.mainPanel?.selectedTrackedChange?.stage === 'committed'
+            ? null // Don't highlight any file in sidebar for committed changes
+            : state?.mainPanel?.selectedTrackedChange?.stage === 'staged'
+          : null}
+        isAllChangesViewActive={state?.mainPanel?.type === 'local-changes'}
+        onOpenChange={sidebarState.handleOpenChange}
+        onStageChange={sidebarState.handleStageChange}
+        onUnstageChange={sidebarState.handleUnstageChange}
+        onRevertChange={sidebarState.handleRevertChange}
+        onAcceptChanges={sidebarState.handleAcceptChanges}
+        isAcceptChangesOpen={state?.mainPanel?.type === 'accept-changes'}
+        onOpenPR={sidebarState.handleOpenPR}
+        currentBranch={$gitBranch$ || ''}
+        unpushedCount={$gitAhead$ ?? 0}
+        isNewWorkspaceSession={$isNewWorkspaceSession$}
+        activePullRequest={$activePullRequest$}
+        commits={$sidebarCommits$}
+        recentActivity={sidebarState.recentActivityEvents}
+        onViewAllActivity={sidebarState.handleViewAllActivity}
+        onOpenActivityEvent={sidebarState.handleOpenActivityEvent}
+        onOpenDashboard={() => {
+          workspaceState?.setMainPanel('dashboard');
+        }}
+        onCreateAgentWithPrompt={handleCreateAgentWithPrompt}
+        onOpenUrl={handleOpenUrl}
+        isChangesLoading={!$ftIsInitialized$ || $ftLoading$}
+        activeItemId={state?.drawer?.itemId}
+        showOverview={state?.drawer?.type === 'overview'}
+        drawerOpen={state?.drawer?.open}
+        drawerType={state?.drawer?.type}
+        onSelectAgent={openAgent}
+        onShowAgent={openAgent}
+        onOpenTerminal={openTerminal}
+        onCreateTerminal={handleCreateTerminal}
+        onToggleOverview={() => {
+          workspaceState?.openDrawer('overview', 'overview');
+        }}
+        onCreateAgent={handleCreateAgent}
+        onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
+      />
+    </div>
   {:else}
-    <VSCodeResizablePanels
-      workspaceId={$workspace?.id || workspaceId}
-      selectedNoteId={state?.mainPanel?.type === 'notes'
-        ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
-        : null}
-      selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
-      loading={false}
-      {handleFileSelect}
-      onOpenNote={handleOpenNote}
-      onSelectAgent={openAgent}
-    />
+    <div
+      class="h-full"
+      style={isFreshCreation
+        ? 'animation: slideInFromLeft 500ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards; opacity: 0;'
+        : ''}
+    >
+      <VSCodeResizablePanels
+        workspaceId={$workspace?.id || workspaceId}
+        selectedNoteId={state?.mainPanel?.type === 'notes'
+          ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
+          : null}
+        selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
+        loading={false}
+        {handleFileSelect}
+        onOpenNote={handleOpenNote}
+        onSelectAgent={openAgent}
+      />
+    </div>
   {/if}
 {/snippet}
 
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
-  {#if !$workspace || isCreatingWorkspace}
-    <ContentSkeleton />
-  {:else}
-    <!-- Panel-based layout when using TabbedSidebar -->
-    <PanelLayout
-      workspaceId={$workspace?.id || workspaceId}
-      onCreateAgent={handleCreateAgent}
-      onCreateNote={handleCreateNote}
-      onOpenBrowser={handleOpenBrowser}
-    />
-  {/if}
+  <div class="h-full w-full relative">
+    {#if showOnboarding}
+      <OnboardingPage
+        {isOnboarding}
+        fadingOut={onboardingFadingOut}
+        {dispatch}
+        onHoldActiveChange={(active) => (onboardingHoldActive = active)}
+        onFadingOutChange={(fading) => (onboardingFadingOut = fading)}
+      />
+    {/if}
+    {#if !showOnboarding || onboardingFadingOut}
+      {#if !$workspace || isCreatingWorkspace}
+        <ContentSkeleton />
+      {:else}
+        <div
+          class="h-full w-full absolute inset-0"
+          style={isFreshCreation
+            ? 'animation: fadeInContent 600ms cubic-bezier(0.16, 1, 0.3, 1) 250ms forwards; opacity: 0;'
+            : ''}
+        >
+          <!-- Panel-based layout when using TabbedSidebar -->
+          <PanelLayout
+            workspaceId={$workspace?.id || workspaceId}
+            onCreateAgent={handleCreateAgent}
+            onCreateNote={handleCreateNote}
+            onOpenBrowser={handleOpenBrowser}
+          />
+        </div>
+      {/if}
+    {/if}
+  </div>
 {/snippet}
 
 <!-- Terminal Overlay Snippet -->
@@ -1272,7 +1304,6 @@
 {#snippet modalsContent()}
   <WorkspaceModals
     workspace={$workspace ?? null}
-    showAugieSetupWizard={false}
     showPRCreator={false}
   />
   <InputDialog
@@ -1285,11 +1316,83 @@
   />
 {/snippet}
 
-<!-- Render the WorkspaceLayout component with snippets -->
-<WorkspaceLayout
-  sidebar={sidebarContent}
-  content={mainContent}
-  terminalOverlay={terminalOverlayContent}
-  modals={modalsContent}
-  sidebarSide={$sidebarSide$}
-/>
+<!-- Always render WorkspaceLayout — sidebar starts collapsed during onboarding -->
+<div class="h-full w-full">
+  <WorkspaceLayout
+    sidebar={sidebarContent}
+    content={mainContent}
+    terminalOverlay={terminalOverlayContent}
+    modals={modalsContent}
+    sidebarSide={$sidebarSide$}
+    startCollapsed={isOnboarding}
+  />
+</div>
+
+
+
+<style>
+  :global {
+    @keyframes slideInFromLeft {
+      from {
+        opacity: 0;
+        transform: translateX(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes fadeInContent {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.995);
+        filter: blur(2px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+    }
+
+    @keyframes slideDownTabBar {
+      from {
+        opacity: 0;
+        transform: translateY(-100%);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes collapseOut {
+      0% {
+        opacity: 1;
+        max-height: 100vh;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+      }
+      40% {
+        opacity: 0.5;
+        max-height: 60vh;
+        transform: translateY(-16px) scale(0.99);
+        filter: blur(0);
+      }
+      100% {
+        opacity: 0;
+        max-height: 0;
+        transform: translateY(-40px) scale(0.97);
+        filter: blur(4px);
+      }
+    }
+
+    .onboarding-collapse-out {
+      animation: collapseOut 500ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      overflow: hidden;
+      pointer-events: none;
+      transform-origin: top center;
+    }
+  }
+</style>

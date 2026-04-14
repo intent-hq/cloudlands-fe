@@ -41,15 +41,3 @@ export const selectHasShownGitCredentialsModalForWorkspace = createSelector(
     return !!selectGitCredentialsModal.select(state).shownForWorkspaceIds[workspaceId];
   }
 );
-
-export const selectNewSpaceModal = createSelector((state) => {
-  return state.globalModals.newSpace;
-});
-
-export const selectIsNewSpaceModalOpen = createSelector((state) => {
-  return selectNewSpaceModal.select(state).open;
-});
-
-export const selectNewSpaceInitialRepo = createSelector((state) => {
-  return selectNewSpaceModal.select(state).initialRepo;
-});

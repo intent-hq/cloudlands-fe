@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   /**
    * Chat Panel Component
    *
@@ -37,7 +37,11 @@
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import { getChatService, MessageGuardError, type ChatState } from '$features/agent/services/chat.service';
+  import {
+    getChatService,
+    MessageGuardError,
+    type ChatState,
+  } from '$features/agent/services/chat.service';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
   import { browser } from '$app/environment';
@@ -69,6 +73,9 @@
   } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectWorkspaceTerminalState } from '$lib/store/slices/terminals/terminals-selectors';
+  import { getItems } from '$lib/store/utils/collection-utils';
+
   import { clearChatDraft, setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
     sendMessage,
@@ -99,6 +106,7 @@
   import AgentCard from './AgentCard.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
+
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import { followBottom, scrollToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
@@ -151,6 +159,7 @@
   import { cleanErrorMessage } from '$shared/errors/messages';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import { resolveHydratedInputModel } from './input-hydration';
+  import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
 
   const logger = createLogger('ChatPanel');
 
@@ -332,6 +341,31 @@
 
   // Track which message is currently "sticky" (scrolled past its natural position)
   let stickyMessageId = $state<string | null>(null);
+
+  // Onboarding context — reconstructed from workspace + agent session data.
+  // No external storage needed; all essential fields live on the workspace object.
+  let onboardingContext = $state<{
+    projectName: string;
+    projectPath: string;
+    branch: string;
+    prompt: string;
+    worktreePath?: string;
+    baseRef?: string;
+    repoPath?: string;
+    specialistName?: string;
+    specialistId?: string;
+    setupScript?: string;
+  } | null>(null);
+
+  function handleFocusSetupTerminal() {
+    const termState = selectWorkspaceTerminalState.select(getReduxStore().getState(), workspace.id);
+    const setupTerminal = getItems(termState.terminals).find((t: any) => t.name === 'Setup');
+    if (setupTerminal) {
+      window.dispatchEvent(
+        new CustomEvent('workspace:openTerminal', { detail: { terminalId: setupTerminal.id } }),
+      );
+    }
+  }
 
   let waitForSessionUnsub: (() => void) | null = null;
 
@@ -1534,6 +1568,26 @@
         agentId,
         workspaceId: workspace.id,
       });
+
+      // Reconstruct onboarding context entirely from workspace + agent session.
+      // No external storage needed — all essential data lives on the workspace object.
+      const repoName =
+        workspace.repositoryName || workspace.repositoryPath?.split('/').pop() || workspace.title;
+      if (repoName) {
+        const session = chatState?.session;
+        onboardingContext = {
+          projectName: repoName,
+          projectPath: workspace.repositoryPath || '',
+          branch: workspace.branch || '',
+          prompt: workspace.initialPrompt || '',
+          worktreePath: workspace.worktreePath || workspace.repositoryPath || '',
+          baseRef: workspace.baseRef ? `origin/${workspace.baseRef}` : 'origin/main',
+          repoPath: workspace.repositoryPath || '',
+          specialistName: session?.name,
+          specialistId: (session?.metadata as any)?.specialist,
+          setupScript: workspace.setupScript,
+        };
+      }
     }
 
     // Set up queue listener using listenSync for proper cleanup without race conditions
@@ -1574,7 +1628,7 @@
                 const hasContextReferences =
                   config.contextReferences && config.contextReferences.length > 0;
                 const hasImageBlocks = config.imageBlocks && config.imageBlocks.length > 0;
-                // Check if message was already sent (e.g., by CompactWorkspaceInitializer in stayOnHomePage mode)
+                // Check if message was already sent before chat-panel hydration.
                 const alreadySent = !!config.messageSent;
 
                 if (
@@ -1582,8 +1636,8 @@
                   (hasPrompt || hasContextReferences || hasImageBlocks)
                 ) {
                   if (alreadySent) {
-                    // Message was already sent by workspace initializer, just clear the config
-                    logger.info('Initial message already sent by workspace initializer, skipping', {
+                    // Message was already sent before hydration, just clear the config.
+                    logger.info('Initial message already sent before hydration, skipping', {
                       agentId,
                       promptLength: config.prompt?.length || 0,
                     });
@@ -3075,7 +3129,56 @@
           onSpecialistChange={handleSpecialistChange}
           session={chatState.session}
         />
+      {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && chatState.messages.length === 0 && !chatState.isStreaming && !pendingInitialPrompt}
+        <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
+        <div class="pt-16 pb-6">
+          <WorkspaceSetupCard
+            repoName={onboardingContext.projectName ||
+              onboardingContext.projectPath?.split('/').pop() ||
+              'your project'}
+            repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
+            worktreePath={onboardingContext.worktreePath}
+            branch={onboardingContext.branch}
+            baseRef={onboardingContext.baseRef || 'origin/main'}
+            specialistName={onboardingContext.specialistName}
+            specialistId={onboardingContext.specialistId}
+            hasPrompt={false}
+            repoStatus="done"
+            branchStatus="done"
+            agentStatus="done"
+            setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
+            setupScriptContent={onboardingContext.setupScript}
+            onFocusSetupTerminal={onboardingContext.setupScript
+              ? handleFocusSetupTerminal
+              : undefined}
+          />
+        </div>
       {:else if !chatState?.session && chatState.messages.length === 0 && !chatState.isStreaming && !pendingInitialPrompt}
+        <!-- Show setup card even while session is loading -->
+        {#if isInitialWorkspaceAgent && onboardingContext}
+          <div class="pt-16 pb-6">
+            <WorkspaceSetupCard
+              repoName={onboardingContext.projectName ||
+                onboardingContext.projectPath?.split('/').pop() ||
+                'your project'}
+              repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
+              worktreePath={onboardingContext.worktreePath}
+              branch={onboardingContext.branch}
+              baseRef={onboardingContext.baseRef || 'origin/main'}
+              specialistName={onboardingContext.specialistName}
+              specialistId={onboardingContext.specialistId}
+              hasPrompt={!!onboardingContext.prompt?.trim()}
+              repoStatus="done"
+              branchStatus="done"
+              agentStatus="done"
+              setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
+              setupScriptContent={onboardingContext.setupScript}
+              onFocusSetupTerminal={onboardingContext.setupScript
+                ? handleFocusSetupTerminal
+                : undefined}
+            />
+          </div>
+        {/if}
         <!-- Skeleton loading state when session is not yet initialized -->
         <div class="flex flex-col gap-4 p-4 w-full">
           <!-- User message skeleton -->
@@ -3124,6 +3227,30 @@
           {#if initialPromptProp}
             <!-- No animation - parent already showed optimistic message, but we need to keep showing it -->
             <div class="w-full">
+              {#if isInitialWorkspaceAgent && onboardingContext}
+                <div class="pt-16 pb-6">
+                  <WorkspaceSetupCard
+                    repoName={onboardingContext.projectName ||
+                      onboardingContext.projectPath?.split('/').pop() ||
+                      'your project'}
+                    repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
+                    worktreePath={onboardingContext.worktreePath}
+                    branch={onboardingContext.branch}
+                    baseRef={onboardingContext.baseRef || 'origin/main'}
+                    specialistName={onboardingContext.specialistName}
+                    specialistId={onboardingContext.specialistId}
+                    hasPrompt={!!onboardingContext.prompt?.trim()}
+                    repoStatus="done"
+                    branchStatus="done"
+                    agentStatus="done"
+                    setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
+                    setupScriptContent={onboardingContext.setupScript}
+                    onFocusSetupTerminal={onboardingContext.setupScript
+                      ? handleFocusSetupTerminal
+                      : undefined}
+                  />
+                </div>
+              {/if}
               <DateSeparator label="Just now" />
               <!-- Conversation turn container - constrains sticky behavior -->
               <div class="conversation-turn">
@@ -3199,6 +3326,30 @@
             <!-- With animation - normal case where parent didn't show optimistic message -->
             <!-- NOTE: Removed in:fly transition to debug duplicate flash issue -->
             <div class="w-full">
+              {#if isInitialWorkspaceAgent && onboardingContext}
+                <div class="pt-16 pb-6">
+                  <WorkspaceSetupCard
+                    repoName={onboardingContext.projectName ||
+                      onboardingContext.projectPath?.split('/').pop() ||
+                      'your project'}
+                    repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
+                    worktreePath={onboardingContext.worktreePath}
+                    branch={onboardingContext.branch}
+                    baseRef={onboardingContext.baseRef || 'origin/main'}
+                    specialistName={onboardingContext.specialistName}
+                    specialistId={onboardingContext.specialistId}
+                    hasPrompt={!!onboardingContext.prompt?.trim()}
+                    repoStatus="done"
+                    branchStatus="done"
+                    agentStatus="done"
+                    setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
+                    setupScriptContent={onboardingContext.setupScript}
+                    onFocusSetupTerminal={onboardingContext.setupScript
+                      ? handleFocusSetupTerminal
+                      : undefined}
+                  />
+                </div>
+              {/if}
               <DateSeparator label="Just now" />
               <!-- Conversation turn container - constrains sticky behavior -->
               <div class="conversation-turn">
@@ -3304,6 +3455,30 @@
         {#if messagesCondition && !pendingCondition}
           <!-- Messages container (removed in:fly to test duplicate flash issue) -->
           <div class="w-full">
+            {#if isInitialWorkspaceAgent && onboardingContext}
+              <div class="pt-16 pb-6">
+                <WorkspaceSetupCard
+                  repoName={onboardingContext.projectName ||
+                    onboardingContext.projectPath?.split('/').pop() ||
+                    'your project'}
+                  repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
+                  worktreePath={onboardingContext.worktreePath}
+                  branch={onboardingContext.branch}
+                  baseRef={onboardingContext.baseRef || 'origin/main'}
+                  specialistName={onboardingContext.specialistName}
+                  specialistId={onboardingContext.specialistId}
+                  hasPrompt={!!onboardingContext.prompt?.trim()}
+                  repoStatus="done"
+                  branchStatus="done"
+                  agentStatus="done"
+                  setupScriptStatus={onboardingContext.setupScript ? 'done' : undefined}
+                  setupScriptContent={onboardingContext.setupScript}
+                  onFocusSetupTerminal={onboardingContext.setupScript
+                    ? handleFocusSetupTerminal
+                    : undefined}
+                />
+              </div>
+            {/if}
             <!-- PERF: Use keyed each blocks for efficient list diffing -->
             {#each groupedMessages as group, groupIndex (group.messages[0]?.id ?? groupIndex)}
               <DateSeparator label={formatDistanceToNow(group.date)} />
@@ -3430,7 +3605,9 @@
                             {workspace}
                             onEditSubmit={(newText, model) =>
                               handleEditMessage(message.id, newText, model)}
-                            editModel={turn.assistantMessages[0]?.metadata?.model ?? hydratedInputModel ?? agentModel}
+                            editModel={turn.assistantMessages[0]?.metadata?.model ??
+                              hydratedInputModel ??
+                              agentModel}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3537,7 +3714,6 @@
                 {/if}
               {/each}
             {/each}
-
           </div>
         {/if}
       {/if}
