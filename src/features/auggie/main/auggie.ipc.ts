@@ -316,6 +316,43 @@ async function execWithEnhancedPath(
   });
 }
 
+/**
+ * Execute a command with enhanced PATH using args array (no shell quoting issues).
+ * On Windows, uses shell-based exec with double-quoted paths (required for .cmd files).
+ * On other platforms, uses execFile (no shell) which is more robust.
+ */
+async function execFileWithEnhancedPath(
+  file: string,
+  args: string[],
+  options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  const enhancedPath = getEnhancedPath();
+  const envOptions = {
+    ...options,
+    env: {
+      PATH: enhancedPath,
+    },
+  };
+
+  if (process.platform === 'win32') {
+    // On Windows, .cmd/.bat files cannot be executed with execFile (no shell).
+    // Build a shell command string with double-quoted path and properly escaped args.
+    const quotedArgs = args.map((arg) => {
+      // If arg contains spaces or special chars, wrap in double quotes
+      if (/[\s"&|<>^]/.test(arg) || arg.includes('{') || arg.includes('}')) {
+        // Escape internal double quotes
+        return `"${arg.replace(/"/g, '\\"')}"`;
+      }
+      return arg;
+    });
+    const command = `"${file}" ${quotedArgs.join(' ')}`;
+    return execAsyncWithRetry(command, envOptions);
+  }
+
+  // On macOS/Linux, use execFile (no shell) - avoids all quoting issues
+  return execFileAsyncWithRetry(file, args, envOptions);
+}
+
 async function saveAuggiePath(auggiePath: string): Promise<void> {
   const savedPathFile = path.join(os.homedir(), '.augment', 'auggie-path');
   const augmentDir = path.join(os.homedir(), '.augment');
@@ -2340,24 +2377,28 @@ export function setupAuggieIPC() {
 
       // First, try to remove any existing auggie entry (ignore errors if it doesn't exist)
       try {
-        const removeCommand = `"${claudePath}" mcp remove auggie --scope user`;
         logger.info('Removing existing Claude Code MCP entry (if any)');
-        await execWithEnhancedPath(removeCommand, { timeout: 15000 });
+        await execFileWithEnhancedPath(claudePath, ['mcp', 'remove', 'auggie', '--scope', 'user'], {
+          timeout: 15000,
+        });
         logger.info('Removed existing auggie MCP entry');
       } catch {
         // Entry didn't exist, that's fine
         logger.debug('No existing auggie MCP entry to remove (this is normal for first setup)');
       }
 
-      // Execute: claude mcp add-json auggie --scope user '<json>'
+      // Execute: claude mcp add-json auggie --scope user <json>
       const jsonString = JSON.stringify(mcpConfig);
-      const command = `"${claudePath}" mcp add-json auggie --scope user '${jsonString}'`;
 
       logger.info('Executing Claude Code MCP setup', {
         command: `${claudePath} mcp add-json auggie --scope user '<json>'`,
       });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const { stdout, stderr } = await execFileWithEnhancedPath(
+        claudePath,
+        ['mcp', 'add-json', 'auggie', '--scope', 'user', jsonString],
+        { timeout: 30000 },
+      );
 
       logger.info('Claude Code MCP setup completed', { stdout, stderr });
 
@@ -2399,11 +2440,15 @@ export function setupAuggieIPC() {
       }
 
       // Execute: codex mcp add codebase-retrieval -- auggie --mcp --mcp-auto-workspace
-      const command = `"${codexPath}" mcp add codebase-retrieval -- "${auggiePath}" --mcp --mcp-auto-workspace`;
+      const codexArgs = ['mcp', 'add', 'codebase-retrieval', '--', auggiePath, '--mcp', '--mcp-auto-workspace'];
 
-      logger.info('Executing Codex MCP setup', { command });
+      logger.info('Executing Codex MCP setup', {
+        command: `${codexPath} ${codexArgs.join(' ')}`,
+      });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const { stdout, stderr } = await execFileWithEnhancedPath(codexPath, codexArgs, {
+        timeout: 30000,
+      });
 
       logger.info('Codex MCP setup completed', { stdout, stderr });
 

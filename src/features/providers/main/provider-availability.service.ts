@@ -367,10 +367,16 @@ async function checkProviderAuth(
         }
       };
 
-      const child = spawn(cliPath, authCheckArgs, {
+      // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
+      const useShell = process.platform === 'win32';
+      // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
+      const spawnCommand = useShell ? `"${cliPath}"` : cliPath;
+
+      const child = spawn(spawnCommand, authCheckArgs, {
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: AUTH_CHECK_TIMEOUT_MS,
+        shell: useShell,
       });
 
       let stdout = '';

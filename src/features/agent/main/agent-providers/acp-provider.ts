@@ -2627,6 +2627,13 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
+    // On Windows with shell: true, quote the command path to handle spaces
+    // (e.g. "C:\Program Files\nodejs\npx.cmd"). Without quotes, cmd.exe splits
+    // the path at the space and fails to find the executable.
+    if (process.platform === 'win32') {
+      spawnCommand = `"${spawnCommand}"`;
+    }
+
     // Spawn the agent process using safe spawn with fallback options
     const spawnOptions: SpawnOptions = {
       cwd: workingDirectory,

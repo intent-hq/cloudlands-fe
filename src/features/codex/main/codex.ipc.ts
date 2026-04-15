@@ -90,11 +90,17 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
   const args = [...resolved.argsPrefix];
   const command = resolved.command;
 
+  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
+  const useShell = process.platform === 'win32';
+  // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
+  const spawnCommand = useShell ? `"${command}"` : command;
+
   return await new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(spawnCommand, args, {
       cwd: os.homedir(),
       env: { ...process.env },
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: useShell,
       windowsHide: true,
     });
 

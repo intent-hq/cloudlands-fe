@@ -115,14 +115,21 @@ async function executeOpencodeCommand(
     // Run from user's home directory to ensure config files are found
     const cwd = os.homedir();
 
+    // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
+    const useShell = process.platform === 'win32';
+    const rawCommand = opencodePath || 'opencode';
+    // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
+    const spawnCommand = useShell ? `"${rawCommand}"` : rawCommand;
+
     logger.debug('OpenCode spawn details', {
       opencodePath,
       cwd,
     });
 
-    const child = spawn(opencodePath || 'opencode', args, {
+    const child = spawn(spawnCommand, args, {
       env: enhancedEnv,
       cwd,
+      shell: useShell,
       windowsHide: true,
     });
 
