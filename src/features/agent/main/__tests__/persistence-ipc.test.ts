@@ -470,6 +470,55 @@ describe('Persistence IPC Handlers', () => {
     });
   });
 
+  describe('Empty messages guard', () => {
+    it('should preserve disk messages when frontend sends empty messages array', async () => {
+      // Regression test: frontend SAVE_SESSION fires before Redux has the user message,
+      // sending messages: []. The guard must keep the disk messages intact.
+      const existingAgent: AgentSession = {
+        id: BrandedIds.AgentId('agent-empty-guard'),
+        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        name: 'Guard Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: BrandedIds.MessageId('msg-user-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-04-14T10:00:00Z' },
+          { id: BrandedIds.MessageId('msg-asst-1'), role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi there' }], timestamp: '2026-04-14T10:00:05Z' },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      const frontendSession = {
+        ...existingAgent,
+        messages: [], // Empty — frontend hasn't received messages yet
+      };
+
+      mockUnifiedPersistence.loadAgent.mockResolvedValue({
+        success: true,
+        data: existingAgent,
+      });
+
+      mockUnifiedPersistence.saveAgent.mockResolvedValue({
+        success: true,
+      });
+
+      const handler = handlers.get(IPC_CHANNELS.PERSISTENCE.SAVE_SESSION);
+      const mockEvent = {} as IpcMainInvokeEvent;
+      const result = await handler!(mockEvent, {
+        session: frontendSession,
+        workspaceId: 'workspace-123',
+      });
+
+      expect(result.success).toBe(true);
+
+      // The saved agent must retain the disk messages, not the empty frontend array
+      const savedAgent = mockUnifiedPersistence.saveAgent.mock.calls[0][0];
+      expect(savedAgent.messages).toHaveLength(2);
+      expect(savedAgent.messages[0].id).toBe(BrandedIds.MessageId('msg-user-1'));
+      expect(savedAgent.messages[1].id).toBe(BrandedIds.MessageId('msg-asst-1'));
+    });
+  });
+
   describe('Response Format Consistency', () => {
     it('should always return { success, data } format', async () => {
       // Test various scenarios to ensure consistent response format

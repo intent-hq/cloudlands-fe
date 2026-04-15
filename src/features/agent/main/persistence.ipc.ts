@@ -277,20 +277,22 @@ export function setupPersistenceIPC(): void {
 
           if (existingAgent.success && existingAgent.data) {
             // CRITICAL FIX: Prevent frontend from overwriting backend-persisted messages.
-            // When the backend adds messages (e.g., subscription wake + assistant response),
-            // those messages are persisted to disk. If the frontend's in-memory session
-            // doesn't have those messages (e.g., after page refresh with stale state),
-            // the frontend's save would overwrite the complete history with a truncated version.
-            //
-            // Detection: Check if the frontend's known messages (those that also exist on disk)
-            // appear as a prefix of the disk messages. If so, the frontend has a stale subset
-            // and we should merge. If the frontend has reordered or removed specific messages
-            // (edit/regenerate), the prefix check will fail and we use the frontend's version.
             const existingMessages: any[] = existingAgent.data.messages || [];
             const frontendMessages: any[] = validated.session.messages || [];
             let mergedMessages = frontendMessages;
 
             const allowTruncation = validated.options?.allowTruncation === true;
+
+            // Safety net: never let an empty frontend save overwrite non-empty disk messages.
+            // This prevents race conditions where the frontend hasn't received messages yet
+            // (e.g., during workspace creation) from clobbering backend-persisted messages.
+            if (!allowTruncation && frontendMessages.length === 0 && existingMessages.length > 0) {
+              logger.warn('Frontend save has empty messages but disk has messages — keeping disk messages', {
+                agentId: validated.session.id,
+                existingMessageCount: existingMessages.length,
+              });
+              mergedMessages = existingMessages;
+            }
 
             if (
               !allowTruncation &&

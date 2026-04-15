@@ -83,6 +83,102 @@ describe('UnifiedPersistence', () => {
     });
   });
 
+  describe('user message preservation on save', () => {
+    it('should prepend missing user messages when backend save has assistant but no user messages', async () => {
+      // Simulate: disk has [user, assistant] from a previous save.
+      // Backend streams a new response and saves [assistant_new] without the user message
+      // (because it loaded the session before the frontend wrote the user message).
+      // The guard should prepend the missing user message from disk.
+      const agent: AgentSession = {
+        id: 'agent-preserve-1' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: new Date().toISOString() },
+          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: new Date().toISOString() },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // First save: write [user, assistant] to disk
+      await persistence.saveAgent(agent, testDir);
+
+      // Second save: backend has only [assistant_new] — no user message
+      const staleBackendSave: AgentSession = {
+        ...agent,
+        messages: [
+          { id: 'msg_asst_new', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Streaming response' }], timestamp: new Date().toISOString() },
+        ] as any[],
+      };
+
+      await persistence.saveAgent(staleBackendSave, testDir);
+
+      // Load and verify: user message from disk should be prepended
+      // Invalidate cache to ensure we read from disk
+      persistence.invalidateAllLoadCaches();
+
+      const loadResult = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(loadResult.success).toBe(true);
+      expect(loadResult.data?.messages).toHaveLength(2);
+      expect(loadResult.data?.messages[0].role).toBe('user');
+      expect(loadResult.data?.messages[0].id).toBe('msg_user_1');
+      expect(loadResult.data?.messages[1].role).toBe('assistant');
+      expect(loadResult.data?.messages[1].id).toBe('msg_asst_new');
+    });
+
+    it('should NOT prepend when incoming save has user messages', async () => {
+      // Normal save: backend has both user and assistant messages — no preservation needed
+      const agent: AgentSession = {
+        id: 'agent-preserve-2' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: new Date().toISOString() },
+          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: new Date().toISOString() },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      await persistence.saveAgent(agent, testDir);
+
+      // Second save has both user and assistant — should NOT trigger preservation
+      const normalSave: AgentSession = {
+        ...agent,
+        messages: [
+          { id: 'msg_user_2', role: 'user', contentBlocks: [{ type: 'text', text: 'New question' }], timestamp: new Date().toISOString() },
+          { id: 'msg_asst_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'New answer' }], timestamp: new Date().toISOString() },
+        ] as any[],
+      };
+
+      await persistence.saveAgent(normalSave, testDir);
+
+      // Invalidate cache to ensure we read from disk
+      persistence.invalidateAllLoadCaches();
+
+      const loadResult = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(loadResult.success).toBe(true);
+      expect(loadResult.data?.messages).toHaveLength(2);
+      expect(loadResult.data?.messages[0].id).toBe('msg_user_2');
+      expect(loadResult.data?.messages[1].id).toBe('msg_asst_2');
+    });
+  });
+
   describe('loadAgent', () => {
     it('should load saved agent', async () => {
       const agent: AgentSession = {

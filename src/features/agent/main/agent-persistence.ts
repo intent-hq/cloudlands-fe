@@ -501,6 +501,7 @@ export class UnifiedPersistence {
     let preservedName: string | undefined;
     let preservedNameExplicitlySet: boolean | undefined;
     let preservedAcpSessionId: string | undefined;
+    let existingMessagesOnDisk: any[] = [];
     const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(agent.workspaceId);
     try {
       const existingData = await metadataFS.readFile(agentPath, 'utf-8');
@@ -508,6 +509,7 @@ export class UnifiedPersistence {
       // Handle both versioned (with data wrapper) and unversioned formats
       const existingAgent =
         existingRaw.version && existingRaw.data ? existingRaw.data : existingRaw;
+      existingMessagesOnDisk = existingAgent.messages || [];
 
       // Preserve config from existing file (includes behaviorPrompt, specialist, etc.)
       // Only preserve if existing config has fields that incoming doesn't have
@@ -562,16 +564,46 @@ export class UnifiedPersistence {
       // File doesn't exist or can't be read - that's fine, nothing to preserve
     }
 
+    // If the incoming save has assistant messages but NO user messages, and disk has
+    // user messages, prepend them. This targets stale backend streaming saves that
+    // loaded the session before the frontend wrote the user message to disk.
+    let messagesWithPreservedUserMsgs = agent.messages || [];
+    if (existingMessagesOnDisk.length > 0 && messagesWithPreservedUserMsgs.length > 0) {
+      const incomingHasUserMsg = messagesWithPreservedUserMsgs.some((m: any) => m.role === 'user');
+      const incomingHasAssistantMsg = messagesWithPreservedUserMsgs.some(
+        (m: any) => m.role === 'assistant',
+      );
+
+      // Only preserve when this looks like a stale backend save: has assistant
+      // messages (streaming/final) but is missing user messages that exist on disk.
+      // Don't preserve during edit/regenerate (which intentionally removes messages).
+      if (!incomingHasUserMsg && incomingHasAssistantMsg) {
+        const incomingIds = new Set(messagesWithPreservedUserMsgs.map((m: any) => m.id));
+        const missingUserMessages = existingMessagesOnDisk.filter(
+          (m: any) => m.role === 'user' && !incomingIds.has(m.id),
+        );
+        if (missingUserMessages.length > 0) {
+          logger.warn('saveAgent - preserving user messages from disk that stale backend save is missing', {
+            agentId,
+            missingCount: missingUserMessages.length,
+            incomingCount: messagesWithPreservedUserMsgs.length,
+          });
+          // Prepend missing user messages (they were earlier in the conversation)
+          messagesWithPreservedUserMsgs = [...missingUserMessages, ...messagesWithPreservedUserMsgs];
+        }
+      }
+    }
+
     // CRITICAL: Deduplicate messages before saving to prevent duplicate message IDs on disk.
     // This is a safety net - duplicates should be prevented upstream, but this ensures
     // the persisted data is always clean regardless of how we got here.
-    let deduplicatedMessages = agent.messages;
-    if (agent.messages && agent.messages.length > 0) {
+    let deduplicatedMessages = messagesWithPreservedUserMsgs;
+    if (messagesWithPreservedUserMsgs.length > 0) {
       const seenIds = new Set<string>();
       const uniqueMessages: AgentMessage[] = [];
       let duplicatesRemoved = 0;
 
-      for (const msg of agent.messages) {
+      for (const msg of messagesWithPreservedUserMsgs) {
         if (!seenIds.has(msg.id)) {
           seenIds.add(msg.id);
           uniqueMessages.push(msg);
@@ -583,7 +615,7 @@ export class UnifiedPersistence {
       if (duplicatesRemoved > 0) {
         logger.warn('saveAgent - removed duplicate messages before saving', {
           agentId,
-          originalCount: agent.messages.length,
+          originalCount: messagesWithPreservedUserMsgs.length,
           uniqueCount: uniqueMessages.length,
           duplicatesRemoved,
         });
