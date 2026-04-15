@@ -22,9 +22,7 @@
     setProviderEnabled,
   } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider, retryLoadModels } from '$lib/store/slices/model/model-slice';
-  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { identifyUser } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
@@ -37,11 +35,10 @@
   import {
     checkSingleProviderSuccess,
     checkSingleProviderFailure,
-    trackInstallTerminal as trackInstallTerminalAction,
+    checkAllProvidersRequested,
     ensureProvidersChecked as ensureProvidersCheckedAction,
   } from '$lib/store/slices/agent-availability/agent-availability-slice';
   import type { ProviderStatus } from '$lib/store/slices/agent-availability/agent-availability-types';
-  import { getProviderTerminalTarget } from '../utils/provider-terminal-target';
 
   import { fly } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
@@ -137,17 +134,17 @@
       // The Claude Code CLI has no top-level `login` subcommand — auth is under
       // the `auth` group (`claude auth login/logout/status`).
       loginCommand: 'claude auth login',
-      docsUrl: 'https://code.claude.com/docs/en/quickstart',
+      docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
     },
     codex: {
       installCommand: 'npm i -g @openai/codex',
       loginCommand: 'codex login',
-      docsUrl: 'https://developers.openai.com/codex/cli',
+      docsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
     },
     opencode: {
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
       loginCommand: 'opencode auth login',
-      docsUrl: 'https://opencode.ai/docs',
+      docsUrl: 'https://opencode.ai/docs#install',
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
@@ -217,60 +214,6 @@
     dispatch(setActiveProvider(providerId));
     dispatch(reloadModelsForProvider());
     onProviderSelected?.(providerId);
-  }
-
-  /** Copy + toast fallback used as a last resort if opening a terminal fails. */
-  function copyAsFallback(cmd: string) {
-    navigator.clipboard.writeText(cmd);
-    toast.success('Copied — paste it into your terminal to run');
-  }
-
-  async function runCommandInTerminal(cmd: string, providerName: string, e: Event) {
-    e.stopPropagation();
-    // Read workspace id once at handler time to comply with the
-    // selector/getContext rules documented in docs/STATE_MANAGEMENT.md.
-    const activeWsId = selectActiveWorkspaceId.select(getReduxStore().getState());
-    const title = `${providerName}: ${cmd.slice(0, 30)}`;
-    const terminalTarget = getProviderTerminalTarget(activeWsId);
-
-    try {
-      const result = await invoke<{
-        ok: boolean;
-        terminalId?: string;
-        error?: string;
-      }>('terminal:createWithCommand', {
-        workspaceId: terminalTarget.ipcWorkspaceId,
-        command: cmd,
-        title,
-        pasteOnly: true,
-      });
-
-      if (!result.ok || !result.terminalId) {
-        throw new Error(result.error || 'Failed to open terminal');
-      }
-
-      if (terminalTarget.isRootContext) {
-        // There's no panel layout during onboarding, so the `workspace:openTerminal`
-        // event (which opens a tab in the panel system) is a no-op. Instead,
-        // drive the root Quake terminal overlay directly and keep the Redux
-        // terminal state bucket aligned with the backend PTY workspace id.
-        dispatch(addTerminal(terminalTarget.uiWorkspaceId, result.terminalId, title));
-        dispatch(openTerminalOverlay(terminalTarget.uiWorkspaceId, result.terminalId));
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('workspace:openTerminal', {
-            detail: { terminalId: result.terminalId },
-          }),
-        );
-      }
-
-      // Hand off to the module-level store, which owns the terminal listeners
-      // and polling fallback for auto-refreshing provider availability.
-      dispatch(trackInstallTerminalAction(result.terminalId));
-    } catch (err) {
-      logger.error('Terminal failed, copying instead', err);
-      copyAsFallback(cmd);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -532,12 +475,17 @@
     dispatch(ensureProvidersCheckedAction());
     checkAuggieVersion();
 
-    // Re-check auth on window focus/visibility (user may have just logged in via browser)
+    // Re-check all provider statuses on window focus/visibility
+    // (user may have installed a CLI tool or logged in via browser)
     const handleFocus = () => {
+      dispatch(checkAllProvidersRequested());
       if (auggieWaitingForBrowser) pollAuggieAuthOnce();
     };
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && auggieWaitingForBrowser) pollAuggieAuthOnce();
+      if (document.visibilityState === 'visible') {
+        dispatch(checkAllProvidersRequested());
+        if (auggieWaitingForBrowser) pollAuggieAuthOnce();
+      }
     };
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
@@ -571,7 +519,6 @@
         onAuggieLogin={() => loginAuggie()}
         onAuggieManualAuth={() => completeAuggieManualAuth()}
         onAuggieManualAuthInputChange={(v) => (auggieManualAuthInput = v)}
-        onRunCommand={runCommandInTerminal}
       />
     </div>
   {/each}

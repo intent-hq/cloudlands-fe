@@ -412,8 +412,22 @@
   }
 
   function handleOnboardingProjectChange(selection: ProjectSelection) {
+    // Only clear the creation error when the project identity changes
+    // (different type / repo path / github URL). Branch auto-population on
+    // BranchSelector remount after a failed clone should NOT silently
+    // dismiss the error the user needs to read.
+    const previous = projectSelection;
+    const projectIdentityChanged =
+      !previous ||
+      previous.type !== selection.type ||
+      previous.repoPath !== selection.repoPath ||
+      previous.githubUrl !== selection.githubUrl ||
+      previous.projectName !== selection.projectName;
+
     projectSelection = selection;
-    onboardingCreationError = null;
+    if (projectIdentityChanged) {
+      onboardingCreationError = null;
+    }
     dispatch(
       setProjectConfig({
         localPath: selection.repoPath || null,
@@ -620,7 +634,7 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
-      } = resolveOnboardingModel(reduxState);
+      } = await resolveOnboardingModel(reduxState);
       const agentId = unifiedIdService.generateAgentId();
       const agentType = createAgentTypeId('workspace');
 

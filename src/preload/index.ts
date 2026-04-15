@@ -47,6 +47,7 @@ const ALLOWED_CHANNELS = [
   "workspace:clear-recent",
   "workspace:get-stats",
   "workspace:validate",
+  "workspace:preflight-clone-check",
   "workspace:repair",
   "workspace:backup",
   "workspace:restore",

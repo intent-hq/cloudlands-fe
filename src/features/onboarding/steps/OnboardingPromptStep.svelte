@@ -22,8 +22,19 @@
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
+  import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import {
+    checkClonePreflight,
+    clearClonePreflight,
+  } from '$lib/store/slices/clone-preflight/clone-preflight-slice';
+  import {
+    selectClonePreflightStatus,
+    selectClonePreflightError,
+    selectClonePreflightUrl,
+  } from '$lib/store/slices/clone-preflight/clone-preflight-selectors';
 
   interface Props {
     // Input state
@@ -103,6 +114,34 @@
   let onboardingRichTextarea: RichTextarea | null = $state(null);
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
+
+  // Preflight check for GitHub URLs. The saga debounces, so we can dispatch
+  // on every change to `projectSelection.githubUrl` without worrying about
+  // flooding the network. A failed preflight surfaces inline BEFORE the user
+  // clicks Create, using the same `WorkspaceCreationError` component used
+  // for post-submit errors so the guidance is consistent.
+  const dispatch = getDispatch();
+  const preflightStatus$ = selectClonePreflightStatus();
+  const preflightError$ = selectClonePreflightError();
+  const preflightUrl$ = selectClonePreflightUrl();
+
+  $effect(() => {
+    if (projectSelection?.type === 'github' && projectSelection.githubUrl) {
+      dispatch(checkClonePreflight(projectSelection.githubUrl));
+    } else {
+      dispatch(clearClonePreflight());
+    }
+  });
+
+  // Only surface a preflight error that matches the URL the user is actively
+  // selecting — otherwise a stale error from a previous URL can linger after
+  // the user fixes the URL.
+  const activePreflightError = $derived.by<string | null>(() => {
+    if (projectSelection?.type !== 'github' || !projectSelection.githubUrl) return null;
+    if ($preflightStatus$ !== 'error') return null;
+    if ($preflightUrl$ !== projectSelection.githubUrl.trim()) return null;
+    return $preflightError$;
+  });
 
   // Expose the RichTextarea ref so the parent can call methods on it
   export function getRichTextarea(): RichTextarea | null {
@@ -484,24 +523,14 @@
       </div>
     {/if}
 
-    <!-- Error state -->
+    <!-- Error state: prefer the post-submit error (user clicked Create and
+         it actually failed). If the user hasn't submitted yet but the
+         preflight check has found a problem, surface that instead so they
+         can fix it before clicking Create. -->
     {#if onboardingCreationError}
-      <div
-        class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
-        in:fly={{ y: 10, duration: 200 }}
-      >
-        <p class="text-destructive font-medium mb-1">
-          Failed to create workspace
-        </p>
-        <p class="text-muted-foreground mb-3">{onboardingCreationError}</p>
-        <button
-          type="button"
-          class="text-sm font-medium text-primary hover:underline cursor-pointer"
-          onclick={onSubmit}
-        >
-          Try again
-        </button>
-      </div>
+      <WorkspaceCreationError message={onboardingCreationError} onRetry={onSubmit} />
+    {:else if activePreflightError}
+      <WorkspaceCreationError message={activePreflightError} variant="warning" />
     {/if}
 
     <!-- Create button -->

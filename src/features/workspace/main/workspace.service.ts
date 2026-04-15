@@ -350,6 +350,94 @@ export class WorkspaceService {
   }
 
   /**
+   * Lightweight preflight check that verifies a GitHub URL is reachable and
+   * that the user's git/SSH setup can authenticate against it. Runs
+   * `git ls-remote --heads <httpsUrl>` with a short timeout — this is what
+   * `git clone` does for auth but without transferring any repository data.
+   *
+   * Returns the same error-string shape as `cloneGitHubRepository` so the
+   * renderer can feed the message into `diagnoseCloneError` and render the
+   * same structured guidance.
+   */
+  async preflightCloneCheck(githubUrl: string): Promise<Result<null, string>> {
+    const urlMatch = githubUrl.match(
+      /(?:https?:\/\/)?(?:www\.)?github\.com\/([^\/]+)\/([^\/\s#?]+)/i,
+    );
+    if (!urlMatch) {
+      return { ok: false, error: `Invalid GitHub URL: ${githubUrl}` };
+    }
+    const owner = urlMatch[1];
+    const repo = urlMatch[2].replace(/\.git$/, '');
+    const httpsUrl = `https://github.com/${owner}/${repo}.git`;
+
+    try {
+      await execAsync(`git ls-remote --heads ${escapeShellArg(httpsUrl)}`, {
+        timeout: 8000,
+      });
+      return { ok: true, data: null };
+    } catch (error: any) {
+      const stderr: string = error?.stderr || '';
+      const message: string = error?.message || String(error);
+      const combined = `${stderr}\n${message}`.toLowerCase();
+
+      logger.info('Preflight clone check failed', {
+        githubUrl,
+        stderr: stderr.slice(0, 500),
+      });
+
+      // Mirror the classification used in cloneGitHubRepository so the
+      // renderer sees the same surface strings for the same conditions.
+      if (
+        combined.includes('terminal prompts disabled') ||
+        combined.includes('could not read username') ||
+        combined.includes('could not read password') ||
+        combined.includes('authentication failed')
+      ) {
+        return {
+          ok: false,
+          error:
+            'This repository requires authentication. Please sign in to GitHub on your terminal first, or make sure the repository is public.',
+        };
+      }
+
+      if (
+        combined.includes('repository not found') ||
+        combined.includes('the requested url returned error: 404') ||
+        combined.includes('404: not found')
+      ) {
+        return {
+          ok: false,
+          error: `Repository not found: ${githubUrl}. The repository may not exist, or it may be private. Please verify the URL.`,
+        };
+      }
+
+      if (combined.includes('the requested url returned error: 403')) {
+        return {
+          ok: false,
+          error: `Access denied for ${githubUrl}. You may not have permission to access this repository.`,
+        };
+      }
+
+      if (
+        combined.includes('could not resolve host') ||
+        combined.includes('network is unreachable') ||
+        combined.includes('operation timed out')
+      ) {
+        return {
+          ok: false,
+          error: 'Network error: Unable to reach GitHub. Please check your internet connection.',
+        };
+      }
+
+      const cleanError = stderr.trim() || message;
+      return {
+        ok: false,
+        error: `Failed to check repository: ${cleanError}`,
+      };
+    }
+  }
+
+  /**
    * Clone a GitHub repository to the specified directory
    * Returns the local path to the cloned repository
    */

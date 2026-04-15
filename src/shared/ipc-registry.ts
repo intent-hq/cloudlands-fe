@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
     CLEAR_RECENT: 'workspace:clear-recent',
     GET_STATS: 'workspace:get-stats',
     VALIDATE: 'workspace:validate',
+    PREFLIGHT_CLONE_CHECK: 'workspace:preflight-clone-check',
     REPAIR: 'workspace:repair',
     BACKUP: 'workspace:backup',
     RESTORE: 'workspace:restore',

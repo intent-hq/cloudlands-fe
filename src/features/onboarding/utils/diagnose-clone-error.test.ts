@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest';
+import { diagnoseCloneError } from './diagnose-clone-error';
+
+describe('diagnoseCloneError', () => {
+  it('returns unknown for empty/whitespace input', () => {
+    expect(diagnoseCloneError('').kind).toBe('unknown');
+    expect(diagnoseCloneError(undefined).kind).toBe('unknown');
+    expect(diagnoseCloneError('   \n').kind).toBe('unknown');
+  });
+
+  it('classifies the real-world askpass packaging failure', () => {
+    const msg =
+      "fatal: cannot exec '/Users/x/Downloads/Intent.app/.../app.asar/resources/bin/ssh-askpass-intent.sh': Not a directory\n" +
+      'fatal: could not read Username for https://github.com: terminal prompts disabled';
+    expect(diagnoseCloneError(msg).kind).toBe('askpass-missing');
+  });
+
+  it('prefers askpass-missing over auth-required when both signals are present', () => {
+    const msg =
+      'fatal: cannot exec ssh-askpass-intent.sh\nfatal: could not read Username for https://github.com: terminal prompts disabled';
+    expect(diagnoseCloneError(msg).kind).toBe('askpass-missing');
+  });
+
+  it('classifies bare auth-required messages', () => {
+    expect(diagnoseCloneError('fatal: Authentication failed').kind).toBe('auth-required');
+    expect(
+      diagnoseCloneError('This repository requires authentication. Please sign in.').kind,
+    ).toBe('auth-required');
+    expect(diagnoseCloneError('git@github.com: Permission denied (publickey).').kind).toBe(
+      'auth-required',
+    );
+  });
+
+  it('does NOT classify github-oauth copy as auth-required', () => {
+    expect(
+      diagnoseCloneError('GitHub authentication is required to list your repositories.').kind,
+    ).not.toBe('auth-required');
+  });
+
+  it('classifies repository-not-found', () => {
+    expect(diagnoseCloneError('ERROR: Repository not found.').kind).toBe('repo-not-found');
+    expect(
+      diagnoseCloneError('fatal: unable to access ... The requested URL returned error: 404').kind,
+    ).toBe('repo-not-found');
+  });
+
+  it('classifies access-denied (403)', () => {
+    expect(diagnoseCloneError('The requested URL returned error: 403').kind).toBe('access-denied');
+  });
+
+  it('classifies network errors', () => {
+    expect(diagnoseCloneError('Could not resolve host: github.com').kind).toBe('network');
+    expect(diagnoseCloneError('network is unreachable').kind).toBe('network');
+    expect(diagnoseCloneError('operation timed out').kind).toBe('network');
+  });
+
+  it('classifies destination-exists', () => {
+    expect(
+      diagnoseCloneError(
+        "fatal: destination path '/Users/x/dev/repo' already exists and is not an empty directory.",
+      ).kind,
+    ).toBe('destination-exists');
+  });
+
+  it('classifies git-not-installed', () => {
+    expect(diagnoseCloneError('spawn git ENOENT').kind).toBe('git-not-installed');
+  });
+
+  it('preserves the raw message regardless of kind', () => {
+    const raw = 'ERROR: Repository not found.';
+    expect(diagnoseCloneError(raw).rawMessage).toBe(raw);
+  });
+});

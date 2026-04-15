@@ -8,14 +8,12 @@
    */
   import { slide } from 'svelte/transition';
   import {
-    faArrowRightToBracket,
     faArrowUpRightFromSquare,
     faArrowsRotate,
-    faDownload,
     faPlug,
-    faTerminal,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { toast } from 'svelte-sonner';
   import { cn } from '$lib/utils';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
@@ -74,8 +72,6 @@
     onAuggieManualAuth: () => void;
     /** Called when manual auth input changes */
     onAuggieManualAuthInputChange: (value: string) => void;
-    /** Called to run a command in a terminal */
-    onRunCommand: (cmd: string, providerName: string, e: Event) => void;
   }
 
   let {
@@ -93,7 +89,6 @@
     onAuggieLogin,
     onAuggieManualAuth,
     onAuggieManualAuthInputChange,
-    onRunCommand,
   }: Props = $props();
 
   const installed = $derived(provider.available);
@@ -112,11 +107,9 @@
   const needsAction = $derived(
     !provider.statusLoading && (needsInstall || needsLogin || needsUpdate),
   );
-  const cardClickable = $derived(needsAction);
-
-  /** Label for the auggie action button (install / update / login). */
-  const auggieActionLabel = $derived(
-    needsInstall ? 'Install Auggie' : needsUpdate ? 'Update Auggie' : 'Log in to Auggie',
+  const cardClickable = $derived(
+    (provider.id === 'auggie' && needsAction) ||
+      (!ready && !provider.statusLoading && provider.id !== 'auggie' && !!provider.docsUrl),
   );
 
   function openDocs(url: string, e: Event) {
@@ -124,23 +117,32 @@
     shell.open(url);
   }
 
-  function handleCardClick(e: Event) {
+  function handleCardClick() {
     if (ready) {
       onSelect(provider.id);
-    } else if (needsAction) {
-      if (provider.id === 'auggie') {
-        if (needsInstall || needsUpdate) onAuggieInstall();
-        else onAuggieLogin();
-      } else if (cmd) {
-        onRunCommand(cmd, provider.name, e);
-      }
+    } else if (needsAction && provider.id === 'auggie') {
+      if (needsInstall || needsUpdate) onAuggieInstall();
+      else onAuggieLogin();
+    } else if (!ready && !provider.statusLoading && provider.id !== 'auggie' && provider.docsUrl) {
+      shell.open(provider.docsUrl);
     }
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      handleCardClick(e);
+      handleCardClick();
+    }
+  }
+
+  async function copyCommand(e: Event) {
+    e.stopPropagation();
+    if (!cmd) return;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      toast.success('Copied — paste it into your terminal to run');
+    } catch {
+      toast.error('Copy failed');
     }
   }
 </script>
@@ -196,10 +198,19 @@
 
     <!-- Bottom area: name + status row -->
     <div class="relative z-10 flex flex-col">
-      <div class="flex items-center gap-1.5 min-w-0">
-        <div class="font-medium text-lg truncate flex-1 min-w-0">
-          {provider.name}
-        </div>
+      <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
+        {#if provider.docsUrl}
+          <button
+            onclick={(e) => openDocs(provider.docsUrl, e)}
+            class="font-medium text-lg truncate min-w-0 cursor-pointer"
+          >
+            {provider.name}
+          </button>
+        {:else}
+          <div class="font-medium text-lg truncate min-w-0">
+            {provider.name}
+          </div>
+        {/if}
         {#if provider.docsUrl}
           <button
             type="button"
@@ -208,16 +219,16 @@
             title="Open {provider.name} docs"
             aria-label="Open {provider.name} docs"
           >
-            <span class="text-xs w-0 overflow-hidden group-hover/button:w-8 transition-all"
+            <!-- <span class="text-xs w-0 overflow-hidden group-hover/button:w-8 transition-all"
               >Docs</span
-            >
+            > -->
             <Fa icon={faArrowUpRightFromSquare} size={11} />
           </button>
         {/if}
       </div>
 
       {#if provider.description}
-        <p class="text-xs opacity-70 leading-snug pb-2">
+        <p class="text-xs opacity-70 leading-snug pb-4">
           {provider.description}
         </p>
       {/if}
@@ -233,7 +244,7 @@
               <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
               <Fa icon={faPlug} class="mr-1.5 transform rotate-90" size={12} />
             </div>
-            <div class="flex items-center whitespace-nowrap truncate opacity-70">
+            <div class="flex items-center whitespace-nowrap truncate font-medium">
               Connected
               {#if provider.authDetails}
                 <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
@@ -248,75 +259,42 @@
             </div>
           </div>
         {:else if needsLogin}
-          <span class="opacity-70">Not logged in</span>
+          <span
+            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+            >Log in</span
+          >
         {:else}
-          <span class="opacity-70">Not installed</span>
+          <span
+            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+            >Not installed</span
+          >
         {/if}
 
-        <div class="ml-auto flex items-center gap-1.5">
-          {#if provider.id === 'auggie' && (needsInstall || needsLogin || needsUpdate)}
-            <!-- Auggie uses a managed binary download + OAuth flow -->
-            <Tooltip
-              side="top"
-              content={auggieActionLabel}
-              disableHoverableContent
+        <div class="flex items-center gap-1.5">
+          {#if needsInstall || needsLogin || needsUpdate}
+            <button
+              type="button"
+              class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={(e) => {
+                e.stopPropagation();
+                dispatch(checkSingleProviderRequested(provider.id));
+              }}
+              disabled={$providerLoadingMap$[provider.id] ||
+                (provider.id === 'auggie' && auggieActionInProgress)}
+              title="Refresh {provider.name} status"
+              aria-label="Refresh {provider.name} status"
             >
-              <button
-                class="text-inherit opacity-50 hover:opacity-100 transition-colors cursor-pointer p-1.5 disabled:opacity-30 disabled:cursor-not-allowed h-6.5"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  if (needsInstall || needsUpdate) onAuggieInstall();
-                  else onAuggieLogin();
-                }}
-                disabled={auggieActionInProgress}
-                title={auggieActionLabel}
-                aria-label={auggieActionLabel}
+              <span
+                class={cn('inline-block', {
+                  'animate-spin':
+                    $providerLoadingMap$[provider.id] ||
+                    (provider.id === 'auggie' && auggieActionInProgress),
+                })}
               >
-                {#if auggieActionInProgress}
-                  <span class="inline-block animate-spin">
-                    <Fa icon={faArrowsRotate} size={14} />
-                  </span>
-                {:else}
-                  <Fa
-                    icon={needsInstall || needsUpdate ? faDownload : faArrowRightToBracket}
-                    size={16}
-                  />
-                {/if}
-              </button>
-            </Tooltip>
-          {:else if cmd}
-            <TooltipRich side="top" maxWidth="24rem">
-              {#snippet content()}
-                <p>{needsLogin ? 'Log in using' : 'Install using'}</p>
-                <div class="font-medium text-xs">{cmd}</div>
-                <p class="opacity-50">Click to paste in terminal</p>
-              {/snippet}
-              <button
-                class="text-inherit opacity-50 hover:opacity-100 transition-colors cursor-pointer p-1.5"
-                onclick={(e) => onRunCommand(cmd, provider.name, e)}
-                title={needsLogin ? 'Run login command' : 'Run install command'}
-                aria-label={needsLogin ? 'Run login command' : 'Run install command'}
-              >
-                <Fa icon={faTerminal} size={14} />
-              </button>
-            </TooltipRich>
+                <Fa icon={faArrowsRotate} size={14} />
+              </span>
+            </button>
           {/if}
-
-          <button
-            type="button"
-            class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            onclick={(e) => {
-              e.stopPropagation();
-              dispatch(checkSingleProviderRequested(provider.id));
-            }}
-            disabled={$providerLoadingMap$[provider.id]}
-            title="Refresh {provider.name} status"
-            aria-label="Refresh {provider.name} status"
-          >
-            <span class={cn('inline-block', { 'animate-spin': $providerLoadingMap$[provider.id] })}>
-              <Fa icon={faArrowsRotate} size={14} />
-            </span>
-          </button>
         </div>
       </div>
       <!-- Auggie inline auth UI (slides in) -->

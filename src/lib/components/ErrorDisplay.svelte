@@ -64,7 +64,7 @@
   const typeConfig = {
     error: {
       icon: faTimesCircle,
-      color: 'text-destructive',
+      color: 'text-destructive-foreground',
       bgColor: 'bg-destructive/10',
       borderColor: 'border-destructive/30',
       defaultTitle: 'Error',

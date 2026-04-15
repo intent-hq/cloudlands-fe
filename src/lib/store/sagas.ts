@@ -40,6 +40,7 @@ import { linearAuthSaga } from "./slices/linear-auth/sagas/linear-auth-saga";
 import { githubAuthSaga } from "./slices/github-auth/sagas/github-auth-saga";
 import { githubReposSaga } from "./slices/github-repos/sagas/github-repos-saga";
 import { githubRepoSearchSaga } from "./slices/github-repo-search/sagas/github-repo-search-saga";
+import { clonePreflightSaga } from "./slices/clone-preflight/sagas/clone-preflight-saga";
 import { sentryAuthSaga } from "./slices/sentry-auth/sagas/sentry-auth-saga";
 import { contextSaga } from "./slices/context/sagas/context-saga";
 import { browserSaga } from "./slices/browser/sagas/browser-saga";
@@ -115,6 +116,7 @@ export const sagas = {
   githubAuthSaga,
   githubReposSaga,
   githubRepoSearchSaga,
+  clonePreflightSaga,
   linearAuthSaga,
   sentryAuthSaga,
   setupScriptsSaga,

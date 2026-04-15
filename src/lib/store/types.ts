@@ -55,6 +55,7 @@ export type SagaName =
   | 'githubAuthSaga'
   | 'githubReposSaga'
   | 'githubRepoSearchSaga'
+  | 'clonePreflightSaga'
   | 'linearAuthSaga'
   | 'sentryAuthSaga'
   | 'setupScriptsSaga'

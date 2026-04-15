@@ -264,6 +264,10 @@ export class WorkspaceClient {
     return result;
   }
 
+  async preflightCloneCheck(githubUrl: string): Promise<Result<null, string>> {
+    return this.invoke<null>(WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK, { githubUrl });
+  }
+
   async get(id: WorkspaceId): Promise<Result<Workspace, string>> {
     const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.GET, { id });
     if (result.ok) {

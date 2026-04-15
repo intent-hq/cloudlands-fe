@@ -123,9 +123,9 @@
   // Provider metadata for docs URLs and auth requirements
   const PROVIDER_METADATA: Record<string, { docsUrl: string; requiresAuth: boolean }> = {
     auggie: { docsUrl: 'https://docs.augmentcode.com/cli/overview', requiresAuth: true },
-    'claude-code': { docsUrl: 'https://code.claude.com/docs/en/quickstart', requiresAuth: false },
-    codex: { docsUrl: 'https://developers.openai.com/codex/cli/', requiresAuth: false },
-    opencode: { docsUrl: 'https://opencode.ai/docs', requiresAuth: false },
+    'claude-code': { docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code', requiresAuth: false },
+    codex: { docsUrl: 'https://developers.openai.com/codex/cli#cli-setup', requiresAuth: false },
+    opencode: { docsUrl: 'https://opencode.ai/docs#install', requiresAuth: false },
     cortex: {
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
