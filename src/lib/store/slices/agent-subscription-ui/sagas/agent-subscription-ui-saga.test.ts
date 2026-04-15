@@ -36,10 +36,11 @@ vi.mock('typed-redux-saga', () => ({
   },
 }));
 
-const { selectActiveWorkspaceIdMock, invokeMock, selectTrackedAgentIdsMock } = vi.hoisted(() => ({
+const { selectActiveWorkspaceIdMock, invokeMock, selectTrackedAgentIdsMock, selectWaitingStateMock } = vi.hoisted(() => ({
   selectActiveWorkspaceIdMock: vi.fn(() => null),
   invokeMock: vi.fn(),
   selectTrackedAgentIdsMock: vi.fn(() => []),
+  selectWaitingStateMock: vi.fn(() => 'idle'),
 }));
 
 vi.mock('$lib/electron-bridge', async () => ({
@@ -56,6 +57,9 @@ vi.mock('../../workspace/workspace-selectors', () => ({
 vi.mock('../agent-subscription-ui-selectors', () => ({
   selectTrackedAgentIds: {
     select: (...args: any[]) => selectTrackedAgentIdsMock(...args),
+  },
+  selectWaitingState: {
+    select: (...args: any[]) => selectWaitingStateMock(...args),
   },
 }));
 
@@ -78,6 +82,7 @@ import {
   fetchAndDispatchSnapshot,
   handleSubscriptionEvent,
   _getWakeupGeneration,
+  _getCompletionGeneration,
 } from './agent-subscription-ui-saga';
 import {
   workspaceMounted,
@@ -155,6 +160,7 @@ describe('agent-subscription-ui-saga', () => {
 
   describe('fetchAndDispatchSnapshot', () => {
     it('dispatches setSubscriptionSnapshot on successful IPC call', () => {
+      selectWaitingStateMock.mockReturnValue('idle');
       invokeMock.mockResolvedValue({
         success: true,
         data: [{ id: 's1', agentId: AGENT, eventTypes: ['file:*'], actorIds: [], createdAt: '', description: '' }],
@@ -164,8 +170,10 @@ describe('agent-subscription-ui-saga', () => {
 
       const iterator = fetchAndDispatchSnapshot(WS, AGENT);
 
+      // select previousWaitingState
+      iterator.next();
       // call invoke
-      const callEffect = iterator.next();
+      const callEffect = iterator.next('idle');
       expect(callEffect.done).toBe(false);
 
       // Simulate successful response
@@ -189,8 +197,10 @@ describe('agent-subscription-ui-saga', () => {
     });
 
     it('does not dispatch when IPC call fails', () => {
+      selectWaitingStateMock.mockReturnValue('idle');
       const iterator = fetchAndDispatchSnapshot(WS, AGENT);
-      iterator.next(); // call invoke
+      iterator.next(); // select
+      iterator.next('idle'); // call invoke
 
       // Simulate error
       const result = iterator.throw?.(new Error('IPC error'));
@@ -199,17 +209,21 @@ describe('agent-subscription-ui-saga', () => {
     });
 
     it('does not dispatch when result is not successful', () => {
+      selectWaitingStateMock.mockReturnValue('idle');
       const iterator = fetchAndDispatchSnapshot(WS, AGENT);
-      iterator.next(); // call invoke
+      iterator.next(); // select
+      iterator.next('idle'); // call invoke
 
       // Simulate unsuccessful response
       const result = iterator.next({ success: false });
       expect(result.done).toBe(true);
     });
 
-    it('sets waitingState to idle when no subscriptions or delegation groups', () => {
+    it('sets waitingState to idle when no subscriptions and previously idle', () => {
+      selectWaitingStateMock.mockReturnValue('idle');
       const iterator = fetchAndDispatchSnapshot(WS, AGENT);
-      iterator.next(); // call invoke
+      iterator.next(); // select
+      iterator.next('idle'); // call invoke
 
       const response = {
         success: true,
@@ -228,6 +242,108 @@ describe('agent-subscription-ui-saga', () => {
       });
       expect((putEffect.value as any)?.payload?.action?.type).toBe(expectedAction.type);
       expect((putEffect.value as any)?.payload?.action?.payload?.data?.waitingState).toBe('idle');
+    });
+
+    it('transitions to completed when previously waiting and snapshot is empty', () => {
+      selectWaitingStateMock.mockReturnValue('waiting');
+      const iterator = fetchAndDispatchSnapshot(WS, AGENT);
+      iterator.next(); // select
+      iterator.next('waiting'); // provide previous state, call invoke
+
+      const response = {
+        success: true,
+        data: [],
+        delegationGroups: [],
+        agentStatuses: {},
+      };
+      const putEffect = iterator.next(response);
+      expect(putEffect.done).toBe(false);
+
+      // Should dispatch with waitingState: 'completed'
+      expect((putEffect.value as any)?.payload?.action?.payload?.data?.waitingState).toBe('completed');
+
+      // Should fork delayed cleanup
+      const forkEffect = iterator.next();
+      expect(forkEffect.done).toBe(false);
+      expect((forkEffect.value as any)?.type).toBe('FORK');
+
+      // Verify completion generation was set
+      const key = `${WS}:${AGENT}`;
+      const gen = _getCompletionGeneration(key);
+      expect(gen).toBeGreaterThan(0);
+
+      // Run the forked cleanup generator
+      const innerFn = (forkEffect.value as any)?.payload?.fn;
+      const inner = innerFn();
+
+      // delay(3000)
+      const delayEff = inner.next();
+      expect(delayEff.done).toBe(false);
+
+      // After delay: generation check passes, then re-fetch snapshot
+      const refetchEff = inner.next();
+      expect(refetchEff.done).toBe(false);
+      // Provide empty re-fetch result so reset proceeds
+      const resetEff = inner.next({ success: true, data: [], delegationGroups: [] });
+      expect(resetEff.done).toBe(false);
+      expect((resetEff.value as any)?.payload?.action?.type).toBe(resetSubscriptionUI(WS, AGENT).type);
+    });
+
+    it('transitions to completed when previously woken and snapshot is empty', () => {
+      selectWaitingStateMock.mockReturnValue('woken');
+      const iterator = fetchAndDispatchSnapshot(WS, AGENT);
+      iterator.next(); // select
+      iterator.next('woken'); // provide previous state
+
+      const response = {
+        success: true,
+        data: [],
+        delegationGroups: [],
+        agentStatuses: {},
+      };
+      const putEffect = iterator.next(response);
+      expect(putEffect.done).toBe(false);
+      expect((putEffect.value as any)?.payload?.action?.payload?.data?.waitingState).toBe('completed');
+    });
+
+    it('newer completion resets cleanup timer (generation counter)', () => {
+      selectWaitingStateMock.mockReturnValue('waiting');
+      const key = `${WS}:${AGENT}`;
+
+      // First completion
+      const it1 = fetchAndDispatchSnapshot(WS, AGENT);
+      it1.next(); // select
+      it1.next('waiting'); // call invoke
+      it1.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} }); // put
+      const fork1 = it1.next(); // fork
+      const gen1 = _getCompletionGeneration(key);
+
+      // Second completion (arrives before first cleanup fires)
+      const it2 = fetchAndDispatchSnapshot(WS, AGENT);
+      it2.next(); // select
+      it2.next('waiting'); // call invoke
+      it2.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} }); // put
+      const fork2 = it2.next(); // fork
+      const gen2 = _getCompletionGeneration(key);
+      expect(gen2).toBe(gen1 + 1);
+
+      // First fork's cleanup fires — generation mismatch → should NOT resetSubscriptionUI
+      const innerFn1 = (fork1.value as any)?.payload?.fn;
+      const inner1 = innerFn1();
+      inner1.next(); // delay
+      const after1 = inner1.next(); // check generation
+      expect(after1.done).toBe(true); // No reset dispatched
+
+      // Second fork's cleanup fires — generation matches → SHOULD resetSubscriptionUI
+      const innerFn2 = (fork2.value as any)?.payload?.fn;
+      const inner2 = innerFn2();
+      inner2.next(); // delay
+      const refetchEff2 = inner2.next(); // generation check passes → re-fetch
+      expect(refetchEff2.done).toBe(false);
+      // Provide empty re-fetch result so reset proceeds
+      const resetEff = inner2.next({ success: true, data: [], delegationGroups: [] });
+      expect(resetEff.done).toBe(false);
+      expect((resetEff.value as any)?.payload?.action?.type).toBe(resetSubscriptionUI(WS, AGENT).type);
     });
   });
 

@@ -39,8 +39,8 @@ import {
   selectAllWorkspaceIds,
   selectIsAgentDeleted,
   selectIsOneShotFired,
-  selectDelegationGroup,
-  selectIsDelegationGroupComplete,
+  selectDelegationGroupRaw,
+  selectIsDelegationGroupCompleteRaw,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
@@ -445,8 +445,8 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
     )
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -584,7 +584,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
     )
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) {
+          if (effect.selector === selectDelegationGroupRaw) {
             return {
               groupId: "deleg-impl",
               parentAgentId: COORDINATOR,
@@ -598,7 +598,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
               delivered: false,
             };
           }
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -703,8 +703,8 @@ describe("E2E: no-window delegation group wakeup (regression)", () => {
     )
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -1155,8 +1155,8 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
     )
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();

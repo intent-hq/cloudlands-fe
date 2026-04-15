@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { call } from "typed-redux-saga";
+import { call, take, delay } from "typed-redux-saga";
 
 /**
  * Helper to detect redux-saga `delay()` effects inside expectSaga call providers.
@@ -56,8 +56,8 @@ import {
   selectAllSubscriptionsRaw,
   selectIsAgentDeleted,
   selectIsOneShotFired,
-  selectDelegationGroup,
-  selectIsDelegationGroupComplete,
+  selectDelegationGroupRaw,
+  selectIsDelegationGroupCompleteRaw,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
@@ -75,12 +75,13 @@ import {
   sendBackendMessage,
   clearDeliveryDedupCache,
   sweepCatchUpSeen,
+  stuckGroupFirstSeen,
   buildSweepCatchUpEventId,
   recordDeliveredEventIds,
   filterAlreadyDelivered,
 } from "./delivery-saga";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
-import { handleDelegationGroupDelivery } from "./delegation-group-saga";
+import { handleDelegationGroupDelivery, delegationGroupSaga } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
 import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots, matchingSaga } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
@@ -579,8 +580,8 @@ describe("handleDelegationGroupDelivery", () => {
     return expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return tracker;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return tracker;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -618,8 +619,8 @@ describe("handleDelegationGroupDelivery", () => {
     return expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return trackerWithEvents;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return trackerWithEvents;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -651,7 +652,7 @@ describe("handleDelegationGroupDelivery", () => {
 
     return expectSaga(handleDelegationGroupDelivery, action)
       .provide([
-        [matchers.select(selectDelegationGroup.select, WS, "group-1"), deliveredTracker],
+        [matchers.select(selectDelegationGroupRaw, WS, "group-1"), deliveredTracker],
       ])
       .not.call.fn(handleDeliverEvents)
       .run();
@@ -662,8 +663,8 @@ describe("handleDelegationGroupDelivery", () => {
 
     return expectSaga(handleDelegationGroupDelivery, action)
       .provide([
-        [matchers.select(selectDelegationGroup.select, WS, "group-1"), tracker],
-        [matchers.select(selectIsDelegationGroupComplete.select, WS, "group-1"), false],
+        [matchers.select(selectDelegationGroupRaw, WS, "group-1"), tracker],
+        [matchers.select(selectIsDelegationGroupCompleteRaw, WS, "group-1"), false],
       ])
       .not.call.fn(handleDeliverEvents)
       .run();
@@ -678,8 +679,8 @@ describe("handleDelegationGroupDelivery", () => {
     await expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroup.select) return tracker;
-          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
+          if (effect.selector === selectDelegationGroupRaw) return tracker;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
           // Always return "busy" so polling never resolves
           if (effect.selector === selectAgentStatus.select) return "responding";
           return next();
@@ -1681,6 +1682,192 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
 
 
 // ---------------------------------------------------------------------------
+// Delegation group stuck-detection (periodicQueueSweep)
+// ---------------------------------------------------------------------------
+
+describe("periodicQueueSweep — delegation group stuck-detection", () => {
+  function makeSweepProvider(wsState: WorkspaceSubscriptionState) {
+    let delayCount = 0;
+    return {
+      call(effect: any, next: () => any) {
+        if (isDelayEffect(effect)) {
+          delayCount++;
+          if (delayCount > 1) return new Promise(() => {});
+          return undefined;
+        }
+        // Stub out handleDelegationGroupDelivery's internal calls
+        // (formatNotification, sendBackendMessage, dispatchWorkspaceEvent)
+        // so the direct call doesn't blow up inside the sweep
+        if (effect.fn === handleDelegationGroupDelivery) {
+          // Let it run — the select provider below handles its selectors
+          return next();
+        }
+        return next();
+      },
+      select(effect: any, next: () => any) {
+        if (effect.args?.length === 0) return [WS];
+        if (effect.args?.[0] === WS && effect.args?.length === 1) return wsState;
+        // Handle raw selectors used by handleDelegationGroupDelivery
+        if (effect.selector === selectDelegationGroupRaw && effect.args?.[0] === WS) {
+          const groupId = effect.args[1];
+          return wsState.delegationGroups[groupId];
+        }
+        if (effect.selector === selectIsDelegationGroupCompleteRaw && effect.args?.[0] === WS) {
+          const groupId = effect.args[1];
+          const group = wsState.delegationGroups[groupId];
+          if (!group) return false;
+          const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
+          return group.awaitMode === "any" ? doneCount >= 1 : doneCount >= group.expectedAgentIds.length;
+        }
+        if (effect.selector === selectAgentStatus.select) return "idle";
+        if (effect.selector === selectIsAgentDeleted.select) return false;
+        return next();
+      },
+    };
+  }
+
+  afterEach(() => {
+    sweepCatchUpSeen.clear();
+    stuckGroupFirstSeen.clear();
+  });
+
+  it("calls handleDelegationGroupDelivery directly for complete-but-undelivered groups", () => {
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId: "group-stuck",
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: ["agent-2", "agent-3"],
+      completedAgentIds: ["agent-2", "agent-3"],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: false,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { "group-stuck": tracker },
+    };
+
+    // Pre-populate stuckGroupFirstSeen so the threshold check passes
+    stuckGroupFirstSeen.set("group-stuck", Date.now() - 60_000);
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true });
+  });
+
+  it("skips already-delivered groups", () => {
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId: "group-done",
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: ["agent-2"],
+      completedAgentIds: ["agent-2"],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: true,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { "group-done": tracker },
+    };
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .not.call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true });
+  });
+
+  it("skips incomplete groups", () => {
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId: "group-partial",
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: ["agent-2", "agent-3"],
+      completedAgentIds: ["agent-2"],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: false,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { "group-partial": tracker },
+    };
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .not.call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true });
+  });
+
+  it("handles awaitMode 'any' — calls delivery when at least one agent completed", () => {
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId: "group-any",
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "any",
+      expectedAgentIds: ["agent-2", "agent-3"],
+      completedAgentIds: ["agent-2"],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: false,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { "group-any": tracker },
+    };
+
+    // Pre-populate stuckGroupFirstSeen so the threshold check passes
+    stuckGroupFirstSeen.set("group-any", Date.now() - 60_000);
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true });
+  });
+
+  it("counts deletedAgentIds toward completion", () => {
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId: "group-deleted",
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: ["agent-2", "agent-3"],
+      completedAgentIds: ["agent-2"],
+      deletedAgentIds: ["agent-3"],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: false,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { "group-deleted": tracker },
+    };
+
+    // Pre-populate stuckGroupFirstSeen so the threshold check passes
+    stuckGroupFirstSeen.set("group-deleted", Date.now() - 60_000);
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
+      .call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
 // Regression: sweep catch-up double-delivery for non-oneShot subscriptions
 // (PR #461 follow-up)
 // ---------------------------------------------------------------------------
@@ -1926,5 +2113,121 @@ describe("matchingSaga blocking behavior", () => {
       .run({ timeout: 200, silenceTimeout: true });
 
     expect(loopCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// delegationGroupSaga restart wrapper behavior
+// ---------------------------------------------------------------------------
+
+describe("delegationGroupSaga restart wrapper behavior", () => {
+  it("does not spin when healthy because delegationGroupSaga blocks", async () => {
+    // delegationGroupSaga registers takeEvery watchers and then blocks on
+    // take("@@NEVER_RESOLVE"). The crash-recovery wrapper in
+    // agentSubscriptionsSaga should therefore never loop.
+    let loopCount = 0;
+
+    function* testWrapper() {
+      while (true) {
+        yield* call(delegationGroupSaga);
+        // If we get here, delegationGroupSaga returned — that's a bug.
+        loopCount++;
+        break; // Don't actually loop in test
+      }
+    }
+
+    await expectSaga(testWrapper)
+      .run({ timeout: 200, silenceTimeout: true });
+
+    expect(loopCount).toBe(0);
+  });
+
+  it("restarts after a thrown error with a delay", async () => {
+    // Simulate delegationGroupSaga throwing an error. The wrapper should
+    // catch the error and delay 1 second before restarting.
+    let restartCount = 0;
+    let delayCallCount = 0;
+    const crashError = new Error("saga boom");
+
+    function* fakeDelegationGroupSaga(): Generator {
+      restartCount++;
+      if (restartCount <= 2) {
+        throw crashError;
+      }
+      // On third call, block forever (healthy state)
+      yield* take("@@NEVER_RESOLVE");
+    }
+
+    function* testWrapper() {
+      while (true) {
+        try {
+          yield* call(fakeDelegationGroupSaga);
+        } catch (_error) {
+          // Mirrors the real wrapper: catch, then delay before restart
+        }
+        yield* delay(1000);
+        delayCallCount++;
+      }
+    }
+
+    await expectSaga(testWrapper)
+      .provide({
+        call(effect, next) {
+          // Resolve delay() immediately so the loop can iterate within timeout
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      .run({ timeout: 500, silenceTimeout: true });
+
+    // The saga should have been called 3 times: two crashes + one healthy block
+    expect(restartCount).toBe(3);
+
+    // Verify that delay was called at least twice (once per crash)
+    expect(delayCallCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("restarts after an unexpected normal exit with a delay", async () => {
+    // Simulate delegationGroupSaga returning normally (unexpected).
+    // The wrapper should delay 1 second before restarting.
+    let callCount = 0;
+    let delayCallCount = 0;
+
+    function* fakeDelegationGroupSaga(): Generator {
+      callCount++;
+      if (callCount <= 1) {
+        // Return normally on first call (simulates unexpected exit)
+        return;
+      }
+      // Block forever on subsequent calls
+      yield* take("@@NEVER_RESOLVE");
+    }
+
+    function* testWrapper() {
+      while (true) {
+        try {
+          yield* call(fakeDelegationGroupSaga);
+        } catch (_error) {
+          // catch path
+        }
+        yield* delay(1000);
+        delayCallCount++;
+      }
+    }
+
+    await expectSaga(testWrapper)
+      .provide({
+        call(effect, next) {
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      .run({ timeout: 500, silenceTimeout: true });
+
+    // Called twice: one unexpected exit + one healthy block
+    expect(callCount).toBe(2);
+
+    // At least one delay for the restart after the unexpected exit
+    expect(delayCallCount).toBeGreaterThanOrEqual(1);
   });
 });

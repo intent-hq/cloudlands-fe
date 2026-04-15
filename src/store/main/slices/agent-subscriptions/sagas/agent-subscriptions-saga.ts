@@ -17,7 +17,17 @@ const logger = new Logger("AgentSubscriptionsSaga");
 
 export function* agentSubscriptionsSaga() {
   yield* fork(deliverySaga);
-  yield* fork(delegationGroupSaga);
+  yield* spawn(function* () {
+    while (true) {
+      try {
+        yield* call(delegationGroupSaga);
+        logger.warn("Delegation group saga exited unexpectedly, restarting in 1s");
+      } catch (error) {
+        logger.error("Delegation group saga crashed, restarting in 1s", { error });
+      }
+      yield* delay(1000);
+    }
+  });
   yield* fork(cleanupSaga);
   yield* fork(ipcBridgeSaga);
   yield* spawn(function* () {

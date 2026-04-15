@@ -24,8 +24,9 @@ import {
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
+  makeKey,
 } from '../agent-subscription-ui-slice';
-import { selectTrackedAgentIds } from '../agent-subscription-ui-selectors';
+import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
 import type {
   Subscription,
   DelegationGroupStatus,
@@ -110,8 +111,11 @@ function createSubscriptionChannel(wsId: string): EventChannel<SubscriptionIpcEv
 // fetchAndDispatchSnapshot — fetches subscription state from main process
 // ---------------------------------------------------------------------------
 
-export function* fetchAndDispatchSnapshot(wsId: string, agentId: string) {
+export function* fetchAndDispatchSnapshot(wsId: string, agentId: string): Generator<any, void, any> {
   try {
+    // Read the previous waiting state before fetching new data
+    const previousWaitingState = yield* select(selectWaitingState.select, wsId, agentId);
+
     const result: any = yield* call(invoke, 'events:get-agent-subscriptions', {
       workspaceId: wsId,
       agentId,
@@ -122,9 +126,58 @@ export function* fetchAndDispatchSnapshot(wsId: string, agentId: string) {
       const delegationGroups: DelegationGroupStatus[] = result.delegationGroups ?? [];
       const agentStatuses: Record<string, AgentStatus> = result.agentStatuses ?? {};
 
-      // Determine waiting state from subscriptions presence
+      const hasData = subscriptions.length > 0 || delegationGroups.length > 0;
+
+      // Detect transition: was waiting/woken but now empty → show "completed"
+      if (!hasData && (previousWaitingState === 'waiting' || previousWaitingState === 'woken')) {
+        yield* put(
+          setSubscriptionSnapshot(wsId, agentId, {
+            subscriptions,
+            delegationGroups,
+            agentStatuses,
+            waitingState: 'completed',
+          }),
+        );
+
+        // Fork delayed cleanup
+        const key = makeKey(wsId, agentId);
+        const gen = (completionGeneration.get(key) ?? 0) + 1;
+        completionGeneration.set(key, gen);
+        yield* fork(function* () {
+          yield* delay(COMPLETED_DISPLAY_DURATION);
+          // Only clean up if no newer completion arrived during the delay
+          if (completionGeneration.get(key) !== gen) return;
+
+          // Re-fetch snapshot to check if new subscriptions or delegation
+          // groups arrived during the "completed" display window.  If the
+          // agent now has active data, skip the reset to avoid wiping it.
+          try {
+            const freshResult: any = yield* call(invoke, 'events:get-agent-subscriptions', {
+              workspaceId: wsId,
+              agentId,
+            });
+            if (freshResult?.success) {
+              const freshSubs: Subscription[] = freshResult.data ?? [];
+              const freshGroups: DelegationGroupStatus[] = freshResult.delegationGroups ?? [];
+              if (freshSubs.length > 0 || freshGroups.length > 0) {
+                // New active data appeared — refresh instead of resetting
+                yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+                return;
+              }
+            }
+          } catch {
+            // If the re-fetch fails, proceed with reset — the original
+            // snapshot already showed empty data.
+          }
+
+          yield* put(resetSubscriptionUI(wsId, agentId));
+        });
+        return;
+      }
+
+      // Normal path: determine waiting state from data presence
       const waitingState: 'idle' | 'waiting' | 'woken' =
-        subscriptions.length > 0 || delegationGroups.length > 0 ? 'waiting' : 'idle';
+        hasData ? 'waiting' : 'idle';
 
       yield* put(
         setSubscriptionSnapshot(wsId, agentId, {
@@ -151,6 +204,21 @@ const wakeupGeneration = new Map<string, number>();
 export function _getWakeupGeneration(key: string): number {
   return wakeupGeneration.get(key) ?? 0;
 }
+
+// ---------------------------------------------------------------------------
+// Per-agent completion generation tracker: prevents a stale cleanup fork
+// from resetting the UI when a new completion arrives.
+// ---------------------------------------------------------------------------
+
+const completionGeneration = new Map<string, number>();
+
+/** @internal Exported for testing only. */
+export function _getCompletionGeneration(key: string): number {
+  return completionGeneration.get(key) ?? 0;
+}
+
+/** Duration (ms) the "Completed" indicator is shown before cleanup. */
+const COMPLETED_DISPLAY_DURATION = 3000;
 
 // ---------------------------------------------------------------------------
 // Per-workspace event handler
@@ -250,12 +318,17 @@ export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnm
     workspaceTasks.delete(wsId);
   }
 
-  // Prune wakeupGeneration entries for the unmounted workspace to prevent
-  // the Map from growing unbounded across workspace mount/unmount cycles.
+  // Prune generation entries for the unmounted workspace to prevent
+  // the Maps from growing unbounded across workspace mount/unmount cycles.
   const prefix = `${wsId}:`;
   for (const key of wakeupGeneration.keys()) {
     if (key.startsWith(prefix)) {
       wakeupGeneration.delete(key);
+    }
+  }
+  for (const key of completionGeneration.keys()) {
+    if (key.startsWith(prefix)) {
+      completionGeneration.delete(key);
     }
   }
 }

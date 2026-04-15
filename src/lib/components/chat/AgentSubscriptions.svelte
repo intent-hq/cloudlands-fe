@@ -17,6 +17,8 @@
     faChevronDown,
     faChevronRight,
     faStop,
+    faTriangleExclamation,
+    faCircleCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
@@ -33,6 +35,7 @@
     selectDelegationGroups,
     selectWokenUpInfo,
     selectCompletionStatus,
+    selectWaitingState,
   } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import { resetSubscriptionUI } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
 
@@ -66,6 +69,7 @@
   const groups$ = selectDelegationGroups(workspaceIdStore, agentIdStore);
   const wokenUpInfo$ = selectWokenUpInfo(workspaceIdStore, agentIdStore);
   const completionStatus$ = selectCompletionStatus(workspaceIdStore, agentIdStore);
+  const waitingState$ = selectWaitingState(workspaceIdStore, agentIdStore);
 
   // ── Component-local UI state ─────────────────────────────────────────
   let isCollapsed: boolean = $state(false);
@@ -111,9 +115,23 @@
     return 'any';
   });
 
+  // Whether any delegation group completed all agents but has not been delivered yet
+  const hasUndeliveredCompleteGroup = $derived.by(() => {
+    return $groups$.some((g) => {
+      const doneCount = g.completedAgentIds.length + g.deletedAgentIds.length;
+      return doneCount >= g.expectedAgentIds.length && g.expectedAgentIds.length > 0 && !g.delivered;
+    });
+  });
+
+  const isCompleted = $derived($waitingState$ === 'completed');
+
   const showSubscriptionRow = $derived.by(() => {
+    // Show row during the 'completed' transitional state
+    if (isCompleted) return true;
     const hasActive = $subs$.length > 0 || $groups$.length > 0;
     const cs = $completionStatus$;
+    // Show row when all agents completed but group not yet delivered (stuck state)
+    if (hasActive && waitMode === 'all' && hasUndeliveredCompleteGroup) return true;
     return (
       hasActive &&
       watchedAgentIds.length > 0 &&
@@ -192,14 +210,27 @@
       </button>
 
       <!-- Wait mode indicator - clickable to toggle collapse/expand -->
-      {#if waitMode === 'all'}
+      {#if isCompleted}
+        <span
+          class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
+          transition:fade={{ duration: 200 }}
+        >
+          <Fa icon={faCircleCheck} size="13" />
+          Completed
+        </span>
+      {:else if waitMode === 'all'}
         <button
           type="button"
           class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
           onclick={toggleCollapsed}
         >
-          <Fa icon={faHourglass} size="13" />
-          Waiting for all
+          {#if hasUndeliveredCompleteGroup}
+            <Fa icon={faTriangleExclamation} size="13" class="text-warning" />
+            <span class="text-warning">Delivery pending</span>
+          {:else}
+            <Fa icon={faHourglass} size="13" />
+            Waiting for all
+          {/if}
           {#if $completionStatus$.total > 0}
             <span class="text-subtle">
               ({$completionStatus$.completed}/{$completionStatus$.total})
@@ -258,44 +289,46 @@
         </div>
       {/if}
 
-      <!-- Action buttons -->
+      <!-- Action buttons (hidden during completed state — nothing to cancel) -->
       <div class="flex-1"></div>
-      <!-- Provider ensures proper context and cleanup during component destruction -->
-      <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root delayDuration={0}>
-          <Tooltip.Trigger>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={stopAllAgents}
-              class="text-ghost hover:text-muted-foreground/70"
-            >
-              <Fa icon={faStop} class="w-2.5! h-2.5!" />
-            </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content side="top" class="text-xs">
-            <p>Stop all agents</p>
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
-      <!-- Provider ensures proper context and cleanup during component destruction -->
-      <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root delayDuration={0}>
-          <Tooltip.Trigger>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={cancelSubscriptions}
-              class="text-ghost hover:text-muted-foreground/70"
-            >
-              <Fa icon={faXmark} class="w-2.5! h-2.5!" />
-            </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content side="top" class="text-xs">
-            <p>Cancel subscription</p>
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
+      {#if !isCompleted}
+        <!-- Provider ensures proper context and cleanup during component destruction -->
+        <Tooltip.Provider delayDuration={0}>
+          <Tooltip.Root delayDuration={0}>
+            <Tooltip.Trigger>
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={stopAllAgents}
+                class="text-ghost hover:text-muted-foreground/70"
+              >
+                <Fa icon={faStop} class="w-2.5! h-2.5!" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="top" class="text-xs">
+              <p>Stop all agents</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+        <!-- Provider ensures proper context and cleanup during component destruction -->
+        <Tooltip.Provider delayDuration={0}>
+          <Tooltip.Root delayDuration={0}>
+            <Tooltip.Trigger>
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={cancelSubscriptions}
+                class="text-ghost hover:text-muted-foreground/70"
+              >
+                <Fa icon={faXmark} class="w-2.5! h-2.5!" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="top" class="text-xs">
+              <p>Cancel subscription</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      {/if}
     </div>
   </div>
 

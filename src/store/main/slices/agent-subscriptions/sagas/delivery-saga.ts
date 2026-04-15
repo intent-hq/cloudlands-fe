@@ -9,6 +9,7 @@
  */
 
 import { call, fork, join, put, select, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
+import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord, AgentStatus } from "../types";
 import { Logger } from "../../../../../shared/logger";
@@ -39,6 +40,7 @@ import {
 import {
   requestDeliverEvents,
   requestDeliverQueuedEvents,
+  requestDelegationGroupDelivery,
 } from "./saga-actions";
 
 const logger = new Logger("DeliverySaga");
@@ -449,6 +451,20 @@ export function* watchAgentIdleForDelivery() {
 // ---------------------------------------------------------------------------
 
 const SWEEP_INTERVAL_MS = 15_000;
+const STUCK_DELEGATION_GROUP_THRESHOLD_MS = 30_000;
+
+/**
+ * Tracks when a delegation group was first observed as complete (but not
+ * yet delivered) by the periodic sweep.  Only groups that have been in this
+ * state longer than STUCK_DELEGATION_GROUP_THRESHOLD_MS are considered
+ * "stuck" and eligible for retry delivery.
+ *
+ * Key: groupId, Value: timestamp (ms) when first seen complete.
+ * Entries are pruned once the group is delivered or removed.
+ *
+ * Exported for testing only.
+ */
+export const stuckGroupFirstSeen = new Map<string, number>();
 
 /**
  * Tracks which subscription+actor+eventType combos have already had catch-up
@@ -686,6 +702,54 @@ export function* periodicQueueSweep() {
           }
         }
       }
+
+      // -----------------------------------------------------------------
+      // Delegation group stuck-detection: find groups that are complete
+      // but never delivered.  This is a self-healing fallback — if
+      // delegation-group-saga handled delivery correctly, this never fires.
+      // -----------------------------------------------------------------
+      const now = Date.now();
+      for (const [groupId, tracker] of Object.entries(wsState.delegationGroups)) {
+        if (tracker.delivered) {
+          stuckGroupFirstSeen.delete(groupId);
+          continue;
+        }
+
+        const doneCount = tracker.completedAgentIds.length + tracker.deletedAgentIds.length;
+        const isComplete =
+          tracker.awaitMode === "any"
+            ? doneCount >= 1
+            : doneCount >= tracker.expectedAgentIds.length;
+        if (!isComplete) {
+          // Not complete yet — clear any stale first-seen entry
+          stuckGroupFirstSeen.delete(groupId);
+          continue;
+        }
+
+        // Record first time we observed this group as complete
+        if (!stuckGroupFirstSeen.has(groupId)) {
+          stuckGroupFirstSeen.set(groupId, now);
+          continue; // Wait for the threshold before considering it stuck
+        }
+
+        const firstSeenAt = stuckGroupFirstSeen.get(groupId)!;
+        if (now - firstSeenAt < STUCK_DELEGATION_GROUP_THRESHOLD_MS) {
+          continue; // Not stuck long enough yet
+        }
+
+        logger.warn(
+          `[subscriptions] sweep groupId=${groupId} workspaceId=${wsId} parentAgentId=${tracker.parentAgentId} doneCount=${doneCount} expectedCount=${tracker.expectedAgentIds.length} stuckForMs=${now - firstSeenAt} step=sweep reason=stuck-delegation-group`,
+        );
+        // Call delivery directly instead of re-dispatching through
+        // requestDelegationGroupDelivery, which would go through the same
+        // stale cached-selector path in the takeEvery handler.
+        yield* call(
+          handleDelegationGroupDelivery,
+          requestDelegationGroupDelivery(wsId, groupId),
+        );
+        // Clear after attempting delivery
+        stuckGroupFirstSeen.delete(groupId);
+      }
     }
 
     // Prune sweepCatchUpSeen entries whose subscriptionId no longer exists
@@ -702,6 +766,20 @@ export function* periodicQueueSweep() {
       const subId = key.split(":")[0];
       if (!allActiveSubIds.has(subId)) {
         sweepCatchUpSeen.delete(key);
+      }
+    }
+
+    // Prune stuckGroupFirstSeen entries for groups that no longer exist
+    const allActiveGroupIds = new Set<string>();
+    for (const wsId of workspaceIds) {
+      const wsState3 = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+      for (const groupId of Object.keys(wsState3.delegationGroups)) {
+        allActiveGroupIds.add(groupId);
+      }
+    }
+    for (const groupId of stuckGroupFirstSeen.keys()) {
+      if (!allActiveGroupIds.has(groupId)) {
+        stuckGroupFirstSeen.delete(groupId);
       }
     }
   }

@@ -49,7 +49,7 @@ export const setSubscriptionSnapshot = createAction(
       subscriptions: Subscription[];
       delegationGroups: DelegationGroupStatus[];
       agentStatuses: Record<string, AgentStatus>;
-      waitingState: 'idle' | 'waiting' | 'woken';
+      waitingState: 'idle' | 'waiting' | 'woken' | 'completed';
     },
   ) => ({ workspaceId, agentId, data }),
 );
@@ -112,6 +112,19 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
     const key = makeKey(workspaceId, agentId);
     const existing = state.entries[key];
     if (!existing) return state;
+    // Don't override 'completed' state — let the cleanup timer handle it
+    if (existing.waitingState === 'completed') {
+      return {
+        ...state,
+        entries: {
+          ...state.entries,
+          [key]: {
+            ...existing,
+            wokenUpInfo: null,
+          },
+        },
+      };
+    }
     return {
       ...state,
       entries: {

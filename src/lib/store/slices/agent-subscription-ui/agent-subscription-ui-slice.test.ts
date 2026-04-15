@@ -38,6 +38,7 @@ const group: DelegationGroupStatus = {
   completedAgentIds: ['a-1'],
   deletedAgentIds: [],
   agentStatuses: { 'a-1': 'completed', 'a-2': 'responding', 'a-3': 'idle' },
+  delivered: false,
 };
 
 function stateWith(slice: AgentSubscriptionUIState) {
@@ -164,6 +165,21 @@ describe('agentSubscriptionUIReducer', () => {
       expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('waiting');
     });
 
+    it('preserves completed state and does not override it', () => {
+      let state = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'completed',
+        }),
+      );
+      state = agentSubscriptionUIReducer(state, clearWokenUp(WS, AGENT));
+      expect(state.entries[makeKey(WS, AGENT)].waitingState).toBe('completed');
+      expect(state.entries[makeKey(WS, AGENT)].wokenUpInfo).toBeNull();
+    });
+
     it('returns same reference when key does not exist', () => {
       const state = agentSubscriptionUIReducer(initialState, clearWokenUp('no', 'exist'));
       expect(state).toBe(initialState);
@@ -229,6 +245,22 @@ describe('agentSubscriptionUI selectors', () => {
     expect(selectShowSubscriptionRow.select(stateWith(initialState), WS, AGENT)).toBe(false);
   });
 
+  it('selectShowSubscriptionRow returns true when waitingState is completed', () => {
+    const key = makeKey(WS, AGENT);
+    const slice: AgentSubscriptionUIState = {
+      entries: { [key]: { ...emptyEntry, waitingState: 'completed' } },
+    };
+    expect(selectShowSubscriptionRow.select(stateWith(slice), WS, AGENT)).toBe(true);
+  });
+
+  it('selectWaitingState returns completed when set', () => {
+    const key = makeKey(WS, AGENT);
+    const slice: AgentSubscriptionUIState = {
+      entries: { [key]: { ...emptyEntry, waitingState: 'completed' } },
+    };
+    expect(selectWaitingState.select(stateWith(slice), WS, AGENT)).toBe('completed');
+  });
+
   it('selectCompletionStatus aggregates across groups', () => {
     const key = makeKey(WS, AGENT);
     const g2: DelegationGroupStatus = {
@@ -238,6 +270,7 @@ describe('agentSubscriptionUI selectors', () => {
       completedAgentIds: ['b-1', 'b-2'],
       deletedAgentIds: [],
       agentStatuses: { 'b-1': 'completed', 'b-2': 'completed' },
+      delivered: true,
     };
     const slice: AgentSubscriptionUIState = {
       entries: { [key]: { ...emptyEntry, delegationGroups: [group, g2] } },

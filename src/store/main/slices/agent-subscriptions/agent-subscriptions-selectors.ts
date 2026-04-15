@@ -170,6 +170,40 @@ export function selectAllSubscriptionsRaw(state: MainStoreState, wsId: string): 
   return Object.values(ws.subscriptions);
 }
 
+/**
+ * Raw (uncached) delegation group read — used by delegation-group-saga to
+ * avoid stale reads caused by createCachedSelector proxy interactions.
+ */
+export function selectDelegationGroupRaw(
+  state: MainStoreState,
+  wsId: string,
+  groupId: string,
+): DelegationGroupTrackerRecord | undefined {
+  const slice = (state as any).agentSubscriptions;
+  if (!slice) return undefined;
+  const ws = slice.byWorkspaceId[wsId];
+  if (!ws) return undefined;
+  return ws.delegationGroups[groupId];
+}
+
+/**
+ * Raw (uncached) delegation group completion check — used by delegation-group-saga
+ * to avoid stale reads caused by createCachedSelector proxy interactions.
+ */
+export function selectIsDelegationGroupCompleteRaw(
+  state: MainStoreState,
+  wsId: string,
+  groupId: string,
+): boolean {
+  const group = selectDelegationGroupRaw(state, wsId, groupId);
+  if (!group) return false;
+  const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
+  if (group.awaitMode === "any") {
+    return doneCount >= 1;
+  }
+  return doneCount >= group.expectedAgentIds.length;
+}
+
 // ---------------------------------------------------------------------------
 // Delivery stats
 // ---------------------------------------------------------------------------

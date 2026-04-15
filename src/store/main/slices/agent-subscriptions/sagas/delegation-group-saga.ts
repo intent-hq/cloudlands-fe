@@ -8,7 +8,7 @@
  * this saga triggers delivery to the parent agent with all accumulated events.
  */
 
-import { call, put, select, takeEvery, delay } from "typed-redux-saga";
+import { call, put, select, take, takeEvery, delay } from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { Logger } from "../../../../../shared/logger";
 import {
@@ -21,9 +21,9 @@ import {
   enqueueEvent,
 } from "../agent-subscriptions-slice";
 import {
-  selectDelegationGroup,
   selectAgentStatus,
-  selectIsDelegationGroupComplete,
+  selectDelegationGroupRaw,
+  selectIsDelegationGroupCompleteRaw,
 } from "../agent-subscriptions-selectors";
 import {
   requestDelegationGroupDelivery,
@@ -55,23 +55,35 @@ export function* handleDelegationGroupDelivery(
 ) {
   const [wsId, groupId] = action.payload;
 
+  logger.warn(`[subscriptions] delegation-group-delivery-entry workspaceId=${wsId} groupId=${groupId} step=entry`);
+
+  // Use raw (uncached) selector to avoid stale reads from createCachedSelector
   const tracker = yield* select(
-    selectDelegationGroup.select,
+    selectDelegationGroupRaw,
     wsId,
     groupId,
   );
-  if (!tracker) return;
+  if (!tracker) {
+    logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=tracker-not-found step=early-return`);
+    return;
+  }
 
   // Already delivered — guard against double-delivery
-  if (tracker.delivered) return;
+  if (tracker.delivered) {
+    logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=already-delivered subscriptionId=${tracker.subscriptionId} parentAgentId=${tracker.parentAgentId} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=early-return`);
+    return;
+  }
 
-  // Check if all agents have completed
+  // Check if all agents have completed — use raw (uncached) selector
   const isComplete: boolean = yield* select(
-    selectIsDelegationGroupComplete.select,
+    selectIsDelegationGroupCompleteRaw,
     wsId,
     groupId,
   );
-  if (!isComplete) return;
+  if (!isComplete) {
+    logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=not-complete subscriptionId=${tracker.subscriptionId} parentAgentId=${tracker.parentAgentId} expectedAgents=${tracker.expectedAgentIds.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=early-return`);
+    return;
+  }
 
   logger.warn(`[subscriptions] delegation-complete subscriptionId=${tracker.subscriptionId} agentId=${tracker.parentAgentId} workspaceId=${wsId} groupId=${groupId} eventCount=${tracker.events.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=deliver`);
 
@@ -286,4 +298,8 @@ export function* delegationGroupSaga() {
   );
   yield* watchDelegationAgentCompleted();
   yield* watchDelegationAgentDeleted();
+
+  // Block forever so the crash-recovery wrapper in agentSubscriptionsSaga
+  // doesn't restart us in a tight loop when nothing has gone wrong.
+  yield* take("@@NEVER_RESOLVE");
 }

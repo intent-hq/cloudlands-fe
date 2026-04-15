@@ -44,7 +44,7 @@ vi.mock('typed-redux-saga', () => ({
   },
 }));
 
-const { listenSyncMock, invokeMock, extractEventDataMock, selectActiveWorkspaceIdMock, selectTrackedAgentIdsMock } = vi.hoisted(() => ({
+const { listenSyncMock, invokeMock, extractEventDataMock, selectActiveWorkspaceIdMock, selectTrackedAgentIdsMock, selectWaitingStateMock } = vi.hoisted(() => ({
   listenSyncMock: vi.fn((_event: string, _handler: (payload: any) => void) => vi.fn()),
   invokeMock: vi.fn(),
   extractEventDataMock: vi.fn((event: any, fieldName?: string) => {
@@ -54,6 +54,10 @@ const { listenSyncMock, invokeMock, extractEventDataMock, selectActiveWorkspaceI
   }),
   selectActiveWorkspaceIdMock: vi.fn(() => null),
   selectTrackedAgentIdsMock: vi.fn(() => []),
+  selectWaitingStateMock: vi.fn((state: any, workspaceId: string, agentId: string) => {
+    const key = `${workspaceId}:${agentId}`;
+    return state?.agentSubscriptionUI?.entries?.[key]?.waitingState ?? 'idle';
+  }),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -71,6 +75,9 @@ vi.mock('../../workspace/workspace-selectors', () => ({
 vi.mock('../agent-subscription-ui-selectors', () => ({
   selectTrackedAgentIds: {
     select: (...args: any[]) => selectTrackedAgentIdsMock(...args),
+  },
+  selectWaitingState: {
+    select: (...args: any[]) => selectWaitingStateMock(...args),
   },
 }));
 

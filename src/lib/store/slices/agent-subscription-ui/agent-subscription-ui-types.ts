@@ -30,6 +30,7 @@ export interface DelegationGroupStatus {
   completedAgentIds: string[];
   deletedAgentIds: string[];
   agentStatuses: Record<string, AgentStatus>;
+  delivered: boolean;
 }
 
 export interface WokenUpInfo {
@@ -38,7 +39,7 @@ export interface WokenUpInfo {
   timestamp: number;
 }
 
-export type WaitingState = 'idle' | 'waiting' | 'woken';
+export type WaitingState = 'idle' | 'waiting' | 'woken' | 'completed';
 
 export interface AgentSubscriptionUIEntry {
   subscriptions: Subscription[];
