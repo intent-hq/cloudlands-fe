@@ -79,6 +79,7 @@ export function getModelIcon(modelValue: string): string {
   const iconMap: Record<string, string> = {
     // Claude models
     'haiku4.5': '🌸',
+    'opus4.7-xhigh': '🎭',
     'opus4.6': '🎭',
     'opus4.1': '🎭',
     sonnet4: '🎵',

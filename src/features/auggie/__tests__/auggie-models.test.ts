@@ -74,10 +74,10 @@ describe('auggie-models', () => {
     });
   });
 
-  // Regression: opus4.6 is the Auggie default and must have display metadata
-  describe('opus4.6 default model regression', () => {
-    it('opus4.6 has a dedicated icon (not the fallback)', () => {
-      const icon = getModelIcon('opus4.6');
+  // Regression: opus4.7-xhigh is the Auggie default and must have display metadata
+  describe('opus4.7-xhigh default model regression', () => {
+    it('opus4.7-xhigh has a dedicated icon (not the fallback)', () => {
+      const icon = getModelIcon('opus4.7-xhigh');
       expect(icon).toBe('🎭');
       // Ensure it's NOT the generic fallback
       expect(icon).not.toBe(getModelIcon('unknown-model'));

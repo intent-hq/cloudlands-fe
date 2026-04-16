@@ -122,14 +122,14 @@ describe('resolveOnboardingModel', () => {
     mockState.userOverrides = { modelOverrides: {} };
   });
 
-  it('returns auggie opus4.6 when only auggie is installed and authenticated', async () => {
+  it('returns auggie opus4.7-xhigh when only auggie is installed and authenticated', async () => {
     setAvailability({ auggie: { available: true, authenticated: true } });
     mockState.activeProviderId = 'auggie';
 
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('auggie');
-    expect(result.model).toBe('opus4.6');
+    expect(result.model).toBe('opus4.7-xhigh');
     expect(result.specialistId).toBe('spec-writer');
   });
 
@@ -147,7 +147,7 @@ describe('resolveOnboardingModel', () => {
 
     expect(result.provider).toBe('opencode');
     expect(result.model).toBe('opencode:foo');
-    expect(result.model).not.toBe('opus4.6');
+    expect(result.model).not.toBe('opus4.7-xhigh');
     expect(result.model.startsWith('auggie:')).toBe(false);
   });
 
@@ -181,7 +181,7 @@ describe('resolveOnboardingModel', () => {
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('auggie');
-    expect(result.model).toBe('opus4.6');
+    expect(result.model).toBe('opus4.7-xhigh');
   });
 
   it('throws when user-explicit opencode is installed but explicitly not authenticated', async () => {
@@ -221,7 +221,7 @@ describe('resolveOnboardingModel', () => {
   it('throws when user-explicit opencode is auggie-unavailable and returns no models (empty list)', async () => {
     // Finding B: if the opencode IPC fetch returns an empty list, we must
     // not fall through to an empty model string (main-side would then
-    // synthesize an invalid `{ provider: 'opencode', model: 'opus4.6' }`).
+    // synthesize an invalid `{ provider: 'opencode', model: 'opus4.7-xhigh' }`).
     setAvailability({
       opencode: { available: true, authenticated: true },
     });
