@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.4
+
+- Claude Opus 4.7 is now the default model for Auggie agents.
+- Onboarding flow redesigned for a smoother first-run experience, with fixes for opencode-only setups.
+- Agents are more resilient under memory pressure — they're no longer killed mid-response, even in background workspace tabs.
+- Terminal titles are now sanitized to prevent credentials from leaking into the window title.
+- Agent suggested prompts are back.
+- Fixes: repeated identical messages no longer silently dropped, user messages preserved during concurrent saves, in-flight message queueing is more reliable, chat messages merge correctly with on-disk content when reopening a chat, delegated agent wake-up and subscription reliability, spec and note updates now reactively reflect task changes, dropdown crash from duplicate options, custom specialists stranded during a prior migration now recover correctly, and a streaming hang when the "done" notification arrives before stream close.
+
 ## 0.3.0
 
 - Project-level custom specialists now load reliably, live-reload when you save changes, and show where each specialist comes from (project, user, or built-in).
