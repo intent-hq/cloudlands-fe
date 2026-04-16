@@ -148,15 +148,38 @@
   // Notify parent when branch status changes.
   // Read individual state values directly instead of a $derived object literal,
   // so Svelte can track each primitive and only re-fire when a value actually changes.
+  // Use a previous-value guard to avoid re-notifying when the callback prop
+  // reference changes but the status values are identical (prevents
+  // effect_update_depth_exceeded when inline function props are recreated).
+  let lastNotifiedBranchStatus: { behind: number; hasUncommittedChanges: boolean; currentBranch: string; isCurrentBranch: boolean; isLoading: boolean } | null = null;
   $effect(() => {
     if (typeof onBranchStatusChange === 'function' && selectedBranch) {
+      const behind = branchStatusBehind;
+      const uncommitted = branchStatusHasUncommittedChanges;
+      const current = currentBranch;
+      const isCurrent = isCurrentBranch;
+      const loading = branchStatusIsLoading;
+
+      // Skip notification if values haven't changed
+      if (
+        lastNotifiedBranchStatus &&
+        lastNotifiedBranchStatus.behind === behind &&
+        lastNotifiedBranchStatus.hasUncommittedChanges === uncommitted &&
+        lastNotifiedBranchStatus.currentBranch === current &&
+        lastNotifiedBranchStatus.isCurrentBranch === isCurrent &&
+        lastNotifiedBranchStatus.isLoading === loading
+      ) {
+        return;
+      }
+
       const status: BranchStatus = {
-        behind: branchStatusBehind,
-        hasUncommittedChanges: branchStatusHasUncommittedChanges,
-        currentBranch,
-        isCurrentBranch,
-        isLoading: branchStatusIsLoading,
+        behind,
+        hasUncommittedChanges: uncommitted,
+        currentBranch: current,
+        isCurrentBranch: isCurrent,
+        isLoading: loading,
       };
+      lastNotifiedBranchStatus = status;
       try {
         onBranchStatusChange(status);
       } catch (e) {

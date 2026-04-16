@@ -125,9 +125,19 @@
   const preflightError$ = selectClonePreflightError();
   const preflightUrl$ = selectClonePreflightUrl();
 
+  // Track the last preflight URL to avoid redundant dispatches that could
+  // contribute to effect cascades (effect_update_depth_exceeded).
+  let lastPreflightKey: string | null = null;
   $effect(() => {
-    if (projectSelection?.type === 'github' && projectSelection.githubUrl) {
-      dispatch(checkClonePreflight(projectSelection.githubUrl));
+    const key = projectSelection?.type === 'github' && projectSelection.githubUrl
+      ? `github:${projectSelection.githubUrl}`
+      : 'clear';
+
+    if (key === lastPreflightKey) return;
+    lastPreflightKey = key;
+
+    if (key !== 'clear') {
+      dispatch(checkClonePreflight(projectSelection!.githubUrl!));
     } else {
       dispatch(clearClonePreflight());
     }

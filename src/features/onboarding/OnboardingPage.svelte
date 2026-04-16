@@ -424,6 +424,18 @@
       previous.githubUrl !== selection.githubUrl ||
       previous.projectName !== selection.projectName;
 
+    // Guard: skip the update entirely when nothing meaningful changed.
+    // This prevents effect_update_depth_exceeded caused by BranchSelector
+    // auto-selecting the same branch on mount and triggering a cascade of
+    // effects through the new projectSelection object reference.
+    const selectionChanged =
+      projectIdentityChanged ||
+      previous?.branch !== selection.branch ||
+      previous?.scope !== selection.scope ||
+      previous?.isValid !== selection.isValid;
+
+    if (!selectionChanged) return;
+
     projectSelection = selection;
     if (projectIdentityChanged) {
       onboardingCreationError = null;
