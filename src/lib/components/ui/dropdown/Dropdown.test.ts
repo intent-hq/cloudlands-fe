@@ -13,25 +13,92 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faChevronRight: { iconName: 'chevron-right' },
 }));
 
-describe('Dropdown portal positioning', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
+function setupDropdownEnv() {
+  vi.clearAllMocks();
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    writable: true,
+    value: 600,
+  });
+}
+
+function cleanupDropdownEnv() {
+  cleanup();
+  vi.unstubAllGlobals();
+  document.body.innerHTML = '';
+}
+
+describe('Dropdown duplicate option handling', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  it('renders without error when flat options contain duplicate values', async () => {
+    const { container } = render(Dropdown, {
+      props: {
+        value: 'a',
+        options: [
+          { value: 'a', label: 'Option A' },
+          { value: 'b', label: 'Option B' },
+          { value: 'a', label: 'Option A (dup)' },
+        ],
+        searchable: false,
+        portal: false,
+      },
     });
-    Object.defineProperty(window, 'innerHeight', {
-      configurable: true,
-      writable: true,
-      value: 600,
+
+    const trigger = container.querySelector('button') as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    await fireEvent.click(trigger);
+
+    await waitFor(() => {
+      const listbox = document.body.querySelector('[role="listbox"]');
+      expect(listbox).toBeTruthy();
+      // Should render only 2 unique options, not 3
+      const optionEls = listbox!.querySelectorAll('[role="option"]');
+      expect(optionEls.length).toBe(2);
     });
   });
 
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-    document.body.innerHTML = '';
+  it('renders without error when grouped options contain duplicate values', async () => {
+    const { container } = render(Dropdown, {
+      props: {
+        value: 'model-1',
+        groups: [
+          {
+            key: 'provider-a',
+            label: 'Provider A',
+            options: [
+              { value: 'model-1', label: 'Model 1' },
+              { value: 'model-2', label: 'Model 2' },
+              { value: 'model-1', label: 'Model 1 (dup)' },
+            ],
+          },
+        ],
+        searchable: false,
+        portal: false,
+      },
+    });
+
+    const trigger = container.querySelector('button') as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    await fireEvent.click(trigger);
+
+    await waitFor(() => {
+      const listbox = document.body.querySelector('[role="listbox"]');
+      expect(listbox).toBeTruthy();
+      const optionEls = listbox!.querySelectorAll('[role="option"]');
+      expect(optionEls.length).toBe(2);
+    });
   });
+});
+
+describe('Dropdown portal positioning', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
 
   it('positions portal content above the trigger when space below is insufficient', async () => {
     const { container } = render(Dropdown, {

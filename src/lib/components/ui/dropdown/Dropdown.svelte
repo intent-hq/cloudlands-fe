@@ -116,30 +116,46 @@
     return options;
   });
 
+  /** Deduplicate options by value, keeping the first occurrence */
+  function deduplicateOptions(opts: DropdownOption[]): DropdownOption[] {
+    const seen = new Set<string>();
+    return opts.filter((opt) => {
+      if (seen.has(opt.value)) return false;
+      seen.add(opt.value);
+      return true;
+    });
+  }
+
   // Filter options based on search
   const filteredOptions = $derived.by(() => {
-    if (!searchValue) return options;
+    if (!searchValue) return deduplicateOptions(options);
     const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return options;
-    return options.filter((opt) => {
-      const haystack = `${opt.label} ${opt.description ?? ''}`.toLowerCase();
-      return terms.every((term) => haystack.includes(term));
-    });
+    if (terms.length === 0) return deduplicateOptions(options);
+    return deduplicateOptions(
+      options.filter((opt) => {
+        const haystack = `${opt.label} ${opt.description ?? ''}`.toLowerCase();
+        return terms.every((term) => haystack.includes(term));
+      }),
+    );
   });
 
   // Filter groups based on search
   const filteredGroups = $derived.by(() => {
-    if (!searchValue) return groups;
+    if (!searchValue)
+      return groups.map((g) => ({ ...g, options: deduplicateOptions(g.options) }));
     const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return groups;
+    if (terms.length === 0)
+      return groups.map((g) => ({ ...g, options: deduplicateOptions(g.options) }));
     return groups
       .map((group) => ({
         ...group,
-        options: group.options.filter((opt) => {
-          const haystack =
-            `${group.label ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
-          return terms.every((term) => haystack.includes(term));
-        }),
+        options: deduplicateOptions(
+          group.options.filter((opt) => {
+            const haystack =
+              `${group.label ?? ''} ${opt.label} ${opt.description ?? ''}`.toLowerCase();
+            return terms.every((term) => haystack.includes(term));
+          }),
+        ),
       }))
       .filter((group) => group.options.length > 0);
   });
@@ -744,7 +760,7 @@
             role="menu"
             tabindex="-1"
           >
-            {#each option.children as child (child.value)}
+            {#each deduplicateOptions(option.children) as child (child.value)}
               {@render optionItem(child)}
             {/each}
           </div>
