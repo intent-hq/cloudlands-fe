@@ -414,6 +414,9 @@ export interface AnalyticsEvents {
   'Started Setup': Record<string, never>;
   'Installed CLI': {
     auggie_version?: string;
+    install_method: 'npm' | 'binary_download';
+    platform?: string;
+    arch?: string;
   };
   // Fires when user clicks Login button for Auggie
   'Started Authentication': Record<string, never>;

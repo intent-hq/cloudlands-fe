@@ -20,6 +20,7 @@ import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggieAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
+import { trackMain } from '../../../lib/services/analytics/main';
 import { checkGitVersion } from './version-checks';
 
 const logger = new Logger('AuggieIPC');
@@ -1207,6 +1208,13 @@ export function setupAuggieIPC() {
     await saveAuggiePath(binaryPath);
     logger.info('Auggie install: binary download succeeded', { path: binaryPath });
 
+    trackMain('Installed CLI', {
+      auggie_version: versionOutput,
+      install_method: 'binary_download',
+      platform,
+      arch,
+    });
+
     return { success: true };
   }
 
@@ -1579,14 +1587,23 @@ export function setupAuggieIPC() {
         await saveAuggiePath(auggiePath);
 
         // Verify it works
+        let installedVersion: string | undefined;
         try {
           const { stdout: versionOutput } = await execAsync(`"${auggiePath}" --version`, {
             timeout: 10_000,
           });
-          logger.info('Auggie version verified', { version: versionOutput.trim() });
+          installedVersion = versionOutput.trim();
+          logger.info('Auggie version verified', { version: installedVersion });
         } catch (verifyError) {
           logger.warn('Could not verify auggie version', { error: verifyError });
         }
+
+        trackMain('Installed CLI', {
+          auggie_version: installedVersion,
+          install_method: 'npm',
+          platform: process.platform,
+          arch: process.arch,
+        });
 
         return {
           success: true,
@@ -1594,6 +1611,11 @@ export function setupAuggieIPC() {
       }
 
       logger.warn('Auggie installed but could not determine path');
+      trackMain('Installed CLI', {
+        install_method: 'npm',
+        platform: process.platform,
+        arch: process.arch,
+      });
       return {
         success: true,
       };
