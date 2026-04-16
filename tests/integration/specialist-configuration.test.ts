@@ -230,26 +230,26 @@ describe('Specialist Configuration', () => {
   });
 
   // ==========================================================================
-  // Regression: Auggie default model is Opus 4.7 x-high
-  // These tests lock in the opus4.7-xhigh default so a revert to opus4.6/gpt5.4
+  // Regression: Auggie default model is Opus 4.7
+  // These tests lock in the opus4.7 default so a revert to opus4.6/gpt5.4
   // would be caught immediately.
   // ==========================================================================
 
-  describe('Auggie Default Model Regression (opus4.7-xhigh)', () => {
-    it('MODEL_DEFAULTS.AGENT_MODEL is opus4.7-xhigh', () => {
-      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('opus4.7-xhigh');
+  describe('Auggie Default Model Regression (opus4.7)', () => {
+    it('MODEL_DEFAULTS.AGENT_MODEL is opus4.7', () => {
+      expect(MODEL_DEFAULTS.AGENT_MODEL).toBe('opus4.7');
     });
 
-    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is opus4.7-xhigh', () => {
-      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('opus4.7-xhigh');
+    it('MODEL_DEFAULTS.UI_INITIAL_MODEL is opus4.7', () => {
+      expect(MODEL_DEFAULTS.UI_INITIAL_MODEL).toBe('opus4.7');
     });
 
-    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has opus4.7-xhigh first', () => {
-      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('opus4.7-xhigh');
+    it('MODEL_DEFAULTS.UI_MODEL_PREFERENCE has opus4.7 first', () => {
+      expect(MODEL_DEFAULTS.UI_MODEL_PREFERENCE[0]).toBe('opus4.7');
     });
 
-    it('deprecated DEFAULT_AGENT_MODEL alias is opus4.7-xhigh', () => {
-      expect(DEFAULT_AGENT_MODEL).toBe('opus4.7-xhigh');
+    it('deprecated DEFAULT_AGENT_MODEL alias is opus4.7', () => {
+      expect(DEFAULT_AGENT_MODEL).toBe('opus4.7');
     });
 
     it('MODEL_IDS.GPT_5_4 is the canonical gpt5.4 string', () => {
@@ -257,40 +257,40 @@ describe('Specialist Configuration', () => {
     });
   });
 
-  describe('Auggie Provider Tier Regression (opus4.7-xhigh)', () => {
-    it('auggie smart tier resolves to opus4.7-xhigh', () => {
-      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('opus4.7-xhigh');
+  describe('Auggie Provider Tier Regression (opus4.7)', () => {
+    it('auggie smart tier resolves to opus4.7', () => {
+      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('opus4.7');
     });
 
-    it('getDefaultModelForProvider(auggie, smart) returns opus4.7-xhigh', () => {
-      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7-xhigh');
+    it('getDefaultModelForProvider(auggie, smart) returns opus4.7', () => {
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
     });
 
-    it('getModelTierFromModel(opus4.7-xhigh) returns smart', () => {
-      expect(getModelTierFromModel('opus4.7-xhigh')).toBe('smart');
+    it('getModelTierFromModel(opus4.7) returns smart', () => {
+      expect(getModelTierFromModel('opus4.7')).toBe('smart');
     });
 
-    it('getModelTierFromModel(opus4.7-xhigh, auggie) returns smart', () => {
-      expect(getModelTierFromModel('opus4.7-xhigh', 'auggie')).toBe('smart');
+    it('getModelTierFromModel(opus4.7, auggie) returns smart', () => {
+      expect(getModelTierFromModel('opus4.7', 'auggie')).toBe('smart');
     });
 
     it('default provider is auggie', () => {
       expect(getDefaultProviderId()).toBe('auggie');
     });
 
-    it('smart-tier specialists resolve to opus4.7-xhigh for auggie', () => {
+    it('smart-tier specialists resolve to opus4.7 for auggie', () => {
       const smartSpecialists = SPECIALISTS.filter((s) => s.defaultModelTier === 'smart');
       expect(smartSpecialists.length).toBeGreaterThan(0);
       for (const s of smartSpecialists) {
         const resolved = getDefaultModelForProvider('auggie', s.defaultModelTier!);
-        expect(resolved).toBe('opus4.7-xhigh');
+        expect(resolved).toBe('opus4.7');
       }
     });
 
-    it('non-auggie provider tiers are NOT opus4.7-xhigh', () => {
+    it('non-auggie provider tiers are NOT opus4.7', () => {
       // Ensure the change is scoped to auggie only
       const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
-      expect(claudeCode.smart).not.toBe('opus4.7-xhigh');
+      expect(claudeCode.smart).not.toBe('opus4.7');
     });
   });
 
