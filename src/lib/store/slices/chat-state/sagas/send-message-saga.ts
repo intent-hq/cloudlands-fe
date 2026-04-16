@@ -184,17 +184,22 @@ function* handleSendPath(
     yield* put(clearChatDraft(wsId, agentId));
     yield* put(uncheckAllSelections());
 
-    // Convert imageBlocks back to contextItems format if present (for "Send now" flow)
+    // When serializedContextItems is already present, it already contains image
+    // entries (with imageData/imageMimeType) from the normal ChatPanel send flow.
+    // Only reconstruct from imageBlocks for the queue-replay ("Send now") flow,
+    // which dispatches imageBlocks without serializedContextItems.
+    const hasSerializedContext = !!serializedContextItems && serializedContextItems.length > 0;
     const imageContextItems =
-      imageBlocks?.map((block, index) => ({
-        id: `queued-image-${index}`,
-        type: 'file' as const,
-        label: `Image ${index + 1}`,
-        imageData: block.data,
-        imageMimeType: block.mimeType,
-      })) ?? [];
+      !hasSerializedContext
+        ? imageBlocks?.map((block, index) => ({
+            id: `queued-image-${index}`,
+            type: 'file' as const,
+            label: `Image ${index + 1}`,
+            imageData: block.data,
+            imageMimeType: block.mimeType,
+          })) ?? []
+        : [];
 
-    // Merge serialized context items with image blocks
     const allContextItems = [
       ...(serializedContextItems ?? []),
       ...imageContextItems,

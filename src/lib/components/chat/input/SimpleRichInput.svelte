@@ -554,27 +554,7 @@
     const files = target.files;
     if (!files || files.length === 0) return;
 
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        logger.warn(`File too large: ${file.name} (${formatFileSize(file.size)})`);
-        continue;
-      }
-
-      const contextItem: ContextItem = {
-        id: `file-upload-${Date.now()}-${file.name}`,
-        type: 'file',
-        label: file.name,
-        description: `${file.type || 'Unknown type'} • ${formatFileSize(file.size)}`,
-        path: file.name,
-        // Store the file data for images
-        file: file,
-      };
-
-      contextItems = [...contextItems, contextItem];
-      oncontextAdd?.(contextItem);
-    }
+    await processImageFiles(Array.from(files));
 
     // Reset the input
     target.value = '';

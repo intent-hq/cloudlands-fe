@@ -755,25 +755,103 @@ describe("send-message-saga", () => {
       });
     });
 
-    it("merges imageBlocks with existing serializedContextItems", async () => {
-      const existingItem = { id: "ctx-1", type: "file", label: "test.ts" };
+    it("passes serializedContextItems through unchanged when both it and imageBlocks are present (no image duplication)", async () => {
+      // Normal ChatPanel send flow: serializedContextItems already contains the
+      // image entry (with imageData/imageMimeType), and imageBlocks is the same
+      // image re-extracted for the main process. The saga must NOT append a
+      // reconstructed image — that would deliver the image twice to the agent.
+      const imageItem = {
+        id: "ctx-img-1",
+        type: "file",
+        label: "pasted.png",
+        imageData: "base64data1",
+        imageMimeType: "image/png",
+      };
       const imageBlocks = [
-        { type: "image" as const, data: "imgdata", mimeType: "image/png" },
+        { type: "image" as const, data: "base64data1", mimeType: "image/png" },
       ];
 
       await runSendMessageSaga({
-        skipQueueCheck: true,
-        serializedContextItems: [existingItem],
+        serializedContextItems: [imageItem],
         imageBlocks,
       });
 
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
       const options = mockSendMessage.mock.calls[0][3];
       expect(options.contextItems).toBeDefined();
-      // Should have both the existing context item and the image
-      expect(options.contextItems.length).toBe(2);
+      // Exactly one image — no duplication from imageBlocks
+      expect(options.contextItems).toHaveLength(1);
+      expect(options.contextItems[0]).toMatchObject({
+        id: "ctx-img-1",
+        imageData: "base64data1",
+        imageMimeType: "image/png",
+      });
+    });
+
+    it("image-only send: inline image context items never carry file/fileData to chatService (no stray file pill)", async () => {
+      // Repro for the "stray File pill on image-only send" bug. An inline image
+      // extracted from the TipTap editor is represented as a context item with
+      // { type: 'file', imageData, imageMimeType } and MUST NOT carry a File
+      // object or fileData — otherwise chat.service.ts would classify it as a
+      // non-image file and emit a type:'file' content block that renders as a
+      // "File" pill in the collapsed user message.
+      const inlineImageItem = {
+        id: "inline-image-0",
+        type: "file",
+        label: "pasted.png",
+        description: "image/png",
+        imageData: "base64data1",
+        imageMimeType: "image/png",
+      };
+      const imageBlocks = [
+        { type: "image" as const, data: "base64data1", mimeType: "image/png" },
+      ];
+
+      await runSendMessageSaga({
+        serializedContextItems: [inlineImageItem],
+        imageBlocks,
+      });
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const options = mockSendMessage.mock.calls[0][3];
+      expect(options.contextItems).toHaveLength(1);
+      const forwarded = options.contextItems[0];
+      // Must have image data
+      expect(forwarded.imageData).toBe("base64data1");
+      expect(forwarded.imageMimeType).toBe("image/png");
+      // Must NOT have any of the fields that would cause chat.service.ts to
+      // emit a type:'file' content block for this image.
+      expect(forwarded.file).toBeUndefined();
+      expect(forwarded.fileData).toBeUndefined();
+      expect(forwarded.fileMimeType).toBeUndefined();
+    });
+
+    it("passes serializedContextItems through unchanged even when it mixes a file and an image alongside imageBlocks", async () => {
+      const fileItem = { id: "ctx-1", type: "file", label: "test.ts" };
+      const imageItem = {
+        id: "ctx-img-1",
+        type: "file",
+        label: "pasted.png",
+        imageData: "imgdata",
+        imageMimeType: "image/png",
+      };
+      const imageBlocks = [
+        { type: "image" as const, data: "imgdata", mimeType: "image/png" },
+      ];
+
+      await runSendMessageSaga({
+        serializedContextItems: [fileItem, imageItem],
+        imageBlocks,
+      });
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const options = mockSendMessage.mock.calls[0][3];
+      expect(options.contextItems).toBeDefined();
+      // The two original items, with no extra reconstructed image appended
+      expect(options.contextItems).toHaveLength(2);
       expect(options.contextItems[0]).toMatchObject({ id: "ctx-1" });
       expect(options.contextItems[1]).toMatchObject({
+        id: "ctx-img-1",
         imageData: "imgdata",
         imageMimeType: "image/png",
       });

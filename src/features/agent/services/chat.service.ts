@@ -1755,12 +1755,21 @@ export class ChatService implements IDisposable {
       });
 
       // Build context references from contextItems (converted format)
+      // Exclude attachment-style items (inline images/files) — they are already
+      // represented as image/file content blocks and must not produce duplicate
+      // pills from metadata.contextReferences (which would render as a bare
+      // "File" pill when no path/title is present).
       const contextItemRefs =
-        options?.contextItems?.map((item) => ({
-          type: item.type,
-          path: item.path,
-          content: item.content,
-        })) || [];
+        options?.contextItems
+          ?.filter((item) => {
+            const asAny = item as any;
+            return !asAny.imageData && !asAny.fileData && !asAny.file;
+          })
+          .map((item) => ({
+            type: item.type,
+            path: item.path,
+            content: item.content,
+          })) || [];
 
       // Merge with any direct context references (e.g., Linear/GitHub issues from workspace creation)
       const allContextReferences = [...contextItemRefs, ...(options?.contextReferences || [])];
