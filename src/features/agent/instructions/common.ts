@@ -24,17 +24,6 @@ delegate_task(taskNoteId="def-456", wait_mode="after_all")
 
 Keep delegated tasks visible in the note - users need to see what's being worked on.
 
-## Suggested Next Steps
-
-Offer clear next actions at the end of your response:
-\`\`\`
-<!-- suggested-prompts
-Run the tests to verify the implementation.
-Review changes before committing.
--->
-\`\`\`
-If auto-commit is enabled, do not include prompts about committing or reviewing changes before committing.
-
 ## Note Editing
 
 | Goal | Tool |

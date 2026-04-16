@@ -31,15 +31,6 @@ Your initial message mentions "YOUR LINKED NOTE" with a note ID, that's your not
 ## After Task Completion
 
 When you've completed your assigned task, update the task note to mark it as complete and end your session. Also, read the task note to see what template it is using. Then update the content of the task note to contain updates based on your work.
-
-Example:
-\`\`\`
-<!-- suggested-prompts
-How are the other tasks progressing?
-Let's look at what was changed.
-Run the tests to make sure everything works.
--->
-\`\`\`
 `;
 
 export default INSTRUCTION;

@@ -305,6 +305,7 @@ export class InstructionService {
           : 'titled';
 
     const subAgentSuffix = config.isSubAgent ? ':subagent' : '';
+    const autoCommitSuffix = config.autoCommitEnabled ? ':autocommit' : '';
     const skillsCatalogSuffix =
       isCacheable && config.workspacePath
         ? `:skills:${this.hashString(prefetchedSkillsCatalog ?? '')}`
@@ -318,7 +319,7 @@ export class InstructionService {
         ? `:role:${this.hashString(`${config.specialistName ?? ''}\n${config.roleReminder ?? ''}`)}`
         : '';
     const cacheKey = isCacheable
-      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}`
+      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}${autoCommitSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}`
       : null;
 
     // Check cache for frequently-used prompts (e.g., bulk task delegation)
@@ -657,6 +658,8 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       config.agentType,
       config.specialistName,
       config.roleReminder,
+      !!config.isSubAgent,
+      !!config.autoCommitEnabled,
     );
     if (mandatoryActions) {
       parts.push({
@@ -1128,14 +1131,23 @@ All new branches must use the prefix "${branchPrefix}" (e.g. "${branchPrefix}my-
    * For agents with a specialist role, adds a brief reminder to reinforce
    * the role identity at the end of the context window.
    *
+   * For top-level (non-sub-agent) interactive agents, also appends a
+   * "Suggested Next Steps" directive so the model reliably emits a
+   * `<!-- suggested-prompts ... -->` block at the end of user-facing responses.
+   * Sub-agents skip this section since they report to a parent, not the user.
+   *
    * @param _agentType - The type of agent (e.g., 'workspace') - reserved for future use
    * @param specialistName - The specialist role name (e.g., 'Coordinator')
    * @param roleReminder - Critical constraints reminder for the specialist
+   * @param isSubAgent - True if delegated/background sub-agent (skips suggested-prompts)
+   * @param autoCommitEnabled - Whether auto-commit is enabled (affects suggested-prompts guidance)
    */
   private getMandatoryActionsFooter(
     _agentType?: string,
     specialistName?: string,
     roleReminder?: string,
+    isSubAgent: boolean = false,
+    autoCommitEnabled: boolean = false,
   ): string | null {
     const parts: string[] = [];
 
@@ -1150,6 +1162,20 @@ All new branches must use the prefix "${branchPrefix}" (e.g. "${branchPrefix}my-
         reminder += ' Follow the instructions in <specialist_role> above.';
       }
       parts.push(reminder);
+    }
+
+    // Suggested Next Steps directive - only for top-level interactive agents.
+    // Placed at the very end of the prompt so recency bias ensures the model
+    // honors it. Sub-agents don't own a user-facing chat turn, so they skip this.
+    if (!isSubAgent) {
+      const exampleSecondLine = autoCommitEnabled
+        ? 'Check the changes in the diff view.'
+        : 'Review changes before committing.';
+      const autoCommitClause = autoCommitEnabled
+        ? ' Auto-commit is enabled; do not include prompts about committing or reviewing changes before committing.'
+        : '';
+      const suggestedPrompts = `## Suggested Next Steps\n\nAt the end of your response, offer the user clear next actions as a \`<!-- suggested-prompts ... -->\` HTML comment block:\n\n\`\`\`\n<!-- suggested-prompts\nRun the tests to verify the implementation.\n${exampleSecondLine}\n-->\n\`\`\`\n\nWrite 2–4 prompts, each a short directive sentence phrased as something the user might say next.${autoCommitClause}`;
+      parts.push(suggestedPrompts);
     }
 
     return parts.length > 0 ? parts.join('\n\n---\n\n') : null;

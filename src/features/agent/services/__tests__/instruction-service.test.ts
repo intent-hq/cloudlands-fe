@@ -670,6 +670,128 @@ describe('InstructionService', () => {
         prompt.indexOf('MANDATORY_ACTIONS_FOOTER'),
       );
     });
+
+    describe('suggested-prompts footer placement', () => {
+      it('includes suggested-prompts section for top-level agent when auto-commit is off', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: false,
+        });
+
+        expect(prompt).toContain('## Suggested Next Steps');
+        expect(prompt).toContain('<!-- suggested-prompts');
+        expect(prompt.indexOf('## Suggested Next Steps')).toBeGreaterThan(
+          prompt.indexOf('## Role Reminder'),
+        );
+        expect(prompt).not.toContain('Auto-commit is enabled');
+      });
+
+      it('includes auto-commit warning when auto-commit is enabled', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: true,
+        });
+
+        expect(prompt).toContain('## Suggested Next Steps');
+        expect(prompt).toContain('<!-- suggested-prompts');
+        expect(prompt.indexOf('## Suggested Next Steps')).toBeGreaterThan(
+          prompt.indexOf('## Role Reminder'),
+        );
+        expect(prompt).toContain('Auto-commit is enabled');
+      });
+
+      it('omits suggested-prompts section for sub-agents', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: true,
+          autoCommitEnabled: false,
+        });
+
+        expect(prompt).not.toContain('## Suggested Next Steps');
+        expect(prompt).not.toContain('<!-- suggested-prompts');
+        expect(prompt).toContain('## Role Reminder');
+      });
+
+      it('includes the suggested-prompts section exactly once for top-level agents', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: false,
+        });
+
+        const matches = prompt.match(/## Suggested Next Steps/g);
+        expect(matches).toHaveLength(1);
+      });
+
+      it('includes "Review changes before committing." example when auto-commit is off', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: false,
+        });
+
+        expect(prompt).toContain('Review changes before committing.');
+      });
+
+      it('omits "Review changes before committing." example when auto-commit is on', async () => {
+        const prompt = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath: path.join(tempDir, 'workspace-autocommit-on'),
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: true,
+        });
+
+        expect(prompt).not.toContain('Review changes before committing.');
+        expect(prompt).toContain('Check the changes in the diff view.');
+      });
+
+      it('produces different prompts for different autoCommitEnabled values (no cache collision)', async () => {
+        // Use the same workspacePath to maximize cache-key overlap;
+        // if autoCommitEnabled is not part of the cache key, these would collide.
+        const autoCommitOff = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: false,
+        });
+
+        const autoCommitOn = await service.buildSystemPrompt({
+          agentType: 'workspace',
+          workspacePath,
+          specialistName: 'Coordinator',
+          roleReminder: 'Test reminder.',
+          isSubAgent: false,
+          autoCommitEnabled: true,
+        });
+
+        expect(autoCommitOff).not.toBe(autoCommitOn);
+        expect(autoCommitOff).toContain('Review changes before committing.');
+        expect(autoCommitOff).not.toContain('Auto-commit is enabled');
+        expect(autoCommitOn).not.toContain('Review changes before committing.');
+        expect(autoCommitOn).toContain('Auto-commit is enabled');
+      });
+    });
   });
 
   describe('Caching', () => {

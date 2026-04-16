@@ -1484,6 +1484,7 @@ export class AgentBackendHandler {
               roleReminder: agentRoleReminder, // Pass role reminder from specialist config
               isInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              isSubAgent: !!(loadResult.data.metadata?.createdByAgentId || loadResult.data.isBackground),
               autoCommitEnabled: isAutoCommitEnabled2(request.workspaceId),
             });
 
@@ -1608,6 +1609,12 @@ export class AgentBackendHandler {
               roleReminder: requestRoleReminder, // Pass role reminder from request
               isInitialAgent: requestIsInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              isSubAgent: !!(
+                loadResult?.data?.metadata?.createdByAgentId ||
+                loadResult?.data?.isBackground ||
+                extendedRequest.metadata?.createdByAgentId ||
+                extendedRequest.metadata?.isBackground
+              ),
               autoCommitEnabled: isAutoCommitEnabled3(request.workspaceId),
             });
 
@@ -1643,6 +1650,12 @@ export class AgentBackendHandler {
               roleReminder: requestRoleReminder, // Pass role reminder from request
               isInitialAgent: requestIsInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
+              isSubAgent: !!(
+                loadResult?.data?.metadata?.createdByAgentId ||
+                loadResult?.data?.isBackground ||
+                extendedRequest.metadata?.createdByAgentId ||
+                extendedRequest.metadata?.isBackground
+              ),
               autoCommitEnabled: isAutoCommitEnabled4(request.workspaceId),
             });
 
