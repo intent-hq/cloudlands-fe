@@ -23,6 +23,7 @@ import { Logger } from '../../../shared/logger';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import { PullRequestStatus, type WorkspaceId } from '../../../shared/types';
+import { matchesBaseRef } from '../../../shared/services/baseref-matching';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitAuthRequired, gitCommitCreated, githubAuthRequired, gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
 import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
@@ -946,7 +947,10 @@ export class AcceptChangesService {
           try {
             const storedPR = await githubService.getPullRequest(owner, repo, storedPRNumber);
             const branchMatches = !storedPR?.sourceBranch || !workspace.branch || storedPR.sourceBranch === workspace.branch;
-            const baseRefMatches = storedPR?.sourceBranch === workspace.baseRef;
+            // Also accept a baseRef match. baseRef may be plain ("main") or
+            // remote-qualified ("origin/main"); only a conservative remote-name
+            // allowlist is stripped so slashed local branches aren't over-stripped.
+            const baseRefMatches = matchesBaseRef(storedPR?.sourceBranch, workspace.baseRef);
             if (storedPR && !branchMatches && !baseRefMatches) {
               // Positive mismatch: PR belongs to a different branch
               logger.info('[AcceptChanges] Stored PR does not match workspace branch, clearing stale link', {

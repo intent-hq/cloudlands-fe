@@ -41,6 +41,7 @@ import {
   unifiedIdService,
   type UnifiedIdService,
 } from '../../../shared/services/unified-id.service';
+import { matchesBaseRef } from '../../../shared/services/baseref-matching';
 import type {
   CreateWorkspaceRequest,
   DiffChunk,
@@ -2551,7 +2552,11 @@ task:
                 !prDetail.sourceBranch ||
                 !updatedWorkspace.branch ||
                 prDetail.sourceBranch === updatedWorkspace.branch;
-              const baseRefMatches = prDetail.sourceBranch === updatedWorkspace.baseRef;
+              // Also accept a baseRef match. baseRef may be plain ("main")
+              // or remote-qualified ("origin/main"); only a conservative
+              // remote-name allowlist is stripped so slashed local branches
+              // aren't over-stripped.
+              const baseRefMatches = matchesBaseRef(prDetail.sourceBranch, updatedWorkspace.baseRef);
               if (!branchMatches && !baseRefMatches) {
                 logger.info(
                   'Background enrichment: PR source branch does not match workspace, clearing stale link',
@@ -2803,7 +2808,10 @@ task:
             !prDetail.sourceBranch ||
             !workspace.branch ||
             prDetail.sourceBranch === workspace.branch;
-          const baseRefMatches = prDetail.sourceBranch === workspace.baseRef;
+          // Also accept a baseRef match. baseRef may be plain ("main") or
+          // remote-qualified ("origin/main"); only a conservative remote-name
+          // allowlist is stripped so slashed local branches aren't over-stripped.
+          const baseRefMatches = matchesBaseRef(prDetail.sourceBranch, workspace.baseRef);
           if (!branchMatches && !baseRefMatches) {
             logger.info(
               'Periodic PR refresh: PR source branch does not match workspace, clearing stale link',

@@ -20,6 +20,10 @@ import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effect
 import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
 import { PullRequestStatus, type PullRequestInfo, type Workspace } from "$shared/types";
 import {
+  matchesBaseRef,
+  getBaseRefMatchCandidates,
+} from "$shared/services/baseref-matching";
+import {
   refreshPRStatusRequested,
   prStatusRefreshStarted,
   prStatusRefreshCompleted,
@@ -44,7 +48,7 @@ const MIN_REFRESH_INTERVAL_MS = 5_000;
 
 // ── Discover PRs ──
 
-function* discoverPRsForBranch(
+export function* discoverPRsForBranch(
   workspaceId: string,
   workspace: Workspace,
   force: boolean,
@@ -69,8 +73,12 @@ function* discoverPRsForBranch(
         const prSourceBranch = pr.headRef || "";
 
         const matchesBranch = !prSourceBranch || !workspace.branch || prSourceBranch === workspace.branch;
-        const matchesBaseRef = prSourceBranch === workspace.baseRef;
-        if (!matchesBranch && !matchesBaseRef) {
+        // Accept the stored PR if its sourceBranch matches the workspace's
+        // baseRef. baseRef may be a plain branch ("main") or remote-qualified
+        // ("origin/main"); only a conservative allowlist of remote prefixes
+        // is stripped so slashed local branches aren't over-stripped.
+        const baseRefMatched = matchesBaseRef(prSourceBranch, workspace.baseRef);
+        if (!matchesBranch && !baseRefMatched) {
           logger.info("[PRStatusSaga] Stored PR source branch mismatch, skipping", {
             workspaceId, prNumber: workspace.prNumber, prSourceBranch,
           });
@@ -95,6 +103,12 @@ function* discoverPRsForBranch(
     const allPRs = openResponse.data || [];
     const branchesToMatch = new Set<string>();
     branchesToMatch.add(workspace.branch);
+    // Also match baseRef for PR review workspaces where workspace.branch is
+    // a local review branch, not the PR's source branch. Only an allowlisted
+    // remote prefix is stripped; slashed local branches pass through as-is.
+    for (const candidate of getBaseRefMatchCandidates(workspace.baseRef)) {
+      branchesToMatch.add(candidate);
+    }
     branchesToMatch.delete("main");
     branchesToMatch.delete("master");
     branchesToMatch.delete("develop");

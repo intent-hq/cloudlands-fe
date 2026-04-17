@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import * as sagaEffects from "redux-saga/effects";
@@ -85,6 +85,8 @@ import {
   selectWorkspaceById,
 } from "$lib/store/slices/workspace/workspace-selectors";
 import { init } from "$lib/store/init";
+import { invoke } from "$lib/electron-bridge";
+import { discoverPRsForBranch } from "./pr-status-saga";
 
 // Access the handleRefreshPRStatus handler through the module
 // We'll test via the saga's takeLatest behavior
@@ -158,6 +160,67 @@ describe("PR Status Saga", () => {
         .dispatch(refreshPRStatusRequested("ws-1", true, false))
         .put(prStatusRefreshCompleted("ws-1", false, "Missing repository info"))
         .silentRun(100);
+    });
+  });
+
+  describe("discoverPRsForBranch baseRef matching", () => {
+    it("matches an open PR whose sourceBranch equals baseRef after stripping allowlisted remote", async () => {
+      const workspace = {
+        id: "ws-review",
+        branch: "local-review-branch",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "origin/feature",
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 42, sourceBranch: "feature", state: "open", title: "PR", url: "u" },
+              { number: 43, sourceBranch: "other", state: "open", title: "Other", url: "u" },
+            ],
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-review", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(42);
+    });
+
+    it("does NOT over-strip a slashed local baseRef", async () => {
+      // Regression: baseRef="feature/foo" must not falsely match sourceBranch="foo".
+      const workspace = {
+        id: "ws-local",
+        branch: "local-review-branch",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "feature/foo",
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 42, sourceBranch: "foo", state: "open", title: "Would-be-false-match", url: "u" },
+            ],
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-local", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toEqual([]);
     });
   });
 });
