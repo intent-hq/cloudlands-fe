@@ -29,7 +29,13 @@ import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 export function getNodeStatus(session: AgentSession | undefined): AgentNode['status'] {
   if (!session) return 'idle';
 
-  // Check processing flags first for responding state
+  // Terminal session statuses are authoritative — if the session is marked
+  // Completed/Error/Deleted, trust that over any stale streaming/processing
+  // flags that may not have been cleared properly.
+  if (session.status === AgentStatus.Completed) return 'completed';
+  if (session.status === AgentStatus.Error || session.status === AgentStatus.Deleted) return 'failed';
+
+  // Check processing flags for responding state
   // These flags indicate the agent is actively working
   if (session.isProcessing || session.isStreaming || (session as any).isResponding) {
     return 'responding';
@@ -58,11 +64,6 @@ export function getNodeStatus(session: AgentSession | undefined): AgentNode['sta
       return 'responding';
     case AgentStatus.Waiting:
       return 'waiting';
-    case AgentStatus.Completed:
-      return 'completed';
-    case AgentStatus.Error:
-    case AgentStatus.Deleted:
-      return 'failed';
     default:
       return 'idle';
   }
