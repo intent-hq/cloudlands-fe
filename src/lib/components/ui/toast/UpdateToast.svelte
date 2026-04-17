@@ -9,6 +9,7 @@
    * - Up to date: Success message (brief)
    */
 
+  import { fly } from "svelte/transition";
   import {
     faArrowsRotate,
     faCakeCandles,
@@ -31,9 +32,16 @@
   interface Props {
     /** Callback when toast should be dismissed */
     onDismiss?: () => void;
+    /** Provided automatically by Sonner for custom toast components */
+    closeToast?: () => void;
   }
 
-  let { onDismiss }: Props = $props();
+  let { onDismiss, closeToast }: Props = $props();
+
+  function handleClose() {
+    onDismiss?.();
+    closeToast?.();
+  }
 
   const dispatch = getDispatch();
   const status$ = selectAutoUpdateStatus();
@@ -76,6 +84,11 @@
 </script>
 
 <div class="update-toast">
+  {#if status === 'downloaded' || status === 'downloading' || status === 'error'}
+    <button class="close-btn" onclick={handleClose} aria-label="Close">
+      <Fa icon={faXmark} size="xs" />
+    </button>
+  {/if}
   {#if status === 'checking'}
     <div class="flex items-center gap-3">
       <div class="icon checking">
@@ -107,11 +120,6 @@
             {progressPercent}%{progress ? ` · ${formatSpeed(progress.bytesPerSecond)}` : ''}
           </div>
         </div>
-        {#if onDismiss}
-          <button class="close-btn" onclick={onDismiss} aria-label="Close">
-            <Fa icon={faXmark} />
-          </button>
-        {/if}
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
@@ -119,7 +127,7 @@
     </div>
   {:else if status === 'downloaded'}
     <div class="flex items-center gap-3">
-      <div class="icon-celebrate">
+      <div class="icon-celebrate" transition:fly={{y: 30, duration: 300}}>
         <Fa icon={faCakeCandles} size="2x" />
       </div>
       <div class="text flex-1">
@@ -156,11 +164,6 @@
           {$error$ || 'An unknown error occurred'}
         </div>
       </div>
-      {#if onDismiss}
-        <button class="close-btn" onclick={onDismiss} aria-label="Close">
-          <Fa icon={faXmark} />
-        </button>
-      {/if}
     </div>
   {/if}
 </div>
@@ -168,6 +171,32 @@
 <style>
   .update-toast {
     min-width: 280px;
+    position: relative;
+    overflow: visible;
+  }
+
+  .close-btn {
+    position: absolute;
+    top: -1rem;
+    left: -1.25rem;
+    transform: translate(-35%, -35%);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--muted-foreground));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: opacity 0.15s ease;
+    z-index: 1;
+  }
+
+  .close-btn:hover {
+    opacity: 0.8;
   }
 
   .icon {
@@ -258,23 +287,4 @@
     background: hsl(142 76% 30%);
   }
 
-  .close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 0;
-    border: none;
-    background: transparent;
-    color: hsl(var(--muted-foreground));
-    cursor: pointer;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-  }
-
-  .close-btn:hover {
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
-  }
 </style>

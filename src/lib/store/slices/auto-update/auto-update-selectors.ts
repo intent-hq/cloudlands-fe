@@ -18,6 +18,10 @@ export const selectAutoUpdateToastVisible = createSelector(
   (state) => state.autoUpdate.toastVisible,
 );
 
+export const selectAutoUpdateDismissedAt = createSelector(
+  (state) => state.autoUpdate.downloadedToastDismissedAt,
+);
+
 export const selectIsUpdateAvailable = createSelector(
   (state) => state.autoUpdate.status === "available",
 );

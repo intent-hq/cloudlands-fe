@@ -11,6 +11,7 @@ export const initialState: AutoUpdateState = {
   error: null,
   channel: "stable",
   toastVisible: false,
+  downloadedToastDismissedAt: null,
 };
 
 // --- Actions ---
@@ -32,6 +33,9 @@ export const showToast = createAction("autoUpdate/showToast");
 
 /** Hide the update toast */
 export const hideToast = createAction("autoUpdate/hideToast");
+
+/** Dismiss the "downloaded" toast — records timestamp for 24h cooldown */
+export const dismissDownloadedToast = createAction<[dismissedAt: number]>("autoUpdate/dismissDownloadedToast");
 
 /** Menu-triggered: show toast + set checking immediately */
 export const showToastChecking = createAction("autoUpdate/showToastChecking");
@@ -100,6 +104,11 @@ export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState)
   .with(hideToast, (state) => ({
     ...state,
     toastVisible: false,
+  }))
+  .with(dismissDownloadedToast, (state, { payload: [dismissedAt] }) => ({
+    ...state,
+    toastVisible: false,
+    downloadedToastDismissedAt: dismissedAt,
   }))
   .with(showToastChecking, (state) => ({
     ...state,

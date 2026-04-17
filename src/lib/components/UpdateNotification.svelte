@@ -17,16 +17,22 @@
   import {
     selectAutoUpdateToastVisible,
     selectAutoUpdateStatus,
+    selectAutoUpdateDismissedAt,
   } from '$lib/store/slices/auto-update/auto-update-selectors';
   import {
     hideToast,
     showToast,
+    dismissDownloadedToast,
     initAutoUpdate,
   } from '$lib/store/slices/auto-update/auto-update-slice';
 
   const dispatch = getDispatch();
   const toastVisible$ = selectAutoUpdateToastVisible();
   const status$ = selectAutoUpdateStatus();
+  const dismissedAt$ = selectAutoUpdateDismissedAt();
+
+  // 24 hours in milliseconds
+  const DISMISS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
   let currentToastId: string | number | undefined;
   let previousStatus: string | undefined;
@@ -40,11 +46,20 @@
     // Show the update toast with custom component
     currentToastId = toast.custom(UpdateToast, {
       duration: Infinity, // Don't auto-dismiss for progress states
+      onDismiss: () => {
+        // Sonner's built-in dismiss (swipe, programmatic)
+        currentToastId = undefined;
+        const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
+        if (currentStatus === 'downloaded') {
+          // Allow dismissal but track the time so we can re-prompt after 24h
+          dispatch(dismissDownloadedToast(Date.now()));
+          return;
+        }
+        dispatch(hideToast());
+      },
       componentProps: {
         onDismiss: () => {
-          // When update is downloaded, toast is non-dismissible — user must click Install
-          const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
-          if (currentStatus === 'downloaded') return;
+          // Used by UpdateToast's auto-dismiss $effect for not-available/error states
           if (currentToastId !== undefined) {
             toast.dismiss(currentToastId);
             currentToastId = undefined;
@@ -76,9 +91,9 @@
     // Don't react if status hasn't changed
     if (status === previousStatus) return;
 
-    // ALWAYS show toast for downloading or downloaded states
-    // This ensures the user always sees download progress and the install button
-    if (status === 'downloading' || status === 'downloaded') {
+    // ALWAYS show toast for downloading states
+    // For downloaded: respect the 24h dismiss cooldown
+    if (status === 'downloading') {
       if (currentToastId === undefined) {
         showUpdateToast();
       }
@@ -86,6 +101,25 @@
       const isToastVisible = selectAutoUpdateToastVisible.select(getReduxStore().getState());
       if (!isToastVisible) {
         dispatch(showToast());
+      }
+    } else if (status === 'downloaded') {
+      const dismissedAt = selectAutoUpdateDismissedAt.select(getReduxStore().getState());
+      const cooldownExpired =
+        dismissedAt == null || Date.now() - dismissedAt >= DISMISS_COOLDOWN_MS;
+
+      if (cooldownExpired) {
+        if (currentToastId === undefined) {
+          showUpdateToast();
+        }
+        const isToastVisible = selectAutoUpdateToastVisible.select(getReduxStore().getState());
+        if (!isToastVisible) {
+          dispatch(showToast());
+        }
+      } else {
+        // Cooldown still active — dismiss the toast if it's showing
+        // (e.g., user triggered "Check for Updates" which briefly showed the checking toast)
+        dismissToast();
+        dispatch(hideToast());
       }
     }
 
@@ -96,6 +130,30 @@
     }
 
     previousStatus = status;
+  });
+
+  // Re-show "downloaded" toast after the 24h cooldown expires
+  $effect(() => {
+    const status = $status$;
+    const dismissedAt = $dismissedAt$;
+
+    if (status !== 'downloaded' || dismissedAt == null) return;
+
+    const elapsed = Date.now() - dismissedAt;
+    const remaining = DISMISS_COOLDOWN_MS - elapsed;
+
+    if (remaining <= 0) return; // Already expired — the status effect above handles it
+
+    const timeout = setTimeout(() => {
+      // Re-show the toast now that cooldown has expired
+      const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
+      if (currentStatus === 'downloaded') {
+        showUpdateToast();
+        dispatch(showToast());
+      }
+    }, remaining);
+
+    return () => clearTimeout(timeout);
   });
 
   // Dismiss toast when not-available or error after a delay (handled by UpdateToast component)

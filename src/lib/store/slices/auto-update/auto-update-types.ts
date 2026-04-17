@@ -8,5 +8,7 @@ export type AutoUpdateState = {
   error: string | null;
   channel: UpdateChannel;
   toastVisible: boolean;
+  /** Timestamp (ms) when the user dismissed the "downloaded" toast. Null = never dismissed. */
+  downloadedToastDismissedAt: number | null;
 };
 
