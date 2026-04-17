@@ -7724,18 +7724,32 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // Get completion report if set via report_to_parent tool
           completionReport = agent.metadata?.completionReport as string | undefined;
 
-          logger.debug('emitAgentIdleEvent: Loaded from persistence', {
-            agentId,
-            hasCompletionReport: !!completionReport,
-            completionReportPreview: completionReport?.substring(0, 100),
-            messageCount,
-            taskNoteId,
-            specialist,
-            metadataKeys: Object.keys(agent.metadata || {}),
-          });
-
           // Get parent agent ID if this is a delegated agent
           parentAgentId = agent.metadata?.createdByAgentId as string | undefined;
+
+          // Forensic logging: promote to info for delegated children so we can
+          // trace completion report propagation end-to-end. Non-delegated
+          // agents stay at debug to avoid log noise.
+          if (parentAgentId) {
+            logger.info('emitAgentIdleEvent: Loaded from persistence', {
+              agentId,
+              parentAgentId,
+              taskNoteId,
+              hasCompletionReport: !!completionReport,
+              completionReportLength: completionReport?.length ?? 0,
+              completionReportTimestamp: agent.metadata?.completionReportTimestamp,
+            });
+          } else {
+            logger.debug('emitAgentIdleEvent: Loaded from persistence', {
+              agentId,
+              hasCompletionReport: !!completionReport,
+              completionReportPreview: completionReport?.substring(0, 100),
+              messageCount,
+              taskNoteId,
+              specialist,
+              metadataKeys: Object.keys(agent.metadata || {}),
+            });
+          }
 
           // Get task title if agent has a task note
           if (taskNoteId) {

@@ -2752,10 +2752,41 @@ If you were created directly by a user, this tool will return an error.`,
         return this.error('Failed to save completion report. Please try again.');
       }
 
+      // Defense-in-depth: also push the completion report into the in-memory
+      // backend session so anything reading from the live session (not just
+      // disk) sees it immediately. Disk is the source of truth; this is a
+      // belt-and-suspenders sync.
+      let inMemorySyncAttempted = false;
+      let inMemorySyncSucceeded = false;
+      try {
+        inMemorySyncAttempted = true;
+        const { ConsolidatedBackendService } = await import(
+          '$features/agent/main/consolidated-backend.service'
+        );
+        const backend = ConsolidatedBackendService.getInstance();
+        const session = backend.getSession(ctx.agentId);
+        if (session) {
+          session.metadata = {
+            ...(session.metadata ?? {}),
+            completionReport: updatedAgent.metadata.completionReport,
+            completionReportTimestamp: updatedAgent.metadata.completionReportTimestamp,
+          };
+          inMemorySyncSucceeded = true;
+        }
+      } catch (syncErr) {
+        logger.warn('In-memory session sync for completion report failed', {
+          agentId: ctx.agentId,
+          error: (syncErr as Error)?.message,
+        });
+      }
+
       logger.info('Completion report saved successfully', {
         agentId: ctx.agentId,
         parentAgentId,
         reportLength: report.length,
+        savedAt: updatedAgent.metadata.completionReportTimestamp,
+        inMemorySyncAttempted,
+        inMemorySyncSucceeded,
       });
 
       return this.success(

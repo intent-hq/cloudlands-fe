@@ -102,6 +102,17 @@ vi.mock('$features/agent/main/agent-persistence', () => ({
   agentPersistence: mockAgentPersistence,
 }));
 
+// Fake in-memory backend for ReportToParentTool defense-in-depth sync tests.
+const mockBackendSessions = new Map<string, any>();
+const mockConsolidatedBackend = {
+  getSession: vi.fn((agentId: string) => mockBackendSessions.get(agentId)),
+};
+vi.mock('$features/agent/main/consolidated-backend.service', () => ({
+  ConsolidatedBackendService: {
+    getInstance: () => mockConsolidatedBackend,
+  },
+}));
+
 vi.mock('$shared/types/branded-ids', () => ({
   AgentId: (id: string) => id,
   WorkspaceId: (id: string) => id,
@@ -1069,6 +1080,7 @@ describe('Agent Interaction Tools', () => {
     beforeEach(async () => {
       const module = await import('../agent-interaction-tools');
       ReportToParentTool = module.ReportToParentTool;
+      mockBackendSessions.clear();
     });
 
     it('should save completion report for delegated agent', async () => {
@@ -1110,6 +1122,65 @@ describe('Agent Interaction Tools', () => {
       const text = (result.content[0] as any).text;
       expect(text).toContain('Completion report saved');
       expect(text).toContain('parent-agent-id');
+    });
+
+    it('should persist to disk AND sync the in-memory backend session', async () => {
+      const tool = new ReportToParentTool(workspaceId);
+
+      mockAgentPersistence.loadAgent.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'child-agent-id',
+          name: 'Child Agent',
+          workspaceId,
+          metadata: {
+            createdByAgentId: 'parent-agent-id',
+          },
+          messages: [],
+        },
+      });
+
+      const saveAgentMock = vi.fn().mockResolvedValue({ success: true });
+      mockAgentPersistence.saveAgent = saveAgentMock;
+
+      // Seed an in-memory session so the tool's sync path has something to update.
+      mockBackendSessions.clear();
+      mockConsolidatedBackend.getSession.mockClear();
+      const fakeSession: { metadata?: Record<string, unknown> } = {
+        metadata: { specialist: 'implementor' },
+      };
+      mockBackendSessions.set('child-agent-id', fakeSession);
+
+      const call: ToolCall = {
+        name: 'report_to_parent',
+        arguments: {
+          report: '  Finished the work. Tests pass.  ',
+        },
+        context: {
+          workspaceId,
+          agentId: 'child-agent-id',
+          agentName: 'Child Agent',
+          sessionId: 'session-123',
+        },
+      };
+
+      const result = await tool.execute(call);
+
+      expect(result.isError).toBe(false);
+
+      // (a) disk save happened with trimmed report + timestamp
+      expect(saveAgentMock).toHaveBeenCalledTimes(1);
+      const savedAgent = saveAgentMock.mock.calls[0][0];
+      expect(savedAgent.metadata.completionReport).toBe('Finished the work. Tests pass.');
+      expect(typeof savedAgent.metadata.completionReportTimestamp).toBe('string');
+
+      // (b) in-memory session now has both fields (and preserves prior metadata)
+      expect(mockConsolidatedBackend.getSession).toHaveBeenCalledWith('child-agent-id');
+      expect(fakeSession.metadata).toMatchObject({
+        specialist: 'implementor',
+        completionReport: 'Finished the work. Tests pass.',
+        completionReportTimestamp: savedAgent.metadata.completionReportTimestamp,
+      });
     });
 
     it('should reject report from non-delegated agent', async () => {

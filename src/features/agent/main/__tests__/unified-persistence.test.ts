@@ -391,6 +391,153 @@ describe('UnifiedPersistence', () => {
     });
   });
 
+  describe('completion report preservation on save', () => {
+    it('should preserve metadata.completionReport from disk when incoming save lacks it (regression)', async () => {
+      // Bug: ReportToParentTool writes metadata.completionReport directly to disk.
+      // A concurrent in-memory save (frontend/streaming) with stale metadata would
+      // clobber the report because saveAgent didn't preserve it.
+      const agent: AgentSession = {
+        id: 'agent-report-1' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      // Step 1: First save (establishes the file on disk).
+      await persistence.saveAgent(agent, testDir);
+
+      // Step 2: Simulate ReportToParentTool writing a completion report directly.
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-report-1.json');
+      const reportTimestamp = '2026-04-17T12:00:00.000Z';
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      const target = data.version && data.data ? data.data : data;
+      target.metadata = {
+        ...(target.metadata || {}),
+        completionReport: 'hello',
+        completionReportTimestamp: reportTimestamp,
+      };
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Step 3: Save again with stale in-memory data that carries unrelated metadata
+      // but no completionReport field.
+      const staleSave: AgentSession = {
+        ...agent,
+        metadata: { someOtherField: 123 } as any,
+      } as any;
+      await persistence.saveAgent(staleSave, testDir);
+
+      // Step 4: Load and verify the completion report was preserved AND other
+      // metadata keys from the incoming save are kept.
+      persistence.invalidateAllLoadCaches();
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      const loadedMetadata = (result.data as any)?.metadata;
+      expect(loadedMetadata?.completionReport).toBe('hello');
+      expect(loadedMetadata?.completionReportTimestamp).toBe(reportTimestamp);
+      expect(loadedMetadata?.someOtherField).toBe(123);
+    });
+
+    it('should preserve metadata.completionReport when incoming save has no metadata at all', async () => {
+      const agent: AgentSession = {
+        id: 'agent-report-2' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      await persistence.saveAgent(agent, testDir);
+
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-report-2.json');
+      const reportTimestamp = '2026-04-17T12:30:00.000Z';
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      const target = data.version && data.data ? data.data : data;
+      target.metadata = {
+        completionReport: 'done',
+        completionReportTimestamp: reportTimestamp,
+      };
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Incoming save has no metadata at all.
+      await persistence.saveAgent(agent, testDir);
+
+      persistence.invalidateAllLoadCaches();
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      const loadedMetadata = (result.data as any)?.metadata;
+      expect(loadedMetadata?.completionReport).toBe('done');
+      expect(loadedMetadata?.completionReportTimestamp).toBe(reportTimestamp);
+    });
+
+    it('should allow incoming save to overwrite completionReport when provided explicitly', async () => {
+      const agent: AgentSession = {
+        id: 'agent-report-3' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      await persistence.saveAgent(agent, testDir);
+
+      // Seed disk with an initial completion report.
+      const agentFilePath = path.join(testDir, '.workspace/agents', 'agent-report-3.json');
+      const raw = await fs.readFile(agentFilePath, 'utf-8');
+      const data = JSON.parse(raw);
+      const target = data.version && data.data ? data.data : data;
+      target.metadata = {
+        completionReport: 'old report',
+        completionReportTimestamp: '2026-04-17T10:00:00.000Z',
+      };
+      await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Incoming save explicitly supplies a new completion report — should win.
+      const newTimestamp = '2026-04-17T13:00:00.000Z';
+      const overwriteSave: AgentSession = {
+        ...agent,
+        metadata: {
+          completionReport: 'new report',
+          completionReportTimestamp: newTimestamp,
+        } as any,
+      } as any;
+      await persistence.saveAgent(overwriteSave, testDir);
+
+      persistence.invalidateAllLoadCaches();
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      const loadedMetadata = (result.data as any)?.metadata;
+      expect(loadedMetadata?.completionReport).toBe('new report');
+      expect(loadedMetadata?.completionReportTimestamp).toBe(newTimestamp);
+    });
+  });
+
   describe('backup and recovery', () => {
     it('should handle multiple writes atomically', async () => {
       const agent: AgentSession = {

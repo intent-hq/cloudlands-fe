@@ -501,7 +501,15 @@ export class UnifiedPersistence {
     let preservedName: string | undefined;
     let preservedNameExplicitlySet: boolean | undefined;
     let preservedAcpSessionId: string | undefined;
+    let preservedCompletionReport: string | undefined;
+    let preservedCompletionReportTimestamp: string | undefined;
     let existingMessagesOnDisk: any[] = [];
+    const incomingMetadata =
+      (agent as any).metadata &&
+      typeof (agent as any).metadata === 'object' &&
+      !Array.isArray((agent as any).metadata)
+        ? (agent as any).metadata
+        : undefined;
     const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(agent.workspaceId);
     try {
       const existingData = await metadataFS.readFile(agentPath, 'utf-8');
@@ -558,6 +566,23 @@ export class UnifiedPersistence {
       // this field on their copy of the session object, so we must not let them clobber it.
       if (existingAgent.acpSessionId && !agent.acpSessionId) {
         preservedAcpSessionId = existingAgent.acpSessionId;
+      }
+
+      // Preserve metadata.completionReport / completionReportTimestamp from existing
+      // file if the incoming save doesn't carry them. ReportToParentTool writes these
+      // fields directly to disk; other save paths (frontend, streaming) may hold a
+      // stale in-memory copy without them and must not clobber the disk value.
+      const existingMetadata =
+        existingAgent.metadata &&
+        typeof existingAgent.metadata === 'object' &&
+        !Array.isArray(existingAgent.metadata)
+          ? existingAgent.metadata
+          : undefined;
+      if (existingMetadata?.completionReport && !incomingMetadata?.completionReport) {
+        preservedCompletionReport = existingMetadata.completionReport;
+        if (existingMetadata.completionReportTimestamp) {
+          preservedCompletionReportTimestamp = existingMetadata.completionReportTimestamp;
+        }
       }
 
     } catch {
@@ -646,6 +671,17 @@ export class UnifiedPersistence {
       // Preserve acpSessionId from existing file if not in incoming agent
       ...(preservedAcpSessionId && {
         acpSessionId: preservedAcpSessionId,
+      }),
+      // Preserve metadata.completionReport[Timestamp] from disk when the incoming
+      // save doesn't include them. Merges into whatever metadata the caller provided.
+      ...(preservedCompletionReport && {
+        metadata: {
+          ...(incomingMetadata ?? {}),
+          completionReport: preservedCompletionReport,
+          ...(preservedCompletionReportTimestamp && {
+            completionReportTimestamp: preservedCompletionReportTimestamp,
+          }),
+        },
       }),
 
     };
