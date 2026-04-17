@@ -268,7 +268,7 @@ class BrowserCaptureService {
 
     // Capture screenshot
     const screenshot = await embeddedBrowserCdp.screenshot(tab.tabId);
-    const screenshotPath = path.join(outputDir, 'screenshot.png');
+    const screenshotPath = path.join(outputDir, 'screenshot.jpg');
     await fs.writeFile(screenshotPath, Buffer.from(screenshot.base64, 'base64'));
 
     // Write console/network if captured
@@ -469,7 +469,7 @@ class BrowserCaptureService {
 
     // Capture screenshot
     const screenshot = await embeddedBrowserCdp.screenshot(session.tabId);
-    await fs.writeFile(path.join(stepDir, 'screenshot.png'), Buffer.from(screenshot.base64, 'base64'));
+    await fs.writeFile(path.join(stepDir, 'screenshot.jpg'), Buffer.from(screenshot.base64, 'base64'));
 
     // Write step metadata
     const tabs = await embeddedBrowserCdp.listAllTabs();

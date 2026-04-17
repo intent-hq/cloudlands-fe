@@ -62,6 +62,7 @@ import {
 } from '$lib/store/slices/chat-state/chat-state-slice';
 import { selectAgentSession, selectAgentMessages } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { upsertSession as upsertAgentSessionData, replaceMessages as replaceAgentSessionMessages, addMessage as addAgentSessionMessage } from '$lib/store/slices/agent-session/agent-session-slice';
+import { resizeImageForAgent } from '$lib/utils/image-resize';
 
 const logger = createLogger('ChatService');
 
@@ -1611,10 +1612,20 @@ export class ChatService implements IDisposable {
       imageFileItems.map(async (item) => {
         try {
           const { data, mimeType } = await fileToBase64(item.file!);
+          // Resize image for optimal token usage
+          const resized = await resizeImageForAgent(data, mimeType);
+          logger.info('Resized user-attached image file', {
+            fileName: item.label,
+            originalSizeKb: Math.round((data.length * 3) / 4 / 1024),
+            resizedSizeKb: Math.round((resized.base64.length * 3) / 4 / 1024),
+            mimeTypeChanged: mimeType !== resized.mimeType,
+            originalMimeType: mimeType,
+            resizedMimeType: resized.mimeType,
+          });
           return {
             type: 'image' as const,
-            data,
-            mimeType,
+            data: resized.base64,
+            mimeType: resized.mimeType,
           };
         } catch (error) {
           logger.error('Failed to convert image to base64', { fileName: item.label, error });
@@ -1655,13 +1666,31 @@ export class ChatService implements IDisposable {
       }
     }
 
-    // Add image blocks from base64 data (already converted)
+    // Add image blocks from base64 data (already converted) — resize for optimal token usage
     for (const item of base64ImageItems) {
-      contentBlocks.push({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      });
+      try {
+        const resized = await resizeImageForAgent(item.imageData!, item.imageMimeType!);
+        logger.info('Resized base64 image attachment', {
+          fileName: item.label,
+          originalSizeKb: Math.round((item.imageData!.length * 3) / 4 / 1024),
+          resizedSizeKb: Math.round((resized.base64.length * 3) / 4 / 1024),
+          mimeTypeChanged: item.imageMimeType !== resized.mimeType,
+          originalMimeType: item.imageMimeType,
+          resizedMimeType: resized.mimeType,
+        });
+        contentBlocks.push({
+          type: 'image' as const,
+          data: resized.base64,
+          mimeType: resized.mimeType,
+        });
+      } catch (error) {
+        logger.warn('Failed to resize base64 image, using original', { fileName: item.label, error });
+        contentBlocks.push({
+          type: 'image' as const,
+          data: item.imageData!,
+          mimeType: item.imageMimeType!,
+        });
+      }
     }
 
     // Add file blocks from base64 data (already converted)

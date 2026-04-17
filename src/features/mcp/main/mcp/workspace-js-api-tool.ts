@@ -52,7 +52,7 @@ const TOOL_DESCRIPTION = [
   '  ws.note.create(title, content, tags?) → { id, title, content, tags }  // Create a new note. DO NOT use this for the spec: the spec already exists as note ID `spec`; edit or add to it instead.',
   '  ws.note.list(tag?) → [{ id, title, tags, ... }]  // List notes. Optional tag filter narrows results.',
   '  ws.note.listTasks(id) → [{ text, status, linkedTaskNoteId, lineNumber, ... }]  // Faster than `read()` when you only need checkbox/task IDs.',
-  '  ws.note.readAsset(asset) → { assetId, mimeType, data, sizeKb }  // `asset` can be an asset ID or `workspace-asset://...` URL.',
+  '  ws.note.readAsset(asset) → { assetId, mimeType, data, sizeKb }  // `asset` can be an asset ID or `workspace-asset://...` URL. Image assets (PNG, JPEG, GIF, WebP) are returned as native image content blocks (the model sees the image directly); non-image assets return the JSON object.',
   '  ws.note.setContent(id, content, confirmReplacement?) → { ... }  // ⚠️ FULL REPLACEMENT: replaces the entire note. Prefer `add()` / `edit()` / `editLines()` unless you intentionally want to overwrite everything.',
   '    If the new content is much shorter, call again with `confirmReplacement=true`. ```task blocks auto-convert into linked task notes.```',
   '  ws.note.add(id, { content, heading?, position? }) → { ... }  // Safest way to add information without losing existing content. Prefer this when asked to "add", "put", "document", or "include" something.',
@@ -238,6 +238,15 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         },
         { timeout: TIMEOUT_MS },
       );
+
+      // Check if the result contains MCP content items (e.g. image content from readAsset)
+      if (result && typeof result === 'object' && Array.isArray(result.__mcpContentItems)) {
+        const contentItems = result.__mcpContentItems;
+        if (logs.length > 0) {
+          contentItems.unshift({ type: 'text', text: logs.join('\n') });
+        }
+        return this.result(contentItems);
+      }
 
       const output = result !== undefined ? JSON.stringify(result, null, 2) : '(no return value)';
       return this.success(formatOutput(logs, output));

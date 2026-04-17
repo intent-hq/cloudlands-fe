@@ -2499,11 +2499,16 @@ export class AgentBackendHandler {
                       // Parse data URL to extract base64 and mimeType
                       const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
                       if (dataMatch) {
+                        // Resize image for token efficiency before sending to agent
+                        const { resizeImageForAgent } = await import(
+                          '../../../shared/main/image-resize'
+                        );
+                        const resized = await resizeImageForAgent(dataMatch[2], dataMatch[1]);
                         // Only add to agent blocks, not display blocks
                         agentContentBlocks.push({
                           type: 'image',
-                          data: dataMatch[2],
-                          mimeType: dataMatch[1],
+                          data: resized.data,
+                          mimeType: resized.mimeType,
                         } as ContentBlock);
                       }
                     }
@@ -2516,11 +2521,16 @@ export class AgentBackendHandler {
                       if (contentType.startsWith('image/')) {
                         const arrayBuffer = await response.arrayBuffer();
                         const base64 = Buffer.from(arrayBuffer).toString('base64');
+                        // Resize image for token efficiency before sending to agent
+                        const { resizeImageForAgent } = await import(
+                          '../../../shared/main/image-resize'
+                        );
+                        const resized = await resizeImageForAgent(base64, contentType);
                         // Only add to agent blocks, not display blocks
                         agentContentBlocks.push({
                           type: 'image',
-                          data: base64,
-                          mimeType: contentType,
+                          data: resized.data,
+                          mimeType: resized.mimeType,
                         } as ContentBlock);
                       }
                     }

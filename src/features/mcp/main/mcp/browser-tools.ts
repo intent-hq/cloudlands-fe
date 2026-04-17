@@ -537,8 +537,8 @@ interface WaitForOptions {
               const saved = await assetsService.saveAsset(
                 workspaceId,
                 screenshotData.base64,
-                'image/png',
-                `screenshot-${Date.now()}.png`,
+                'image/jpeg',
+                `screenshot-${Date.now()}.jpg`,
               );
               // Replace the base64 data with the asset URL so the text result stays small
               actionResult.result = {

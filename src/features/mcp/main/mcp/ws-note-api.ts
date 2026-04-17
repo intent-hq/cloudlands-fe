@@ -572,11 +572,28 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
         const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (!dataMatch) throw new Error('Failed to parse asset data');
 
+        const mimeType = dataMatch[1];
+        const data = dataMatch[2];
+        const sizeKb = Math.round(data.length / 1024);
+
+        // For image mime types, return as MCP image content block for efficient vision processing
+        // (~2,700 tokens for a screenshot vs ~100k+ tokens as base64 text)
+        const imageMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+        if (imageMimeTypes.includes(mimeType)) {
+          return {
+            __mcpContentItems: [
+              { type: 'text' as const, text: JSON.stringify({ assetId, mimeType, sizeKb }) },
+              { type: 'image' as const, data, mimeType },
+            ],
+          };
+        }
+
+        // Non-image assets: return as text/base64 (existing behavior)
         return {
           assetId,
-          mimeType: dataMatch[1],
-          data: dataMatch[2],
-          sizeKb: Math.round(dataMatch[2].length / 1024),
+          mimeType,
+          data,
+          sizeKb,
         };
       },
 

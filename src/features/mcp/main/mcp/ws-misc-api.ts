@@ -91,8 +91,8 @@ async function persistBrowserScreenshots(result: ExecutionResult, workspaceId?: 
       const saved = await assetsService.saveAsset(
         workspaceId,
         screenshotData.base64,
-        'image/png',
-        `screenshot-${Date.now()}.png`,
+        'image/jpeg',
+        `screenshot-${Date.now()}.jpg`,
       );
       actionResult.result = {
         assetUrl: saved.url,

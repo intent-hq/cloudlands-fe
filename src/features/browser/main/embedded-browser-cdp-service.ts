@@ -661,19 +661,52 @@ class EmbeddedBrowserCdpService {
       );
     }
 
-    // Get layout metrics to determine viewport size
+    // Get layout metrics to determine viewport size.
+    // layoutViewport reflects the page's internal layout (may exceed visible area
+    // if the page sets min-width larger than the panel).
+    // cssVisualViewport reflects the actual visible area the user sees.
+    // We cap to whichever is smaller so screenshots match the panel bounds.
     const layoutMetrics = (await this.sendCommand(webContentsId, 'Page.getLayoutMetrics')) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
+      cssVisualViewport?: {
+        clientWidth: number;
+        clientHeight: number;
+        pageX: number;
+        pageY: number;
+      };
     };
 
+    const layoutW = layoutMetrics.layoutViewport.clientWidth;
+    const layoutH = layoutMetrics.layoutViewport.clientHeight;
+    const visualW = layoutMetrics.cssVisualViewport?.clientWidth;
+    const visualH = layoutMetrics.cssVisualViewport?.clientHeight;
+
+    // Use scroll offsets from cssVisualViewport so the screenshot captures
+    // what the user currently sees, not the document origin.
+    const scrollX = layoutMetrics.cssVisualViewport?.pageX ?? 0;
+    const scrollY = layoutMetrics.cssVisualViewport?.pageY ?? 0;
+
+    // Use the smaller of layout vs visual viewport so a narrow panel
+    // produces a narrow screenshot instead of capturing off-screen content.
+    const width = visualW && visualW > 0 ? Math.min(layoutW, visualW) : layoutW;
+    const height = visualH && visualH > 0 ? Math.min(layoutH, visualH) : layoutH;
+
     const result = (await this.sendCommand(webContentsId, 'Page.captureScreenshot', {
-      format: 'png',
+      format: 'jpeg',
+      quality: 80,
+      clip: {
+        x: scrollX,
+        y: scrollY,
+        width,
+        height,
+        scale: 1,
+      },
     })) as { data: string };
 
     return {
       base64: result.data,
-      width: layoutMetrics.layoutViewport.clientWidth,
-      height: layoutMetrics.layoutViewport.clientHeight,
+      width,
+      height,
     };
   }
 

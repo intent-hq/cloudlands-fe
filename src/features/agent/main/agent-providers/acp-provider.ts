@@ -606,6 +606,48 @@ export function getIntentServerPath(): string {
 const logger = new Logger('ACPProvider');
 
 /**
+ * Extract pixel dimensions from a base64-encoded image by reading the binary header.
+ * Supports PNG and JPEG formats. Returns null if dimensions cannot be determined.
+ */
+function getImageDimensionsFromBase64(
+  base64Data: string,
+  mimeType: string,
+): { width: number; height: number } | null {
+  try {
+    const buf = Buffer.from(base64Data, 'base64');
+
+    // PNG: width at bytes 16-19, height at bytes 20-23 (big-endian in IHDR chunk)
+    if (mimeType === 'image/png' && buf.length >= 24) {
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      if (width > 0 && height > 0 && width < 100000 && height < 100000) {
+        return { width, height };
+      }
+    }
+
+    // JPEG: scan for SOF0/SOF2 markers (0xFF 0xC0 or 0xFF 0xC2)
+    if ((mimeType === 'image/jpeg' || mimeType === 'image/jpg') && buf.length >= 2) {
+      for (let i = 0; i < buf.length - 9; i++) {
+        if (
+          buf[i] === 0xff &&
+          (buf[i + 1] === 0xc0 || buf[i + 1] === 0xc2)
+        ) {
+          const height = buf.readUInt16BE(i + 5);
+          const width = buf.readUInt16BE(i + 7);
+          if (width > 0 && height > 0 && width < 100000 && height < 100000) {
+            return { width, height };
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Checks if an error message indicates the provider needs authentication
  * Uses provider-specific patterns from the provider configuration
  */
@@ -5543,6 +5585,16 @@ export class ACPProvider extends BaseAgentProvider {
           data: imageBlock.data,
           mimeType: imageBlock.mimeType,
         });
+        const dims = getImageDimensionsFromBase64(imageBlock.data, imageBlock.mimeType);
+        const estimatedTokens = dims ? Math.ceil((dims.width * dims.height) / 750) : null;
+        logger.info('Image block added to ACP prompt (non-streaming)', {
+          sessionId: this.sessionId,
+          mimeType: imageBlock.mimeType,
+          dataLength: imageBlock.data?.length || 0,
+          width: dims?.width ?? 'unknown',
+          height: dims?.height ?? 'unknown',
+          estimatedTokens: estimatedTokens ?? 'unknown',
+        });
       }
     }
 
@@ -7714,6 +7766,16 @@ export class ACPProvider extends BaseAgentProvider {
               type: 'image' as const,
               data: imageBlock.data,
               mimeType: imageBlock.mimeType,
+            });
+            const dims = getImageDimensionsFromBase64(imageBlock.data, imageBlock.mimeType);
+            const estimatedTokens = dims ? Math.ceil((dims.width * dims.height) / 750) : null;
+            logger.info('Image block added to ACP prompt (streaming)', {
+              sessionId: this.sessionId,
+              mimeType: imageBlock.mimeType,
+              dataLength: imageBlock.data?.length || 0,
+              width: dims?.width ?? 'unknown',
+              height: dims?.height ?? 'unknown',
+              estimatedTokens: estimatedTokens ?? 'unknown',
             });
           }
           logger.info('Including images in ACP prompt', {
