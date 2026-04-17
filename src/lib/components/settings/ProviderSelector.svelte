@@ -137,6 +137,7 @@
     auggie: 'auggie',
     'claude-code': 'claudeCode',
     codex: 'codex',
+    mock: 'mock',
     opencode: 'opencode',
     cortex: 'cortex',
   };

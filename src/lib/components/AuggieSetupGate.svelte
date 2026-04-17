@@ -132,6 +132,7 @@
             codex: { available: false },
             opencode: { available: false },
             cortex: { available: false },
+            mock: { available: false },
           },
           hiddenProviders: [],
         };

@@ -75,6 +75,7 @@ function getProviderStatus(
     codex: availability.providers.codex,
     cortex: availability.providers.cortex,
     opencode: availability.providers.opencode,
+    mock: availability.providers.mock,
   };
   return map[providerId];
 }

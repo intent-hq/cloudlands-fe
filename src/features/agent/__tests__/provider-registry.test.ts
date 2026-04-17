@@ -130,8 +130,11 @@ describe('ProviderRegistry', () => {
     it('should create a registry with ACP providers', () => {
       const defaultRegistry = ProviderRegistry.createDefault();
 
-      // All known ACP providers are supported
-      for (const providerId of Object.keys(ACP_PROVIDERS)) {
+      // All known ACP providers are supported (skip those gated by env vars)
+      const activeProviders = Object.entries(ACP_PROVIDERS).filter(
+        ([, config]) => !config.requiresEnvVar || process.env[config.requiresEnvVar],
+      );
+      for (const [providerId] of activeProviders) {
         expect(defaultRegistry.has(providerId)).toBe(true);
       }
 
@@ -140,8 +143,8 @@ describe('ProviderRegistry', () => {
       expect(defaultRegistry.has('augment')).toBe(true);
       expect(defaultRegistry.has('default')).toBe(true);
 
-      // Should include all providers plus aliases
-      expect(defaultRegistry.list()).toHaveLength(Object.keys(ACP_PROVIDERS).length + 3);
+      // Should include all active providers plus aliases
+      expect(defaultRegistry.list()).toHaveLength(activeProviders.length + 3);
     });
 
     it('should use ACP for any unknown provider', async () => {
@@ -176,8 +179,11 @@ describe('ProviderRegistry', () => {
       const defaultRegistry = ProviderRegistry.createDefault();
       const providers = defaultRegistry.list();
 
-      // Includes provider IDs and default aliases (order not guaranteed)
-      for (const providerId of Object.keys(ACP_PROVIDERS)) {
+      // Includes provider IDs and default aliases (skip env-gated providers)
+      const activeProviders = Object.entries(ACP_PROVIDERS).filter(
+        ([, config]) => !config.requiresEnvVar || process.env[config.requiresEnvVar],
+      );
+      for (const [providerId] of activeProviders) {
         expect(providers).toContain(providerId);
       }
       expect(providers).toContain('acp');

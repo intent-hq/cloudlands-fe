@@ -619,6 +619,7 @@
     class="flex flex-col gap-1.5 relative"
     class:streaming={isStreaming}
     style="contain: layout style paint;"
+    data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
   >
     {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
       {#if block.type === 'content_group'}

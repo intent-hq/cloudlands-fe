@@ -836,6 +836,7 @@
   onpaste={handlePaste}
   role="region"
   aria-label="Chat input with file drop support"
+  data-testid="message-input"
 >
   <!-- Drop zone overlay -->
   {#if isDragging}
@@ -1103,6 +1104,7 @@
               class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
               aria-label="Interrupt and send"
+              data-testid="interrupt-btn"
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span

@@ -1680,7 +1680,18 @@ task:
         // Check for behaviorPrompt passed directly (from team coordinator or custom specialist)
         const passedBehaviorPrompt = (request.initialAgent as any).behaviorPrompt;
         // Get the explicitly selected provider (auggie, claude-code, codex)
-        const provider = (request.initialAgent as any).provider;
+        // Test-only: DEFAULT_PROVIDER_OVERRIDE forces the provider regardless of
+        // what the renderer resolved (resolveOnboardingModel defaults to auggie).
+        let providerOverride: string | undefined;
+        if (process.env.TESTING === 'true' && process.env.DEFAULT_PROVIDER_OVERRIDE) {
+          const { ACP_PROVIDERS } = await import('$shared/config/provider-config');
+          if (process.env.DEFAULT_PROVIDER_OVERRIDE in ACP_PROVIDERS) {
+            providerOverride = process.env.DEFAULT_PROVIDER_OVERRIDE;
+          } else {
+            logger.warn(`DEFAULT_PROVIDER_OVERRIDE '${process.env.DEFAULT_PROVIDER_OVERRIDE}' is not a known provider, ignoring`);
+          }
+        }
+        const provider = providerOverride || (request.initialAgent as any).provider;
 
         const specialistPath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
         if (specialist) {

@@ -281,11 +281,11 @@
           </span>
         {:else if status === 'error' && error}
           <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
-          <span class="text-destructive-foreground text-sm">{statusMessage}</span>
+          <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
         {:else}
           <!-- Normal - show spinner -->
           <Spinner size={4} {seed} />
-          <span class="text-subtle text-sm font-family-child">{statusMessage}</span>
+          <span class="text-subtle text-sm font-family-child" data-testid="streaming-status-thinking">{statusMessage}</span>
           {#if showDetails && sortedStatusEvents.length > 0 && latestEvent}
             <button
               onclick={() => sortedStatusEvents.length > 1 && (expanded = !expanded)}

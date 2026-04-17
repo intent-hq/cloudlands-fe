@@ -28,15 +28,17 @@ import {
   archiveAndGoHome,
   startPermissionAutoApprover,
   startChatNudgeMonitor,
+  setMockAgentBehavior,
 } from './build-smoke-helpers';
 
-const KNOWN_PROVIDERS = ['auggie', 'claude-code', 'codex', 'opencode'] as const;
+const KNOWN_PROVIDERS = ['auggie', 'claude-code', 'codex', 'opencode', 'mock'] as const;
 
 const PROMPT =
   'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
 function getProviderTimeout(providerId: string): number {
+  if (providerId === 'mock') return 60 * 1000;
   return DEFAULT_PROVIDER_TIMEOUT;
 }
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -160,7 +162,7 @@ test.describe('Build Smoke — Provider Verification', () => {
 
   for (const providerId of KNOWN_PROVIDERS) {
     test(`${providerId} provider completes the hello-world task`, async () => {
-      // Skip unavailable providers — shows as "skipped" in Playwright reporter
+      // Skip unavailable providers — shows as "skipped" in Playwright reporter.
       if (!availableProviders.has(providerId)) {
         test.skip(true, `${providerId} is not installed`);
         return;
@@ -170,6 +172,17 @@ test.describe('Build Smoke — Provider Verification', () => {
       test.setTimeout(providerTimeout);
       const start = Date.now();
       let workspaceId: string | undefined;
+
+      // For the mock provider, configure the mock agent behavior env vars.
+      // The mock provider reads MOCK_AGENT_BEHAVIOR to know what files to
+      // write and what response to return.
+      const mockEnv =
+        providerId === 'mock'
+          ? setMockAgentBehavior({
+            files: { 'README.md': 'hello world' },
+            response: 'I have written hello world to the README. TASK_COMPLETE',
+          })
+          : {};
 
       try {
         // Always explicitly switch provider via localStorage — don't assume any
@@ -185,6 +198,14 @@ test.describe('Build Smoke — Provider Verification', () => {
         //   console.log(`Setting opencode model via Settings UI`);
         //   await setOpencodeModelViaSettingsUI(page);
         // }
+
+        // For mock provider, inject MOCK_AGENT_BEHAVIOR into the Electron
+        // main process environment so spawned agent subprocesses inherit it.
+        if (providerId === 'mock') {
+          await app.evaluate(({ app: _app }, env) => {
+            Object.assign(process.env, env);
+          }, mockEnv);
+        }
 
         // Reset README between providers (skip for the first one)
         if (results.length > 0) {

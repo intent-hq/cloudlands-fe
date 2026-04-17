@@ -1680,7 +1680,15 @@ export class AgentBackendHandler {
         // If model is still the default but we have an explicit NON-default provider,
         // re-resolve the model for that provider. When the provider IS the default (auggie),
         // DEFAULT_AGENT_MODEL is already correct — don't downgrade it.
+        const testOverride = process.env.TESTING === 'true' ? process.env.DEFAULT_PROVIDER_OVERRIDE : undefined;
+        if (testOverride) {
+          const { ACP_PROVIDERS } = await import('$shared/config/provider-config');
+          if (!(testOverride in ACP_PROVIDERS)) {
+            logger.warn(`DEFAULT_PROVIDER_OVERRIDE '${testOverride}' is not a known provider, ignoring`);
+          }
+        }
         const explicitProvider =
+          (testOverride && (await import('$shared/config/provider-config')).ACP_PROVIDERS[testOverride] ? testOverride : undefined) ||
           agentConfig?.provider || agentMetadata?.provider || (request as any).provider;
         if (modelId === DEFAULT_AGENT_MODEL && explicitProvider) {
           const { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS } =

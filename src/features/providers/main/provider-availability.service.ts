@@ -80,29 +80,29 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
     const commonPaths =
       process.platform === 'win32'
         ? [
-            path.join(process.env.APPDATA || '', 'npm', 'auggie.cmd'),
-            path.join(process.env.APPDATA || '', 'npm', 'auggie'),
-            path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie.cmd'),
-            path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie'),
-            path.join(process.env.APPDATA || '', 'nvm', 'auggie.cmd'),
-            path.join(process.env.LOCALAPPDATA || '', 'Volta', 'bin', 'auggie.exe'),
-          ]
+          path.join(process.env.APPDATA || '', 'npm', 'auggie.cmd'),
+          path.join(process.env.APPDATA || '', 'npm', 'auggie'),
+          path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie.cmd'),
+          path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie'),
+          path.join(process.env.APPDATA || '', 'nvm', 'auggie.cmd'),
+          path.join(process.env.LOCALAPPDATA || '', 'Volta', 'bin', 'auggie.exe'),
+        ]
         : [
-            '/usr/local/bin/auggie',
-            '/usr/bin/auggie',
-            '/opt/homebrew/bin/auggie',
-            path.join(homeDir, '.npm-global', 'bin', 'auggie'),
-            path.join(homeDir, '.npm-packages', 'bin', 'auggie'),
-            path.join(homeDir, '.local', 'bin', 'auggie'),
-            path.join(homeDir, 'npm', 'bin', 'auggie'),
-            path.join(homeDir, '.volta', 'bin', 'auggie'),
-            path.join(homeDir, '.fnm', 'aliases', 'default', 'bin', 'auggie'),
-            path.join(homeDir, '.asdf', 'shims', 'auggie'),
-            path.join(homeDir, 'n', 'bin', 'auggie'),
-            '/usr/local/n/bin/auggie',
-            '/usr/local/opt/node/bin/auggie',
-            '/opt/homebrew/opt/node/bin/auggie',
-          ];
+          '/usr/local/bin/auggie',
+          '/usr/bin/auggie',
+          '/opt/homebrew/bin/auggie',
+          path.join(homeDir, '.npm-global', 'bin', 'auggie'),
+          path.join(homeDir, '.npm-packages', 'bin', 'auggie'),
+          path.join(homeDir, '.local', 'bin', 'auggie'),
+          path.join(homeDir, 'npm', 'bin', 'auggie'),
+          path.join(homeDir, '.volta', 'bin', 'auggie'),
+          path.join(homeDir, '.fnm', 'aliases', 'default', 'bin', 'auggie'),
+          path.join(homeDir, '.asdf', 'shims', 'auggie'),
+          path.join(homeDir, 'n', 'bin', 'auggie'),
+          '/usr/local/n/bin/auggie',
+          '/usr/local/opt/node/bin/auggie',
+          '/opt/homebrew/opt/node/bin/auggie',
+        ];
 
     for (const p of commonPaths) {
       if (p && (await pathExists(p))) {
@@ -191,6 +191,27 @@ async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isOpenCodeInstalled();
     return { available: installed };
+  } catch (error) {
+    return { available: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Check if the mock ACP agent is available for test runs.
+ */
+async function checkMockAvailability(): Promise<ProviderStatus> {
+  if (process.env.TESTING !== 'true') {
+    return { available: false, error: 'Mock provider requires TESTING=true' };
+  }
+  const scriptPath = process.env.MOCK_AGENT_SCRIPT_PATH;
+  if (!scriptPath) {
+    return { available: false, error: 'MOCK_AGENT_SCRIPT_PATH not set' };
+  }
+
+  try {
+    await fs.access(scriptPath);
+    // Mock provider is always authenticated when available — no login required
+    return { available: true, authenticated: true };
   } catch (error) {
     return { available: false, error: (error as Error).message };
   }
@@ -462,7 +483,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   // Check all providers in parallel for faster startup
   // For hidden providers, skip the actual check and return unavailable
   const isCortexHidden = hiddenProviders.includes('cortex');
-  const [auggieResult, claudeCodeResult, codexResult, cortexResult, opencodeResult] =
+  const isMockHidden = hiddenProviders.includes('mock');
+  const [auggieResult, claudeCodeResult, codexResult, cortexResult, mockResult, opencodeResult] =
     await Promise.all([
       checkAuggieAvailability(),
       checkClaudeCodeAvailability(),
@@ -470,6 +492,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       isCortexHidden
         ? Promise.resolve({ available: false } as ProviderStatus)
         : checkCortexAvailability(),
+      isMockHidden
+        ? Promise.resolve({ available: false } as ProviderStatus)
+        : checkMockAvailability(),
       checkOpenCodeAvailability(),
     ]);
 
@@ -515,12 +540,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       claudeCodeResult.available ||
       codexResult.available ||
       cortexResult.available ||
+      mockResult.available ||
       opencodeResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
       codex: codexResult,
       cortex: cortexResult,
+      mock: mockResult,
       opencode: opencodeResult,
     },
     hiddenProviders,
@@ -532,6 +559,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     claudeCode: claudeCodeResult.available,
     codex: codexResult.available,
     cortex: cortexResult.available,
+    mock: mockResult.available,
     opencode: opencodeResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
@@ -650,6 +678,9 @@ export function setupProviderAvailabilityIPC(): void {
               const opencodePath = await getOpenCodePath();
               authenticated = await checkOpenCodeReady(opencodePath);
             }
+            break;
+          case 'mock':
+            status = await checkMockAvailability();
             break;
           default:
             return { success: false, providerId, error: `Unknown provider: ${providerId}` };

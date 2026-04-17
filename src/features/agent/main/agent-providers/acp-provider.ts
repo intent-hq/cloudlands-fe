@@ -7353,11 +7353,14 @@ export class ACPProvider extends BaseAgentProvider {
           }
 
           if (callbacks?.resolveStream) {
+            // Don't resolve during a retry — the retry's own completion
+            // should handle resolution (same guard as onComplete wrapper)
             if (this.retryInProgress) {
               logger.debug('Skipping resolveStream in onCleanup — retry in progress', {
                 sessionId,
               });
             } else {
+              // Clear stale state that the normal onComplete path clears
               this.pendingRetry = undefined;
               this.sessionRecoveryAttempts = 0;
               this.contextTooLargeRecoveryCount = 0;
@@ -7365,6 +7368,9 @@ export class ACPProvider extends BaseAgentProvider {
               this.currentStreamingRequestId = null;
 
               callbacks.resolveStream();
+              logger.debug('Resolved stream from onCleanup (done notification path)', {
+                sessionId,
+              });
             }
           }
           this.cleanupStreamingCallback(sessionId);

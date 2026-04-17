@@ -18,7 +18,7 @@ import {
   appendFileSync,
 } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { basename, join } from 'path';
+import { basename, join, resolve } from 'path';
 
 // ---------------------------------------------------------------------------
 // findPackagedApp
@@ -249,6 +249,107 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
 }
 
 // ---------------------------------------------------------------------------
+// createTempRepoFromRemote
+// ---------------------------------------------------------------------------
+
+/**
+ * Clone a remote repository into a temp directory and check out a fresh branch.
+ *
+ * Used for e2e tests that need to push commits and open PRs against a real
+ * remote (e.g. `augmentcode/intent-e2e-test`).
+ *
+ * Requires `INTENT_SMOKE_TEST` env var for authentication.  The branch name includes
+ * a timestamp and random suffix to avoid collisions between concurrent runs.
+ *
+ * Returns the repo path, branch name, and a cleanup function that:
+ *   - Closes any open PRs from the branch
+ *   - Deletes the remote branch
+ *   - Removes the local directory
+ */
+export function createTempRepoFromRemote(options?: {
+  /** GitHub repo in "owner/repo" format. Default: augmentcode/intent-e2e-test */
+  repo?: string;
+  /** PAT token for auth. Default: process.env.INTENT_SMOKE_TEST */
+  token?: string;
+}): {
+  repoPath: string;
+  branchName: string;
+  cleanup: () => void;
+} {
+  const repo = options?.repo ?? 'augmentcode/intent-e2e-test';
+  const token = options?.token ?? process.env.INTENT_SMOKE_TEST;
+  if (!token) {
+    throw new Error('INTENT_SMOKE_TEST env var is required for createTempRepoFromRemote');
+  }
+
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  const branchName = `e2e-test-${timestamp}-${random}`;
+
+  const repoPath = join(tmpdir(), `build-smoke-pr-repo-${random}`);
+
+  // Delete any leftover directory from a previous run
+  rmSync(repoPath, { recursive: true, force: true });
+
+  // Use GIT_ASKPASS to provide the token without embedding it in the URL
+  // (avoids leaking the secret in error messages or .git/config)
+  const askPassScript = join(tmpdir(), `git-askpass-${random}.sh`);
+  writeFileSync(askPassScript, `#!/bin/sh\necho "${token}"\n`, { mode: 0o700 });
+
+  const cloneUrl = `https://x-access-token@github.com/${repo}.git`;
+  const gitEnv = { ...process.env, GIT_ASKPASS: askPassScript, GIT_TERMINAL_PROMPT: '0' };
+  console.log(`📂 Cloning ${repo} into ${repoPath}...`);
+  execSync(`git clone --depth=1 "${cloneUrl}" "${repoPath}"`, { stdio: 'ignore', env: gitEnv });
+
+  // Configure git user and credential helper for this repo
+  // (GIT_ASKPASS in repo config ensures push/fetch also use the token without URL embedding)
+  execSync('git config user.email "smoke-test@test.local"', { cwd: repoPath, stdio: 'ignore' });
+  execSync('git config user.name "Smoke Test"', { cwd: repoPath, stdio: 'ignore' });
+  execSync(`git config core.askPass "${askPassScript}"`, { cwd: repoPath, stdio: 'ignore' });
+
+  // Create and check out a new branch
+  execSync(`git checkout -b "${branchName}"`, { cwd: repoPath, stdio: 'ignore' });
+  console.log(`🌿 Created branch: ${branchName}`);
+
+  // Empty the README so the agent has a clean slate (matches createTempRepo behavior)
+  writeFileSync(join(repoPath, 'README.md'), '');
+  execSync('git add README.md', { cwd: repoPath, stdio: 'ignore' });
+  execSync('git commit -m "reset README for e2e test"', { cwd: repoPath, stdio: 'ignore' });
+  execSync(`git push origin "${branchName}"`, { cwd: repoPath, stdio: 'ignore' });
+
+  const cleanup = () => {
+    try {
+      // Close any open PRs from this branch via gh CLI (best-effort)
+      try {
+        execSync(
+          `gh pr list --repo "${repo}" --head "${branchName}" --state open --json number -q '.[].number' | xargs -I {} gh pr close {} --repo "${repo}" --delete-branch`,
+          { stdio: 'ignore', env: { ...process.env, GH_TOKEN: token } },
+        );
+      } catch {
+        // gh may not be installed or no PRs to close
+      }
+      // Delete the remote branch (best-effort)
+      try {
+        execSync(`git push origin --delete "${branchName}"`, { cwd: repoPath, stdio: 'ignore' });
+      } catch {
+        // Branch may already be deleted
+      }
+      // Remove the local directory and askpass script
+      rmSync(repoPath, { recursive: true, force: true });
+      try {
+        rmSync(askPassScript);
+      } catch {
+        /* askpass script may already be cleaned up */
+      }
+    } catch {
+      // best-effort cleanup
+    }
+  };
+
+  return { repoPath, branchName, cleanup };
+}
+
+// ---------------------------------------------------------------------------
 // createWorkspaceWithPrompt
 // ---------------------------------------------------------------------------
 
@@ -257,6 +358,8 @@ export interface CreateWorkspaceOptions {
   repoPath: string;
   /** Prompt text to type into onboarding */
   prompt: string;
+  /** Provider to select during the welcome step (display name, e.g. 'Mock (E2E)') */
+  providerName?: string;
 }
 
 /**
@@ -274,7 +377,7 @@ export async function createWorkspaceWithPrompt(
   page: Page,
   options: CreateWorkspaceOptions,
 ): Promise<string> {
-  const { repoPath, prompt } = options;
+  const { repoPath, prompt, providerName } = options;
 
   // Ensure we have a stable origin before seeding onboarding state.
   const baseUrl = await page.evaluate(() => window.location.origin);
@@ -294,16 +397,9 @@ export async function createWorkspaceWithPrompt(
 
     sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: path, branch: 'main' }));
 
-    // Seed fallback read by ProjectPickerMessage.
-    localStorage.setItem(
-      'workspace-initializer-last-repo',
-      JSON.stringify({
-        path,
-        type: 'local',
-        isNewRepo: false,
-        isValidPath: true,
-      }),
-    );
+    // Do NOT seed workspace-initializer-last-repo — it triggers auto-advance
+    // past the project step, which leaves projectSelection null and blocks
+    // workspace creation. The sessionStorage prefill above is sufficient.
   }, repoPath);
 
   console.log(`📍 Seeded onboarding prefill with repo path: ${repoPath}`);
@@ -320,6 +416,16 @@ export async function createWorkspaceWithPrompt(
 
   let onboardingStep = await getOnboardingStep();
   if (onboardingStep === 'welcome') {
+    // If a specific provider is requested, click its card in the AgentGrid
+    // to select it before proceeding. The card's aria-label is "Use <name>"
+    // when the provider is ready (available + authenticated).
+    if (providerName) {
+      const providerCard = page.locator(`[aria-label="Use ${providerName}"]`).first();
+      await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
+      await providerCard.click();
+      console.log(`🔄 Selected provider: ${providerName}`);
+    }
+
     const letsGo = page.getByRole('button', { name: "Let's go" }).first();
     await letsGo.waitFor({ state: 'visible', timeout: 20_000 });
     await letsGo.click();
@@ -328,6 +434,9 @@ export async function createWorkspaceWithPrompt(
   }
 
   if (onboardingStep === 'project') {
+    // Wait for ProjectPickerMessage to mount and read from sessionStorage
+    // before advancing — this populates projectSelection.isValid.
+    await page.waitForTimeout(1_000);
     await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Enter`);
     await page.locator('[data-onboarding-step="configuring"]').waitFor({ timeout: 10_000 });
   } else if (onboardingStep !== 'configuring') {
@@ -352,11 +461,30 @@ export async function createWorkspaceWithPrompt(
   // Focus the TipTap rich-text editor and type the prompt.
   // RichTextarea uses TipTap (contenteditable div), not a native <textarea>.
   // The wrapper has role="textbox"; inside it TipTap creates a [contenteditable] div.
+  //
+  // IMPORTANT: When the editor is empty, suggestion pills with pointer-events-auto
+  // overlay the contenteditable area (OnboardingPromptStep.svelte line ~237).
+  // Clicking the contenteditable hits the overlay instead of focusing the editor.
+  // Use page.evaluate to programmatically focus the ProseMirror element.
   const editable = page.locator('[role="textbox"] [contenteditable="true"]').first();
   await editable.waitFor({ state: 'visible', timeout: 10_000 });
-  await editable.click();
-  // Small delay to let TipTap focus handler settle
+
+  // Programmatically focus — bypasses any overlays
+  await editable.evaluate((el: HTMLElement) => el.focus());
   await page.waitForTimeout(300);
+
+  // Verify focus took hold; if not, try clicking the top-left corner of the
+  // editor (above the suggestion overlay which starts at top: 52px)
+  const isFocused = await editable.evaluate((el) =>
+    el === document.activeElement || el.contains(document.activeElement));
+  if (!isFocused) {
+    console.log('⚠️ Programmatic focus failed, clicking editor top-left corner...');
+    const box = await editable.boundingBox();
+    if (box) {
+      await page.mouse.click(box.x + 10, box.y + 10);
+      await page.waitForTimeout(300);
+    }
+  }
 
   // Clear any pre-existing content before typing.  When multiple providers run
   // in serial the editor may still contain text from a previous iteration
@@ -399,13 +527,22 @@ export async function createWorkspaceWithPrompt(
   console.log('✅ "Create workspace" button is enabled — clicking');
   await createBtn.click();
 
-  // Wait for navigation to a workspace page and extract the workspace ID
-  await page.waitForURL(/\/workspace\//, { timeout: 30_000 });
+  // Wait for navigation to the actual workspace page (not /workspace/creating).
+  // The new onboarding flow navigates to /workspace/creating first, then
+  // redirects to /workspace/<slug> once the workspace is ready.
+  await page.waitForURL(
+    (url) => {
+      const path = url.pathname || url.toString();
+      return /\/workspace\//.test(path) && !/\/workspace\/creating/.test(path) && !/\/workspace\/new/.test(path);
+    },
+    { timeout: 60_000 },
+  );
   const url = page.url();
   const workspaceId = url.match(/\/workspace\/([^/?#]+)/)?.[1];
   if (!workspaceId) {
     throw new Error(`Failed to extract workspace ID from URL: ${url}`);
   }
+  console.log(`✅ Workspace created: ${workspaceId} (URL: ${url})`);
   return workspaceId;
 }
 
@@ -799,6 +936,7 @@ export async function getAvailableProviders(page: Page): Promise<Set<string>> {
     auggie: 'auggie',
     claudeCode: 'claude-code',
     codex: 'codex',
+    mock: 'mock',
     opencode: 'opencode',
   };
 
@@ -1356,6 +1494,50 @@ export async function waitForAssistantResponse(
     .innerText({ timeout: 5_000 })
     .catch(() => '');
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// setMockAgentBehavior
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a `MOCK_AGENT_BEHAVIOR` env-var payload for the mock ACP provider.
+ *
+ * The mock provider reads this env var on startup and replays the described
+ * behavior instead of calling a real LLM.
+ *
+ * @param options.files  - Map of relative file paths → content the mock agent
+ *                         should write (e.g. `{ 'README.md': 'hello world' }`).
+ * @param options.response - The text the mock agent should return as its chat
+ *                           response.  Defaults to a simple completion message
+ *                           that includes `TASK_COMPLETE`.
+ * @returns A `Record<string, string>` suitable for spreading into
+ *          `LaunchOptions.extraEnv`.
+ */
+export function setMockAgentBehavior(
+  options: {
+    files?: Record<string, string>;
+    response?: string;
+    chunks?: string[];
+    chunkDelayMs?: number;
+  } = {},
+): Record<string, string> {
+  const behavior: Record<string, unknown> = {
+    files: options.files ?? {},
+  };
+
+  if (options.chunks) {
+    behavior.chunks = options.chunks;
+    behavior.chunkDelayMs = options.chunkDelayMs ?? 500;
+  } else {
+    behavior.response = options.response ?? 'I have completed the task. TASK_COMPLETE';
+  }
+
+  return {
+    MOCK_AGENT_BEHAVIOR: JSON.stringify(behavior),
+    MOCK_AGENT_SCRIPT_PATH: resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
+    DEFAULT_PROVIDER_OVERRIDE: 'mock',
+  };
 }
 
 // ---------------------------------------------------------------------------

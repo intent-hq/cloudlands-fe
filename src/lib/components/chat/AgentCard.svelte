@@ -408,6 +408,7 @@
   style="padding-left: {depth * 10}px; container-type: inline-size;"
   class="relative agent-card-container"
   data-agent-id={agentId}
+  data-testid="agent-list-item"
 >
   <button
     type="button"
@@ -505,12 +506,13 @@
             {#if lastResponse}
               <p
                 class="text-sm text-subtle truncate"
+                data-testid="agent-card-preview"
                 transition:slide={{ axis: 'y', duration: 150 }}
               >
                 {lastResponse}
               </p>
             {:else if lastUserMsg}
-              <p class="text-sm text-subtle truncate">
+              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
                 {lastUserMsg}
               </p>
             {/if}

@@ -823,6 +823,7 @@
             ondragleave={(e) => handleDragLeave(e)}
             ondrop={(e) => handleDrop(e)}
             ondragend={handleDragEnd}
+            data-testid={tab.id === 'agents' ? 'agent-panel-toggle' : undefined}
           >
             <div class={cn('shrink-0 opacity-50', tab.hideLabel ? '' : 'tab-icon')}>
               <Fa icon={tab.icon} class="size-3.5" />
@@ -1087,7 +1088,7 @@
                     onOpenAgentOverview={handleOpenAgentOverview}
                   />
                 {:else if tabId === 'agents'}
-                  <div class="px-3 transition-all duration-200">
+                  <div class="px-3 transition-all duration-200" data-testid="agent-panel">
                     <WorkspaceAgentsList
                       agents={$allWorkspaceAgents}
                       loading={$agentsLoading}

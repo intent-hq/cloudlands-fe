@@ -36,6 +36,7 @@ export interface ProviderAvailabilityResult {
     auggie: ProviderStatus;
     claudeCode: ProviderStatus;
     codex: ProviderStatus;
+    mock: ProviderStatus;
     opencode: ProviderStatus;
     cortex: ProviderStatus;
   };
@@ -109,6 +110,7 @@ export async function getProviderAvailability(
       claudeCode: cachedResult.providers.claudeCode.available,
       codex: cachedResult.providers.codex.available,
       cortex: cachedResult.providers.cortex.available,
+      mock: cachedResult.providers.mock?.available ?? false,
       opencode: cachedResult.providers.opencode.available,
     });
 
@@ -134,6 +136,9 @@ export async function getAvailableProviderIds(forceRefresh = false): Promise<str
   }
   if (result.providers.codex.available) {
     available.push('codex');
+  }
+  if (result.providers.mock.available) {
+    available.push('mock');
   }
   if (result.providers.opencode.available) {
     available.push('opencode');
@@ -165,6 +170,7 @@ function getDefaultResult(): ProviderAvailabilityResult {
       claudeCode: { available: false },
       codex: { available: false },
       cortex: { available: false },
+      mock: { available: false },
       opencode: { available: false },
     },
     hiddenProviders: [],

@@ -105,7 +105,7 @@ jobs:
   test:
     name: Test (${{ matrix.provider }})
     needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    if: always() && needs.build.result == 'success'
     runs-on: macos-14
     timeout-minutes: 45
     strategy:
@@ -118,6 +118,7 @@ jobs:
       AUGMENT_SESSION_AUTH: ${{ secrets.AUGMENT_SESSION_AUTH }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      INTENT_SMOKE_TEST: ${{ secrets.INTENT_SMOKE_TEST }}
 
     steps:
       - name: Checkout
@@ -171,6 +172,12 @@ jobs:
           find dist-electron -name "spawn-helper" -type f -exec chmod +x {} +
           find dist-electron -path "*/app.asar.unpacked/*" -name "fontlist" -type f -exec chmod +x {} +
 
+      - name: Configure git credentials for e2e test repo
+        if: env.INTENT_SMOKE_TEST != ''
+        run: |
+          git config --global credential.helper store
+          echo "https://x-access-token:${INTENT_SMOKE_TEST}@github.com" >> ~/.git-credentials
+
       - name: Install and authenticate auggie
         if: matrix.provider == 'auggie' && env.AUGMENT_SESSION_AUTH != ''
         run: |
@@ -220,11 +227,19 @@ jobs:
           path: e2e-reports/
           retention-days: 7
 
+      - name: Cleanup e2e test branches and PRs
+        if: always() && env.INTENT_SMOKE_TEST != ''
+        env:
+          GH_TOKEN: ${{ secrets.INTENT_SMOKE_TEST }}
+        run: |
+          gh pr list --repo augmentcode/intent-e2e-test --state open --json number,headRefName \
+            | jq -r '.[] | select(.headRefName | startswith("e2e-test-")) | .number' \
+            | xargs -I {} gh pr close {} --repo augmentcode/intent-e2e-test --delete-branch || true
 
   test-multi-provider:
+    if: always() && needs.build.result == 'success'
     name: Test (multi-provider)
     needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: macos-14
     timeout-minutes: 45
     env:
@@ -334,3 +349,98 @@ jobs:
           name: smoke-test-report-multi-provider
           path: e2e-reports/
           retention-days: 7
+
+
+  ui-smoke-tests:
+    name: UI Smoke Tests (Mock Agent)
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      INTENT_SMOKE_TEST: ${{ secrets.INTENT_SMOKE_TEST }}
+      GITHUB_API_TOKEN: ${{ secrets.INTENT_SMOKE_TEST }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download Electron build (from artifact)
+        if: inputs.build_source != 'cdn'
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-build
+          path: dist-electron/
+
+      - name: Download Electron build (from CDN)
+        if: inputs.build_source == 'cdn'
+        run: |
+          CHANNEL="${{ inputs.cdn_channel }}"
+          DMG_URL="https://cdn.augmentcode.com/${CHANNEL}/Intent-latest-arm64.dmg"
+          echo "📥 Downloading ${CHANNEL} build from CDN..."
+          curl -fSL -o intent.dmg "$DMG_URL"
+          echo "📦 Mounting DMG..."
+          hdiutil attach intent.dmg -nobrowse -mountpoint /tmp/intent-dmg
+          echo "📂 Copying app to dist-electron/mac-arm64/..."
+          mkdir -p dist-electron/mac-arm64
+          cp -R "/tmp/intent-dmg/Intent by Augment.app" "dist-electron/mac-arm64/Intent by Augment.app"
+          hdiutil detach /tmp/intent-dmg
+          rm -f intent.dmg
+          echo "✅ CDN build (${CHANNEL}) ready"
+
+      - name: Fix executable permissions
+        run: |
+          find dist-electron -path "*/MacOS/*" -type f -exec chmod +x {} +
+          find dist-electron -name "*.sh" -type f -exec chmod +x {} +
+          find dist-electron -name "*.node" -type f -exec chmod +x {} +
+          find dist-electron -name "spawn-helper" -type f -exec chmod +x {} +
+          find dist-electron -path "*/app.asar.unpacked/*" -name "fontlist" -type f -exec chmod +x {} +
+
+      - name: Run mock agent chat tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-agent-chat.e2e.ts --reporter=list
+        env:
+          RUNNING_IN_TERMINAL: '1'
+
+      - name: Run multi-agent tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-multi-agent.e2e.ts --reporter=list
+        env:
+          RUNNING_IN_TERMINAL: '1'
+
+      - name: Run commit flow tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-commit.e2e.ts --reporter=list
+        env:
+          RUNNING_IN_TERMINAL: '1'
+
+      - name: Run follow-up message tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-followup.e2e.ts --reporter=list
+        env:
+          RUNNING_IN_TERMINAL: '1'
+
+      - name: Run navigation tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-navigation.e2e.ts --reporter=list
+        env:
+          RUNNING_IN_TERMINAL: '1'
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-report-ui-mock
+          path: e2e-reports/
+          retention-days: 7
+

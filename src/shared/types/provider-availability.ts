@@ -24,6 +24,7 @@ export interface ProviderAvailabilityResult {
     claudeCode: ProviderStatus;
     codex: ProviderStatus;
     cortex: ProviderStatus;
+    mock: ProviderStatus;
     opencode: ProviderStatus;
   };
   /** Provider IDs that are hidden because their required env var or feature code is not set */

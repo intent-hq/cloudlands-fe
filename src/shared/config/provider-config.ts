@@ -158,12 +158,34 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     authCheckArgs: ['models'],
     loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
+
+  mock: {
+    id: 'mock',
+    displayName: 'Mock (E2E)',
+    command: 'node',
+    baseArgs: [],
+    supportsAuthenticate: true,
+    supportsSetMode: false,
+    supportsMcpConfig: false,
+    supportsRulesFile: false,
+    isDefault: false,
+    canBeDisabled: true,
+    ipcChannelPrefix: 'mock',
+    requiresEnvVar: 'MOCK_AGENT_SCRIPT_PATH',
+  },
 };
 
 /**
  * Get the default provider configuration
  */
 export function getDefaultProviderConfig(): ACPProviderConfig {
+  // Test-only override: allow tests to force a default provider (e.g. mock)
+  if (process.env.TESTING === 'true') {
+    const override = process.env.DEFAULT_PROVIDER_OVERRIDE;
+    if (override && ACP_PROVIDERS[override]) {
+      return ACP_PROVIDERS[override];
+    }
+  }
   const defaultProvider = Object.values(ACP_PROVIDERS).find((p) => p.isDefault);
   if (defaultProvider) {
     return defaultProvider;

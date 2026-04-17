@@ -4154,7 +4154,7 @@
           <div>
             <TimelineDivider>
               {#if hasUnstaged}
-                <DividerButton onclick={handleStageAll} disabled={isStaging} loading={isStaging}>
+                <DividerButton onclick={handleStageAll} disabled={isStaging} loading={isStaging} data-testid="stage-all-button">
                   Stage all
                 </DividerButton>
               {/if}
@@ -4365,7 +4365,7 @@
 
           <!-- Divider with Commit and Export buttons -->
           <TimelineDivider>
-            <div class="w-full flex gap-1">
+            <div class="w-full flex gap-1" data-testid="commit-export-divider">
               <DividerButton
                 tooltipContents={!hasStaged ? 'No staged changes to commit' : ''}
                 onclick={() => {
@@ -4398,6 +4398,7 @@
               {/if}
               <div class="relative">
                 <Textarea
+                  data-testid="commit-message-input"
                   value={commitMessage}
                   oninput={(e) => (commitMessage = (e.target as HTMLTextAreaElement).value)}
                   onkeydown={(e) => {
@@ -4419,6 +4420,7 @@
                 <Button
                   variant="default"
                   size="xs"
+                  data-testid="commit-submit-button"
                   onclick={() => handleCommit()}
                   disabled={!commitMessage.trim() ||
                     isCommitting ||
@@ -5332,6 +5334,7 @@
                       <Button
                         variant="default"
                         size="xs"
+                        data-testid="create-pr-button"
                         onclick={() => handleCreatePR()}
                         disabled={!prTitle.trim() ||
                           isCreatingPR ||

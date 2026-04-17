@@ -21,6 +21,7 @@
     icon?: IconDefinition;
     tooltipContents?: string;
     children?: Snippet;
+    [key: string]: unknown;
   }
 
   let {
@@ -34,6 +35,7 @@
     icon,
     tooltipContents = '',
     children,
+    ...restProps
   }: Props = $props();
 
   const buttonClass = $derived(
@@ -75,7 +77,7 @@
     <TooltipPrimitive.Root delayDuration={200} disableHoverableContent>
       <TooltipPrimitive.Trigger>
         {#snippet child({ props })}
-          <button type="button" class={buttonClass} {onclick} {disabled} {...props}>
+          <button type="button" class={buttonClass} {onclick} {disabled} {...restProps} {...props}>
             {@render buttonContent()}
           </button>
         {/snippet}
@@ -94,7 +96,7 @@
     </TooltipPrimitive.Root>
   </TooltipPrimitive.Provider>
 {:else}
-  <button type="button" class={buttonClass} {onclick} {disabled}>
+  <button type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
     {@render buttonContent()}
   </button>
 {/if}

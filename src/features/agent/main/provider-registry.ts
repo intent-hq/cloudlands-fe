@@ -58,6 +58,18 @@ async function resolveProviderCommand(providerConfig: ACPProviderConfig): Promis
     logger.warn('Failed to resolve cortex command, falling back to config');
   }
 
+  if (providerConfig.id === 'mock') {
+    if (process.env.TESTING !== 'true') {
+      logger.warn('Mock provider requires TESTING=true, skipping');
+      throw new Error('Mock provider is only available when TESTING=true');
+    }
+    const scriptPath = process.env.MOCK_AGENT_SCRIPT_PATH;
+    if (!scriptPath) {
+      throw new Error('MOCK_AGENT_SCRIPT_PATH must be set when using the mock provider');
+    }
+    return { command: 'node', argsPrefix: [scriptPath] };
+  }
+
   // Default: return command as-is (for other providers)
   return { command: providerConfig.command, argsPrefix: [] };
 }

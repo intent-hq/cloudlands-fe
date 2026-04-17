@@ -953,6 +953,7 @@
     <div
       class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
       aria-label="Application shell"
+      data-testid="app-ready"
     >
       <!-- Title bar at top -->
       <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />

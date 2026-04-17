@@ -3035,7 +3035,7 @@
   }}
 />
 
-<div bind:this={panelElement} class="group/panel flex flex-col h-full w-full min-w-0 relative z-20">
+<div bind:this={panelElement} class="group/panel flex flex-col h-full w-full min-w-0 relative z-20" data-agent-model={agentModel}>
   <!-- Search Bar -->
   {#if showSearch}
     <div
@@ -3267,7 +3267,11 @@
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
                   {@const isCurrentlyStreaming = isLastMessage && chatState.isStreaming}
-                  <div class="message-nav-target">
+                  <div
+                    data-message-id={message.id}
+                    data-message-role="assistant"
+                    class="message-nav-target"
+                  >
                     <ChatMessage
                       {message}
                       {workspace}
@@ -3365,7 +3369,11 @@
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
                   {@const isCurrentlyStreaming = isLastMessage && chatState.isStreaming}
-                  <div class="message-nav-target">
+                  <div
+                    data-message-id={message.id}
+                    data-message-role="assistant"
+                    class="message-nav-target"
+                  >
                     <ChatMessage
                       {message}
                       {workspace}
@@ -3597,6 +3605,7 @@
                         <!-- z-20 and bg-sidebar to cover the sticky compact header when in view -->
                         <div
                           data-message-id={message.id}
+                          data-message-role="user"
                           data-message-index={globalIndex}
                           class="message-nav-target z-20 mb-9 bg-sidebar relative"
                         >
@@ -3652,6 +3661,7 @@
                         {@const globalIndex = getMessageIndex(message.id)}
                         <div
                           data-message-id={message.id}
+                          data-message-role="assistant"
                           data-message-index={globalIndex}
                           data-turn-number={turnNumber}
                           class="message-nav-target"
@@ -3815,7 +3825,7 @@
   {/if}
 
   <!-- Message Input with Aurora Background -->
-  <div class="relative w-full px-2 z-0" class:input-flash={showInputFlash}>
+  <div class="relative w-full px-2 z-0" class:input-flash={showInputFlash} data-streaming={chatState.isStreaming}>
     <!-- Aurora northern lights effect during streaming -->
     {#if chatState.isStreaming}
       <div
