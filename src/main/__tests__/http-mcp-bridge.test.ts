@@ -20,6 +20,7 @@ const {
   eventHandlers,
   mockElectronStoreInstance,
   mockFromWebContents,
+  createdWssInstances,
 } = vi.hoisted(() => {
   const mockFromWebContents = vi.fn().mockReturnValue(null);
   const mockExpressApp: any = {
@@ -33,6 +34,8 @@ const {
     listen: vi.fn(),
     close: vi.fn((cb?: Function) => cb?.()),
     on: vi.fn(),
+    once: vi.fn(),
+    removeListener: vi.fn(),
   };
 
   const eventHandlers: Record<string, Function[]> = {};
@@ -43,6 +46,9 @@ const {
     store: {},
     path: '/tmp/settings.json',
   };
+
+  // Tracks every WebSocketServer instance the factory creates.
+  const createdWssInstances: any[] = [];
 
   return {
     mockCreateWorkspaceMCPServer: vi.fn().mockResolvedValue({
@@ -64,6 +70,7 @@ const {
     eventHandlers,
     mockElectronStoreInstance,
     mockFromWebContents,
+    createdWssInstances,
   };
 });
 
@@ -83,10 +90,18 @@ vi.mock('http', async (importOriginal) => {
   };
 });
 
+// Track every WebSocketServer instance created so tests can inspect them
+// (created by the mock factory; hoisted so the factory can reference it).
 vi.mock('ws', () => {
   // Must use function (not arrow) so it can be called with `new`
-  function MockWebSocketServer() {
-    return { on: vi.fn(), clients: new Set(), close: vi.fn() };
+  function MockWebSocketServer(this: any) {
+    const self: any = {
+      on: vi.fn(),
+      clients: new Set(),
+      close: vi.fn((cb?: Function) => cb?.()),
+    };
+    createdWssInstances.push(self);
+    return self;
   }
   return {
     WebSocketServer: MockWebSocketServer,
@@ -161,10 +176,16 @@ describe('HttpMcpBridge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearEventHandlers();
+    createdWssInstances.length = 0;
     // Reset the listen mock to call callback synchronously
     mockHttpServer.listen.mockImplementation((_port: number, _host: string, cb: Function) => {
       cb();
     });
+    // Reset on()/once() to passthroughs that record calls but store nothing special.
+    mockHttpServer.on.mockImplementation(() => {});
+    mockHttpServer.once.mockImplementation(() => {});
+    mockHttpServer.removeListener.mockImplementation(() => {});
+    mockHttpServer.close.mockImplementation((cb?: Function) => cb?.());
   });
 
   afterEach(async () => {
@@ -454,11 +475,13 @@ describe('HttpMcpBridge', () => {
     });
   });
 
-  // ── Port retry on EADDRINUSE (Fix 8 regression) ────────────────
+  // ── Port retry on EADDRINUSE (serialised start with backoff + fallthrough) ─
 
   describe('port retry on EADDRINUSE', () => {
     beforeEach(() => {
       bridge = new HttpMcpBridge(5179);
+      // Zero backoff so tests finish instantly.
+      (bridge as any).listenBackoffMs = [0, 0, 0];
     });
 
     /**
@@ -468,18 +491,25 @@ describe('HttpMcpBridge', () => {
      */
     function setupEADDRINUSE(failCount: number) {
       const attemptedPorts: number[] = [];
-      // Each start() call registers a new error handler; keep the latest
-      let currentErrorHandler: Function | undefined;
+      // Track error handlers: each once('error') pushes; each listen uses the latest.
+      const errorHandlers: Function[] = [];
 
-      mockHttpServer.on.mockImplementation((event: string, handler: Function) => {
-        if (event === 'error') currentErrorHandler = handler;
+      mockHttpServer.once.mockImplementation((event: string, handler: Function) => {
+        if (event === 'error') errorHandlers.push(handler);
       });
+      mockHttpServer.removeListener.mockImplementation(
+        (event: string, handler: Function) => {
+          if (event === 'error') {
+            const idx = errorHandlers.indexOf(handler);
+            if (idx >= 0) errorHandlers.splice(idx, 1);
+          }
+        },
+      );
 
       mockHttpServer.listen.mockImplementation((port: number, _host: string, cb: Function) => {
         attemptedPorts.push(port);
         if (attemptedPorts.length <= failCount) {
-          // Fire EADDRINUSE asynchronously (like a real server)
-          const handler = currentErrorHandler;
+          const handler = errorHandlers[errorHandlers.length - 1];
           setTimeout(() => {
             const err: any = new Error('listen EADDRINUSE: address already in use');
             err.code = 'EADDRINUSE';
@@ -495,68 +525,358 @@ describe('HttpMcpBridge', () => {
       return { attemptedPorts };
     }
 
-    it('retries on the next port when EADDRINUSE is emitted', async () => {
+    it('retries the SAME port with backoff before falling through', async () => {
       const { attemptedPorts } = setupEADDRINUSE(1);
-
       await bridge.start();
+      // One failure on 5179 → waits → retries 5179 → succeeds.
+      expect(attemptedPorts).toEqual([5179, 5179]);
+      expect(bridge.getPort()).toBe(5179);
+    });
 
-      // First attempt on 5179 failed, second on 5180 succeeded
-      expect(attemptedPorts).toEqual([5179, 5180]);
+    it('falls through to the next port after same-port attempts are exhausted', async () => {
+      // backoff length 3 → 4 attempts per port. Fail all 4 on 5179, succeed on 5180.
+      const { attemptedPorts } = setupEADDRINUSE(4);
+      await bridge.start();
+      expect(attemptedPorts).toEqual([5179, 5179, 5179, 5179, 5180]);
       expect(bridge.getPort()).toBe(5180);
     });
 
-    it('rejects with EADDRINUSE when port exceeds startPort + 10 bound', async () => {
-      // This tests the fix: `this.port < startPort + 10` (was `this.port < this.port + 10`).
-      // We simulate the scenario where the error handler's bound is hit by
-      // pre-incrementing the port past the bound before the error fires.
-      let currentErrorHandler: Function | undefined;
-      let listenCalled: (() => void) | undefined;
-      const listenCalledPromise = new Promise<void>((resolve) => {
-        listenCalled = resolve;
+    it('start() rejects cleanly on persistent EADDRINUSE (no unhandled exception)', async () => {
+      // Fail every attempt so start() is forced to give up.
+      // 10 ports × 4 attempts = 40 failures is enough.
+      setupEADDRINUSE(1000);
+      // Track unhandledRejection / uncaughtException while start runs.
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      const onUncaught = (err: unknown) => unhandled.push(err);
+      process.on('unhandledRejection', onUnhandled);
+      process.on('uncaughtException', onUncaught);
+      try {
+        await expect(bridge.start()).rejects.toMatchObject({ code: 'EADDRINUSE' });
+        // Give the loop a tick to surface any async error.
+        await new Promise((r) => setTimeout(r, 0));
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+        process.off('uncaughtException', onUncaught);
+      }
+    });
+
+    it('start() refuses to run while server is still non-null (must stop() first)', async () => {
+      await startBridge(bridge);
+      // Don't call stop(); start() should refuse.
+      await expect(bridge.start()).rejects.toThrow(/server is still running/i);
+    });
+  });
+
+  // ── stop() lifecycle: WSS close + null refs (DoD #3) ───────────
+  describe('stop() lifecycle', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it('closes the WebSocketServer and nulls server/wss', async () => {
+      await startBridge(bridge);
+      const wssInstance = (bridge as any).wss;
+      expect((bridge as any).server).not.toBeNull();
+      expect(wssInstance).not.toBeNull();
+      // Spy on close() so we can assert it was called even if the real ws
+      // module is used at runtime (createRequire bypasses vi.mock).
+      const closeSpy = vi.spyOn(wssInstance, 'close').mockImplementation((cb?: any) => {
+        if (typeof cb === 'function') cb();
       });
 
-      mockHttpServer.on.mockImplementation((event: string, handler: Function) => {
-        if (event === 'error') currentErrorHandler = handler;
-      });
+      await bridge.stop();
 
-      // listen() does nothing — we'll fire the error manually
-      mockHttpServer.listen.mockImplementation(() => {
-        listenCalled?.();
+      expect(closeSpy).toHaveBeenCalled();
+      expect(mockHttpServer.close).toHaveBeenCalled();
+      expect((bridge as any).server).toBeNull();
+      expect((bridge as any).wss).toBeNull();
+    });
+
+    it('terminates any connected WebSocket clients before closing WSS', async () => {
+      await startBridge(bridge);
+      const wssInstance = (bridge as any).wss;
+      expect(wssInstance).not.toBeNull();
+      // Make close() resolve synchronously so stop() can progress.
+      vi.spyOn(wssInstance, 'close').mockImplementation((cb?: any) => {
+        if (typeof cb === 'function') cb();
       });
+      const client1 = { terminate: vi.fn() };
+      const client2 = { terminate: vi.fn() };
+      // wssInstance.clients is a Set-like from real ws; we can add to it.
+      (wssInstance.clients as Set<any>).add(client1);
+      (wssInstance.clients as Set<any>).add(client2);
+
+      await bridge.stop();
+
+      expect(client1.terminate).toHaveBeenCalled();
+      expect(client2.terminate).toHaveBeenCalled();
+    });
+
+    // ── stop() coordination with in-flight start() retries (Fix 4) ────
+    it('start() aborts cleanly without binding when stop() fires during backoff', async () => {
+      // Backoff long enough that stop() can race in before the retry completes.
+      (bridge as any).listenBackoffMs = [50, 50, 50];
+
+      // Every listen() attempt returns EADDRINUSE so start() falls into backoff.
+      const errorHandlers: Function[] = [];
+      mockHttpServer.once.mockImplementation((event: string, handler: Function) => {
+        if (event === 'error') errorHandlers.push(handler);
+      });
+      mockHttpServer.removeListener.mockImplementation(
+        (event: string, handler: Function) => {
+          if (event === 'error') {
+            const idx = errorHandlers.indexOf(handler);
+            if (idx >= 0) errorHandlers.splice(idx, 1);
+          }
+        },
+      );
+      let listenCalls = 0;
+      mockHttpServer.listen.mockImplementation(
+        (_port: number, _host: string, _cb: Function) => {
+          listenCalls++;
+          const handler = errorHandlers[errorHandlers.length - 1];
+          setTimeout(() => {
+            const err: any = new Error('listen EADDRINUSE');
+            err.code = 'EADDRINUSE';
+            handler?.(err);
+          }, 0);
+        },
+      );
       mockFindAvailablePort.mockImplementation((port: number) => Promise.resolve(port));
 
       const startPromise = bridge.start();
+      // Let start() enter its first backoff sleep.
+      await new Promise((r) => setTimeout(r, 10));
+      // Fire stop() while start() is mid-retry.
+      const stopPromise = bridge.stop();
 
-      // Wait for listen() to be called (after findAvailablePort resolves)
-      await listenCalledPromise;
-
-      // At this point, startPort = 5179 inside the error handler closure.
-      // Manually increment this.port past the bound (simulating 10 failed retries)
-      // by directly mutating the bridge's port.
-      // The error handler checks: this.port < startPort + 10
-      // If this.port >= startPort + 10, it should reject.
-      for (let i = 0; i < 10; i++) {
-        (bridge as any).port++;
-      }
-      // Now this.port = 5189, startPort = 5179, so 5189 < 5179 + 10 is FALSE
-
-      const err: any = new Error('listen EADDRINUSE: address already in use');
-      err.code = 'EADDRINUSE';
-      currentErrorHandler?.(err);
-
-      await expect(startPromise).rejects.toThrow('EADDRINUSE');
+      // start() must return without throwing AND without publishing a server.
+      await expect(startPromise).resolves.toBeUndefined();
+      await expect(stopPromise).resolves.toBeUndefined();
+      expect((bridge as any).server).toBeNull();
+      expect((bridge as any).wss).toBeNull();
+      // Should have attempted at least once; the flag cut the retries short.
+      expect(listenCalls).toBeGreaterThanOrEqual(1);
     });
 
-    it('succeeds on a later retry port (5 failures then success)', async () => {
-      const FAIL_COUNT = 5;
-      const { attemptedPorts } = setupEADDRINUSE(FAIL_COUNT);
+    it('stop() completes promptly even with an in-flight restart (bounded wait)', async () => {
+      await startBridge(bridge);
+      // Kick off a restart; immediately call stop() to race with it.
+      // We don't care about restart's outcome — just that stop() is bounded.
+      const restartPromise = bridge.restart().catch(() => {
+        /* expected: may fail because stop() races the restart */
+      });
+      const start = Date.now();
+      await bridge.stop();
+      const elapsed = Date.now() - start;
+      // The wait in stop() is capped at 1s; total should be well under 2s.
+      expect(elapsed).toBeLessThan(2000);
+      await restartPromise;
+      expect((bridge as any).server).toBeNull();
+    });
+  });
 
-      await bridge.start();
+  // ── restart() serialisation + ensureHealthy() behaviour (DoD #2, #6) ───
+  describe('restart() and ensureHealthy()', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+      (bridge as any).healthRetryBackoffMs = 0;
+    });
 
-      // Should have tried 6 ports total (5 failures + 1 success)
-      expect(attemptedPorts).toHaveLength(FAIL_COUNT + 1);
-      // Final port should be startPort + FAIL_COUNT
-      expect(bridge.getPort()).toBe(5179 + FAIL_COUNT);
+    it('concurrent restart() calls share one in-flight promise', async () => {
+      await startBridge(bridge);
+      const startSpy = vi.spyOn(bridge, 'start');
+      const stopSpy = vi.spyOn(bridge, 'stop');
+
+      // Fire three concurrent restart() calls.
+      const [r1, r2, r3] = [bridge.restart(), bridge.restart(), bridge.restart()];
+      // They should all resolve — and represent exactly ONE stop/start pair.
+      await Promise.all([r1, r2, r3]);
+
+      expect(stopSpy).toHaveBeenCalledTimes(1);
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('restart() releases the in-flight promise after completion', async () => {
+      await startBridge(bridge);
+      await bridge.restart();
+      expect((bridge as any).restartPromise).toBeNull();
+      // A subsequent restart() should actually run.
+      const startSpy = vi.spyOn(bridge, 'start');
+      await bridge.restart();
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('ensureHealthy() returns true without restarting when /health is ok', async () => {
+      await startBridge(bridge);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ status: 'ok' }),
+      } as any);
+      const restartSpy = vi.spyOn(bridge, 'restart');
+      try {
+        expect(await bridge.ensureHealthy()).toBe(true);
+        expect(restartSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it('ensureHealthy() is idempotent under concurrent callers', async () => {
+      await startBridge(bridge);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ status: 'ok' }),
+      } as any);
+      try {
+        const results = await Promise.all([
+          bridge.ensureHealthy(),
+          bridge.ensureHealthy(),
+          bridge.ensureHealthy(),
+          bridge.ensureHealthy(),
+        ]);
+        expect(results).toEqual([true, true, true, true]);
+        // Coalesced probe — at most one fetch per burst.
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it('ensureHealthy() emits httpBridgeUnrecoverable when restart fails', async () => {
+      await startBridge(bridge);
+      // /health keeps returning non-ok so isHealthy() → false.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ status: 'down' }),
+      } as any);
+      // Force restart() to throw.
+      const restartSpy = vi
+        .spyOn(bridge, 'restart')
+        .mockRejectedValue(new Error('restart boom'));
+
+      const { onHttpBridgeUnrecoverable } = await import('../http-mcp-bridge');
+      const handler = vi.fn();
+      const off = onHttpBridgeUnrecoverable(handler);
+      try {
+        expect(await bridge.ensureHealthy()).toBe(false);
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reason: 'restart-failed',
+            port: expect.any(Number),
+            timestamp: expect.any(Number),
+          }),
+        );
+      } finally {
+        off();
+        fetchSpy.mockRestore();
+        restartSpy.mockRestore();
+      }
+    });
+
+    it('emitHttpBridgeUnrecoverable swallows async handler rejections (no unhandled rejection)', async () => {
+      await startBridge(bridge);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ status: 'down' }),
+      } as any);
+      const restartSpy = vi
+        .spyOn(bridge, 'restart')
+        .mockRejectedValue(new Error('restart boom'));
+
+      const { onHttpBridgeUnrecoverable } = await import('../http-mcp-bridge');
+      // Async handler whose returned Promise rejects — must not leak.
+      const asyncHandler = vi.fn(async () => {
+        throw new Error('async handler boom');
+      });
+      const off = onHttpBridgeUnrecoverable(asyncHandler);
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        expect(await bridge.ensureHealthy()).toBe(false);
+        expect(asyncHandler).toHaveBeenCalledTimes(1);
+        // Give the microtask queue a few ticks so any rejection would surface.
+        await new Promise((r) => setTimeout(r, 10));
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+        off();
+        fetchSpy.mockRestore();
+        restartSpy.mockRestore();
+      }
+    });
+  });
+
+  // ── isHealthy() load tolerance (DoD #4) ────────────────────────
+  describe('isHealthy() load tolerance', () => {
+    beforeEach(async () => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).healthRetryBackoffMs = 0;
+      await startBridge(bridge);
+      const { __resetCriticalMemoryPressureForTests } = await import('../http-mcp-bridge');
+      __resetCriticalMemoryPressureForTests();
+    });
+
+    it('returns true (skips probe) when memory-critical signal is fresh', async () => {
+      const { notifyCriticalMemoryPressure } = await import('../http-mcp-bridge');
+      notifyCriticalMemoryPressure();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ status: 'down' }),
+      } as any);
+      try {
+        expect(await bridge.isHealthy()).toBe(true);
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it('retries once before declaring unhealthy', async () => {
+      // Let any pending 100ms self-test timers fire before we install the spy
+      // so they don't pollute our call count.
+      await new Promise((r) => setTimeout(r, 120));
+      let call = 0;
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+        call++;
+        if (call === 1) return Promise.reject(new Error('slow'));
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ status: 'ok' }),
+        } as any);
+      });
+      try {
+        expect(await bridge.isHealthy()).toBe(true);
+        // At least one retry happened; tolerate an extra self-test fetch.
+        expect(call).toBeGreaterThanOrEqual(2);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it('returns false after both probe attempts fail', async () => {
+      await new Promise((r) => setTimeout(r, 120));
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValue(new Error('slow'));
+      try {
+        expect(await bridge.isHealthy()).toBe(false);
+        expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 

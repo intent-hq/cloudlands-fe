@@ -367,7 +367,11 @@ import {
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
-import { HttpMcpBridge, setHttpMcpBridge } from './http-mcp-bridge';
+import {
+  HttpMcpBridge,
+  setHttpMcpBridge,
+  notifyCriticalMemoryPressure,
+} from './http-mcp-bridge';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
@@ -482,6 +486,25 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error stopping MCP Hub servers:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    // Persist in-flight streaming agents BEFORE shutting down the backend so
+    // our clean-quit flush runs against live state (ConsolidatedBackendService
+    // .shutdown() saves sessions + kills providers, which would either clear
+    // state or overwrite it). Bounded by an internal 3s timeout and swallows
+    // its own errors; ignore the per-agent result here (logged internally).
+    try {
+      const result = await agentBackendHandler.persistShutdownState();
+      logger.info('Agent shutdown state persisted', {
+        persisted: result.persisted.length,
+        skipped: result.skipped.length,
+        failed: result.failed.length,
+      });
+    } catch (error) {
+      logger.error(
+        'Error persisting agent shutdown state:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1667,6 +1690,13 @@ app.whenReady().then(async () => {
         performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical', skipStreamCleanup: true });
       }
 
+      // Inform the HTTP MCP Bridge so its health probe tolerates load.
+      // A critical signal suppresses the probe's restart decision for
+      // HTTP_MCP_MEMORY_CRITICAL_WINDOW_MS — see http-mcp-bridge.ts.
+      if (level === 'critical') {
+        notifyCriticalMemoryPressure();
+      }
+
       // Evict idle auggie processes — the biggest single source of memory (~200-300 MB each).
       // Warning: conservative (up to 2), Critical: aggressive (all idle).
       if (level === 'warning' || level === 'critical') {
@@ -1775,11 +1805,14 @@ app.whenReady().then(async () => {
         }
 
         try {
-          const healthy = await httpMcpServer.isHealthy();
+          // Single restart entry point (DoD #5). ensureHealthy() handles
+          // isHealthy+restart internally with a serialised restart promise,
+          // so we never race the ACP provider's per-message ensureHealthy().
+          const healthy = await httpMcpServer.ensureHealthy();
           if (!healthy) {
-            logger.warn('HTTP MCP Bridge health check failed, attempting restart...');
-            await httpMcpServer.restart();
-            logger.info('HTTP MCP Bridge restarted by health monitor');
+            logger.warn(
+              'HTTP MCP Bridge health monitor: bridge unrecoverable (see httpBridgeUnrecoverable hook)',
+            );
           }
         } catch (error) {
           logger.error('HTTP MCP Bridge health monitor error', {

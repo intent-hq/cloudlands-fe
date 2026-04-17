@@ -4,6 +4,33 @@
  * Exposes the existing MCP server (same one used by STDIO MCP) via HTTP.
  * This creates a transparent bridge so STDIO MCP can access all tools
  * without duplicating tool definitions.
+ *
+ * ---------------------------------------------------------------------------
+ * Integration hook: `httpBridgeUnrecoverable`
+ * ---------------------------------------------------------------------------
+ * When `ensureHealthy()` fails to make the bridge healthy after a full
+ * restart attempt, it emits a structured event via the exported
+ * `onHttpBridgeUnrecoverable(handler)` registration API. The sibling
+ * "Recover stuck agents" task consumes this hook to mark streaming agents
+ * as interrupted.
+ *
+ * Handler signature:
+ *   type HttpBridgeUnrecoverableHandler = (info: {
+ *     reason: 'restart-failed' | 'still-unhealthy-after-restart';
+ *     error?: Error;
+ *     port: number;
+ *     timestamp: number;
+ *   }) => void;
+ *
+ * Usage from the sibling task:
+ *   import { onHttpBridgeUnrecoverable } from '../main/http-mcp-bridge';
+ *   onHttpBridgeUnrecoverable((info) => {
+ *     // repair persisted agents, notify renderer, …
+ *   });
+ *
+ * The event is best-effort and should never throw — handlers are called
+ * synchronously and any thrown error is caught and logged.
+ * ---------------------------------------------------------------------------
  */
 
 import { createRequire } from 'module';
@@ -46,6 +73,81 @@ let fromWebContentsPatched = false;
 // Default TTL for cached MCP servers (30 minutes)
 const DEFAULT_MCP_SERVER_TTL_MS = 30 * 60 * 1000;
 
+// Health probe configuration (exported so tests can import).
+// Raised from 2s → 5s per spec: the health endpoint is merely slow under
+// memory pressure; aborting at 2s synthesises a failure that then races
+// restart() against itself.
+export const HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS = 5000;
+// Backoff before a single retry of the health probe.
+export const HTTP_MCP_HEALTH_CHECK_RETRY_BACKOFF_MS = 250;
+// Window during which a recent memory-critical signal suppresses the
+// health probe's restart decision.
+export const HTTP_MCP_MEMORY_CRITICAL_WINDOW_MS = 30_000;
+// Backoff schedule when a chosen port is still held by a concurrent listener
+// (e.g. our own previous server still releasing). After the schedule is
+// exhausted we fall through to the next port.
+export const HTTP_MCP_LISTEN_BACKOFF_MS: number[] = [100, 200, 400];
+// Maximum number of distinct ports to try before giving up.
+export const HTTP_MCP_MAX_PORT_ATTEMPTS = 10;
+
+// ---------------------------------------------------------------------------
+// Memory-critical signal (shared via module scope).
+// Set by the memory-pressure handler in src/main/index.ts via
+// `notifyCriticalMemoryPressure()`. Read by isHealthy() to avoid tearing
+// down a slow-but-working bridge during heap stress.
+// Using module scope (not `global`) keeps the signal scoped to this bundle
+// and easy to reset from tests.
+// ---------------------------------------------------------------------------
+let lastCriticalMemoryAt = 0;
+export function notifyCriticalMemoryPressure(): void {
+  lastCriticalMemoryAt = Date.now();
+}
+export function isCriticalMemoryPressureActive(
+  windowMs: number = HTTP_MCP_MEMORY_CRITICAL_WINDOW_MS,
+): boolean {
+  return lastCriticalMemoryAt > 0 && Date.now() - lastCriticalMemoryAt < windowMs;
+}
+/** Test-only helper: reset the memory-critical signal. */
+export function __resetCriticalMemoryPressureForTests(): void {
+  lastCriticalMemoryAt = 0;
+}
+
+// ---------------------------------------------------------------------------
+// httpBridgeUnrecoverable hook
+// See file-header for the handler signature and consumer contract.
+// ---------------------------------------------------------------------------
+export interface HttpBridgeUnrecoverableInfo {
+  reason: 'restart-failed' | 'still-unhealthy-after-restart';
+  error?: Error;
+  port: number;
+  timestamp: number;
+}
+export type HttpBridgeUnrecoverableHandler = (info: HttpBridgeUnrecoverableInfo) => void | Promise<void>;
+
+const unrecoverableHandlers = new Set<HttpBridgeUnrecoverableHandler>();
+export function onHttpBridgeUnrecoverable(handler: HttpBridgeUnrecoverableHandler): () => void {
+  unrecoverableHandlers.add(handler);
+  return () => unrecoverableHandlers.delete(handler);
+}
+function emitHttpBridgeUnrecoverable(info: HttpBridgeUnrecoverableInfo, logger: Logger): void {
+  for (const handler of unrecoverableHandlers) {
+    try {
+      const result = handler(info);
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        (result as Promise<void>).catch((err) => {
+          logger.error('httpBridgeUnrecoverable async handler rejected', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    } catch (err) {
+      logger.error('httpBridgeUnrecoverable handler threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
 interface CachedMcpServer {
   server: any;
   createdAt: number;
@@ -63,6 +165,18 @@ export class HttpMcpBridge {
   private port: number;
   private cleanupIntervalId: NodeJS.Timeout | null = null;
   private readonly mcpServerTtlMs: number = DEFAULT_MCP_SERVER_TTL_MS;
+  // In-flight restart promise — concurrent callers share it (DoD #2).
+  private restartPromise: Promise<void> | null = null;
+  // In-flight health probe promise — concurrent callers share it so a burst
+  // of messages does not spam the health endpoint.
+  private healthCheckPromise: Promise<boolean> | null = null;
+  // Set true by stop() so an in-flight start() retry loop aborts cleanly
+  // instead of binding a new listener after the server has been torn down.
+  // Cleared at the top of the next start() call.
+  private shuttingDown = false;
+  // Exposed as a hook for tests that need shorter backoff than production.
+  protected listenBackoffMs: number[] = HTTP_MCP_LISTEN_BACKOFF_MS;
+  protected healthRetryBackoffMs: number = HTTP_MCP_HEALTH_CHECK_RETRY_BACKOFF_MS;
 
   constructor(port: number = parseInt(process.env.HTTP_MCP_PORT || '5179', 10)) {
     this.port = port;
@@ -832,119 +946,288 @@ export class HttpMcpBridge {
     }
   }
 
-  async start(): Promise<void> {
-    // Try to find an available port if the default is in use
-    let actualPort = this.port;
+  /**
+   * Attempt a single listen() on (port, host). Resolves with the bound
+   * server+wss on success, or with { error } on failure. Never throws.
+   * Attaches `on('error')` BEFORE calling listen so EADDRINUSE can never
+   * escape to `uncaughtException`.
+   */
+  private listenOnce(
+    port: number,
+    host: string,
+  ): Promise<
+    | { server: any; wss: InstanceType<typeof WebSocketServer> }
+    | { error: NodeJS.ErrnoException }
+  > {
+    return new Promise((resolve) => {
+      const server = createServer(this.app);
+      const wss = new WebSocketServer({ server, path: '/ipc-events' });
+      wss.on('connection', (ws: InstanceType<typeof WebSocket>) => {
+        this.logger.info('Browser IPC WebSocket client connected');
+        ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
+      });
 
+      let settled = false;
+      const onError = (error: NodeJS.ErrnoException) => {
+        if (settled) return;
+        settled = true;
+        try {
+          server.removeListener('error', onError);
+        } catch {
+          /* ignore */
+        }
+        // Release any partially-acquired resources from this attempt.
+        try {
+          wss.close();
+        } catch {
+          /* ignore */
+        }
+        try {
+          server.close(() => {});
+        } catch {
+          /* ignore */
+        }
+        resolve({ error });
+      };
+      // Attach error handler BEFORE listen — this is the invariant that
+      // prevents EADDRINUSE from reaching process.on('uncaughtException').
+      // `once` auto-removes after firing; retries recreate the server and
+      // re-register `once` on that fresh instance.
+      server.once('error', onError);
+
+      server.listen(port, host, () => {
+        if (settled) return;
+        settled = true;
+        try {
+          server.removeListener('error', onError);
+        } catch {
+          /* ignore */
+        }
+        // Attach a durable error listener so post-listen errors from the HTTP
+        // server are not treated as unhandled 'error' events by Node (which
+        // would otherwise crash the main process). Log and swallow — the
+        // restart path is driven by the health check, not by ad-hoc server
+        // errors.
+        server.on('error', (err: NodeJS.ErrnoException) => {
+          this.logger.warn('HTTP MCP Bridge server error after listening', {
+            code: err.code,
+            message: err.message,
+          });
+        });
+        // Same for the WebSocket server for symmetry.
+        wss.on('error', (err: Error) => {
+          this.logger.warn('HTTP MCP Bridge WSS error after listening', {
+            message: err.message,
+          });
+        });
+        resolve({ server, wss });
+      });
+    });
+  }
+
+  async start(): Promise<void> {
+    // DoD #3: start() refuses to proceed if a server is still running.
+    // Restart must go through stop() first.
+    if (this.server) {
+      throw new Error(
+        'HttpMcpBridge.start(): server is still running; call stop() first',
+      );
+    }
+    // Fresh start clears any prior stop() shutdown marker. The flag remains
+    // true after an external stop() so an in-flight start() can detect the
+    // race, but a deliberate new start() call wants to run normally.
+    this.shuttingDown = false;
+
+    // Try to find an available port if the default is in use.
+    // This is a best-effort pre-check; the real EADDRINUSE handling is below.
     try {
-      actualPort = await findAvailablePort(this.port, 10);
+      const actualPort = await findAvailablePort(this.port, 10);
       this.port = actualPort;
     } catch (error) {
       this.logger.warn(`Could not find available port, trying default ${this.port}:`, error);
     }
 
-    return new Promise((resolve, reject) => {
-      // Always use 127.0.0.1 to ensure IPv4 binding (avoids IPv6/IPv4 port conflicts with Vite)
-      // In production builds, use 0.0.0.0 to ensure binding works in ASAR
-      const host =
-        process.env.NODE_ENV === 'production' || app?.isPackaged ? '0.0.0.0' : '127.0.0.1';
+    // Always use 127.0.0.1 to ensure IPv4 binding (avoids IPv6/IPv4 port conflicts with Vite)
+    // In production builds, use 0.0.0.0 to ensure binding works in ASAR
+    const host =
+      process.env.NODE_ENV === 'production' || app?.isPackaged ? '0.0.0.0' : '127.0.0.1';
 
-      // Create HTTP server explicitly for better ASAR compatibility
-      this.server = createServer(this.app);
+    const startPort = this.port;
+    let boundServer: any = null;
+    let boundWss: InstanceType<typeof WebSocketServer> | null = null;
+    let lastError: NodeJS.ErrnoException | null = null;
 
-      // Setup WebSocket server for browser-mode event push (shares the HTTP server)
-      this.wss = new WebSocketServer({ server: this.server, path: '/ipc-events' });
-      this.wss.on('connection', (ws: InstanceType<typeof WebSocket>) => {
-        this.logger.info('Browser IPC WebSocket client connected');
-        ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
-      });
+    for (let portOffset = 0; portOffset < HTTP_MCP_MAX_PORT_ATTEMPTS; portOffset++) {
+      // Abort cleanly if stop() fired while we were between attempts, so a
+      // delayed listen() can't bind after the bridge has already been stopped.
+      if (this.shuttingDown) {
+        this.logger.info('HttpMcpBridge.start(): aborting port retry, stop() in progress');
+        return;
+      }
+      const tryPort = startPort + portOffset;
 
-      // Expose a global broadcast function so any code that does webContents.send
-      // can also push events to browser-mode clients
-      (global as any).__browserIpcBroadcast = (channel: string, data: any) => {
-        if (!this.wss) return;
-        const message = JSON.stringify({ channel, data });
-        for (const client of this.wss.clients) {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
+      // Same-port backoff schedule: retry a held port a few times before
+      // falling through to the next port (DoD #1).
+      const backoff = this.listenBackoffMs;
+      const maxSamePortAttempts = backoff.length + 1; // initial + len(backoff) waits
+      for (let attempt = 0; attempt < maxSamePortAttempts; attempt++) {
+        if (this.shuttingDown) {
+          this.logger.info('HttpMcpBridge.start(): aborting port retry, stop() in progress');
+          return;
+        }
+        const result = await this.listenOnce(tryPort, host);
+        if ('server' in result) {
+          boundServer = result.server;
+          boundWss = result.wss;
+          this.port = tryPort;
+          break;
+        }
+        lastError = result.error;
+        if (result.error.code !== 'EADDRINUSE') {
+          // Non-retryable error — surface it immediately.
+          this.logger.error('Server listen error (not retrying):', result.error);
+          throw result.error;
+        }
+        // Wait before retrying the same port, except after the last attempt.
+        if (attempt < backoff.length) {
+          this.logger.warn(
+            `Port ${tryPort} in use, waiting ${backoff[attempt]}ms before retry...`,
+          );
+          await new Promise((r) => setTimeout(r, backoff[attempt]));
+          if (this.shuttingDown) {
+            this.logger.info(
+              'HttpMcpBridge.start(): aborting after backoff sleep, stop() in progress',
+            );
+            return;
           }
         }
-      };
+      }
 
-      // Add error handler before listening - this is the ONLY error handler
-      // to avoid duplicate handlers causing race conditions
-      const startPort = this.port;
-      this.server.on('error', (error: any) => {
-        this.logger.error('HTTP MCP Bridge server error', {
-          error: error.message,
-          code: error.code,
+      if (boundServer) break;
+      this.logger.warn(
+        `Port ${tryPort} still in use after ${maxSamePortAttempts} attempts, trying next port`,
+      );
+    }
+
+    // After the loop: if we were asked to shut down and somehow bound a server,
+    // close it immediately and return — don't publish it.
+    if (this.shuttingDown && boundServer) {
+      try {
+        boundServer.close?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        boundWss?.close?.();
+      } catch {
+        /* ignore */
+      }
+      this.logger.info('HttpMcpBridge.start(): discarded newly-bound server, stop() in progress');
+      return;
+    }
+
+    if (!boundServer || !boundWss) {
+      const err =
+        lastError ??
+        Object.assign(new Error('HttpMcpBridge: no ports available'), {
+          code: 'EADDRINUSE',
         });
+      this.logger.error(
+        `HttpMcpBridge: could not bind to any port in range ${startPort}-${startPort + HTTP_MCP_MAX_PORT_ATTEMPTS - 1}`,
+        err,
+      );
+      throw err;
+    }
 
-        // If address in use, try next port (up to a reasonable limit)
-        if (error.code === 'EADDRINUSE' && this.port < startPort + 10) {
-          this.logger.warn(`Port ${this.port} in use, trying next port...`);
-          this.port++;
-          setTimeout(() => {
-            this.server.close();
-            this.start().then(resolve).catch(reject);
-          }, 100);
-        } else {
-          // For non-retryable errors, reject the promise
-          this.logger.error('Server listen error (not retrying):', error);
-          reject(error);
+    // Publish the bound server/wss references.
+    this.server = boundServer;
+    this.wss = boundWss;
+
+    // Expose a global broadcast function so any code that does webContents.send
+    // can also push events to browser-mode clients.
+    (global as any).__browserIpcBroadcast = (channel: string, data: any) => {
+      if (!this.wss) return;
+      const message = JSON.stringify({ channel, data });
+      for (const client of this.wss.clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
         }
+      }
+    };
+
+    // Keep references to prevent garbage collection and for sibling modules.
+    (global as any).__httpMcpBridgeServer = this.server;
+    (global as any).__httpMcpBridgeInstance = this;
+
+    // CRITICAL: Only set the port env var and persist AFTER successfully binding
+    process.env.HTTP_MCP_PORT = this.port.toString();
+
+    try {
+      const userDataDir = app.getPath('userData');
+      process.env.ELECTRON_STORE_CWD =
+        this.settingsStore.path?.replace(/settings\.json$/, '') || userDataDir;
+      this.settingsStore.set('http-bridge-port', this.port);
+    } catch (error) {
+      this.logger.warn('Failed to persist HTTP MCP port to settings store', { error });
+    }
+
+    // Get tool count for the startup message (async, don't block startup)
+    this.getMcpServer('http-bridge-workspace', DUMMY_WORKSPACE_PATH)
+      .then((defaultServer) => {
+        const toolCount = defaultServer.getTools().length;
+        console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port} (${toolCount} tools)\n`);
+      })
+      .catch(() => {
+        console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port}\n`);
       });
 
-      // Keep reference to prevent garbage collection
-      (global as any).__httpMcpBridgeServer = this.server;
-      (global as any).__httpMcpBridgeInstance = this;
-
-      this.server.listen(this.port, host, () => {
-        // CRITICAL: Only set the port env var and persist AFTER successfully binding
-        // This ensures agents get the correct port even after fallback retries
-        process.env.HTTP_MCP_PORT = this.port.toString();
-
-        // Persist the resolved port so child processes that miss the env can still read it
-        try {
-          const userDataDir = app.getPath('userData');
-          process.env.ELECTRON_STORE_CWD =
-            this.settingsStore.path?.replace(/settings\.json$/, '') || userDataDir;
-          this.settingsStore.set('http-bridge-port', this.port);
-        } catch (error) {
-          this.logger.warn('Failed to persist HTTP MCP port to settings store', { error });
-        }
-
-        // Get tool count for the startup message (async, don't block startup)
-        this.getMcpServer('http-bridge-workspace', DUMMY_WORKSPACE_PATH)
-          .then((defaultServer) => {
-            const toolCount = defaultServer.getTools().length;
-            // Single clean startup message
-            console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port} (${toolCount} tools)\n`);
-          })
-          .catch(() => {
-            // Fallback message if we can't get tool count
-            console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port}\n`);
-          });
-
-        // Silent self-test - only log on failure
-        setTimeout(() => {
-          fetch(`http://127.0.0.1:${this.port}/health`)
-            .then((res) => {
-              if (!res.ok) {
-                this.logger.error(`Health check failed with status ${res.status}`);
-              }
-            })
-            .catch((err) => {
-              this.logger.error(`Self-test failed: ${err.message}`);
-            });
-        }, 100);
-
-        resolve();
-      });
-    });
+    // Silent self-test - only log on failure
+    setTimeout(() => {
+      fetch(`http://127.0.0.1:${this.port}/health`)
+        .then((res) => {
+          if (!res.ok) {
+            this.logger.error(`Health check failed with status ${res.status}`);
+          }
+        })
+        .catch((err) => {
+          this.logger.error(`Self-test failed: ${err.message}`);
+        });
+    }, 100);
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Stop the bridge cleanly.
+   * Terminates all WSS clients, closes the WSS, awaits server.close(),
+   * and nulls `this.server` / `this.wss` before resolving (DoD #3).
+   */
+  async stop(opts: { _fromRestart?: boolean } = {}): Promise<void> {
+    // Signal any in-flight start() retry loop to abort cleanly so a delayed
+    // listen() cannot bind a new listener after we tear down the server.
+    this.shuttingDown = true;
+
+    // External callers racing with an in-flight restart() should wait briefly
+    // for that restart to settle (its own stop() + start() cycle) so we tear
+    // down the server restart just produced — otherwise stop() returns while
+    // restart's start() is still pending and a listener binds after us.
+    // When restart() itself calls us via { _fromRestart: true }, skip the
+    // await or we would deadlock on our own promise.
+    const inflight = this.restartPromise;
+    if (inflight && !opts._fromRestart) {
+      try {
+        await Promise.race([
+          inflight.catch(() => {
+            /* ignore — restart errors are handled by its own caller */
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        ]);
+      } catch {
+        /* ignore */
+      }
+      // Re-assert the shutdown flag: restart's internal start() reset it
+      // when entering, and we need it set so any late retry aborts.
+      this.shuttingDown = true;
+    }
+
     // Stop the cache cleanup interval
     if (this.cleanupIntervalId) {
       clearInterval(this.cleanupIntervalId);
@@ -955,42 +1238,109 @@ export class HttpMcpBridge {
     // Clear all cached MCP servers
     this.clearAllMcpServers();
 
-    if (this.server) {
-      return new Promise((resolve) => {
-        this.server.close(() => {
-          this.logger.info('HTTP MCP Bridge stopped');
+    // Close WSS first: terminate all connected clients, then close the WSS.
+    // If we close the HTTP server first, the WSS can linger holding refs.
+    const wss = this.wss;
+    this.wss = null;
+    if (wss) {
+      try {
+        for (const client of wss.clients) {
+          try {
+            client.terminate();
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      await new Promise<void>((resolve) => {
+        try {
+          wss.close(() => resolve());
+        } catch {
           resolve();
-        });
+        }
       });
+    }
+
+    const server = this.server;
+    this.server = null;
+    if (server) {
+      await new Promise<void>((resolve) => {
+        try {
+          server.close(() => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+
+    // NOTE: `shuttingDown` intentionally stays true here so any start() still
+    // in its retry backoff aborts instead of binding a listener after stop()
+    // has returned. The flag is cleared at the top of the next start() call.
+
+    this.logger.info('HTTP MCP Bridge stopped');
+  }
+
+  /**
+   * Perform a single fetch of /health with an AbortController timeout.
+   */
+  private async probeHealthOnce(timeoutMs: number): Promise<boolean> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`http://127.0.0.1:${this.port}/health`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        this.logger.warn('Health check returned non-OK status', { status: response.status });
+        return false;
+      }
+      const data = await response.json();
+      return data?.status === 'ok';
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   /**
    * Check if the HTTP bridge is healthy and responding.
-   * Returns true if the health endpoint responds correctly.
+   * Tolerates main-process load (DoD #4):
+   *   - 5s configurable timeout (HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS)
+   *   - one retry with short backoff
+   *   - returns true when a recent memory-critical signal is active
    */
-  async isHealthy(): Promise<boolean> {
+  async isHealthy(
+    timeoutMs: number = HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS,
+  ): Promise<boolean> {
     if (!this.server) {
       return false;
     }
 
+    // Memory-critical override: under sustained pressure the health endpoint
+    // is merely slow. Reporting unhealthy here would trip restart() against
+    // its own running listener (the original EADDRINUSE bug).
+    if (isCriticalMemoryPressureActive()) {
+      this.logger.info(
+        'Skipping HTTP MCP Bridge health probe — recent critical memory pressure',
+      );
+      return true;
+    }
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      const response = await fetch(`http://127.0.0.1:${this.port}/health`, {
-        signal: controller.signal,
+      const healthy = await this.probeHealthOnce(timeoutMs);
+      if (healthy) return true;
+    } catch (error) {
+      this.logger.warn('Health check failed (first attempt)', {
+        error: (error as Error).message,
       });
+    }
 
-      clearTimeout(timeoutId);
+    // One retry with short backoff before declaring unhealthy.
+    await new Promise((r) => setTimeout(r, this.healthRetryBackoffMs));
 
-      if (!response.ok) {
-        this.logger.warn('Health check returned non-OK status', { status: response.status });
-        return false;
-      }
-
-      const data = await response.json();
-      return data.status === 'ok';
+    try {
+      return await this.probeHealthOnce(timeoutMs);
     } catch (error) {
       this.logger.warn('Health check failed', { error: (error as Error).message });
       return false;
@@ -999,50 +1349,95 @@ export class HttpMcpBridge {
 
   /**
    * Restart the HTTP bridge.
-   * Stops the current server and starts a new one.
+   * Serialised: concurrent callers share a single in-flight Promise (DoD #2).
+   * Any failure from either stop() or start() is logged once and rethrown
+   * as a single Error with the original error preserved on `.cause`.
    */
   async restart(): Promise<void> {
-    this.logger.info('Restarting HTTP MCP Bridge...');
-
-    try {
-      await this.stop();
-    } catch (error) {
-      this.logger.warn('Error stopping bridge during restart', { error: (error as Error).message });
+    if (this.restartPromise) {
+      this.logger.debug('Restart already in-flight; awaiting shared promise');
+      return this.restartPromise;
     }
 
-    // Re-initialize the cleanup interval and listeners that were stopped
-    this.startCacheCleanupInterval();
+    this.restartPromise = (async () => {
+      this.logger.info('Restarting HTTP MCP Bridge...');
+      try {
+        // Internal stop: skip the "await in-flight restart" branch (that
+        // would be this very promise → self-await deadlock).
+        await this.stop({ _fromRestart: true });
+        // Re-initialize the cleanup interval that stop() cleared.
+        this.startCacheCleanupInterval();
+        await this.start();
+        this.logger.info('HTTP MCP Bridge restarted successfully', { port: this.port });
+      } catch (error) {
+        this.logger.error('HTTP MCP Bridge restart failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw new Error(
+          `HttpMcpBridge.restart() failed: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+    })();
 
-    await this.start();
-    this.logger.info('HTTP MCP Bridge restarted successfully', { port: this.port });
+    try {
+      await this.restartPromise;
+    } finally {
+      this.restartPromise = null;
+    }
   }
 
   /**
    * Ensure the bridge is healthy, restarting if necessary.
-   * Returns true if the bridge is healthy after the check (possibly after restart).
+   * Idempotent under concurrent callers (shares `restartPromise` and the
+   * in-flight probe). Returns false and emits `httpBridgeUnrecoverable`
+   * on permanent failure — never throws, never leaks an uncaught exception.
    */
   async ensureHealthy(): Promise<boolean> {
-    const healthy = await this.isHealthy();
-
-    if (healthy) {
-      return true;
+    // Coalesce concurrent probes so a burst of messages doesn't spam /health.
+    if (!this.healthCheckPromise) {
+      this.healthCheckPromise = this.isHealthy().finally(() => {
+        this.healthCheckPromise = null;
+      });
     }
+    const healthy = await this.healthCheckPromise;
+    if (healthy) return true;
 
     this.logger.warn('HTTP MCP Bridge unhealthy, attempting restart...');
 
     try {
       await this.restart();
-      // Verify it's healthy after restart
-      const healthyAfterRestart = await this.isHealthy();
-      if (!healthyAfterRestart) {
-        this.logger.error('HTTP MCP Bridge still unhealthy after restart');
-        return false;
-      }
-      return true;
     } catch (error) {
-      this.logger.error('Failed to restart HTTP MCP Bridge', { error: (error as Error).message });
+      this.logger.error('Failed to restart HTTP MCP Bridge', {
+        error: (error as Error).message,
+      });
+      emitHttpBridgeUnrecoverable(
+        {
+          reason: 'restart-failed',
+          error: error as Error,
+          port: this.port,
+          timestamp: Date.now(),
+        },
+        this.logger,
+      );
       return false;
     }
+
+    // Verify it's healthy after restart (fresh probe, not the coalesced one).
+    const healthyAfterRestart = await this.isHealthy();
+    if (!healthyAfterRestart) {
+      this.logger.error('HTTP MCP Bridge still unhealthy after restart');
+      emitHttpBridgeUnrecoverable(
+        {
+          reason: 'still-unhealthy-after-restart',
+          port: this.port,
+          timestamp: Date.now(),
+        },
+        this.logger,
+      );
+      return false;
+    }
+    return true;
   }
 
   /**

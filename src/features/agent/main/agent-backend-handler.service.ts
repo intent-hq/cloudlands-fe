@@ -39,6 +39,10 @@ import { agentValidator } from '../services/agent-validator';
 import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
 import { resolveStreamingConfig, DEFAULT_PROFILE } from '$lib/store/slices/streaming-config/streaming-config-types';
 import { agentPersistence } from './agent-persistence';
+import {
+  onHttpBridgeUnrecoverable,
+  type HttpBridgeUnrecoverableHandler,
+} from '../../../main/http-mcp-bridge';
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { trackMain } from '$lib/services/analytics/main';
 import { getMainState } from '../../../store/main/redux-store-bridge';
@@ -217,6 +221,42 @@ export class AgentBackendHandler {
   private static readonly QUEUE_STUCK_THRESHOLD_MS = 10_000;
 
   /**
+   * Agents whose persisted orphaned-streaming state has already been repaired
+   * in this process lifetime. Prevents re-appending the "interrupted" assistant
+   * message or re-emitting the stream-error on every subsequent resumability
+   * check for the same agent.
+   */
+  private repairedOrphanedAgents = new Set<string>();
+
+  /**
+   * Agent IDs currently being torn down by an unrecoverable-bridge event.
+   * Persistence writes for these agents are suppressed to prevent post-terminal
+   * re-dirtying: late provider callbacks (content-block, error) funnel into
+   * `persistStreamingState`, which short-circuits when the agent is in this set
+   * so the repair save done at the top of `handleHttpBridgeUnrecoverable`
+   * cannot be overwritten by a racing streaming save.
+   */
+  private terminatingAgents = new Set<string>();
+
+  /** Message appended to an agent session when its persisted streaming state is
+   *  repaired on load. Worded neutrally so it's accurate whether the cause was a
+   *  crash, a bridge loss, or a clean user-initiated quit mid-stream. */
+  private static readonly ORPHAN_RECOVERY_MESSAGE =
+    'Previous response was interrupted before it could complete. Please retry.';
+  /** Message appended when interrupt() is called on an agent whose provider has
+   *  been torn down (MCP bridge crash mid-stream). */
+  private static readonly INTERRUPT_ORPHAN_MESSAGE =
+    'Response was interrupted because the MCP bridge disconnected. Please retry.';
+  /** Message appended when the HTTP MCP bridge reports unrecoverable failure. */
+  private static readonly BRIDGE_UNRECOVERABLE_MESSAGE =
+    'The MCP bridge became unavailable and this response was interrupted. Please retry.';
+
+  /** Disposer returned by `onHttpBridgeUnrecoverable()`. Set during
+   *  construction, invoked on shutdown so re-instantiation (e.g. in tests)
+   *  does not leak stale subscribers into the producer. */
+  private httpBridgeUnrecoverableDisposer: (() => void) | null = null;
+
+  /**
    * Registers an event listener for cleanup tracking.
    *
    * @private
@@ -291,6 +331,29 @@ export class AgentBackendHandler {
   private constructor() {
     this.setupHandlers();
     this.startProviderCleanupInterval();
+    this.subscribeToHttpBridgeUnrecoverable();
+  }
+
+  /**
+   * Register a subscriber on the HTTP MCP bridge's unrecoverable-failure hook.
+   * The bridge (src/main/http-mcp-bridge.ts) invokes every subscriber when it
+   * permanently fails so we can clear any in-flight agent streams that can no
+   * longer make progress. The returned disposer is retained so shutdown can
+   * unregister this subscriber.
+   */
+  private subscribeToHttpBridgeUnrecoverable(): void {
+    // The producer's HttpBridgeUnrecoverableHandler passes an info payload;
+    // an arg-less function is assignable to that signature in TS (arity
+    // widening) and JS silently discards the extra argument, so no data
+    // is lost from the consumer's perspective.
+    const handler: HttpBridgeUnrecoverableHandler = () => {
+      void this.handleHttpBridgeUnrecoverable().catch((err) => {
+        logger.error('handleHttpBridgeUnrecoverable threw', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    };
+    this.httpBridgeUnrecoverableDisposer = onHttpBridgeUnrecoverable(handler);
   }
 
   /**
@@ -2843,6 +2906,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       // Helper to persist current state during streaming using messageAccumulator
       const persistStreamingState = async (reason: string) => {
+        // Suppress persistence for agents currently being torn down by an
+        // unrecoverable-bridge event — prevents late callbacks from re-dirtying
+        // state after handleHttpBridgeUnrecoverable's repair save.
+        if (this.terminatingAgents.has(request.agentId)) {
+          logger.debug('persistStreamingState: skipped, agent terminating', {
+            agentId: request.agentId,
+            reason,
+          });
+          return;
+        }
         if (persistInProgress) return; // Don't overlap persistence calls
         persistInProgress = true;
 
@@ -3915,15 +3988,83 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           logger.error('Error interrupting ACP provider', { agentId, error: interruptError });
         }
       } else {
-        logger.warn('No provider found to interrupt', {
-          agentId,
-          hasProvider: !!provider,
-          hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
-        });
+        // Resolve a workspace id for possible persistence repair. The stream
+        // tracking map is the authoritative source when the stream is still
+        // alive; fall back to the caller-supplied workspaceId (some internal
+        // callers pass it explicitly) for the post-crash case where stream
+        // tracking was cleared by cleanupStreamResources on provider teardown.
+        const repairWorkspaceId =
+          workspaceId ||
+          (typeof validated === 'object' && validated?.workspaceId
+            ? String(validated.workspaceId)
+            : undefined);
+
+        let repaired = false;
+        if (repairWorkspaceId) {
+          try {
+            const loadResult = await agentPersistence.loadAgent(
+              agentId as AgentId,
+              repairWorkspaceId as WorkspaceId,
+            );
+            if (
+              loadResult.success &&
+              loadResult.data &&
+              (loadResult.data.isStreaming === true ||
+                (loadResult.data as any).isProcessing === true)
+            ) {
+              logger.warn(
+                'Interrupt on orphaned stream, clearing persisted streaming state',
+                {
+                  agentId,
+                  workspaceId: repairWorkspaceId,
+                  hasProvider: !!provider,
+                  hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
+                  persistedIsStreaming: loadResult.data.isStreaming === true,
+                  persistedIsProcessing: (loadResult.data as any).isProcessing === true,
+                },
+              );
+              const { persisted: repairPersisted } =
+                await this.repairOrphanedStreamingState(loadResult.data, {
+                  appendMessage: AgentBackendHandler.INTERRUPT_ORPHAN_MESSAGE,
+                  reason: 'interrupt_orphaned_stream',
+                });
+              // Only mark repaired when the save actually hit disk, otherwise
+              // next load still shows isStreaming=true and we need to retry.
+              if (repairPersisted) {
+                this.repairedOrphanedAgents.add(agentId);
+              }
+              // Emit a stream-error so the renderer unblocks the "Thinking…" spinner.
+              this.sendStreamToRenderer(agentId, `agent:stream:${agentId}`, {
+                type: 'error',
+                error: AgentBackendHandler.INTERRUPT_ORPHAN_MESSAGE,
+                streamId: sessionId || agentId,
+                sessionId: agentId,
+              });
+              repaired = true;
+            }
+          } catch (repairError) {
+            logger.warn('Failed to repair orphaned streaming state on interrupt', {
+              agentId,
+              workspaceId: repairWorkspaceId,
+              error:
+                repairError instanceof Error ? repairError.message : String(repairError),
+            });
+          }
+        }
+
+        if (!repaired) {
+          logger.warn('No provider found to interrupt', {
+            agentId,
+            hasProvider: !!provider,
+            hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
+          });
+        }
+
         // CRITICAL FIX: When there's no provider to interrupt, we must still clean up stream resources.
         // This can happen when:
         // 1. The stream completed before the page was refreshed
         // 2. The stream was interrupted in a previous session
+        // 3. The bridge crashed mid-stream and the provider was torn down (repaired above).
         // Without this cleanup, streamStartTimes retains the agent ID, causing getActiveStreams()
         // to incorrectly report the agent as still streaming after page reload.
         this.cleanupStreamResources(agentId);
@@ -5439,6 +5580,251 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   }
 
   /**
+   * Repair a persisted agent session whose streaming flags are stale because
+   * the provider/bridge was torn down mid-stream. Clears isStreaming /
+   * isProcessing, forces status to Idle, optionally appends a final assistant
+   * message explaining what happened, and re-persists via the canonical
+   * agentPersistence.saveAgent path (which handles the .json.checksum SHA-256
+   * sidecar). Returns the mutated session AND whether the save succeeded so
+   * callers only mark it "repaired" when on-disk state actually changed.
+   */
+  private async repairOrphanedStreamingState(
+    agent: AgentSession,
+    options: { appendMessage?: string; reason: string },
+  ): Promise<{ agent: AgentSession; persisted: boolean }> {
+    const { AgentStatus } = await import('../../../shared/types/agent.types.js');
+    agent.isStreaming = false;
+    (agent as any).isProcessing = false;
+    agent.status = AgentStatus.Idle;
+    agent.updatedAt = new Date();
+
+    if (options.appendMessage) {
+      const messages = Array.isArray(agent.messages) ? agent.messages : [];
+      // Avoid duplicate recovery banners if one is already the last message.
+      const last = messages[messages.length - 1];
+      const lastText =
+        last?.contentBlocks?.[0]?.type === 'text'
+          ? (last.contentBlocks[0] as any).text
+          : undefined;
+      if (lastText !== options.appendMessage) {
+        messages.push({
+          id: uuidv4(),
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: options.appendMessage }],
+          timestamp: new Date().toISOString(),
+          metadata: { source: 'system', recoveryReason: options.reason },
+        } as AgentMessage);
+        agent.messages = messages;
+      }
+    }
+
+    let persisted = false;
+    try {
+      const saveResult = await agentPersistence.saveAgent(agent);
+      if (!saveResult.success) {
+        logger.warn('repairOrphanedStreamingState: repair attempted but not persisted', {
+          agentId: agent.id,
+          reason: options.reason,
+          error: saveResult.error,
+        });
+      } else {
+        persisted = true;
+        logger.info('repairOrphanedStreamingState: persisted repaired session', {
+          agentId: agent.id,
+          reason: options.reason,
+          appendedMessage: !!options.appendMessage,
+        });
+      }
+    } catch (err) {
+      logger.warn('repairOrphanedStreamingState: repair attempted but not persisted', {
+        agentId: agent.id,
+        reason: options.reason,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return { agent, persisted };
+  }
+
+  /**
+   * Handle the HTTP MCP bridge reporting permanent, unrecoverable failure.
+   * Iterate every agent that has an active stream tracked locally and repair
+   * its persisted state so the UI unblocks and the Stop button works again.
+   * This is invoked by the subscriber registered on the shared global
+   * bridge-unrecoverable callback registry.
+   */
+  private async handleHttpBridgeUnrecoverable(): Promise<void> {
+    const streamingAgentIds = Array.from(this.streamStartTimes.keys());
+    logger.warn('httpBridgeUnrecoverable received, clearing orphaned streaming agents', {
+      agentCount: streamingAgentIds.length,
+      agentIds: streamingAgentIds,
+    });
+    if (streamingAgentIds.length === 0) return;
+
+    for (const agentId of streamingAgentIds) {
+      const workspaceId = this.streamWorkspaceIds.get(agentId);
+      const sessionId = this.streamSessionIds.get(agentId);
+      // Mark this agent as terminating BEFORE the repair save so any streaming
+      // callback that fires between the save and provider.stop short-circuits
+      // in persistStreamingState instead of re-dirtying disk.
+      this.terminatingAgents.add(agentId);
+      try {
+        if (workspaceId) {
+          const loadResult = await agentPersistence.loadAgent(
+            agentId as AgentId,
+            workspaceId as WorkspaceId,
+          );
+          if (loadResult.success && loadResult.data) {
+            await this.repairOrphanedStreamingState(loadResult.data, {
+              appendMessage: AgentBackendHandler.BRIDGE_UNRECOVERABLE_MESSAGE,
+              reason: 'http_bridge_unrecoverable',
+            });
+          }
+        }
+        // Emit stream-error on the per-agent channel so the UI unblocks.
+        this.sendStreamToRenderer(agentId, `agent:stream:${agentId}`, {
+          type: 'error',
+          error: AgentBackendHandler.BRIDGE_UNRECOVERABLE_MESSAGE,
+          streamId: sessionId || agentId,
+          sessionId: agentId,
+        });
+        // Stop the live ACP provider so the auggie subprocess cannot keep
+        // streaming and re-dirty the session we just repaired. Mirrors the
+        // canonical teardown in stopProvidersForWorkspace: prefer stop()
+        // with forceCleanup, fall back to cleanup(). Swallow errors per
+        // spec (bridge is already unrecoverable; don't cascade).
+        const provider = this.providers.get(agentId);
+        if (provider) {
+          try {
+            if (typeof provider.stop === 'function') {
+              await provider.stop({ forceCleanup: true });
+            } else if (typeof provider.cleanup === 'function') {
+              await provider.cleanup();
+            }
+          } catch (stopErr) {
+            logger.warn('handleHttpBridgeUnrecoverable: provider stop failed', {
+              agentId,
+              error: stopErr instanceof Error ? stopErr.message : String(stopErr),
+            });
+          }
+          this.providers.delete(agentId);
+          this.providerLastUsed.delete(agentId);
+        }
+      } catch (err) {
+        logger.error('handleHttpBridgeUnrecoverable: failed to clear agent', {
+          agentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        // Clean up local stream tracking so subsequent interrupts/health checks
+        // do not keep reporting this agent as active.
+        this.cleanupStreamResources(agentId);
+        // Clear the guard last so a future restart of this agent can persist
+        // normally. Safe to do in finally: once we reach here the repair save
+        // is committed and the provider is either stopped or was never present.
+        this.terminatingAgents.delete(agentId);
+      }
+    }
+  }
+
+  /**
+   * Cleanly persist in-flight streaming agents during graceful shutdown.
+   * Iterates currently-streaming agents, flips `isStreaming` / `isProcessing`
+   * to false and status to Idle, and persists via `agentPersistence.saveAgent`.
+   * Unlike the orphan-recovery and bridge-unrecoverable paths, this does NOT
+   * append any assistant message — a user-initiated clean quit is not a
+   * failure mode. Safe to call from shutdown handlers: per-agent errors are
+   * logged and swallowed, and the whole method is bounded by `timeoutMs` so
+   * it can't block app quit.
+   *
+   * Returns per-agent outcome so callers can log/report accurately:
+   *   - persisted: saveAgent succeeded within the timeout
+   *   - skipped:   no workspaceId known or load returned no data (nothing to save)
+   *   - failed:    save failed (error) or hung past the global timeout
+   */
+  public async persistShutdownState(
+    timeoutMs = 3000,
+  ): Promise<{ persisted: string[]; skipped: string[]; failed: string[] }> {
+    const streamingAgentIds = Array.from(this.streamStartTimes.keys());
+    if (streamingAgentIds.length === 0) {
+      return { persisted: [], skipped: [], failed: [] };
+    }
+    logger.info('persistShutdownState: flushing in-flight streaming agents', {
+      agentCount: streamingAgentIds.length,
+      agentIds: streamingAgentIds,
+    });
+
+    const persisted: string[] = [];
+    const skipped: string[] = [];
+    const failed: string[] = [];
+    // Agents still in-flight when the global timeout fires go in `failed`.
+    const pending = new Set<string>(streamingAgentIds);
+
+    const persistOne = async (agentId: string): Promise<void> => {
+      try {
+        const workspaceId = this.streamWorkspaceIds.get(agentId);
+        if (!workspaceId) {
+          skipped.push(agentId);
+          return;
+        }
+        const loadResult = await agentPersistence.loadAgent(
+          agentId as AgentId,
+          workspaceId as WorkspaceId,
+        );
+        if (!loadResult.success || !loadResult.data) {
+          skipped.push(agentId);
+          return;
+        }
+        const { persisted: ok } = await this.repairOrphanedStreamingState(
+          loadResult.data,
+          { reason: 'graceful_shutdown' },
+        );
+        if (ok) {
+          persisted.push(agentId);
+        } else {
+          failed.push(agentId);
+        }
+      } catch (err) {
+        failed.push(agentId);
+        logger.warn('persistShutdownState: failed to persist agent', {
+          agentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        pending.delete(agentId);
+      }
+    };
+
+    const work = Promise.allSettled(streamingAgentIds.map(persistOne));
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timeoutId = setTimeout(() => resolve('timeout'), timeoutMs);
+    });
+    try {
+      const result = await Promise.race([work, timeout]);
+      if (result === 'timeout') {
+        // Any agent still pending when the global timeout fires is reported
+        // as failed — its save promise is abandoned.
+        for (const agentId of pending) failed.push(agentId);
+        logger.warn('persistShutdownState: timed out, continuing shutdown', {
+          timeoutMs,
+          agentCount: streamingAgentIds.length,
+          pendingCount: pending.size,
+        });
+      }
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+
+    logger.info('persistShutdownState: result', {
+      persisted: persisted.length,
+      skipped: skipped.length,
+      failed: failed.length,
+    });
+    return { persisted, skipped, failed };
+  }
+
+  /**
    * Check if an agent is resumable/wakeable
    *
    * This is a system-wide method to determine the state of an agent:
@@ -5493,6 +5879,44 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
 
       const canWake = status === 'running' || status === 'resumable';
+
+      // Orphan recovery: if the on-disk session was left mid-stream (isStreaming /
+      // isProcessing true) but no in-memory provider exists, repair it exactly
+      // once per process lifetime so the UI can resume without manual JSON
+      // editing. Subsequent calls hit the repairedOrphanedAgents guard and
+      // become no-ops.
+      if (
+        status === 'resumable' &&
+        !hasProvider &&
+        agentData &&
+        (agentData.isStreaming === true || agentData.isProcessing === true) &&
+        !this.repairedOrphanedAgents.has(agentId)
+      ) {
+        logger.warn('Orphaned streaming agent detected on resumability check, repairing', {
+          agentId,
+          workspaceId,
+          persistedIsStreaming: agentData.isStreaming === true,
+          persistedIsProcessing: agentData.isProcessing === true,
+        });
+        try {
+          const repair = await this.repairOrphanedStreamingState(agentData, {
+            appendMessage: AgentBackendHandler.ORPHAN_RECOVERY_MESSAGE,
+            reason: 'resumability_orphan_recovery',
+          });
+          agentData = repair.agent;
+          // Only mark repaired when the save actually hit disk — otherwise disk
+          // still says isStreaming=true and we must retry on the next check.
+          if (repair.persisted) {
+            this.repairedOrphanedAgents.add(agentId);
+          }
+        } catch (repairError) {
+          logger.error('Failed to repair orphaned agent during resumability check', {
+            agentId,
+            workspaceId,
+            error: repairError instanceof Error ? repairError.message : String(repairError),
+          });
+        }
+      }
 
       logger.info('Agent resumability check', {
         agentId,
@@ -7704,6 +8128,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   public cleanup(): void {
     logger.info('Cleaning up AgentBackendHandler');
     this.cleanupAllListeners();
+
+    // Unsubscribe from the HTTP MCP bridge unrecoverable-failure hook so we
+    // do not leak a stale subscriber if the handler is re-instantiated.
+    if (this.httpBridgeUnrecoverableDisposer) {
+      try {
+        this.httpBridgeUnrecoverableDisposer();
+      } catch (err) {
+        logger.warn('Error disposing httpBridgeUnrecoverable subscription', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      this.httpBridgeUnrecoverableDisposer = null;
+    }
 
     // Clear message queues and processing state
     this.messageQueues.clear();
