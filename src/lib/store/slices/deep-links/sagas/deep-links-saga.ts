@@ -83,7 +83,12 @@ function writeWorkspacePrefill(params: Record<string, string>): void {
     JSON.stringify({
       repoPath: params.repo || "",
       branch: params.branch || "main",
-    }),
+      prompt: params.prompt || "",
+      specialist: params.specialist || "",
+      githubUrl: params.githubUrl || "",
+      title: params.title || "",
+      autoCreate: params.autoCreate || "",
+    })
   );
 }
 

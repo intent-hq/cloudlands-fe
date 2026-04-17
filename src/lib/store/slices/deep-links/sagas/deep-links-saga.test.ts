@@ -123,7 +123,7 @@ describe("deepLinksSaga", () => {
       .run();
 
     expect(sessionStorage.getItem("workspace-prefill")).toBe(
-      JSON.stringify({ repoPath: "/repo/intent", branch: "develop" })
+      JSON.stringify({ repoPath: "/repo/intent", branch: "develop", prompt: "", specialist: "", githubUrl: "", title: "", autoCreate: "" })
     );
     expect(window.history.replaceState).toHaveBeenCalledWith(null, "", "/");
   });
@@ -137,7 +137,7 @@ describe("deepLinksSaga", () => {
       .run();
 
     expect(sessionStorage.getItem("workspace-prefill")).toBe(
-      JSON.stringify({ repoPath: "/repo/intent", branch: "main" })
+      JSON.stringify({ repoPath: "/repo/intent", branch: "main", prompt: "", specialist: "", githubUrl: "", title: "", autoCreate: "" })
     );
   });
 

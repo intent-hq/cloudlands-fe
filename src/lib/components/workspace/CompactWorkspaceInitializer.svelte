@@ -230,19 +230,58 @@
    * Apply prefill data from sessionStorage (used by deep links)
    * This is called after the component is mounted to apply prefill data
    */
-  export function applyPrefill() {
+  export async function applyPrefill() {
     const prefillData = sessionStorage.getItem(PREFILL_KEY);
     if (prefillData) {
       try {
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
 
-        // Apply repo and branch settings
-        if (data.repoPath) {
+        // Apply repo and branch settings (skip if onMount already set repoPath)
+        if (data.repoPath && !repoPath) {
           repoPath = data.repoPath;
           isValidPath = true;
           // Reset scope when changing repos - scope is repo-specific
           scope = '';
+        } else if (data.githubUrl && !repoPath) {
+          // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
+          // Try resolving now via IPC to the repo registry.
+          try {
+            const result = await invoke<{ success: boolean; data?: Array<{ path: string; name: string; owner?: string }> }>(
+              'workspace:get-recent-repositories',
+              {},
+            );
+            if (result?.success && Array.isArray(result.data)) {
+              const ghUrl = data.githubUrl.trim();
+              const patterns = [
+                /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/.*)?$/,
+                /^git@github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/,
+              ];
+              let owner: string | null = null;
+              let repo: string | null = null;
+              for (const pattern of patterns) {
+                const match = ghUrl.match(pattern);
+                if (match) {
+                  owner = match[1].toLowerCase();
+                  repo = match[2].toLowerCase();
+                  break;
+                }
+              }
+              if (owner && repo) {
+                const matched = result.data.find(
+                  (r) => r.owner?.toLowerCase() === owner && r.name.toLowerCase() === repo,
+                );
+                if (matched?.path) {
+                  repoPath = matched.path;
+                  isValidPath = true;
+                  scope = '';
+                  logger.debug('Resolved githubUrl to local path via IPC', { githubUrl: data.githubUrl, repoPath });
+                }
+              }
+            }
+          } catch (e) {
+            logger.warn('Failed to resolve githubUrl via repo registry IPC', { error: e });
+          }
         }
         if (data.branch) branch = data.branch;
 
@@ -259,6 +298,25 @@
           initialPrompt = data.prompt;
         }
 
+        // Apply specialist if provided (match by specialist ID)
+        if (data.specialist) {
+          const specialists = selectSpecialists.select(getReduxStore().getState());
+          const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
+          if (matchedSpecialist) {
+            selectedSpecialist = matchedSpecialist.id;
+            // Switch team mode based on specialist - spec-writer uses team orchestration, everything else is single agent
+            isTeamMode = data.specialist === 'spec-writer';
+            logger.debug('Applied specialist from prefill', { specialistId: matchedSpecialist.id });
+          } else {
+            logger.warn('Specialist from prefill not found, ignoring', { specialist: data.specialist });
+          }
+        }
+
+        // Apply title if provided (used by handleSubmit instead of hardcoded '')
+        if (data.title) {
+          prefillTitle = data.title;
+        }
+
         // If we have previous workspace info, set up the pending mention
         if (data.previousWorkspaceId && data.previousWorkspaceTitle) {
           pendingPreviousWorkspace = {
@@ -270,10 +328,17 @@
         // Clear the prefill data so it doesn't get reapplied on next mount
         sessionStorage.removeItem(PREFILL_KEY);
 
-        // Focus the prompt textarea so the user can immediately type what to do
-        setTimeout(() => {
-          richTextarea?.focus();
-        }, 100);
+        // If autoCreate is set, signal the reactive $effect to auto-submit
+        // once isValid becomes true (avoids flaky setTimeout).
+        if (data.autoCreate === true || data.autoCreate === 'true') {
+          logger.info('autoCreate is set, will auto-submit once form is valid');
+          pendingAutoCreate = true;
+        } else {
+          // Focus the prompt textarea so the user can immediately type what to do
+          setTimeout(() => {
+            richTextarea?.focus();
+          }, 100);
+        }
       } catch (e) {
         logger.error('Failed to parse prefill data:', e);
         // Clear malformed data to prevent repeated failures
@@ -375,6 +440,7 @@
   // Track which provider the user selected for the initial agent
   // Priority: active provider store takes precedence since it's the user's explicit choice
   let selectedProvider = $state<string>($activeProviderId$ ?? 'auggie');
+  let prefillTitle = $state('');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
   let hasFiredClick = $state(false);
@@ -510,6 +576,10 @@
   // Key for prefill data from sessionStorage (shared with layout and other components)
   const PREFILL_KEY = 'workspace-prefill';
 
+  // Flag for reactive auto-submit: set by applyPrefill() when autoCreate is requested.
+  // The $effect below watches this + isValid to submit once form validation settles.
+  let pendingAutoCreate = $state(false);
+
   // Ref to RepoAndBranchPicker for focusing the input after prefill
   let repoAndBranchPicker: any = $state(null);
 
@@ -574,6 +644,20 @@
           initialPrompt = data.prompt;
         }
 
+        // Apply specialist if provided (match by specialist ID)
+        if (data.specialist) {
+          const specialists = selectSpecialists.select(getReduxStore().getState());
+          const matchedSpecialist = specialists.find((s: { id: string }) => s.id === data.specialist);
+          if (matchedSpecialist) {
+            selectedSpecialist = matchedSpecialist.id;
+            // Switch team mode based on specialist - spec-writer uses team orchestration, everything else is single agent
+            isTeamMode = data.specialist === 'spec-writer';
+            logger.debug('Applied specialist from prefill (onMount)', { specialistId: matchedSpecialist.id });
+          } else {
+            logger.warn('Specialist from prefill not found (onMount), ignoring', { specialist: data.specialist });
+          }
+        }
+
         // If we have previous workspace info, set up the pending mention
         // This will trigger the $effect that inserts the @ mention with the seed prompt
         if (data.previousWorkspaceId && data.previousWorkspaceTitle) {
@@ -583,8 +667,9 @@
           };
         }
 
-        // Clear the prefill data so it doesn't get reapplied on next mount
-        sessionStorage.removeItem(PREFILL_KEY);
+        // Do NOT remove PREFILL_KEY here — applyPrefill() (called by +page.svelte
+        // after tick()) still needs to read it for autoCreate and other fields.
+        // applyPrefill() is the single owner that reads and removes the key.
       } catch (e) {
         logger.error('Failed to parse prefill data:', e);
         // Clear malformed data to prevent repeated failures
@@ -607,6 +692,16 @@
           logger.error('Failed to parse saved repo:', e);
         }
       }
+    }
+  });
+
+  // Reactive auto-submit: when applyPrefill() sets pendingAutoCreate, this $effect
+  // fires once isValid becomes true, avoiding the flaky setTimeout approach.
+  $effect(() => {
+    if (pendingAutoCreate && isValid) {
+      pendingAutoCreate = false;
+      logger.info('Auto-submitting workspace creation form');
+      handleSubmit();
     }
   });
 
@@ -1631,7 +1726,7 @@
       }
 
       const result = await workspaceClient.create({
-        title: '', // Start with blank title - agent will set it based on the task
+        title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: String(remoteSetupSnapshot?.workspacePath || repoPath),
         githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL to clone
         clonePath:

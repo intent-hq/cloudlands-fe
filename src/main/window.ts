@@ -387,6 +387,7 @@ export function createWindow() {
  * Handle a deep link URL received from the OS (intent:// protocol)
  *
  * Settings deep links are sent to the existing main window.
+ * Create deep links are sent to the existing window unless newWindow=true.
  * All other deep link types create a new window.
  */
 export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandler: DeepLinkHandler) {
@@ -399,8 +400,13 @@ export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandl
     return;
   }
 
-  // Settings actions should be sent to the existing window, not create a new one
-  if (action.type === 'settings') {
+  // Settings actions are always sent to the existing window.
+  // Create actions are sent to the existing window unless newWindow=true.
+  const shouldRouteToExisting =
+    action.type === 'settings' ||
+    (action.type === 'create' && String(action.params?.newWindow) !== 'true');
+
+  if (shouldRouteToExisting) {
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('deep-link', action);
@@ -408,10 +414,10 @@ export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandl
         mainWindow.restore();
       }
       mainWindow.focus();
-      logger.info('Sent settings deep link to existing window');
+      logger.info('Sent deep link to existing window', { type: action.type });
     } else {
       // No window yet — store as pending (will be processed after startup)
-      logger.info('No window available for settings deep link, storing as pending');
+      logger.info('No window available for deep link, storing as pending', { type: action.type });
       await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
     }
     return;

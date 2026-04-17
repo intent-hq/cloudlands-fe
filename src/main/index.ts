@@ -1749,20 +1749,24 @@ app.whenReady().then(async () => {
     startupMetrics.end('createWindow');
   }
 
-  // Register intent:// protocol handler in development mode
-  // In production, this is registered via electron-builder.yml
-  if (isDev) {
-    try {
-      // In dev mode, we must pass the Electron binary path and the app entry point
-      // so macOS launches "electron /path/to/dist/main" instead of just "electron"
+  // Register intent:// protocol handler with the OS.
+  // In production, electron-builder registers the scheme statically (Info.plist / registry),
+  // but we also call setAsDefaultProtocolClient at runtime as a belt-and-suspenders measure
+  // to ensure the association is set even if the installer didn't complete properly.
+  // In dev mode, we pass extra args so macOS launches the Electron binary correctly.
+  try {
+    if (isDev) {
       app.setAsDefaultProtocolClient('intent', process.execPath, [path.resolve(app.getAppPath())]);
       logger.info('Registered intent:// protocol handler for development mode', {
         execPath: process.execPath,
         appPath: path.resolve(app.getAppPath()),
       });
-    } catch (error) {
-      logger.warn('Failed to register intent:// protocol handler:', error);
+    } else {
+      app.setAsDefaultProtocolClient('intent');
+      logger.info('Registered intent:// protocol handler for production mode');
     }
+  } catch (error) {
+    logger.warn('Failed to register intent:// protocol handler:', error);
   }
 
   // Process any pending deep link URL that was received before the window was ready
