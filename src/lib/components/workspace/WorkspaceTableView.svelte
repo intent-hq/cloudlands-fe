@@ -9,7 +9,9 @@
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
   import { scale, slide } from 'svelte/transition';
+  import WorkspaceTableCollapseButton from './WorkspaceTableCollapseButton.svelte';
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
+  import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
   import WorkspaceTableRow from './WorkspaceTableRow.svelte';
 
   // Safe non-deferred transition functions replacing crossfade.
@@ -163,6 +165,43 @@
     }
   }
 
+  // Track which groups have their "older" bucket expanded. Collapsed by default.
+  let expandedOlderGroups = $state<Set<string>>(new Set());
+
+  function toggleOlder(key: string) {
+    if (expandedOlderGroups.has(key)) {
+      expandedOlderGroups = new Set([...expandedOlderGroups].filter((k) => k !== key));
+    } else {
+      expandedOlderGroups = new Set([...expandedOlderGroups, key]);
+    }
+  }
+
+  const RECENT_CAP = 10;
+
+  // Split a group's workspaces into recent (first N non-archived) and older
+  // buckets. Archived workspaces are always classified as older regardless of
+  // position. When searching, the split is bypassed so every match renders in
+  // a single list.
+  function partitionByRecency(list: Workspace[]): { recent: Workspace[]; older: Workspace[] } {
+    if (searchQuery) {
+      return { recent: list, older: [] };
+    }
+    const recent: Workspace[] = [];
+    const older: Workspace[] = [];
+    for (const ws of list) {
+      if (ws.status === WorkspaceStatusEnum.Archived) {
+        older.push(ws);
+        continue;
+      }
+      if (recent.length < RECENT_CAP) {
+        recent.push(ws);
+      } else {
+        older.push(ws);
+      }
+    }
+    return { recent, older };
+  }
+
   // Filter workspaces
   let filteredWorkspaces = $derived.by(() => {
     return workspaces.filter((ws) => {
@@ -295,7 +334,17 @@
   // Calculate height of a group table
   function getGroupHeight(group: GroupedWorkspaces[number], isCollapsed: boolean): number {
     if (isCollapsed) return HEADER_HEIGHT;
-    return HEADER_HEIGHT + group.workspaces.length * ROW_HEIGHT;
+    let visibleRows: number;
+    if (searchQuery) {
+      visibleRows = group.workspaces.length;
+    } else {
+      const split = partitionByRecency(group.workspaces);
+      visibleRows =
+        split.older.length > 2
+          ? split.recent.length + 1 // +1 for the "Show N older workspaces" toggle row
+          : split.recent.length + split.older.length;
+    }
+    return HEADER_HEIGHT + visibleRows * ROW_HEIGHT;
   }
 
   // Create a layout key that changes ONLY when view settings change
@@ -464,12 +513,19 @@
                       {/if}
                     </div>
                   {:else}
-                    {#each group.workspaces as ws, wsIndex (ws.id)}
+                    {@const split = partitionByRecency(group.workspaces)}
+                    {@const showToggle = split.older.length > 2}
+                    {@const recentRows = showToggle
+                      ? split.recent
+                      : [...split.recent, ...split.older]}
+                    {@const olderRows = showToggle ? split.older : []}
+                    {@const isOlderExpanded = expandedOlderGroups.has(group.key)}
+                    {#each recentRows as ws, wsIndex (ws.id)}
                       <div transition:slide={{ axis: 'y', duration: 150 }}>
                         <WorkspaceTableRow
                           workspace={ws}
                           agents={getWorkspaceAgentInfo(ws)}
-                          isLastInGroup={wsIndex === group.workspaces.length - 1}
+                          isLastInGroup={wsIndex === recentRows.length - 1 && !showToggle}
                           groupByRepo={true}
                           {onOpen}
                           {onDelete}
@@ -478,6 +534,37 @@
                         />
                       </div>
                     {/each}
+                    {#if showToggle}
+                      {#if isOlderExpanded}
+                        <div
+                          class="overflow-hidden"
+                          transition:slide={{ axis: 'y', duration: 150 }}
+                        >
+                          {#each olderRows as ws (ws.id)}
+                            <div transition:slide={{ axis: 'y', duration: 150 }}>
+                              <WorkspaceTableRow
+                                workspace={ws}
+                                agents={getWorkspaceAgentInfo(ws)}
+                                isLastInGroup={false}
+                                groupByRepo={true}
+                                {onOpen}
+                                {onDelete}
+                                {onArchive}
+                                {onUnarchive}
+                              />
+                            </div>
+                          {/each}
+                          <WorkspaceTableCollapseButton
+                            onCollapse={() => toggleOlder(group.key)}
+                          />
+                        </div>
+                      {:else}
+                        <WorkspaceTableOlderToggle
+                          count={olderRows.length}
+                          onToggle={() => toggleOlder(group.key)}
+                        />
+                      {/if}
+                    {/if}
                   {/if}
                 </div>
               {/if}
@@ -495,13 +582,20 @@
 
       <!-- Group Items -->
       {#if !isCollapsed}
+        {@const split = partitionByRecency(group.workspaces)}
+        {@const showToggle = split.older.length > 2}
+        {@const recentRows = showToggle
+          ? split.recent
+          : [...split.recent, ...split.older]}
+        {@const olderRows = showToggle ? split.older : []}
+        {@const isOlderExpanded = expandedOlderGroups.has(group.key)}
         <div class="overflow-hidden" transition:slide={{ axis: 'y', duration: 150 }}>
-          {#each group.workspaces as ws, wsIndex (ws.id)}
+          {#each recentRows as ws, wsIndex (ws.id)}
             <div transition:slide={{ axis: 'y', duration: 150 }}>
               <WorkspaceTableRow
                 workspace={ws}
                 agents={getWorkspaceAgentInfo(ws)}
-                isLastInGroup={wsIndex === group.workspaces.length - 1}
+                isLastInGroup={wsIndex === recentRows.length - 1 && !showToggle}
                 showRepoAvatar={!!ws.repositoryOwner}
                 groupByRepo={false}
                 {onOpen}
@@ -511,6 +605,35 @@
               />
             </div>
           {/each}
+          {#if showToggle}
+            {#if isOlderExpanded}
+              <div class="overflow-hidden" transition:slide={{ axis: 'y', duration: 150 }}>
+                {#each olderRows as ws (ws.id)}
+                  <div transition:slide={{ axis: 'y', duration: 150 }}>
+                    <WorkspaceTableRow
+                      workspace={ws}
+                      agents={getWorkspaceAgentInfo(ws)}
+                      isLastInGroup={false}
+                      showRepoAvatar={!!ws.repositoryOwner}
+                      groupByRepo={false}
+                      {onOpen}
+                      {onDelete}
+                      {onArchive}
+                      {onUnarchive}
+                    />
+                  </div>
+                {/each}
+                <WorkspaceTableCollapseButton
+                  onCollapse={() => toggleOlder(group.key)}
+                />
+              </div>
+            {:else}
+              <WorkspaceTableOlderToggle
+                count={olderRows.length}
+                onToggle={() => toggleOlder(group.key)}
+              />
+            {/if}
+          {/if}
         </div>
       {/if}
     {/each}
