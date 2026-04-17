@@ -56,11 +56,11 @@
     workspaceId: string;
     /** Callbacks for creating new items (passed to panel tab bars) */
     onCreateAgent?: () => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
-    onOpenBrowser?: () => void;
   }
 
-  let { workspaceId, onCreateAgent, onCreateNote, onOpenBrowser }: Props = $props();
+  let { workspaceId, onCreateAgent, onCreateAgentWithSpecialist, onCreateNote }: Props = $props();
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -226,6 +226,11 @@
     } catch (error) {
       logger.error('Failed to create terminal', error);
     }
+  }
+
+  // Handler to open a new browser tab
+  function handleOpenBrowser() {
+    layoutManager.openBrowserPanel('about:blank');
   }
 
   // Provide a getter function to child components via context
@@ -1130,9 +1135,10 @@
         onTabDropToSplitHandle={handleTabDropToSplitHandle}
         onTabRename={handleTabRename}
         {onCreateAgent}
+        {onCreateAgentWithSpecialist}
         {onCreateNote}
         onCreateTerminal={handleCreateTerminal}
-        {onOpenBrowser}
+        onOpenBrowser={handleOpenBrowser}
       />
     {/if}
   </div>

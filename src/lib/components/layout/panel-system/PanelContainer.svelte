@@ -66,6 +66,7 @@
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Callbacks for creating new items */
     onCreateAgent?: () => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
     onCreateTerminal?: () => void;
     onOpenBrowser?: () => void;
@@ -95,6 +96,7 @@
     onTabDropToSplitHandle,
     onTabRename,
     onCreateAgent,
+    onCreateAgentWithSpecialist,
     onCreateNote,
     onCreateTerminal,
     onOpenBrowser,
@@ -362,6 +364,7 @@
         onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
       {onTabRename}
       {onCreateAgent}
+      {onCreateAgentWithSpecialist}
       {onCreateNote}
       {onCreateTerminal}
       {onOpenBrowser}
@@ -411,6 +414,7 @@
           {onTabDropToSplitHandle}
           {onTabRename}
           {onCreateAgent}
+          {onCreateAgentWithSpecialist}
           {onCreateNote}
           {onCreateTerminal}
           {onOpenBrowser}

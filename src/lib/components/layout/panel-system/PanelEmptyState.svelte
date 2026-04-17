@@ -9,7 +9,7 @@
   import { writable } from 'svelte/store';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import Fa from 'svelte-fa';
-  import { faPlus, faTerminal, faGlobe, faFile, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faTerminal, faGlobe, faFile, faRobot, faGear } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
@@ -17,10 +17,12 @@
   import { openPalette } from '$lib/store/slices/palette/palette-slice';
   import { selectRecentlyClosed } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
 
   interface Props {
     workspaceId: string;
     onCreateAgent?: () => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
     onCreateTerminal?: () => void;
     onOpenBrowser?: () => void;
@@ -29,6 +31,7 @@
   let {
     workspaceId: _workspaceId,
     onCreateAgent,
+    onCreateAgentWithSpecialist,
     onCreateNote,
     onCreateTerminal,
     onOpenBrowser,
@@ -81,13 +84,13 @@
     layoutManager?.reopenClosedTab();
   }
 
-  // Quick action buttons
-  const quickActions = [
-    { id: 'agent', label: 'Agent', icon: faRobot, action: () => onCreateAgent?.() },
+  // Quick action buttons (agent handled separately when specialist picker is available)
+  const nonAgentQuickActions = [
     { id: 'note', label: 'Note', icon: faNote, action: () => onCreateNote?.() },
     { id: 'terminal', label: 'Terminal', icon: faTerminal, action: () => onCreateTerminal?.() },
     { id: 'browser', label: 'Browser', icon: faGlobe, action: () => onOpenBrowser?.() },
   ];
+  const agentQuickAction = { id: 'agent', label: 'Agent', icon: faRobot, action: () => onCreateAgent?.() };
 
   // Keyboard shortcuts to display with their actions
   const keyboardShortcuts = [
@@ -135,7 +138,25 @@
   <div class="w-full max-w-[27rem] space-y-6">
     <!-- Quick action buttons row -->
     <div class="flex items-center justify-center gap-1 flex-wrap">
-      {#each quickActions as action (action.id)}
+      <!-- Agent action: use specialist picker when available -->
+      {#if onCreateAgentWithSpecialist}
+        <CreateAgentSection
+          onCreate={onCreateAgent}
+          onCreateWithSpecialist={onCreateAgentWithSpecialist}
+          compact
+        />
+      {:else}
+        <button
+          class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          onclick={agentQuickAction.action}
+          title="New Agent"
+        >
+          <Fa icon={faPlus} class="w-2.5 h-2.5 opacity-50" />
+          <Fa icon={faRobot} class="w-3 h-3" />
+          <span class="font-medium">Agent</span>
+        </button>
+      {/if}
+      {#each nonAgentQuickActions as action (action.id)}
         <button
           class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           onclick={action.action}

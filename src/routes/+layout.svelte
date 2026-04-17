@@ -68,7 +68,7 @@
     recordWorkspaceView,
     setActiveWorkspaceId,
   } from '$lib/store/slices/workspace/workspace-slice';
-  import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { createAgentRequested, createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
@@ -536,11 +536,11 @@
         action: toggleAllSpaces,
       });
     }
-    // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent, like browser new tab)
+    // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent with specialist picker)
     const newTab = () => {
       const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
       if (wsId) {
-        dispatch(createAgentRequested(wsId));
+        dispatch(createAgentWithSpecialistRequested(wsId, null));
       }
     };
     register({ key: 't', meta: true, description: 'New Tab (Mac)', action: newTab });

@@ -42,7 +42,10 @@
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
+  import { filterSpecialistsByGitHubAuth, selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -71,6 +74,7 @@
     contentActions?: Snippet | null;
     /** Callbacks for creating new items */
     onCreateAgent?: () => void;
+    onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
     onCreateTerminal?: () => void;
     onOpenBrowser?: () => void;
@@ -105,6 +109,7 @@
     isFocused = false,
     contentActions = null,
     onCreateAgent,
+    onCreateAgentWithSpecialist,
     onCreateNote,
     onCreateTerminal,
     onOpenBrowser,
@@ -152,13 +157,17 @@
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
+  const visibleSpecialists = $derived.by(() =>
+    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$)
+  );
   $effect(() => {
     void $specialists$;
   });
 
   // Check if any creation callbacks are available
   const hasCreateActions = $derived(
-    !!onCreateAgent || !!onCreateNote || !!onCreateTerminal || !!onOpenBrowser,
+    !!onCreateAgent || !!onCreateAgentWithSpecialist || !!onCreateNote || !!onCreateTerminal || !!onOpenBrowser,
   );
 
   /**
@@ -1211,7 +1220,43 @@
             {/snippet}
             {#snippet content({ close }: { close: () => void })}
               <div class="flex flex-col min-w-35">
-                {#if onCreateAgent}
+                {#if onCreateAgentWithSpecialist}
+                  <!-- Blank Agent option -->
+                  <button
+                    class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
+                    onclick={() => {
+                      onCreateAgentWithSpecialist(null);
+                      close();
+                    }}
+                  >
+                    <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} />
+                    <span>Blank Agent</span>
+                  </button>
+                  <!-- Specialist options -->
+                  {#each visibleSpecialists as specialist (specialist.id)}
+                    <button
+                      class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
+                      onclick={() => {
+                        onCreateAgentWithSpecialist(specialist.id);
+                        close();
+                      }}
+                    >
+                      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} specialist={specialist.id} />
+                      <span>{specialist.name}</span>
+                    </button>
+                  {/each}
+                  <!-- Manage specialists link -->
+                  <button
+                    class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors text-subtle border-t border-border mt-0.5 pt-1.5"
+                    onclick={async () => {
+                      await navigateToSettings({ tab: 'agents' });
+                      close();
+                    }}
+                  >
+                    <Fa icon={faPlus} size="xs" class="text-ghost" />
+                    <span>Manage specialists</span>
+                  </button>
+                {:else if onCreateAgent}
                   <button
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {

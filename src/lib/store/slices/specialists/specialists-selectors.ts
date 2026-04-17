@@ -3,7 +3,6 @@ import { getItem, getItems, type Collection } from "../../utils/collection-utils
 import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS, type Specialist } from "$lib/constants/specialists";
 import { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS, } from "$shared/config/provider-config";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
-import { selectIsFeatureEnabled } from "../feature-codes/feature-codes-selectors";
 import type { CustomSpecialist, FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
 // ============================================================================
@@ -26,13 +25,9 @@ export const selectProviderModelOverrides = createSelector((state): Record<strin
 // ============================================================================
 /**
  * Check if a specialist should be visible based on Redux state and GitHub auth.
- * Gates both feature-flagged specialists (ralph) and GitHub-dependent specialists (pr-shepherd, pr-reviewer).
+ * Gates GitHub-dependent specialists (pr-shepherd, pr-reviewer).
  */
 export const selectIsSpecialistVisible = createSelector((state, specialistId: string): boolean => {
-    // Gate ralph behind feature flag
-    if (specialistId === 'ralph' && !selectIsFeatureEnabled.select(state, 'ralph-agent')) {
-        return false;
-    }
     // Gate GitHub-dependent specialists behind GitHub auth
     if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId)) {
         if (!selectGitHubAuthIsAuthenticated.select(state)) {

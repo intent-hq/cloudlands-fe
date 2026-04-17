@@ -30,7 +30,6 @@ import {
   migrateOverridesFromStore,
 } from '../../specialists/main/specialist-file-loader';
 import { mergeSpecialistsByPriority, type SpecialistFile } from '../../../shared/specialist-file-types';
-import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
 
 const logger = new Logger('SpecialistsService');
@@ -431,11 +430,6 @@ export function getAllEffectiveSpecialists(providerId?: string, workspacePath?: 
 
   let filtered = allSpecialists;
 
-  // Gate ralph specialist behind feature flag
-  if (!featureCodesService.isFeatureEnabled('ralph-agent')) {
-    filtered = filtered.filter((s) => s.id !== 'ralph');
-  }
-
   // Hide GitHub-dependent specialists when GitHub is not connected
   if (!isGitHubAuthenticated) {
     filtered = filtered.filter((s) => !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id));
@@ -553,12 +547,6 @@ export function resolveSpecialistForAgent(
   providerId?: string,
   workspacePath?: string,
 ): ResolvedSpecialistConfig | null {
-  // Gate ralph specialist behind feature flag
-  if (specialistId === 'ralph' && !featureCodesService.isFeatureEnabled('ralph-agent')) {
-    logger.info('resolveSpecialistForAgent: ralph specialist gated by feature flag');
-    return null;
-  }
-
   // Gate GitHub-dependent specialists behind GitHub auth
   if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId) && !isGitHubAuthenticated) {
     logger.info('resolveSpecialistForAgent: specialist requires GitHub auth', { specialistId });

@@ -924,15 +924,6 @@
     }
   }
 
-  function handleOpenBrowser() {
-    // Open browser with a default search page
-    const defaultUrl = 'about:blank';
-    if (workspaceState) {
-      logger.debug('[WorkspacePage] handleOpenBrowser called');
-      workspaceState.openBrowserUrl(defaultUrl);
-    }
-  }
-
   async function handleDelegateTask(taskText: string, openAgent?: boolean): Promise<string | null> {
     if (!$workspace) return null;
     dispatch(delegateTaskRequested($workspace.id, taskText, openAgent));
@@ -1294,8 +1285,8 @@
           <PanelLayout
             workspaceId={$workspace?.id || workspaceId}
             onCreateAgent={handleCreateAgent}
+            onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
-            onOpenBrowser={handleOpenBrowser}
           />
         </div>
       {/if}

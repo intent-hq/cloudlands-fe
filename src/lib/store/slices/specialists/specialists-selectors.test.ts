@@ -82,18 +82,8 @@ describe("specialists selectors", () => {
   });
 
   describe("visibility gating", () => {
-    it("should hide ralph when the feature flag is disabled", () => {
+    it("should include ralph without any feature flag", () => {
       const state = mockState();
-      const ids = selectSpecialists.select(state).map((specialist) => specialist.id);
-
-      expect(ids).not.toContain("ralph");
-    });
-
-    it("should include ralph when the feature flag is enabled", () => {
-      const state = {
-        ...mockState(),
-        featureCodes: { activeFeatures: ["ralph-agent"], initialized: true },
-      } as StoreState;
       const ids = selectSpecialists.select(state).map((specialist) => specialist.id);
 
       expect(ids).toContain("ralph");

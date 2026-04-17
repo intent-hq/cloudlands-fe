@@ -112,6 +112,19 @@ describe("panelLayoutReducer", () => {
       expect(result.byWorkspaceId[WS].panels.p1.tabs).toHaveLength(1);
       expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe("t1");
     });
+
+    it("opens a browser tab with browserUrl", () => {
+      const state = stateWithPanel("p1");
+      const result = panelLayoutReducer(
+        state,
+        openTab(WS, { type: "browser", title: "Browser", browserUrl: "about:blank", closable: true }, undefined, "tab1"),
+      );
+      const panel = result.byWorkspaceId[WS].panels.p1;
+      expect(panel.tabs).toHaveLength(1);
+      expect(panel.tabs[0].type).toBe("browser");
+      expect(panel.tabs[0].browserUrl).toBe("about:blank");
+      expect(panel.activeTabId).toBe("tab1");
+    });
   });
 
   describe("closeTab", () => {
