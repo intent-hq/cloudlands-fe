@@ -7,11 +7,15 @@
  * Handles:
  * 1. agent:message:sent → message delivery between agents
  * 2. agent:idle → auto-commit of agent changes
+ * 3. agent:idle → OS notification + bell (NotificationService)
  */
 
 import { call, takeEvery } from "typed-redux-saga";
 import { workspaceEventAccepted } from "../workspace-events-slice";
-import type { AgentMessageSentEvent } from "../../../../../features/events/types";
+import type {
+  AgentIdleEvent,
+  AgentMessageSentEvent,
+} from "../../../../../features/events/types";
 
 // ---------------------------------------------------------------------------
 // 1. Message delivery: agent:message:sent
@@ -153,11 +157,45 @@ function* handleAgentIdleAutoCommit(
 }
 
 // ---------------------------------------------------------------------------
+// 3. OS notification + bell: agent:idle
+//
+// Runs in parallel with handleAgentIdleAutoCommit. Errors here must never
+// affect auto-commit or message delivery, so we swallow and log them.
+// ---------------------------------------------------------------------------
+
+export function* handleAgentIdleNotification(
+  action: ReturnType<typeof workspaceEventAccepted>,
+) {
+  const [event] = action.payload;
+  if (event.type !== "agent:idle") return;
+
+  yield* call(async () => {
+    try {
+      const { getNotificationService } = await import(
+        "../../../../../features/notifications/main/notification.service"
+      );
+      await getNotificationService(event.workspaceId).handleAgentIdle(
+        event as AgentIdleEvent,
+      );
+    } catch (error) {
+      const { Logger } = await import("../../../../../shared/logger");
+      const logger = new Logger("EventTriggeredAgents");
+      logger.error(
+        "[NOTIFICATION] Error handling agent:idle notification",
+        error as Error,
+        { workspaceId: event.workspaceId },
+      );
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
 
 export function* eventTriggeredSagas() {
   yield* takeEvery(workspaceEventAccepted, handleMessageSentEvent);
   yield* takeEvery(workspaceEventAccepted, handleAgentIdleAutoCommit);
+  yield* takeEvery(workspaceEventAccepted, handleAgentIdleNotification);
 }
 
