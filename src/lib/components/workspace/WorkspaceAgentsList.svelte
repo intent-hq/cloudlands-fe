@@ -101,6 +101,14 @@
     return null;
   }
 
+  // Helper to get the last updated timestamp for sorting by recency
+  function getAgentRecency(agent: AgentSession): number {
+    const ts = agent.updatedAt ?? agent.createdAt;
+    if (!ts) return 0;
+    const t = new Date(ts).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
   // Helper to get avatar state for an agent
   function getAgentAvatarState(agent: AgentSession) {
     const isRunning = isAgentRunning(agent.id) || agent.isStreaming || agent.isProcessing;
@@ -140,12 +148,12 @@
       }
     }
 
-    // Sort each group by creation time
+    // Sort each group by most recent activity (newest first)
     for (const children of map.values()) {
       children.sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return aTime - bTime;
+        const aTime = getAgentRecency(a);
+        const bTime = getAgentRecency(b);
+        return bTime - aTime;
       });
     }
     return map;
@@ -170,7 +178,7 @@
   // Helper to check if an agent is the coordinator (initial spec-writer agent)
 
   // Top-level foreground agents: not background, not delegated under another agent
-  // Coordinator agent is always sorted first
+  // Coordinator agent is always sorted first, then by most recent activity
   const topLevelForegroundAgents = $derived.by(() => {
     return dedupedAgents
       .filter((a) => !isBackgroundAgent(a) && !delegatedAgentIds.has(a.id))
@@ -180,10 +188,10 @@
         const bCoord = getAgentSpecialistId(b) === 'spec-writer';
         if (aCoord && !bCoord) return -1;
         if (!aCoord && bCoord) return 1;
-        // Then by creation time
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return aTime - bTime;
+        // Then by most recent activity (newest first)
+        const aTime = getAgentRecency(a);
+        const bTime = getAgentRecency(b);
+        return bTime - aTime;
       });
   });
 
@@ -297,6 +305,7 @@
     {@const children = getDelegatedChildren(agent.id)}
     {#if children.length > 0}
       {@const isExpanded = expandedDelegations.has(agent.id)}
+      {@const runningChildCount = children.filter((c) => isAgentRunning(c.id) || c.isStreaming || c.isProcessing).length}
       <div style="padding-left: {(depth + 1) * 26}px;" class="mb-2">
         <!-- Toggle row: avatars preview + count + chevron -->
         <button
@@ -323,7 +332,11 @@
             </div>
           {/if}
           <span class="truncate text-left">
-            {children.length} delegated
+            {#if !isExpanded && runningChildCount > 0}
+              {runningChildCount} / {children.length} delegated running
+            {:else}
+              {children.length} delegated
+            {/if}
           </span>
           <Fa
             icon={faChevronDown}
@@ -334,11 +347,30 @@
           />
         </button>
 
-        <!-- Expanded: show delegated agent cards (flush with toggle) -->
+        <!-- Expanded: show full delegated agent tree (including nested grandchildren) -->
         {#if isExpanded}
           <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
             {@render agentTree(children, 0)}
           </div>
+        {:else}
+          <!-- Collapsed: show only running delegated agents as flat cards -->
+          {@const runningChildren = children.filter((c) => isAgentRunning(c.id) || c.isStreaming || c.isProcessing)}
+          {#if runningChildren.length > 0}
+            <div class="flex flex-col gap-0.5">
+              {#each runningChildren as child (child.id)}
+                <div class="w-full" transition:slide={{ axis: 'y', duration: 150 }}>
+                  <AgentCard
+                    agentId={child.id}
+                    agentName={child.name}
+                    isBackground={isBackgroundAgent(child)}
+                    selected={child.id === selectedAgentId}
+                    depth={0}
+                    onclick={() => handleAgentClick(child.id)}
+                  />
+                </div>
+              {/each}
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}
