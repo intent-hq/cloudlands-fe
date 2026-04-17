@@ -37,7 +37,7 @@
     selectCompletionStatus,
     selectWaitingState,
   } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-  import { resetSubscriptionUI } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { resetSubscriptionUI, requestSubscriptionFetch } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
 
   const logger = createLogger('AgentSubscriptions');
 
@@ -60,6 +60,15 @@
   });
   $effect(() => {
     agentIdStore.set(agentId);
+  });
+
+  // Request an initial fetch of subscription data so the UI is populated
+  // even if no IPC events have arrived yet (e.g. switching to an agent
+  // that is already waiting on delegated agents).
+  $effect(() => {
+    if (workspaceId && agentId) {
+      dispatch(requestSubscriptionFetch(workspaceId, agentId));
+    }
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);

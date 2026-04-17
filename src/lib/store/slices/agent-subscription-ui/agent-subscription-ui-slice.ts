@@ -71,6 +71,13 @@ export const resetSubscriptionUI = createAction<[workspaceId: string, agentId: s
   'agentSubscriptionUI/resetSubscriptionUI',
 );
 
+/** Dispatched by the AgentSubscriptions component to request an initial fetch
+ *  when the component mounts or the agentId changes. The saga handles the
+ *  actual IPC call so no side effects live in the component. */
+export const requestSubscriptionFetch = createAction<[workspaceId: string, agentId: string]>(
+  'agentSubscriptionUI/requestSubscriptionFetch',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------

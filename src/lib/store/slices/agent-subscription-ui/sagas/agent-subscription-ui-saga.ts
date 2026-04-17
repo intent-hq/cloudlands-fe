@@ -24,6 +24,7 @@ import {
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
+  requestSubscriptionFetch,
   makeKey,
 } from '../agent-subscription-ui-slice';
 import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
@@ -357,9 +358,15 @@ export function* retroactiveMountCheckSaga() {
 // Root saga
 // ---------------------------------------------------------------------------
 
+function* handleRequestSubscriptionFetch(action: ReturnType<typeof requestSubscriptionFetch>) {
+  const [wsId, agentId] = action.payload;
+  yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+}
+
 export function* agentSubscriptionUISaga() {
   yield* takeEvery(workspaceMounted, handleWorkspaceMounted);
   yield* takeEvery(workspaceUnmounted, handleWorkspaceUnmounted);
+  yield* takeEvery(requestSubscriptionFetch, handleRequestSubscriptionFetch);
 
   // Check if a workspace is already active (missed the mount action)
   yield* fork(retroactiveMountCheckSaga);

@@ -93,6 +93,7 @@ import {
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
+  requestSubscriptionFetch,
 } from '../agent-subscription-ui-slice';
 
 const WS = 'ws-test';
@@ -104,7 +105,7 @@ describe('agent-subscription-ui-saga', () => {
   });
 
   describe('agentSubscriptionUISaga (root)', () => {
-    it('registers workspace lifecycle watchers and forks retroactive check', () => {
+    it('registers workspace lifecycle watchers, requestSubscriptionFetch, and forks retroactive check', () => {
       const iterator = agentSubscriptionUISaga();
 
       // takeEvery workspaceMounted
@@ -121,10 +122,15 @@ describe('agent-subscription-ui-saga', () => {
         sagaEffects.takeEvery(workspaceUnmounted, handleWorkspaceUnmounted),
       );
 
-      // fork retroactive mount check
+      // takeEvery requestSubscriptionFetch
       const step3 = iterator.next();
       expect(step3.done).toBe(false);
       expect((step3.value as any)?.type).toBe('FORK');
+
+      // fork retroactive mount check
+      const step4 = iterator.next();
+      expect(step4.done).toBe(false);
+      expect((step4.value as any)?.type).toBe('FORK');
     });
   });
 
