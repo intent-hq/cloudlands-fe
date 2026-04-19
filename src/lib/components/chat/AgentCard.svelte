@@ -12,6 +12,7 @@
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
+  import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$lib/store/slices/line-changes/line-changes-selectors';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -353,13 +354,21 @@
     return selectSpecialistName.select(getReduxStore().getState(), specialist);
   });
 
-  // Show streaming content if actively streaming, otherwise show last response
+  // Show streaming content if actively streaming, otherwise show last response.
+  // When actively streaming, prefer the live text buffer so we reflect
+  // character-by-character progress. Tool previews (lastToolUse) only kick in
+  // when there's no meaningful text to show.
   const lastResponse = $derived.by(() => {
     if (isStreamActive && streamingBuffer) {
-      return getLastMeaningfulLine(streamingBuffer);
+      const line = getLastMeaningfulLine(streamingBuffer);
+      if (line) return line;
     }
     return agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : '';
   });
+
+  // Tool-use block to preview when the latest thing the agent did was a tool
+  // call (see agent-peek-utils). Only used when there's no text to display.
+  const lastToolUse = $derived(agentData?.lastToolUse);
 
   const updatedAt = $derived(agent?.updatedAt);
 
@@ -501,7 +510,7 @@
               {effectiveCompletionReport}
             </p>
           </div>
-        {:else if lastUserMsg || lastResponse}
+        {:else if lastUserMsg || lastResponse || lastToolUse}
           <div class="space-y-0.5">
             {#if lastResponse}
               <p
@@ -511,6 +520,14 @@
               >
                 {lastResponse}
               </p>
+            {:else if lastToolUse}
+              <div
+                class="text-sm text-subtle truncate"
+                data-testid="agent-card-preview"
+                transition:slide={{ axis: 'y', duration: 150 }}
+              >
+                <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
+              </div>
             {:else if lastUserMsg}
               <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
                 {lastUserMsg}

@@ -12,6 +12,7 @@
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
+  import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
@@ -163,8 +164,15 @@
         />
         <div class="flex-1 min-w-0">
           {#if isCollapsed}
-            <div class="font-medium truncate-end text-subtle">
-              <span class="text-xs italic">{truncatedOneLine}</span>
+            <div class="font-medium truncate-end text-subtle text-xs italic">
+              {#if truncatedOneLine}
+                <span>{truncatedOneLine}</span>
+              {:else if agentData.lastToolUse}
+                <AgentPreviewToolLabel
+                  toolUse={agentData.lastToolUse}
+                  animate={agentData.isResponding}
+                />
+              {/if}
             </div>
           {:else}
             <div class="font-medium text-sm truncate">
@@ -215,6 +223,13 @@
           {#if agentData?.lastResponse}
             <div class="text-xs whitespace-pre-wrap mb-2 line-clamp-3">
               {agentData?.lastResponse}
+            </div>
+          {:else if agentData?.lastToolUse}
+            <div class="text-xs mb-2 line-clamp-3">
+              <AgentPreviewToolLabel
+                toolUse={agentData.lastToolUse}
+                animate={agentData.isResponding}
+              />
             </div>
           {/if}
 

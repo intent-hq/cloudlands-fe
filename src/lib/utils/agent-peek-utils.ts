@@ -5,7 +5,7 @@
  * Used by AgentPeekCard and other components that need to display agent summaries.
  */
 
-import type { AgentSession, AgentMessage, FileOperation } from '$shared/types';
+import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AuggieTextParser } from './auggie-text-parser';
 import { stripGroupTags } from './text-utils';
@@ -18,6 +18,14 @@ export interface AgentPeekData {
   isResponding: boolean;
   lastUserMessage: string;
   lastResponse: string;
+  /**
+   * Latest tool_use block from the most recent assistant message when the
+   * trailing meaningful block is a tool_use (i.e. after ignoring empty text
+   * and tool_result blocks). Set even when the message has earlier text,
+   * in which case `lastResponse` is cleared so consumers render the tool
+   * icon/label preview instead of stale prior text.
+   */
+  lastToolUse?: ToolUseBlock;
   fileChanges: FileOperation[];
   messages: AgentMessage[];
   /** Completion report set via report_to_parent tool */
@@ -37,6 +45,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
   // Extract last user message and last assistant response from messages array
   let lastUserMessage = '';
   let lastResponse = '';
+  let lastToolUse: ToolUseBlock | undefined;
   let digest: string | undefined;
 
   if (agent.messages && agent.messages.length > 0) {
@@ -58,9 +67,17 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
         const extracted = AuggieTextParser.extractDigest(fullText);
         if (extracted.digest) {
           digest = extracted.digest;
-          lastResponse = extracted.cleanedText;
+        }
+
+        // Prefer previewing the latest block. If the assistant most recently
+        // emitted a tool_use, surface it as the preview (consumers render a
+        // proper tool icon) instead of the older text earlier in the message.
+        const latest = getLatestMeaningfulBlock(msg);
+        if (latest && (latest as any).type === 'tool_use') {
+          lastToolUse = latest as ToolUseBlock;
+          lastResponse = '';
         } else {
-          lastResponse = fullText;
+          lastResponse = extracted.digest ? extracted.cleanedText : fullText;
         }
         break;
       }
@@ -79,6 +96,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     isResponding: agent.isProcessing || false,
     lastUserMessage,
     lastResponse,
+    lastToolUse,
     fileChanges: (agent.fileChanges || []).map((fc: any) => ({
       path: fc.path,
       action: fc.type || fc.action || 'modify',
@@ -92,44 +110,39 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
 }
 
 /**
- * Extract text content from a message
- * Handles ContentBlock arrays and includes tool calls when there's no text content
+ * Extract text content from a message. Returns an empty string if the message
+ * has no text blocks (callers can fall back to tool_use previews separately).
  */
 function extractMessageText(msg: AgentMessage): string {
   if (msg.contentBlocks && Array.isArray(msg.contentBlocks)) {
-    // Extract text from content blocks
-    const textContent = stripGroupTags(
+    return stripGroupTags(
       msg.contentBlocks
         .filter((block: any) => block.type === 'text')
         .map((block: any) => block.text || block.content || '')
         .join(' ')
         .trim(),
     );
-
-    // If we have text content, return it
-    if (textContent) {
-      return textContent;
-    }
-
-    // Otherwise, look for tool use blocks and show them
-    const toolUseBlocks = msg.contentBlocks.filter((block: any) => block.type === 'tool_use');
-    if (toolUseBlocks.length > 0) {
-      const lastTool = toolUseBlocks[toolUseBlocks.length - 1];
-      const toolName = lastTool.name || lastTool.toolName || 'tool';
-      return `🔧 ${formatToolName(toolName)}`;
-    }
   }
   return '';
 }
 
 /**
- * Format a tool name for display (snake_case to Title Case)
+ * Return the most recent meaningful content block from a message, preferring
+ * tool_use / non-empty text and skipping tool_result entries. Used to decide
+ * whether the preview should render a tool icon or plain text.
  */
-function formatToolName(name: string): string {
-  return name
-    .replace(/_/g, ' ')
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function getLatestMeaningfulBlock(msg: AgentMessage): unknown {
+  if (!msg.contentBlocks || !Array.isArray(msg.contentBlocks)) return undefined;
+  for (let i = msg.contentBlocks.length - 1; i >= 0; i--) {
+    const block: any = msg.contentBlocks[i];
+    if (block.type === 'tool_use') return block;
+    if (block.type === 'text') {
+      const text = (block.text || block.content || '').trim();
+      if (text) return block;
+    }
+    // tool_result and empty text blocks are skipped
+  }
+  return undefined;
 }
 
 /**

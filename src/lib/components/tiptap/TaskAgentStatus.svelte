@@ -5,12 +5,13 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { AgentStatus, type ContentBlock } from '$shared/types';
+  import { AgentStatus, type ContentBlock, type ToolUseBlock } from '$shared/types';
   import { onMount, onDestroy } from 'svelte';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   
 const logger = createLogger('TaskAgentStatus');
 
@@ -466,55 +467,6 @@ const logger = createLogger('TaskAgentStatus');
     }
   });
 
-  // Helper to get readable tool description
-  interface ToolBlock {
-    name?: string;
-    toolName?: string;
-    input?: Record<string, unknown>;
-  }
-  function getToolDescription(toolBlock: ToolBlock): string {
-    const toolName = toolBlock?.name || toolBlock?.toolName || 'tool';
-    const input = toolBlock?.input || {};
-
-    // Helper to safely get string values from input
-    const getString = (key: string): string | undefined => {
-      const value = input[key];
-      return typeof value === 'string' ? value : undefined;
-    };
-
-    // Create human-readable descriptions for common tools
-    switch (toolName) {
-      case 'view':
-        return getString('path') ? `Viewing ${getString('path')}` : 'Viewing file';
-      case 'str-replace-editor':
-        return getString('path') ? `Editing ${getString('path')}` : 'Editing file';
-      case 'save-file':
-        return getString('path') ? `Saving ${getString('path')}` : 'Saving file';
-      case 'codebase-retrieval':
-        return 'Searching codebase';
-      case 'conversation-retrieval':
-      case 'conversation_retrieval':
-        return 'Searching conversations';
-      case 'launch-process': {
-        const command = getString('command');
-        return command
-          ? `Running: ${command.slice(0, 50)}${command.length > 50 ? '...' : ''}`
-          : 'Running command';
-      }
-      case 'browser_snapshot_Playwright':
-      case 'browser_snapshot':
-        return 'Taking browser snapshot';
-      case 'browser_click_Playwright':
-      case 'browser_click':
-        return getString('element') ? `Clicking ${getString('element')}` : 'Clicking element';
-      case 'browser_navigate_Playwright':
-      case 'browser_navigate':
-        return getString('url') ? `Navigating to ${getString('url')}` : 'Navigating';
-      default:
-        return `Using ${toolName}`;
-    }
-  }
-
   // Determine agent status - defined before latestContent since it depends on this value
   type AgentDisplayStatus = 'streaming' | 'active' | 'complete' | 'error' | 'idle' | 'unknown';
   const agentStatus: AgentDisplayStatus = $derived.by(() => {
@@ -620,15 +572,15 @@ const logger = createLogger('TaskAgentStatus');
             };
           }
 
-          // If no text blocks, check for tool_use blocks and get a readable description
+          // If no text blocks, surface the latest tool_use block so the template
+          // can render the same icon+label UI used in ToolCall.svelte.
           const toolBlocks = msg.contentBlocks.filter(
-            (block: ContentBlock) => block.type === 'tool_use',
+            (block: ContentBlock): block is ToolUseBlock => block.type === 'tool_use',
           );
           if (toolBlocks.length > 0) {
-            // Get the last tool block for the most recent action
             const lastToolBlock = toolBlocks[toolBlocks.length - 1];
             return {
-              text: getToolDescription(lastToolBlock),
+              toolBlock: lastToolBlock,
               isStreaming: agentStatus === 'streaming' || agentStatus === 'active',
             };
           }
@@ -683,7 +635,14 @@ const logger = createLogger('TaskAgentStatus');
         <span class="status-text loading-text">Spinning up...</span>
       {:else if !agent}
         <span class="status-text loading-text">Loading agent...</span>
-      {:else if latestContent}
+      {:else if latestContent?.toolBlock}
+        <span class="status-text">
+          <AgentPreviewToolLabel
+            toolUse={latestContent.toolBlock}
+            animate={latestContent.isStreaming}
+          />
+        </span>
+      {:else if latestContent?.text}
         <span class="status-text">{latestContent.text}</span>
       {:else if agentStatus === 'streaming' || agentStatus === 'active'}
         <span class="status-text">Working...</span>
