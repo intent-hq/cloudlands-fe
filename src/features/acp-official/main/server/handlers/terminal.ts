@@ -54,6 +54,10 @@ export function isLikelyLongRunningCommand(command: string, args?: string[]): st
   return null;
 }
 
+function encodePowerShellCommand(command: string): string {
+  return Buffer.from(command, 'utf16le').toString('base64');
+}
+
 export class TerminalHandler {
   private terminals = new Map<string, Terminal>();
 
@@ -101,13 +105,38 @@ export class TerminalHandler {
       cwd: workingDir,
     });
 
-    // Spawn the process
-    const childProcess = spawn(command, args || [], {
+    const spawnOptions = {
       cwd: workingDir,
       env: processEnv,
-      shell: true,
       windowsHide: true,
-    });
+    };
+
+    const isWindows = process.platform === 'win32';
+    let childProcess: ChildProcess;
+
+    if (isWindows) {
+      const windowsCommand = args?.length
+        ? `& '${command.replace(/'/g, "''")}' ${args.map((arg) => `'${arg.replace(/'/g, "''")}'`).join(' ')}`
+        : `& '${command.replace(/'/g, "''")}'`;
+
+      logger.info('Routing Windows terminal command through -EncodedCommand', {
+        terminalId,
+        command,
+        args,
+      });
+
+      childProcess = spawn(
+        'powershell',
+        ['-NoProfile', '-NoLogo', '-NonInteractive', '-EncodedCommand', encodePowerShellCommand(windowsCommand)],
+        spawnOptions,
+      );
+    } else {
+      // Spawn the process
+      childProcess = spawn(command, args || [], {
+        ...spawnOptions,
+        shell: true,
+      });
+    }
 
     const terminal: Terminal = {
       id: terminalId,
@@ -209,8 +238,6 @@ export class TerminalHandler {
     }
 
     if (!terminal.exitStatus) {
-      // Use killChildProcessTree because terminals are spawned with shell: true,
-      // so child.kill() only kills the shell, not the actual command underneath
       await killChildProcessTree(terminal.process);
       logger.info('Terminal killed', { terminalId });
     }

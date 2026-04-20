@@ -145,9 +145,13 @@ function findValidShell(): string {
   return '/bin/sh';
 }
 
+function encodePowerShellCommand(command: string): string {
+  return Buffer.from(command, 'utf16le').toString('base64');
+}
+
 /**
  * Build shell args based on the detected shell type.
- * - PowerShell/pwsh: -NoProfile -Command
+ * - PowerShell/pwsh: -NoProfile -NoLogo -NonInteractive -EncodedCommand <utf16le-base64>
  * - cmd.exe: /c
  * - /bin/sh: -c (no -l, not reliably supported)
  * - zsh/bash: -l -c (login shell for PATH via nvm/fnm)
@@ -157,7 +161,13 @@ function getShellArgs(shell: string, command: string): string[] {
 
   if (process.platform === 'win32') {
     if (shellBase === 'powershell' || shellBase === 'pwsh') {
-      return ['-NoProfile', '-Command', command];
+      return [
+        '-NoProfile',
+        '-NoLogo',
+        '-NonInteractive',
+        '-EncodedCommand',
+        encodePowerShellCommand(command),
+      ];
     }
     // cmd.exe or other Windows shells
     return ['/c', command];
@@ -407,7 +417,7 @@ export class ScriptProcessManager {
     // Build shell args based on detected shell type
     const shellArgs = getShellArgs(shell, script.command);
 
-    logger.info(`[Scripts] Spawning "${script.name}": ${shell} ${shellArgs.join(' ')}`, {
+    logger.info(`[Scripts] Spawning "${script.name}": ${shell} [command: ${script.command}]`, {
       cwd,
       scriptId: script.id,
       mode: script.mode,
