@@ -4,8 +4,10 @@
  */
 
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
+import type { PullRequestInfo } from '$shared/types';
 import type {
   AgentChangeGroup,
+  PRInfo,
   UIFileChange,
 } from '$lib/components/file-tracking/accept-changes/types';
 
@@ -210,6 +212,111 @@ export function isFileFocused(
   focusedFile: { path: string; staged: boolean } | null,
 ): boolean {
   return focusedFile?.path === path && focusedFile?.staged === staged;
+}
+
+/**
+ * Aggregate PR files from pushed commits.
+ * Deduplicates by path and accumulates additions/deletions across commits.
+ * Commits are sorted oldest-first so newer values accumulate properly.
+ */
+export function aggregatePRFiles(pushedCommits: CommitInfo[]): UIFileChange[] {
+  if (pushedCommits.length === 0) return [];
+
+  const fileMap = new Map<string, { additions: number; deletions: number }>();
+  const sortedCommits = [...pushedCommits].sort((a, b) => a.timestamp - b.timestamp);
+
+  for (const commit of sortedCommits) {
+    for (const file of commit.files ?? []) {
+      const existing = fileMap.get(file.path);
+      if (existing) {
+        fileMap.set(file.path, {
+          additions: existing.additions + (file.additions || 0),
+          deletions: existing.deletions + (file.deletions || 0),
+        });
+      } else {
+        fileMap.set(file.path, {
+          additions: file.additions || 0,
+          deletions: file.deletions || 0,
+        });
+      }
+    }
+  }
+
+  return Array.from(fileMap.entries()).map(([path, stats]) => ({
+    path,
+    additions: stats.additions,
+    deletions: stats.deletions,
+    staged: false,
+  }));
+}
+
+/**
+ * Compute total file-change statistics across unstaged, staged, and committed changes.
+ * Returns { totalFilesChanged, totalAdditions, totalDeletions }.
+ */
+export function computeTotalStats(
+  unstagedChanges: TrackedChange[],
+  stagedChanges: TrackedChange[],
+  allCommits: CommitInfo[],
+): { totalFilesChanged: number; totalAdditions: number; totalDeletions: number } {
+  const uniquePaths = new Set<string>();
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+
+  for (const change of unstagedChanges) {
+    uniquePaths.add(change.relativePath);
+    totalAdditions += change.stats?.additions || 0;
+    totalDeletions += change.stats?.deletions || 0;
+  }
+  for (const change of stagedChanges) {
+    uniquePaths.add(change.relativePath);
+    totalAdditions += change.stats?.additions || 0;
+    totalDeletions += change.stats?.deletions || 0;
+  }
+  for (const commit of allCommits) {
+    for (const file of commit.files || []) {
+      uniquePaths.add(file.path);
+      totalAdditions += file.additions || 0;
+      totalDeletions += file.deletions || 0;
+    }
+  }
+
+  return { totalFilesChanged: uniquePaths.size, totalAdditions, totalDeletions };
+}
+
+/**
+ * Map workspace pull requests to PRInfo[] for display.
+ * Falls back to activePullRequest if workspace.pullRequests is empty.
+ */
+export function mapWorkspacePRs(
+  workspacePRs: PullRequestInfo[] | undefined,
+  activePR: PullRequestInfo | null | undefined,
+  buildPrUrl: (prNumber: number, fallbackUrl?: string) => string,
+  getDisplayTitle: (pr: PullRequestInfo) => string,
+): PRInfo[] {
+  if (workspacePRs && workspacePRs.length > 0) {
+    return workspacePRs.map((pr) => ({
+      number: pr.number,
+      title: getDisplayTitle(pr),
+      url: buildPrUrl(pr.number, pr.url),
+      htmlUrl: buildPrUrl(pr.number, pr.url),
+      status: toPRDisplayStatus(pr.status),
+      createdAt: pr.createdAt,
+      updatedAt: pr.updatedAt,
+    }));
+  }
+  if (activePR) {
+    return [{
+      number: activePR.number,
+      title: getDisplayTitle(activePR),
+      url: buildPrUrl(activePR.number, activePR.url),
+      htmlUrl: buildPrUrl(activePR.number, activePR.url),
+      status: toPRDisplayStatus(activePR.status),
+      createdAt: activePR.createdAt,
+      updatedAt: activePR.updatedAt,
+    }];
+  }
+  return [];
 }
 
 /** Check if an agent group is collapsed. */

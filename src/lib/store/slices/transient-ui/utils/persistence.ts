@@ -84,7 +84,10 @@ export function sanitizePersistedTransientUiState(
     state.acceptChanges.pendingCommitAction = null;
     state.acceptChanges.pendingPRContext = null;
     state.acceptChanges.backgroundOperation = null;
+    state.sidebarChanges.commitWhenReady = false;
     state.sidebarChanges.createPRWhenReady = false;
+    state.sidebarChanges.mergeWhenReady = false;
+    state.sidebarChanges.pendingAutoAction = null;
   }
 
   if (

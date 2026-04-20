@@ -35,6 +35,8 @@ import { workspaceNavigationSaga } from "./slices/workspace-navigation/sagas/wor
 import { workspaceSwitcherSaga } from "./slices/workspace-switcher/sagas/workspace-switcher-saga";
 import { releaseNotesSaga } from "./slices/release-notes/sagas/release-notes-saga";
 import { transientUiSaga } from "./slices/transient-ui/sagas/transient-ui-saga";
+import { acceptChangesStatusSaga } from "./slices/transient-ui/sagas/accept-changes-status-saga";
+import { executorResultSaga } from "./slices/transient-ui/sagas/executor-result-saga";
 import { skillsSaga } from "./slices/skills/sagas/skills-saga";
 import { linearAuthSaga } from "./slices/linear-auth/sagas/linear-auth-saga";
 import { githubAuthSaga } from "./slices/github-auth/sagas/github-auth-saga";
@@ -112,6 +114,8 @@ export const sagas = {
   workspaceSwitcherSaga,
   releaseNotesSaga,
   transientUiSaga,
+  acceptChangesStatusSaga,
+  executorResultSaga,
   skillsSaga,
   githubAuthSaga,
   githubReposSaga,

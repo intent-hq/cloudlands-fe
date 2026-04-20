@@ -51,6 +51,8 @@ export type SagaName =
   | 'workspaceSwitcherSaga'
   | 'releaseNotesSaga'
   | 'transientUiSaga'
+  | 'acceptChangesStatusSaga'
+  | 'executorResultSaga'
   | 'skillsSaga'
   | 'githubAuthSaga'
   | 'githubReposSaga'

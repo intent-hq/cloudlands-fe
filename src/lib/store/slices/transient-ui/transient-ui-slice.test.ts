@@ -12,11 +12,15 @@ import {
   setSidebarActiveTab,
   startBackgroundOperation,
   setTargetBranch,
+  setGitOperationFlag,
+  defaultGitOperationFlags,
   transientUiReducer,
 } from "./transient-ui-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   selectSidebarActiveTab,
+  selectGitOperationFlags,
+  selectGitOperationFlag,
 } from "./transient-ui-selectors";
 
 const WS_1 = "ws-1";
@@ -96,6 +100,54 @@ describe("transientUiReducer", () => {
     expect(state.byWorkspaceId[WS_1].acceptChanges.cachedGitStatusTimestamp).toBe(234_567);
   });
 
+  it("sets a git operation flag", () => {
+    const state = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isPushing", true)
+    );
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations.isPushing).toBe(true);
+    // Other flags remain false
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations.isPulling).toBe(false);
+  });
+
+  it("resets a git operation flag", () => {
+    let state = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isRebasing", true)
+    );
+    state = transientUiReducer(state, setGitOperationFlag(WS_1, "isRebasing", false));
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations.isRebasing).toBe(false);
+  });
+
+  it("scopes git operation flags per workspace", () => {
+    let state = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isPushing", true)
+    );
+    state = transientUiReducer(state, setGitOperationFlag(WS_2, "isPulling", true));
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations.isPushing).toBe(true);
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations.isPulling).toBe(false);
+    expect(state.byWorkspaceId[WS_2].sidebarChanges.gitOperations.isPulling).toBe(true);
+    expect(state.byWorkspaceId[WS_2].sidebarChanges.gitOperations.isPushing).toBe(false);
+  });
+
+  it("clears git operation flags on workspaceUnmounted", () => {
+    let state = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isPushing", true)
+    );
+    state = transientUiReducer(state, setGitOperationFlag(WS_1, "isRebasing", true));
+    const nextState = transientUiReducer(state, workspaceUnmounted(WS_1));
+    expect(nextState.byWorkspaceId[WS_1]).toBeUndefined();
+  });
+
+  it("initializes git operation flags to all false", () => {
+    const state = transientUiReducer(initialState, setSidebarActiveTab(WS_1, "changes"));
+    expect(state.byWorkspaceId[WS_1].sidebarChanges.gitOperations).toEqual(
+      defaultGitOperationFlags
+    );
+  });
+
   it("clears workspace state on workspaceUnmounted", () => {
     let state = transientUiReducer(initialState, setCommitMessage(WS_1, "feat: something"));
     state = transientUiReducer(state, setSidebarActiveTab(WS_1, "files"));
@@ -113,5 +165,32 @@ describe("transientUi selectors", () => {
     const state = mockState();
 
     expect(selectSidebarActiveTab.select(state, WS_1)).toBe("notes");
+  });
+
+  it("selectGitOperationFlags returns all flags", () => {
+    const reducerState = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isPushing", true)
+    );
+    const state = mockState(reducerState);
+    const flags = selectGitOperationFlags.select(state, WS_1);
+    expect(flags.isPushing).toBe(true);
+    expect(flags.isPulling).toBe(false);
+  });
+
+  it("selectGitOperationFlag returns a single flag", () => {
+    const reducerState = transientUiReducer(
+      initialState,
+      setGitOperationFlag(WS_1, "isRefreshingPR", true)
+    );
+    const state = mockState(reducerState);
+    expect(selectGitOperationFlag.select(state, WS_1, "isRefreshingPR")).toBe(true);
+    expect(selectGitOperationFlag.select(state, WS_1, "isPushing")).toBe(false);
+  });
+
+  it("selectGitOperationFlags returns defaults for missing workspace", () => {
+    const state = mockState();
+    const flags = selectGitOperationFlags.select(state, "nonexistent");
+    expect(flags).toEqual(defaultGitOperationFlags);
   });
 });

@@ -83,9 +83,9 @@ describe("transientUiSaga workers", () => {
       done: false,
     });
 
-    // Skip remaining debounced persist takeEvery calls (19 more),
+    // Skip remaining debounced persist takeEvery calls (21 more),
     // persistWorkspaceTransientUi, removeWorkspaceEntity
-    for (let i = 0; i < 21; i += 1) {
+    for (let i = 0; i < 23; i += 1) {
       iterator.next();
     }
 

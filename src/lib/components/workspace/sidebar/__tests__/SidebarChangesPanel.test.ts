@@ -136,9 +136,23 @@ const mockWorkspaceStore = {
 };
 
 const mockSidebarChangesState = {
+  commitWhenReady: false,
   createPRWhenReady: false,
+  mergeWhenReady: false,
+  pendingAutoAction: null as any,
   prDescriptionExecutor: null as any,
   postMergeState: null as any,
+};
+
+const mockAcceptChangesState = {
+  commitMessage: '',
+  prTitle: '',
+  prDescription: '',
+  isAutofillAndCommitting: false,
+  isAutofillAndCreatingPR: false,
+  pendingCommitAction: null as any,
+  pendingPRContext: null as any,
+  backgroundOperation: null as any,
 };
 
 function createReadable<T>(value: T) {
@@ -193,11 +207,56 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   ),
 }));
 
+const mockPostMergeState = {
+  aheadOfTrunk: null as number | null,
+  behindTrunk: 0,
+  hasConflicts: false,
+  isContentMergedToTrunk: false,
+  hasRemote: true,
+  isMergedToTrunk: false,
+  mergeHeadSha: null as string | null,
+  hasResetToTrunk: false,
+};
+
+const mockGitOperationFlags = {
+  isPushing: false,
+  isPulling: false,
+  isForcePushing: false,
+  isRebasing: false,
+  isRefreshingPR: false,
+  isRefreshingGitStatus: false,
+  isResettingToTrunk: false,
+};
+
 vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
   selectSidebarChangesState: Object.assign(
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockSidebarChangesState),
     {
       select: () => mockSidebarChangesState,
+    },
+  ),
+  selectAcceptChangesState: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockAcceptChangesState),
+    {
+      select: () => mockAcceptChangesState,
+    },
+  ),
+  selectPendingAutoAction: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => null),
+    {
+      select: () => null,
+    },
+  ),
+  selectPostMergeState: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
+    {
+      select: () => mockPostMergeState,
+    },
+  ),
+  selectGitOperationFlags: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
+    {
+      select: () => mockGitOperationFlags,
     },
   ),
 }));
@@ -324,8 +383,13 @@ vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => (
 vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
   clearSidebarExecutorStates: vi.fn((...args: any[]) => ({ type: 'transientUi/clearSidebarExecutorStates', payload: args })),
   setPostMergeState: vi.fn((...args: any[]) => ({ type: 'transientUi/setPostMergeState', payload: args })),
+  setSidebarCommitWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarCommitWhenReady', payload: args })),
   setSidebarCreatePRWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarCreatePRWhenReady', payload: args })),
+  setSidebarMergeWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarMergeWhenReady', payload: args })),
+  setPendingAutoAction: vi.fn((...args: any[]) => ({ type: 'transientUi/setPendingAutoAction', payload: args })),
   setSidebarPRExecutorState: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarPRExecutorState', payload: args })),
+  setGitOperationFlag: vi.fn((...args: any[]) => ({ type: 'transientUi/setGitOperationFlag', payload: args })),
+  refreshAcceptChangesStatus: vi.fn((...args: any[]) => ({ type: 'transientUi/refreshAcceptChangesStatus', payload: args })),
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
@@ -484,9 +548,22 @@ async function resetMocks() {
   mockGitState.behind = 0;
   mockGitState.status = null;
   mockWorkspaceStore.findById.mockReturnValue(undefined);
+  mockSidebarChangesState.commitWhenReady = false;
   mockSidebarChangesState.createPRWhenReady = false;
+  mockSidebarChangesState.mergeWhenReady = false;
+  mockSidebarChangesState.pendingAutoAction = null;
   mockSidebarChangesState.prDescriptionExecutor = null;
   mockSidebarChangesState.postMergeState = null;
+
+  // Reset post-merge state
+  mockPostMergeState.aheadOfTrunk = null;
+  mockPostMergeState.behindTrunk = 0;
+  mockPostMergeState.hasConflicts = false;
+  mockPostMergeState.isContentMergedToTrunk = false;
+  mockPostMergeState.hasRemote = true;
+  mockPostMergeState.isMergedToTrunk = false;
+  mockPostMergeState.mergeHeadSha = null;
+  mockPostMergeState.hasResetToTrunk = false;
 
   // Reset mock implementations that individual tests override via mockReturnValue
   const { groupFilesByAgent } = await import(
@@ -1274,14 +1351,12 @@ describe('SidebarChangesPanel', () => {
       expect(container.textContent).toContain('locked.ts');
     });
 
-    it('deferred result restoration from background executor', async () => {
-      const { hasDeferredResults, getDeferredResults } = await import(
-        '$features/agent/deferred-results-cache'
-      );
-      // getDeferredResults returns an array of strings, not objects
-      (hasDeferredResults as Mock).mockReturnValue(true);
-      (getDeferredResults as Mock).mockReturnValue(['Auto-generated commit message']);
-
+    it('deferred result restoration handled by executor-result-saga (not component)', async () => {
+      // Deferred result restoration is now handled by the executor-result-saga,
+      // not by the component directly. The saga dispatches setCommitMessage to Redux,
+      // and the component syncs form fields from the acceptChangesState selector.
+      // This test verifies the component renders without errors when no deferred
+      // results processing happens locally.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const staged = [
         makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
@@ -1294,9 +1369,6 @@ describe('SidebarChangesPanel', () => {
       await waitFor(() => {
         expect(container.textContent).toContain('Staged');
       });
-
-      // Component should have processed deferred results without error
-      expect(hasDeferredResults).toHaveBeenCalled();
     });
 
     it('renders multiple commits in correct order (newest first)', async () => {
@@ -1727,6 +1799,11 @@ describe('SidebarChangesPanel', () => {
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
 
+      // Post-merge state is now read from Redux selector
+      mockPostMergeState.aheadOfTrunk = 3;
+      mockPostMergeState.isContentMergedToTrunk = true;
+      mockPostMergeState.hasRemote = true;
+
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 3,
@@ -1799,6 +1876,10 @@ describe('SidebarChangesPanel', () => {
       // Set ahead to match aheadOfTrunk
       mockGitState.ahead = 2;
 
+      // Post-merge state is now read from Redux selector
+      mockPostMergeState.aheadOfTrunk = 2;
+      mockPostMergeState.hasRemote = true;
+
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 2,
@@ -1829,6 +1910,11 @@ describe('SidebarChangesPanel', () => {
       // NO staged/unstaged changes
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
+
+      // Post-merge state is now read from Redux selector
+      mockPostMergeState.aheadOfTrunk = 3;
+      mockPostMergeState.isContentMergedToTrunk = true;
+      mockPostMergeState.hasRemote = true;
 
       const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ChangeStage, type TrackedChange, type CommitInfo } from '$features/file-tracking/types';
 import type { AgentChangeGroup } from '$lib/components/file-tracking/accept-changes/types';
+import type { PullRequestInfo } from '$shared/types';
 import {
   getBranchNameValidationError,
   constructPrUrl,
@@ -18,6 +19,9 @@ import {
   isFileFocused,
   isAgentGroupCollapsed,
   toUIFileChange,
+  aggregatePRFiles,
+  computeTotalStats,
+  mapWorkspacePRs,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -548,3 +552,134 @@ describe('toUIFileChange', () => {
   });
 });
 
+
+
+// ─── aggregatePRFiles ──────────────────────────────────────────────────────────
+
+describe('aggregatePRFiles', () => {
+  it('returns empty array for empty commits', () => {
+    expect(aggregatePRFiles([])).toEqual([]);
+  });
+
+  it('aggregates files from a single commit', () => {
+    const commits = [
+      makeCommit({ files: [{ path: 'a.ts', additions: 5, deletions: 2 }], timestamp: 100 }),
+    ];
+    const result = aggregatePRFiles(commits);
+    expect(result).toEqual([{ path: 'a.ts', additions: 5, deletions: 2, staged: false }]);
+  });
+
+  it('accumulates additions/deletions across commits for the same file', () => {
+    const commits = [
+      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 5, deletions: 2 }], timestamp: 100 }),
+      makeCommit({ hash: 'b', files: [{ path: 'a.ts', additions: 3, deletions: 1 }], timestamp: 200 }),
+    ];
+    const result = aggregatePRFiles(commits);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ path: 'a.ts', additions: 8, deletions: 3, staged: false });
+  });
+
+  it('handles multiple different files across commits', () => {
+    const commits = [
+      makeCommit({ hash: 'a', files: [{ path: 'a.ts', additions: 1, deletions: 0 }], timestamp: 100 }),
+      makeCommit({ hash: 'b', files: [{ path: 'b.ts', additions: 2, deletions: 1 }], timestamp: 200 }),
+    ];
+    const result = aggregatePRFiles(commits);
+    expect(result).toHaveLength(2);
+    expect(result.find((f) => f.path === 'a.ts')).toEqual({ path: 'a.ts', additions: 1, deletions: 0, staged: false });
+    expect(result.find((f) => f.path === 'b.ts')).toEqual({ path: 'b.ts', additions: 2, deletions: 1, staged: false });
+  });
+
+  it('handles commits with undefined files', () => {
+    const commits = [makeCommit({ files: undefined, timestamp: 100 })];
+    expect(aggregatePRFiles(commits)).toEqual([]);
+  });
+});
+
+// ─── computeTotalStats ─────────────────────────────────────────────────────────
+
+describe('computeTotalStats', () => {
+  it('returns zeros for empty inputs', () => {
+    expect(computeTotalStats([], [], [])).toEqual({
+      totalFilesChanged: 0,
+      totalAdditions: 0,
+      totalDeletions: 0,
+    });
+  });
+
+  it('counts unstaged changes', () => {
+    const unstaged = [
+      makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 5, deletions: 2 } }),
+    ];
+    const result = computeTotalStats(unstaged, [], []);
+    expect(result).toEqual({ totalFilesChanged: 1, totalAdditions: 5, totalDeletions: 2 });
+  });
+
+  it('deduplicates paths across unstaged, staged, and commits', () => {
+    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
+    const staged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 2, deletions: 1 } })];
+    const commits = [
+      makeCommit({ files: [{ path: 'a.ts', additions: 3, deletions: 0 }] }),
+    ];
+    const result = computeTotalStats(unstaged, staged, commits);
+    expect(result.totalFilesChanged).toBe(1); // same file across all
+    expect(result.totalAdditions).toBe(6); // 1+2+3
+    expect(result.totalDeletions).toBe(1);
+  });
+
+  it('counts unique files across sources', () => {
+    const unstaged = [makeTrackedChange({ relativePath: 'a.ts', stats: { additions: 1, deletions: 0 } })];
+    const staged = [makeTrackedChange({ relativePath: 'b.ts', stats: { additions: 1, deletions: 0 } })];
+    const commits = [makeCommit({ files: [{ path: 'c.ts', additions: 1, deletions: 0 }] })];
+    const result = computeTotalStats(unstaged, staged, commits);
+    expect(result.totalFilesChanged).toBe(3);
+  });
+});
+
+// ─── mapWorkspacePRs ───────────────────────────────────────────────────────────
+
+describe('mapWorkspacePRs', () => {
+  const buildUrl = (n: number, fallback?: string) => fallback || `https://github.com/pr/${n}`;
+  const getTitle = (pr: PullRequestInfo) => pr.title;
+
+  function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+    return {
+      id: 'pr-1',
+      number: 1,
+      url: 'https://github.com/pr/1',
+      title: 'Test PR',
+      status: 'open',
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-02',
+      ...overrides,
+    };
+  }
+
+  it('returns empty array when no PRs and no active PR', () => {
+    expect(mapWorkspacePRs(undefined, null, buildUrl, getTitle)).toEqual([]);
+    expect(mapWorkspacePRs([], null, buildUrl, getTitle)).toEqual([]);
+  });
+
+  it('maps workspace PRs when available', () => {
+    const prs = [makePR({ number: 42, title: 'My PR', status: 'open' })];
+    const result = mapWorkspacePRs(prs, null, buildUrl, getTitle);
+    expect(result).toHaveLength(1);
+    expect(result[0].number).toBe(42);
+    expect(result[0].title).toBe('My PR');
+  });
+
+  it('falls back to active PR when workspace PRs are empty', () => {
+    const activePR = makePR({ number: 99, title: 'Active' });
+    const result = mapWorkspacePRs([], activePR, buildUrl, getTitle);
+    expect(result).toHaveLength(1);
+    expect(result[0].number).toBe(99);
+  });
+
+  it('prefers workspace PRs over active PR', () => {
+    const prs = [makePR({ number: 1 })];
+    const activePR = makePR({ number: 99 });
+    const result = mapWorkspacePRs(prs, activePR, buildUrl, getTitle);
+    expect(result).toHaveLength(1);
+    expect(result[0].number).toBe(1);
+  });
+});

@@ -52,9 +52,41 @@ export interface AcceptChangesState {
   cachedGitStatusTimestamp: number | null;
 }
 
+export type GitOperationFlagName =
+  | "isPushing"
+  | "isPulling"
+  | "isForcePushing"
+  | "isRebasing"
+  | "isRefreshingPR"
+  | "isRefreshingGitStatus"
+  | "isResettingToTrunk";
+
+export interface GitOperationFlags {
+  isPushing: boolean;
+  isPulling: boolean;
+  isForcePushing: boolean;
+  isRebasing: boolean;
+  isRefreshingPR: boolean;
+  isRefreshingGitStatus: boolean;
+  isResettingToTrunk: boolean;
+}
+
+export type PendingAutoActionType = "commit" | "create-pr" | "merge" | null;
+
+export interface PendingAutoAction {
+  action: "commit" | "create-pr" | "merge";
+  workspaceId: string;
+  /** For PR auto-create: the target branch from the executor context */
+  targetBranch?: string;
+}
+
 export interface SidebarChangesState {
+  commitWhenReady: boolean;
   createPRWhenReady: boolean;
+  mergeWhenReady: boolean;
+  pendingAutoAction: PendingAutoAction | null;
   postMergeState: PostMergeState | null;
+  gitOperations: GitOperationFlags;
 }
 
 export interface TransientUiWorkspaceState {
@@ -86,10 +118,24 @@ export function createEmptyAcceptChangesState(): AcceptChangesState {
   };
 }
 
+export const defaultGitOperationFlags: GitOperationFlags = {
+  isPushing: false,
+  isPulling: false,
+  isForcePushing: false,
+  isRebasing: false,
+  isRefreshingPR: false,
+  isRefreshingGitStatus: false,
+  isResettingToTrunk: false,
+};
+
 export function createEmptySidebarChangesState(): SidebarChangesState {
   return {
+    commitWhenReady: false,
     createPRWhenReady: false,
+    mergeWhenReady: false,
+    pendingAutoAction: null,
     postMergeState: null,
+    gitOperations: { ...defaultGitOperationFlags },
   };
 }
 
@@ -140,6 +186,15 @@ export const setSidebarActiveTab = createAction<[workspaceId: string, tab: Sideb
 );
 export const setSidebarCreatePRWhenReady = createAction<[workspaceId: string, value: boolean]>(
   "transientUi/setSidebarCreatePRWhenReady"
+);
+export const setSidebarCommitWhenReady = createAction<[workspaceId: string, value: boolean]>(
+  "transientUi/setSidebarCommitWhenReady"
+);
+export const setSidebarMergeWhenReady = createAction<[workspaceId: string, value: boolean]>(
+  "transientUi/setSidebarMergeWhenReady"
+);
+export const setPendingAutoAction = createAction<[workspaceId: string, pendingAutoAction: PendingAutoAction | null]>(
+  "transientUi/setPendingAutoAction"
 );
 export const setPostMergeState = createAction<[workspaceId: string, postMergeState: PostMergeState | null]>(
   "transientUi/setPostMergeState"
@@ -198,6 +253,16 @@ export const setChatDraft = createAction<[workspaceId: string, agentId: string, 
 export const clearChatDraft = createAction<[workspaceId: string, agentId: string]>(
   "transientUi/clearChatDraft"
 );
+export const setGitOperationFlag = createAction<[
+  workspaceId: string,
+  flag: GitOperationFlagName,
+  value: boolean,
+]>("transientUi/setGitOperationFlag");
+
+/** Saga trigger: fetch AcceptChangesClient.getStatus and update post-merge state */
+export const refreshAcceptChangesStatus = createAction<[workspaceId: string]>(
+  "transientUi/refreshAcceptChangesStatus"
+);
 
 
 export const transientUiReducer = createReducer<TransientUiState>(initialState)
@@ -220,6 +285,24 @@ export const transientUiReducer = createReducer<TransientUiState>(initialState)
     updateWorkspaceState(state, workspaceId, (workspaceState) => ({
       ...workspaceState,
       sidebarChanges: { ...workspaceState.sidebarChanges, createPRWhenReady: value },
+    }))
+  )
+  .with(setSidebarCommitWhenReady, (state, { payload: [workspaceId, value] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+      ...workspaceState,
+      sidebarChanges: { ...workspaceState.sidebarChanges, commitWhenReady: value },
+    }))
+  )
+  .with(setSidebarMergeWhenReady, (state, { payload: [workspaceId, value] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+      ...workspaceState,
+      sidebarChanges: { ...workspaceState.sidebarChanges, mergeWhenReady: value },
+    }))
+  )
+  .with(setPendingAutoAction, (state, { payload: [workspaceId, pendingAutoAction] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+      ...workspaceState,
+      sidebarChanges: { ...workspaceState.sidebarChanges, pendingAutoAction },
     }))
   )
   .with(setPostMergeState, (state, { payload: [workspaceId, postMergeState] }) =>
@@ -358,5 +441,17 @@ export const transientUiReducer = createReducer<TransientUiState>(initialState)
       delete chatDrafts[agentId];
       return { ...workspaceState, chatDrafts };
     })
+  )
+  .with(setGitOperationFlag, (state, { payload: [workspaceId, flag, value] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => ({
+      ...workspaceState,
+      sidebarChanges: {
+        ...workspaceState.sidebarChanges,
+        gitOperations: {
+          ...workspaceState.sidebarChanges.gitOperations,
+          [flag]: value,
+        },
+      },
+    }))
   )
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
