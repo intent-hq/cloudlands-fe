@@ -1,16 +1,19 @@
-import * as Sentry from "@sentry/electron/renderer";
-import type { Middleware, UnknownAction } from "redux";
+import type { Middleware } from "redux";
 
+type EventWithBreadcrumbs = { breadcrumbs?: Array<unknown> };
+
+const MAX_BUFFERED_ACTIONS = 500;
 const MAX_SUMMARY_KEYS = 5;
-const MAX_ARRAY_TYPE_SAMPLES = 3;
 
-type BreadcrumbAction = UnknownAction & {
-  payload?: unknown;
-  meta?: unknown;
-  error?: unknown;
-  asyncActionType?: unknown;
-  promise?: unknown;
-};
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PREFIXED_UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+let primary: unknown[] = [];
+let backup: unknown[] = [];
+
+function isUuidLike(value: string): boolean {
+  return UUID_REGEX.test(value) || PREFIXED_UUID_REGEX.test(value);
+}
 
 function getValueKind(value: unknown): string {
   if (value === null) {
@@ -32,53 +35,12 @@ function getValueKind(value: unknown): string {
   return typeof value;
 }
 
-function summarizeValue(value: unknown): Record<string, unknown> | undefined {
-  if (value === undefined) {
-    return undefined;
+function formatValue(value: unknown): string {
+  if (typeof value === "string" && isUuidLike(value)) {
+    return value.slice(-12);
   }
 
-  if (Array.isArray(value)) {
-    return {
-      kind: "array",
-      length: value.length,
-      sampleKinds: [...new Set(value.slice(0, MAX_ARRAY_TYPE_SAMPLES).map(getValueKind))],
-    };
-  }
-
-  if (value instanceof Error) {
-    return {
-      kind: "error",
-      name: value.name,
-    };
-  }
-
-  if (value instanceof Date) {
-    return {
-      kind: "date",
-    };
-  }
-
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-
-    return {
-      kind: "object",
-      keyCount: entries.length,
-      keys: entries.slice(0, MAX_SUMMARY_KEYS).map(([key]) => key),
-      valueKinds: [...new Set(entries.slice(0, MAX_SUMMARY_KEYS).map(([, entryValue]) => getValueKind(entryValue)))],
-    };
-  }
-
-  if (typeof value === "function") {
-    return {
-      kind: "function",
-      name: value.name || "anonymous",
-    };
-  }
-
-  return {
-    kind: typeof value,
-  };
+  return getValueKind(value);
 }
 
 function getActionType(action: unknown): string {
@@ -93,68 +55,110 @@ function getActionType(action: unknown): string {
   return "unknown-action";
 }
 
-function canInspectActionProperties(action: unknown): action is BreadcrumbAction {
-  return action !== null && (typeof action === "object" || typeof action === "function");
+function formatPayload(payload: unknown): string {
+  if (payload === undefined) {
+    return "";
+  }
+
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload) || payload instanceof Error || payload instanceof Date) {
+    return formatValue(payload);
+  }
+
+  const entries = Object.entries(payload as Record<string, unknown>);
+
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const truncated = entries.length > MAX_SUMMARY_KEYS;
+  const visible = entries.slice(0, MAX_SUMMARY_KEYS);
+  const parts = visible.map(([key, value]) => `${key}=${formatValue(value)}`);
+
+  if (truncated) {
+    parts.push("...");
+  }
+
+  return parts.join(", ");
 }
 
-function buildBreadcrumbData(action: unknown, actionType: string): Record<string, unknown> {
-  const data: Record<string, unknown> = {
-    actionType,
-    actionKind: getValueKind(action),
-  };
+function formatAction(action: unknown): string {
+  const actionType = getActionType(action);
 
-  if (action && typeof action === "object") {
-    data.actionKeys = Object.keys(action as Record<string, unknown>).slice(0, MAX_SUMMARY_KEYS);
+  if (action === null || typeof action !== "object") {
+    return `${actionType}: []`;
   }
 
-  if (!canInspectActionProperties(action)) {
-    return data;
+  if (!("payload" in (action as Record<string, unknown>))) {
+    return `${actionType}: []`;
   }
 
-  if (typeof action.asyncActionType === "string") {
-    data.asyncActionType = action.asyncActionType;
-  }
-
-  if ("payload" in action) {
-    data.payload = summarizeValue(action.payload);
-  }
-
-  if ("meta" in action) {
-    data.meta = summarizeValue(action.meta);
-  }
-
-  if ("error" in action) {
-    data.error = summarizeValue(action.error);
-  }
-
-  if ("promise" in action) {
-    const promiseLike = action.promise as PromiseLike<unknown> | null | undefined;
-    data.hasPromise = typeof promiseLike?.then === "function";
-  }
-
-  return data;
+  const payload = (action as { payload?: unknown }).payload;
+  return `${actionType}: [${formatPayload(payload)}]`;
 }
 
 /**
- * Sentry breadcrumbs middleware - records Redux actions as Sentry breadcrumbs.
+ * Flush any buffered Redux actions as a single Sentry breadcrumb.
+ *
+ * Intended to be called from Sentry's `beforeSend` hook. Mutates the outgoing
+ * event by appending a single summarized breadcrumb to `event.breadcrumbs` so
+ * the actions ride along with that specific event (Sentry has already
+ * snapshotted scope breadcrumbs by the time `beforeSend` runs). Buffered raw
+ * actions are summarized into compact strings here (cold path) so only type
+ * labels and truncated UUIDs reach Sentry — raw payload values never do.
+ */
+export function flushReduxActionBreadcrumbs(event: EventWithBreadcrumbs): void {
+  if (primary.length === 0 && backup.length === 0) {
+    return;
+  }
+
+  const raw = backup.concat(primary).slice(-MAX_BUFFERED_ACTIONS);
+  backup = [];
+  primary = [];
+
+  try {
+    const actions = raw.map((a) => formatAction(a));
+    const breadcrumb = {
+      category: "redux.action",
+      level: "info",
+      message: `${actions.length} redux actions`,
+      data: { actions },
+      timestamp: Date.now() / 1000,
+    };
+    if (event.breadcrumbs === undefined) {
+      event.breadcrumbs = [];
+    }
+    event.breadcrumbs.push(breadcrumb);
+  } catch {
+    // Buffers are already cleared above to avoid unbounded growth if formatting throws.
+  }
+}
+
+/** Test-only helper; not for production callers. */
+export function __resetReduxActionBreadcrumbsBufferForTests(): void {
+  primary = [];
+  backup = [];
+}
+
+/**
+ * Sentry breadcrumbs middleware - buffers raw Redux actions in a
+ * double-buffer that retains the last `MAX_BUFFERED_ACTIONS` and flushes them
+ * as a single summarized breadcrumb when `flushReduxActionBreadcrumbs()` is
+ * called (typically from Sentry's `beforeSend` hook). No formatting happens on
+ * the dispatch path.
  */
 export function createSentryBreadcrumbsMiddleware(): Middleware {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   return (_store) => (next) => (action) => {
     try {
-      const actionType = getActionType(action);
-
-      Sentry.addBreadcrumb({
-        category: "redux.action",
-        message: actionType,
-        level: "info",
-        data: buildBreadcrumbData(action, actionType),
-      });
+      primary.push(action);
+      if (primary.length >= MAX_BUFFERED_ACTIONS) {
+        backup = primary;
+        primary = [];
+      }
     } catch {
-      // Never block Redux dispatch if Sentry is unavailable or breadcrumb capture fails.
+      // Never block Redux dispatch if capture fails.
     }
 
     return next(action);
   };
 }
-

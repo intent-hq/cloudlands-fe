@@ -1,6 +1,7 @@
 import { logger } from '$shared/logger';
 import type { HandleClientError } from '@sveltejs/kit';
 import { initAnalytics, track, identifyUser } from '$lib/services/analytics';
+import { flushReduxActionBreadcrumbs } from '$lib/store/middlewares/sentry-breadcrumbs';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
 
 // In browser-only mode (no Electron), @sentry/electron/renderer is unavailable.
@@ -113,6 +114,15 @@ async function initSentry() {
             if (shouldFilterSentryException(ex)) {
               return null; // Drop the event
             }
+          }
+          // Attach any buffered Redux action breadcrumbs directly onto the
+          // outgoing event. Called after the filter loop so filtered-null
+          // events do not drain the buffer. Wrapped in try/catch so that
+          // a flush failure cannot prevent the event from being sent.
+          try {
+            flushReduxActionBreadcrumbs(event);
+          } catch {
+            // ignore
           }
           return event;
         },
