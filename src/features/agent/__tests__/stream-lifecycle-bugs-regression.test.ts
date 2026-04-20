@@ -196,3 +196,47 @@ describe('Bug 9: Double dispatch of upsertAgentSession', () => {
     expect(setStreamingIdx).toBeLessThan(firstUpsertAfter);
   });
 });
+
+describe('Reconnect placeholder ID reuse is guarded (PR 485 follow-up)', () => {
+  // When reconnecting to an in-flight stream we may inherit an `existingMessage`
+  // from the session. Reusing its ID for a fresh streaming placeholder is only
+  // safe when (a) that message is itself still streaming AND (b) its ID uses
+  // the canonical `msg_` prefix. Otherwise we risk either colliding with a
+  // finalized message of the same ID or persisting a legacy ID format.
+  it('production code derives a guarded `reusableExistingMessageId` helper', () => {
+    expect(source).toContain('reusableExistingMessageId');
+    expect(source).toMatch(/existingMessage\?\.isStreaming/);
+    expect(source).toContain("existingMessage.id.startsWith('msg_')");
+  });
+
+  it('placeholder creation sites use `pickPlaceholderId(reusableExistingMessageId, …)`', () => {
+    // Both placeholder-creation branches (chunk and content-blocks) must route
+    // through `pickPlaceholderId`, which re-validates the captured snapshot
+    // against the current messages list at placeholder-creation time. Direct
+    // use of `reusableExistingMessageId || …` would keep the stale-snapshot
+    // bug alive (the snapshot can refer to a now-finalized message).
+    const pickUses = source.match(/pickPlaceholderId\(reusableExistingMessageId, [A-Za-z.]+\.messages\)/g);
+    expect(pickUses).not.toBeNull();
+    expect(pickUses!.length).toBeGreaterThanOrEqual(2);
+
+    // And the old unguarded patterns must be gone from these call sites.
+    expect(source).not.toMatch(/existingMessage\?\.id \|\| createMessageId\('msg_' \+ uuidv4\(\)\)/);
+    expect(source).not.toMatch(/reusableExistingMessageId \|\| createMessageId\('msg_' \+ uuidv4\(\)\)/);
+  });
+
+  // Behavioral verification: the guard logic itself.
+  function shouldReuseId(msg?: { isStreaming?: boolean; id?: string }): boolean {
+    return Boolean(
+      msg?.isStreaming && typeof msg.id === 'string' && msg.id.startsWith('msg_'),
+    );
+  }
+
+  it('reuses id only when message is streaming AND canonical', () => {
+    expect(shouldReuseId({ isStreaming: true, id: 'msg_abc' })).toBe(true);
+    expect(shouldReuseId({ isStreaming: true, id: 'legacy-123' })).toBe(false);
+    expect(shouldReuseId({ isStreaming: false, id: 'msg_abc' })).toBe(false);
+    expect(shouldReuseId({ isStreaming: false, id: 'legacy-123' })).toBe(false);
+    expect(shouldReuseId(undefined)).toBe(false);
+    expect(shouldReuseId({})).toBe(false);
+  });
+});

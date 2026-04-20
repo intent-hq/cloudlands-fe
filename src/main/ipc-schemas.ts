@@ -531,6 +531,9 @@ export const AgentBackendStreamMessageSchema = z
     specialist: z.string().optional(),
     specialistName: z.string().optional(), // Display name of the specialist (e.g., "Coordinator")
     roleReminder: z.string().optional(), // Critical constraints reminder for the specialist
+    // Pre-assigned assistant message ID from the renderer so both sides share the same ID.
+    // Must match 'msg_' followed by a UUID (hex + hyphens, 36 chars, case-insensitive).
+    assistantMessageId: z.string().regex(/^msg_[0-9a-f-]{36}$/i).optional(),
   })
   .superRefine((data, ctx) => {
     const hasContent = data.content && data.content.trim().length > 0;

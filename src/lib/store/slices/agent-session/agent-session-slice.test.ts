@@ -19,9 +19,15 @@ import {
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
+  computeMessageContentHash,
+  hasCanonicalId,
+  isTimestampClose,
+  replaceMessageById,
 } from './agent-session-slice';
 import {
+  addAgentMessage,
   removeAgentMessage,
+  replaceAgentMessageById,
   setAgentStreaming,
   upsertAgentSession,
 } from '../workspace-agents/workspace-agents-slice';
@@ -42,6 +48,11 @@ import {
 
 function makeMessage(id: string, role: 'user' | 'assistant' = 'user'): AgentMessage {
   return { id, role, timestamp: '2024-01-01T00:00:00.000Z' };
+}
+
+/** Like makeMessage but with unique content so content-hash dedup doesn't collapse them. */
+function makeUniqueMessage(id: string, role: 'user' | 'assistant' = 'user', timestamp = '2024-01-01T00:00:00.000Z'): AgentMessage {
+  return { id, role, timestamp, contentBlocks: [{ type: 'text' as const, text: `content-${id}` }] };
 }
 
 function makeSession(
@@ -428,7 +439,7 @@ describe('agent-session selectors', () => {
 describe('removeMessage (native action)', () => {
   it('removes a message by ID', () => {
     const session = makeSession('a1', 'ws-1', {
-      messages: [makeMessage('m1'), makeMessage('m2'), makeMessage('m3')],
+      messages: [makeUniqueMessage('m1'), makeUniqueMessage('m2'), makeUniqueMessage('m3')],
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
     state = agentSessionReducer(state, removeMessage('a1', 'm2'));
@@ -454,7 +465,7 @@ describe('removeMessage (native action)', () => {
 describe('removeAgentMessage (cross-slice action)', () => {
   it('atomically removes a message by ID from agent-session state', () => {
     const session = makeSession('a1', 'ws-1', {
-      messages: [makeMessage('m1'), makeMessage('m2')],
+      messages: [makeUniqueMessage('m1'), makeUniqueMessage('m2')],
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
     state = agentSessionReducer(state, removeAgentMessage('ws-1', 'a1', 'm1'));
@@ -594,5 +605,923 @@ describe('upsertAgentSession — preserves isProcessing/isStreaming from placeho
 
     expect(state.byAgentId['a1'].isProcessing).toBeFalsy();
     expect(state.byAgentId['a1'].isStreaming).toBeFalsy();
+  });
+});
+
+
+// ============================================================================
+// Content-hash helper tests
+// ============================================================================
+
+describe('computeMessageContentHash', () => {
+  it('produces the same hash for identical text-block messages regardless of ID', () => {
+    const a: AgentMessage = {
+      id: 'local-uuid-1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello world' }],
+    };
+    const b: AgentMessage = {
+      id: 'msg_backend-uuid-1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:05.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello world' }],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for different roles', () => {
+    const a: AgentMessage = {
+      id: 'a',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello' }],
+    };
+    const b: AgentMessage = {
+      id: 'b',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for different content', () => {
+    const a: AgentMessage = {
+      id: 'a',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello' }],
+    };
+    const b: AgentMessage = {
+      id: 'b',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Goodbye' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('handles tool_use blocks deterministically', () => {
+    const msg: AgentMessage = {
+      id: 'x',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_use', name: 'read_file', input: { path: 'foo.ts' } },
+      ],
+    };
+    const hash1 = computeMessageContentHash(msg);
+    const hash2 = computeMessageContentHash({ ...msg, id: 'y' });
+    expect(hash1).toBe(hash2);
+  });
+
+  it('returns null for messages with no contentBlocks', () => {
+    const msg: AgentMessage = { id: 'x', role: 'assistant', timestamp: '2024-01-01T00:00:00.000Z' };
+    const hash = computeMessageContentHash(msg);
+    expect(hash).toBeNull();
+  });
+});
+
+describe('computeMessageContentHash — media blocks', () => {
+  it('produces a non-null hash for image-only messages', () => {
+    const msg: AgentMessage = {
+      id: 'img1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'base64data', mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(msg)).not.toBeNull();
+  });
+
+  it('produces a non-null hash for audio-only messages', () => {
+    const msg: AgentMessage = {
+      id: 'aud1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: 'audiodata', mimeType: 'audio/mp3', transcript: 'hello' }],
+    };
+    expect(computeMessageContentHash(msg)).not.toBeNull();
+  });
+
+  it('produces a non-null hash for file-only messages', () => {
+    const msg: AgentMessage = {
+      id: 'file1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' }],
+    };
+    expect(computeMessageContentHash(msg)).not.toBeNull();
+  });
+
+  it('produces the same hash for two logically-equal image messages', () => {
+    const a: AgentMessage = {
+      id: 'local-uuid',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'base64data', mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'msg_backend',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'image', data: 'base64data', mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces the same hash for two logically-equal audio messages', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: 'audiodata', mimeType: 'audio/mp3', transcript: 'hi' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'audio', data: 'audiodata', mimeType: 'audio/mp3', transcript: 'hi' }],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces the same hash for two logically-equal file messages', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' }],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for images whose data differs in length', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'short', mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'much-longer-payload', mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for images whose data differs in bytes but has the same length', () => {
+    // A compact payload fingerprint (djb2) is mixed into the hash alongside
+    // mime + length so two distinct same-size images do not collide and cause
+    // content-match dedup to replace the wrong message.
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'BBBB', mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('produces identical hashes for images whose data is byte-identical', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for audio blocks whose data differs in bytes but has the same length', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: 'AAAA', mimeType: 'audio/wav' }],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: 'BBBB', mimeType: 'audio/wav' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('produces different hashes for file blocks whose data differs in bytes but has the same length and name', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'file', data: 'AAAA', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+      ],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'file', data: 'BBBB', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+      ],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  // ---------------------------------------------------------------------
+  // Bounded-cost hash for large media payloads
+  // ---------------------------------------------------------------------
+
+  // Helper: build a deterministic base64-ish payload of exact `len` with a
+  // configurable `marker` at a specific offset so we can vary a single byte.
+  function makePayload(len: number, marker: string, markerOffset: number): string {
+    const base = 'A'.repeat(len);
+    if (markerOffset >= len) return base;
+    return base.slice(0, markerOffset) + marker + base.slice(markerOffset + marker.length);
+  }
+
+  it('distinguishes large same-length payloads that differ near the start', () => {
+    const LEN = 2_000_000; // ~2 MB base64
+    const a: AgentMessage = {
+      id: 'a', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: makePayload(LEN, 'X', 10), mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'b', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: makePayload(LEN, 'Y', 10), mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('distinguishes large same-length payloads that differ near the end', () => {
+    const LEN = 2_000_000;
+    const a: AgentMessage = {
+      id: 'a', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: makePayload(LEN, 'X', LEN - 20), mimeType: 'image/png' }],
+    };
+    const b: AgentMessage = {
+      id: 'b', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'image', data: makePayload(LEN, 'Y', LEN - 20), mimeType: 'image/png' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('distinguishes large same-length payloads that differ across the interior region', () => {
+    // Sampling is intentionally not byte-perfect: a single-byte change at an
+    // arbitrary interior offset may or may not land on a sampled position.
+    // What matters for real-world dedup is that distinct attachments — which
+    // diverge across most of their body — are always distinguished.  Here
+    // both payloads share identical head/tail but differ at *every* interior
+    // character, guaranteeing divergence at every strided interior sample.
+    const LEN = 1_000_000;
+    const EDGE = 128;
+    const head = 'A'.repeat(EDGE);
+    const tail = 'A'.repeat(EDGE);
+    const aInterior = 'X'.repeat(LEN - 2 * EDGE);
+    const bInterior = 'Y'.repeat(LEN - 2 * EDGE);
+    const a: AgentMessage = {
+      id: 'a', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: head + aInterior + tail, mimeType: 'audio/wav' }],
+    };
+    const b: AgentMessage = {
+      id: 'b', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'audio', data: head + bInterior + tail, mimeType: 'audio/wav' }],
+    };
+    expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
+  });
+
+  it('produces a deterministic hash for multi-MB payloads (reducer-safe)', () => {
+    // Sampling is O(1) in payload size by construction; a correctness check
+    // (same input hashes to the same value, back-to-back) is deterministic
+    // and CI-safe.  Timing assertions would be flaky across hardware.
+    const LEN = 5_000_000;
+    const data = 'A'.repeat(LEN);
+    const msg: AgentMessage = {
+      id: 'big', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'file', data, mimeType: 'application/octet-stream', fileName: 'blob.bin' }],
+    };
+    const h1 = computeMessageContentHash(msg);
+    const h2 = computeMessageContentHash(msg);
+    expect(h1).not.toBeNull();
+    expect(h1).toBe(h2);
+  });
+
+  it('produces the same hash for tool_use blocks whose input has different key order', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_use', name: 'search', input: { query: 'hi', limit: 10, nested: { a: 1, b: 2 } } },
+      ],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_use', name: 'search', input: { nested: { b: 2, a: 1 }, limit: 10, query: 'hi' } },
+      ],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('produces the same hash for tool_result blocks whose output has different key order', () => {
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_result', tool_use_id: 't1', output: { ok: true, items: [{ x: 1, y: 2 }] } },
+      ],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_result', tool_use_id: 't1', output: { items: [{ y: 2, x: 1 }], ok: true } },
+      ],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+
+  it('treats undefined object values as absent when hashing tool blocks', () => {
+    // stableStringify must match JSON.stringify's treatment of undefined — keys
+    // with undefined values should be dropped rather than emitted as `...:undefined`
+    // which would produce non-canonical output and break dedup across producers
+    // that omit vs. include optional fields.
+    const a: AgentMessage = {
+      id: 'a1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_use', name: 'search', input: { query: 'hi', extra: undefined } },
+      ],
+    };
+    const b: AgentMessage = {
+      id: 'b1',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [
+        { type: 'tool_use', name: 'search', input: { query: 'hi' } },
+      ],
+    };
+    expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
+  });
+});
+
+describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
+  it('keeps newest messages by timestamp when input exceeds prune limit and is out-of-order', () => {
+    // Create 502 messages. The first 2 (by array position) have the NEWEST timestamps,
+    // and the remaining 500 have older timestamps. With the old sort(prune(dedup(...)))
+    // order, prune would run first on the unsorted list and drop the last 2 by array
+    // position (which are actually old messages — correct by accident in-order, but
+    // wrong when out-of-order). With the fix prune(sort(dedup(...))), sort runs first,
+    // then prune drops the oldest by timestamp.
+    const messages: AgentMessage[] = [];
+    // Two newest messages placed first in the array (out of order)
+    messages.push(makeUniqueMessage('newest-1', 'user', '2025-12-31T23:59:58.000Z'));
+    messages.push(makeUniqueMessage('newest-2', 'user', '2025-12-31T23:59:59.000Z'));
+    // 500 older messages
+    for (let i = 0; i < 500; i++) {
+      const ts = `2024-01-01T${String(Math.floor(i / 3600)).padStart(2, '0')}:${String(Math.floor((i % 3600) / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`;
+      messages.push(makeUniqueMessage(`old-${i}`, 'user', ts));
+    }
+    // Total: 502 messages, exceeds MAX_MESSAGES_PER_AGENT (500)
+
+    const session = makeSession('a1', 'ws-1', { messages });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    const result = state.byAgentId['a1'].messages;
+
+    expect(result).toHaveLength(500);
+    // The two newest messages MUST survive (they should be at the end after sort+prune)
+    const ids = result.map((m) => m.id);
+    expect(ids).toContain('newest-1');
+    expect(ids).toContain('newest-2');
+    // The two oldest messages (old-0 and old-1) should have been pruned
+    expect(ids).not.toContain('old-0');
+    expect(ids).not.toContain('old-1');
+  });
+});
+
+describe('hasCanonicalId', () => {
+  it('returns true for msg_-prefixed IDs', () => {
+    expect(hasCanonicalId('msg_abc-123')).toBe(true);
+  });
+  it('returns false for plain UUIDs', () => {
+    expect(hasCanonicalId('abc-123-def')).toBe(false);
+  });
+});
+
+describe('isTimestampClose', () => {
+  it('returns true when timestamps are within tolerance', () => {
+    expect(isTimestampClose('2024-01-01T00:00:00.000Z', '2024-01-01T00:00:05.000Z')).toBe(true);
+  });
+  it('returns false when timestamps are far apart', () => {
+    expect(isTimestampClose('2024-01-01T00:00:00.000Z', '2024-01-01T01:00:00.000Z')).toBe(false);
+  });
+  it('returns false when first timestamp is undefined (fail-closed)', () => {
+    expect(isTimestampClose(undefined, '2024-01-01T00:00:00.000Z', 30_000)).toBe(false);
+  });
+  it('returns false when second timestamp is undefined (fail-closed)', () => {
+    expect(isTimestampClose('2024-01-01T00:00:00.000Z', undefined, 30_000)).toBe(false);
+  });
+  it('returns false when a timestamp is unparseable (fail-closed)', () => {
+    expect(isTimestampClose('garbage-string', '2024-01-01T00:00:00.000Z', 30_000)).toBe(false);
+  });
+  it('returns true for close timestamps (sanity regression)', () => {
+    expect(isTimestampClose('2026-04-15T10:00:00Z', '2026-04-15T10:00:05Z', 30_000)).toBe(true);
+  });
+  it('returns false for timestamps outside tolerance (out of range)', () => {
+    expect(isTimestampClose('2026-04-15T10:00:00Z', '2026-04-15T11:00:00Z', 30_000)).toBe(false);
+  });
+});
+
+// ============================================================================
+// Content-match dedup in reducers
+// ============================================================================
+
+describe('addMessage content-match dedup', () => {
+  function makeContentMessage(
+    id: string,
+    role: 'user' | 'assistant',
+    text: string,
+    ts: string = '2024-01-01T00:00:00.000Z',
+  ): AgentMessage {
+    return {
+      id,
+      role,
+      timestamp: ts,
+      contentBlocks: [{ type: 'text', text }],
+    };
+  }
+
+  it('replaces local-UUID message with incoming msg_* message when content matches', () => {
+    const localMsg = makeContentMessage('local-uuid', 'assistant', 'Hello world');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    // Should still have exactly 1 message, with the canonical ID
+    expect(state.byAgentId['a1'].messages).toHaveLength(1);
+    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_backend');
+  });
+
+  it('does not replace when content differs', () => {
+    const localMsg = makeContentMessage('local-uuid', 'assistant', 'Hello world');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Goodbye world', '2024-01-01T00:00:02.000Z');
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    // Should have 2 messages (no match)
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+
+  it('does not replace when roles differ', () => {
+    const localMsg = makeContentMessage('local-uuid', 'user', 'Hello world');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+
+  it('does not replace when timestamps are far apart', () => {
+    const localMsg = makeContentMessage('local-uuid', 'assistant', 'Hello world', '2024-01-01T00:00:00.000Z');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T01:00:00.000Z');
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+
+  it('does not replace when incoming ID is not canonical', () => {
+    const localMsg = makeContentMessage('local-uuid-1', 'assistant', 'Hello world');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const otherMsg = makeContentMessage('local-uuid-2', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
+    state = agentSessionReducer(state, addMessage('a1', otherMsg));
+    // Both should remain since the incoming ID isn't canonical
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+});
+
+describe('addAgentMessage (cross-slice) content-match dedup', () => {
+  function makeContentMessage(
+    id: string,
+    role: 'user' | 'assistant',
+    text: string,
+    ts: string = '2024-01-01T00:00:00.000Z',
+  ): AgentMessage {
+    return { id, role, timestamp: ts, contentBlocks: [{ type: 'text', text }] };
+  }
+
+  it('replaces local-UUID message with incoming msg_* message when content matches', () => {
+    const localMsg = makeContentMessage('local-uuid', 'assistant', 'Reply text');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = makeContentMessage('msg_canonical', 'assistant', 'Reply text', '2024-01-01T00:00:03.000Z');
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', backendMsg));
+    expect(state.byAgentId['a1'].messages).toHaveLength(1);
+    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+  });
+});
+
+describe('replaceMessageById', () => {
+  it('replaces a message in-place preserving array position', () => {
+    const msgA: AgentMessage = {
+      id: 'msg_a', role: 'user', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'First' }],
+    };
+    const localB: AgentMessage = {
+      id: 'local-uuid-b', role: 'assistant', timestamp: '2024-01-01T00:00:20.000Z',
+      contentBlocks: [{ type: 'text', text: 'Middle' }],
+    };
+    const msgC: AgentMessage = {
+      id: 'msg_c', role: 'user', timestamp: '2024-01-01T00:00:30.000Z',
+      contentBlocks: [{ type: 'text', text: 'Third' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [msgA, localB, msgC] })));
+    const canonicalB: AgentMessage = {
+      id: 'msg_b_canonical', role: 'assistant', timestamp: '2024-01-01T00:00:20.000Z',
+      contentBlocks: [{ type: 'text', text: 'Middle' }],
+    };
+    state = agentSessionReducer(state, replaceMessageById('a1', 'local-uuid-b', canonicalB));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0].id).toBe('msg_a');
+    expect(msgs[1].id).toBe('msg_b_canonical');
+    expect(msgs[2].id).toBe('msg_c');
+  });
+
+  it('is a no-op when oldId is not found', () => {
+    const msg: AgentMessage = {
+      id: 'msg_a', role: 'user', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [msg] })));
+    const replacement: AgentMessage = {
+      id: 'msg_new', role: 'user', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello' }],
+    };
+    const before = state;
+    state = agentSessionReducer(state, replaceMessageById('a1', 'nonexistent-id', replacement));
+    expect(state).toBe(before);
+  });
+
+  it('preserves position even when new timestamp would sort to end', () => {
+    const m1: AgentMessage = {
+      id: 'msg_m1', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'First' }],
+    };
+    const m2: AgentMessage = {
+      id: 'msg_m2', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Second' }],
+    };
+    const m3: AgentMessage = {
+      id: 'msg_m3', role: 'user', timestamp: '2024-01-01T00:00:20.000Z',
+      contentBlocks: [{ type: 'text', text: 'Third' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [m1, m2, m3] })));
+    const newMsg: AgentMessage = {
+      id: 'msg_new', role: 'assistant', timestamp: '2024-01-01T00:01:40.000Z',
+      contentBlocks: [{ type: 'text', text: 'Second' }],
+    };
+    state = agentSessionReducer(state, replaceMessageById('a1', 'msg_m2', newMsg));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0].id).toBe('msg_m1');
+    expect(msgs[1].id).toBe('msg_new');
+    expect(msgs[2].id).toBe('msg_m3');
+  });
+
+  it('drops a stale duplicate when the replacement ID already exists elsewhere', () => {
+    const local: AgentMessage = {
+      id: 'local-uuid', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Reply' }],
+    };
+    const canonicalAlreadyThere: AgentMessage = {
+      id: 'msg_canonical', role: 'assistant', timestamp: '2024-01-01T00:00:11.000Z',
+      contentBlocks: [{ type: 'text', text: 'Reply' }],
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [local, canonicalAlreadyThere] })),
+    );
+    state = agentSessionReducer(state, replaceMessageById('a1', 'local-uuid', canonicalAlreadyThere));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe('msg_canonical');
+  });
+});
+
+describe('replaceAgentMessageById', () => {
+  it('preserves position even when new timestamp would sort to end', () => {
+    const m1: AgentMessage = {
+      id: 'msg_m1', role: 'user', timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'First' }],
+    };
+    const m2: AgentMessage = {
+      id: 'msg_m2', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Second' }],
+    };
+    const m3: AgentMessage = {
+      id: 'msg_m3', role: 'user', timestamp: '2024-01-01T00:00:20.000Z',
+      contentBlocks: [{ type: 'text', text: 'Third' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [m1, m2, m3] })));
+    const newMsg: AgentMessage = {
+      id: 'msg_new', role: 'assistant', timestamp: '2024-01-01T00:01:40.000Z',
+      contentBlocks: [{ type: 'text', text: 'Second' }],
+    };
+    state = agentSessionReducer(state, replaceAgentMessageById('ws-1', 'a1', 'msg_m2', newMsg));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0].id).toBe('msg_m1');
+    expect(msgs[1].id).toBe('msg_new');
+    expect(msgs[2].id).toBe('msg_m3');
+  });
+
+  it('drops a stale duplicate when the replacement ID already exists elsewhere', () => {
+    const local: AgentMessage = {
+      id: 'local-uuid', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Reply' }],
+    };
+    const canonicalAlreadyThere: AgentMessage = {
+      id: 'msg_canonical', role: 'assistant', timestamp: '2024-01-01T00:00:11.000Z',
+      contentBlocks: [{ type: 'text', text: 'Reply' }],
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [local, canonicalAlreadyThere] })),
+    );
+    state = agentSessionReducer(state, replaceAgentMessageById('ws-1', 'a1', 'local-uuid', canonicalAlreadyThere));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe('msg_canonical');
+  });
+});
+
+describe('deduplicateMessages content-hash tiebreaker', () => {
+  it('collapses content-duplicate messages keeping msg_* ID on upsert', () => {
+    const localMsg: AgentMessage = {
+      id: 'local-uuid',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const canonicalMsg: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    // upsertSession runs deduplicateMessages internally
+    const session = makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(state.byAgentId['a1'].messages).toHaveLength(1);
+    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+  });
+
+  it('keeps both messages when content differs', () => {
+    const msg1: AgentMessage = {
+      id: 'local-uuid',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'First reply' }],
+    };
+    const msg2: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Second reply' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [msg1, msg2] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+
+  it('collapses multiple non-canonical duplicates when canonical arrives (localA, localB, canonical)', () => {
+    const localA: AgentMessage = {
+      id: 'local-uuid-a',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const localB: AgentMessage = {
+      id: 'local-uuid-b',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const canonical: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [localA, localB, canonical] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(state.byAgentId['a1'].messages).toHaveLength(1);
+    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+  });
+
+  it('does NOT collapse same-text messages when one has a missing timestamp (fail-closed)', () => {
+    const msgA: AgentMessage = {
+      id: 'local-uuid-a',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'thanks' }],
+    };
+    const msgB: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: undefined as unknown as string,
+      contentBlocks: [{ type: 'text', text: 'thanks' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [msgA, msgB] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    // Both must survive — missing timestamp prevents content-hash collapse
+    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+  });
+
+  it('collapses multiple non-canonical duplicates when canonical is first (canonical, localA, localB)', () => {
+    const canonical: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const localA: AgentMessage = {
+      id: 'local-uuid-a',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const localB: AgentMessage = {
+      id: 'local-uuid-b',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [canonical, localA, localB] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(state.byAgentId['a1'].messages).toHaveLength(1);
+    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+  });
+});
+
+// ===========================================================================
+// Part C: Timestamp sort and content dedup on session load
+// ===========================================================================
+
+describe('sortMessagesByTimestamp — messages are ordered after upsert', () => {
+  it('sorts messages by timestamp ascending on upsertSession', () => {
+    const session = makeSession('a1', 'ws-1', {
+      messages: [
+        makeUniqueMessage('m3', 'user', '2024-01-01T00:00:03.000Z'),
+        makeUniqueMessage('m1', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m2', 'user', '2024-01-01T00:00:02.000Z'),
+      ],
+    });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('sorts messages by timestamp ascending on upsertAgentSession', () => {
+    const session = makeSession('a1', 'ws-1', {
+      messages: [
+        makeUniqueMessage('m3', 'user', '2024-01-01T00:00:03.000Z'),
+        makeUniqueMessage('m1', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m2', 'user', '2024-01-01T00:00:02.000Z'),
+      ],
+    });
+    const state = agentSessionReducer(initialState, upsertAgentSession('ws-1', session));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('sorts messages by timestamp ascending on replaceMessages', () => {
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    const messages = [
+      makeUniqueMessage('m3', 'user', '2024-01-01T00:00:03.000Z'),
+      makeUniqueMessage('m1', 'user', '2024-01-01T00:00:01.000Z'),
+      makeUniqueMessage('m2', 'user', '2024-01-01T00:00:02.000Z'),
+    ];
+    state = agentSessionReducer(state, replaceMessages('a1', messages));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('sorts messages by timestamp ascending on bulkUpsertSessions', () => {
+    const session = makeSession('a1', 'ws-1', {
+      messages: [
+        makeUniqueMessage('m3', 'user', '2024-01-01T00:00:03.000Z'),
+        makeUniqueMessage('m1', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m2', 'user', '2024-01-01T00:00:02.000Z'),
+      ],
+    });
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([session]));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('preserves order for messages with equal timestamps (stable sort)', () => {
+    const session = makeSession('a1', 'ws-1', {
+      messages: [
+        makeUniqueMessage('m1', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m2', 'user', '2024-01-01T00:00:01.000Z'),
+        makeUniqueMessage('m3', 'user', '2024-01-01T00:00:01.000Z'),
+      ],
+    });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    const msgs = state.byAgentId['a1'].messages;
+    expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+});
+
+describe('fixture regression: agent-b93c1222-corrupted.json', () => {
+  // Load the corrupted fixture — it has 6 messages total where 2 are content
+  // duplicates of earlier messages with plain-UUID IDs and later timestamps.
+  // After content dedup + sort, we expect 4 unique messages in timestamp order.
+  const fixture = require('../../../../test/fixtures/agent-b93c1222-corrupted.json');
+
+  it('collapses content-duplicate messages and sorts by timestamp', () => {
+    const session: AgentSession = {
+      ...fixture,
+      id: fixture.id as any,
+      workspaceId: fixture.workspaceId as any,
+    };
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    const msgs = state.byAgentId[fixture.id].messages;
+
+    // Should have collapsed from 6 to 4 (2 duplicate pairs removed)
+    expect(msgs).toHaveLength(4);
+
+    // Messages should be in timestamp order
+    for (let i = 1; i < msgs.length; i++) {
+      expect(msgs[i].timestamp >= msgs[i - 1].timestamp).toBe(true);
+    }
+
+    // The canonical msg_*-prefixed IDs should be preserved
+    expect(msgs[0].id).toBe('msg_aaa00001');
+    expect(msgs[1].id).toBe('msg_aaa00002');
+    expect(msgs[2].id).toBe('msg_aaa00003');
+    expect(msgs[3].id).toBe('msg_aaa00004');
+  });
+
+  it('works through bulkUpsertSessions (session-load path)', () => {
+    const session: AgentSession = {
+      ...fixture,
+      id: fixture.id as any,
+      workspaceId: fixture.workspaceId as any,
+    };
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([session]));
+    const msgs = state.byAgentId[fixture.id].messages;
+
+    expect(msgs).toHaveLength(4);
+
+    // Verify timestamp order
+    for (let i = 1; i < msgs.length; i++) {
+      expect(msgs[i].timestamp >= msgs[i - 1].timestamp).toBe(true);
+    }
+  });
+
+  it('works through upsertAgentSession (cross-slice load path)', () => {
+    const session: AgentSession = {
+      ...fixture,
+      id: fixture.id as any,
+      workspaceId: fixture.workspaceId as any,
+    };
+    const state = agentSessionReducer(
+      initialState,
+      upsertAgentSession(fixture.workspaceId, session),
+    );
+    const msgs = state.byAgentId[fixture.id].messages;
+
+    expect(msgs).toHaveLength(4);
+    expect(msgs.map((m) => m.id)).toEqual([
+      'msg_aaa00001',
+      'msg_aaa00002',
+      'msg_aaa00003',
+      'msg_aaa00004',
+    ]);
   });
 });

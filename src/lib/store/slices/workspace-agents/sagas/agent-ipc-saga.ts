@@ -24,6 +24,7 @@ import {
   setAgentStreaming,
   addAgentMessage,
   removeAgentMessage,
+  replaceAgentMessageById,
   recordAgentCreatedEvent,
   cleanupAgentCreatedEvents,
   triggerBackendStreamReconnect,
@@ -39,6 +40,10 @@ import {
   upsertSession as upsertAgentSessionAction,
   addMessage as addAgentSessionMessage,
   removeMessage as removeAgentSessionMessage,
+  replaceMessageById as replaceAgentSessionMessageById,
+  computeMessageContentHash,
+  hasCanonicalId,
+  isTimestampClose,
 } from "../../agent-session/agent-session-slice";
 
 const logger = createLogger("AgentIpcSaga");
@@ -292,7 +297,8 @@ function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<void> {
   yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
 }
 
-function* handleExistingSessionUpdate(
+/** Exported for testing */
+export function* handleExistingSessionUpdate(
   existingSession: AgentSession, agent: (Partial<AgentSession> & { messages?: AgentMessage[] }) | undefined, agentId: string, workspaceId?: string,
 ): SagaGenerator<void> {
   if (agent) {
@@ -315,13 +321,84 @@ function* handleExistingSessionUpdate(
 
   if (agent?.messages) {
     const existingIds = new Set(existingSession.messages.map((m: AgentMessage) => m.id));
-    const newMsgs = agent.messages.filter((m: AgentMessage) => !existingIds.has(m.id));
-    for (const msg of newMsgs) {
-      const wsId = workspaceId || existingSession.workspaceId;
-      if (wsId) {
-        yield* put(addAgentSessionMessage(agentId, msg));
-        yield* put(addAgentMessage(wsId, agentId, msg));
+
+    // Build a content-hash index of local messages for content-match dedup.
+    // Maps hash → list of indices in existingSession.messages (only non-canonical IDs).
+    // Multiple messages may share the same hash (e.g. content-hash collisions),
+    // so we track all candidates and pick the best match at replacement time.
+    const localHashIndex = new Map<string, number[]>();
+    for (let i = 0; i < existingSession.messages.length; i++) {
+      const m = existingSession.messages[i];
+      if (!hasCanonicalId(m.id)) {
+        const hash = computeMessageContentHash(m);
+        if (hash !== null) {
+          const existing = localHashIndex.get(hash);
+          if (existing) {
+            existing.push(i);
+          } else {
+            localHashIndex.set(hash, [i]);
+          }
+        }
       }
+    }
+
+    for (const msg of agent.messages) {
+      const wsId = workspaceId || existingSession.workspaceId;
+      if (!wsId) continue;
+
+      // Primary guard: exact ID match → skip (already have it)
+      if (existingIds.has(msg.id)) continue;
+
+      // Content-match guard: if the backend message has a canonical `msg_*` ID
+      // and a local message matches by content+role+timestamp, replace the local
+      // copy (to keep the canonical ID) rather than appending a duplicate.
+      if (hasCanonicalId(msg.id)) {
+        const hash = computeMessageContentHash(msg);
+        const candidates = hash !== null ? localHashIndex.get(hash) : undefined;
+        if (candidates && candidates.length > 0) {
+          // Pick the candidate whose timestamp is closest to the canonical message.
+          // This handles hash collisions where multiple local messages share
+          // the same content hash — we match the one most likely to be the
+          // same logical message.
+          let bestIdx = -1;
+          let bestDelta = Infinity;
+          const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : NaN;
+          for (const idx of candidates) {
+            const localMsg = existingSession.messages[idx];
+            if (localMsg.role !== msg.role) continue;
+            if (!isTimestampClose(localMsg.timestamp, msg.timestamp)) continue;
+            const localTime = localMsg.timestamp ? new Date(localMsg.timestamp).getTime() : NaN;
+            const delta = (!isNaN(msgTime) && !isNaN(localTime))
+              ? Math.abs(msgTime - localTime)
+              : 0; // missing timestamps → treat as zero delta (first eligible wins)
+            if (delta < bestDelta) {
+              bestDelta = delta;
+              bestIdx = idx;
+            }
+          }
+          if (bestIdx !== -1) {
+            const localMsg = existingSession.messages[bestIdx];
+            // Replace local copy in-place to preserve array position (no append-to-end).
+            yield* put(replaceAgentSessionMessageById(agentId, localMsg.id, msg));
+            yield* put(replaceAgentMessageById(wsId, agentId, localMsg.id, msg));
+            // Remove the matched index from the candidates list so subsequent
+            // messages don't re-match the same local message.
+            const pos = candidates.indexOf(bestIdx);
+            if (pos !== -1) candidates.splice(pos, 1);
+            if (candidates.length === 0) localHashIndex.delete(hash!);
+            // Track the canonical ID so a duplicate in the same batch is skipped.
+            existingIds.add(msg.id);
+            continue;
+          }
+        }
+      }
+
+      // No match → genuinely new message, append
+      yield* put(addAgentSessionMessage(agentId, msg));
+      yield* put(addAgentMessage(wsId, agentId, msg));
+      // Keep batch-local tracking in sync so later messages in the same
+      // batch don't re-process this one.
+      existingIds.add(msg.id);
     }
   }
 }

@@ -108,11 +108,16 @@ vi.mock("../../workspace/workspace-selectors", () => ({
   selectActiveWorkspaceId: { select: () => "active-ws-id" },
 }));
 
-vi.mock("../../agent-session/agent-session-slice", () => ({
-  upsertSession: vi.fn((s: any) => ({ type: "agentSessions/upsertSession", payload: s })),
-  addMessage: vi.fn((agentId: string, msg: any) => ({ type: "agentSessions/addMessage", payload: [agentId, msg] })),
-  removeMessage: vi.fn((agentId: string, msgId: string) => ({ type: "agentSessions/removeMessage", payload: [agentId, msgId] })),
-}));
+vi.mock("../../agent-session/agent-session-slice", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    upsertSession: vi.fn((s: any) => ({ type: "agentSessions/upsertSession", payload: s })),
+    addMessage: vi.fn((agentId: string, msg: any) => ({ type: "agentSessions/addMessage", payload: [agentId, msg] })),
+    removeMessage: vi.fn((agentId: string, msgId: string) => ({ type: "agentSessions/removeMessage", payload: [agentId, msgId] })),
+    replaceMessageById: vi.fn((agentId: string, oldId: string, newMsg: any) => ({ type: "agentSessions/replaceMessageById", payload: [agentId, oldId, newMsg] })),
+  };
+});
 
 vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromElectronChannel: vi.fn(function* () {}),
@@ -120,8 +125,8 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 }));
 
 // Import after mocks
-import { handleQueueProcessing, handleQueueCancelled } from "./agent-ipc-saga";
-import { setAgentStreaming, removeAgentMessage } from "../workspace-agents-slice";
+import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate } from "./agent-ipc-saga";
+import { setAgentStreaming, removeAgentMessage, addAgentMessage, replaceAgentMessageById } from "../workspace-agents-slice";
 
 const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   id: "agent-1",
@@ -349,5 +354,142 @@ describe("handleQueueCancelled", () => {
 
     // saveSession should be called with the active workspace fallback
     expect(saveSessionMock).toHaveBeenCalledWith("agent-1", "active-ws-id", true);
+  });
+});
+
+
+describe("handleExistingSessionUpdate — content-hash collision", () => {
+  const baseTime = new Date("2025-01-15T12:00:00Z");
+  const makeMsg = (id: string, text: string, offsetMs = 0): AgentMessage => ({
+    id,
+    role: "assistant",
+    contentBlocks: [{ type: "text", text }],
+    timestamp: new Date(baseTime.getTime() + offsetMs).toISOString(),
+    metadata: {},
+  });
+
+  beforeEach(() => {
+    selectState.index = 0;
+    selectState.results = [];
+  });
+
+  it("picks the closest-timestamp local message when multiple share the same content hash", async () => {
+    // Two local messages with identical content but different timestamps.
+    // The canonical message's timestamp is closer to localB.
+    const localA = makeMsg("local-uuid-a", "Hello world", 0);       // T+0
+    const localB = makeMsg("local-uuid-b", "Hello world", 5_000);   // T+5s
+    const canonical = makeMsg("msg_canonical-1", "Hello world", 4_000); // T+4s  (closer to B)
+
+    const session = makeSession({
+      id: "agent-1",
+      workspaceId: "ws-1",
+      messages: [localA, localB],
+    });
+
+    const agent = { messages: [canonical] };
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleExistingSessionUpdate as any,
+      session,
+      agent,
+      "agent-1",
+      "ws-1",
+    ).toPromise();
+
+    // Should replace localB in-place (closer timestamp) with canonical
+    const replaceOps = dispatched.filter((a) => a.type === "agentSessions/replaceMessageById");
+    expect(replaceOps.length).toBe(1);
+    expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-b", canonical]);
+
+    // Workspace-agents store should also get in-place replacement
+    const wsReplace = dispatched.filter((a) => a.type === replaceAgentMessageById.type);
+    expect(wsReplace.length).toBe(1);
+    expect(wsReplace[0].payload).toEqual(["ws-1", "agent-1", "local-uuid-b", canonical]);
+  });
+
+  it("preserves single-match behavior (no regression)", async () => {
+    const local = makeMsg("local-uuid-only", "Single message", 0);
+    const canonical = makeMsg("msg_canonical-2", "Single message", 2_000);
+
+    const session = makeSession({
+      id: "agent-1",
+      workspaceId: "ws-1",
+      messages: [local],
+    });
+
+    const agent = { messages: [canonical] };
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleExistingSessionUpdate as any,
+      session,
+      agent,
+      "agent-1",
+      "ws-1",
+    ).toPromise();
+
+    // Should replace local message in-place with canonical
+    const replaceOps = dispatched.filter((a) => a.type === "agentSessions/replaceMessageById");
+    expect(replaceOps.length).toBe(1);
+    expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-only", canonical]);
+  });
+});
+
+
+describe("handleExistingSessionUpdate — in-place replacement preserves order", () => {
+  const makeMsg = (id: string, text: string, ts: string): AgentMessage => ({
+    id,
+    role: "assistant",
+    contentBlocks: [{ type: "text", text }],
+    timestamp: ts,
+    metadata: {},
+  });
+
+  beforeEach(() => {
+    selectState.index = 0;
+    selectState.results = [];
+  });
+
+  it("replaces local message in-place (not appended to end)", async () => {
+    // Existing session: [msgA@t=10, localB@t=20, msgC@t=30]
+    const msgA = makeMsg("msg_a", "First", "2024-01-01T00:00:10.000Z");
+    const localB = makeMsg("local-uuid-b", "Middle", "2024-01-01T00:00:20.000Z");
+    const msgC = makeMsg("msg_c", "Third", "2024-01-01T00:00:30.000Z");
+
+    const session = makeSession({
+      id: "agent-1",
+      workspaceId: "ws-1",
+      messages: [msgA, localB, msgC],
+    });
+
+    // Canonical message for localB (same content, close timestamp)
+    const canonicalB = makeMsg("msg_b_canonical", "Middle", "2024-01-01T00:00:20.000Z");
+    const agent = { messages: [canonicalB] };
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleExistingSessionUpdate as any,
+      session,
+      agent,
+      "agent-1",
+      "ws-1",
+    ).toPromise();
+
+    // Should dispatch replaceMessageById (in-place), NOT remove+add
+    const replaceOps = dispatched.filter((a) => a.type === "agentSessions/replaceMessageById");
+    expect(replaceOps.length).toBe(1);
+    expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-b", canonicalB]);
+
+    // Should NOT dispatch addMessage (which would append to end)
+    const addOps = dispatched.filter((a) => a.type === "agentSessions/addMessage");
+    expect(addOps.length).toBe(0);
+
+    // Should NOT dispatch removeMessage
+    const removeOps = dispatched.filter((a) => a.type === "agentSessions/removeMessage");
+    expect(removeOps.length).toBe(0);
   });
 });

@@ -1036,6 +1036,7 @@ export class ACPProvider extends BaseAgentProvider {
   private streamingHandler?: ACPProviderStreaming;
   private streamingAgentId?: string; // The agentId used by the streaming handler (may differ from sessionId)
   private isStreaming = false; // Track streaming state
+
   // Store temp file paths for cleanup when agent exits (not on a timer!)
   // These files are needed by auggie for the lifetime of the process
   private tempRulesFilePath?: string;
@@ -1134,6 +1135,9 @@ export class ACPProvider extends BaseAgentProvider {
       processedChunkIds?: Set<string>; // Track processed chunks to avoid duplicates
       completeSent?: boolean; // Track if we've already sent a complete message
       streamGeneration?: number; // Track which generation this stream belongs to
+      /** Pre-assigned assistant message ID from the renderer (Part A of unified ID fix).
+       *  Stored per-session to avoid a race when two streams overlap. */
+      assistantMessageId?: string;
     }
   >();
 
@@ -7371,6 +7375,7 @@ export class ACPProvider extends BaseAgentProvider {
       workspaceId: this.config.workspaceId || 'default',
       workspacePath: this.getEffectiveWorkspacePath(),
       frontendSessionId: options?.frontendSessionId,
+      assistantMessageId: options?.assistantMessageId,
       onChunk: options?.onChunk,
       onContentBlocks: options?.onContentBlocks,
       onComplete: options?.onComplete,
@@ -7519,6 +7524,8 @@ export class ACPProvider extends BaseAgentProvider {
         processedChunkIds: new Set(),
         // Track which generation this stream belongs to - used to reject stale cancelled responses
         streamGeneration: this.streamGeneration,
+        // Per-session assistant message ID — avoids race when two streams overlap
+        assistantMessageId: options?.assistantMessageId,
       });
 
       // Don't register duplicate callbacks - this causes issues with cleanup
@@ -9233,9 +9240,13 @@ export class ACPProvider extends BaseAgentProvider {
         logger.error('Error getting accumulated content on inactivity complete', { error });
       }
 
-      // IMPORTANT: Generate a proper message ID (must start with 'msg_' for Zod validation)
-      // Session IDs (agent-xxx) cannot be used as message IDs
-      const messageId = unifiedIdService.generateMessageId();
+      // Use the pre-assigned assistant message ID from the per-session callbacks map,
+      // so both renderer and backend share the same identity for this message.
+      // Reading from the callbacks struct (keyed by sessionId) instead of an instance
+      // field avoids a race when two streams overlap: the second streamMessage() would
+      // overwrite the instance field before the first's handleStreamCompletion() reads it.
+      // Fall back to generating a fresh ID if none was provided (e.g. backend-initiated messages).
+      const messageId = callbacks.assistantMessageId || unifiedIdService.generateMessageId();
 
       const finalMessage: StreamMessage = {
         id: messageId,

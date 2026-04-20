@@ -45,6 +45,7 @@ import {
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { PendingEventQueue } from './utils/pending-event-queue';
+import { pickPlaceholderId } from './utils/pick-placeholder-id';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
 
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -333,6 +334,24 @@ export function registerStreamHandlerForSession(
     }
   }
 
+  // Only reuse the existing message's ID when it is actively streaming AND has
+  // a canonical backend `msg_` prefix. Reusing a non-streaming (finalized)
+  // message's ID would collide with its finalized entry during session dedup,
+  // and reusing a legacy non-`msg_` ID would persist a stale format that the
+  // backend will never produce for new messages.
+  //
+  // NOTE: this is a snapshot taken at handler-registration time.  Session state
+  // may change before the first placeholder is created (e.g. the message gets
+  // finalized via another code path).  `pickPlaceholderId` re-validates against
+  // the current messages list at placeholder creation time to prevent reusing
+  // an ID that now refers to a finalized entry.
+  const reusableExistingMessageId =
+    existingMessage?.isStreaming &&
+    typeof existingMessage.id === 'string' &&
+    existingMessage.id.startsWith('msg_')
+      ? existingMessage.id
+      : undefined;
+
   let chunkCount = 0;
   let currentStreamId: string | undefined = undefined;
   const handlerSessionId = agentId;
@@ -407,7 +426,12 @@ export function registerStreamHandlerForSession(
           );
           if (!hasStreamingMessage) {
             const assistantMessage: AgentMessage = {
-              id: createMessageId(uuidv4()),
+              // Reuse the existing streaming message's ID only when it is still
+              // streaming and canonical (`msg_` prefix) AND no current message
+              // already carries that ID; otherwise mint a fresh `msg_*` ID to
+              // avoid colliding with a finalized or legacy-ID entry in the
+              // session.
+              id: pickPlaceholderId(reusableExistingMessageId, streamSession.messages),
               role: 'assistant' as const,
               contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
               timestamp: new Date().toISOString(),
@@ -451,7 +475,12 @@ export function registerStreamHandlerForSession(
 
           if (!assistantMessage) {
             assistantMessage = {
-              id: createMessageId(uuidv4()),
+              // Reuse the existing streaming message's ID only when it is still
+              // streaming and canonical (`msg_` prefix) AND no current message
+              // already carries that ID; otherwise mint a fresh `msg_*` ID to
+              // avoid colliding with a finalized or legacy-ID entry in the
+              // session.
+              id: pickPlaceholderId(reusableExistingMessageId, updatedSession.messages),
               role: 'assistant' as const,
               contentBlocks: [],
               timestamp: new Date().toISOString(),
@@ -1063,6 +1092,11 @@ export async function sendMessage(
               allowTruncation: options.resetHistory,
             });
 
+            // Pre-assign the assistant message ID BEFORE the retry boundary
+            // so that retries reuse the same ID instead of minting a new one.
+            // This keeps the renderer's placeholder message and the backend in sync.
+            const assistantMessageId = createMessageId(`msg_${uuidv4()}`);
+
             // --- Retry boundary: only wraps stream setup + backend send ---
             const result = await errorRecovery.executeWithRecovery(
               async () =>
@@ -1108,7 +1142,7 @@ export async function sendMessage(
                     // For follow-up messages, the streaming indicator will appear when the first chunk arrives
                     if (!hasAssistantMessage) {
                       const assistantMessage: AgentMessage = {
-                        id: createMessageId(uuidv4()),
+                        id: assistantMessageId,
                         role: 'assistant',
                         contentBlocks: [{ type: 'text' as const, text: '' }], // Add empty text block
                         timestamp: new Date().toISOString(),
@@ -1274,8 +1308,10 @@ export async function sendMessage(
 
                             if (!hasStreamingMessage) {
                               // Only create initial message structure once
+                              // Reuse the pre-assigned assistantMessageId so renderer
+                              // and backend share the same message identity.
                               const assistantMessage: AgentMessage = {
-                                id: createMessageId(uuidv4()),
+                                id: assistantMessageId,
                                 role: 'assistant' as const,
                                 contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
                                 timestamp: new Date().toISOString(),
@@ -1364,8 +1400,9 @@ export async function sendMessage(
 
                             if (!assistantMessage) {
                               // Create new assistant message with only contentBlocks
+                              // Reuse the pre-assigned assistantMessageId for consistency.
                               assistantMessage = {
-                                id: createMessageId(uuidv4()),
+                                id: assistantMessageId,
                                 role: 'assistant' as const,
                                 contentBlocks: [], // Initialize contentBlocks array
                                 timestamp: new Date().toISOString(),
@@ -2121,6 +2158,8 @@ export async function sendMessage(
                         // This handles the case where user selects specialist before sending any messages
                         behaviorPrompt: session.metadata?.behaviorPrompt,
                         specialist: session.metadata?.specialist,
+                        // Pre-assigned assistant message ID so backend uses the same ID as the renderer
+                        assistantMessageId,
                       });
 
                       // Check if the response is in IpcResponse format

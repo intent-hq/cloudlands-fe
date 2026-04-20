@@ -194,6 +194,17 @@ export const removeAgentMessage = createAction<[wsId: string, agentId: string, m
   "workspaceAgents/removeAgentMessage"
 );
 
+/**
+ * Swaps the message at the matched index in place. Does not re-sort or
+ * re-dedup — the caller must ensure the new message is semantically close
+ * enough to the old one (same logical turn) that re-normalization isn't
+ * required. Used by the saga's content-match dedup to preserve canonical-ID
+ * without reordering.
+ */
+export const replaceAgentMessageById = createAction<[wsId: string, agentId: string, oldId: string, newMessage: AgentMessage]>(
+  "workspaceAgents/replaceAgentMessageById"
+);
+
 /** Update an agent's digest field */
 export const updateAgentDigest = createAction<[wsId: string, agentId: string, digest: string | null]>(
   "workspaceAgents/updateAgentDigest"

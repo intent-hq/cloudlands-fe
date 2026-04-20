@@ -8,6 +8,7 @@ import {
   addAgentMessage,
   replaceAgentMessages,
   removeAgentMessage,
+  replaceAgentMessageById,
   updateAgentMessage,
   updateAgentDigest,
   renameAgent,
@@ -82,24 +83,268 @@ function normalizeAgentSession(agent: AgentSession): AgentSession {
 }
 
 // ============================================================================
+// Content-hash helpers (pure, deterministic)
+// ============================================================================
+
+/**
+ * Returns true when the message ID uses the canonical backend prefix (`msg_`).
+ * These IDs are provider-assigned and should be preferred over renderer-generated UUIDs.
+ */
+export function hasCanonicalId(id: string): boolean {
+  return id.startsWith('msg_');
+}
+
+/**
+ * Canonical JSON stringify that sorts object keys recursively so that two
+ * logically-equal values produce byte-identical output regardless of key
+ * insertion order. Used by `computeMessageContentHash` for tool-block
+ * payloads where property order may differ between producers.
+ *
+ * Undefined values are normalized to match standard `JSON.stringify`
+ * semantics: omitted from objects and replaced with `null` in arrays. This
+ * ensures `{a: undefined, b: 1}` and `{b: 1}` produce identical hashes.
+ */
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+}
+
+/**
+ * Fast deterministic non-cryptographic string hash (djb2 variant).
+ * Produces an 8-char hex string.  Pure / serializable / no crypto API.
+ *
+ * This is O(n) in the input length, so callers that may receive very large
+ * strings (e.g., multi-MB base64 payloads) should route through
+ * `sampledPayloadHash` instead of calling this directly.
+ */
+function simpleStringHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0; // h * 33 + c, 32-bit
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Bounded-cost fingerprint for media-block `data` payloads.
+ *
+ * `computeMessageContentHash` runs on the reducer hot path during session
+ * load/merge, so iterating a multi-MB base64 string per image/audio/file
+ * block would risk UI stalls.  Instead of hashing every byte, we sample a
+ * small, fixed-size "signature" of the payload: the first 64 chars, the
+ * last 64 chars, and 8 single chars at evenly-spaced interior offsets.
+ * The signature is hashed with `simpleStringHash`.
+ *
+ * Cost is O(1) in `s.length` once the string exceeds the sampling window,
+ * so attachment size no longer affects reducer time.
+ *
+ * Collision resistance: distinct user attachments almost never share both
+ * their head and tail bytes (base64-encoded media headers and trailers
+ * diverge rapidly), and adding 8 strided interior samples plus the exact
+ * length (included separately in the content-hash string) makes a
+ * cross-attachment false positive astronomically unlikely in practice.
+ */
+function sampledPayloadHash(s: string): string {
+  const len = s.length;
+  // For small strings, sampling buys nothing — just hash the whole thing.
+  const HEAD = 64;
+  const TAIL = 64;
+  const MID_SAMPLES = 8;
+  if (len <= HEAD + TAIL + MID_SAMPLES) return simpleStringHash(s);
+
+  const head = s.slice(0, HEAD);
+  const tail = s.slice(len - TAIL);
+  // Strided interior samples.  Offsets are clamped to the interior region
+  // between HEAD and (len - TAIL) so we never re-sample the head/tail.
+  const interiorStart = HEAD;
+  const interiorEnd = len - TAIL;
+  const interiorLen = interiorEnd - interiorStart;
+  let mid = '';
+  for (let i = 1; i <= MID_SAMPLES; i++) {
+    const offset = interiorStart + Math.floor((i * interiorLen) / (MID_SAMPLES + 1));
+    mid += s.charCodeAt(offset).toString(16);
+  }
+  return simpleStringHash(head + mid + tail);
+}
+
+/**
+ * Compute a stable, deterministic hash string for an AgentMessage based on its
+ * `role` and the text content of its `contentBlocks`.  The hash intentionally
+ * ignores metadata, timestamps, and IDs so that two copies of the same logical
+ * message (one with a local UUID, one with a `msg_*` ID) will produce the same
+ * value.
+ *
+ * Returns `null` when the message has no contentBlocks (or they're all empty),
+ * signalling that content-based dedup should not apply to this message.
+ *
+ * The implementation uses a simple string-concatenation approach that is fast
+ * enough for reducer-time use and is fully serializable (no crypto APIs).
+ * Tool-block payloads use `stableStringify` so key-order variation between
+ * producers does not produce divergent hashes.
+ */
+export function computeMessageContentHash(message: AgentMessage): string | null {
+  const blocks = message.contentBlocks;
+  if (!blocks || blocks.length === 0) return null;
+
+  const role = message.role ?? '';
+  // Collect only the text-bearing content from blocks in order.
+  // Tool-use / tool-result blocks are included via their stringified form so
+  // that messages with identical tool sequences also match.
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (block.type === 'text' || block.type === 'thinking') {
+      parts.push(block.text ?? block.content ?? '');
+    } else if (block.type === 'tool_use') {
+      parts.push(`tool_use:${block.name ?? block.toolName ?? ''}:${stableStringify(block.input ?? {})}`);
+    } else if (block.type === 'tool_result') {
+      parts.push(`tool_result:${block.tool_use_id ?? ''}:${stableStringify(block.output ?? block.content ?? '')}`);
+    } else if (block.type === 'code') {
+      parts.push(`code:${block.language ?? ''}:${block.text ?? block.content ?? ''}`);
+    } else if (block.type === 'image') {
+      // Mime + length + sampled fingerprint of data.  `sampledPayloadHash`
+      // is O(1) in payload size (samples head, tail, and a few strided
+      // interior bytes) so reducer cost stays bounded even for multi-MB
+      // base64 attachments, while still distinguishing distinct payloads.
+      const data = block.data ?? '';
+      parts.push(`image:${block.mimeType ?? ''}:${data.length}:${sampledPayloadHash(data)}`);
+    } else if (block.type === 'audio') {
+      const data = block.data ?? '';
+      parts.push(`audio:${block.mimeType ?? ''}:${data.length}:${sampledPayloadHash(data)}:${block.transcript ?? ''}`);
+    } else if (block.type === 'file') {
+      const data = block.data ?? '';
+      parts.push(`file:${block.mimeType ?? ''}:${block.fileName ?? ''}:${data.length}:${sampledPayloadHash(data)}`);
+    }
+  }
+  const contentStr = parts.join('\n');
+  if (!contentStr) return null; // all blocks were empty
+  return `${role}::${contentStr}`;
+}
+
+/**
+ * Check whether two timestamps are within a tolerance window (default 30 seconds).
+ * Used as a secondary guard to avoid false content-hash matches across
+ * genuinely different turns that happen to have the same text.
+ *
+ * Returns false when either timestamp is missing or unparseable
+ * (fail-closed guard against collapsing distinct messages).
+ */
+export function isTimestampClose(
+  a: string | Date | undefined,
+  b: string | Date | undefined,
+  toleranceMs: number = 30_000,
+): boolean {
+  if (!a || !b) return false; // Missing → fail closed, don't collapse
+  const ta = typeof a === 'string' ? new Date(a).getTime() : a.getTime();
+  const tb = typeof b === 'string' ? new Date(b).getTime() : b.getTime();
+  if (isNaN(ta) || isNaN(tb)) return false; // Unparseable → fail closed
+  return Math.abs(ta - tb) <= toleranceMs;
+}
+
+/**
+ * Find a local message that matches the incoming message by content hash,
+ * role, and timestamp proximity. Returns the index in `messages` or -1.
+ */
+function findContentMatch(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+): number {
+  const incomingHash = computeMessageContentHash(incoming);
+  if (incomingHash === null) return -1; // no content blocks, skip
+  for (let i = 0; i < messages.length; i++) {
+    const existing = messages[i];
+    if (existing.id === incoming.id) continue; // already same ID, skip
+    if (existing.role !== incoming.role) continue;
+    if (computeMessageContentHash(existing) !== incomingHash) continue;
+    if (!isTimestampClose(existing.timestamp, incoming.timestamp)) continue;
+    return i;
+  }
+  return -1;
+}
+
+// ============================================================================
 // Dedup / Prune helpers
 // ============================================================================
 
 function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
   const seen = new Set<string>();
   const result: AgentMessage[] = [];
+
+  // First pass: deduplicate by ID (existing behavior)
   for (const msg of messages) {
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
       result.push(msg);
     }
   }
-  return result;
+
+  // Second pass: content-hash tiebreaker — when two messages have different IDs
+  // but the same content hash, role, and close timestamps, keep the one with
+  // the canonical `msg_*` prefix.
+  // We track *all* indices per hash so that multiple non-canonical duplicates
+  // are all removed when a canonical message arrives (not just the first one).
+  const hashMap = new Map<string, number[]>();
+  const toRemove = new Set<number>();
+  for (let i = 0; i < result.length; i++) {
+    const hash = computeMessageContentHash(result[i]);
+    if (hash === null) continue; // no content blocks, skip
+    const prevIndices = hashMap.get(hash);
+    if (prevIndices !== undefined) {
+      const curr = result[i];
+      const currCanonical = hasCanonicalId(curr.id);
+      let currRemoved = false;
+      for (const prevIdx of prevIndices) {
+        if (toRemove.has(prevIdx)) continue; // already scheduled for removal
+        const prev = result[prevIdx];
+        // Only merge if timestamps are close (same logical message)
+        if (!isTimestampClose(prev.timestamp, curr.timestamp)) continue;
+        // Only collapse when exactly one copy has a canonical `msg_*` ID
+        // (i.e., one is local-UUID and the other is provider-assigned).
+        // If both are canonical or both are non-canonical, keep both.
+        const prevCanonical = hasCanonicalId(prev.id);
+        if (currCanonical && !prevCanonical) {
+          toRemove.add(prevIdx);
+        } else if (prevCanonical && !currCanonical) {
+          toRemove.add(i);
+          currRemoved = true;
+          break; // current is dropped, no need to check other priors
+        }
+        // else: both canonical or both non-canonical → keep both
+      }
+      if (!currRemoved) {
+        prevIndices.push(i);
+      }
+    } else {
+      hashMap.set(hash, [i]);
+    }
+  }
+
+  if (toRemove.size === 0) return result;
+  return result.filter((_, i) => !toRemove.has(i));
 }
 
 function pruneMessages(messages: AgentMessage[]): AgentMessage[] {
   if (messages.length <= MAX_MESSAGES_PER_AGENT) return messages;
   return messages.slice(messages.length - MAX_MESSAGES_PER_AGENT);
+}
+
+/**
+ * Stable sort by timestamp ascending. Normalized timestamps are ISO strings,
+ * so lexicographic comparison is correct. Messages with equal timestamps
+ * preserve their original relative order (V8 Array.sort is stable).
+ */
+function sortMessagesByTimestamp(messages: AgentMessage[]): AgentMessage[] {
+  if (messages.length <= 1) return messages;
+  return [...messages].sort((a, b) => {
+    const tsA = typeof a.timestamp === 'string' ? a.timestamp : (a.timestamp?.toISOString?.() ?? '');
+    const tsB = typeof b.timestamp === 'string' ? b.timestamp : (b.timestamp?.toISOString?.() ?? '');
+    if (tsA < tsB) return -1;
+    if (tsA > tsB) return 1;
+    return 0;
+  });
 }
 
 // ============================================================================
@@ -241,6 +486,21 @@ export const removeMessage = createAction<[agentId: string, messageId: string]>(
   'agentSessions/removeMessage',
 );
 
+/**
+ * Swaps the message at the matched index in place. Does not re-sort or
+ * re-dedup — the caller must ensure the new message is semantically close
+ * enough to the old one (same logical turn) that re-normalization isn't
+ * required. Used by the saga's content-match dedup to preserve canonical-ID
+ * without reordering.
+ *
+ * If a different message already exists with the same ID as `newMessage`
+ * (e.g. the canonical copy was added concurrently), that stale entry is
+ * dropped so the list never contains two messages sharing an ID.
+ */
+export const replaceMessageById = createAction<[agentId: string, oldId: string, newMessage: AgentMessage]>(
+  'agentSessions/replaceMessageById',
+);
+
 /** Non-message field updates */
 export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
   'agentSessions/updateSession',
@@ -281,7 +541,7 @@ export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState)
   .with(upsertSession, (state, { payload: [session] }) => {
     const normalized = normalizeAgentSession(session);
-    const deduped = pruneMessages(deduplicateMessages(normalized.messages || []));
+    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
     const finalSession: AgentSession = { ...normalized, messages: deduped };
     const agentId = String(normalized.id);
     const wsId = String(session.workspaceId);
@@ -326,7 +586,18 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
+    // Primary guard: exact ID match → skip
     if (session.messages.some((m) => m.id === normalizedMsg.id)) return state;
+    // Content-match guard: if the arriving message has a canonical `msg_*` ID
+    // and a local message matches by content, replace the local copy.
+    if (hasCanonicalId(normalizedMsg.id)) {
+      const matchIdx = findContentMatch(session.messages, normalizedMsg);
+      if (matchIdx !== -1 && !hasCanonicalId(session.messages[matchIdx].id)) {
+        const newMessages = [...session.messages];
+        newMessages[matchIdx] = normalizedMsg;
+        return setSession(state, agentId, { ...session, messages: newMessages });
+      }
+    }
     const updated = pruneMessages([...session.messages, normalizedMsg]);
     return setSession(state, agentId, { ...session, messages: updated });
   })
@@ -342,7 +613,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(replaceMessages, (state, { payload: [agentId, messages] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const deduped = pruneMessages(deduplicateMessages(messages.map(normalizeAgentMessage)));
+    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage))));
     return setSession(state, agentId, { ...session, messages: deduped });
   })
   .with(removeMessage, (state, { payload: [agentId, messageId] }) => {
@@ -352,6 +623,19 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     if (filtered.length === session.messages.length) return state;
     return setSession(state, agentId, { ...session, messages: filtered });
   })
+  .with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const idx = session.messages.findIndex((m) => m.id === oldId);
+    if (idx === -1) return state;
+    const normalized = normalizeAgentMessage(newMessage);
+    const swapped = session.messages.map((m, i) => (i === idx ? normalized : m));
+    const newMessages =
+      normalized.id === oldId
+        ? swapped
+        : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
+    return setSession(state, agentId, { ...session, messages: newMessages });
+  })
   .with(updateSession, (state, { payload: [agentId, updates] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
@@ -360,7 +644,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     if (messages && Array.isArray(messages)) {
       merged = {
         ...merged,
-        messages: pruneMessages(deduplicateMessages(messages.map(normalizeAgentMessage))),
+        messages: pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage)))),
       };
     }
     return setSession(state, agentId, merged);
@@ -380,7 +664,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     let next = state;
     for (const session of sessions) {
       const normalized = normalizeAgentSession(session);
-      const deduped = pruneMessages(deduplicateMessages(normalized.messages || []));
+      const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
       const finalSession: AgentSession = { ...normalized, messages: deduped };
       const agentId = String(normalized.id);
       const wsId = String(session.workspaceId);
@@ -422,7 +706,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   // -----------------------------------------------------------------------
   .with(upsertAgentSession, (state, { payload: [, session] }) => {
     const normalized = normalizeAgentSession(session);
-    const deduped = pruneMessages(deduplicateMessages(normalized.messages || []));
+    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
     const finalSession: AgentSession = { ...normalized, messages: deduped };
     const agentId = String(normalized.id);
     const wsId = String(session.workspaceId);
@@ -457,14 +741,25 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
+    // Primary guard: exact ID match → skip
     if (session.messages.some((m) => m.id === normalizedMsg.id)) return state;
+    // Content-match guard: if the arriving message has a canonical `msg_*` ID
+    // and a local message matches by content, replace the local copy.
+    if (hasCanonicalId(normalizedMsg.id)) {
+      const matchIdx = findContentMatch(session.messages, normalizedMsg);
+      if (matchIdx !== -1 && !hasCanonicalId(session.messages[matchIdx].id)) {
+        const newMessages = [...session.messages];
+        newMessages[matchIdx] = normalizedMsg;
+        return setSession(state, agentId, { ...session, messages: newMessages });
+      }
+    }
     const updated = pruneMessages([...session.messages, normalizedMsg]);
     return setSession(state, agentId, { ...session, messages: updated });
   })
   .with(replaceAgentMessages, (state, { payload: [, agentId, messages] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const deduped = pruneMessages(deduplicateMessages(messages.map(normalizeAgentMessage)));
+    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage))));
     return setSession(state, agentId, { ...session, messages: deduped });
   })
   .with(removeAgentMessage, (state, { payload: [, agentId, messageId] }) => {
@@ -473,6 +768,19 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const filtered = session.messages.filter((m) => m.id !== messageId);
     if (filtered.length === session.messages.length) return state;
     return setSession(state, agentId, { ...session, messages: filtered });
+  })
+  .with(replaceAgentMessageById, (state, { payload: [, agentId, oldId, newMessage] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const idx = session.messages.findIndex((m) => m.id === oldId);
+    if (idx === -1) return state;
+    const normalized = normalizeAgentMessage(newMessage);
+    const swapped = session.messages.map((m, i) => (i === idx ? normalized : m));
+    const newMessages =
+      normalized.id === oldId
+        ? swapped
+        : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
+    return setSession(state, agentId, { ...session, messages: newMessages });
   })
   .with(updateAgentMessage, (state, { payload: [, agentId, messageId, updates] }) => {
     const session = getSession(state, agentId);

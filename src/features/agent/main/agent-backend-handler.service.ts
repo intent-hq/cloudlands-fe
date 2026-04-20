@@ -99,6 +99,8 @@ interface SendMessageRequest {
   stdinContext?: string;
   /** Metadata to attach to the message (e.g., source: 'system' for system-initiated messages) */
   messageMetadata?: Record<string, any>;
+  /** Pre-assigned assistant message ID from the renderer so both sides share the same ID */
+  assistantMessageId?: string;
 }
 
 /**
@@ -2948,7 +2950,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
               id:
                 existingStreamingMsgIndex >= 0
                   ? backendSession.messages[existingStreamingMsgIndex].id
-                  : `msg_${uuidv4()}`,
+                  : (request.assistantMessageId || `msg_${uuidv4()}`),
               role: 'assistant' as const,
               contentBlocks: currentContentBlocks,
               timestamp: new Date().toISOString(),
@@ -3089,6 +3091,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       await provider.streamMessage(messagesForAgent, {
         frontendSessionId: request.agentId, // Pass the agentId as frontendSessionId
         stdinContext, // Pass context from contextReferences or request.stdinContext
+        assistantMessageId: request.assistantMessageId, // Pre-assigned from renderer
         onChunk: (chunk: string) => {
           // PERF: Changed from INFO to DEBUG - chunks are very frequent during streaming
           // Only log occasionally at INFO level to avoid log spam
@@ -3363,7 +3366,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // Also set interrupted: true when stopReason is 'cancelled' for persistence
           const wasInterrupted = finishReason === 'cancelled';
           const assistantMessage = {
-            id: providerMessage?.id || `msg_${uuidv4()}`, // Use provider's ID if available
+            // Prefer the renderer's pre-assigned ID so both sides share the same identity.
+            // Fall back to the provider's ID (if available) or a fresh UUID.
+            id: request.assistantMessageId || providerMessage?.id || `msg_${uuidv4()}`,
             role: 'assistant' as const,
             contentBlocks: finalContentBlocks,
             timestamp: new Date().toISOString(),
@@ -3777,6 +3782,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         skipUserMessage: request.skipUserMessage,
         // Pass through queuedMessageId for queued message consistency
         queuedMessageId: request.queuedMessageId,
+        // Pre-assigned assistant message ID from the renderer (Part A of dedup fix)
+        assistantMessageId: request.assistantMessageId,
       };
 
       // Try to send the message first

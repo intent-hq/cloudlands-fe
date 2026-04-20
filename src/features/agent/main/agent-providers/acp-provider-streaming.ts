@@ -166,6 +166,8 @@ export interface StreamingOptions {
   workspaceId: string;
   workspacePath?: string; // Path to the git worktree for file operations
   frontendSessionId?: string;
+  /** Pre-assigned assistant message ID from the renderer (Part A of unified ID fix) */
+  assistantMessageId?: string;
   onChunk?: (chunk: string) => void;
   onContentBlocks?: (blocks: ContentBlock[]) => void;
   onComplete?: (message: any) => void;
@@ -250,9 +252,10 @@ class BackendStreamManager extends EventEmitter {
       throw new Error('agentId is required for startStream');
     }
 
-    // Generate internal streamId for logging/metadata (not used as primary key)
-    // IMPORTANT: Use generateMessageId() to ensure the ID starts with 'msg_' for Zod validation
-    const streamId = unifiedIdService.generateMessageId();
+    // Use the pre-assigned assistant message ID from the renderer when available,
+    // so handleComplete uses the same ID the renderer already created.
+    // Fall back to generating a fresh ID (must start with 'msg_' for Zod validation).
+    const streamId = config.assistantMessageId || unifiedIdService.generateMessageId();
 
     // Clean up any existing session for this agent BEFORE creating a new one
     // This prevents callback/session accumulation across multiple messages
@@ -832,6 +835,7 @@ export class ACPProviderStreaming {
         workspaceId: options.workspaceId,
         workspacePath: options.workspacePath, // Path to git worktree for file operations
         frontendSessionId: options.frontendSessionId,
+        assistantMessageId: options.assistantMessageId, // Pre-assigned from renderer
       },
       options,
     );
