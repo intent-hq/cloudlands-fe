@@ -60,7 +60,6 @@ import {
   sortNodes,
   enrichDirectoriesWithGitStatus,
   countFilesInTree,
-  applyAgentEditsToTree,
   extractWorkspaceId,
   findNodeByPath,
   CACHE_TTL,
@@ -417,11 +416,9 @@ function* initializeFileExplorerSaga(
       type: "directory",
       children,
     };
-    // Apply agent edits
+    // Load agent file edits — selector derives per-node agentEdits from this record
     yield* call(loadAgentFileEditsSaga, wsId);
-    const wsAfterEdits = yield* getWsState(wsId);
-    const withEdits = applyAgentEditsToTree(rootNode, wsAfterEdits.agentFileEdits, workspacePath);
-    yield* put(setRootNode(wsId, withEdits || rootNode));
+    yield* put(setRootNode(wsId, rootNode));
     yield* put(addExpandedPath(wsId, workspacePath));
     yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
   }
@@ -610,9 +607,7 @@ function* handleRefresh(
   };
 
   yield* call(loadAgentFileEditsSaga, wsId);
-  const wsAfterEdits = yield* getWsState(wsId);
-  const withEdits = applyAgentEditsToTree(rootNode, wsAfterEdits.agentFileEdits, ws.workspacePath);
-  yield* put(setRootNode(wsId, withEdits || rootNode));
+  yield* put(setRootNode(wsId, rootNode));
   yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
   yield* put(setFileExplorerLoading(wsId, false));
 

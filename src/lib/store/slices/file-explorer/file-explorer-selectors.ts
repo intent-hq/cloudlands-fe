@@ -1,4 +1,5 @@
 import type { FileNode, FileGitStatus } from "$shared/types";
+import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import { createSelector } from "../../utils/create-selector";
 import { emptyFileExplorerWorkspaceState } from "./file-explorer-slice";
 import type { FileExplorerWorkspaceState, FlattenedFileNode } from "./file-explorer-types";
@@ -93,7 +94,8 @@ export const selectHasExpandedDirectories = createSelector<[wsId: string], boole
 
 /**
  * Computed flattened nodes for virtualized rendering.
- * Depends on rootNode, expandedPaths, loadingPaths, and treeVersion.
+ * Depends on rootNode, expandedPaths, loadingPaths, treeVersion, and agentFileEdits.
+ * Enriches each flattened node with agentEdits derived from ws.agentFileEdits.
  */
 export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFileNode[]>(
   (state, wsId) => {
@@ -103,7 +105,20 @@ export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFile
     if (!ws.rootNode || !ws.rootNode.children) return [];
     const expandedSet = new Set(ws.expandedPaths);
     const loadingSet = new Set(ws.loadingPaths);
-    return flattenVisibleNodes(ws.rootNode.children, expandedSet, loadingSet);
+    const flattened = flattenVisibleNodes(ws.rootNode.children, expandedSet, loadingSet);
+    const { agentFileEdits, workspacePath } = ws;
+    return flattened.map((flatNode) => {
+      let relativePath = flatNode.node.path;
+      if (workspacePath) {
+        const stripped = stripWorkspacePrefix(flatNode.node.path, workspacePath);
+        if (stripped !== flatNode.node.path) relativePath = stripped;
+      }
+      const edits = agentFileEdits[relativePath];
+      if (edits && edits.length > 0) {
+        return { ...flatNode, agentEdits: edits };
+      }
+      return flatNode;
+    });
   },
 );
 

@@ -1606,8 +1606,6 @@ export interface FileNode {
   gitStatus?: FileGitStatus;
   /** Whether this file/directory is matched by .gitignore patterns */
   isGitignored?: boolean;
-  /** Agent IDs who recently edited this file (last 3 per agent) */
-  agentEdits?: string[];
 }
 
 // ============================================================================

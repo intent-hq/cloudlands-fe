@@ -13,6 +13,8 @@ export interface FlattenedFileNode {
   isExpanded: boolean;
   /** UI state computed from loadingPaths */
   isLoading: boolean;
+  /** Agent IDs who recently edited this file (derived from ws.agentFileEdits) */
+  agentEdits?: string[];
 }
 
 // ---------------------------------------------------------------------------

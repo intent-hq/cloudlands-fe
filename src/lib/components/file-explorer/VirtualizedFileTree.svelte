@@ -1180,9 +1180,9 @@
                   class=" ml-2"
                 />
               {/if}
-              {#if node.agentEdits && node.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
+              {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
-                  {#each node.agentEdits.slice(0, 3) as agentId (agentId)}
+                  {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
                     <button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"

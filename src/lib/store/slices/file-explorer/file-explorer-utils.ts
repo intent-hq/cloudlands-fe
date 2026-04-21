@@ -143,47 +143,6 @@ export function applyGitStatusToTree(
 }
 
 // ---------------------------------------------------------------------------
-// Agent edits application (pure)
-// ---------------------------------------------------------------------------
-
-export function applyAgentEditsToTree(
-  node: FileNode,
-  agentFileEdits: Record<string, string[]>,
-  workspacePath: string,
-): FileNode {
-  let relativePath = node.path;
-  if (workspacePath) {
-    const stripped = stripWorkspacePrefix(node.path, workspacePath);
-    if (stripped !== node.path) relativePath = stripped;
-  }
-  const edits = agentFileEdits[relativePath];
-  const hasEdits = edits && edits.length > 0;
-  const hasChildren = node.children && node.children.length > 0;
-
-  if (!hasEdits && !hasChildren) return node;
-
-  return {
-    ...node,
-    ...(hasEdits ? { agentEdits: edits } : {}),
-    ...(hasChildren
-      ? {
-          children: node.children!.map((c) =>
-            applyAgentEditsToTree(c, agentFileEdits, workspacePath),
-          ),
-        }
-      : {}),
-  };
-}
-
-export function applyAgentEditsToNodes(
-  nodes: FileNode[],
-  agentFileEdits: Record<string, string[]>,
-  workspacePath: string,
-): FileNode[] {
-  return nodes.map((node) => applyAgentEditsToTree(node, agentFileEdits, workspacePath));
-}
-
-// ---------------------------------------------------------------------------
 // Sort & enrich nodes (pure)
 // ---------------------------------------------------------------------------
 
