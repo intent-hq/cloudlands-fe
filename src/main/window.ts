@@ -137,36 +137,76 @@ export function getWindowSessionsPath(): string {
   return path.join(app.getPath('userData'), 'window-sessions.json');
 }
 
+// In-memory snapshot of the most recent non-empty sessions list. Used as a
+// fallback when saveWindowSessions() is invoked after all windows are already
+// gone (e.g., non-macOS window-all-closed, where BrowserWindow.getAllWindows()
+// returns empty and there is nothing live left to serialize).
+let lastKnownSessions: WindowSession[] | null = null;
+
+function buildSessionsFromOpenWindows(): WindowSession[] {
+  return BrowserWindow.getAllWindows()
+    .filter((w: BrowserWindowType) => {
+      if (w.isDestroyed()) return false;
+      const url = w.webContents.getURL();
+      // Skip windows that haven't loaded yet (about:blank) or have empty URLs
+      if (!url || url === 'about:blank') return false;
+      return true;
+    })
+    .map((w: BrowserWindowType) => {
+      const bounds = w.getBounds();
+      const url = w.webContents.getURL();
+      let route = '/';
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'file:') {
+          // Windows created via WINDOW_CHANNELS.CREATE use file:// with ?initialRoute=
+          const initialRoute = parsed.searchParams.get('initialRoute');
+          route = initialRoute || '/';
+        } else {
+          // For dev (http:) and production (app:): pathname is the route
+          route = parsed.pathname;
+        }
+      } catch {
+        // Fall back to home
+      }
+      return { route, bounds };
+    });
+}
+
+/**
+ * Synchronously capture a snapshot of current window sessions into an
+ * in-memory cache. Intended to be wired to each window's `close` event so the
+ * cache holds the final layout right before the window is destroyed — the
+ * non-macOS window-all-closed path fires after BrowserWindow.getAllWindows()
+ * has already emptied, at which point saveWindowSessions() would otherwise
+ * have nothing to write.
+ */
+export function captureWindowSessionsSnapshot(): void {
+  try {
+    const sessions = buildSessionsFromOpenWindows();
+    if (sessions.length > 0) {
+      lastKnownSessions = sessions;
+    }
+  } catch (err) {
+    logger.warn('Failed to capture window sessions snapshot:', err);
+  }
+}
+
 export async function saveWindowSessions(): Promise<void> {
   try {
-    const allWindows = BrowserWindow.getAllWindows();
-    const sessions: WindowSession[] = allWindows
-      .filter((w: BrowserWindowType) => {
-        if (w.isDestroyed()) return false;
-        const url = w.webContents.getURL();
-        // Skip windows that haven't loaded yet (about:blank) or have empty URLs
-        if (!url || url === 'about:blank') return false;
-        return true;
-      })
-      .map((w: BrowserWindowType) => {
-        const bounds = w.getBounds();
-        const url = w.webContents.getURL();
-        let route = '/';
-        try {
-          const parsed = new URL(url);
-          if (parsed.protocol === 'file:') {
-            // Windows created via WINDOW_CHANNELS.CREATE use file:// with ?initialRoute=
-            const initialRoute = parsed.searchParams.get('initialRoute');
-            route = initialRoute || '/';
-          } else {
-            // For dev (http:) and production (app:): pathname is the route
-            route = parsed.pathname;
-          }
-        } catch {
-          // Fall back to home
-        }
-        return { route, bounds };
+    let sessions = buildSessionsFromOpenWindows();
+
+    if (sessions.length > 0) {
+      // Refresh the cache whenever we have a live non-empty list.
+      lastKnownSessions = sessions;
+    } else if (lastKnownSessions && lastKnownSessions.length > 0) {
+      // No live windows (e.g., non-macOS window-all-closed). Fall back to the
+      // last pre-close snapshot so the latest layout still persists.
+      sessions = lastKnownSessions;
+      logger.info('saveWindowSessions: using last-known snapshot (no live windows)', {
+        count: sessions.length,
       });
+    }
 
     const sessionsPath = getWindowSessionsPath();
     if (sessions.length > 0) {
@@ -179,6 +219,28 @@ export async function saveWindowSessions(): Promise<void> {
   } catch (err) {
     logger.warn('Failed to save window sessions:', err);
   }
+}
+
+/**
+ * Clear the in-memory last-known sessions snapshot.
+ *
+ * Must be called whenever the on-disk sessions file is intentionally discarded
+ * (e.g., macOS manual all-windows-closed, where we delete window-sessions.json
+ * so a later dock-click opens a fresh window). Without this, a subsequent
+ * saveWindowSessions() call — from a pending debounced saver, an auto-update
+ * hook, or any other trigger — would see no live windows, fall back to the
+ * cached snapshot, and resurrect the file the user deliberately cleared.
+ */
+export function clearWindowSessionsSnapshot(): void {
+  lastKnownSessions = null;
+}
+
+/**
+ * Test-only helper: reset the in-memory last-known sessions cache.
+ * Not part of the production API.
+ */
+export function _resetWindowSessionsCacheForTests(): void {
+  clearWindowSessionsSnapshot();
 }
 
 export function isValidWindowSession(s: unknown): s is WindowSession {

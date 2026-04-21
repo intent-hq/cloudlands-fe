@@ -21,6 +21,8 @@ const {
   mockElectronStoreInstance,
   mockFromWebContents,
   createdWssInstances,
+  createdHttpServers,
+  makeMockHttpServer,
 } = vi.hoisted(() => {
   const mockFromWebContents = vi.fn().mockReturnValue(null);
   const mockExpressApp: any = {
@@ -30,6 +32,11 @@ const {
     listen: vi.fn(),
   };
 
+  // Shared spies that aggregate calls across every server instance created
+  // by the factory. Tests configure behavior (mockImplementation) on these
+  // shared spies and every fresh instance delegates through them. Per-instance
+  // identity is preserved separately in `createdHttpServers` so tests can
+  // assert "each failed attempt closed its own server" (T6).
   const mockHttpServer: any = {
     listen: vi.fn(),
     close: vi.fn((cb?: Function) => cb?.()),
@@ -37,6 +44,21 @@ const {
     once: vi.fn(),
     removeListener: vi.fn(),
   };
+
+  const createdHttpServers: any[] = [];
+  function makeMockHttpServer() {
+    const instance: any = {
+      listen: vi.fn((...args: any[]) => (mockHttpServer.listen as any)(...args)),
+      close: vi.fn((...args: any[]) => (mockHttpServer.close as any)(...args)),
+      on: vi.fn((...args: any[]) => (mockHttpServer.on as any)(...args)),
+      once: vi.fn((...args: any[]) => (mockHttpServer.once as any)(...args)),
+      removeListener: vi.fn(
+        (...args: any[]) => (mockHttpServer.removeListener as any)(...args),
+      ),
+    };
+    createdHttpServers.push(instance);
+    return instance;
+  }
 
   const eventHandlers: Record<string, Function[]> = {};
 
@@ -71,6 +93,8 @@ const {
     mockElectronStoreInstance,
     mockFromWebContents,
     createdWssInstances,
+    createdHttpServers,
+    makeMockHttpServer,
   };
 });
 
@@ -83,10 +107,14 @@ vi.mock('express', () => {
 
 vi.mock('http', async (importOriginal) => {
   const actual = await importOriginal() as any;
+  // Each createServer() call returns a *fresh* mock instance so tests can
+  // verify per-attempt teardown (T6). The shared spies on `mockHttpServer`
+  // still receive all calls via delegation, so existing tests that assert
+  // against `mockHttpServer.listen`/`.close` continue to work.
   return {
     ...actual,
-    default: { ...actual, createServer: vi.fn().mockReturnValue(mockHttpServer) },
-    createServer: vi.fn().mockReturnValue(mockHttpServer),
+    default: { ...actual, createServer: vi.fn(() => makeMockHttpServer()) },
+    createServer: vi.fn(() => makeMockHttpServer()),
   };
 });
 
@@ -177,6 +205,7 @@ describe('HttpMcpBridge', () => {
     vi.clearAllMocks();
     clearEventHandlers();
     createdWssInstances.length = 0;
+    createdHttpServers.length = 0;
     // Reset the listen mock to call callback synchronously
     mockHttpServer.listen.mockImplementation((_port: number, _host: string, cb: Function) => {
       cb();
@@ -654,7 +683,9 @@ describe('HttpMcpBridge', () => {
       const stopPromise = bridge.stop();
 
       // start() must return without throwing AND without publishing a server.
-      await expect(startPromise).resolves.toBeUndefined();
+      // It signals the abort via the 'aborted' return value (R2) so callers
+      // like restart() can distinguish "bound successfully" from "bailed out".
+      await expect(startPromise).resolves.toBe('aborted');
       await expect(stopPromise).resolves.toBeUndefined();
       expect((bridge as any).server).toBeNull();
       expect((bridge as any).wss).toBeNull();
@@ -844,38 +875,51 @@ describe('HttpMcpBridge', () => {
     });
 
     it('retries once before declaring unhealthy', async () => {
-      // Let any pending 100ms self-test timers fire before we install the spy
-      // so they don't pollute our call count.
-      await new Promise((r) => setTimeout(r, 120));
-      let call = 0;
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
-        call++;
-        if (call === 1) return Promise.reject(new Error('slow'));
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ status: 'ok' }),
-        } as any);
-      });
+      // T10: deterministic fake-timer advancement instead of racing a
+      // real 120ms sleep to flush the 100ms self-test fetch.
+      vi.useFakeTimers({ shouldAdvanceTime: false });
       try {
-        expect(await bridge.isHealthy()).toBe(true);
-        // At least one retry happened; tolerate an extra self-test fetch.
+        let call = 0;
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+          call++;
+          if (call === 1) return Promise.reject(new Error('slow'));
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ status: 'ok' }),
+          } as any);
+        });
+        // Flush the bridge's 100ms self-test timer so it consumes call #1.
+        await vi.advanceTimersByTimeAsync(120);
+        // Reset the counter so the assertion applies to the real isHealthy.
+        call = 0;
+        const probePromise = bridge.isHealthy();
+        // Advance through the retry backoff (set to 0 above).
+        await vi.advanceTimersByTimeAsync(10);
+        expect(await probePromise).toBe(true);
         expect(call).toBeGreaterThanOrEqual(2);
-      } finally {
         fetchSpy.mockRestore();
+      } finally {
+        vi.useRealTimers();
       }
     });
 
     it('returns false after both probe attempts fail', async () => {
-      await new Promise((r) => setTimeout(r, 120));
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockRejectedValue(new Error('slow'));
+      vi.useFakeTimers({ shouldAdvanceTime: false });
       try {
-        expect(await bridge.isHealthy()).toBe(false);
+        const fetchSpy = vi
+          .spyOn(globalThis, 'fetch')
+          .mockRejectedValue(new Error('slow'));
+        // Flush any pending self-test first.
+        await vi.advanceTimersByTimeAsync(120);
+        const probePromise = bridge.isHealthy();
+        // Advance through the retry backoff.
+        await vi.advanceTimersByTimeAsync(10);
+        expect(await probePromise).toBe(false);
         expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-      } finally {
         fetchSpy.mockRestore();
+      } finally {
+        vi.useRealTimers();
       }
     });
   });
@@ -999,6 +1043,374 @@ describe('HttpMcpBridge', () => {
       const fakeRealWebContents = { id: 999 };
       BrowserWindow.fromWebContents(fakeRealWebContents as any);
       expect(mockFromWebContents).toHaveBeenCalledWith(fakeRealWebContents);
+    });
+  });
+
+  // ── Pre-listen error-handler invariant (T1) ────────────────────────
+  describe('listen-attempt invariants (T1)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it("attaches once('error') before every listen(), including retries", async () => {
+      // Fail the first 2 attempts (same port, backoff), succeed on the 3rd.
+      const errorHandlers: Function[] = [];
+      mockHttpServer.once.mockImplementation((event: string, handler: Function) => {
+        if (event === 'error') errorHandlers.push(handler);
+      });
+      mockHttpServer.removeListener.mockImplementation(
+        (event: string, handler: Function) => {
+          if (event === 'error') {
+            const idx = errorHandlers.indexOf(handler);
+            if (idx >= 0) errorHandlers.splice(idx, 1);
+          }
+        },
+      );
+      let listenCount = 0;
+      mockHttpServer.listen.mockImplementation(
+        (_port: number, _host: string, cb: Function) => {
+          listenCount++;
+          if (listenCount <= 2) {
+            const handler = errorHandlers[errorHandlers.length - 1];
+            setTimeout(() => {
+              const err: any = new Error('EADDRINUSE');
+              err.code = 'EADDRINUSE';
+              handler?.(err);
+            }, 0);
+          } else {
+            cb();
+          }
+        },
+      );
+      mockFindAvailablePort.mockImplementation((p: number) => Promise.resolve(p));
+
+      await bridge.start();
+
+      // Invariant: every time listen was called, a matching once('error')
+      // must have been registered *strictly earlier* on the SAME server
+      // instance. With the per-instance factory, createdHttpServers holds
+      // each fresh server; we check per-instance call order.
+      expect(listenCount).toBeGreaterThanOrEqual(3);
+      for (const inst of createdHttpServers) {
+        const listenOrders: number[] = (inst.listen.mock.invocationCallOrder ?? [])
+          .slice();
+        const onceErrorOrders: number[] = inst.once.mock.calls
+          .map((call: any[], idx: number) =>
+            call[0] === 'error' ? inst.once.mock.invocationCallOrder[idx] : -1,
+          )
+          .filter((n: number) => n > 0);
+        if (listenOrders.length === 0) continue; // skip servers never used
+        const earliestOnceError = Math.min(...onceErrorOrders);
+        const earliestListen = Math.min(...listenOrders);
+        expect(onceErrorOrders.length).toBeGreaterThanOrEqual(1);
+        expect(earliestOnceError).toBeLessThan(earliestListen);
+      }
+    });
+  });
+
+  // ── Per-attempt server/WSS cleanup (T6) ────────────────────────────
+  describe('per-attempt server cleanup (T6)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it('closes the failed server/WSS on each EADDRINUSE and creates a fresh pair for the retry', async () => {
+      const errorHandlers: Function[] = [];
+      mockHttpServer.once.mockImplementation((event: string, handler: Function) => {
+        if (event === 'error') errorHandlers.push(handler);
+      });
+      mockHttpServer.removeListener.mockImplementation(
+        (event: string, handler: Function) => {
+          if (event === 'error') {
+            const idx = errorHandlers.indexOf(handler);
+            if (idx >= 0) errorHandlers.splice(idx, 1);
+          }
+        },
+      );
+      let listenCount = 0;
+      mockHttpServer.listen.mockImplementation(
+        (_port: number, _host: string, cb: Function) => {
+          listenCount++;
+          if (listenCount <= 2) {
+            const handler = errorHandlers[errorHandlers.length - 1];
+            setTimeout(() => {
+              const err: any = new Error('EADDRINUSE');
+              err.code = 'EADDRINUSE';
+              handler?.(err);
+            }, 0);
+          } else {
+            cb();
+          }
+        },
+      );
+      mockFindAvailablePort.mockImplementation((p: number) => Promise.resolve(p));
+
+      await bridge.start();
+
+      // Three listenOnce attempts → three fresh createServer() instances.
+      expect(createdHttpServers.length).toBeGreaterThanOrEqual(3);
+
+      // The two failed server instances must each have had close() called
+      // on their own instance (not just the shared spy). The final (3rd)
+      // one is the currently-bound server — it must NOT have been closed.
+      const failed = createdHttpServers.slice(0, 2);
+      const bound = createdHttpServers[createdHttpServers.length - 1];
+      for (const inst of failed) {
+        expect(inst.close).toHaveBeenCalled();
+      }
+      expect(bound.close).not.toHaveBeenCalled();
+
+      // And: distinct HTTP server instances (retries did not reuse the
+      // failed one). This is the core T6 invariant.
+      expect(failed[0]).not.toBe(bound);
+      expect(failed[1]).not.toBe(bound);
+      expect(failed[0]).not.toBe(failed[1]);
+    });
+  });
+
+  // ── Start pre-check does not mutate this.port (C5) ─────────────────
+  describe('port pre-check isolation (C5)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it('keeps retrying the originally-requested port even when findAvailablePort drifts', async () => {
+      // Simulate findAvailablePort returning a *different* port (9999).
+      // Prior to C5 this mutated this.port and the retry loop then used
+      // 9999 as its startPort, skipping same-port backoff on 5179.
+      mockFindAvailablePort.mockImplementation(() => Promise.resolve(9999));
+
+      const attempted: number[] = [];
+      mockHttpServer.listen.mockImplementation(
+        (port: number, _host: string, cb: Function) => {
+          attempted.push(port);
+          cb();
+        },
+      );
+
+      await bridge.start();
+
+      // First attempt must be on 5179 (the original), not on 9999 that
+      // findAvailablePort returned.
+      expect(attempted[0]).toBe(5179);
+      expect(bridge.getPort()).toBe(5179);
+    });
+  });
+
+  // ── Health probe timeout (T9) ──────────────────────────────────────
+  describe('health probe timeout (T9)', () => {
+    beforeEach(async () => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).healthRetryBackoffMs = 0;
+      await startBridge(bridge);
+      const { __resetCriticalMemoryPressureForTests } = await import('../http-mcp-bridge');
+      __resetCriticalMemoryPressureForTests();
+    });
+
+    it('exports HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS === 5000', async () => {
+      const { HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS } = await import('../http-mcp-bridge');
+      expect(HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS).toBe(5000);
+    });
+
+    it('aborts the health fetch after the 5s timeout (fake timers)', async () => {
+      const { HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS } = await import('../http-mcp-bridge');
+      // Install fake timers AFTER startBridge has completed so the bridge's
+      // internal cleanup interval is already scheduled on real time.
+      vi.useFakeTimers({ shouldAdvanceTime: false });
+
+      // fetch() returns a promise that only settles when the abort signal
+      // fires — mimicking a timed-out request. Each call records its signal.
+      // Only track probe fetches (those carrying an AbortSignal); the bridge
+      // also fires a one-shot self-test fetch from start() at real +100ms that
+      // has no signal and must not be counted here or the abortedCalls.length
+      // assertions below flake when that real-timer callback lands mid-test.
+      const abortedCalls: AbortSignal[] = [];
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation((_url: any, opts: any = {}) => {
+          const signal: AbortSignal | undefined = opts.signal;
+          if (!signal) {
+            // Bridge's start-time self-test fetch — return a benign resolved
+            // response so the self-test chain completes silently.
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ status: 'ok' }),
+            } as any);
+          }
+          abortedCalls.push(signal);
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              const err: any = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          });
+        });
+
+      try {
+        const resultPromise = bridge.isHealthy(HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS);
+        // Let the first probe register its AbortController.setTimeout.
+        await vi.advanceTimersByTimeAsync(1);
+        expect(abortedCalls.length).toBe(1);
+        expect(abortedCalls[0].aborted).toBe(false);
+        // Advance to just before the timeout — signal must NOT have aborted
+        // yet (guards against a too-eager timer).
+        await vi.advanceTimersByTimeAsync(HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS - 2);
+        expect(abortedCalls[0].aborted).toBe(false);
+        // Tripping the timer aborts the signal and kicks off the retry.
+        await vi.advanceTimersByTimeAsync(10);
+        expect(abortedCalls[0].aborted).toBe(true);
+        // Second probe runs; advance past its timeout too.
+        await vi.advanceTimersByTimeAsync(HTTP_MCP_HEALTH_CHECK_TIMEOUT_MS + 10);
+        const result = await resultPromise;
+        expect(result).toBe(false);
+        expect(abortedCalls.length).toBe(2);
+        expect(abortedCalls[1].aborted).toBe(true);
+      } finally {
+        fetchSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // ── External stop during in-flight restart (R1) ────────────────────
+  describe('external stop vs in-flight restart (R1)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it('external stop() fired during restart() prevents restart from re-binding', async () => {
+      await startBridge(bridge);
+
+      // Make restart's internal start() wait long enough for an external
+      // stop() to race with it. We do this by making listen() never call
+      // its callback for the second-phase start. The internal stop() still
+      // completes normally.
+      let listenCalls = 0;
+      const errorHandlers: Function[] = [];
+      mockHttpServer.once.mockImplementation((event: string, handler: Function) => {
+        if (event === 'error') errorHandlers.push(handler);
+      });
+      mockHttpServer.listen.mockImplementation(
+        (_port: number, _host: string, cb: Function) => {
+          listenCalls++;
+          if (listenCalls === 1) {
+            // First call = the initial startBridge above; succeed.
+            cb();
+          }
+          // Subsequent calls (inside restart) hang so stop() can race in.
+        },
+      );
+
+      const restartPromise = bridge.restart().catch(() => {
+        /* may reject if stop() terminates the cycle */
+      });
+      // Give restart() a tick to begin.
+      await new Promise((r) => setTimeout(r, 10));
+      // External stop() bumps externalStopGeneration and forces abort.
+      await bridge.stop();
+      await restartPromise;
+
+      // After everything settles, no server should be bound.
+      expect((bridge as any).server).toBeNull();
+      expect((bridge as any).wss).toBeNull();
+    });
+  });
+
+  // ── Per-client WebSocket error handler (R5) ────────────────────────
+  describe('per-client WebSocket error handler (R5)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    it("attaches 'error' listener to each ws client and terminates on error", async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      // The bridge registered a 'connection' handler on the real WSS.
+      // Simulate a client connecting by invoking the real wss.emit() path:
+      // we just directly look up and invoke the registered handler.
+      // In production, wss.on('connection', …) accepts a callback; the
+      // real ws module stores it internally. We can emit on it:
+      const fakeWs: any = {
+        _errorHandler: undefined as any,
+        _closeHandler: undefined as any,
+        on: vi.fn(function (this: any, event: string, cb: Function) {
+          if (event === 'error') this._errorHandler = cb;
+          if (event === 'close') this._closeHandler = cb;
+        }),
+        terminate: vi.fn(),
+      };
+
+      // Trigger the bridge's 'connection' handler.
+      wss.emit('connection', fakeWs);
+
+      // The bridge must have attached its own 'error' (and 'close') listener.
+      expect(fakeWs.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(fakeWs._errorHandler).toBeDefined();
+
+      // Simulate the client emitting an error: the attached handler must
+      // call terminate() (and not rethrow).
+      expect(() => fakeWs._errorHandler(new Error('client boom'))).not.toThrow();
+      expect(fakeWs.terminate).toHaveBeenCalled();
+    });
+  });
+
+  // ── Unrecoverable handler Set snapshot (R6) ────────────────────────
+  describe('unrecoverable handler snapshot (R6)', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+      (bridge as any).healthRetryBackoffMs = 0;
+    });
+
+    it('handler that unsubscribes itself during emission does not skip peers', async () => {
+      await startBridge(bridge);
+      // Force ensureHealthy() to emit via the restart-failed path.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ status: 'down' }),
+      } as any);
+      const restartSpy = vi
+        .spyOn(bridge, 'restart')
+        .mockRejectedValue(new Error('restart boom'));
+
+      const { onHttpBridgeUnrecoverable } = await import('../http-mcp-bridge');
+      // handlerA unsubscribes handlerB mid-iteration; before the snapshot
+      // fix this would either skip handlerC (Set.forEach semantics) or
+      // throw on iterator-after-mutation. With the Array.from snapshot,
+      // all three registered handlers must be invoked exactly once.
+      const handlerA = vi.fn(() => {
+        offB();
+        offC();
+      });
+      const handlerB = vi.fn();
+      const handlerC = vi.fn();
+      const offA = onHttpBridgeUnrecoverable(handlerA);
+      const offB = onHttpBridgeUnrecoverable(handlerB);
+      const offC = onHttpBridgeUnrecoverable(handlerC);
+
+      try {
+        await bridge.ensureHealthy();
+        expect(handlerA).toHaveBeenCalledTimes(1);
+        expect(handlerB).toHaveBeenCalledTimes(1);
+        expect(handlerC).toHaveBeenCalledTimes(1);
+      } finally {
+        offA();
+        // B/C already detached by handlerA but calling is idempotent.
+        offB();
+        offC();
+        fetchSpy.mockRestore();
+        restartSpy.mockRestore();
+      }
     });
   });
 });

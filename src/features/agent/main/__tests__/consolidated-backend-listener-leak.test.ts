@@ -115,5 +115,70 @@ describe('ConsolidatedBackendService SIGTERM/SIGINT listener leak', () => {
     expect(sigintAdded).toBeLessThanOrEqual(0);
     expect(sigtermAdded).toBeLessThanOrEqual(0);
   });
+
+  it('should SKIP SIGINT/SIGTERM registration when INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1 (Electron single-owner)', async () => {
+    // Simulate the Electron main process telling the backend service to stay
+    // out of signal handling. src/main/index.ts is the single owner of
+    // SIGINT/SIGTERM in Electron so that persistShutdownState() can run
+    // BEFORE shutdownUnifiedBackend() without a race.
+    const prev = process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS;
+    process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS = '1';
+    try {
+      const mod = await import('../consolidated-backend.service');
+      const CBS = mod.ConsolidatedBackendService;
+
+      const instance = CBS.getInstance({ healthCheckInterval: 0 });
+
+      const sigintAdded = process.listenerCount('SIGINT') - initialSigintCount;
+      const sigtermAdded = process.listenerCount('SIGTERM') - initialSigtermCount;
+
+      expect(sigintAdded).toBe(0);
+      expect(sigtermAdded).toBe(0);
+
+      instance.dispose();
+    } finally {
+      if (prev === undefined) {
+        delete process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS;
+      } else {
+        process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS = prev;
+      }
+    }
+  });
+
+  it('should SKIP SIGINT/SIGTERM registration when running inside Electron (process.versions.electron set)', async () => {
+    const versions = process.versions as Record<string, string>;
+    const prev = versions.electron;
+    // Simulate Electron runtime. In real Electron main process this is set
+    // automatically; tests run in plain Node so we stub it.
+    Object.defineProperty(process.versions, 'electron', {
+      value: '37.0.0-test',
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const mod = await import('../consolidated-backend.service');
+      const CBS = mod.ConsolidatedBackendService;
+
+      const instance = CBS.getInstance({ healthCheckInterval: 0 });
+
+      const sigintAdded = process.listenerCount('SIGINT') - initialSigintCount;
+      const sigtermAdded = process.listenerCount('SIGTERM') - initialSigtermCount;
+
+      expect(sigintAdded).toBe(0);
+      expect(sigtermAdded).toBe(0);
+
+      instance.dispose();
+    } finally {
+      if (prev === undefined) {
+        delete (process.versions as Record<string, string | undefined>).electron;
+      } else {
+        Object.defineProperty(process.versions, 'electron', {
+          value: prev,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+  });
 });
 

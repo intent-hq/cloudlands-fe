@@ -130,11 +130,18 @@ export function onHttpBridgeUnrecoverable(handler: HttpBridgeUnrecoverableHandle
   return () => unrecoverableHandlers.delete(handler);
 }
 function emitHttpBridgeUnrecoverable(info: HttpBridgeUnrecoverableInfo, logger: Logger): void {
-  for (const handler of unrecoverableHandlers) {
+  // Snapshot the subscriber Set before iterating so handlers that subscribe /
+  // unsubscribe during emission do not mutate the iteration we are currently
+  // in. Each emission sees a stable view of the subscribers.
+  const snapshot = Array.from(unrecoverableHandlers);
+  for (const handler of snapshot) {
     try {
       const result = handler(info);
-      if (result && typeof (result as Promise<void>).then === 'function') {
-        (result as Promise<void>).catch((err) => {
+      // Assimilate any thenable (not just real Promises) via Promise.resolve.
+      // This prevents a non-Promise thenable with `then` but no `catch` from
+      // throwing TypeError on the direct `.catch` call below.
+      if (result && typeof (result as PromiseLike<void>).then === 'function') {
+        Promise.resolve(result as PromiseLike<void>).catch((err) => {
           logger.error('httpBridgeUnrecoverable async handler rejected', {
             error: err instanceof Error ? err.message : String(err),
           });
@@ -174,6 +181,12 @@ export class HttpMcpBridge {
   // instead of binding a new listener after the server has been torn down.
   // Cleared at the top of the next start() call.
   private shuttingDown = false;
+  // Monotonic counter incremented by every external stop() call (i.e. stops
+  // that did not come from restart()'s internal cycle). start() and restart()
+  // capture this at entry and abort if it changes, so an external stop() that
+  // races with an in-flight restart cannot be "undone" by restart()'s own
+  // later call to start() clearing `shuttingDown`.
+  private externalStopGeneration = 0;
   // Exposed as a hook for tests that need shorter backoff than production.
   protected listenBackoffMs: number[] = HTTP_MCP_LISTEN_BACKOFF_MS;
   protected healthRetryBackoffMs: number = HTTP_MCP_HEALTH_CHECK_RETRY_BACKOFF_MS;
@@ -965,6 +978,20 @@ export class HttpMcpBridge {
       wss.on('connection', (ws: InstanceType<typeof WebSocket>) => {
         this.logger.info('Browser IPC WebSocket client connected');
         ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
+        // Per-client error listener: in Node's EventEmitter semantics, an
+        // 'error' emitted by a WebSocket with no listener throws as an
+        // uncaught 'error' event. The WSS-level error listener does not
+        // cover per-client errors. Log and terminate the client.
+        ws.on('error', (err: Error) => {
+          this.logger.warn('Browser IPC WebSocket client error', {
+            message: err.message,
+          });
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+        });
       });
 
       let settled = false;
@@ -1025,7 +1052,7 @@ export class HttpMcpBridge {
     });
   }
 
-  async start(): Promise<void> {
+  async start(): Promise<void | 'aborted'> {
     // DoD #3: start() refuses to proceed if a server is still running.
     // Restart must go through stop() first.
     if (this.server) {
@@ -1033,16 +1060,25 @@ export class HttpMcpBridge {
         'HttpMcpBridge.start(): server is still running; call stop() first',
       );
     }
+    // Capture the external-stop generation at entry. If an external stop()
+    // increments it while we are running, we abort instead of binding — even
+    // if our own code has since cleared `shuttingDown`. This closes the
+    // R1 race where external stop() returned while this call was mid-retry
+    // and a later listen() could still bind after stop() completed.
+    const genAtEntry = this.externalStopGeneration;
     // Fresh start clears any prior stop() shutdown marker. The flag remains
     // true after an external stop() so an in-flight start() can detect the
     // race, but a deliberate new start() call wants to run normally.
     this.shuttingDown = false;
 
-    // Try to find an available port if the default is in use.
-    // This is a best-effort pre-check; the real EADDRINUSE handling is below.
+    // Best-effort advisory pre-check: ask for an available port. We used to
+    // assign the returned port back to `this.port`, but that bypassed the
+    // same-port EADDRINUSE backoff below — if findAvailablePort drifted to
+    // 5180 while 5179 was transiently held (e.g. during restart), the real
+    // retry loop would never wait for 5179 to release. Keep the call for
+    // its validation side-effects only; let the retry loop own port choice.
     try {
-      const actualPort = await findAvailablePort(this.port, 10);
-      this.port = actualPort;
+      await findAvailablePort(this.port, 10);
     } catch (error) {
       this.logger.warn(`Could not find available port, trying default ${this.port}:`, error);
     }
@@ -1055,14 +1091,20 @@ export class HttpMcpBridge {
     const startPort = this.port;
     let boundServer: any = null;
     let boundWss: InstanceType<typeof WebSocketServer> | null = null;
+    let boundPort: number = -1;
     let lastError: NodeJS.ErrnoException | null = null;
+
+    // True iff this start() run has been cancelled by either the local
+    // `shuttingDown` flag or by an external stop() bumping the generation.
+    const isAborted = (): boolean =>
+      this.shuttingDown || this.externalStopGeneration !== genAtEntry;
 
     for (let portOffset = 0; portOffset < HTTP_MCP_MAX_PORT_ATTEMPTS; portOffset++) {
       // Abort cleanly if stop() fired while we were between attempts, so a
       // delayed listen() can't bind after the bridge has already been stopped.
-      if (this.shuttingDown) {
+      if (isAborted()) {
         this.logger.info('HttpMcpBridge.start(): aborting port retry, stop() in progress');
-        return;
+        return 'aborted';
       }
       const tryPort = startPort + portOffset;
 
@@ -1071,15 +1113,20 @@ export class HttpMcpBridge {
       const backoff = this.listenBackoffMs;
       const maxSamePortAttempts = backoff.length + 1; // initial + len(backoff) waits
       for (let attempt = 0; attempt < maxSamePortAttempts; attempt++) {
-        if (this.shuttingDown) {
+        if (isAborted()) {
           this.logger.info('HttpMcpBridge.start(): aborting port retry, stop() in progress');
-          return;
+          return 'aborted';
         }
         const result = await this.listenOnce(tryPort, host);
         if ('server' in result) {
           boundServer = result.server;
           boundWss = result.wss;
-          this.port = tryPort;
+          // Capture the bound port locally; publish to `this.port` only after
+          // the post-loop abort check passes so an abort-after-bind path that
+          // discards the server doesn't leave `this.port` pointing at a port
+          // that was never actually published (subsequent restarts/health
+          // checks would otherwise probe a never-bound port).
+          boundPort = tryPort;
           break;
         }
         lastError = result.error;
@@ -1094,11 +1141,11 @@ export class HttpMcpBridge {
             `Port ${tryPort} in use, waiting ${backoff[attempt]}ms before retry...`,
           );
           await new Promise((r) => setTimeout(r, backoff[attempt]));
-          if (this.shuttingDown) {
+          if (isAborted()) {
             this.logger.info(
               'HttpMcpBridge.start(): aborting after backoff sleep, stop() in progress',
             );
-            return;
+            return 'aborted';
           }
         }
       }
@@ -1111,7 +1158,7 @@ export class HttpMcpBridge {
 
     // After the loop: if we were asked to shut down and somehow bound a server,
     // close it immediately and return — don't publish it.
-    if (this.shuttingDown && boundServer) {
+    if (isAborted() && boundServer) {
       try {
         boundServer.close?.();
       } catch {
@@ -1123,7 +1170,7 @@ export class HttpMcpBridge {
         /* ignore */
       }
       this.logger.info('HttpMcpBridge.start(): discarded newly-bound server, stop() in progress');
-      return;
+      return 'aborted';
     }
 
     if (!boundServer || !boundWss) {
@@ -1139,9 +1186,14 @@ export class HttpMcpBridge {
       throw err;
     }
 
-    // Publish the bound server/wss references.
+    // Publish the bound server/wss references and the port they're bound to.
+    // Deferring the `this.port` assignment until here (instead of inside the
+    // listen loop) ensures an abort-after-bind path that discards the server
+    // also leaves `this.port` unchanged — so the instance never retains a
+    // port value for a server that was never actually published.
     this.server = boundServer;
     this.wss = boundWss;
+    this.port = boundPort;
 
     // Expose a global broadcast function so any code that does webContents.send
     // can also push events to browser-mode clients.
@@ -1201,6 +1253,12 @@ export class HttpMcpBridge {
    * and nulls `this.server` / `this.wss` before resolving (DoD #3).
    */
   async stop(opts: { _fromRestart?: boolean } = {}): Promise<void> {
+    // External stops bump the generation counter so an in-flight restart()
+    // can observe "external stop fired while I was running" and abort before
+    // its start() re-binds a listener (R1).
+    if (!opts._fromRestart) {
+      this.externalStopGeneration++;
+    }
     // Signal any in-flight start() retry loop to abort cleanly so a delayed
     // listen() cannot bind a new listener after we tear down the server.
     this.shuttingDown = true;
@@ -1211,6 +1269,8 @@ export class HttpMcpBridge {
     // restart's start() is still pending and a listener binds after us.
     // When restart() itself calls us via { _fromRestart: true }, skip the
     // await or we would deadlock on our own promise.
+    // The 1s timeout bounds the wait; the externalStopGeneration bump above
+    // is what guarantees correctness if the inflight restart outlives it.
     const inflight = this.restartPromise;
     if (inflight && !opts._fromRestart) {
       try {
@@ -1361,13 +1421,34 @@ export class HttpMcpBridge {
 
     this.restartPromise = (async () => {
       this.logger.info('Restarting HTTP MCP Bridge...');
+      // Capture the external-stop generation at entry (R1). If an external
+      // stop() fires during our internal stop() or start(), we abort without
+      // re-binding.
+      const genAtEntry = this.externalStopGeneration;
       try {
         // Internal stop: skip the "await in-flight restart" branch (that
         // would be this very promise → self-await deadlock).
         await this.stop({ _fromRestart: true });
+        // If an external stop() fired during our internal stop, abort before
+        // calling start() so we never re-bind after external stop returned.
+        if (this.externalStopGeneration !== genAtEntry) {
+          this.logger.info(
+            'HTTP MCP Bridge restart() aborting after internal stop: external stop() fired',
+          );
+          return;
+        }
         // Re-initialize the cleanup interval that stop() cleared.
         this.startCacheCleanupInterval();
-        await this.start();
+        const started = await this.start();
+        // R2: start() returns 'aborted' when it short-circuited due to
+        // shuttingDown / a racing external stop. Don't report success in
+        // that case — no server was actually published.
+        if (started === 'aborted') {
+          this.logger.info(
+            'HTTP MCP Bridge restart() aborting: start() did not publish a server',
+          );
+          return;
+        }
         this.logger.info('HTTP MCP Bridge restarted successfully', { port: this.port });
       } catch (error) {
         this.logger.error('HTTP MCP Bridge restart failed', {

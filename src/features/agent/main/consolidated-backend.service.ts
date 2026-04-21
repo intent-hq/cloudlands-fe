@@ -1195,15 +1195,29 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
   /**
    * Setup shutdown handlers
+   *
+   * NOTE: When running inside the Electron main process, `src/main/index.ts`
+   * is the single owner of SIGINT/SIGTERM — it routes those signals through
+   * `gracefulShutdown()` so that `agentBackendHandler.persistShutdownState()`
+   * runs BEFORE backend provider teardown. Registering our own listeners here
+   * would race with that ordering (Node invokes signal listeners in
+   * registration order and these are registered first, during module init).
+   * Detect the Electron runtime and skip registration in that context; other
+   * callers can force-skip via INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1.
    */
   private setupShutdownHandlers(): void {
-    // Only setup process handlers in main process (Node.js environment)
-    if (isMainProcess() && typeof process !== 'undefined' && typeof process.on === 'function') {
-      this.sigintHandler = () => this.shutdown();
-      this.sigtermHandler = () => this.shutdown();
-      process.on('SIGINT', this.sigintHandler);
-      process.on('SIGTERM', this.sigtermHandler);
+    if (!(isMainProcess() && typeof process !== 'undefined' && typeof process.on === 'function')) {
+      return;
     }
+    const isElectronMain = !!(process as any)?.versions?.electron;
+    const disabledByEnv = process.env?.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS === '1';
+    if (isElectronMain || disabledByEnv) {
+      return;
+    }
+    this.sigintHandler = () => this.shutdown();
+    this.sigtermHandler = () => this.shutdown();
+    process.on('SIGINT', this.sigintHandler);
+    process.on('SIGTERM', this.sigtermHandler);
   }
 
   /**
@@ -1626,12 +1640,50 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       clearInterval(this.healthTimer);
     }
 
-    // Save all active sessions first
-    const savePromises: Promise<any>[] = [];
-    for (const [agentId] of this.sessions.entries()) {
-      if (this.config.persistenceEnabled) {
-        savePromises.push(this.saveAgent(agentId.toString()));
+    // Save all active sessions first.
+    //
+    // IMPORTANT: Skip sessions whose in-memory state still looks like an
+    // in-flight stream. The clean-quit path calls
+    // `agentBackendHandler.persistShutdownState()` BEFORE this shutdown — that
+    // flush loads a fresh copy from disk, repairs the stale streaming flags to
+    // idle, and writes the repaired copy back. Our in-memory `record.session`
+    // is a SEPARATE object reference that still carries the stale streaming
+    // snapshot; calling `saveAgent()` here would overwrite the repaired idle
+    // on-disk state with that stale snapshot.
+    //
+    // Detection must cover BOTH forms of stale streaming state:
+    //  1. Session-level flags — `record.session.isStreaming/isProcessing`.
+    //  2. Message-level flags — `persistStreamingSessionState()` writes an
+    //     assistant message with `message.isStreaming: true` onto the shared
+    //     in-memory backend session without setting session-level flags, so
+    //     a session can be mid-stream with only the per-message flag set.
+    //
+    // Skipping is safe when `persistShutdownState()` did not run (e.g.
+    // hard-kill or test environments): the disk state is left untouched and
+    // the next `loadAgent` path triggers orphan-recovery which repairs it.
+    const hasStreamingMessage = (session: AgentSession | undefined): boolean => {
+      if (!session?.messages) return false;
+      for (const m of session.messages) {
+        if ((m as any)?.isStreaming === true) return true;
       }
+      return false;
+    };
+    const savePromises: Promise<any>[] = [];
+    for (const [agentId, record] of this.sessions.entries()) {
+      if (!this.config.persistenceEnabled) continue;
+      const sessionStreaming =
+        record.session?.isStreaming === true || record.session?.isProcessing === true;
+      const messageStreaming = hasStreamingMessage(record.session);
+      if (sessionStreaming || messageStreaming) {
+        logger.info('[shutdown] Skipping save for streaming session to preserve repaired on-disk state', {
+          agentId: agentId.toString(),
+          isStreaming: record.session?.isStreaming === true,
+          isProcessing: record.session?.isProcessing === true,
+          hasStreamingMessage: messageStreaming,
+        });
+        continue;
+      }
+      savePromises.push(this.saveAgent(agentId.toString()));
     }
 
     await Promise.allSettled(savePromises);

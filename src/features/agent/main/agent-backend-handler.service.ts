@@ -223,22 +223,35 @@ export class AgentBackendHandler {
   private static readonly QUEUE_STUCK_THRESHOLD_MS = 10_000;
 
   /**
-   * Agents whose persisted orphaned-streaming state has already been repaired
-   * in this process lifetime. Prevents re-appending the "interrupted" assistant
-   * message or re-emitting the stream-error on every subsequent resumability
-   * check for the same agent.
+   * Tracks orphaned-streaming repairs applied in this process lifetime, keyed
+   * by agentId. The value is a signature of the persisted-on-disk orphan state
+   * seen at the time of repair: `${updatedAtMs}|${lastMessageId}|${messageCount}`.
+   *
+   * Purpose: suppress duplicate repair of the SAME orphan (re-appending the
+   * recovery banner / re-emitting stream-error if the same stale state is
+   * loaded again) WITHOUT suppressing repair of a NEW orphan for the same
+   * agent later in the same process. A fresh orphan necessarily mutates at
+   * least one of the signature fields (updatedAt advances, or a new streaming
+   * message is appended), so its signature differs from the stored one and
+   * repair runs again.
    */
-  private repairedOrphanedAgents = new Set<string>();
+  private repairedOrphanedAgents = new Map<string, string>();
 
   /**
-   * Agent IDs currently being torn down by an unrecoverable-bridge event.
-   * Persistence writes for these agents are suppressed to prevent post-terminal
-   * re-dirtying: late provider callbacks (content-block, error) funnel into
-   * `persistStreamingState`, which short-circuits when the agent is in this set
-   * so the repair save done at the top of `handleHttpBridgeUnrecoverable`
-   * cannot be overwritten by a racing streaming save.
+   * Agents currently being torn down. Persistence writes for these agents are
+   * suppressed to prevent post-terminal re-dirtying: late provider callbacks
+   * (content-block, error) funnel into `persistStreamingState`, which
+   * short-circuits when the agent is a key in this map.
+   *
+   * Implemented as a refcount so concurrent owners (graceful shutdown AND an
+   * http-bridge-unrecoverable event firing for the same agent at the same
+   * time) do not interfere. Each owner calls `acquireTerminatingGuard` on
+   * entry and `releaseTerminatingGuard` on exit; only the last release
+   * removes the entry. The shutdown path only acquires (never releases) —
+   * the caller is expected to tear the backend down next, so any lingering
+   * streaming callback must stay suppressed until process exit.
    */
-  private terminatingAgents = new Set<string>();
+  private terminatingAgents = new Map<string, number>();
 
   /** Message appended to an agent session when its persisted streaming state is
    *  repaired on load. Worded neutrally so it's accurate whether the cause was a
@@ -257,6 +270,56 @@ export class AgentBackendHandler {
    *  construction, invoked on shutdown so re-instantiation (e.g. in tests)
    *  does not leak stale subscribers into the producer. */
   private httpBridgeUnrecoverableDisposer: (() => void) | null = null;
+
+  /**
+   * Increment the `terminatingAgents` refcount for an agent. Every caller that
+   * needs streaming saves suppressed for `agentId` must call this before any
+   * I/O and call `releaseTerminatingGuard` when it is done (except the
+   * shutdown path, which never releases — see field doc).
+   */
+  private acquireTerminatingGuard(agentId: string): void {
+    const prev = this.terminatingAgents.get(agentId) ?? 0;
+    this.terminatingAgents.set(agentId, prev + 1);
+  }
+
+  /**
+   * Decrement the `terminatingAgents` refcount for an agent. Removes the
+   * entry only when the count reaches zero, so a concurrent owner's guard
+   * survives this release. Calling release without a matching acquire is a
+   * no-op (defensive — a symptom of a leaked owner, but will not corrupt
+   * state).
+   */
+  private releaseTerminatingGuard(agentId: string): void {
+    const prev = this.terminatingAgents.get(agentId) ?? 0;
+    if (prev <= 1) {
+      this.terminatingAgents.delete(agentId);
+    } else {
+      this.terminatingAgents.set(agentId, prev - 1);
+    }
+  }
+
+  /**
+   * Compute a stable signature of a persisted orphan session used as the
+   * value in `repairedOrphanedAgents`. Must be derived from fields that
+   * change when a NEW orphan occurs for the same agent id (so subsequent
+   * orphans are not suppressed by the idempotency guard) and NOT change
+   * when the same orphan state is loaded again (so the same orphan does
+   * not get a duplicate recovery banner). `updatedAt` advances on every
+   * save, the last message id changes whenever streaming appends a new
+   * assistant message, and messages.length changes on any append — any
+   * new orphan event necessarily moves at least one.
+   */
+  private computeOrphanRepairSignature(agentData: {
+    updatedAt?: unknown;
+    messages?: unknown;
+  }): string {
+    const updatedAtMs =
+      agentData?.updatedAt != null ? new Date(agentData.updatedAt as any).getTime() : 0;
+    const messages = Array.isArray(agentData?.messages) ? (agentData.messages as any[]) : [];
+    const lastMessageId =
+      messages.length > 0 ? (messages[messages.length - 1]?.id ?? 'none') : 'none';
+    return `${updatedAtMs}|${lastMessageId}|${messages.length}`;
+  }
 
   /**
    * Registers an event listener for cleanup tracking.
@@ -1356,12 +1419,20 @@ export class AgentBackendHandler {
         }
         this.providers.delete(request.agentId);
         this.providerLastUsed.delete(request.agentId);
-        // Clean up all stream tracking state (consistent with cleanupStreamResources)
+        // Clean up all stream tracking state (consistent with cleanupStreamResources).
+        // IMPORTANT: do NOT delete streamGenerations here. This is a
+        // replacement-start cleanup (the existing provider was dead and a fresh
+        // one will be created). A stale bridge-unrecoverable handler may have
+        // captured the previous generation N before its `await` and will later
+        // call cleanupStreamResources(agentId, N). If we reset the counter,
+        // the next stream re-uses N (1 → 1) and the `generation < current`
+        // guard cannot detect the staleness, erasing the replacement stream's
+        // tracking maps. Preserving the entry guarantees the next stream gets
+        // N+1 and the stale cleanup short-circuits.
         this.streamStartTimes.delete(request.agentId);
         this.streamSessionIds.delete(request.agentId);
         this.streamWorkspaceIds.delete(request.agentId);
         this.streamWindowIds.delete(request.agentId);
-        this.streamGenerations.delete(request.agentId);
         provider = undefined;
       }
 
@@ -2916,78 +2987,21 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       const PERSIST_EVERY_N_CHUNKS = 50;
       let persistInProgress = false;
 
-      // Helper to persist current state during streaming using messageAccumulator
+      // Helper to persist current state during streaming using messageAccumulator.
+      // The body lives on the prototype (`persistStreamingSessionState`) so the
+      // guard + save behavior is covered by direct unit tests that cannot
+      // easily drive the full streamMessage pipeline; this closure only owns
+      // the per-turn `persistInProgress` mutex that serializes overlapping
+      // chunk/content-block callbacks.
       const persistStreamingState = async (reason: string) => {
-        // Suppress persistence for agents currently being torn down by an
-        // unrecoverable-bridge event — prevents late callbacks from re-dirtying
-        // state after handleHttpBridgeUnrecoverable's repair save.
-        if (this.terminatingAgents.has(request.agentId)) {
-          logger.debug('persistStreamingState: skipped, agent terminating', {
-            agentId: request.agentId,
-            reason,
-          });
-          return;
-        }
         if (persistInProgress) return; // Don't overlap persistence calls
         persistInProgress = true;
-
         try {
-          const backend = await this.getBackend();
-          const backendSession = backend.getSession(request.agentId);
-          if (backendSession) {
-            // Get current content blocks from messageAccumulator (single source of truth)
-            const { contentBlocks: currentContentBlocks } = messageAccumulator.getPartialContent(
-              request.agentId,
-            );
-
-            // Create/update streaming assistant message
-            // Look for existing streaming message or create new one
-            const existingStreamingMsgIndex = backendSession.messages.findIndex(
-              (m: any) => m.role === 'assistant' && m.isStreaming,
-            );
-
-            const streamingMessage = {
-              id:
-                existingStreamingMsgIndex >= 0
-                  ? backendSession.messages[existingStreamingMsgIndex].id
-                  : (request.assistantMessageId || `msg_${uuidv4()}`),
-              role: 'assistant' as const,
-              contentBlocks: currentContentBlocks,
-              timestamp: new Date().toISOString(),
-              isStreaming: true, // Mark as in-progress
-            };
-
-            if (existingStreamingMsgIndex >= 0) {
-              backendSession.messages[existingStreamingMsgIndex] = streamingMessage;
-            } else {
-              backendSession.messages.push(streamingMessage);
-            }
-            backendSession.updatedAt = new Date();
-
-            // Persist to disk
-            const saveResult = await agentPersistence.saveAgent(backendSession);
-            if (saveResult.success) {
-              logger.debug('Backend: Streaming state persisted', {
-                agentId: request.agentId,
-                reason,
-                blocksCount: currentContentBlocks.length,
-              });
-            }
-          } else {
-            logger.warn(
-              'Backend: No backend session during streaming — streaming state will NOT be persisted',
-              {
-                agentId: request.agentId,
-                reason,
-              },
-            );
-          }
-        } catch (error) {
-          logger.warn('Backend: Failed to persist streaming state', {
-            agentId: request.agentId,
+          await this.persistStreamingSessionState(
+            request.agentId,
             reason,
-            error: error instanceof Error ? error.message : String(error),
-          });
+            request.assistantMessageId,
+          );
         } finally {
           persistInProgress = false;
         }
@@ -4040,6 +4054,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                   persistedIsProcessing: (loadResult.data as any).isProcessing === true,
                 },
               );
+              // Snapshot the orphan signature from the freshly-loaded disk
+              // state BEFORE repair mutates it in place. This signature
+              // identifies THIS orphan event so a later new orphan for the
+              // same agent (different updatedAt / new last message) is not
+              // suppressed.
+              const repairSignature = this.computeOrphanRepairSignature(loadResult.data);
               const { persisted: repairPersisted } =
                 await this.repairOrphanedStreamingState(loadResult.data, {
                   appendMessage: AgentBackendHandler.INTERRUPT_ORPHAN_MESSAGE,
@@ -4048,7 +4068,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
               // Only mark repaired when the save actually hit disk, otherwise
               // next load still shows isStreaming=true and we need to retry.
               if (repairPersisted) {
-                this.repairedOrphanedAgents.add(agentId);
+                this.repairedOrphanedAgents.set(agentId, repairSignature);
               }
               // Emit a stream-error so the renderer unblocks the "Thinking…" spinner.
               this.sendStreamToRenderer(agentId, `agent:stream:${agentId}`, {
@@ -5597,6 +5617,120 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   }
 
   /**
+   * Persist current streaming state for an agent mid-turn. Invoked from the
+   * `persistStreamingState` closure in `handleSendMessage` on chunk boundaries
+   * and content-block callbacks. Extracted onto the prototype so the guard
+   * + save path is unit-testable without driving the full streamMessage
+   * pipeline.
+   *
+   * Contract:
+   *   - Short-circuits (no I/O) if `terminatingAgents.has(agentId)` at entry.
+   *   - Re-checks the guard immediately before the save so a shutdown / bridge
+   *     event that flipped the guard mid-await cannot be overwritten.
+   *   - Errors are logged and swallowed — streaming persistence is best-effort.
+   *
+   * NOTE: The caller owns the per-turn `persistInProgress` mutex that
+   * serializes overlapping callbacks. This method is safe to call
+   * concurrently but will duplicate work if the caller does not gate it.
+   */
+  private async persistStreamingSessionState(
+    agentId: string,
+    reason: string,
+    assistantMessageId?: string,
+  ): Promise<void> {
+    // Suppress persistence for agents currently being torn down by a
+    // shutdown or unrecoverable-bridge event — prevents late callbacks from
+    // re-dirtying state after the repair save commits.
+    if (this.terminatingAgents.has(agentId)) {
+      logger.debug('persistStreamingState: skipped, agent terminating', {
+        agentId,
+        reason,
+      });
+      return;
+    }
+
+    try {
+      const backend = await this.getBackend();
+      const backendSession = backend.getSession(agentId);
+      if (backendSession) {
+        // Second guard: re-check terminatingAgents immediately AFTER the
+        // `getBackend()` await and BEFORE any mutation of the in-memory
+        // backend session. The outer check at the top of this function
+        // can race with persistShutdownState / handleHttpBridgeUnrecoverable
+        // flipping the guard AFTER this callback started but BEFORE we
+        // reach here. Placing the guard before the mutation prevents two
+        // overwrite paths:
+        //   (a) our own `agentPersistence.saveAgent` overwriting the
+        //       just-committed repair state on disk, AND
+        //   (b) dirtying the in-memory backend session (shared by
+        //       reference with ConsolidatedBackendService's sessions Map)
+        //       so that a subsequent `ConsolidatedBackendService.shutdown()`
+        //       `saveAgent` call silently overwrites the repaired idle
+        //       state on disk with a stale `isStreaming: true` snapshot.
+        if (this.terminatingAgents.has(agentId)) {
+          logger.debug('persistStreamingState: skipped at save, agent terminating', {
+            agentId,
+            reason,
+          });
+          return;
+        }
+
+        // Get current content blocks from messageAccumulator (single source of truth)
+        const { contentBlocks: currentContentBlocks } =
+          messageAccumulator.getPartialContent(agentId);
+
+        // Create/update streaming assistant message
+        // Look for existing streaming message or create new one
+        const existingStreamingMsgIndex = backendSession.messages.findIndex(
+          (m: any) => m.role === 'assistant' && m.isStreaming,
+        );
+
+        const streamingMessage = {
+          id:
+            existingStreamingMsgIndex >= 0
+              ? backendSession.messages[existingStreamingMsgIndex].id
+              : assistantMessageId || `msg_${uuidv4()}`,
+          role: 'assistant' as const,
+          contentBlocks: currentContentBlocks,
+          timestamp: new Date().toISOString(),
+          isStreaming: true, // Mark as in-progress
+        };
+
+        if (existingStreamingMsgIndex >= 0) {
+          backendSession.messages[existingStreamingMsgIndex] = streamingMessage;
+        } else {
+          backendSession.messages.push(streamingMessage);
+        }
+        backendSession.updatedAt = new Date();
+
+        // Persist to disk
+        const saveResult = await agentPersistence.saveAgent(backendSession);
+        if (saveResult.success) {
+          logger.debug('Backend: Streaming state persisted', {
+            agentId,
+            reason,
+            blocksCount: currentContentBlocks.length,
+          });
+        }
+      } else {
+        logger.warn(
+          'Backend: No backend session during streaming — streaming state will NOT be persisted',
+          {
+            agentId,
+            reason,
+          },
+        );
+      }
+    } catch (error) {
+      logger.warn('Backend: Failed to persist streaming state', {
+        agentId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
    * Repair a persisted agent session whose streaming flags are stale because
    * the provider/bridge was torn down mid-stream. Clears isStreaming /
    * isProcessing, forces status to Idle, optionally appends a final assistant
@@ -5614,6 +5748,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     (agent as any).isProcessing = false;
     agent.status = AgentStatus.Idle;
     agent.updatedAt = new Date();
+
+    // Clear stale per-message streaming flags. Streaming assistant messages
+    // written by persistStreamingState carry `isStreaming: true` and are used
+    // by the renderer to re-register stream handlers. Leaving them set after
+    // orphan repair causes stale spinner/handler state even though the session
+    // flags say idle.
+    if (Array.isArray(agent.messages)) {
+      for (const msg of agent.messages) {
+        if (msg && (msg as any).isStreaming) {
+          (msg as any).isStreaming = false;
+        }
+      }
+    }
 
     if (options.appendMessage) {
       const messages = Array.isArray(agent.messages) ? agent.messages : [];
@@ -5678,13 +5825,44 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     });
     if (streamingAgentIds.length === 0) return;
 
+    // Capture per-agent snapshots for EVERY agent BEFORE the loop begins so no
+    // read below is observed after an await. With per-iteration capture, when
+    // the loop is mid-await for an earlier agent, a racing wake/resume that
+    // installs a replacement provider / replacement stream for a LATER agent
+    // would be observed by that later agent's iteration as if it were the
+    // original — the handler would then force-stop the replacement provider
+    // and `cleanupStreamResources` would erase the replacement stream's
+    // tracking maps (the generation guard only short-circuits when the
+    // captured generation is STALE relative to the current one, which is not
+    // true if the current one WAS the captured one). Capturing up front makes
+    // each agent's work depend only on the map state at handler entry.
+    const snapshots = new Map<
+      string,
+      {
+        workspaceId: string | undefined;
+        sessionId: string | undefined;
+        capturedProvider: any;
+        capturedGeneration: number | undefined;
+      }
+    >();
     for (const agentId of streamingAgentIds) {
-      const workspaceId = this.streamWorkspaceIds.get(agentId);
-      const sessionId = this.streamSessionIds.get(agentId);
+      snapshots.set(agentId, {
+        workspaceId: this.streamWorkspaceIds.get(agentId),
+        sessionId: this.streamSessionIds.get(agentId),
+        capturedProvider: this.providers.get(agentId),
+        capturedGeneration: this.streamGenerations.get(agentId),
+      });
+    }
+
+    for (const agentId of streamingAgentIds) {
+      const snapshot = snapshots.get(agentId)!;
+      const { workspaceId, sessionId, capturedProvider, capturedGeneration } = snapshot;
       // Mark this agent as terminating BEFORE the repair save so any streaming
       // callback that fires between the save and provider.stop short-circuits
-      // in persistStreamingState instead of re-dirtying disk.
-      this.terminatingAgents.add(agentId);
+      // in persistStreamingState instead of re-dirtying disk. Use acquire/
+      // release so a concurrent shutdown-path owner's guard survives our
+      // release in the finally below.
+      this.acquireTerminatingGuard(agentId);
       try {
         if (workspaceId) {
           const loadResult = await agentPersistence.loadAgent(
@@ -5710,13 +5888,35 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // canonical teardown in stopProvidersForWorkspace: prefer stop()
         // with forceCleanup, fall back to cleanup(). Swallow errors per
         // spec (bridge is already unrecoverable; don't cascade).
-        const provider = this.providers.get(agentId);
-        if (provider) {
+        //
+        // Teardown invariant (Runtime audit finding 4): ALWAYS force-stop the
+        // provider we captured at entry, even if the map has since been
+        // swapped to a replacement. Leaving the captured old provider alive
+        // would let it keep streaming and re-dirty disk after we release the
+        // terminating guard below. Map mutation is conditional: only remove
+        // when the map still holds our captured provider — a replacement is
+        // a newer, user-requested provider and must be preserved.
+        if (capturedProvider) {
+          const currentProvider = this.providers.get(agentId);
+          const replaced = currentProvider !== capturedProvider;
+          if (replaced) {
+            // Preserve the existing log message (dashboards match on this
+            // exact text) and add a companion line that records the
+            // corrective force-stop of the captured old provider.
+            logger.info(
+              'handleHttpBridgeUnrecoverable: provider replaced during repair, leaving newer provider intact',
+              { agentId },
+            );
+            logger.info(
+              'handleHttpBridgeUnrecoverable: force-stopping captured old provider after replacement detected',
+              { agentId },
+            );
+          }
           try {
-            if (typeof provider.stop === 'function') {
-              await provider.stop({ forceCleanup: true });
-            } else if (typeof provider.cleanup === 'function') {
-              await provider.cleanup();
+            if (typeof capturedProvider.stop === 'function') {
+              await capturedProvider.stop({ forceCleanup: true });
+            } else if (typeof capturedProvider.cleanup === 'function') {
+              await capturedProvider.cleanup();
             }
           } catch (stopErr) {
             logger.warn('handleHttpBridgeUnrecoverable: provider stop failed', {
@@ -5724,8 +5924,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
               error: stopErr instanceof Error ? stopErr.message : String(stopErr),
             });
           }
-          this.providers.delete(agentId);
-          this.providerLastUsed.delete(agentId);
+          // Conditional map mutation: only delete when the captured provider
+          // is still the one in the map (no replacement happened, or the
+          // replacement itself raced in during the stop await — either way
+          // preserving the replacement is correct).
+          if (this.providers.get(agentId) === capturedProvider) {
+            this.providers.delete(agentId);
+            this.providerLastUsed.delete(agentId);
+          }
         }
       } catch (err) {
         logger.error('handleHttpBridgeUnrecoverable: failed to clear agent', {
@@ -5734,12 +5940,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         });
       } finally {
         // Clean up local stream tracking so subsequent interrupts/health checks
-        // do not keep reporting this agent as active.
-        this.cleanupStreamResources(agentId);
-        // Clear the guard last so a future restart of this agent can persist
-        // normally. Safe to do in finally: once we reach here the repair save
-        // is committed and the provider is either stopped or was never present.
-        this.terminatingAgents.delete(agentId);
+        // do not keep reporting this agent as active. Pass the captured
+        // generation so cleanup short-circuits if a replacement stream has
+        // started for the same agent during the repair await — that newer
+        // stream owns the tracking maps and its entries must be preserved.
+        this.cleanupStreamResources(agentId, capturedGeneration);
+        // Release our own guard last so a future restart of this agent can
+        // persist normally. Safe to do in finally: once we reach here the
+        // repair save is committed and the provider is either stopped or was
+        // never present. If a concurrent shutdown-path owner also acquired
+        // the guard for this agent, their refcount survives this release.
+        this.releaseTerminatingGuard(agentId);
       }
     }
   }
@@ -5751,13 +5962,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * Unlike the orphan-recovery and bridge-unrecoverable paths, this does NOT
    * append any assistant message — a user-initiated clean quit is not a
    * failure mode. Safe to call from shutdown handlers: per-agent errors are
-   * logged and swallowed, and the whole method is bounded by `timeoutMs` so
-   * it can't block app quit.
+   * logged and swallowed, and each agent is bounded by `timeoutMs` so it
+   * can't block app quit.
    *
-   * Returns per-agent outcome so callers can log/report accurately:
-   *   - persisted: saveAgent succeeded within the timeout
+   * Every streaming agent is added to `terminatingAgents` BEFORE any load
+   * or save, and the guard is intentionally NOT cleared on return — the
+   * caller is expected to shut down the backend next, so any lingering
+   * streaming callback must stay suppressed until the process exits.
+   *
+   * Returns per-agent outcome so callers can log/report accurately. Each
+   * agent appears in exactly one bucket; the returned arrays are snapshot
+   * copies that cannot be mutated by late-running tasks:
+   *   - persisted: saveAgent succeeded within the per-agent timeout
    *   - skipped:   no workspaceId known or load returned no data (nothing to save)
-   *   - failed:    save failed (error) or hung past the global timeout
+   *   - failed:    save failed (error) or hung past the per-agent timeout
    */
   public async persistShutdownState(
     timeoutMs = 3000,
@@ -5771,66 +5989,107 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       agentIds: streamingAgentIds,
     });
 
-    const persisted: string[] = [];
-    const skipped: string[] = [];
-    const failed: string[] = [];
-    // Agents still in-flight when the global timeout fires go in `failed`.
-    const pending = new Set<string>(streamingAgentIds);
+    // Mark every streaming agent as terminating BEFORE any load/repair so
+    // live streaming callbacks (persistStreamingState) short-circuit and
+    // cannot re-dirty state after this clean flush commits repair to disk.
+    // We intentionally do NOT clear the guard here: the caller is expected
+    // to shut down the backend providers next, and any lingering callback
+    // after this returns must remain suppressed until the process exits.
+    for (const agentId of streamingAgentIds) {
+      this.acquireTerminatingGuard(agentId);
+    }
 
-    const persistOne = async (agentId: string): Promise<void> => {
+    // Per-agent immutable outcome. Each agent resolves exactly once, either
+    // to a real outcome from persistOne or to 'failed' when its per-agent
+    // timeout fires first. After resolution, late-running tasks can log but
+    // cannot change the recorded outcome.
+    type Outcome = 'persisted' | 'skipped' | 'failed';
+    const outcomes = new Map<string, Outcome>();
+
+    const persistOne = async (agentId: string): Promise<Outcome> => {
       try {
         const workspaceId = this.streamWorkspaceIds.get(agentId);
         if (!workspaceId) {
-          skipped.push(agentId);
-          return;
+          return 'skipped';
         }
         const loadResult = await agentPersistence.loadAgent(
           agentId as AgentId,
           workspaceId as WorkspaceId,
         );
         if (!loadResult.success || !loadResult.data) {
-          skipped.push(agentId);
-          return;
+          return 'skipped';
         }
         const { persisted: ok } = await this.repairOrphanedStreamingState(
           loadResult.data,
           { reason: 'graceful_shutdown' },
         );
-        if (ok) {
-          persisted.push(agentId);
-        } else {
-          failed.push(agentId);
-        }
+        return ok ? 'persisted' : 'failed';
       } catch (err) {
-        failed.push(agentId);
         logger.warn('persistShutdownState: failed to persist agent', {
           agentId,
           error: err instanceof Error ? err.message : String(err),
         });
-      } finally {
-        pending.delete(agentId);
+        return 'failed';
       }
     };
 
-    const work = Promise.allSettled(streamingAgentIds.map(persistOne));
-    let timeoutId: NodeJS.Timeout | undefined;
-    const timeout = new Promise<'timeout'>((resolve) => {
-      timeoutId = setTimeout(() => resolve('timeout'), timeoutMs);
-    });
-    try {
-      const result = await Promise.race([work, timeout]);
-      if (result === 'timeout') {
-        // Any agent still pending when the global timeout fires is reported
-        // as failed — its save promise is abandoned.
-        for (const agentId of pending) failed.push(agentId);
-        logger.warn('persistShutdownState: timed out, continuing shutdown', {
-          timeoutMs,
-          agentCount: streamingAgentIds.length,
-          pendingCount: pending.size,
-        });
-      }
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
+    const withPerAgentTimeout = (agentId: string): Promise<void> => {
+      return new Promise<void>((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          if (!outcomes.has(agentId)) outcomes.set(agentId, 'failed');
+          logger.warn('persistShutdownState: per-agent timeout, marked failed', {
+            agentId,
+            timeoutMs,
+          });
+          resolve();
+        }, timeoutMs);
+        persistOne(agentId)
+          .then((result) => {
+            if (settled) {
+              // Late-running task: log and return without mutating the
+              // already-recorded outcome.
+              logger.debug('persistShutdownState: late completion after timeout', {
+                agentId,
+                lateResult: result,
+              });
+              return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            if (!outcomes.has(agentId)) outcomes.set(agentId, result);
+            resolve();
+          })
+          .catch((err) => {
+            if (settled) {
+              logger.debug('persistShutdownState: late rejection after timeout', {
+                agentId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            if (!outcomes.has(agentId)) outcomes.set(agentId, 'failed');
+            resolve();
+          });
+      });
+    };
+
+    await Promise.all(streamingAgentIds.map(withPerAgentTimeout));
+
+    // Build immutable snapshot arrays. Each agent appears in exactly one
+    // bucket because outcomes is keyed by agentId and set-once.
+    const persisted: string[] = [];
+    const skipped: string[] = [];
+    const failed: string[] = [];
+    for (const agentId of streamingAgentIds) {
+      const outcome = outcomes.get(agentId) ?? 'failed';
+      if (outcome === 'persisted') persisted.push(agentId);
+      else if (outcome === 'skipped') skipped.push(agentId);
+      else failed.push(agentId);
     }
 
     logger.info('persistShutdownState: result', {
@@ -5838,7 +6097,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       skipped: skipped.length,
       failed: failed.length,
     });
-    return { persisted, skipped, failed };
+    // Return fresh copies so a hypothetical late mutator (we have none, but
+    // defense-in-depth) cannot change arrays the caller has already logged.
+    return {
+      persisted: persisted.slice(),
+      skipped: skipped.slice(),
+      failed: failed.slice(),
+    };
   }
 
   /**
@@ -5897,41 +6162,67 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       const canWake = status === 'running' || status === 'resumable';
 
-      // Orphan recovery: if the on-disk session was left mid-stream (isStreaming /
-      // isProcessing true) but no in-memory provider exists, repair it exactly
-      // once per process lifetime so the UI can resume without manual JSON
-      // editing. Subsequent calls hit the repairedOrphanedAgents guard and
-      // become no-ops.
+      // Orphan recovery: if the on-disk session was left mid-stream but no
+      // in-memory provider exists, repair it so the UI can resume without
+      // manual JSON editing. Detection must cover BOTH forms of stale
+      // streaming state:
+      //  1. Session-level flags — `agentData.isStreaming/isProcessing`.
+      //  2. Message-level flags — `persistStreamingSessionState()` writes an
+      //     assistant message with `message.isStreaming: true` without always
+      //     setting session-level flags, so a persisted session can be left
+      //     mid-stream with only the per-message flag set.
+      // Idempotency is per-orphan (not per-agent-per-process):
+      // `repairedOrphanedAgents` stores a signature of the disk state we
+      // repaired, so loading the exact same stale orphan again short-circuits
+      // with no duplicate banner, but a later NEW orphan for the same agent
+      // (different updatedAt / new last streaming message / new message count)
+      // gets repaired again.
+      const hasStreamingMessage =
+        agentData &&
+        Array.isArray(agentData.messages) &&
+        agentData.messages.some((m: any) => m?.isStreaming === true);
       if (
         status === 'resumable' &&
         !hasProvider &&
         agentData &&
-        (agentData.isStreaming === true || agentData.isProcessing === true) &&
-        !this.repairedOrphanedAgents.has(agentId)
+        (agentData.isStreaming === true ||
+          agentData.isProcessing === true ||
+          hasStreamingMessage)
       ) {
-        logger.warn('Orphaned streaming agent detected on resumability check, repairing', {
-          agentId,
-          workspaceId,
-          persistedIsStreaming: agentData.isStreaming === true,
-          persistedIsProcessing: agentData.isProcessing === true,
-        });
-        try {
-          const repair = await this.repairOrphanedStreamingState(agentData, {
-            appendMessage: AgentBackendHandler.ORPHAN_RECOVERY_MESSAGE,
-            reason: 'resumability_orphan_recovery',
-          });
-          agentData = repair.agent;
-          // Only mark repaired when the save actually hit disk — otherwise disk
-          // still says isStreaming=true and we must retry on the next check.
-          if (repair.persisted) {
-            this.repairedOrphanedAgents.add(agentId);
-          }
-        } catch (repairError) {
-          logger.error('Failed to repair orphaned agent during resumability check', {
+        const candidateSignature = this.computeOrphanRepairSignature(agentData);
+        const previousSignature = this.repairedOrphanedAgents.get(agentId);
+        if (previousSignature === candidateSignature) {
+          logger.debug(
+            'Orphaned streaming agent already repaired with matching signature, skipping',
+            { agentId, workspaceId, signature: candidateSignature },
+          );
+        } else {
+          logger.warn('Orphaned streaming agent detected on resumability check, repairing', {
             agentId,
             workspaceId,
-            error: repairError instanceof Error ? repairError.message : String(repairError),
+            persistedIsStreaming: agentData.isStreaming === true,
+            persistedIsProcessing: agentData.isProcessing === true,
+            hasStreamingMessage,
+            previouslyRepaired: previousSignature !== undefined,
           });
+          try {
+            const repair = await this.repairOrphanedStreamingState(agentData, {
+              appendMessage: AgentBackendHandler.ORPHAN_RECOVERY_MESSAGE,
+              reason: 'resumability_orphan_recovery',
+            });
+            agentData = repair.agent;
+            // Only mark repaired when the save actually hit disk — otherwise disk
+            // still says isStreaming=true and we must retry on the next check.
+            if (repair.persisted) {
+              this.repairedOrphanedAgents.set(agentId, candidateSignature);
+            }
+          } catch (repairError) {
+            logger.error('Failed to repair orphaned agent during resumability check', {
+              agentId,
+              workspaceId,
+              error: repairError instanceof Error ? repairError.message : String(repairError),
+            });
+          }
         }
       }
 
@@ -6273,12 +6564,18 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
       this.providers.delete(sessionId);
       this.providerLastUsed.delete(sessionId);
-      // Clean up all stream tracking state (consistent with cleanupStreamResources)
+      // Clean up all stream tracking state (consistent with cleanupStreamResources).
+      // IMPORTANT: do NOT delete streamGenerations here. See the matching
+      // comment in handleSendMessage's dead-provider branch — preserving the
+      // monotonic counter is what lets the next stream's generation be > any
+      // generation captured by a still-pending stale-cleanup callback (e.g.
+      // bridge-unrecoverable), so cleanupStreamResources(_, capturedGeneration)
+      // short-circuits on the stale path instead of erasing the replacement
+      // stream's tracking maps.
       this.streamStartTimes.delete(sessionId);
       this.streamSessionIds.delete(sessionId);
       this.streamWorkspaceIds.delete(sessionId);
       this.streamWindowIds.delete(sessionId);
-      this.streamGenerations.delete(sessionId);
       existingProvider = undefined;
     }
 

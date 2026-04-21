@@ -391,7 +391,7 @@ import { registerWorkspacePRHandlers } from '../features/workspace/main/workspac
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { resolveAppTitle } from './utils/resolve-app-title.js';
 import { getMainWindow} from './state';
-import { createWindow, createWindowForDeepLink, createWindowForSession, getWindowSessionsPath, loadWindowSessions, saveWindowSessions } from './window.js';
+import { captureWindowSessionsSnapshot, clearWindowSessionsSnapshot, createWindow, createWindowForDeepLink, createWindowForSession, getWindowSessionsPath, loadWindowSessions, saveWindowSessions } from './window.js';
 import { setupAppProtocolHandler, setupWorkspaceAssetProtocolHandler } from './protocol-handlers.js';
 
 const logger = new Logger('Main');
@@ -612,6 +612,12 @@ app.whenReady().then(async () => {
     window.on('move', debouncedSaveWindowSessions);
     window.webContents.on('did-navigate', debouncedSaveWindowSessions);
     window.webContents.on('did-navigate-in-page', debouncedSaveWindowSessions);
+    // Capture a synchronous snapshot right before the window is destroyed so
+    // the in-memory cache inside saveWindowSessions() holds the final layout.
+    // Needed for the non-macOS window-all-closed path, where the handler runs
+    // after BrowserWindow.getAllWindows() has already emptied and an async
+    // saveWindowSessions() call would otherwise serialize nothing.
+    window.on('close', captureWindowSessionsSnapshot);
   });
 
   // Set application menu with correct app name on macOS
@@ -1798,36 +1804,47 @@ app.whenReady().then(async () => {
 
       httpMcpServer = new HttpMcpBridge();
       setHttpMcpBridge(httpMcpServer);
-      await httpMcpServer.start();
-
-      // Start proactive health monitoring for HTTP MCP Bridge
-      // Checks every 60 seconds and auto-restarts if unhealthy
-      const HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS = 60 * 1000;
-      httpMcpHealthCheckInterval = setInterval(async () => {
-        if (isShuttingDown || !httpMcpServer) {
-          return;
-        }
-
-        try {
-          // Single restart entry point (DoD #5). ensureHealthy() handles
-          // isHealthy+restart internally with a serialised restart promise,
-          // so we never race the ACP provider's per-message ensureHealthy().
-          const healthy = await httpMcpServer.ensureHealthy();
-          if (!healthy) {
-            logger.warn(
-              'HTTP MCP Bridge health monitor: bridge unrecoverable (see httpBridgeUnrecoverable hook)',
-            );
+      // start() returns 'aborted' when a concurrent stop() raced the bind
+      // (e.g. fast shutdown during startup). In that case no server is bound
+      // and process.env.HTTP_MCP_PORT is never set, so downstream code that
+      // assumes the bridge is live would mis-report. Gate the health monitor
+      // setup on a non-aborted result; if aborted, the rest of the IIFE still
+      // runs so post-window IPC setup and startupMetrics.end() are not skipped.
+      const startResult = await httpMcpServer.start();
+      if (startResult === 'aborted') {
+        logger.warn(
+          'HTTP MCP Bridge start() aborted (stop() raced startup); skipping health monitor',
+        );
+      } else {
+        // Start proactive health monitoring for HTTP MCP Bridge
+        // Checks every 60 seconds and auto-restarts if unhealthy
+        const HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS = 60 * 1000;
+        httpMcpHealthCheckInterval = setInterval(async () => {
+          if (isShuttingDown || !httpMcpServer) {
+            return;
           }
-        } catch (error) {
-          logger.error('HTTP MCP Bridge health monitor error', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }, HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS);
 
-      logger.info('HTTP MCP Bridge health monitor started', {
-        intervalMs: HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS,
-      });
+          try {
+            // Single restart entry point (DoD #5). ensureHealthy() handles
+            // isHealthy+restart internally with a serialised restart promise,
+            // so we never race the ACP provider's per-message ensureHealthy().
+            const healthy = await httpMcpServer.ensureHealthy();
+            if (!healthy) {
+              logger.warn(
+                'HTTP MCP Bridge health monitor: bridge unrecoverable (see httpBridgeUnrecoverable hook)',
+              );
+            }
+          } catch (error) {
+            logger.error('HTTP MCP Bridge health monitor error', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }, HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS);
+
+        logger.info('HTTP MCP Bridge health monitor started', {
+          intervalMs: HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS,
+        });
+      }
     } catch (error) {
       logger.error(
         'Failed to start HTTP MCP Server:',
@@ -1886,6 +1903,49 @@ app.whenReady().then(async () => {
 // This window-all-closed handler was duplicated and has been removed.
 // The proper handler is defined below at line 448.
 
+/**
+ * Show the running-agent confirmation prompt if any agents are active.
+ *
+ * Returns true if the caller should proceed with quit/teardown (no agents
+ * running, or user confirmed), false if the user cancelled.
+ *
+ * Shared between `before-quit` (Cmd+Q path) and `window-all-closed` (non-macOS
+ * last-window-close path) so both paths honor the prompt. Historically only
+ * `before-quit` checked, but `window-all-closed` tears down providers before
+ * `app.quit()` fires, so by the time `before-quit` runs the active-stream
+ * check sees zero and silently skips the prompt.
+ */
+async function confirmQuitWithRunningAgents(): Promise<boolean> {
+  const activeStreams = agentBackendHandler.getActiveStreams();
+  if (activeStreams.length === 0) {
+    return true;
+  }
+
+  logger.info('Active agents detected during quit attempt', {
+    count: activeStreams.length,
+    agentIds: activeStreams.map((s) => s.agentId),
+  });
+
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Agents Running',
+    message: `${activeStreams.length} agent${activeStreams.length > 1 ? 's are' : ' is'} still running.`,
+    detail:
+      'Quitting now will stop all running agents and they may lose progress. Are you sure you want to quit?',
+    buttons: ['Cancel', 'Quit Anyway'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+
+  if (result.response === 0) {
+    logger.info('User cancelled quit due to running agents');
+    return false;
+  }
+
+  logger.info('User confirmed quit despite running agents');
+  return true;
+}
+
 app.on('before-quit', async (event: Electron.Event) => {
   logger.info('App before-quit event triggered');
 
@@ -1898,33 +1958,9 @@ app.on('before-quit', async (event: Electron.Event) => {
     // and preventDefault must be called synchronously within the event handler.
     await saveWindowSessions();
 
-    // Check if there are any running agents
-    const activeStreams = agentBackendHandler.getActiveStreams();
-    if (activeStreams.length > 0) {
-      logger.info('Active agents detected during quit attempt', {
-        count: activeStreams.length,
-        agentIds: activeStreams.map((s) => s.agentId),
-      });
-
-      // Show confirmation dialog
-      const result = await dialog.showMessageBox({
-        type: 'warning',
-        title: 'Agents Running',
-        message: `${activeStreams.length} agent${activeStreams.length > 1 ? 's are' : ' is'} still running.`,
-        detail:
-          'Quitting now will stop all running agents and they may lose progress. Are you sure you want to quit?',
-        buttons: ['Cancel', 'Quit Anyway'],
-        defaultId: 0,
-        cancelId: 0,
-      });
-
-      if (result.response === 0) {
-        // User cancelled - don't quit
-        logger.info('User cancelled quit due to running agents');
-        return;
-      }
-
-      logger.info('User confirmed quit despite running agents');
+    const proceed = await confirmQuitWithRunningAgents();
+    if (!proceed) {
+      return;
     }
 
     await gracefulShutdown();
@@ -1947,6 +1983,62 @@ app.on('window-all-closed', async () => {
     } catch (err) {
       logger.warn('Failed to clear sessions file on window-all-closed:', err);
     }
+    // Also wipe the in-memory fallback snapshot so a pending debounced saver,
+    // or any later saveWindowSessions() trigger, can't resurrect the file we
+    // just deleted from the last-known-sessions cache.
+    clearWindowSessionsSnapshot();
+  }
+
+  // On non-macOS this handler runs the full backend teardown (persist, kill
+  // providers, stop MCP servers) before calling app.quit(). By the time
+  // app.quit() emits `before-quit`, providers are already dead and the prompt
+  // there sees zero active streams. So we must run the running-agent prompt
+  // HERE, before any teardown, on the non-macOS last-window-close path.
+  // If the user cancels, re-open a fresh window so the app is still reachable
+  // (on Windows/Linux there are no windows left) and return early without
+  // tearing anything down or calling app.quit().
+  if (process.platform !== 'darwin' && !isShuttingDown && !isInstallingUpdate) {
+    const proceed = await confirmQuitWithRunningAgents();
+    if (!proceed) {
+      logger.info('window-all-closed quit cancelled; re-opening a window');
+      try {
+        createWindow();
+      } catch (err) {
+        logger.error(
+          'Failed to re-open window after cancelled quit',
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+      return;
+    }
+    // Persist window sessions before handing off to gracefulShutdown().
+    // gracefulShutdown() calls app.exit(0), which skips `before-quit` entirely,
+    // so the saveWindowSessions() call inside the before-quit handler never
+    // fires on this non-macOS last-window-close path. Without this explicit
+    // save, window positions/state for the just-closed windows would be lost
+    // on next launch. The debounced background saver (1s) is best-effort and
+    // may not have captured the final state; always flush synchronously here.
+    try {
+      await saveWindowSessions();
+    } catch (err) {
+      logger.error(
+        'Failed to save window sessions on window-all-closed',
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+    // Delegate the confirmed-quit teardown to gracefulShutdown(), which is the
+    // same path before-quit (Cmd+Q) uses. gracefulShutdown() sets
+    // isShuttingDown=true internally (so any subsequent before-quit is a
+    // no-op), runs the full cleanup ordering — including the items only it
+    // performs (cleanupTerminals + settling delay, cleanupNoteTerminals,
+    // disposeAllScriptProcessManagers, cleanupMCP, cleanupAutoUpdater) — and
+    // then calls app.exit(0). Delegating here (instead of running a bespoke
+    // partial teardown and calling app.quit()) prevents before-quit re-entry
+    // that otherwise showed a second running-agent prompt and ran a duplicate
+    // teardown, while still performing the gracefulShutdown-only cleanup the
+    // older app.quit()→before-quit hop was relied upon to do.
+    await gracefulShutdown();
+    return;
   }
 
   // Terminal cleanup is NOT done here — app.quit() (line 2692) triggers
@@ -1974,6 +2066,25 @@ app.on('window-all-closed', async () => {
     logger.info('Agent pool disposed');
   } catch (error) {
     logger.error('Failed to dispose agent pool', error as Error);
+  }
+
+  // Persist in-flight streaming agents BEFORE backend shutdown so the
+  // clean-quit flush runs against live state. On Windows/Linux this is the
+  // common quit path (closing the last window), so we mirror the ordering
+  // from gracefulShutdown() — otherwise shutdownUnifiedBackend() would save
+  // sessions + kill providers and overwrite/clear the flush target.
+  try {
+    const result = await agentBackendHandler.persistShutdownState();
+    logger.info('Agent shutdown state persisted (window-all-closed)', {
+      persisted: result.persisted.length,
+      skipped: result.skipped.length,
+      failed: result.failed.length,
+    });
+  } catch (error) {
+    logger.error(
+      'Error persisting agent shutdown state (window-all-closed):',
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   // Cleanup agent backend
