@@ -13,7 +13,7 @@
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import {
     refreshRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     refreshPRStatusRequested,
   } from '$lib/store/slices/pr-status/pr-status-slice';
@@ -29,23 +29,25 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { setSidebarCreatePRWhenReady } from '$lib/store/slices/changes/changes-slice';
+  import { setGitOperationFlag } from '$lib/store/slices/git/git-slice';
+  import { selectSidebarCreatePRWhenReady } from '$lib/store/slices/changes/changes-selectors';
   import {
-    setSidebarCreatePRWhenReady,
-    setGitOperationFlag,
-    refreshAcceptChangesStatus,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
-  import {
-    selectSidebarChangesState,
-    selectAcceptChangesState,
     selectPostMergeState,
     selectGitOperationFlags,
-  } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  } from '$lib/store/slices/git/git-selectors';
+  import {
+    refreshAcceptChangesStatus,
+  } from '$lib/store/slices/changes/changes-slice';
+  import {
+    selectAcceptChangesState,
+  } from '$lib/store/slices/changes/changes-selectors';
   import {
     selectWorkspaceById,
   } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     clearOlderCommits as ftClearOlderCommits,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -176,7 +178,7 @@
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const workspace$ = selectWorkspaceById(workspaceIdStore);
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
-  const sidebarChangesState$ = selectSidebarChangesState(workspaceIdStore);
+  const createPRWhenReady$ = selectSidebarCreatePRWhenReady(workspaceIdStore);
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
   const postMergeState$ = selectPostMergeState(workspaceIdStore);
   const prExecState$ = selectExecutorState(workspaceIdStore, readable('pr'));
@@ -193,7 +195,7 @@
   // PR generation state
   const isGeneratingPR = $derived($prExecState$.status === 'running');
   const prAgentId = $derived($prExecState$.agentId);
-  const createPRWhenReady = $derived($sidebarChangesState$.createPRWhenReady);
+  const createPRWhenReady = $derived($createPRWhenReady$);
 
   // Post-merge state
   const aheadOfTrunk = $derived($postMergeState$.aheadOfTrunk);

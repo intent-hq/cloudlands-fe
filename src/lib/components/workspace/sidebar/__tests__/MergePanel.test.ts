@@ -41,12 +41,14 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   getReduxStore: () => ({ getState: () => ({}), dispatch: mocks.dispatch }),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
-  selectSidebarChangesState: mocks.selector(() => mocks.sidebarChanges),
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+  selectSidebarMergeWhenReady: mocks.selector(() => mocks.sidebarChanges.mergeWhenReady),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({ type: 'transientUi/setSidebarMergeWhenReady', payload: args })),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarMergeWhenReady', payload: args })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
@@ -76,11 +78,6 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
   executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
-}));
-
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: [wsId] })),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/git/git-slice', () => ({
@@ -243,7 +240,7 @@ describe('MergePanel', () => {
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'transientUi/setSidebarMergeWhenReady',
+        type: 'changes/setSidebarMergeWhenReady',
         payload: ['ws-1', false],
       }),
     );

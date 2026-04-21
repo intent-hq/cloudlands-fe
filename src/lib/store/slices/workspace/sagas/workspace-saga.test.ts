@@ -163,7 +163,6 @@ import {
   selectWorkspaceRecency,
 } from "../workspace-selectors";
 import { clearWorkspaceTransientUi } from "$lib/store/slices/transient-ui/transient-ui-slice";
-import { clearWorkspaceStats as clearLineChangesWorkspaceStats } from "$lib/store/slices/line-changes/line-changes-slice";
 import {
   handleLoadWorkspaces,
   initializeWorkspaceRecencySaga,
@@ -488,7 +487,6 @@ describe("workspace request sagas", () => {
     expect(iterator.next().value).toEqual(sagaEffects.put(removeWorkspaceAgentState("ws-1")));
     expect(iterator.next().value).toEqual(sagaEffects.put(workspaceUnmounted("ws-1")));
     expect(iterator.next().value).toEqual(sagaEffects.put(clearWorkspaceTransientUi("ws-1")));
-    expect(iterator.next().value).toEqual(sagaEffects.put(clearLineChangesWorkspaceStats("ws-1")));
     expect(iterator.next().value).toEqual(
       sagaEffects.call([{ clearState: mockWorkspaceStorageClearState }, mockWorkspaceStorageClearState], "ws-1"),
     );

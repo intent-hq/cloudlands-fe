@@ -9,10 +9,10 @@
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import {
     refreshRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     clearOlderCommits as ftClearOlderCommits,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
@@ -21,7 +21,7 @@
   } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import {
     setSidebarMergeWhenReady,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     refreshPRStatusRequested,
   } from '$lib/store/slices/pr-status/pr-status-slice';
@@ -34,7 +34,7 @@
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectSidebarChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { selectSidebarMergeWhenReady } from '$lib/store/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
   import Switch from '$lib/components/ui/switch/switch.svelte';
@@ -103,12 +103,12 @@
 
   const workspace = selectWorkspaceById(workspaceIdStore);
   const mergeExecState$ = selectExecutorState(workspaceIdStore, readable('commit-merge'));
-  const sidebarChangesState = selectSidebarChangesState(workspaceIdStore);
+  const mergeWhenReady$ = selectSidebarMergeWhenReady(workspaceIdStore);
 
   // Derived from Redux
   const isGeneratingMerge = $derived($mergeExecState$.status === 'running');
   const mergeAgentId = $derived($mergeExecState$.agentId);
-  const mergeWhenReady = $derived($sidebarChangesState.mergeWhenReady);
+  const mergeWhenReady = $derived($mergeWhenReady$);
 
   // Local state
   let isMergingToTrunk = $state(false);

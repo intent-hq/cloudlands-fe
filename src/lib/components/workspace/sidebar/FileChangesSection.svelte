@@ -10,13 +10,13 @@
   import {
     selectStagedWorkingChanges as selectFtStagedChanges,
     selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  } from '$lib/store/slices/changes/changes-selectors';
   import {
     stageByPathRequested,
     unstageByPathRequested,
     revertByPathRequested,
     refreshRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';

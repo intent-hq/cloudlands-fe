@@ -25,16 +25,16 @@
     selectStagedWorkingChanges as selectFtStagedChanges,
     selectUnstagedWorkingChanges as selectFtUnstagedChanges,
     selectFileTrackingIsInitialized as selectFtIsInitialized,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  } from '$lib/store/slices/changes/changes-selectors';
   import {
     clearMainPanelView as ftClearMainPanelView,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     stageByPathRequested,
     unstageByPathRequested,
     revertByPathRequested,
     refreshRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
@@ -80,7 +80,7 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { loadWorkspacesRequested, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { selectAcceptChangesState } from '$lib/store/slices/changes/changes-selectors';
   import {
     clearAcceptChangesForm,
     clearBackgroundOperation,
@@ -96,7 +96,7 @@
     setTargetBranch,
     startBackgroundOperation,
     updateBackgroundOperationPhase,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     resetExecutor,
   } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';

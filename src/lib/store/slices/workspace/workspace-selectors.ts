@@ -4,8 +4,8 @@ import { createSelector } from "../../utils/create-selector";
 import { getItem, getItems } from "../../utils/collection-utils";
 import { type WorkspaceRecencyState } from "./workspace-slice";
 import { selectIsNewlyCreatedWorkspace } from "../workspace-agents/workspace-agents-selectors";
-import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from "../file-tracking/file-tracking-selectors";
-import { selectGitCommits, selectGitStatus } from "../git/git-selectors";
+import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges, selectFileTrackingCommits } from "../changes/changes-selectors";
+import { selectGitStatus } from "../git/git-selectors";
 
 export const selectActiveWorkspaceId = createSelector((state) => {
   return state.workspace.activeWorkspaceId as WorkspaceId | null;
@@ -118,7 +118,7 @@ export const selectIsNewWorkspaceSession = createSelector<
   const isNewlyCreated = selectIsNewlyCreatedWorkspace.select(state, wsId);
   const staged = selectCurrentStagedWorkingChanges.select(state);
   const unstaged = selectCurrentUnstagedWorkingChanges.select(state);
-  const commits = selectGitCommits.select(state, wsId) ?? [];
+  const commits = selectFileTrackingCommits.select(state, wsId) ?? [];
   const gitStatus = selectGitStatus.select(state, wsId);
   return !!(
     isNewlyCreated &&

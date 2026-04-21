@@ -1,5 +1,5 @@
 /**
- * File Tracking Operations Saga
+ * Changes Operations Saga
  *
  * Handles all file-tracking operations (stage, unstage, revert, refresh, sync, load)
  * as saga handlers triggered by request actions.
@@ -34,13 +34,13 @@ import {
   trackChangeRequested,
   clearTrackedChangesRequested,
   loadOlderCommitsRequested,
-} from "../file-tracking-slice";
+} from "../changes-slice";
 import {
   selectFileTrackingChanges,
   selectCurrentWorkspaceId,
-} from "../file-tracking-selectors";
+} from "../changes-selectors";
 import { ChangeStage } from "$features/file-tracking/types";
-import type { TrackedChange, StageTransition, CommitInfo } from "../file-tracking-types";
+import type { TrackedChange, StageTransition, CommitInfo } from "../changes-types";
 import { FILE_TRACKING_CHANNELS } from "$shared/ipc/channels";
 import {
   hasChangesDifference,
@@ -227,7 +227,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
 
     const hasChanges = hasChangesDifference(existingChanges, filteredChanges);
-    const wsState = yield* select((s: any) => s.fileTracking.byWorkspaceId[wsId]);
+    const wsState = yield* select((s: any) => s.changes.byWorkspaceId[wsId]);
     const existingTrans = wsState?.transitions || [];
     const existingCommits = wsState?.commits || [];
     const hasTransitionChanges = hasTransitionsDifference(existingTrans, newTransitions);
@@ -263,6 +263,8 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
   }
 }
+
+
 
 
 // ---------------------------------------------------------------------------

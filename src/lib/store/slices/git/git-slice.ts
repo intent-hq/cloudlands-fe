@@ -9,18 +9,39 @@ import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import type { GitWorkspaceState, GitState } from "./git-types";
-import type { GitStatus, CommitInfo, DiffChunk } from "$shared/types";
+import type {
+  GitWorkspaceState,
+  GitState,
+  GitOperationCompletedEvent,
+  GitOperationFailedEvent,
+  GitOperationFlagName,
+  GitOperationFlags,
+  AutoCommitHookFailureEvent,
+  PostMergeState,
+} from "./git-types";
+export type { GitOperationCompletedEvent, GitOperationFailedEvent, AutoCommitHookFailureEvent } from "./git-types";
+import type { GitStatus, DiffChunk } from "$shared/types";
+
+export const defaultGitOperationFlags: GitOperationFlags = {
+  isPushing: false,
+  isPulling: false,
+  isForcePushing: false,
+  isRebasing: false,
+  isRefreshingPR: false,
+  isRefreshingGitStatus: false,
+  isResettingToTrunk: false,
+};
 
 const emptyWorkspaceState: GitWorkspaceState = {
   status: null,
-  commits: [],
   diffs: [],
   loading: false,
   error: null,
   branch: null,
   ahead: 0,
   behind: 0,
+  postMergeState: null,
+  gitOperations: { ...defaultGitOperationFlags },
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -30,6 +51,9 @@ export { getWorkspaceState as getGitWorkspaceState };
 
 export const initialState: GitState = {
   byWorkspaceId: {},
+  lastGitOperation: null,
+  lastGitError: null,
+  lastAutoCommitHookFailure: null,
 };
 
 // ── Actions ──
@@ -60,19 +84,6 @@ export const clearGitError = createAction<[wsId: string]>(
   "git/clearError"
 );
 
-/** Trigger saga to load commits */
-export const loadGitCommits = createAction(
-  "git/loadCommits",
-  (wsId: string, limit?: number, since?: string, baseRef?: string, baseCommitSha?: string) =>
-    ({ wsId, limit, since, baseRef, baseCommitSha })
-);
-
-/** Set commits result */
-export const setGitCommits = createAction(
-  "git/setCommits",
-  (wsId: string, commits: CommitInfo[]) => ({ wsId, commits })
-);
-
 /** Trigger saga to load diffs */
 export const loadGitDiffs = createAction<[wsId: string]>(
   "git/loadDiffs"
@@ -99,16 +110,6 @@ export const gitPull = createAction<[wsId: string]>(
   "git/pull"
 );
 
-/** Trigger saga: stage file */
-export const gitStageFile = createAction<[wsId: string, filePath: string]>(
-  "git/stageFile"
-);
-
-/** Trigger saga: unstage file */
-export const gitUnstageFile = createAction<[wsId: string, filePath: string]>(
-  "git/unstageFile"
-);
-
 /** Trigger saga: stage hunk */
 export const gitStageHunk = createAction<[wsId: string, filePath: string, hunkPatch: string]>(
   "git/stageHunk"
@@ -123,6 +124,33 @@ export const gitUnstageHunk = createAction<[wsId: string, filePath: string, hunk
 export const gitRemoveLockFile = createAction<[wsId: string]>(
   "git/removeLockFile"
 );
+
+// ── Git Operation Event Actions ──
+
+export const setLastGitOperation = createAction<[event: GitOperationCompletedEvent]>(
+  "git/setLastGitOperation"
+);
+
+export const setLastGitError = createAction<[event: GitOperationFailedEvent]>(
+  "git/setLastGitError"
+);
+
+export const setLastAutoCommitHookFailure = createAction<[
+  event: AutoCommitHookFailureEvent,
+]>("git/setLastAutoCommitHookFailure");
+
+// ── Sidebar git operation actions (moved from transient-ui) ──
+
+export const setPostMergeState = createAction<[
+  wsId: string,
+  postMergeState: PostMergeState | null,
+]>("git/setPostMergeState");
+
+export const setGitOperationFlag = createAction<[
+  wsId: string,
+  flag: GitOperationFlagName,
+  value: boolean,
+]>("git/setGitOperationFlag");
 
 // ── Reducer ──
 
@@ -153,15 +181,33 @@ export const gitReducer = createReducer<GitState>(initialState)
     if (ws.error === null) return state;
     return setWorkspaceState(state, wsId, { ...ws, error: null });
   })
-  .with(setGitCommits, (state, action) => {
-    const { wsId, commits } = action.payload;
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, commits, loading: false });
-  })
   .with(setGitDiffs, (state, action) => {
     const { wsId, diffs } = action.payload;
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, diffs, loading: false });
   })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
+  .with(setLastGitOperation, (state, { payload: [event] }) => ({
+    ...state,
+    lastGitOperation: event,
+  }))
+  .with(setLastGitError, (state, { payload: [event] }) => ({
+    ...state,
+    lastGitError: event,
+  }))
+  .with(setLastAutoCommitHookFailure, (state, { payload: [event] }) => ({
+    ...state,
+    lastAutoCommitHookFailure: event,
+  }))
+  .with(setPostMergeState, (state, { payload: [wsId, postMergeState] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, { ...ws, postMergeState });
+  })
+  .with(setGitOperationFlag, (state, { payload: [wsId, flag, value] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      gitOperations: { ...ws.gitOperations, [flag]: value },
+    });
+  });
 

@@ -48,26 +48,26 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: mocks.selector(() => mocks.staged),
   selectUnstagedWorkingChanges: mocks.selector(() => mocks.unstaged),
 }));
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
   stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'fileTracking/stageByPathRequested',
+    type: 'changes/stageByPathRequested',
     payload: [wsId, paths],
   })),
   unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'fileTracking/unstageByPathRequested',
+    type: 'changes/unstageByPathRequested',
     payload: [wsId, paths],
   })),
   revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
-    type: 'fileTracking/revertByPathRequested',
+    type: 'changes/revertByPathRequested',
     payload: [wsId, paths],
   })),
   refreshRequested: vi.fn((wsId: string) => ({
-    type: 'fileTracking/refreshRequested',
+    type: 'changes/refreshRequested',
     payload: wsId,
   })),
 }));
@@ -232,7 +232,7 @@ describe('FileChangesSection', () => {
     await fireEvent.click(getByText('Stage all'));
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/stageByPathRequested',
+        type: 'changes/stageByPathRequested',
         payload: ['ws-1', ['src/a.ts', 'src/b.ts']],
       }),
     );
@@ -244,7 +244,7 @@ describe('FileChangesSection', () => {
     await fireEvent.click(getByText('Unstage all'));
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/unstageByPathRequested',
+        type: 'changes/unstageByPathRequested',
         payload: ['ws-1', ['src/c.ts']],
       }),
     );
@@ -264,7 +264,7 @@ describe('FileChangesSection', () => {
 
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/stageByPathRequested',
+        type: 'changes/stageByPathRequested',
         payload: ['ws-1', ['src/a.ts']],
       }),
     );
@@ -288,7 +288,7 @@ describe('FileChangesSection', () => {
 
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/unstageByPathRequested',
+        type: 'changes/unstageByPathRequested',
         payload: ['ws-1', ['src/c.ts']],
       }),
     );
@@ -305,7 +305,7 @@ describe('FileChangesSection', () => {
     await fireEvent.click(getAllByTestId('revert-btn')[0]);
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/revertByPathRequested',
+        type: 'changes/revertByPathRequested',
         payload: ['ws-1', ['src/a.ts']],
       }),
     );
@@ -331,7 +331,7 @@ describe('FileChangesSection', () => {
     await fireEvent.click(getByText('Stage all'));
     expect(mocks.reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'fileTracking/stageByPathRequested',
+        type: 'changes/stageByPathRequested',
         payload: ['ws-1', ['src/free.ts']],
       }),
     );

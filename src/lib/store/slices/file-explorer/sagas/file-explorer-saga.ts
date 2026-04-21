@@ -19,11 +19,11 @@ import { getAgentFileEdits, propagateAgentEditsToParents } from "$lib/utils/agen
 import {
   selectCurrentStagedWorkingChanges as selectFtCurrentStagedChanges,
   selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
-} from "../../file-tracking/file-tracking-selectors";
+} from "../../changes/changes-selectors";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { setGitStatus, setGitDiffs } from "../../git/git-slice";
 import { selectGitStatus } from "../../git/git-selectors";
-import { selectFileChanges } from "../../line-changes/line-changes-selectors";
+import { selectWorkspaceFileChanges } from "../../changes/changes-selectors";
 import {
   initializeFileExplorer,
   setWorkspacePathRequested,
@@ -307,7 +307,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
       }
 
       const effectiveWsId = wsId || extractWorkspaceId(ws.workspacePath);
-      const fileChanges = yield* select((state: any) => selectFileChanges.select(state, effectiveWsId));
+      const fileChanges = yield* select((state: any) => selectWorkspaceFileChanges.select(state, effectiveWsId));
       if (fileChanges?.length > 0) {
         for (const change of fileChanges) {
           const existing = newGitStatus[change.path];

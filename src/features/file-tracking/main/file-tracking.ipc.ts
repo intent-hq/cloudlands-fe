@@ -255,6 +255,16 @@ export function setupFileTrackingIPC() {
               const rpcClient = await remoteRPCManager.getClient(workspaceId);
               const maxCount = limit ?? 50;
 
+              // Determine the current branch so we can compare against origin/<branch>
+              // instead of @{u} (which is unreliable when upstream isn't set).
+              const branchResult = await rpcClient
+                .exec({
+                  command: `cd "${workspacePath}" && git branch --show-current`,
+                  timeout: 15000,
+                })
+                .then((r) => r.stdout.trim())
+                .catch(() => '');
+
               // Use the same format as gitService._doGetHistory:
               // %H=hash, %an=author, %ae=email, %aI=date, %s=subject, %b=body
               // %x00 as commit delimiter, %x01 as field separator
@@ -264,19 +274,24 @@ export function setupFileTrackingIPC() {
               // Run git log and unpushed check in parallel
               const [logResult, unpushedResult] = await Promise.all([
                 rpcClient.exec({ command: gitLogCmd, timeout: 30000 }),
-                rpcClient
-                  .exec({
-                    command: `cd "${workspacePath}" && git log @{u}..HEAD --format=%H`,
-                    timeout: 15000,
-                  })
-                  .then((r) => ({
-                    hashes: new Set(r.stdout.trim().split('\n').filter(Boolean)),
-                    hasUpstream: true,
-                  }))
-                  .catch(() => ({
-                    hashes: new Set<string>(),
-                    hasUpstream: false,
-                  })),
+                branchResult
+                  ? rpcClient
+                      .exec({
+                        command: `cd "${workspacePath}" && git log origin/${branchResult}..HEAD --format=%H`,
+                        timeout: 15000,
+                      })
+                      .then((r) => ({
+                        hashes: new Set(r.stdout.trim().split('\n').filter(Boolean)),
+                        hasUpstream: true,
+                      }))
+                      .catch(() => ({
+                        hashes: new Set<string>(),
+                        hasUpstream: false,
+                      }))
+                  : Promise.resolve({
+                      hashes: new Set<string>(),
+                      hasUpstream: false,
+                    }),
               ]);
 
               const logOutput = logResult.stdout;
@@ -529,7 +544,7 @@ export function setupFileTrackingIPC() {
               workspaceId,
               beforeSha,
             });
-            return [];
+            return { commits: [] };
           }
 
           const lines = stdout.trim().split('\n');
@@ -576,12 +591,12 @@ export function setupFileTrackingIPC() {
             count: commits.length,
           });
 
-          return commits;
+          return { commits };
         } catch (error) {
           logger.error('Failed to load older commits', error as Error, {
             workspaceId: validated.workspaceId,
           });
-          return [];
+          return { commits: [] };
         }
       },
       FILE_TRACKING_CHANNELS.LOAD_OLDER_COMMITS,

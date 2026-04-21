@@ -13,7 +13,7 @@
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
-  import { selectAgentLineStats } from '$lib/store/slices/line-changes/line-changes-selectors';
+  import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
@@ -114,10 +114,12 @@
         ? String(workspace.id)
         : selectActiveWorkspaceId.select(getReduxStore().getState());
       if (wsId) {
-        getReduxStore().dispatch(updateAgentSessionFields(agentId, {
-          name: editingValue.trim(),
-          nameExplicitlySet: true,
-        } as any));
+        getReduxStore().dispatch(
+          updateAgentSessionFields(agentId, {
+            name: editingValue.trim(),
+            nameExplicitlySet: true,
+          } as any),
+        );
         agentService.saveSession(agentId, wsId, true);
       }
     }

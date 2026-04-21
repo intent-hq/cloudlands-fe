@@ -14,7 +14,6 @@ import { permissionReducer } from "./slices/permission/permission-slice";
 import { pipReducer } from "./slices/pip/pip-slice";
 import { featureCodesReducer } from "./slices/feature-codes/feature-codes-slice";
 import { globalModalsReducer } from "./slices/global-modals/global-modals-slice";
-import { gitOperationsReducer } from "./slices/git-operations/git-operations-slice";
 import { knownReposReducer } from "./slices/known-repos/known-repos-slice";
 import { deepLinksReducer } from "./slices/deep-links/deep-links-slice";
 import { modelReducer } from "./slices/model/model-slice";
@@ -43,14 +42,14 @@ import { setupScriptsReducer } from "./slices/setup-scripts/setup-scripts-slice"
 import { mcpServersReducer } from "./slices/mcp-servers/mcp-servers-slice";
 import { mcpSettingsReducer } from "./slices/mcp-settings/mcp-settings-slice";
 import { commentsReducer } from "./slices/comments/comments-slice";
-import { lineChangesReducer } from "./slices/line-changes/line-changes-slice";
+
 import { autoUpdateReducer } from "./slices/auto-update/auto-update-slice";
 import { sidebarNavReducer } from "./slices/sidebar-nav/sidebar-nav-slice";
 import { scriptsReducer } from "./slices/scripts/scripts-slice";
 import { agentFollowReducer } from "./slices/agent-follow/agent-follow-slice";
 import { gitReducer } from "./slices/git/git-slice";
 import { agentOverviewReducer } from "./slices/agent-overview/agent-overview-slice";
-import { fileTrackingReducer } from "./slices/file-tracking/file-tracking-slice";
+import { fileTrackingReducer } from "./slices/changes/changes-slice";
 import { agentLockReducer } from "./slices/agent-lock/agent-lock-slice";
 import { panelLayoutReducer } from "./slices/panel-layout/panel-layout-slice";
 import { streamingConfigReducer } from "./slices/streaming-config/streaming-config-slice";
@@ -78,7 +77,6 @@ export const reducers = {
   permission: permissionReducer,
   featureCodes: featureCodesReducer,
   globalModals: globalModalsReducer,
-  gitOperations: gitOperationsReducer,
   knownRepos: knownReposReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
@@ -110,14 +108,14 @@ export const reducers = {
   mcpServers: mcpServersReducer,
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
-  lineChanges: lineChangesReducer,
+
   autoUpdate: autoUpdateReducer,
   sidebarNav: sidebarNavReducer,
   scripts: scriptsReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   agentOverview: agentOverviewReducer,
-  fileTracking: fileTrackingReducer,
+  changes: fileTrackingReducer,
   agentLock: agentLockReducer,
   panelLayout: panelLayoutReducer,
   streamingConfig: streamingConfigReducer,

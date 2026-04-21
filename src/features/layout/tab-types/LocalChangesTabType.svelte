@@ -12,12 +12,12 @@
     selectFileTrackingChanges,
     selectFileTrackingCommits,
     selectFileTrackingLoading,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  } from '$lib/store/slices/changes/changes-selectors';
   import {
     stageByPathRequested,
     unstageByPathRequested,
     revertByPathRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';

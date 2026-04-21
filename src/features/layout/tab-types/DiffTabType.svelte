@@ -12,8 +12,8 @@
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { selectFileTrackingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
-  import { refreshRequested } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  import { selectFileTrackingChanges } from '$lib/store/slices/changes/changes-selectors';
+  import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';

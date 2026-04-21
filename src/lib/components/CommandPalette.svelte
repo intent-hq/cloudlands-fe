@@ -50,7 +50,7 @@
   import { Skeleton } from './ui/skeleton';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectCurrentChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectCurrentChanges } from '$lib/store/slices/changes/changes-selectors';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';

@@ -15,7 +15,7 @@ import { noteReadTrackingSaga } from "./slices/note-read-tracking/sagas/note-rea
 import { permissionSaga } from "./slices/permission/sagas/permission-saga";
 import { pipSaga } from "./slices/pip/sagas/pip-saga";
 import { featureCodesSaga } from "./slices/feature-codes/sagas/feature-codes-saga";
-import { gitOperationsSaga } from "./slices/git-operations/sagas/git-operations-saga";
+import { gitOperationsSaga } from "./slices/git/sagas/git-operations-saga";
 import { knownReposSaga } from "./slices/known-repos/sagas/known-repos-saga";
 import { deepLinksSaga } from "./slices/deep-links/sagas/deep-links-saga";
 import { modelSaga } from "./slices/model/sagas/model-saga";
@@ -50,13 +50,13 @@ import { setupScriptsSaga } from "./slices/setup-scripts/sagas/setup-scripts-sag
 import { mcpServersSaga } from "./slices/mcp-servers/sagas/mcp-servers-saga";
 import { mcpSettingsSaga } from "./slices/mcp-settings/sagas/mcp-settings-saga";
 import { commentsSaga } from "./slices/comments/sagas/comments-saga";
-import { lineChangesSaga } from "./slices/line-changes/sagas/line-changes-saga";
+
 import { sidebarNavSaga } from "./slices/sidebar-nav/sagas/sidebar-nav-saga";
 import { scriptsSaga } from "./slices/scripts/sagas/scripts-saga";
 import { agentFollowSaga } from "./slices/agent-follow/sagas/agent-follow-saga";
 import { gitSaga as gitStatusSaga } from "./slices/git/sagas/git-saga";
 import { agentOverviewSaga } from "./slices/agent-overview/sagas/agent-overview-saga";
-import { fileTrackingSaga } from "./slices/file-tracking/sagas/file-tracking-saga";
+import { changesSaga } from "./slices/changes/sagas/changes-saga";
 import { agentLockSaga } from "./slices/agent-lock/sagas/agent-lock-saga";
 import { panelLayoutSaga } from "./slices/panel-layout/sagas/panel-layout-saga";
 import { streamingConfigSaga } from "./slices/streaming-config/sagas/streaming-config-saga";
@@ -99,7 +99,7 @@ export const sagas = {
   streamingSaga: streamingConfigSaga,
   workspaceSaga,
   gitSaga: gitOperationsSaga,
-  fileTrackingSaga,
+  changesSaga,
   notesSaga: workspaceNotesSaga,
   workspaceEventsSaga: workspaceEventsRendererSaga,
   agentsSaga: workspaceAgentsSaga,
@@ -126,7 +126,7 @@ export const sagas = {
   setupScriptsSaga,
   mcpSettingsSaga,
   commentsSaga,
-  lineChangesSaga,
+
   sidebarNavSaga,
   scriptsSaga,
   agentFollowSaga,

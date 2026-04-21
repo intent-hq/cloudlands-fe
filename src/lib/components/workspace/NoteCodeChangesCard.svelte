@@ -13,7 +13,7 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
   import { agentService } from '$features/agent/agent-ipc-bridge';
-  import { selectCurrentChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectCurrentChanges } from '$lib/store/slices/changes/changes-selectors';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';

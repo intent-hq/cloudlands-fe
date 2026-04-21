@@ -65,7 +65,7 @@ vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
 vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: vi.fn((...args: any[]) => ({ type: 'noteReadTracking/createNoteRequested', payload: args })),
 }));
-vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectCurrentChanges: () => ({
     subscribe: (fn: (value: any[]) => void) => {
       fn([]);

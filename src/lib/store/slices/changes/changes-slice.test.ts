@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ChangeStage } from "$features/file-tracking/types";
-import type { TrackedChange, StageTransition, CommitInfo, MainPanelViewState } from "./file-tracking-types";
+import type { TrackedChange, StageTransition, CommitInfo, MainPanelViewState } from "./changes-types";
 import type { StoreState } from "../../types";
 import {
   fileTrackingReducer,
@@ -19,7 +19,18 @@ import {
   clearAllChanges,
   setMainPanelView,
   clearMainPanelView,
-} from "./file-tracking-slice";
+  updateAgentStats,
+  clearAgentStats,
+  setCommitMessage,
+  setTargetBranch,
+  setPendingCommitAction,
+  setIsAutofillAndCommitting,
+  setIsAutofillAndCreatingPR,
+  startBackgroundOperation,
+  resetAcceptChangesOperations,
+  setCachedGitStatus,
+} from "./changes-slice";
+import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   selectCurrentWorkspaceId,
   selectFileTrackingLoading,
@@ -29,7 +40,10 @@ import {
   selectMainPanelView,
   selectStagedWorkingChanges,
   selectUnstagedWorkingChanges,
-} from "./file-tracking-selectors";
+  selectAgentLineStats,
+  selectAllAgentStats,
+} from "./changes-selectors";
+import type { LineChangeStats } from "./changes-types";
 
 const WS = "ws-1";
 
@@ -56,7 +70,7 @@ function mockCommit(hash: string): CommitInfo {
 }
 
 function asStoreState(ft: ReturnType<typeof fileTrackingReducer>, activeWorkspaceId: string | null = null): StoreState {
-  return { fileTracking: ft, workspace: { activeWorkspaceId } } as unknown as StoreState;
+  return { changes: ft, workspace: { activeWorkspaceId } } as unknown as StoreState;
 }
 
 describe("fileTrackingReducer", () => {
@@ -178,9 +192,96 @@ describe("fileTrackingReducer", () => {
     state = fileTrackingReducer(state, clearMainPanelView());
     expect(state.mainPanelView).toBeNull();
   });
+
+  // Agent stats tests (absorbed from line-changes)
+  it("updateAgentStats sets agent stats", () => {
+    const stats: LineChangeStats = { additions: 3, deletions: 1, timestamp: "2025-01-01T00:00:00Z" };
+    const state = fileTrackingReducer(initialState, updateAgentStats("agent-1", stats));
+    expect(state.agentStats["agent-1"]).toEqual(stats);
+  });
+
+  it("updateAgentStats overwrites existing agent stats", () => {
+    const stats1: LineChangeStats = { additions: 3, deletions: 1, timestamp: "2025-01-01T00:00:00Z" };
+    const stats2: LineChangeStats = { additions: 10, deletions: 5, timestamp: "2025-01-02T00:00:00Z" };
+    let state = fileTrackingReducer(initialState, updateAgentStats("agent-1", stats1));
+    state = fileTrackingReducer(state, updateAgentStats("agent-1", stats2));
+    expect(state.agentStats["agent-1"]).toEqual(stats2);
+  });
+
+  it("clearAgentStats removes agent stats", () => {
+    let state = fileTrackingReducer(initialState, updateAgentStats("agent-1", { additions: 1, deletions: 0, timestamp: "" }));
+    state = fileTrackingReducer(state, clearAgentStats("agent-1"));
+    expect(state.agentStats["agent-1"]).toBeUndefined();
+  });
+
+  it("workspaceUnmounted clears workspace state", () => {
+    let state = fileTrackingReducer(initialState, setLoading(WS, true));
+    state = fileTrackingReducer(state, setChanges(WS, [mockChange("a")]));
+    expect(state.byWorkspaceId[WS]).toBeDefined();
+    state = fileTrackingReducer(state, workspaceUnmounted(WS));
+    expect(state.byWorkspaceId[WS]).toBeUndefined();
+  });
+
+  it("clearAgentStats does not affect other agents", () => {
+    let state = fileTrackingReducer(initialState, updateAgentStats("agent-1", { additions: 1, deletions: 0, timestamp: "" }));
+    state = fileTrackingReducer(state, updateAgentStats("agent-2", { additions: 2, deletions: 0, timestamp: "" }));
+    state = fileTrackingReducer(state, clearAgentStats("agent-1"));
+    expect(state.agentStats["agent-1"]).toBeUndefined();
+    expect(state.agentStats["agent-2"]).toBeDefined();
+  });
+
+  // Accept changes tests (moved from transient-ui slice)
+  it("setCommitMessage stores the commit message on acceptChanges", () => {
+    const state = fileTrackingReducer(initialState, setCommitMessage(WS, "feat: add reducer"));
+    expect(state.byWorkspaceId[WS].acceptChanges.commitMessage).toBe("feat: add reducer");
+  });
+
+  it("resetAcceptChangesOperations clears coordination state without touching target branch", () => {
+    let state = fileTrackingReducer(initialState, setTargetBranch(WS, "release/next"));
+    state = fileTrackingReducer(state, setPendingCommitAction(WS, "commit"));
+    state = fileTrackingReducer(state, setIsAutofillAndCommitting(WS, true));
+    state = fileTrackingReducer(state, setIsAutofillAndCreatingPR(WS, true));
+    state = fileTrackingReducer(
+      state,
+      startBackgroundOperation(WS, "commit", Date.now(), "Generating...")
+    );
+
+    const nextState = fileTrackingReducer(state, resetAcceptChangesOperations(WS));
+
+    expect(nextState.byWorkspaceId[WS].acceptChanges.pendingCommitAction).toBeNull();
+    expect(nextState.byWorkspaceId[WS].acceptChanges.isAutofillAndCommitting).toBe(false);
+    expect(nextState.byWorkspaceId[WS].acceptChanges.isAutofillAndCreatingPR).toBe(false);
+    expect(nextState.byWorkspaceId[WS].acceptChanges.backgroundOperation).toBeNull();
+    expect(nextState.byWorkspaceId[WS].acceptChanges.targetBranch).toBe("release/next");
+  });
+
+  it("uses payload timestamps for background operation and cached git status", () => {
+    const gitStatus = {
+      currentBranch: "feature/changes",
+      files: [],
+      isClean: true,
+      ahead: 0,
+      behind: 0,
+      hasConflicts: false,
+    } as any;
+
+    let state = fileTrackingReducer(
+      initialState,
+      startBackgroundOperation(WS, "create-pr", 123_456, "Creating PR")
+    );
+    state = fileTrackingReducer(state, setCachedGitStatus(WS, gitStatus, 234_567));
+
+    expect(state.byWorkspaceId[WS].acceptChanges.backgroundOperation).toEqual({
+      type: "create-pr",
+      startedAt: 123_456,
+      phase: "generating",
+      label: "Creating PR",
+    });
+    expect(state.byWorkspaceId[WS].acceptChanges.cachedGitStatusTimestamp).toBe(234_567);
+  });
 });
 
-describe("file-tracking selectors", () => {
+describe("changes selectors", () => {
   it("selectCurrentWorkspaceId returns null when no active workspace", () => {
     expect(selectCurrentWorkspaceId.select(asStoreState(initialState))).toBeNull();
   });
@@ -222,6 +323,24 @@ describe("file-tracking selectors", () => {
 
   it("selectMainPanelView returns null by default", () => {
     expect(selectMainPanelView.select(asStoreState(initialState))).toBeNull();
+  });
+
+  // Agent stats selector tests
+  it("selectAgentLineStats returns undefined for unknown agent", () => {
+    expect(selectAgentLineStats.select(asStoreState(initialState), "unknown")).toBeUndefined();
+  });
+
+  it("selectAgentLineStats returns stats for known agent", () => {
+    const stats: LineChangeStats = { additions: 5, deletions: 2, timestamp: "t" };
+    const state = fileTrackingReducer(initialState, updateAgentStats("agent-1", stats));
+    expect(selectAgentLineStats.select(asStoreState(state), "agent-1")).toEqual(stats);
+  });
+
+  it("selectAllAgentStats returns all agent stats", () => {
+    let state = fileTrackingReducer(initialState, updateAgentStats("a1", { additions: 1, deletions: 0, timestamp: "" }));
+    state = fileTrackingReducer(state, updateAgentStats("a2", { additions: 2, deletions: 0, timestamp: "" }));
+    const all = selectAllAgentStats.select(asStoreState(state));
+    expect(Object.keys(all)).toHaveLength(2);
   });
 });
 

@@ -1,7 +1,6 @@
 import { clearDeferredResults } from "$features/agent/deferred-results-cache";
 import { removeWorkspaceAgentState } from "../../workspace-agents/workspace-agents-slice";
 import { cleanupPRStatusWorkspace } from "$lib/store/slices/pr-status/pr-status-slice";
-import { clearWorkspaceStats as clearLineChangesWorkspaceStats } from "$lib/store/slices/line-changes/line-changes-slice";
 import { clearWorkspaceTransientUi } from "$lib/store/slices/transient-ui/transient-ui-slice";
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
 import { workspaceStorageManager } from "$lib/store/slices/workspace/utils/workspace-storage-manager";
@@ -182,7 +181,7 @@ export function* handleDeleteWorkspace(action: ReturnType<typeof deleteWorkspace
 
     try {
       yield* put(clearWorkspaceTransientUi(wsId));
-      yield* put(clearLineChangesWorkspaceStats(wsId));
+
       yield* call([workspaceStorageManager, workspaceStorageManager.clearState], wsId);
     } catch {
       // Best effort only — do not fail deletion after backend success.

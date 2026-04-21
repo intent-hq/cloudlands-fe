@@ -44,7 +44,7 @@
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { selectCurrentCommits } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectCurrentCommits } from '$lib/store/slices/changes/changes-selectors';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { type WorkspaceId } from '$shared/types/branded-ids';

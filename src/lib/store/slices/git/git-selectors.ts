@@ -5,7 +5,19 @@
  */
 
 import { createSelector } from "../../utils/create-selector";
-import { getGitWorkspaceState } from "./git-slice";
+import { defaultGitOperationFlags, getGitWorkspaceState } from "./git-slice";
+import type { GitOperationFlagName, PostMergeState } from "./git-types";
+
+const defaultPostMergeState: PostMergeState = {
+  aheadOfTrunk: null,
+  behindTrunk: 0,
+  hasConflicts: false,
+  isContentMergedToTrunk: false,
+  hasRemote: true,
+  isMergedToTrunk: false,
+  mergeHeadSha: null,
+  hasResetToTrunk: false,
+};
 
 // ── Raw state selectors ──
 
@@ -15,10 +27,6 @@ export const selectGitWorkspaceState = createSelector(
 
 export const selectGitStatus = createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).status
-);
-
-export const selectGitCommits = createSelector(
-  (state, wsId: string) => getGitWorkspaceState(state.git, wsId).commits
 );
 
 export const selectGitDiffs = createSelector(
@@ -118,42 +126,37 @@ export const selectGitIsDiverged = createSelector(
   }
 );
 
-// ── Sidebar-specific selectors (stable references for template props) ──
+// ── Git operation event selectors (absorbed from git-operations) ──
 
-type SidebarCommitFile = { path: string; additions: number; deletions: number };
-type SidebarCommit = {
-  hash: string;
-  message: string;
-  author: string;
-  date: string;
-  filesChanged: number;
-  isPushed: boolean;
-  files: SidebarCommitFile[];
-};
+export const selectLastGitOperation = createSelector((state) => {
+  return state.git.lastGitOperation;
+});
 
-const EMPTY_SIDEBAR_COMMITS: SidebarCommit[] = [];
-const EMPTY_FILES: SidebarCommitFile[] = [];
+export const selectLastGitError = createSelector((state) => {
+  return state.git.lastGitError;
+});
 
-/**
- * Returns the unpushed commits formatted for the sidebar component.
- * Uses createSelector's built-in caching so the same array reference is
- * returned when the underlying data hasn't changed.
- */
-export const selectSidebarCommits = createSelector<[wsId: string], SidebarCommit[]>(
-  (state, wsId) => {
-    const gitState = getGitWorkspaceState(state.git, wsId);
-    const commits = gitState.commits ?? [];
-    const ahead = gitState.ahead ?? 0;
-    if (!commits.length || !ahead) return EMPTY_SIDEBAR_COMMITS;
-    return commits.slice(0, ahead).map((c) => ({
-      hash: c.hash,
-      message: c.message,
-      author: c.author || "",
-      date: c.date || "",
-      filesChanged: c.files?.length || 0,
-      isPushed: false,
-      files: c.files?.map((f: string) => ({ path: f, additions: 0, deletions: 0 })) || EMPTY_FILES,
-    }));
+export const selectLastAutoCommitHookFailure = createSelector((state) => {
+  return state.git.lastAutoCommitHookFailure;
+});
+
+// ── Sidebar post-merge / git operation flag selectors (moved from transient-ui) ──
+
+export const selectPostMergeState = createSelector(
+  (state, wsId: string): PostMergeState =>
+    getGitWorkspaceState(state.git, wsId).postMergeState ?? defaultPostMergeState
+);
+
+export const selectGitOperationFlags = createSelector(
+  (state, wsId: string) => {
+    const ws = getGitWorkspaceState(state.git, wsId);
+    return ws.gitOperations ?? defaultGitOperationFlags;
   }
 );
 
+export const selectGitOperationFlag = createSelector(
+  (state, wsId: string, flag: GitOperationFlagName): boolean => {
+    const ws = getGitWorkspaceState(state.git, wsId);
+    return (ws.gitOperations ?? defaultGitOperationFlags)[flag];
+  }
+);

@@ -7,7 +7,7 @@
 
 import { untrack } from 'svelte';
 import { handleLink } from '$features/navigation/link-handler';
-import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
 import { selectAllNotes, selectNotesLoading } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
@@ -15,7 +15,7 @@ import {
   stageByPathRequested,
   unstageByPathRequested,
   revertChangeRequested,
-} from '$lib/store/slices/file-tracking/file-tracking-slice';
+} from '$lib/store/slices/changes/changes-slice';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';

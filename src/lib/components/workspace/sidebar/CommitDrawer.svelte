@@ -11,10 +11,10 @@
   } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import {
     setSidebarCommitWhenReady,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
-    selectSidebarChangesState,
-  } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+    selectSidebarCommitWhenReady,
+  } from '$lib/store/slices/changes/changes-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -76,12 +76,12 @@
     workspaceIdStore.set(workspaceId);
   });
 
-  const sidebarChangesState = selectSidebarChangesState(workspaceIdStore);
+  const commitWhenReady$ = selectSidebarCommitWhenReady(workspaceIdStore);
   const commitExecState$ = selectExecutorState(workspaceIdStore, readable('commit'));
 
   const isGenerating = $derived($commitExecState$.status === 'running');
   const commitAgentId = $derived($commitExecState$.agentId);
-  const commitWhenReady = $derived($sidebarChangesState.commitWhenReady);
+  const commitWhenReady = $derived($commitWhenReady$);
 
   // Export state
   let exportPath = $state('');

@@ -47,17 +47,16 @@ vi.mock('$lib/store/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
-  selectSidebarChangesState: mocks.selector(() => mocks.state.sidebarChanges),
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectAcceptChangesState: mocks.selector(() => mocks.state.acceptChanges),
-  selectPostMergeState: mocks.selector(() => mocks.state.postMerge),
-  selectGitOperationFlags: mocks.selector(() => mocks.state.sidebarChanges.gitOperations),
+  selectSidebarCreatePRWhenReady: mocks.selector(() => mocks.state.sidebarChanges.createPRWhenReady),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  setSidebarCreatePRWhenReady: vi.fn((...args: unknown[]) => ({ type: 'transientUi/setSidebarCreatePRWhenReady', payload: args })),
-  setGitOperationFlag: vi.fn((...args: unknown[]) => ({ type: 'transientUi/setGitOperationFlag', payload: args })),
-  refreshAcceptChangesStatus: vi.fn((...args: unknown[]) => ({ type: 'transientUi/refreshAcceptChangesStatus', payload: args })),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  refreshAcceptChangesStatus: vi.fn((...args: unknown[]) => ({ type: 'changes/refreshAcceptChangesStatus', payload: args })),
+  setSidebarCreatePRWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarCreatePRWhenReady', payload: args })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
@@ -79,19 +78,17 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
 vi.mock('$lib/store/slices/git/git-selectors', () => ({
   selectGitAhead: mocks.selector(() => 0),
   selectGitBehind: mocks.selector(() => 0),
+  selectPostMergeState: mocks.selector(() => mocks.state.postMerge),
+  selectGitOperationFlags: mocks.selector(() => mocks.state.sidebarChanges.gitOperations),
 }));
 
 vi.mock('$lib/store/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
+  setGitOperationFlag: vi.fn((...args: unknown[]) => ({ type: 'git/setGitOperationFlag', payload: args })),
 }));
 
 vi.mock('$lib/store/slices/pr-status/pr-status-slice', () => ({
   refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
-}));
-
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: [wsId] })),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({

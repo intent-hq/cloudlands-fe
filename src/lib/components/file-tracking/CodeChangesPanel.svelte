@@ -19,17 +19,17 @@
     selectCurrentCommits as selectFtCurrentCommits,
     selectCurrentLoading as selectFtCurrentLoading,
     selectMainPanelView as selectFtMainPanelView,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  } from '$lib/store/slices/changes/changes-selectors';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
     setMainPanelView as ftSetMainPanelView,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import {
     stageChangesRequested,
     unstageChangesRequested,
     revertChangeRequested,
     loadWorkspaceDataRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
   import FileChangesList from './FileChangesList.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
@@ -46,7 +46,7 @@
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectAcceptChangesState } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { selectAcceptChangesState } from '$lib/store/slices/changes/changes-selectors';
 
   interface Props {
     collapsed?: boolean;

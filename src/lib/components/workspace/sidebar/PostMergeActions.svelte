@@ -9,12 +9,12 @@
   import {
     setPostMergeState,
     setGitOperationFlag,
-    refreshAcceptChangesStatus,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  } from '$lib/store/slices/git/git-slice';
+  import { refreshAcceptChangesStatus } from '$lib/store/slices/changes/changes-slice';
   import {
     selectPostMergeState,
     selectGitOperationFlags,
-  } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  } from '$lib/store/slices/git/git-selectors';
   import {
     selectWorkspaceById,
   } from '$lib/store/slices/workspace/workspace-selectors';
@@ -26,12 +26,12 @@
   import {
     clearOlderCommits as ftClearOlderCommits,
     refreshRequested,
-  } from '$lib/store/slices/file-tracking/file-tracking-slice';
+  } from '$lib/store/slices/changes/changes-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import type { PostMergeState } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import type { PostMergeState } from '$lib/store/slices/git/git-types';
   import {
     faRotateLeft,
     faRocket,

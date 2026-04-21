@@ -1,8 +1,5 @@
 import {
-  createEmptyAcceptChangesState,
-  createEmptySidebarChangesState,
   createEmptyWorkspaceTransientUiState,
-  STALE_STATE_THRESHOLD_MS,
   STORAGE_KEY_PREFIX,
   type SidebarTabId,
   type TransientUiWorkspaceState,
@@ -53,22 +50,7 @@ export function sanitizePersistedTransientUiState(
     return { state: null, removeStorage: true, persistSanitized: false };
   }
 
-  const acceptChanges = isRecord(persisted.acceptChanges)
-    ? (persisted.acceptChanges as Partial<ReturnType<typeof createEmptyAcceptChangesState>>)
-    : {};
-  const sidebarChanges = isRecord(persisted.sidebarChanges)
-    ? (persisted.sidebarChanges as Partial<ReturnType<typeof createEmptySidebarChangesState>>)
-    : {};
-
   const state: TransientUiWorkspaceState = {
-    acceptChanges: {
-      ...createEmptyAcceptChangesState(),
-      ...acceptChanges,
-    },
-    sidebarChanges: {
-      ...createEmptySidebarChangesState(),
-      ...sidebarChanges,
-    },
     chatDrafts: normalizeStringRecord(persisted.chatDrafts),
     sidebarActiveTab: normalizeSidebarTab(persisted.sidebarActiveTab),
     viewedFiles: normalizeStringRecord(persisted.viewedFiles),
@@ -76,29 +58,6 @@ export function sanitizePersistedTransientUiState(
   };
 
   const originalSerialized = JSON.stringify(persisted);
-  const isStale = state.timestamp > 0 && now - state.timestamp > STALE_STATE_THRESHOLD_MS;
-
-  if (isStale) {
-    state.acceptChanges.isAutofillAndCommitting = false;
-    state.acceptChanges.isAutofillAndCreatingPR = false;
-    state.acceptChanges.pendingCommitAction = null;
-    state.acceptChanges.pendingPRContext = null;
-    state.acceptChanges.backgroundOperation = null;
-    state.sidebarChanges.commitWhenReady = false;
-    state.sidebarChanges.createPRWhenReady = false;
-    state.sidebarChanges.mergeWhenReady = false;
-    state.sidebarChanges.pendingAutoAction = null;
-  }
-
-  if (
-    state.acceptChanges.isAutofillAndCommitting ||
-    state.acceptChanges.isAutofillAndCreatingPR ||
-    state.acceptChanges.backgroundOperation
-  ) {
-    state.acceptChanges.isAutofillAndCommitting = false;
-    state.acceptChanges.isAutofillAndCreatingPR = false;
-    state.acceptChanges.backgroundOperation = null;
-  }
 
   const sanitizedSerialized = JSON.stringify({
     ...createEmptyWorkspaceTransientUiState(),

@@ -4,7 +4,7 @@ import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { call, fork, put } from "typed-redux-saga";
-import { setLastAutoCommitHookFailure, setLastGitError, setLastGitOperation, type AutoCommitHookFailureEvent, type GitOperationCompletedEvent, type GitOperationFailedEvent, } from "../git-operations-slice";
+import { setLastAutoCommitHookFailure, setLastGitError, setLastGitOperation, type AutoCommitHookFailureEvent, type GitOperationCompletedEvent, type GitOperationFailedEvent, } from "../git-slice";
 async function handleGitOperationCompleted(data: GitOperationCompletedEvent): Promise<void> {
     if ((data.operationType === "auto-commit" || data.operationType === "commit") && data.result?.noChanges) {
         return;
@@ -196,3 +196,4 @@ export function* gitOperationsSaga() {
     yield* fork(watchGitOperationFailedSaga);
     yield* fork(watchAutoCommitHookFailureSaga);
 }
+

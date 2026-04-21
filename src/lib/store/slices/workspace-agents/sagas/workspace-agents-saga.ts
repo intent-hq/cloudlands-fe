@@ -1,6 +1,6 @@
 import type { AgentDeletedPayload, AgentRenamedPayload } from "$features/events/types";
 import { agentService } from "$features/agent/agent-ipc-bridge";
-import { initWorkspace as initFileTracking } from "$lib/store/slices/file-tracking/file-tracking-slice";
+import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";

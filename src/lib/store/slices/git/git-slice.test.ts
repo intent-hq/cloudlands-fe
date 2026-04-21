@@ -6,12 +6,11 @@ import {
   setGitStatus,
   setGitError,
   clearGitError,
-  setGitCommits,
   setGitDiffs,
   getGitWorkspaceState,
 } from "./git-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import type { GitStatus, CommitInfo, DiffChunk } from "$shared/types";
+import type { GitStatus, DiffChunk } from "$shared/types";
 
 const reduce = gitReducer;
 
@@ -23,16 +22,6 @@ const makeGitStatus = (overrides: Partial<GitStatus> = {}): GitStatus => ({
   files: [],
   hasUncommittedChanges: false,
   hasUntrackedFiles: false,
-  ...overrides,
-});
-
-const makeCommit = (overrides: Partial<CommitInfo> = {}): CommitInfo => ({
-  hash: "abc123",
-  author: "Test Author",
-  email: "test@example.com",
-  date: "2025-01-01T00:00:00Z",
-  message: "test commit",
-  files: [],
   ...overrides,
 });
 
@@ -101,17 +90,6 @@ describe("gitReducer", () => {
       const state = reduce(initialState, clearGitError("ws-1"));
       // workspace is lazily created, but error starts null
       expect(getGitWorkspaceState(state, "ws-1").error).toBeNull();
-    });
-  });
-
-  describe("setGitCommits", () => {
-    it("should set commits and clear loading", () => {
-      const commits = [makeCommit({ hash: "aaa" }), makeCommit({ hash: "bbb" })];
-      let state = reduce(initialState, setGitLoading("ws-1", true));
-      state = reduce(state, setGitCommits("ws-1", commits));
-      const ws = getGitWorkspaceState(state, "ws-1");
-      expect(ws.commits).toEqual(commits);
-      expect(ws.loading).toBe(false);
     });
   });
 

@@ -21,19 +21,20 @@ import { setExecutorState, reconnectAgent } from "../../background-agent-executo
 import { selectExecutorState } from "../../background-agent-executor/background-agent-executor-selectors";
 import type { ExecutorStatus } from "../../background-agent-executor/background-agent-executor-types";
 import {
-  setCommitMessage,
-  setPRTitle,
-  setPRDescription,
   setSidebarCommitWhenReady,
   setSidebarCreatePRWhenReady,
   setSidebarMergeWhenReady,
   setPendingAutoAction,
-  type PendingAutoAction,
-} from "../transient-ui-slice";
+  setCommitMessage,
+  setPRTitle,
+  setPRDescription,
+} from "../../changes/changes-slice";
 import {
-  selectSidebarChangesState,
   selectAcceptChangesState,
-} from "../transient-ui-selectors";
+  selectSidebarCommitWhenReady,
+  selectSidebarCreatePRWhenReady,
+  selectSidebarMergeWhenReady,
+} from "../../changes/changes-selectors";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 
 const logger = new Logger({ category: "ExecutorResultSaga" });
@@ -71,12 +72,11 @@ function* handleExecutorSuccess(
   executorType: string,
   result: string,
 ): SagaGenerator<void> {
-  const sidebarState = yield* selectSidebarChangesState.effect(workspaceId);
-
   if (executorType === "commit") {
     yield* put(setCommitMessage(workspaceId, result));
 
-    if (sidebarState.commitWhenReady) {
+    const commitWhenReady = yield* selectSidebarCommitWhenReady.effect(workspaceId);
+    if (commitWhenReady) {
       yield* put(setSidebarCommitWhenReady(workspaceId, false));
       yield* put(setPendingAutoAction(workspaceId, {
         action: "commit",
@@ -92,7 +92,8 @@ function* handleExecutorSuccess(
       yield* put(setPRDescription(workspaceId, description));
     }
 
-    if (sidebarState.createPRWhenReady) {
+    const createPRWhenReady = yield* selectSidebarCreatePRWhenReady.effect(workspaceId);
+    if (createPRWhenReady) {
       yield* put(setSidebarCreatePRWhenReady(workspaceId, false));
       // Read the executor state to get the execution context (target branch)
       const execState = yield* selectExecutorState.effect(workspaceId, "pr");
@@ -105,7 +106,8 @@ function* handleExecutorSuccess(
   } else if (executorType === "commit-merge") {
     yield* put(setCommitMessage(workspaceId, result));
 
-    if (sidebarState.mergeWhenReady) {
+    const mergeWhenReady = yield* selectSidebarMergeWhenReady.effect(workspaceId);
+    if (mergeWhenReady) {
       yield* put(setSidebarMergeWhenReady(workspaceId, false));
       yield* put(setPendingAutoAction(workspaceId, {
         action: "merge",
@@ -138,7 +140,6 @@ function* handleDeferredResults(
   workspaceId: string,
 ): SagaGenerator<void> {
   const acceptChanges = yield* selectAcceptChangesState.effect(workspaceId);
-  const sidebarState = yield* selectSidebarChangesState.effect(workspaceId);
 
   // Check for deferred commit messages — only if commitMessage is empty
   if (!acceptChanges.commitMessage && hasDeferredResults(workspaceId, "commit")) {
@@ -176,7 +177,8 @@ function* handleDeferredResults(
         });
 
         // If createPRWhenReady was set, trigger auto-PR creation
-        if (sidebarState.createPRWhenReady) {
+        const createPRWhenReady = yield* selectSidebarCreatePRWhenReady.effect(workspaceId);
+        if (createPRWhenReady) {
           logger.info(
             "[ExecutorResultSaga] Auto-creating PR after deferred result restored",
             { workspaceId },
@@ -200,7 +202,7 @@ function* handlePRExecutorReconnection(
   workspaceId: string,
 ): SagaGenerator<void> {
   const prExecState = yield* selectExecutorState.effect(workspaceId, "pr");
-  const sidebarState = yield* selectSidebarChangesState.effect(workspaceId);
+  const createPRWhenReady = yield* selectSidebarCreatePRWhenReady.effect(workspaceId);
 
   // Only reconnect if we have a persisted executor state with an agentId
   if (!prExecState.agentId) return;
@@ -209,13 +211,13 @@ function* handlePRExecutorReconnection(
 
   if (savedStatus === "running" || savedStatus === "initializing") {
     // Restore createPRWhenReady from persisted state
-    if (sidebarState.createPRWhenReady) {
+    if (createPRWhenReady) {
       // Already set in Redux — no-op needed, saga will handle it when executor completes
     }
     logger.info("[ExecutorResultSaga] Reconnecting to running PR executor", {
       agentId,
       savedStatus,
-      createPRWhenReady: sidebarState.createPRWhenReady,
+      createPRWhenReady,
     });
     yield* put(
       reconnectAgent(workspaceId, "pr", agentId, {
@@ -226,7 +228,7 @@ function* handlePRExecutorReconnection(
   } else if (savedStatus === "success" && result) {
     logger.info("[ExecutorResultSaga] Restoring completed PR executor result", {
       agentId,
-      createPRWhenReady: sidebarState.createPRWhenReady,
+      createPRWhenReady,
     });
     yield* put(
       reconnectAgent(workspaceId, "pr", agentId, {

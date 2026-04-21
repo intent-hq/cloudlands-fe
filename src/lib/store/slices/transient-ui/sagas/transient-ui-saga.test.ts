@@ -30,7 +30,7 @@ import {
   persistWorkspaceTransientUi,
   SAVE_DEBOUNCE_MS,
   requestPersistWorkspaceTransientUi,
-  setCommitMessage,
+  setSidebarActiveTab,
   setViewedFiles,
 } from "../transient-ui-slice";
 import {
@@ -46,15 +46,11 @@ import {
 } from "../utils/persistence";
 
 describe("transientUi persistence utils", () => {
-  it("migrates deprecated sidebar tabs and clears stale in-progress state", () => {
+  it("migrates deprecated sidebar tabs and drops legacy sidebarChanges keys", () => {
     const now = 4_000_000;
     const persisted = {
       sidebarActiveTab: "activity",
-      timestamp: now - (60 * 60 * 1000 + 1),
-      acceptChanges: {
-        isAutofillAndCommitting: true,
-        pendingCommitAction: "commit",
-      },
+      timestamp: now,
       sidebarChanges: {
         createPRWhenReady: true,
       },
@@ -63,9 +59,7 @@ describe("transientUi persistence utils", () => {
     const result = sanitizePersistedTransientUiState(persisted, now);
 
     expect(result.state?.sidebarActiveTab).toBe("agents");
-    expect(result.state?.acceptChanges.isAutofillAndCommitting).toBe(false);
-    expect(result.state?.acceptChanges.pendingCommitAction).toBeNull();
-    expect(result.state?.sidebarChanges.createPRWhenReady).toBe(false);
+    expect(result.state).not.toHaveProperty("sidebarChanges");
     expect(result.persistSanitized).toBe(true);
   });
 });
@@ -83,9 +77,9 @@ describe("transientUiSaga workers", () => {
       done: false,
     });
 
-    // Skip remaining debounced persist takeEvery calls (21 more),
+    // Skip remaining debounced persist takeEvery calls (3 more),
     // persistWorkspaceTransientUi, removeWorkspaceEntity
-    for (let i = 0; i < 23; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       iterator.next();
     }
 
@@ -98,7 +92,7 @@ describe("transientUiSaga workers", () => {
   });
 
   it("queues debounced persistence for workspace-scoped mutations", () => {
-    const iterator = queueTransientUiPersistence(setCommitMessage("ws-1", "feat: add slice"));
+    const iterator = queueTransientUiPersistence(setSidebarActiveTab("ws-1", "changes"));
 
     expect(iterator.next()).toEqual({
       value: sagaEffects.put(requestPersistWorkspaceTransientUi(persistWorkspaceTransientUi("ws-1"))),
@@ -111,9 +105,6 @@ describe("transientUiSaga workers", () => {
     const persisted = {
       sidebarActiveTab: "activity",
       timestamp: 123,
-      acceptChanges: {
-        isAutofillAndCreatingPR: true,
-      },
     };
     const expectedState = sanitizePersistedTransientUiState(persisted).state;
     const iterator = handleWorkspaceMounted(workspaceMounted("ws-1"));

@@ -38,7 +38,7 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$lib/store/slices/git/git-selectors', () => ({
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
   selectPostMergeState: Object.assign(
     () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.postMerge); return () => {}; } }),
@@ -46,24 +46,21 @@ vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  setPostMergeState: vi.fn((wsId: string, state: unknown) => ({ type: 'transientUi/setPostMergeState', payload: [wsId, state] })),
-  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'transientUi/setGitOperationFlag', payload: [wsId, flag, val] })),
-  refreshAcceptChangesStatus: vi.fn((wsId: string) => ({ type: 'transientUi/refreshAcceptChangesStatus', payload: wsId })),
+vi.mock('$lib/store/slices/git/git-slice', () => ({
+  loadGitStatus: vi.fn((wsId: string, force: boolean) => ({ type: 'git/loadStatus', payload: [wsId, force] })),
+  setPostMergeState: vi.fn((wsId: string, state: unknown) => ({ type: 'git/setPostMergeState', payload: [wsId, state] })),
+  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'git/setGitOperationFlag', payload: [wsId, flag, val] })),
+}));
+
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  refreshAcceptChangesStatus: vi.fn((wsId: string) => ({ type: 'changes/refreshAcceptChangesStatus', payload: wsId })),
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((entity: unknown) => ({ type: 'workspace/setWorkspaceEntity', payload: entity })),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
-}));
-
-vi.mock('$lib/store/slices/git/git-slice', () => ({
-  loadGitStatus: vi.fn((wsId: string, force: boolean) => ({ type: 'git/loadStatus', payload: [wsId, force] })),
-}));
-
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', () => ({
@@ -167,11 +164,11 @@ describe('PostMergeActions', () => {
 
     // flag flipped on then off
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'transientUi/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', true] }),
+      expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', true] }),
     );
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'transientUi/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', false] }),
+        expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', false] }),
       ),
     );
 
@@ -182,22 +179,22 @@ describe('PostMergeActions', () => {
 
     // refresh dispatches
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'fileTracking/clearOlderCommits', payload: 'ws-1' }),
+      expect.objectContaining({ type: 'changes/clearOlderCommits', payload: 'ws-1' }),
     );
     expect(reduxDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'git/loadStatus' }),
     );
     expect(reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'fileTracking/refreshRequested' }),
+      expect.objectContaining({ type: 'changes/refreshRequested' }),
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'transientUi/refreshAcceptChangesStatus' }),
+      expect.objectContaining({ type: 'changes/refreshAcceptChangesStatus' }),
     );
 
     // post-merge state updated with hasResetToTrunk=true
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'transientUi/setPostMergeState',
+        type: 'git/setPostMergeState',
         payload: expect.arrayContaining([
           'ws-1',
           expect.objectContaining({ hasResetToTrunk: true, isMergedToTrunk: false }),
@@ -218,7 +215,7 @@ describe('PostMergeActions', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('boom'));
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'transientUi/setPostMergeState' }),
+      expect.objectContaining({ type: 'git/setPostMergeState' }),
     );
   });
 

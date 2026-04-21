@@ -7,8 +7,10 @@
  */
 
 import { createSelector } from "../../utils/create-selector";
+import type { StoreState } from "../../types";
 import type { InteractionEvent, GraphState, GraphNode, GraphEdge, AgentNode, FileNode, NoteNode, TaskNode } from "$lib/components/agent-overview/types";
-import type { FileLineChange } from "$lib/store/slices/line-changes/line-changes-types";
+import type { FileLineChange } from "$lib/store/slices/changes/changes-types";
+import { selectWorkspaceFileChanges, selectAgentLineStats } from "$lib/store/slices/changes/changes-selectors";
 import type { AgentOverviewWorkspaceState } from "./agent-overview-types";
 import { ACTIVE_EDGE_WINDOW_MS } from "$lib/components/agent-overview/constants";
 import {
@@ -67,7 +69,7 @@ export const selectEvents = createSelector(
 export const selectGraphState = createSelector(
   (state, workspaceId: string): GraphState => {
     const ws = state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
-    const fileChanges: FileLineChange[] = state.lineChanges.fileChanges[workspaceId] || [];
+    const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
 
     // Derive agents from the canonical agent-session slice
     const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
@@ -540,8 +542,8 @@ function createFallbackFileNodes(
   edges: GraphEdge[],
   isLive: boolean,
   currentTime: string,
-   
-  state: any,
+
+  state: StoreState,
 ) {
   const hasFileNodes = nodes.some(n => n.type === 'file');
   if (hasFileNodes || fileChanges.length === 0) return;
@@ -549,7 +551,7 @@ function createFallbackFileNodes(
   // Find agents that have file change stats
   const agentsWithEdits: string[] = [];
   for (const agentId of Object.keys(agents)) {
-    const stats = state.lineChanges.agentStats[agentId];
+    const stats = selectAgentLineStats.select(state, agentId);
     if (stats && (stats.additions > 0 || stats.deletions > 0)) {
       agentsWithEdits.push(agentId);
     }

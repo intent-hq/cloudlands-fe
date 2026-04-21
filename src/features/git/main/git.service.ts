@@ -221,9 +221,14 @@ export class GitService {
       logger.debug('Current branch', { workspaceId, branch: branch.trim() });
 
       // Get ahead/behind info
-      const { stdout: revList } = await execAsync('git rev-list --left-right --count HEAD...@{u}', {
-        cwd: worktreePath,
-      }).catch(() => ({ stdout: '0\t0' })); // Default if no upstream
+      const branchTrimmed = branch.trim();
+      const { stdout: revList } = await execFileAsync(
+        'git',
+        ['rev-list', '--left-right', '--count', `HEAD...origin/${branchTrimmed}`],
+        {
+          cwd: worktreePath,
+        },
+      ).catch(() => ({ stdout: '0\t0' })); // Default if no upstream
 
       const [ahead, behind] = revList.trim().split('\t').map(Number);
       logger.debug('Branch status', { workspaceId, ahead, behind });
@@ -268,9 +273,11 @@ export class GitService {
             // First, check if the remote branch exists
             let remoteBranchExists = false;
             try {
-              await execAsync(`git rev-parse --verify origin/${branchName}`, {
-                cwd: worktreePath,
-              });
+              await execFileAsync(
+                'git',
+                ['rev-parse', '--verify', `origin/${branchName}`],
+                { cwd: worktreePath },
+              );
               remoteBranchExists = true;
               logger.debug('Remote branch exists', { workspaceId, branch: branchName });
             } catch {
@@ -281,9 +288,11 @@ export class GitService {
             // Only check for divergence if the remote branch exists
             if (remoteBranchExists) {
               try {
-                await execAsync(`git merge-base --is-ancestor origin/${branchName} HEAD`, {
-                  cwd: worktreePath,
-                });
+                await execFileAsync(
+                  'git',
+                  ['merge-base', '--is-ancestor', `origin/${branchName}`, 'HEAD'],
+                  { cwd: worktreePath },
+                );
                 // Command succeeded = origin/branch is ancestor of HEAD = NOT diverged
                 diverged = false;
                 logger.info('Branch is NOT diverged (merge-base succeeded)', {
@@ -3021,22 +3030,25 @@ export class GitService {
         ]);
 
         // Pick the boundary to use.
-        // When the user has explicitly set a baseCommitSha, always honour it — they're
-        // saying "show me everything since this commit". The merge-base is only used
-        // as a fallback when no explicit baseCommitSha was provided.
-        if (validBaseCommitSha) {
-          boundary = validBaseCommitSha;
-          logger.info('getHistory: Using baseCommitSha as boundary', {
-            workspaceId,
-            baseCommitSha: validBaseCommitSha.substring(0, 8),
-            mergeBase: mergeBaseSha?.substring(0, 8) ?? 'none',
-            currentBranch,
-          });
-        } else if (mergeBaseSha) {
+        // Prefer merge-base: it dynamically adjusts after rebase, so it only
+        // shows commits that belong to the workspace branch. baseCommitSha is
+        // frozen at workspace-creation time, so after a rebase it includes
+        // parent-branch commits that were rebased onto the branch.
+        // baseCommitSha is still useful as a fallback when merge-base can't be
+        // computed (e.g. orphan branch, shallow clone).
+        if (mergeBaseSha) {
           boundary = mergeBaseSha;
-          logger.info('getHistory: Using merge-base as boundary (no baseCommitSha)', {
+          logger.info('getHistory: Using merge-base as boundary', {
             workspaceId,
             mergeBase: mergeBaseSha.substring(0, 8),
+            baseCommitSha: validBaseCommitSha?.substring(0, 8) ?? 'none',
+            currentBranch,
+          });
+        } else if (validBaseCommitSha) {
+          boundary = validBaseCommitSha;
+          logger.info('getHistory: Using baseCommitSha as boundary (no merge-base)', {
+            workspaceId,
+            baseCommitSha: validBaseCommitSha.substring(0, 8),
             currentBranch,
           });
         }
@@ -3086,7 +3098,9 @@ export class GitService {
       // These are independent operations that can execute concurrently
       const [logResult, unpushedResult] = await Promise.all([
         execFileAsyncWithRetry('git', gitArgs, { cwd: worktreePath }),
-        execFileAsync('git', ['log', '@{u}..HEAD', '--format=%H'], { cwd: worktreePath })
+        (currentBranch && currentBranch !== 'HEAD'
+          ? execFileAsync('git', ['log', `origin/${currentBranch}..HEAD`, '--format=%H'], { cwd: worktreePath })
+          : Promise.reject(new Error('Detached HEAD: no upstream to compare')))
           .then(({ stdout: unpushedOutput }) => {
             const hashes = new Set(unpushedOutput.trim().split('\n').filter(Boolean));
             logger.debug('Unpushed commits detected', {

@@ -9,7 +9,7 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectFileTrackingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectFileTrackingChanges } from '$lib/store/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 	  import { invoke, listenSync } from '$lib/electron-bridge';

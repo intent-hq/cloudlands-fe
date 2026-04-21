@@ -38,14 +38,14 @@
   import {
     selectGitBranch,
     selectGitAhead,
-    selectSidebarCommits,
   } from '$lib/store/slices/git/git-selectors';
   import {
     selectMainPanelView,
     selectCurrentIsInitialized,
     selectCurrentLoading,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
-  import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/file-tracking/file-tracking-slice';
+    selectSidebarCommits,
+  } from '$lib/store/slices/changes/changes-selectors';
+  import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/changes/changes-slice';
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,

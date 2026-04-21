@@ -6,7 +6,7 @@
    * Shows a preview of the agent conversation instead of a regular comment.
    */
 
-  import { selectAgentLineStats } from '$lib/store/slices/line-changes/line-changes-selectors';
+  import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
   import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';

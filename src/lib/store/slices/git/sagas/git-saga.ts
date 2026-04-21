@@ -18,15 +18,11 @@ import {
   setGitStatus,
   setGitError,
   clearGitError,
-  loadGitCommits,
-  setGitCommits,
   loadGitDiffs,
   setGitDiffs,
   gitCommit,
   gitPush,
   gitPull,
-  gitStageFile,
-  gitUnstageFile,
   gitStageHunk,
   gitUnstageHunk,
   gitRemoveLockFile,
@@ -86,34 +82,6 @@ function* backgroundRefreshStatus(wsId: string, cacheKey: string) {
     }
   } catch {
     // Silently fail — we already have cached data
-  }
-}
-
-// ── Load Commits ──
-
-function* handleLoadCommits(action: ReturnType<typeof loadGitCommits>) {
-  const { wsId, limit, since, baseRef, baseCommitSha } = action.payload;
-  yield* put(setGitLoading(wsId, true));
-  yield* put(clearGitError(wsId));
-
-  try {
-    const result = yield* call(
-      [gitClient, gitClient.getHistory],
-      wsId as WorkspaceId,
-      limit,
-      since,
-      baseRef,
-      baseCommitSha
-    );
-    if (result.ok) {
-      yield* put(setGitCommits(wsId, result.data));
-    } else {
-      yield* put(setGitError(wsId, result.error));
-    }
-  } catch (error) {
-    yield* put(
-      setGitError(wsId, error instanceof Error ? error.message : "Failed to load commits")
-    );
   }
 }
 
@@ -191,40 +159,6 @@ function* handleGitPull(action: ReturnType<typeof gitPull>) {
   } catch (error) {
     yield* put(
       setGitError(wsId, error instanceof Error ? error.message : "Pull failed")
-    );
-  }
-}
-
-// ── Stage / Unstage File ──
-
-function* handleStageFile(action: ReturnType<typeof gitStageFile>) {
-  const [wsId, filePath] = action.payload;
-  try {
-    const result = yield* call([gitClient, gitClient.stageFiles], wsId as WorkspaceId, [filePath]);
-    if (result.ok) {
-      yield* put(loadGitStatus(wsId));
-    } else {
-      yield* put(setGitError(wsId, result.error));
-    }
-  } catch (error) {
-    yield* put(
-      setGitError(wsId, error instanceof Error ? error.message : "Failed to stage file")
-    );
-  }
-}
-
-function* handleUnstageFile(action: ReturnType<typeof gitUnstageFile>) {
-  const [wsId, filePath] = action.payload;
-  try {
-    const result = yield* call([gitClient, gitClient.unstageFiles], wsId as WorkspaceId, [filePath]);
-    if (result.ok) {
-      yield* put(loadGitStatus(wsId));
-    } else {
-      yield* put(setGitError(wsId, result.error));
-    }
-  } catch (error) {
-    yield* put(
-      setGitError(wsId, error instanceof Error ? error.message : "Failed to unstage file")
     );
   }
 }
@@ -317,13 +251,10 @@ function* watchGitStatusChanged() {
 export function* gitSaga() {
   yield* fork(watchGitStatusChanged);
   yield* takeLatest(loadGitStatus, handleLoadStatus);
-  yield* takeEvery(loadGitCommits, handleLoadCommits);
   yield* takeEvery(loadGitDiffs, handleLoadDiffs);
   yield* takeEvery(gitCommit, handleGitCommit);
   yield* takeEvery(gitPush, handleGitPush);
   yield* takeEvery(gitPull, handleGitPull);
-  yield* takeEvery(gitStageFile, handleStageFile);
-  yield* takeEvery(gitUnstageFile, handleUnstageFile);
   yield* takeEvery(gitStageHunk, handleStageHunk);
   yield* takeEvery(gitUnstageHunk, handleUnstageHunk);
   yield* takeEvery(gitRemoveLockFile, handleRemoveLockFile);

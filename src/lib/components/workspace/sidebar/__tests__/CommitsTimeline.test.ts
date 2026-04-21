@@ -53,30 +53,27 @@ vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((entity: unknown) => ({ type: 'workspace/setWorkspaceEntity', payload: entity })),
 }));
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectFileTrackingCommits: mocks.selector(() => mocks.ftCommits),
   selectFileTrackingBoundarySha: mocks.selector(() => mocks.boundarySha),
   selectFileTrackingOlderCommits: mocks.selector(() => mocks.olderCommits),
   selectFileTrackingLoadingOlderCommits: mocks.selector(() => mocks.loadingOlderCommits),
 }));
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: wsId })),
-  loadOlderCommitsRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/loadOlderCommitsRequested', payload: wsId })),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: wsId })),
+  loadOlderCommitsRequested: vi.fn((wsId: string) => ({ type: 'changes/loadOlderCommitsRequested', payload: wsId })),
 }));
 
 vi.mock('$lib/store/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((wsId: string, force: boolean) => ({ type: 'git/loadStatus', payload: [wsId, force] })),
+  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'git/setGitOperationFlag', payload: [wsId, flag, val] })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$lib/store/slices/git/git-selectors', () => ({
   selectPostMergeState: mocks.selector(() => mocks.postMergeState),
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
-}));
-
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'transientUi/setGitOperationFlag', payload: [wsId, flag, val] })),
 }));
 
 vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
@@ -261,10 +258,10 @@ describe('CommitsTimeline', () => {
       expect(mockWorkspaceUpdate).toHaveBeenCalledWith(expect.objectContaining({ baseCommitSha: 'abc' })),
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'fileTracking/clearOlderCommits', payload: 'ws-1' }),
+      expect.objectContaining({ type: 'changes/clearOlderCommits', payload: 'ws-1' }),
     );
     expect(reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'fileTracking/refreshRequested' }),
+      expect.objectContaining({ type: 'changes/refreshRequested' }),
     );
   });
 
@@ -309,7 +306,7 @@ describe('CommitsTimeline', () => {
     await fireEvent.click(pushBtn);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'transientUi/setGitOperationFlag', payload: ['ws-1', 'isPushing', true] }),
+      expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isPushing', true] }),
     );
     await waitFor(() =>
       expect(mockExecute).toHaveBeenCalledWith(
@@ -320,7 +317,7 @@ describe('CommitsTimeline', () => {
     );
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'transientUi/setGitOperationFlag', payload: ['ws-1', 'isPushing', false] }),
+        expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isPushing', false] }),
       ),
     );
   });

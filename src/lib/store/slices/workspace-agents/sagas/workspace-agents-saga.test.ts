@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
-import { initWorkspace as initFileTracking } from "$lib/store/slices/file-tracking/file-tracking-slice";
+import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 
 function cancelEffect(task: unknown) {
   return {

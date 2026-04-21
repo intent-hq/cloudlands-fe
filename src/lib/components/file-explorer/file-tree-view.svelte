@@ -17,7 +17,7 @@
     reactivateFileExplorerStore,
   } from './file-explorer-adapter';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
-  import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

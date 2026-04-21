@@ -37,15 +37,20 @@ import { hasDeferredResults, getDeferredResults } from "$features/agent/deferred
 import { setExecutorState } from "../../background-agent-executor/background-agent-executor-slice";
 import { selectExecutorState } from "../../background-agent-executor/background-agent-executor-selectors";
 import {
-  setCommitMessage,
-  setPRTitle,
-  setPRDescription,
   setSidebarCommitWhenReady,
   setSidebarCreatePRWhenReady,
   setSidebarMergeWhenReady,
   setPendingAutoAction,
-} from "../transient-ui-slice";
-import { selectSidebarChangesState, selectAcceptChangesState } from "../transient-ui-selectors";
+  setCommitMessage,
+  setPRTitle,
+  setPRDescription,
+} from "../../changes/changes-slice";
+import {
+  selectAcceptChangesState,
+  selectSidebarCommitWhenReady,
+  selectSidebarCreatePRWhenReady,
+  selectSidebarMergeWhenReady,
+} from "../../changes/changes-selectors";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { executorResultSaga } from "./executor-result-saga";
 
@@ -58,22 +63,11 @@ const emptyExecutorInstance = {
   executionContext: null,
 };
 
-const defaultSidebarChanges = {
-  commitWhenReady: false,
-  createPRWhenReady: false,
-  mergeWhenReady: false,
-  postMergeState: null,
-  pendingAutoAction: null,
-  gitOperations: {
-    isPushing: false,
-    isPulling: false,
-    isForcePushing: false,
-    isRebasing: false,
-    isRefreshingPR: false,
-    isRefreshingGitStatus: false,
-    isResettingToTrunk: false,
-  },
-};
+const defaultSidebarChangesProvides = [
+  [matchers.select.selector(selectSidebarCommitWhenReady.select), false],
+  [matchers.select.selector(selectSidebarCreatePRWhenReady.select), false],
+  [matchers.select.selector(selectSidebarMergeWhenReady.select), false],
+] as const;
 
 describe("executorResultSaga", () => {
   it("watches setExecutorState and workspaceMounted", () => {
@@ -93,9 +87,7 @@ describe("executor state change handling", () => {
 
   it("sets commit message on commit executor success", async () => {
     await expectSaga(executorResultSaga)
-      .provide([
-        [matchers.select.selector(selectSidebarChangesState.select), defaultSidebarChanges],
-      ])
+      .provide([...defaultSidebarChangesProvides])
       .dispatch(setExecutorState(wsId, "commit", {
         status: "success",
         result: "feat: add new feature",
@@ -106,9 +98,7 @@ describe("executor state change handling", () => {
 
   it("sets PR title and description on pr executor success", async () => {
     await expectSaga(executorResultSaga)
-      .provide([
-        [matchers.select.selector(selectSidebarChangesState.select), defaultSidebarChanges],
-      ])
+      .provide([...defaultSidebarChangesProvides])
       .dispatch(setExecutorState(wsId, "pr", {
         status: "success",
         result: "# Fix login bug\n\nThis fixes the login flow.",
@@ -121,10 +111,9 @@ describe("executor state change handling", () => {
   it("triggers auto-commit when commitWhenReady is true", async () => {
     await expectSaga(executorResultSaga)
       .provide([
-        [matchers.select.selector(selectSidebarChangesState.select), {
-          ...defaultSidebarChanges,
-          commitWhenReady: true,
-        }],
+        [matchers.select.selector(selectSidebarCommitWhenReady.select), true],
+        [matchers.select.selector(selectSidebarCreatePRWhenReady.select), false],
+        [matchers.select.selector(selectSidebarMergeWhenReady.select), false],
       ])
       .dispatch(setExecutorState(wsId, "commit", {
         status: "success",
@@ -160,10 +149,9 @@ describe("executor state change handling", () => {
   it("triggers auto-PR with targetBranch when createPRWhenReady is true", async () => {
     await expectSaga(executorResultSaga)
       .provide([
-        [matchers.select.selector(selectSidebarChangesState.select), {
-          ...defaultSidebarChanges,
-          createPRWhenReady: true,
-        }],
+        [matchers.select.selector(selectSidebarCommitWhenReady.select), false],
+        [matchers.select.selector(selectSidebarCreatePRWhenReady.select), true],
+        [matchers.select.selector(selectSidebarMergeWhenReady.select), false],
         [matchers.select.selector(selectExecutorState.select), {
           ...emptyExecutorInstance,
           executionContext: { targetBranch: "develop" },
@@ -187,10 +175,9 @@ describe("executor state change handling", () => {
   it("triggers auto-merge when mergeWhenReady is true on commit-merge success", async () => {
     await expectSaga(executorResultSaga)
       .provide([
-        [matchers.select.selector(selectSidebarChangesState.select), {
-          ...defaultSidebarChanges,
-          mergeWhenReady: true,
-        }],
+        [matchers.select.selector(selectSidebarCommitWhenReady.select), false],
+        [matchers.select.selector(selectSidebarCreatePRWhenReady.select), false],
+        [matchers.select.selector(selectSidebarMergeWhenReady.select), true],
       ])
       .dispatch(setExecutorState(wsId, "commit-merge", {
         status: "success",
@@ -227,7 +214,7 @@ describe("workspaceMounted handling", () => {
     await expectSaga(executorResultSaga)
       .provide([
         [matchers.select.selector(selectAcceptChangesState.select), emptyAcceptChanges],
-        [matchers.select.selector(selectSidebarChangesState.select), defaultSidebarChanges],
+        ...defaultSidebarChangesProvides,
         [matchers.select.selector(selectExecutorState.select), emptyExecutorInstance],
       ])
       .dispatch(workspaceMounted(wsId))
@@ -248,10 +235,9 @@ describe("workspaceMounted handling", () => {
     await expectSaga(executorResultSaga)
       .provide([
         [matchers.select.selector(selectAcceptChangesState.select), emptyAcceptChanges],
-        [matchers.select.selector(selectSidebarChangesState.select), {
-          ...defaultSidebarChanges,
-          createPRWhenReady: true,
-        }],
+        [matchers.select.selector(selectSidebarCommitWhenReady.select), false],
+        [matchers.select.selector(selectSidebarCreatePRWhenReady.select), true],
+        [matchers.select.selector(selectSidebarMergeWhenReady.select), false],
         [matchers.select.selector(selectExecutorState.select), emptyExecutorInstance],
       ])
       .dispatch(workspaceMounted(wsId))

@@ -65,7 +65,7 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
   };
 });
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.stagedChanges),
   selectUnstagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.unstagedChanges),
   selectFileTrackingCommits: createMockFtSelector(() => mockFileTrackingStore.commits),
@@ -75,15 +75,42 @@ vi.mock('$lib/store/slices/file-tracking/file-tracking-selectors', () => ({
   selectFileTrackingLoading: createMockFtSelector(() => mockFileTrackingStore.loading),
   selectFileTrackingChangesTruncated: createMockFtSelector(() => mockFileTrackingStore.changesTruncated),
   selectFileTrackingTotalChangesCount: createMockFtSelector(() => mockFileTrackingStore.totalChangesCount),
+  selectAcceptChangesState: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockAcceptChangesState),
+    {
+      select: () => mockAcceptChangesState,
+    },
+  ),
+  selectPendingAutoAction: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => null),
+    { select: () => null },
+  ),
+  selectSidebarCommitWhenReady: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => false),
+    { select: () => false },
+  ),
+  selectSidebarCreatePRWhenReady: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => false),
+    { select: () => false },
+  ),
+  selectSidebarMergeWhenReady: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => false),
+    { select: () => false },
+  ),
 }));
 
-vi.mock('$lib/store/slices/file-tracking/file-tracking-slice', () => ({
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'fileTracking/clearOlderCommits', payload: wsId })),
-  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/stageByPathRequested', payload: [wsId, paths] })),
-  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/unstageByPathRequested', payload: [wsId, paths] })),
-  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'fileTracking/revertByPathRequested', payload: [wsId, paths] })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'fileTracking/refreshRequested', payload: [wsId] })),
-  loadOlderCommitsRequested: vi.fn((wsId: string, sha: string) => ({ type: 'fileTracking/loadOlderCommitsRequested', payload: { wsId, beforeSha: sha } })),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/stageByPathRequested', payload: [wsId, paths] })),
+  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/unstageByPathRequested', payload: [wsId, paths] })),
+  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/revertByPathRequested', payload: [wsId, paths] })),
+  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
+  loadOlderCommitsRequested: vi.fn((wsId: string, sha: string) => ({ type: 'changes/loadOlderCommitsRequested', payload: { wsId, beforeSha: sha } })),
+  refreshAcceptChangesStatus: vi.fn((...args: any[]) => ({ type: 'changes/refreshAcceptChangesStatus', payload: args })),
+  setPendingAutoAction: vi.fn((...args: any[]) => ({ type: 'changes/setPendingAutoAction', payload: args })),
+  setSidebarCommitWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarCommitWhenReady', payload: [wsId, value] })),
+  setSidebarCreatePRWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarCreatePRWhenReady', payload: [wsId, value] })),
+  setSidebarMergeWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarMergeWhenReady', payload: [wsId, value] })),
 }));
 
 const mockGitState = {
@@ -120,12 +147,22 @@ vi.mock('$lib/store/slices/git/git-selectors', () => ({
     () => createReadable(mockGitState.status),
     { select: () => mockGitState.status },
   ),
+  selectPostMergeState: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
+    { select: () => mockPostMergeState },
+  ),
+  selectGitOperationFlags: Object.assign(
+    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
+    { select: () => mockGitOperationFlags },
+  ),
 }));
 
 vi.mock('$lib/store/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
   gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
   gitPull: vi.fn((...args: any[]) => ({ type: 'git/pull', payload: args })),
+  setPostMergeState: vi.fn((...args: any[]) => ({ type: 'git/setPostMergeState', payload: args })),
+  setGitOperationFlag: vi.fn((...args: any[]) => ({ type: 'git/setGitOperationFlag', payload: args })),
 }));
 
 const mockWorkspaceStore = {
@@ -228,38 +265,7 @@ const mockGitOperationFlags = {
   isResettingToTrunk: false,
 };
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
-  selectSidebarChangesState: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockSidebarChangesState),
-    {
-      select: () => mockSidebarChangesState,
-    },
-  ),
-  selectAcceptChangesState: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockAcceptChangesState),
-    {
-      select: () => mockAcceptChangesState,
-    },
-  ),
-  selectPendingAutoAction: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => null),
-    {
-      select: () => null,
-    },
-  ),
-  selectPostMergeState: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
-    {
-      select: () => mockPostMergeState,
-    },
-  ),
-  selectGitOperationFlags: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
-    {
-      select: () => mockGitOperationFlags,
-    },
-  ),
-}));
+vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({}));
 
 vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: vi.fn().mockReturnValue({
@@ -380,17 +386,7 @@ vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => (
   syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  clearSidebarExecutorStates: vi.fn((...args: any[]) => ({ type: 'transientUi/clearSidebarExecutorStates', payload: args })),
-  setPostMergeState: vi.fn((...args: any[]) => ({ type: 'transientUi/setPostMergeState', payload: args })),
-  setSidebarCommitWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarCommitWhenReady', payload: args })),
-  setSidebarCreatePRWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarCreatePRWhenReady', payload: args })),
-  setSidebarMergeWhenReady: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarMergeWhenReady', payload: args })),
-  setPendingAutoAction: vi.fn((...args: any[]) => ({ type: 'transientUi/setPendingAutoAction', payload: args })),
-  setSidebarPRExecutorState: vi.fn((...args: any[]) => ({ type: 'transientUi/setSidebarPRExecutorState', payload: args })),
-  setGitOperationFlag: vi.fn((...args: any[]) => ({ type: 'transientUi/setGitOperationFlag', payload: args })),
-  refreshAcceptChangesStatus: vi.fn((...args: any[]) => ({ type: 'transientUi/refreshAcceptChangesStatus', payload: args })),
-}));
+vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({}));
 
 vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
@@ -919,7 +915,7 @@ describe('SidebarChangesPanel', () => {
       expect(stageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(stageBtns[0]);
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'fileTracking/stageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
+        expect.objectContaining({ type: 'changes/stageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
       );
     });
 
@@ -941,7 +937,7 @@ describe('SidebarChangesPanel', () => {
       expect(unstageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(unstageBtns[0]);
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'fileTracking/unstageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
+        expect.objectContaining({ type: 'changes/unstageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
       );
     });
 
@@ -1191,7 +1187,7 @@ describe('SidebarChangesPanel', () => {
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'fileTracking/stageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
+        expect.objectContaining({ type: 'changes/stageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
       );
     });
 
@@ -1219,7 +1215,7 @@ describe('SidebarChangesPanel', () => {
       expect(unstageAllBtn).toBeDefined();
       await fireEvent.click(unstageAllBtn!);
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'fileTracking/unstageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
+        expect.objectContaining({ type: 'changes/unstageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
       );
     });
 
@@ -1542,7 +1538,7 @@ describe('SidebarChangesPanel', () => {
 
       // Check that refreshRequested was dispatched
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'fileTracking/refreshRequested' })
+        expect.objectContaining({ type: 'changes/refreshRequested' })
       );
     });
   });

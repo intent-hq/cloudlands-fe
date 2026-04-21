@@ -8,7 +8,7 @@
     selectCurrentStagedWorkingChanges,
     selectCurrentUnstagedWorkingChanges,
     selectCurrentCommits,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  } from '$lib/store/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';

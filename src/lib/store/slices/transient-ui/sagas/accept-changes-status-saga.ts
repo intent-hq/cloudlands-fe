@@ -13,11 +13,9 @@ import { createLogger } from "$lib/utils/client-logger";
 import { AcceptChangesClient } from "$features/accept-changes/accept-changes.client";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import {
-  refreshAcceptChangesStatus,
-  setPostMergeState,
-} from "../transient-ui-slice";
-import { selectPostMergeState } from "../transient-ui-selectors";
+import { refreshAcceptChangesStatus } from "../../changes/changes-slice";
+import { setPostMergeState } from "../../git/git-slice";
+import { selectPostMergeState } from "../../git/git-selectors";
 
 const logger = createLogger("AcceptChangesStatusSaga");
 

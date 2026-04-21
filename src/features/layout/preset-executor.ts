@@ -8,7 +8,7 @@
  */
 
 import { agentService } from '$features/agent/agent-ipc-bridge';
-import { selectStagedWorkingChanges, selectUnstagedWorkingChanges, selectFileTrackingCommits } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+import { selectStagedWorkingChanges, selectUnstagedWorkingChanges, selectFileTrackingCommits } from '$lib/store/slices/changes/changes-selectors';
 import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';

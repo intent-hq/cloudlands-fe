@@ -29,7 +29,7 @@ import {
   setLastAutoCommitHookFailure,
   setLastGitError,
   setLastGitOperation,
-} from "../git-operations-slice";
+} from "../git-slice";
 import {
   gitOperationsSaga,
   watchAutoCommitHookFailureSaga,
@@ -128,3 +128,4 @@ describe("gitOperationsSaga", () => {
     expect(effect.payload.args).toEqual([data]);
   });
 });
+

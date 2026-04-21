@@ -90,7 +90,6 @@ import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.cli
 import { workspaceUnmounted } from "../../../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceAgentState } from "../../../workspace-agents/workspace-agents-slice";
 import { clearWorkspaceTransientUi } from "$lib/store/slices/transient-ui/transient-ui-slice";
-import { clearWorkspaceStats as clearLineChangesWorkspaceStats } from "$lib/store/slices/line-changes/line-changes-slice";
 import {
   createWorkspaceRequested,
   deleteWorkspaceRequested,
@@ -296,7 +295,6 @@ describe("workspace-crud-saga", () => {
       expect(iterator.next().value).toEqual(sagaEffects.put(removeWorkspaceAgentState("ws-1")));
       expect(iterator.next().value).toEqual(sagaEffects.put(workspaceUnmounted("ws-1")));
       expect(iterator.next().value).toEqual(sagaEffects.put(clearWorkspaceTransientUi("ws-1")));
-      expect(iterator.next().value).toEqual(sagaEffects.put(clearLineChangesWorkspaceStats("ws-1")));
       expect(iterator.next().value).toEqual(
         sagaEffects.call(
           [{ clearState: mockWorkspaceStorageClearState }, mockWorkspaceStorageClearState],

@@ -31,12 +31,12 @@ vi.mock('$lib/store/utils/svelte-context', () => ({
   getStoreContext: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
-  selectSidebarChangesState: mocks.selector(() => mocks.sidebarChanges),
+vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+  selectSidebarCommitWhenReady: mocks.selector(() => mocks.sidebarChanges.commitWhenReady),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
-  setSidebarCommitWhenReady: vi.fn((...args: unknown[]) => ({ type: 'transientUi/setSidebarCommitWhenReady', payload: args })),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+  setSidebarCommitWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarCommitWhenReady', payload: args })),
 }));
 
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
@@ -158,7 +158,7 @@ describe('CommitDrawer', () => {
     await fireEvent.click(toggleBtn!);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'transientUi/setSidebarCommitWhenReady',
+        type: 'changes/setSidebarCommitWhenReady',
         payload: ['ws-1', true],
       }),
     );

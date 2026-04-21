@@ -12,8 +12,8 @@
 
 import { fork, put, select, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import { Logger } from "$lib/utils/logger";
-import { selectStagedWorkingChanges, selectUnstagedWorkingChanges } from "../../file-tracking/file-tracking-selectors";
-import { setChangesData, setChanges } from "../../file-tracking/file-tracking-slice";
+import { selectStagedWorkingChanges, selectUnstagedWorkingChanges } from "../../changes/changes-selectors";
+import { setChangesData, setChanges } from "../../changes/changes-slice";
 import {
   setAutoCommitEnabled,
   loadAutoCommitSettings,
@@ -23,7 +23,7 @@ import { applyTaskStatusChanged } from "../../workspace-notes/workspace-notes-sl
 import { selectNoteById } from "../../workspace-notes/workspace-notes-selectors";
 import { recomputeAgentLocks, setAgentLockState } from "../agent-lock-slice";
 import { selectAgentById } from "../../workspace-agents/workspace-agents-selectors";
-import type { TrackedChange } from "../../file-tracking/file-tracking-types";
+import type { TrackedChange } from "../../changes/changes-types";
 
 const agentLockLogger = new Logger({ category: "AgentLockSaga" });
 

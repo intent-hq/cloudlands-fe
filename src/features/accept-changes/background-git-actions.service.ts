@@ -8,7 +8,7 @@
 
 import { AcceptChangesClient } from './accept-changes.client';
 import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-import { refreshRequested } from '$lib/store/slices/file-tracking/file-tracking-slice';
+import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';

@@ -1,12 +1,15 @@
 /**
- * File Tracking Saga
+ * Changes Saga
+ *
+ * Consolidated from file-tracking-saga + line-changes-saga.
  *
  * Handles:
  * - IPC event listeners (file-tracking:changes-updated, workspace-changes, etc.)
  * - Workspace initialization flow
+ * - Periodic sync of agent stats with main process (safety net)
  */
 
-import { call, put, takeLatest, delay, fork, take, cancel, cancelled, type SagaGenerator } from "typed-redux-saga";
+import { call, put, takeLatest, delay, fork, take, cancel, cancelled, select, type SagaGenerator } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import { invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
 import { Logger } from "$lib/utils/logger";
@@ -16,20 +19,27 @@ import {
   setLoading,
   setError,
   setHasLoadedInitialData,
-} from "../file-tracking-slice";
+  updateAgentStats as updateAgentStatsAction,
+} from "../changes-slice";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
+import { selectAllWorkspaceAgents } from "../../workspace-agents/workspace-agents-selectors";
 import { createElectronChannel } from "$lib/store/utils/ipc-channel";
+import { setGitStatus } from "../../git/git-slice";
 import {
   doSyncWithGit,
   doLoadWorkspaceData,
   resetTrackingState,
   fileTrackingOperationsSaga,
-} from "./file-tracking-operations-saga";
+} from "./changes-operations-saga";
+import { lineChangesClient } from "$features/line-changes/line-changes.client";
+import { createLogger } from "$lib/utils/client-logger";
 
-const logger = new Logger({ category: "FileTrackingSaga" });
+const logger = new Logger({ category: "ChangesSaga" });
+const agentStatsLogger = createLogger("ChangesSaga:AgentStats");
 
 const IPC_INIT_TIMEOUT_MS = 10000;
 const config = TRACKING_CONFIG.fileTracking;
+const AGENT_STATS_SYNC_INTERVAL = 60000; // 60 seconds safety net
 
 // ---------------------------------------------------------------------------
 // IPC Listener Sagas
@@ -85,17 +95,50 @@ function* watchWorkspaceChanges(wsId: string): SagaGenerator<void> {
   }
 }
 
-function* watchGitStatusChanged(wsId: string): SagaGenerator<void> {
-  const channel = createElectronChannel<{ workspaceId?: string }>("git:status-changed");
+function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
+  yield* takeLatest(setGitStatus, function* (action) {
+    const { wsId: actionWsId } = action.payload;
+    if (actionWsId !== wsId) return;
+    yield* delay(config.updateDebounce);
+    yield* call(doLoadWorkspaceData, wsId);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Agent stats periodic sync (absorbed from line-changes-saga)
+// ---------------------------------------------------------------------------
+
+function* syncAgentStatsFromMain() {
   try {
-    while (true) {
-      const data = yield* take(channel);
-      if (data.workspaceId !== wsId) continue;
-      yield* delay(config.updateDebounce);
-      yield* call(doLoadWorkspaceData, wsId);
+    const wsId = yield* selectActiveWorkspaceId.effect();
+    if (!wsId) return;
+
+    // Use canonical workspace agents list instead of only already-known stats keys
+    const agents = yield* selectAllWorkspaceAgents.effect(wsId);
+
+    for (const agent of agents) {
+      try {
+        const stats = yield* call([lineChangesClient, lineChangesClient.getAgentStats], agent.id as any);
+        if (stats) {
+          yield* put(updateAgentStatsAction(agent.id, stats));
+        }
+      } catch {
+        // Best effort
+      }
     }
-  } finally {
-    if (yield* cancelled()) channel.close();
+  } catch (error) {
+    agentStatsLogger.error("Failed to sync agent stats from main process:", error as Error);
+  }
+}
+
+function* periodicAgentStatsSyncSaga() {
+  // Initial sync
+  yield* call(syncAgentStatsFromMain);
+
+  // Then periodic
+  while (true) {
+    yield* delay(AGENT_STATS_SYNC_INTERVAL);
+    yield* call(syncAgentStatsFromMain);
   }
 }
 
@@ -105,7 +148,7 @@ function* watchGitStatusChanged(wsId: string): SagaGenerator<void> {
 
 function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGenerator<void> {
   const wsId = action.payload[0];
-  logger.info("[FileTrackingSaga] initWorkspace", { wsId });
+  logger.info("[ChangesSaga] initWorkspace", { wsId });
 
   yield* put(setLoading(wsId, true));
   yield* put(setError(wsId, null));
@@ -148,7 +191,7 @@ function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGen
     yield* put(setHasLoadedInitialData(wsId, true));
     yield* put(setLoading(wsId, false));
   } catch (error) {
-    logger.error("[FileTrackingSaga] Unexpected init error", error as Error, { wsId });
+    logger.error("[ChangesSaga] Unexpected init error", error as Error, { wsId });
     const currentWsId = yield* selectActiveWorkspaceId.effect();
     if (currentWsId === wsId) {
       yield* put(setHasLoadedInitialData(wsId, true));
@@ -162,9 +205,12 @@ function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGen
 // Root saga
 // ---------------------------------------------------------------------------
 
-export function* fileTrackingSaga(): SagaGenerator<void> {
+export function* changesSaga(): SagaGenerator<void> {
   // Fork the operations saga to handle all operation request actions
   yield* fork(fileTrackingOperationsSaga);
+
+  // Fork agent stats periodic sync
+  yield* fork(periodicAgentStatsSyncSaga);
 
   // Watch for workspace init and set up listeners
   let listenerTask: Task | null = null;
@@ -187,7 +233,7 @@ export function* fileTrackingSaga(): SagaGenerator<void> {
       yield* fork(watchChangesUpdated, wsId);
       yield* fork(watchAgentFileChanged, wsId);
       yield* fork(watchWorkspaceChanges, wsId);
-      yield* fork(watchGitStatusChanged, wsId);
+      yield* fork(watchGitStatusAction, wsId);
     })) as unknown as Task;
   });
 }

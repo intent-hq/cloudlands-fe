@@ -88,17 +88,17 @@ export function* discoverPRsForBranch(
       }
     }
 
-    // Step 2: Fetch all open PRs and match by source branch
+    // Step 2a: Fetch open PRs filtered by head branch (server-side filtering)
     const openResponse: any = yield* call(invoke, "git-tracking:get-pull-requests", {
       owner: workspace.repositoryOwner,
       repo: workspace.repositoryName,
-      options: { state: "open", per_page: 100 },
+      options: {
+        state: "open",
+        head: `${workspace.repositoryOwner}:${workspace.branch}`,
+        per_page: 10,
+      },
       force,
     });
-
-    if (!openResponse.success) {
-      return { success: true, prs: [] };
-    }
 
     const allPRs = openResponse.data || [];
     const branchesToMatch = new Set<string>();
@@ -113,10 +113,63 @@ export function* discoverPRsForBranch(
     branchesToMatch.delete("master");
     branchesToMatch.delete("develop");
 
-    const matchingPRs = allPRs.filter((pr: any) => {
+
+    let matchingPRs = allPRs.filter((pr: any) => {
       const src = pr.sourceBranch || "";
       return branchesToMatch.has(src);
     });
+
+    // Step 2b: Broad fetch fallback — if head-filtered returned empty,
+    // fetch all open PRs and client-side filter by branch (original working approach)
+    if (matchingPRs.length === 0 && workspace.branch) {
+      try {
+        const broadResponse: any = yield* call(invoke, "git-tracking:get-pull-requests", {
+          owner: workspace.repositoryOwner,
+          repo: workspace.repositoryName,
+          options: {
+            state: "open",
+            per_page: 100,
+          },
+          force,
+        });
+
+        if (broadResponse.success && broadResponse.data) {
+          matchingPRs = (broadResponse.data as any[]).filter((pr: any) => {
+            const src = pr.sourceBranch || "";
+            return src === workspace.branch;
+          });
+        }
+      } catch (broadErr) {
+        logger.warn("[PRStatusSaga] Broad PR fetch fallback failed", {
+          workspaceId,
+          error: broadErr instanceof Error ? broadErr.message : "Unknown error",
+        });
+      }
+    }
+
+    // Step 3: Search API fallback if Strategy 2a and 2b found nothing
+    if (matchingPRs.length === 0 && workspace.branch) {
+      try {
+        const searchResponse: any = yield* call(invoke, "git-tracking:search-pull-requests", {
+          owner: workspace.repositoryOwner,
+          repo: workspace.repositoryName,
+          options: { filter: "all", state: "open" },
+          force,
+        });
+
+        if (searchResponse.success && searchResponse.data) {
+          matchingPRs = (searchResponse.data as any[]).filter((pr: any) => {
+            const src = pr.sourceBranch || "";
+            return src === workspace.branch;
+          });
+        }
+      } catch (searchErr) {
+        logger.warn("[PRStatusSaga] Search API fallback failed", {
+          workspaceId,
+          error: searchErr instanceof Error ? searchErr.message : "Unknown error",
+        });
+      }
+    }
 
     if (matchingPRs.length > 0) {
       const normalizedPRs: PullRequestInfo[] = matchingPRs.map((pr: any) => {
@@ -396,7 +449,7 @@ function* watchWindowFocus(): SagaGenerator<void> {
       if (!currentWsId) continue;
 
       const workspace: Workspace | undefined = yield* select(selectWorkspaceById.select, currentWsId);
-      if (workspace?.activePullRequest) {
+      if (workspace) {
         yield* put(refreshPRStatusRequested(currentWsId, true, false));
       }
     }

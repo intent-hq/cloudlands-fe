@@ -36,7 +36,7 @@ export type SagaName =
   | 'streamingSaga'
   | 'workspaceSaga'
   | 'gitSaga'
-  | 'fileTrackingSaga'
+  | 'changesSaga'
   | 'notesSaga'
   | 'workspaceEventsSaga'
   | 'agentsSaga'
@@ -63,7 +63,7 @@ export type SagaName =
   | 'setupScriptsSaga'
   | 'mcpSettingsSaga'
   | 'commentsSaga'
-  | 'lineChangesSaga'
+
   | 'sidebarNavSaga'
   | 'scriptsSaga'
   | 'agentFollowSaga'

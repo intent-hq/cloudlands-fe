@@ -13,10 +13,10 @@
     selectFileTrackingLoading as selectFtLoading,
     selectFileTrackingChangesTruncated as selectFtChangesTruncated,
     selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
-  } from '$lib/store/slices/file-tracking/file-tracking-selectors';
-  import { refreshRequested } from '$lib/store/slices/file-tracking/file-tracking-slice';
-  import { type TrackedChange } from '$features/file-tracking/types';
+  } from '$lib/store/slices/changes/changes-selectors';
+  import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
   import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
+  import { type TrackedChange } from '$features/file-tracking/types';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import {
@@ -30,16 +30,20 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
     setPostMergeState,
-    setPendingAutoAction,
     setGitOperationFlag,
-    refreshAcceptChangesStatus,
-  } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  } from '$lib/store/slices/git/git-slice';
   import {
-    selectAcceptChangesState,
     selectPostMergeState,
     selectGitOperationFlags,
-    selectPendingAutoAction,
-  } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  } from '$lib/store/slices/git/git-selectors';
+  import {
+    refreshAcceptChangesStatus,
+    setPendingAutoAction,
+  } from '$lib/store/slices/changes/changes-slice';
+  import { selectPendingAutoAction } from '$lib/store/slices/changes/changes-selectors';
+  import {
+    selectAcceptChangesState,
+  } from '$lib/store/slices/changes/changes-selectors';
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,

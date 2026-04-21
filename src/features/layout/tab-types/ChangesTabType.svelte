@@ -9,7 +9,7 @@
   import { untrack } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { selectFileTrackingCommits, selectFileTrackingOlderCommits, selectFileTrackingLoading } from '$lib/store/slices/file-tracking/file-tracking-selectors';
+  import { selectFileTrackingCommits, selectFileTrackingOlderCommits, selectFileTrackingLoading } from '$lib/store/slices/changes/changes-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
