@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5
+
+- Homepage workspace list now caps at 10 with a collapsible "Older" section to keep things tidy.
+- Agent previews show the tool icon and label when the latest block is a tool call, so you can tell at a glance what an agent is doing.
+- Image token usage is optimized to use less context when working with images.
+- Enhanced deep link support for easy workspace creation.
+- Fixes: ACP agents recovering from invalid tool-call history, workspace switching preserves layouts, shutdown UX and orphan-recovery race guards tightened, duplicate streaming assistant messages, agents no longer appear stuck as streaming in the overview tree, running delegated agents are visible when collapsed and sorted by recency, PR branch matching strips remote prefixes correctly, OS notifications and the bell fire again on agent idle, HttpMcpBridge restart race and orphan recovery for stuck agents, and duplicate image previews.
+
 ## 0.3.4
 
 - Claude Opus 4.7 is now the default model for Auggie agents.
