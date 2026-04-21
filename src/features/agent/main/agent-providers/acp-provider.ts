@@ -250,6 +250,97 @@ function truncateMiddleContent(text: string, maxChars: number): string {
 }
 
 /**
+ * Remove or normalize malformed content blocks before rendering history for
+ * session recovery. The provider returned HTTP 400/invalidArgument for agents
+ * whose persisted state contained tool_result blocks with missing/empty
+ * tool_use_id, and duplicate tool_result entries for the same id. This helper
+ * is deliberately narrow — it only drops blocks that cannot be safely
+ * rendered — so user-visible transcript content (text, thinking, valid tool
+ * uses) is preserved.
+ *
+ * Logs a single summary line per invocation so recovery bundles show what was
+ * filtered without producing per-block log noise.
+ */
+export function sanitizeMessagesForHistory(messages: AgentMessage[]): AgentMessage[] {
+  let droppedEmptyToolResult = 0;
+  let droppedMissingToolUseId = 0;
+  let droppedDuplicateToolResult = 0;
+  let droppedEmptyAssistant = 0;
+  const seenToolResultIds = new Set<string>();
+
+  const sanitized: AgentMessage[] = [];
+  for (const msg of messages) {
+    const blocks = msg.contentBlocks;
+    if (!blocks || blocks.length === 0) {
+      // An assistant message with zero blocks is the exact shape that precedes
+      // the repeating 400s in debug bundles — drop it so the recovery history
+      // doesn't include an empty agent turn. User/error messages pass through
+      // because they can legitimately be empty wrappers.
+      if (msg.role === 'assistant') {
+        droppedEmptyAssistant++;
+        continue;
+      }
+      sanitized.push(msg);
+      continue;
+    }
+
+    const cleanBlocks: ContentBlock[] = [];
+    for (const block of blocks) {
+      if (block.type === 'tool_result') {
+        const toolUseId = (block.tool_use_id || '').trim();
+        if (!toolUseId) {
+          droppedMissingToolUseId++;
+          continue;
+        }
+        if (seenToolResultIds.has(toolUseId)) {
+          droppedDuplicateToolResult++;
+          continue;
+        }
+        const output = block.output ?? block.content;
+        const hasOutput =
+          (typeof output === 'string' && output.length > 0) ||
+          (typeof output === 'object' && output !== null);
+        if (!hasOutput && !block.is_error && !block.isError) {
+          droppedEmptyToolResult++;
+          continue;
+        }
+        seenToolResultIds.add(toolUseId);
+        cleanBlocks.push(block);
+      } else {
+        cleanBlocks.push(block);
+      }
+    }
+
+    if (cleanBlocks.length === 0 && msg.role === 'assistant') {
+      // All blocks were malformed — drop the whole assistant turn rather than
+      // emit a zero-block agent_response_or_tool_uses element.
+      droppedEmptyAssistant++;
+      continue;
+    }
+
+    sanitized.push({ ...msg, contentBlocks: cleanBlocks });
+  }
+
+  const totalDropped =
+    droppedEmptyToolResult +
+    droppedMissingToolUseId +
+    droppedDuplicateToolResult +
+    droppedEmptyAssistant;
+  if (totalDropped > 0) {
+    logger.warn('Sanitized malformed persisted blocks for history recovery', {
+      droppedEmptyToolResult,
+      droppedMissingToolUseId,
+      droppedDuplicateToolResult,
+      droppedEmptyAssistant,
+      inputMessageCount: messages.length,
+      outputMessageCount: sanitized.length,
+    });
+  }
+
+  return sanitized;
+}
+
+/**
  * Format conversation history as XML exchange format for session recovery.
  * Groups messages into exchanges (user→assistant pairs) and renders them as XML.
  * Wraps the result in <supervisor> tags with recovery context.
@@ -267,13 +358,20 @@ export function formatHistoryAsXml(
     return '';
   }
 
+  // Sanitize malformed persisted tool blocks before rendering. Empty/id-less
+  // tool_result blocks and duplicate tool_result ids are the exact pattern
+  // observed in debug bundles where the provider returned 400/invalidArgument
+  // for chat-stream. Filtering here ensures the recovery XML payload cannot
+  // carry the same malformed shape forward on the next prompt.
+  const sanitizedMessages = sanitizeMessagesForHistory(messages);
+
   // Group messages into exchanges (user message → assistant response pairs).
   // Error-role messages are appended to the current exchange's assistant slot.
   // Consecutive assistant messages each get their own exchange to avoid silent data loss.
   const exchanges: Array<{ user?: AgentMessage; assistants: AgentMessage[] }> = [];
   let currentExchange: { user?: AgentMessage; assistants: AgentMessage[] } = { assistants: [] };
 
-  for (const msg of messages) {
+  for (const msg of sanitizedMessages) {
     if (msg.role === 'user') {
       // Save any pending exchange before starting a new one
       if (currentExchange.user || currentExchange.assistants.length > 0) {
@@ -664,10 +762,48 @@ function isAuthenticationError(errorMessage: string, providerId?: string): boole
  * Includes HTTP 404 errors which typically indicate the model endpoint doesn't exist
  * (i.e., the user doesn't have access to that model).
  */
-function isModelNotAvailableError(errorMessage: string, errorCode: number): boolean {
-  const errorLower = errorMessage.toLowerCase();
+/**
+ * Classifier-safe text derived from `error.data` structured fields.
+ * Only consults fields that `summarizeProviderErrorForLog` considers safe
+ * (apiStatus, errorDetails.code/message/detail). `error.data.details` is the
+ * raw HTTP response body (prompt echoes, tool outputs, file contents) and is
+ * deliberately NEVER read here, so a sentinel in `data.details` cannot leak
+ * into classifier keyword inputs or any downstream message/log payload.
+ */
+function classifierTextFromErrorData(errorData?: {
+  apiStatus?: string;
+  errorDetails?: { code?: number; message?: string; detail?: string };
+}): string {
+  if (!errorData) return '';
+  const parts: string[] = [];
+  if (typeof errorData.apiStatus === 'string') parts.push(errorData.apiStatus);
+  const d = errorData.errorDetails;
+  if (d) {
+    if (typeof d.code === 'number') parts.push(String(d.code));
+    if (typeof d.message === 'string') parts.push(d.message);
+    if (typeof d.detail === 'string') parts.push(d.detail);
+  }
+  return parts.join(' ').toLowerCase();
+}
 
-  // Explicit model-related errors
+export function isModelNotAvailableError(
+  errorMessage: string,
+  errorCode: number,
+  errorData?: {
+    httpStatus?: number;
+    apiStatus?: string;
+    errorDetails?: { code?: number; message?: string; detail?: string };
+  },
+): boolean {
+  const errorLower = errorMessage.toLowerCase();
+  const structuredLower = classifierTextFromErrorData(errorData);
+
+  // Structured signal: provider-reported HTTP 404 for a model endpoint.
+  if (errorData?.httpStatus === 404) return true;
+
+  // Explicit model-related errors (check both the top-level message and the
+  // safe structured error detail text so we don't regress when the provider
+  // buries "model not found" in errorDetails.detail with a generic message).
   const hasModelError =
     errorLower.includes('model not found') ||
     errorLower.includes('model not available') ||
@@ -675,7 +811,14 @@ function isModelNotAvailableError(errorMessage: string, errorCode: number): bool
     errorLower.includes('invalid model') ||
     errorLower.includes('unknown model') ||
     errorLower.includes('model does not exist') ||
-    errorLower.includes('unsupported model');
+    errorLower.includes('unsupported model') ||
+    structuredLower.includes('model not found') ||
+    structuredLower.includes('model not available') ||
+    structuredLower.includes('model is not available') ||
+    structuredLower.includes('invalid model') ||
+    structuredLower.includes('unknown model') ||
+    structuredLower.includes('model does not exist') ||
+    structuredLower.includes('unsupported model');
 
   // HTTP 404 errors often indicate the model endpoint doesn't exist
   // This happens when a user doesn't have access to a specific model
@@ -683,7 +826,10 @@ function isModelNotAvailableError(errorMessage: string, errorCode: number): bool
     errorCode === 404 ||
     errorLower.includes('404') ||
     errorLower.includes('http error: 404') ||
-    errorLower.includes('not found');
+    errorLower.includes('not found') ||
+    structuredLower.includes('404') ||
+    structuredLower.includes('http error: 404') ||
+    structuredLower.includes('not found');
 
   return hasModelError || has404Error;
 }
@@ -691,21 +837,39 @@ function isModelNotAvailableError(errorMessage: string, errorCode: number): bool
 /**
  * Error types that indicate session recovery should be attempted
  */
-export function isSessionRecoverableError(rawError: string, errorCode: number): boolean {
+export function isSessionRecoverableError(
+  rawError: string,
+  errorCode: number,
+  errorData?: {
+    apiStatus?: string;
+    errorDetails?: { code?: number; message?: string; detail?: string };
+  },
+): boolean {
   const errorLower = rawError.toLowerCase();
+  const structuredLower = classifierTextFromErrorData(errorData);
 
-  // Check for explicit session-related errors
+  // Check for explicit session-related errors in either the top-level message
+  // or the safe structured error detail text (since the provider may surface
+  // the specific "session not found" signal in errorDetails.detail while
+  // returning only a generic top-level message like "Internal error").
+  const hasSessionKeyword = (text: string): boolean =>
+    text.includes('session not found') ||
+    text.includes('session expired') ||
+    text.includes('session invalid') ||
+    (text.includes('session') && text.includes('not found'));
   const isSessionError =
-    errorLower.includes('session not found') ||
-    errorLower.includes('session expired') ||
-    errorLower.includes('session invalid') ||
-    (errorLower.includes('session') && errorLower.includes('not found'));
+    hasSessionKeyword(errorLower) || hasSessionKeyword(structuredLower);
 
   // For -32603 (JSON-RPC internal error), only treat as session-recoverable
-  // if the error message mentions session. Otherwise it's likely a code bug
-  // (e.g., "r.map is not a function") that won't be fixed by session recovery.
+  // if the error message (or structured detail) mentions session. Otherwise
+  // it's likely a code bug (e.g., "r.map is not a function") that won't be
+  // fixed by session recovery.
   if (errorCode === -32603) {
-    return isSessionError || errorLower.includes('session');
+    return (
+      isSessionError ||
+      errorLower.includes('session') ||
+      structuredLower.includes('session')
+    );
   }
 
   return isSessionError;
@@ -718,17 +882,29 @@ export function isSessionRecoverableError(rawError: string, errorCode: number): 
  * Recovery: recreate the session (resets auggie's internal context) so the next
  * message sends only truncated history via formatHistoryAsXml().
  */
-export function isContextTooLargeError(rawError: string, errorCode: number): boolean {
+export function isContextTooLargeError(
+  rawError: string,
+  errorCode: number,
+  errorData?: {
+    httpStatus?: number;
+    apiStatus?: string;
+    errorDetails?: { code?: number; message?: string; detail?: string };
+  },
+): boolean {
+  // Structured signal: provider-reported HTTP 413 is definitive for this class.
+  if (errorData?.httpStatus === 413) return true;
+
   const errorLower = rawError.toLowerCase();
-  return (
-    errorCode === 413 ||
-    errorLower.includes('413') ||
-    errorLower.includes('request entity too large') ||
-    errorLower.includes('payload too large') ||
-    errorLower.includes('content too large') ||
-    errorLower.includes('body too large') ||
-    (errorLower.includes('exceed') && errorLower.includes('context'))
-  );
+  const structuredLower = classifierTextFromErrorData(errorData);
+  const matches = (text: string): boolean =>
+    text.includes('413') ||
+    text.includes('request entity too large') ||
+    text.includes('payload too large') ||
+    text.includes('content too large') ||
+    text.includes('body too large') ||
+    (text.includes('exceed') && text.includes('context'));
+
+  return errorCode === 413 || matches(errorLower) || matches(structuredLower);
 }
 
 /**
@@ -807,18 +983,155 @@ function isNoIntentPlanError(errorData?: {
 }
 
 /**
+ * Checks if an error indicates the provider rejected the prompt because the
+ * persisted tool history is malformed (e.g. tool_result blocks without a valid
+ * tool_use_id, unmatched tool_use/tool_result pairing, or otherwise invalid
+ * content blocks that auggie forwarded to chat-stream).
+ *
+ * Signature observed in debug bundles:
+ *   { httpStatus: 400, apiStatus: 'invalidArgument',
+ *     httpUrl: '.../chat-stream', message: 'HTTP error: 400 Bad Request' }
+ *
+ * Recovery path: recreate the ACP session and resend history via
+ * formatHistoryAsXml() so the provider receives sanitized text/XML rather
+ * than the malformed native tool blocks that caused the original 400.
+ */
+export function isInvalidToolHistoryError(
+  rawError: string,
+  errorData?: { apiStatus?: string; httpStatus?: number; httpUrl?: string },
+): boolean {
+  if (!errorData) return false;
+  // Require both the HTTP 400 status and the explicit invalidArgument apiStatus
+  // so we don't confuse this with unrelated 400s (auth, rate-limiting variants,
+  // request validation bugs in other endpoints).
+  if (errorData.httpStatus !== 400) return false;
+  if (errorData.apiStatus !== 'invalidArgument') return false;
+  // Only treat chat-stream 400s this way. Other endpoints returning 400 with
+  // invalidArgument (e.g. session/new validation) shouldn't trigger history
+  // recovery — they indicate a different class of bug.
+  if (errorData.httpUrl && !errorData.httpUrl.includes('chat-stream')) return false;
+  // Guard against false positives from clearly unrelated messages (e.g. auth
+  // errors that happen to surface as 400). The observed provider message is
+  // just "HTTP error: 400 Bad Request" so any string shape is acceptable.
+  void rawError;
+  return true;
+}
+
+/**
+ * Derives the `rawErrorMessage` used by ACP prompt and fallback error paths
+ * for keyword classification (model-not-available, session-recoverable,
+ * context-too-large, transient, auth, etc.) and as the `rawError` argument
+ * to `createUserFriendlyErrorMessage`.
+ *
+ * Returns ONLY the safe top-level `error.message`. `error.data.details` is
+ * deliberately NOT consulted here because it can echo raw HTTP response body
+ * content (prompt echoes, tool outputs, file contents) and must never leak
+ * into classifier inputs, user-facing messages, callback errors, rejected
+ * Error messages, or log payloads.
+ *
+ * The `fallback` argument matches the call site's existing default string
+ * (e.g. `'Unknown agent error'` for the primary prompt source or
+ * `'Unknown error'` for the model-fallback prompt source) so behavior is
+ * unchanged when `error.message` is missing or non-string.
+ */
+export function deriveSafeRawErrorMessage(
+  error: { message?: unknown } | null | undefined,
+  fallback: string,
+): string {
+  const message = error?.message;
+  return (typeof message === 'string' && message) || fallback;
+}
+
+/**
+ * Extracts only non-sensitive diagnostic fields from a JSON-RPC error response.
+ * Used for error logging so future 400/invalidArgument failures stay actionable
+ * without dumping prompt content or tool_result payloads into the log stream.
+ *
+ * Safe-to-log fields: code, message, httpStatus, apiStatus, httpUrl, requestId,
+ * and a sanitized errorDetails { code, message, detail } shape.
+ *
+ * Explicitly NOT logged: data.prompt, data.details (raw HTTP body), and any
+ * other unknown keys on error.data — these can embed prompt text, tool outputs,
+ * or workspace file contents.
+ */
+export function summarizeProviderErrorForLog(error: unknown): {
+  code?: number;
+  message?: string;
+  httpStatus?: number;
+  apiStatus?: string;
+  httpUrl?: string;
+  requestId?: string | number;
+  errorDetails?: { code?: number; message?: string; detail?: string };
+} {
+  if (!error || typeof error !== 'object') {
+    return {};
+  }
+  const err = error as { code?: unknown; message?: unknown; data?: unknown };
+  const data =
+    err.data && typeof err.data === 'object'
+      ? (err.data as {
+          httpStatus?: unknown;
+          apiStatus?: unknown;
+          httpUrl?: unknown;
+          requestId?: unknown;
+          errorDetails?: unknown;
+        })
+      : undefined;
+
+  const summary: ReturnType<typeof summarizeProviderErrorForLog> = {};
+  if (typeof err.code === 'number') summary.code = err.code;
+  if (typeof err.message === 'string') summary.message = err.message;
+  if (data) {
+    if (typeof data.httpStatus === 'number') summary.httpStatus = data.httpStatus;
+    if (typeof data.apiStatus === 'string') summary.apiStatus = data.apiStatus;
+    if (typeof data.httpUrl === 'string') summary.httpUrl = data.httpUrl;
+    if (typeof data.requestId === 'string' || typeof data.requestId === 'number') {
+      summary.requestId = data.requestId;
+    }
+    if (data.errorDetails && typeof data.errorDetails === 'object') {
+      const d = data.errorDetails as {
+        code?: unknown;
+        message?: unknown;
+        detail?: unknown;
+      };
+      const details: { code?: number; message?: string; detail?: string } = {};
+      if (typeof d.code === 'number') details.code = d.code;
+      if (typeof d.message === 'string') details.message = d.message;
+      if (typeof d.detail === 'string') details.detail = d.detail;
+      if (Object.keys(details).length > 0) summary.errorDetails = details;
+    }
+  }
+  return summary;
+}
+
+/**
  * Creates a user-friendly error message from raw agent errors.
  * Helps users understand what went wrong and how to fix it.
+ *
+ * `rawError` is used ONLY for keyword classification (session, timeout, 429, etc.)
+ * and is never surfaced verbatim to the user, because callers may source it from
+ * `response.error.data.details`, which can contain raw HTTP body content (prompt
+ * echoes, tool outputs, file contents). For unclassified errors the function
+ * falls back to `safeFallbackMessage` (the safe top-level `response.error.message`)
+ * or a generic string.
  */
-function createUserFriendlyErrorMessage(
+export function createUserFriendlyErrorMessage(
   rawError: string,
   errorCode: number,
   currentModel?: string,
   providerId?: string,
-  errorData?: { errorDetails?: { code?: number }; httpStatus?: number },
+  errorData?: {
+    errorDetails?: { code?: number; detail?: string };
+    httpStatus?: number;
+    apiStatus?: string;
+    httpUrl?: string;
+  },
   workspaceId?: string,
+  safeFallbackMessage?: string,
+  isTerminal: boolean = false,
 ): string {
   const errorLower = rawError.toLowerCase();
+  const safeFallback = safeFallbackMessage?.trim();
 
   // Provider authentication required - special case for remote environments
   if (isAuthenticationError(rawError, providerId)) {
@@ -829,6 +1142,28 @@ function createUserFriendlyErrorMessage(
   // Check this BEFORE session and -32603 checks since the error may be wrapped in JSON-RPC -32603
   if (isNoIntentPlanError(errorData)) {
     return 'Intent is not available on your current plan. Please contact your administrator to upgrade your plan or contact your Augment account manager';
+  }
+
+  // 400/invalidArgument from chat-stream — persisted tool history is malformed.
+  // Session recovery re-sends sanitized history via formatHistoryAsXml(), so
+  // surface an actionable message instead of the raw "HTTP error: 400 Bad
+  // Request" that the provider returns. Check BEFORE the -32603 branch since
+  // the provider wraps this as JSON-RPC -32603 with invalidArgument in data.
+  //
+  // `isTerminal` distinguishes the two call-site categories:
+  //   - Active recovery (isTerminal=false): an automatic retry is imminent,
+  //     so it's accurate to tell the user recovery is happening.
+  //   - Terminal/exhausted (isTerminal=true): recovery already failed, the
+  //     retry budget is spent, or we're outside the recovery path entirely.
+  //     In that case the message must NOT imply an automatic retry, otherwise
+  //     a failed recovery looks like active recovery to users/operators.
+  if (isInvalidToolHistoryError(rawError, errorData)) {
+    const detail = errorData?.errorDetails?.detail;
+    const suffix = detail ? ` (${detail})` : '';
+    if (isTerminal) {
+      return `The previous agent history contained invalid tool blocks${suffix}. Automatic recovery was unsuccessful. Please send your message again.`;
+    }
+    return `The previous agent history contained invalid tool blocks${suffix}. Recovering with a fresh session...`;
   }
 
   // Session not found - this means the ACP session was lost/never created
@@ -852,7 +1187,7 @@ function createUserFriendlyErrorMessage(
 
   // 413 Request Entity Too Large - conversation context exceeded LLM token limit.
   // Session recovery will recreate the session with truncated history.
-  if (isContextTooLargeError(rawError, errorCode)) {
+  if (isContextTooLargeError(rawError, errorCode, errorData)) {
     return 'Conversation context is too large. Recovering with trimmed history...';
   }
 
@@ -874,11 +1209,10 @@ function createUserFriendlyErrorMessage(
     ) {
       return 'The model produced an invalid response. Please try again.';
     }
-    // Strip the "Internal error: " prefix if present, surface the rest as-is
-    return (
-      rawError.replace(/^internal error:\s*/i, '').trim() ||
-      'The agent encountered an internal error.'
-    );
+    // Surface the safe top-level message (e.g. response.error.message) if we have one;
+    // otherwise return a generic string. `rawError` is intentionally NOT surfaced here
+    // because it may be sourced from response.error.data.details (raw HTTP body).
+    return safeFallback || 'The agent encountered an internal error.';
   }
 
   // Model-specific errors - only blame the model if the error explicitly mentions it
@@ -959,13 +1293,15 @@ function createUserFriendlyErrorMessage(
     return 'Connection failed. Please check your network and try again.';
   }
 
-  // Default - return a cleaned up version of the raw error
-  // Truncate if too long
+  // Default - prefer the safe top-level provider message (e.g. response.error.message)
+  // over `rawError`, which may be sourced from response.error.data.details (raw HTTP
+  // body content). Truncate either value if too long.
   const maxLength = 200;
-  if (rawError.length > maxLength) {
-    return `${rawError.substring(0, maxLength)}...`;
+  const fallback = safeFallback || rawError;
+  if (fallback.length > maxLength) {
+    return `${fallback.substring(0, maxLength)}...`;
   }
-  return rawError;
+  return fallback || 'The agent encountered an error.';
 }
 
 // Remote process handle type (returned by sshManager.spawnRemoteProcess)
@@ -5647,11 +5983,16 @@ export class ACPProvider extends BaseAgentProvider {
     const response = await this.sendRequest(promptRequest);
 
     if (response?.error) {
-      logger.error('Prompt request failed - Full error:', response.error);
-      // Try to extract more specific error information
-      if (response.error.data?.prompt) {
-        logger.error('Prompt validation errors:', response.error.data.prompt);
-      }
+      // Log sanitized error diagnostics only. Do NOT log response.error.data.prompt
+      // or response.error.data.details directly — they can embed prompt content,
+      // tool_result payloads, or workspace file contents from the provider's
+      // echoed request body. summarizeProviderErrorForLog() extracts the safe
+      // fields (httpStatus/apiStatus/requestId/errorDetails).
+      logger.error('Prompt request failed', {
+        sessionId: this.sessionId,
+        requestId: promptRequest.id,
+        error: summarizeProviderErrorForLog(response.error),
+      });
       throw new Error(response.error.message || 'Invalid params');
     }
 
@@ -5746,11 +6087,16 @@ export class ACPProvider extends BaseAgentProvider {
         const message = response.error?.message || '';
         const isMethodNotFound =
           code === -32601 || (typeof message === 'string' && message.includes('Method not found'));
+        // Do NOT log the raw response.error object: its `data.details` can
+        // embed the raw HTTP response body (tool outputs, prompt echoes,
+        // file contents). Use summarizeProviderErrorForLog to keep only
+        // the safe diagnostic fields (code/message/httpStatus/apiStatus/
+        // errorDetails.{code,detail}) while redacting data.details.
         logger.warn('Failed to set model via ACP', {
           providerId: caps.id,
           method,
           modelId,
-          error: response.error,
+          error: summarizeProviderErrorForLog(response.error),
           isMethodNotFound,
         });
         if (!isMethodNotFound) {
@@ -6928,14 +7274,28 @@ export class ACPProvider extends BaseAgentProvider {
         }
 
         if (typedResponse?.error) {
-          const rawErrorMessage =
-            typedResponse.error.data?.details || typedResponse.error.message || 'Unknown error';
+          // Use only the safe top-level error.message for classification and
+          // user-facing paths. `error.data.details` can contain the raw HTTP
+          // response body (tool outputs, prompt echoes, file contents) and
+          // must never reach logs, createUserFriendlyErrorMessage, callbacks,
+          // or rejected Error messages.
+          const rawErrorMessage = deriveSafeRawErrorMessage(
+            typedResponse.error,
+            'Unknown error',
+          );
           const errorCode = typedResponse.error.code || -1;
           const errorData = typedResponse.error.data as
-            | { errorDetails?: { code?: number }; httpStatus?: number }
+            | {
+                errorDetails?: { code?: number; message?: string; detail?: string };
+                httpStatus?: number;
+                apiStatus?: string;
+              }
             | undefined;
 
-          if (isModelNotAvailableError(rawErrorMessage, errorCode) && this.config.model) {
+          if (
+            isModelNotAvailableError(rawErrorMessage, errorCode, errorData) &&
+            this.config.model
+          ) {
             // Mark current model as tried and recurse
             this.triedModels.add(this.config.model);
             logger.warn('Model not available in fallback attempt, trying next', {
@@ -6959,6 +7319,9 @@ export class ACPProvider extends BaseAgentProvider {
 
           // Other error - reject with user-friendly message
           this.isStoppingIntentionally = false;
+          // Terminal path: model-fallback attempts have been exhausted or the
+          // error isn't a model-availability error. No recovery will run from
+          // here, so the user-friendly message must not imply an automatic retry.
           const userFriendlyMessage = createUserFriendlyErrorMessage(
             rawErrorMessage,
             errorCode,
@@ -6966,6 +7329,10 @@ export class ACPProvider extends BaseAgentProvider {
             this.providerCapabilities.id,
             errorData,
             this.config.workspaceId,
+            typeof typedResponse.error.message === 'string'
+              ? typedResponse.error.message
+              : undefined,
+            true,
           );
           const sid = this.frontendSessionId || callbackSessionId;
           const cb = this.streamingCallbacks.get(sid);
@@ -8054,16 +8421,34 @@ export class ACPProvider extends BaseAgentProvider {
               // the response will have an 'error' field instead of 'result'.
               // Previously this was silently ignored, causing the stream to hang until timeout.
               if (response?.error) {
-                const rawErrorMessage =
-                  response.error.data?.details || response.error.message || 'Unknown agent error';
+                // Use only the safe top-level error.message for classification
+                // and user-facing paths. `error.data.details` can contain the
+                // raw HTTP response body (tool outputs, prompt echoes, file
+                // contents) and must never reach logs,
+                // createUserFriendlyErrorMessage, callbacks, or rejected Error
+                // messages. Classification that depends on structured signals
+                // (httpStatus, apiStatus, errorDetails.code) continues to use
+                // `errorData` below.
+                const rawErrorMessage = deriveSafeRawErrorMessage(
+                  response.error,
+                  'Unknown agent error',
+                );
                 const errorCode = response.error.code || -1;
                 const errorData = response.error.data as
-                  | { errorDetails?: { code?: number }; httpStatus?: number }
+                  | {
+                      errorDetails?: { code?: number; message?: string; detail?: string };
+                      httpStatus?: number;
+                      apiStatus?: string;
+                      httpUrl?: string;
+                    }
                   | undefined;
 
                 // Check if this is a model not available error (404)
                 // If so, try to switch to a fallback model and retry using the recursive helper
-                if (isModelNotAvailableError(rawErrorMessage, errorCode) && this.config.model) {
+                if (
+                  isModelNotAvailableError(rawErrorMessage, errorCode, errorData) &&
+                  this.config.model
+                ) {
                   // Mark current model as tried
                   this.triedModels.add(this.config.model);
 
@@ -8074,13 +8459,20 @@ export class ACPProvider extends BaseAgentProvider {
                   const fallbackChain = this.getModelFallbackChain();
                   const nextModel = fallbackChain.find((m) => !this.triedModels.has(m));
 
+                  // Do NOT log `rawErrorMessage` here: it may be sourced from
+                  // response.error.data.details (raw HTTP body). Log the safe
+                  // top-level message + sanitized summary instead.
                   logger.warn('Model not available', {
                     failedModel: this.config.model,
                     triedModels: Array.from(this.triedModels),
-                    rawErrorMessage,
+                    errorMessage:
+                      typeof response.error.message === 'string'
+                        ? response.error.message
+                        : undefined,
                     errorCode,
                     isBackground,
                     nextModel,
+                    error: summarizeProviderErrorForLog(response.error),
                   });
 
                   // For interactive (non-background) agents, stop and let user choose to retry
@@ -8153,19 +8545,44 @@ export class ACPProvider extends BaseAgentProvider {
                 }
 
                 // Check if this is a session-recoverable error (session lost/expired)
-                // If so, try to recreate the session and retry automatically
+                // or an invalid-tool-history error (chat-stream 400/invalidArgument
+                // caused by malformed persisted tool_use/tool_result blocks).
+                // Both are fixed by recreating the session so the next prompt goes
+                // through formatHistoryAsXml() rather than resubmitting the native
+                // tool blocks that poisoned the provider-side session state.
+                const isInvalidHistoryError = isInvalidToolHistoryError(
+                  rawErrorMessage,
+                  errorData as
+                    | { apiStatus?: string; httpStatus?: number; httpUrl?: string }
+                    | undefined,
+                );
                 if (
-                  isSessionRecoverableError(rawErrorMessage, errorCode) &&
+                  (isSessionRecoverableError(rawErrorMessage, errorCode, errorData) ||
+                    isInvalidHistoryError) &&
                   this.sessionRecoveryAttempts < this.MAX_SESSION_RECOVERY_ATTEMPTS
                 ) {
                   this.sessionRecoveryAttempts++;
-                  logger.info('Session error detected, attempting automatic recovery', {
-                    rawErrorMessage,
-                    errorCode,
-                    recoveryAttempt: this.sessionRecoveryAttempts,
-                    maxAttempts: this.MAX_SESSION_RECOVERY_ATTEMPTS,
-                    sessionId: this.sessionId,
-                  });
+                  // Do NOT log `rawErrorMessage` directly: it may be sourced
+                  // from response.error.data.details, which can contain the
+                  // raw HTTP body (tool outputs, prompt echoes). Use the
+                  // sanitized summary instead.
+                  logger.info(
+                    isInvalidHistoryError
+                      ? 'Invalid tool history (400/invalidArgument) detected, recreating session'
+                      : 'Session error detected, attempting automatic recovery',
+                    {
+                      errorMessage:
+                        typeof response.error.message === 'string'
+                          ? response.error.message
+                          : undefined,
+                      errorCode,
+                      recoveryAttempt: this.sessionRecoveryAttempts,
+                      maxAttempts: this.MAX_SESSION_RECOVERY_ATTEMPTS,
+                      sessionId: this.sessionId,
+                      invalidHistoryRecovery: isInvalidHistoryError,
+                      error: summarizeProviderErrorForLog(response.error),
+                    },
+                  );
 
                   // Clear the timeout and pending request before recovery
                   clearTimeout(timeout);
@@ -8225,7 +8642,9 @@ export class ACPProvider extends BaseAgentProvider {
                           reject(new Error('Connection was lost. Please send your message again.'));
                         }
                       } else {
-                        // Recovery failed, show original error
+                        // Terminal path: session recovery returned false (could not
+                        // recreate the session). No further retry will happen here,
+                        // so use the terminal messaging for invalid-history errors.
                         const userFriendlyMessage = createUserFriendlyErrorMessage(
                           rawErrorMessage,
                           errorCode,
@@ -8233,6 +8652,10 @@ export class ACPProvider extends BaseAgentProvider {
                           this.providerCapabilities.id,
                           errorData,
                           this.config.workspaceId,
+                          typeof response.error.message === 'string'
+                            ? response.error.message
+                            : undefined,
+                          true,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
                         const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -8244,6 +8667,8 @@ export class ACPProvider extends BaseAgentProvider {
                     })
                     .catch((recoveryError) => {
                       logger.error('Session recovery failed', { error: recoveryError });
+                      // Terminal path: session recovery threw. No further retry
+                      // will happen from here, so use terminal messaging.
                       const userFriendlyMessage = createUserFriendlyErrorMessage(
                         rawErrorMessage,
                         errorCode,
@@ -8251,6 +8676,10 @@ export class ACPProvider extends BaseAgentProvider {
                         this.providerCapabilities.id,
                         errorData,
                         this.config.workspaceId,
+                        typeof response.error.message === 'string'
+                          ? response.error.message
+                          : undefined,
+                        true,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
                       const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -8265,7 +8694,7 @@ export class ACPProvider extends BaseAgentProvider {
                 // Check if this is a context-too-large error (413) — recoverable by
                 // recreating the session with truncated history
                 if (
-                  isContextTooLargeError(rawErrorMessage, errorCode) &&
+                  isContextTooLargeError(rawErrorMessage, errorCode, errorData) &&
                   this.sessionRecoveryAttempts < this.MAX_SESSION_RECOVERY_ATTEMPTS
                 ) {
                   this.sessionRecoveryAttempts++;
@@ -8276,10 +8705,16 @@ export class ACPProvider extends BaseAgentProvider {
                     10_000,
                   );
 
+                  // See note above: `rawErrorMessage` may be sourced from
+                  // response.error.data.details (raw HTTP body); log only the
+                  // sanitized summary + safe top-level message.
                   logger.info(
                     'Context too large (413) — attempting session recovery with reduced history budget',
                     {
-                      rawErrorMessage,
+                      errorMessage:
+                        typeof response.error.message === 'string'
+                          ? response.error.message
+                          : undefined,
                       errorCode,
                       recoveryAttempt: this.sessionRecoveryAttempts,
                       contextRecoveryCount: this.contextTooLargeRecoveryCount,
@@ -8287,6 +8722,7 @@ export class ACPProvider extends BaseAgentProvider {
                       defaultHistoryBudget: MAX_HISTORY_CHARS,
                       maxAttempts: this.MAX_SESSION_RECOVERY_ATTEMPTS,
                       sessionId: this.sessionId,
+                      error: summarizeProviderErrorForLog(response.error),
                     },
                   );
 
@@ -8358,7 +8794,8 @@ export class ACPProvider extends BaseAgentProvider {
                           );
                         }
                       } else {
-                        // Recovery failed — show terminal error
+                        // Terminal path: 413 recovery returned false. No
+                        // further retry will happen, so use terminal messaging.
                         const userFriendlyMessage = createUserFriendlyErrorMessage(
                           rawErrorMessage,
                           errorCode,
@@ -8366,6 +8803,10 @@ export class ACPProvider extends BaseAgentProvider {
                           this.providerCapabilities.id,
                           errorData,
                           this.config.workspaceId,
+                          typeof response.error.message === 'string'
+                            ? response.error.message
+                            : undefined,
+                          true,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
                         const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -8379,6 +8820,8 @@ export class ACPProvider extends BaseAgentProvider {
                       logger.error('Session recovery after 413 failed', {
                         error: recoveryError,
                       });
+                      // Terminal path: 413 recovery threw. No further retry
+                      // will happen, so use terminal messaging.
                       const userFriendlyMessage = createUserFriendlyErrorMessage(
                         rawErrorMessage,
                         errorCode,
@@ -8386,6 +8829,10 @@ export class ACPProvider extends BaseAgentProvider {
                         this.providerCapabilities.id,
                         errorData,
                         this.config.workspaceId,
+                        typeof response.error.message === 'string'
+                          ? response.error.message
+                          : undefined,
+                        true,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
                       const callbacks = this.streamingCallbacks.get(completionSessionId);
@@ -8413,15 +8860,21 @@ export class ACPProvider extends BaseAgentProvider {
                     10000,
                   ); // 1s, 2s, 4s (capped at 10s)
 
+                  // See note above: `rawErrorMessage` may be sourced from
+                  // response.error.data.details (raw HTTP body); log only the
+                  // sanitized summary + safe top-level message.
                   logger.warn('Transient prompt error detected, attempting retry', {
-                    rawErrorMessage,
+                    errorMessage:
+                      typeof response.error.message === 'string'
+                        ? response.error.message
+                        : undefined,
                     errorCode,
-                    apiStatus: (errorData as { apiStatus?: string } | undefined)?.apiStatus,
                     retryAttempt: this.transientRetryAttempts,
                     maxAttempts: this.MAX_TRANSIENT_RETRY_ATTEMPTS,
                     retryDelayMs,
                     isBackground: this.config.metadata?.isBackground === true,
                     sessionId: this.sessionId,
+                    error: summarizeProviderErrorForLog(response.error),
                   });
 
                   // Clear the timeout and pending request before retry
@@ -8476,10 +8929,18 @@ export class ACPProvider extends BaseAgentProvider {
                   return;
                 }
 
-                // Reset recovery attempts on non-session errors (or if max attempts reached)
+                // Reset recovery attempts on non-session errors (or if max attempts reached).
+                // Keep the counter stable across session-recoverable, context-too-large,
+                // and invalid-tool-history errors since they all share the same recovery path.
                 if (
-                  !isSessionRecoverableError(rawErrorMessage, errorCode) &&
-                  !isContextTooLargeError(rawErrorMessage, errorCode)
+                  !isSessionRecoverableError(rawErrorMessage, errorCode, errorData) &&
+                  !isContextTooLargeError(rawErrorMessage, errorCode, errorData) &&
+                  !isInvalidToolHistoryError(
+                    rawErrorMessage,
+                    errorData as
+                      | { apiStatus?: string; httpStatus?: number; httpUrl?: string }
+                      | undefined,
+                  )
                 ) {
                   this.sessionRecoveryAttempts = 0;
                 }
@@ -8494,7 +8955,16 @@ export class ACPProvider extends BaseAgentProvider {
                   this.transientRetryAttempts = 0;
                 }
 
-                // Create user-friendly error message
+                // Create user-friendly error message. `rawErrorMessage` is used only
+                // for keyword classification; for unclassified errors the function
+                // falls back to `response.error.message` (safe top-level JSON-RPC
+                // message) rather than the raw HTTP body in `data.details`.
+                //
+                // Terminal path: this branch is reached when the session-recovery
+                // or transient-retry budget is exhausted, or the error isn't
+                // one of those recoverable categories. Either way, no further
+                // automatic retry will happen for this request, so invalid-history
+                // errors must NOT imply an automatic retry is in progress.
                 const userFriendlyMessage = createUserFriendlyErrorMessage(
                   rawErrorMessage,
                   errorCode,
@@ -8502,15 +8972,28 @@ export class ACPProvider extends BaseAgentProvider {
                   this.providerCapabilities.id,
                   errorData,
                   this.config.workspaceId,
+                  typeof response.error.message === 'string'
+                    ? response.error.message
+                    : undefined,
+                  true,
                 );
 
+                // Log sanitized diagnostics (httpStatus/apiStatus/httpUrl/
+                // requestId/errorDetails) so 400/invalidArgument failures stay
+                // actionable without echoing prompt content or tool payloads.
+                // Neither `rawErrorMessage` nor `userFriendlyMessage` are logged
+                // here: both may be sourced from response.error.data.details
+                // (raw HTTP body) via the fallback path.
                 logger.error('Prompt response returned error from agent', {
                   errorCode,
-                  errorMessage: rawErrorMessage,
-                  userFriendlyMessage,
+                  errorMessage:
+                    typeof response.error.message === 'string'
+                      ? response.error.message
+                      : undefined,
                   sessionId: this.sessionId,
                   frontendSessionId: this.frontendSessionId,
-                  fullError: response.error,
+                  requestId: request.id,
+                  error: summarizeProviderErrorForLog(response.error),
                 });
 
                 // Emit domain event for authentication errors so UI can show helpful guidance

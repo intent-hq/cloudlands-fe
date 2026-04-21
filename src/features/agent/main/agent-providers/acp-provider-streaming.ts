@@ -1953,6 +1953,31 @@ export class ACPProviderStreaming {
       }
     }
 
+    // Guard against blank/missing tool_use_id: the provider rejects any tool_result that
+    // does not reference a prior tool_use, so a blank id produces the HTTP 400
+    // invalidArgument poison pill observed in agent-20a9e410. Fall back to the most
+    // recent pending tool id when available, otherwise drop the update so we do not
+    // persist a malformed tool_result block.
+    if (!toolCallId || !toolCallId.trim()) {
+      if (this.lastPendingToolId && this.lastPendingToolId.trim()) {
+        logger.warn('[ACPProviderStreaming] Tool call update missing toolCallId; recovering from lastPendingToolId', {
+          recoveredToolId: this.lastPendingToolId,
+          agentId: session.agentId,
+          status: update?.status,
+          isError,
+        });
+        toolCallId = this.lastPendingToolId;
+      } else {
+        logger.warn('[ACPProviderStreaming] Dropping tool call update with blank toolCallId and no recoverable pending id', {
+          agentId: session.agentId,
+          status: update?.status,
+          isError,
+          hasOutput: typeof output === 'string' && output.length > 0,
+        });
+        return;
+      }
+    }
+
     // Clear lastPendingToolId since we received a proper tool_call_update
     if (toolCallId && toolCallId === this.lastPendingToolId) {
       this.lastPendingToolId = undefined;

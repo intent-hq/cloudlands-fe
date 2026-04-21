@@ -202,5 +202,135 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
       expect(onChunk).not.toHaveBeenCalled();
     });
   });
+
+  // ── Scenario 3: blank/missing toolCallId does not produce poisoned tool_result
+  //
+  // The agent-20a9e410 bundle shows 5 tool_result blocks with tool_use_id: ""
+  // referencing no prior tool_use. Those blocks were persisted and then replayed
+  // to chat-stream, which rejects them with HTTP 400/invalidArgument. Prevent the
+  // poisoned block at the source by never emitting a tool_result with a blank id.
+
+  describe('blank toolCallId handling in tool_call_update', () => {
+    it('drops a tool_call_update with blank toolCallId when no pending tool id is recoverable', async () => {
+      const sessionId = 'ses_blank_tool';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: '',
+          status: 'failed',
+          rawOutput: { output: '' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(0);
+    });
+
+    it('drops a tool_call_update with whitespace-only toolCallId', async () => {
+      const sessionId = 'ses_ws_tool';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: '   ',
+          status: 'failed',
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(0);
+    });
+
+    it('falls back to lastPendingToolId when the update omits toolCallId', async () => {
+      const sessionId = 'ses_fallback_tool';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      // Establish a pending tool via a tool_call event so lastPendingToolId is set
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_recoverable',
+          title: 'Read file',
+          name: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/x' },
+        } as any,
+      });
+
+      // Provider then sends a tool_call_update that accidentally drops toolCallId
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: '',
+          status: 'completed',
+          rawOutput: { output: 'contents' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_recoverable');
+    });
+
+    it('does not emit a tool_result with tool_use_id="" even when status is failed', async () => {
+      // This is the exact shape seen in agent-20a9e410: failed update, empty id,
+      // empty rawOutput, sometimes an error message. It must not reach the accumulator.
+      const sessionId = 'ses_error_blank';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: '',
+          status: 'failed',
+          error: { message: 'something went wrong' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      for (const block of partial.contentBlocks) {
+        if (block.type === 'tool_result') {
+          const id = (block as any).tool_use_id;
+          expect(typeof id === 'string' && id.trim().length > 0).toBe(true);
+        }
+      }
+    });
+
+    it('preserves a normal tool_call_update with a valid toolCallId', async () => {
+      const sessionId = 'ses_normal_tool';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_good',
+          status: 'completed',
+          rawOutput: { output: 'ok' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_good');
+    });
+  });
 });
 
