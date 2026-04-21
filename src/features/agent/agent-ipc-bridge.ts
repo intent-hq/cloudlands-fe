@@ -681,7 +681,6 @@ export async function resumeSession(
         if (cmp > 0) session.messages = existingSession.messages;
       }
       getReduxStore().dispatch(upsertAgentSession(workspace.id, session));
-      getReduxStore().dispatch(setActiveAgentId(workspace.id, plainAgentId));
       return session;
     },
     'resume session',

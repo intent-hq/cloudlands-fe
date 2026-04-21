@@ -407,27 +407,19 @@ function reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]): 
   }
 }
 function* handleStreamingAgentReconnect(
-  wsId: string,
-  restoredAgents: AgentSession[],
+  _wsId: string,
+  _restoredAgents: AgentSession[],
 ): Generator<any, boolean, any> {
-  let hasOpenedStreamingAgent = false;
+  // Query backend for active streams so stale streaming state is cleared and
+  // stream handlers are reconciled. We intentionally do NOT auto-open a tab
+  // for a streaming agent on workspace switch: the backend returns streams in
+  // arbitrary order, so picking .find() here would open a random agent for
+  // the user. Tab restoration is handled by restoreLayoutState from the
+  // user's persisted panel layout / initial agent.
   try {
-    const activeStreamAgentIds: string[] = yield* call([
-      agentService,
-      agentService.reconnectToBackendStreams,
-    ]);
-    if (activeStreamAgentIds.length > 0) {
-      const workspaceAgentIds = new Set(restoredAgents.map((a: AgentSession) => String(a.id)));
-      const streamingAgentInWorkspace = activeStreamAgentIds.find((id) =>
-        workspaceAgentIds.has(id),
-      );
-      if (streamingAgentInWorkspace) {
-        openAgentInLayout(streamingAgentInWorkspace, 'Agent', wsId);
-        hasOpenedStreamingAgent = true;
-      }
-    }
+    yield* call([agentService, agentService.reconnectToBackendStreams]);
   } catch {}
-  return hasOpenedStreamingAgent;
+  return false;
 }
 /** @internal Exported for testing only. */
 export function restoreLayoutState(
