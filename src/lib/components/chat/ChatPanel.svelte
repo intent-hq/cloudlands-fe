@@ -137,7 +137,7 @@
   import Button from '../ui/button/button.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
-  import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
@@ -427,25 +427,92 @@
   // Search state
   let showSearch = $state(false);
   let searchQuery = $state('');
+  // Debounced copy of searchQuery — drives the expensive match derivation so
+  // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
+  let debouncedSearchQuery = $state('');
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const SEARCH_DEBOUNCE_MS = 150;
+  // Number of match-neighbors (before + after the current index) to force-render
+  // via LazyTurn in addition to the current match's turn. Keeps initial search
+  // responsive even when a query matches hundreds of turns.
+  const SEARCH_NEIGHBOR_COUNT = 1;
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
 
-  // Derive all individual match positions: { messageId, matchIndex (within message) }
+  // Build a search catalog that matches what's actually rendered in the DOM.
+  // The rendered text for a message is the result of two transforms applied by
+  // MessageContent.svelte:
+  //
+  //   1. groupContentBlocks() splits text blocks on `<group:Name>` / `</group>`
+  //      and `<think>` / `</think>` tags, consuming the tag markup and moving
+  //      think content into separate `'thinking'` blocks.
+  //   2. parseSuggestedPrompts(text).cleanedContent strips the
+  //      `<!-- suggested-prompts … -->` comment block from each text block
+  //      before markdown rendering.
+  //
+  // Mirroring those exact transforms (instead of re-encoding them as a regex)
+  // keeps the search index in lockstep with the renderer automatically.
+  //
+  // Additionally:
+  //   - Only the last top-level content_group stays expanded after streaming
+  //     (`isLast={blockIndex === groupedBlocks.length - 1}` in
+  //     MessageContent.svelte); earlier groups collapse and their children are
+  //     removed from the DOM by ResponseGroup's `{#if isExpanded || showCylinder}`
+  //     gate, so matches inside them have no text nodes to highlight.
+  //   - Event-notification user messages are rendered as an EventWakeupBanner
+  //     summary (+ optional AgentCards) instead of a ChatMessage, so the raw
+  //     text never reaches the DOM.
+  //
+  // Skipping both categories here prevents unreachable "ghost" matches.
+  function extractSearchableContent(msg: AgentMessage): string {
+    const blocks = msg.contentBlocks;
+    if (!blocks || blocks.length === 0) return '';
+    if (msg.role === 'user') {
+      if (msg.metadata?.type === 'event_notification') return '';
+      if (extractAllContent(msg).trimStart().startsWith('[WORKSPACE EVENTS]')) return '';
+    }
+    const grouped = groupContentBlocks(blocks, !!msg.isStreaming);
+    const lastIndex = grouped.length - 1;
+    const parts: string[] = [];
+    const pushText = (text: string) =>
+      parts.push(parseSuggestedPrompts(text).cleanedContent);
+    grouped.forEach((block, i) => {
+      if (block.type === 'text') {
+        pushText(block.text || block.content || '');
+      } else if (block.type === 'content_group' && i === lastIndex) {
+        for (const child of block.children) {
+          if (child.type === 'text') pushText(child.text || child.content || '');
+        }
+      }
+    });
+    return parts.join('');
+  }
+
+  // Derive all individual match positions: { messageId, matchIndex (within message), turnKey }
+  // turnKey ties each match back to its enclosing conversation turn so that the
+  // current-match turn (and its neighbors) can be force-rendered through the
+  // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    if (!searchQuery.trim()) {
+    if (!debouncedSearchQuery.trim()) {
       return [];
     }
-    const query = searchQuery.toLowerCase();
-    const matches: Array<{ messageId: string; matchIndexInMessage: number }> = [];
+    const query = debouncedSearchQuery.toLowerCase();
+    const turnKeyMap = messageIdToTurnKey;
+    const matches: Array<{
+      messageId: string;
+      matchIndexInMessage: number;
+      turnKey: string;
+    }> = [];
 
     for (const msg of chatState.messages) {
-      const content = extractAllContent(msg);
+      const content = extractSearchableContent(msg);
       const lowerContent = content.toLowerCase();
+      const turnKey = turnKeyMap.get(msg.id) ?? msg.id;
       let index = 0;
       let matchIndexInMessage = 0;
       while ((index = lowerContent.indexOf(query, index)) !== -1) {
-        matches.push({ messageId: msg.id, matchIndexInMessage });
+        matches.push({ messageId: msg.id, matchIndexInMessage, turnKey });
         index += query.length;
         matchIndexInMessage++;
       }
@@ -457,9 +524,30 @@
   // Derive the match count from allSearchMatches
   const searchMatchCount = $derived(allSearchMatches.length);
 
+  // Small set of turnKeys that must stay force-rendered while search is active:
+  // just the current match's turn plus SEARCH_NEIGHBOR_COUNT neighbors on each
+  // side (with wraparound). This caps the number of LazyTurn re-renders per
+  // navigation step to a constant instead of "every turn containing a match".
+  const visibleSearchTurnKeys = $derived.by(() => {
+    const set = new Set<string>();
+    const matches = allSearchMatches;
+    if (matches.length === 0) return set;
+    const total = matches.length;
+    for (let offset = -SEARCH_NEIGHBOR_COUNT; offset <= SEARCH_NEIGHBOR_COUNT; offset++) {
+      let idx = (currentSearchIndex + offset) % total;
+      if (idx < 0) idx += total;
+      set.add(matches[idx].turnKey);
+    }
+    return set;
+  });
+
   // Navigate to a search match (wraps around at boundaries)
   function scrollToSearchMatch(index: number) {
     if (allSearchMatches.length === 0) return;
+    // Navigating to an earlier match means the user no longer wants the
+    // viewport pinned to the bottom; drop follow so incoming streaming content
+    // doesn't yank them away from the highlighted match.
+    shouldFollowBottom = false;
     // Wrap around: going past the end cycles to the beginning, and vice versa
     let wrappedIndex = index % allSearchMatches.length;
     if (wrappedIndex < 0) wrappedIndex += allSearchMatches.length;
@@ -468,13 +556,17 @@
   }
 
   // Trigger highlighting (called from event handlers, not effects)
-  function triggerHighlight() {
+  // Async: awaits Svelte's pending DOM updates so that any LazyTurn force-rendered
+  // by the visibleSearchTurnKeys change has actually rendered its message content
+  // before we run querySelector('[data-message-id="..."]').
+  async function triggerHighlight() {
     // Use untrack to read reactive values without creating dependencies
-    const query = untrack(() => searchQuery);
+    const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
     const isShowing = untrack(() => showSearch);
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
+    await tick();
     // Use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
       doHighlightSearchMatches(query, index, matches, isShowing, container);
@@ -487,7 +579,7 @@
   function doHighlightSearchMatches(
     query: string,
     currentIndex: number,
-    matches: Array<{ messageId: string; matchIndexInMessage: number }>,
+    matches: Array<{ messageId: string; matchIndexInMessage: number; turnKey: string }>,
     isShowing: boolean,
     container: HTMLDivElement | undefined,
   ) {
@@ -518,38 +610,77 @@
       matchesByMessage.get(m.messageId)!.push(globalIndex);
     });
 
-    // Find text nodes and create ranges for each match
+    // PERF: Index message elements once instead of running querySelector per message.
+    // Previous implementation did a full container subtree scan for every message with
+    // matches; this collapses that to a single walk.
+    const messageElById = new Map<string, Element>();
+    for (const el of container.querySelectorAll('[data-message-id]')) {
+      const id = (el as HTMLElement).dataset.messageId;
+      if (id && !messageElById.has(id)) messageElById.set(id, el);
+    }
+
     for (const [messageId, globalIndices] of matchesByMessage) {
-      const messageEl = container.querySelector(`[data-message-id="${messageId}"]`);
+      const messageEl = messageElById.get(messageId);
       if (!messageEl) continue;
 
-      const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, null);
-      let matchCountInMessage = 0;
+      // Walk all text nodes once, concatenating them into `fullText` and recording
+      // each node's cumulative start offset. Running indexOf on the concatenated text
+      // (instead of per-node) ensures we find matches that span multiple text nodes
+      // — e.g. a query landing across syntax-highlighter token boundaries inside a
+      // code block. Without this, the per-node scan miscounts against the catalog
+      // and subsequent matches in the same message get mislabelled global indices.
+      const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, {
+        acceptNode: (n) => {
+          const parent = (n as Text).parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          const tag = parent.tagName;
+          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'INPUT') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
 
+      const textNodes: Text[] = [];
+      const nodeStarts: number[] = [];
+      const parts: string[] = [];
+      let cursor = 0;
       let node: Text | null;
       while ((node = walker.nextNode() as Text | null)) {
-        const parent = node.parentElement;
-        if (parent && !['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(parent.tagName)) {
-          const text = node.textContent || '';
-          const lowerText = text.toLowerCase();
-          let index = lowerText.indexOf(lowerQuery);
+        const text = node.textContent ?? '';
+        textNodes.push(node);
+        nodeStarts.push(cursor);
+        parts.push(text);
+        cursor += text.length;
+      }
 
-          while (index !== -1) {
-            const globalIndex = globalIndices[matchCountInMessage];
-            const range = document.createRange();
-            range.setStart(node, index);
-            range.setEnd(node, index + query.length);
+      if (cursor === 0) continue;
 
-            if (globalIndex === currentIndex) {
-              currentRange = range;
-            } else {
-              allRanges.push(range);
-            }
+      const fullText = parts.join('');
+      const lowerFullText = fullText.toLowerCase();
+      const maxMatches = globalIndices.length;
+      let searchPos = 0;
+      let matchCountInMessage = 0;
 
-            matchCountInMessage++;
-            index = lowerText.indexOf(lowerQuery, index + 1);
+      while (matchCountInMessage < maxMatches) {
+        const hit = lowerFullText.indexOf(lowerQuery, searchPos);
+        if (hit === -1) break;
+        const hitEnd = hit + lowerQuery.length;
+        const globalIndex = globalIndices[matchCountInMessage];
+
+        const range = createRangeForSpan(textNodes, nodeStarts, hit, hitEnd);
+        if (range) {
+          if (globalIndex === currentIndex) {
+            currentRange = range;
+          } else {
+            allRanges.push(range);
           }
         }
+
+        matchCountInMessage++;
+        // Advance by query length (non-overlapping) — matches allSearchMatches'
+        // counting so global indices stay aligned with the catalog.
+        searchPos = hitEnd;
       }
     }
 
@@ -576,13 +707,81 @@
     }
   }
 
+  // Locate the text node containing a given absolute offset in the concatenated
+  // fullText, and the local offset within that node. Uses binary search over the
+  // precomputed cumulative-start table so per-match lookup is O(log N).
+  function locateOffset(
+    textNodes: Text[],
+    nodeStarts: number[],
+    absoluteOffset: number,
+  ): { nodeIndex: number; localOffset: number } | null {
+    if (textNodes.length === 0) return null;
+    let lo = 0;
+    let hi = textNodes.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >>> 1;
+      if (nodeStarts[mid] <= absoluteOffset) lo = mid;
+      else hi = mid - 1;
+    }
+    const nodeLen = (textNodes[lo].textContent ?? '').length;
+    const localOffset = Math.min(absoluteOffset - nodeStarts[lo], nodeLen);
+    return { nodeIndex: lo, localOffset };
+  }
+
+  // Build a DOM Range spanning [start, end) in the concatenated fullText.
+  // Supports multi-node ranges natively via Range.setStart/setEnd on different
+  // nodes, which is required for matches that cross text-node boundaries.
+  function createRangeForSpan(
+    textNodes: Text[],
+    nodeStarts: number[],
+    start: number,
+    end: number,
+  ): Range | null {
+    const startLoc = locateOffset(textNodes, nodeStarts, start);
+    const endLoc = locateOffset(textNodes, nodeStarts, end);
+    if (!startLoc || !endLoc) return null;
+    const range = document.createRange();
+    range.setStart(textNodes[startLoc.nodeIndex], startLoc.localOffset);
+    range.setEnd(textNodes[endLoc.nodeIndex], endLoc.localOffset);
+    return range;
+  }
+
+  // Flush any pending debounce so the next operation (Enter / Escape) sees
+  // the latest typed query immediately.
+  function flushSearchDebounce() {
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    if (debouncedSearchQuery !== searchQuery) {
+      debouncedSearchQuery = searchQuery;
+    }
+  }
+
+  // Close the search UI and fully reset search state. All close paths (Esc,
+  // X button) must route through here so a stale `debouncedSearchQuery` or
+  // pending debounce timer can't leave `allSearchMatches` populated — which
+  // would otherwise show a stale match count and keep `LazyTurn` neighbors
+  // force-visible the next time the search panel reopens.
+  function closeSearch() {
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    showSearch = false;
+    searchQuery = '';
+    debouncedSearchQuery = '';
+    triggerHighlight();
+  }
+
   // Handle search keyboard shortcuts
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      showSearch = false;
-      searchQuery = '';
-      triggerHighlight(); // Clear highlights
+      closeSearch();
     } else if (e.key === 'Enter') {
+      // Pressing Enter before the debounce fires should navigate immediately
+      // using the latest typed query, not the stale debounced one.
+      flushSearchDebounce();
       if (e.shiftKey) {
         scrollToSearchMatch(currentSearchIndex - 1);
       } else {
@@ -591,10 +790,25 @@
     }
   }
 
-  // Handle search input changes
+  // Handle search input changes — debounce the expensive match derivation so
+  // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
+  // cascade. An empty query flushes immediately to clear highlights.
   function handleSearchInput() {
     currentSearchIndex = 0;
-    triggerHighlight();
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    if (!searchQuery.trim()) {
+      debouncedSearchQuery = '';
+      triggerHighlight();
+      return;
+    }
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   // Context items for the input
@@ -1362,6 +1576,24 @@
         const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`;
         map.set(turnKey, globalIndex);
         globalIndex++;
+      }
+    }
+    return map;
+  });
+
+  // Map each messageId to its enclosing turnKey. Used by allSearchMatches so that
+  // matches in virtualized LazyTurn placeholders can be force-rendered during search.
+  const messageIdToTurnKey = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (let groupIndex = 0; groupIndex < groupedMessages.length; groupIndex++) {
+      const turns = groupIntoTurns(groupedMessages[groupIndex].messages);
+      for (let turnIndex = 0; turnIndex < turns.length; turnIndex++) {
+        const turn = turns[turnIndex];
+        const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`;
+        if (turn.userMessage) map.set(turn.userMessage.id, turnKey);
+        for (const assistantMessage of turn.assistantMessages) {
+          map.set(assistantMessage.id, turnKey);
+        }
       }
     }
     return map;
@@ -2284,6 +2516,10 @@
     // running and falsely reset streaming state when the backend query returns
     // no active streams (because the query runs in the wrong workspace context).
     chatService.pauseBackgroundTimers();
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
     // The service will persist data for when the panel is reopened
@@ -2512,6 +2748,10 @@
     inputComponent?.clear();
     shouldFollowBottom = true;
     isScrollUnlocked = false;
+    // Snap to bottom explicitly: the follow action no longer auto-snaps when
+    // `follow` flips to true, and waiting for the message-count effect leaves
+    // a small window where mutations could land above the viewport.
+    if (scrollContainer) scrollToBottomUtil(scrollContainer);
 
     // Dispatch all orchestration to the send-message saga
     multiPanelDispatch(
@@ -3078,11 +3318,7 @@
       <button
         type="button"
         class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        onclick={() => {
-          showSearch = false;
-          searchQuery = '';
-          triggerHighlight(); // Clear highlights
-        }}
+        onclick={closeSearch}
         title="Close (Esc)"
       >
         <Fa icon={faTimes} class="w-3.5 h-3.5" />
@@ -3095,7 +3331,16 @@
     <div
       bind:this={scrollContainer}
       use:followBottom={{
-        follow: shouldFollowBottom && !isScrollUnlocked && chatState.messages.length > 0,
+        // While search is open we drive our own programmatic scrolls (to the
+        // current match), so we drop `follow` to keep the mutation/resize
+        // observers from yanking the viewport to the bottom when a LazyTurn
+        // placeholder expands between us computing and applying the match's
+        // scroll target.
+        follow:
+          shouldFollowBottom &&
+          !isScrollUnlocked &&
+          !showSearch &&
+          chatState.messages.length > 0,
         threshold: 100,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
@@ -3506,7 +3751,8 @@
                     {turnKey}
                     scrollRoot={scrollContainer}
                     forceVisible={isTurnForceVisible(turnKey) ||
-                      (chatState.isStreaming && isLastTurnInConversation)}
+                      (chatState.isStreaming && isLastTurnInConversation) ||
+                      visibleSearchTurnKeys.has(turnKey)}
                   >
                     {#snippet children()}
                       <!-- Event wakeup banner - shown when agent is woken by a subscription -->

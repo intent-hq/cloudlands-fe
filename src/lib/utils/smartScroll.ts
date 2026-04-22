@@ -23,6 +23,11 @@ export interface FollowBottomOptions {
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
+ *
+ * The consumer owns the follow policy: mutation/resize observers only
+ * auto-scroll to bottom when `follow` is true, and `update()` never initiates
+ * a scroll on its own. Callers that want to snap to bottom must do so
+ * explicitly (see `scrollToBottom` below) in addition to flipping `follow`.
  */
 export function followBottom(container: HTMLElement, options: FollowBottomOptions) {
   let isAtBottom = options.follow;
@@ -202,24 +207,23 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     update(newOptions: FollowBottomOptions) {
       onFollowChange = newOptions.onFollowChange;
 
+      // Sync internal follow state with the consumer's intent. We intentionally
+      // never initiate a scroll here — consumers that want to snap to bottom
+      // must call `scrollToBottom(container)` explicitly. The observers below
+      // will keep the viewport pinned to the bottom while `follow` is true as
+      // new content streams in.
+      //
+      // Assign `isAtBottom` directly rather than through `setIsAtBottom` so this
+      // consumer-driven change doesn't echo back via `onFollowChange`. That
+      // callback is reserved for user-input pathways (wheel/touch/keyboard); if
+      // we routed through it, toggling `follow` (e.g. when search opens) would
+      // flip the consumer's own follow flag and leave auto-follow disabled when
+      // the consumer next sets `follow: true`.
       if (newOptions.follow && !isAtBottom) {
         isUserScrolling = false;
-        setIsAtBottom(true);
-        // Defer scrollTo to avoid forced synchronous layout during Svelte batch updates.
-        // Reading scrollHeight in the middle of a batch triggers expensive layout recalc.
-        const scrollFn = () => {
-          container.scrollTo({
-            top: container.scrollHeight,
-            behavior: 'instant',
-          });
-        };
-        if (typeof requestAnimationFrame !== 'undefined') {
-          requestAnimationFrame(scrollFn);
-        } else {
-          scrollFn();
-        }
+        isAtBottom = true;
       } else if (!newOptions.follow && isAtBottom) {
-        setIsAtBottom(false);
+        isAtBottom = false;
       }
     },
 
