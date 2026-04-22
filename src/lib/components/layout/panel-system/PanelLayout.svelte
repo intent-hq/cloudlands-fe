@@ -34,6 +34,7 @@
   import { updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -350,6 +351,12 @@
     } else if (tab.type === 'agent' && tab.agentId) {
       // Rename agent
       const agentId = tab.agentId;
+      // Capture the pre-rename nameExplicitlySet flag so revert paths can
+      // restore the exact disk state. Auto-named sessions have
+      // nameExplicitlySet: false; hardcoding true here would diverge Redux
+      // from disk and permanently block MCP/automatic naming on failure.
+      const preRenameSession = selectAgentSession.select(getReduxStore().getState(), agentId);
+      const oldNameExplicitlySet = preRenameSession?.nameExplicitlySet ?? false;
       await renameWithUndo(
         'agent',
         oldName,
@@ -373,7 +380,7 @@
             getReduxStore().dispatch(
               updateAgentSessionFields(agentId, {
                 name: oldName,
-                nameExplicitlySet: true,
+                nameExplicitlySet: oldNameExplicitlySet,
               } as any),
             );
             layoutManager.updateTabTitle(tab.id, oldName);
@@ -381,12 +388,12 @@
           }
         },
         async () => {
-          // Undo: restore old name with nameExplicitlySet so persistence allows the
-          // disk write (without it, the preservation logic blocks the revert).
+          // Undo: restore old name with the captured nameExplicitlySet so
+          // Redux matches what disk held before the rename.
           getReduxStore().dispatch(
             updateAgentSessionFields(agentId, {
               name: oldName,
-              nameExplicitlySet: true,
+              nameExplicitlySet: oldNameExplicitlySet,
             } as any),
           );
           layoutManager.updateTabTitle(tab.id, oldName);
