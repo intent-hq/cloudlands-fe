@@ -51,14 +51,12 @@ import {
   setEnvironmentConfigAction,
   setRemoteConnectionIdAction,
   setIsRemoteInitializedAction,
-  applyGitStatusToTreeAction,
 } from "../file-explorer-slice";
 import { selectFileExplorerState } from "../file-explorer-selectors";
 import {
   shouldHide,
   checkGitignored,
   sortNodes,
-  enrichDirectoriesWithGitStatus,
   countFilesInTree,
   extractWorkspaceId,
   findNodeByPath,
@@ -105,12 +103,12 @@ function* loadDirectoryCore(
   dirPath: string,
 ): SagaGenerator<FileNode[]> {
   const ws = yield* getWsState(wsId);
-  const { workspacePath, gitStatus, gitignorePatterns, environmentConfig, remoteConnectionId } = ws;
+  const { workspacePath, gitignorePatterns, environmentConfig, remoteConnectionId } = ws;
 
   if (environmentConfig?.type === "remote") {
-    return yield* call(loadDirectoryCoreRemote, wsId, dirPath, workspacePath, remoteConnectionId, gitStatus, gitignorePatterns);
+    return yield* call(loadDirectoryCoreRemote, wsId, dirPath, workspacePath, remoteConnectionId, gitignorePatterns);
   }
-  return yield* call(loadDirectoryCoreLocal, dirPath, workspacePath, gitStatus, gitignorePatterns);
+  return yield* call(loadDirectoryCoreLocal, dirPath, workspacePath, gitignorePatterns);
 }
 
 
@@ -118,7 +116,6 @@ function* loadDirectoryCore(
 async function loadDirectoryCoreLocal(
   dirPath: string,
   workspacePath: string,
-  gitStatus: Record<string, FileGitStatus>,
   gitignorePatterns: string[],
 ): Promise<FileNode[]> {
   try {
@@ -141,8 +138,6 @@ async function loadDirectoryCoreLocal(
     for (const entry of response.data) {
       const fullPath = `${dirPath}/${entry.name}`;
       if (shouldHide(fullPath)) continue;
-      const relativePath = fullPath.replace(`${workspacePath}/`, "");
-      const fileGitStatus = gitStatus[relativePath];
       const ignored = checkGitignored(fullPath, workspacePath, gitignorePatterns);
 
       nodes.push({
@@ -152,13 +147,11 @@ async function loadDirectoryCoreLocal(
         size: entry.size,
         modified: entry.modified,
         children: entry.isDirectory ? [] : undefined,
-        gitStatus: fileGitStatus,
         ...(ignored && { isGitignored: true }),
       });
     }
 
-    const sorted = sortNodes(nodes);
-    return enrichDirectoriesWithGitStatus(sorted, gitStatus, workspacePath);
+    return sortNodes(nodes);
   } catch (err) {
     logger.error("Failed to load directory:", err);
     return [];
@@ -170,7 +163,6 @@ async function loadDirectoryCoreRemote(
   dirPath: string,
   workspacePath: string,
   remoteConnectionId: string | null,
-  gitStatus: Record<string, FileGitStatus>,
   gitignorePatterns: string[],
 ): Promise<FileNode[]> {
   if (!remoteConnectionId) {
@@ -192,8 +184,6 @@ async function loadDirectoryCoreRemote(
     for (const entry of response.data) {
       const fullPath = entry.path || `${dirPath}/${entry.name}`;
       if (shouldHide(fullPath)) continue;
-      const relativePath = fullPath.replace(`${workspacePath}/`, "");
-      const fileGitStatus = gitStatus[relativePath];
       const ignored = checkGitignored(fullPath, workspacePath, gitignorePatterns);
       const modifiedDate = entry.modified instanceof Date ? entry.modified : new Date(entry.modified);
 
@@ -204,12 +194,10 @@ async function loadDirectoryCoreRemote(
         size: entry.size,
         modified: modifiedDate.toISOString(),
         children: entry.isDirectory ? [] : undefined,
-        gitStatus: fileGitStatus,
         ...(ignored && { isGitignored: true }),
       });
     }
-    const sorted = sortNodes(nodes);
-    return enrichDirectoriesWithGitStatus(sorted, gitStatus, workspacePath);
+    return sortNodes(nodes);
   } catch (err) {
     logger.error("Failed to load remote directory:", err);
     return [];
@@ -634,7 +622,7 @@ function* handleRefreshGitStatus(
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   yield* call(loadGitStatusSaga, wsId);
-  yield* put(applyGitStatusToTreeAction(wsId));
+  // selectFlattenedNodes reactively picks up changes from ws.gitStatus
   yield* put(incrementTreeVersion(wsId));
 }
 
@@ -647,7 +635,7 @@ function* handleSyncGitStatusFromStores(
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   yield* call(loadGitStatusSaga, wsId);
-  yield* put(applyGitStatusToTreeAction(wsId));
+  // selectFlattenedNodes reactively picks up changes from ws.gitStatus
   yield* call(loadAgentFileEditsSaga, wsId);
   yield* put(incrementTreeVersion(wsId));
 }

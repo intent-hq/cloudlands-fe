@@ -2,7 +2,7 @@
  * Pure utility functions for file explorer tree operations.
  * No store, service, or side-effect dependencies.
  */
-import type { FileNode, FileGitStatus } from "$shared/types";
+import type { FileNode } from "$shared/types";
 import type { FlattenedFileNode } from "./file-explorer-types";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import ignore from "ignore";
@@ -117,56 +117,13 @@ export function setChildrenAtPath(
 }
 
 // ---------------------------------------------------------------------------
-// Git status application (pure)
-// ---------------------------------------------------------------------------
-
-export function applyGitStatusToTree(
-  node: FileNode | null,
-  gitStatus: Record<string, FileGitStatus>,
-  workspacePath: string,
-): FileNode | null {
-  if (!node) return null;
-  const updatedNode = { ...node };
-
-  if (updatedNode.type === "file" && updatedNode.path) {
-    const relativePath = stripWorkspacePrefix(updatedNode.path, workspacePath);
-    const fileGitStatus = gitStatus[relativePath];
-    updatedNode.gitStatus = fileGitStatus || undefined;
-  }
-
-  if (updatedNode.children) {
-    updatedNode.children = updatedNode.children.map(
-      (child) => applyGitStatusToTree(child, gitStatus, workspacePath) || child,
-    );
-  }
-  return updatedNode;
-}
-
-// ---------------------------------------------------------------------------
-// Sort & enrich nodes (pure)
+// Sort nodes (pure)
 // ---------------------------------------------------------------------------
 
 export function sortNodes(nodes: FileNode[]): FileNode[] {
   return [...nodes].sort((a, b) => {
     if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
     return a.name.localeCompare(b.name);
-  });
-}
-
-export function enrichDirectoriesWithGitStatus(
-  nodes: FileNode[],
-  gitStatus: Record<string, FileGitStatus>,
-  workspacePath: string,
-): FileNode[] {
-  return nodes.map((node) => {
-    if (node.type !== "directory") return node;
-    const nodeDirPath = stripWorkspacePrefix(node.path, workspacePath);
-    for (const filePath of Object.keys(gitStatus)) {
-      if (filePath.startsWith(`${nodeDirPath}/`)) {
-        return { ...node, gitStatus: { status: "M ", additions: 0, deletions: 0 } };
-      }
-    }
-    return node;
   });
 }
 

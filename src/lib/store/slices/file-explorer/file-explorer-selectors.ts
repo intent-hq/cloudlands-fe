@@ -94,8 +94,9 @@ export const selectHasExpandedDirectories = createSelector<[wsId: string], boole
 
 /**
  * Computed flattened nodes for virtualized rendering.
- * Depends on rootNode, expandedPaths, loadingPaths, treeVersion, and agentFileEdits.
- * Enriches each flattened node with agentEdits derived from ws.agentFileEdits.
+ * Depends on rootNode, expandedPaths, loadingPaths, treeVersion, agentFileEdits, and gitStatus.
+ * Enriches each flattened node with agentEdits, gitStatus (files only), and
+ * directoryHasChanges (directories only) derived from the workspace-level records.
  */
 export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFileNode[]>(
   (state, wsId) => {
@@ -106,16 +107,41 @@ export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFile
     const expandedSet = new Set(ws.expandedPaths);
     const loadingSet = new Set(ws.loadingPaths);
     const flattened = flattenVisibleNodes(ws.rootNode.children, expandedSet, loadingSet);
-    const { agentFileEdits, workspacePath } = ws;
+    const { agentFileEdits, workspacePath, gitStatus } = ws;
+
+    // Precompute the set of directory paths that contain at least one changed
+    // file. Walking up each changed-file path adds every ancestor directory
+    // once, so the per-node directory rollup check below is O(1).
+    const changedDirs = new Set<string>();
+    for (const filePath of Object.keys(gitStatus)) {
+      const parts = filePath.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        changedDirs.add(parts.slice(0, i).join("/"));
+      }
+    }
+
     return flattened.map((flatNode) => {
       let relativePath = flatNode.node.path;
       if (workspacePath) {
         const stripped = stripWorkspacePrefix(flatNode.node.path, workspacePath);
         if (stripped !== flatNode.node.path) relativePath = stripped;
       }
+      const isFile = flatNode.node.type === "file";
       const edits = agentFileEdits[relativePath];
-      if (edits && edits.length > 0) {
-        return { ...flatNode, agentEdits: edits };
+      const fileGitStatus = isFile ? gitStatus[relativePath] : undefined;
+      const dirHasChanges = !isFile && changedDirs.has(relativePath);
+
+      if (
+        (edits && edits.length > 0) ||
+        fileGitStatus !== undefined ||
+        dirHasChanges
+      ) {
+        return {
+          ...flatNode,
+          ...(edits && edits.length > 0 ? { agentEdits: edits } : {}),
+          ...(fileGitStatus !== undefined ? { gitStatus: fileGitStatus } : {}),
+          ...(dirHasChanges ? { directoryHasChanges: true } : {}),
+        };
       }
       return flatNode;
     });

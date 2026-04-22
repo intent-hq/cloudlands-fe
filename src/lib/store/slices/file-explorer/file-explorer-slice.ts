@@ -3,10 +3,7 @@ import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { FileExplorerWorkspaceState, FileExplorerState } from "./file-explorer-types";
-import {
-  setChildrenAtPath,
-  applyGitStatusToTree,
-} from "./file-explorer-utils";
+import { setChildrenAtPath } from "./file-explorer-utils";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 
@@ -171,10 +168,6 @@ export const clearFileExplorerForWorkspace = createAction<[wsId: string]>(
   "fileExplorer/clearForWorkspace",
 );
 
-export const applyGitStatusToTreeAction = createAction<[wsId: string]>(
-  "fileExplorer/applyGitStatusToTree",
-);
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -315,15 +308,4 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
   .with(setIsStoreActive, (state, { payload: [wsId, value] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, isStoreActive: value });
-  })
-  .with(applyGitStatusToTreeAction, (state, { payload: [wsId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (!ws.rootNode) return state;
-    const updatedRoot = applyGitStatusToTree(ws.rootNode, ws.gitStatus, ws.workspacePath);
-    if (!updatedRoot) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      rootNode: updatedRoot,
-      treeVersion: ws.treeVersion + 1,
-    });
   });

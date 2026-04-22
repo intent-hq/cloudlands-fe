@@ -1603,7 +1603,6 @@ export interface FileNode {
   children?: FileNode[];
   size?: number;
   modified?: string;
-  gitStatus?: FileGitStatus;
   /** Whether this file/directory is matched by .gitignore patterns */
   isGitignored?: boolean;
 }

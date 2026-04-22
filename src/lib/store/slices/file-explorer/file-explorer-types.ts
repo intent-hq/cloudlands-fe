@@ -15,6 +15,10 @@ export interface FlattenedFileNode {
   isLoading: boolean;
   /** Agent IDs who recently edited this file (derived from ws.agentFileEdits) */
   agentEdits?: string[];
+  /** Git status for files (derived from ws.gitStatus[relativePath]) */
+  gitStatus?: FileGitStatus;
+  /** True for directories whose subtree contains at least one changed file (derived from ws.gitStatus) */
+  directoryHasChanges?: boolean;
 }
 
 // ---------------------------------------------------------------------------

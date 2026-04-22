@@ -10,7 +10,7 @@
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
-  import type { FileNode, EnvironmentConfig, FileGitStatus } from '$shared/types';
+  import type { EnvironmentConfig } from '$shared/types';
   import {
     getFileExplorerStore,
     deactivateFileExplorerStore,
@@ -310,45 +310,18 @@
     return modifiedFiles.has(filePath);
   }
 
-  // Check if a node or any of its children have git changes
-  function hasGitChanges(node: FileNode, gitStatusRec: Record<string, FileGitStatus>): boolean {
-    // Check if this node has git status with changes (from node property)
-    if (node.gitStatus?.status) return true;
-    // Check if this node has line changes
-    if ((node.gitStatus?.additions ?? 0) > 0) return true;
-    if ((node.gitStatus?.deletions ?? 0) > 0) return true;
-
-    // Also check the git status record directly (more reliable for root-level files)
-    if (node.type === 'file') {
-      const relativePath = node.path.replace(`${workspacePath}/`, '');
-      if (relativePath in gitStatusRec) return true;
-    }
-
-    // For directories, check children recursively
-    if (node.children) {
-      return node.children.some((child) => hasGitChanges(child, gitStatusRec));
-    }
-
-    // For directories without loaded children, check if any git status paths start with this dir
-    if (node.type === 'directory') {
-      const relativePath = node.path.replace(`${workspacePath}/`, '');
-      for (const filePath of Object.keys(gitStatusRec)) {
-        if (filePath.startsWith(`${relativePath}/`)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   // Filtered flattened nodes - applies showOnlyChanged filter
   const filteredFlattenedNodes = $derived.by(() => {
     const nodes = $flattenedNodes$;
-    const gitStatusRec = $gitStatusRecord$;
     if (!showOnlyChanged) return nodes;
-    // Filter to only show nodes that have git changes
-    return nodes.filter((flatNode) => hasGitChanges(flatNode.node, gitStatusRec));
+    // Git-change signals are derived onto each FlattenedFileNode by
+    // selectFlattenedNodes, so a single field check covers files and
+    // directories at any depth (including lazily loaded ones).
+    return nodes.filter((flatNode) =>
+      flatNode.node.type === 'file'
+        ? flatNode.gitStatus !== undefined
+        : flatNode.directoryHasChanges === true,
+    );
   });
 
   // Filter nodes by search query and changed files filter

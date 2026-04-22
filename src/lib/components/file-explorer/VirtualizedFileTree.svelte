@@ -1076,9 +1076,15 @@
             {@const isFocused = node.path === focusedPath}
             {@const displayName = flatNode.displayPath ?? node.name}
             {@const isIgnored = node.isGitignored === true}
-            {@const gitColor = getGitStatusColor(node.gitStatus?.status)}
+            {@const gitColor =
+              node.type === 'directory'
+                ? flatNode.directoryHasChanges
+                  ? 'text-yellow-700 dark:text-yellow-400'
+                  : ''
+                : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =
-              (node.gitStatus?.additions ?? 0) > 0 || (node.gitStatus?.deletions ?? 0) > 0}
+              (flatNode.gitStatus?.additions ?? 0) > 0 ||
+              (flatNode.gitStatus?.deletions ?? 0) > 0}
             {@const isModified = isFileModified(node.path) && node.type === 'file'}
             {@const isDropTarget =
               isExternalFileDragOver &&
@@ -1174,8 +1180,8 @@
               {/if}
               {#if hasChanges}
                 <LineChangesBadge
-                  additions={node.gitStatus?.additions ?? 0}
-                  deletions={node.gitStatus?.deletions ?? 0}
+                  additions={flatNode.gitStatus?.additions ?? 0}
+                  deletions={flatNode.gitStatus?.deletions ?? 0}
                   size="xs"
                   class=" ml-2"
                 />
