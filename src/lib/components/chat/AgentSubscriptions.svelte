@@ -22,6 +22,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
+  import { untrack } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
   import { writable } from 'svelte/store';
@@ -65,10 +66,13 @@
   // Request an initial fetch of subscription data so the UI is populated
   // even if no IPC events have arrived yet (e.g. switching to an agent
   // that is already waiting on delegated agents).
+  let lastFetchKey: string | null = null;
   $effect(() => {
-    if (workspaceId && agentId) {
-      dispatch(requestSubscriptionFetch(workspaceId, agentId));
-    }
+    if (!workspaceId || !agentId) return;
+    const nextKey = `${workspaceId}::${agentId}`;
+    if (nextKey === lastFetchKey) return;
+    lastFetchKey = nextKey;
+    untrack(() => dispatch(requestSubscriptionFetch(workspaceId, agentId)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
