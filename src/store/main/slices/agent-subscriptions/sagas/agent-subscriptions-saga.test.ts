@@ -45,6 +45,7 @@ import {
   evictDeletedAgent,
   removeAllSubscriptions,
   emptyWorkspaceSubscriptionState,
+  subscribeToDelegationGroup,
   type QueuedEventRecord,
   type DelegationGroupTrackerRecord,
   type WorkspaceSubscriptionState,
@@ -80,9 +81,10 @@ import {
   recordDeliveredEventIds,
   filterAlreadyDelivered,
 } from "./delivery-saga";
-import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
-import { handleDelegationGroupDelivery, delegationGroupSaga } from "./delegation-group-saga";
+import { dispatchWorkspaceEvent, handleSubscribeToDelegationGroup } from "./ipc-bridge-saga";
+import { handleDelegationGroupDelivery, delegationGroupSaga, subsetInvariantWarningEmitted } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
+import { selectSubscriptionRaw } from "../agent-subscriptions-selectors";
 import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots, matchingSaga } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
@@ -701,6 +703,171 @@ describe("handleDelegationGroupDelivery", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("status=timeout"),
     );
+
+    warnSpy.mockRestore();
+  });
+
+  // -------------------------------------------------------------------------
+  // Subset-invariant: expectedAgentIds must be a subset of filter.actorIds
+  // -------------------------------------------------------------------------
+
+  it("logs subset-invariant warning when expectedAgentIds is not a subset of filter.actorIds", async () => {
+    const { Logger } = await import("../../../../../shared/logger");
+    const warnSpy = vi.spyOn(Logger.prototype, "warn");
+    subsetInvariantWarningEmitted.clear();
+
+    // Tracker expects 3 agents but subscription only knows about 2 — simulates
+    // the desync that prompted this warning.
+    const desyncedTracker: DelegationGroupTrackerRecord = {
+      ...tracker,
+      expectedAgentIds: ["agent-2", "agent-3", "agent-4"],
+      completedAgentIds: ["agent-2", "agent-3", "agent-4"],
+    };
+    const desyncedSubscription: AgentSubscriptionRecord = {
+      id: "sub-1",
+      agentId: AGENT,
+      agentName: "Agent 1",
+      workspaceId: WS,
+      filter: { eventTypes: ["agent:idle"], actorIds: ["agent-2", "agent-3"] },
+      createdAt: new Date().toISOString(),
+    };
+
+    const action = requestDelegationGroupDelivery(WS, "group-1");
+
+    await expectSaga(handleDelegationGroupDelivery, action)
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectDelegationGroupRaw) return desyncedTracker;
+          if (effect.selector === selectSubscriptionRaw) return desyncedSubscription;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectAgentStatus.select) return "idle";
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Event notification";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .run();
+
+    const subsetWarn = warnSpy.mock.calls.find(
+      ([msg]) => typeof msg === "string" && msg.includes("delegation-group-subset-invariant-violation"),
+    );
+    expect(subsetWarn, "expected subset-invariant warning to be emitted").toBeDefined();
+    const msg = (subsetWarn ?? [""])[0] as string;
+    expect(msg).toContain("groupId=group-1");
+    expect(msg).toContain(`parentAgentId=${AGENT}`);
+    expect(msg).toContain("missingIds=[\"agent-4\"]");
+    expect(msg).toContain("actorIds=[\"agent-2\",\"agent-3\"]");
+    expect(msg).toContain("expectedAgentIds=[\"agent-2\",\"agent-3\",\"agent-4\"]");
+
+    warnSpy.mockRestore();
+  });
+
+  it("does NOT log subset-invariant warning when expectedAgentIds is a subset of filter.actorIds", async () => {
+    const { Logger } = await import("../../../../../shared/logger");
+    const warnSpy = vi.spyOn(Logger.prototype, "warn");
+    subsetInvariantWarningEmitted.clear();
+
+    const healthySubscription: AgentSubscriptionRecord = {
+      id: "sub-1",
+      agentId: AGENT,
+      agentName: "Agent 1",
+      workspaceId: WS,
+      filter: { eventTypes: ["agent:idle"], actorIds: ["agent-2", "agent-3"] },
+      createdAt: new Date().toISOString(),
+    };
+
+    const action = requestDelegationGroupDelivery(WS, "group-1");
+
+    await expectSaga(handleDelegationGroupDelivery, action)
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectDelegationGroupRaw) return tracker;
+          if (effect.selector === selectSubscriptionRaw) return healthySubscription;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectAgentStatus.select) return "idle";
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Event notification";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+        race() {
+          return { result: { success: true }, timeout: undefined };
+        },
+      })
+      .run();
+
+    const subsetWarn = warnSpy.mock.calls.find(
+      ([msg]) => typeof msg === "string" && msg.includes("delegation-group-subset-invariant-violation"),
+    );
+    expect(subsetWarn).toBeUndefined();
+
+    warnSpy.mockRestore();
+  });
+
+  it("deduplicates subset-invariant warning so repeated runs emit it only once per (groupId, missingIds)", async () => {
+    const { Logger } = await import("../../../../../shared/logger");
+    const warnSpy = vi.spyOn(Logger.prototype, "warn");
+    subsetInvariantWarningEmitted.clear();
+
+    const desyncedTracker: DelegationGroupTrackerRecord = {
+      ...tracker,
+      expectedAgentIds: ["agent-2", "agent-3", "agent-4"],
+      completedAgentIds: ["agent-2", "agent-3", "agent-4"],
+    };
+    const desyncedSubscription: AgentSubscriptionRecord = {
+      id: "sub-1",
+      agentId: AGENT,
+      agentName: "Agent 1",
+      workspaceId: WS,
+      filter: { eventTypes: ["agent:idle"], actorIds: ["agent-2", "agent-3"] },
+      createdAt: new Date().toISOString(),
+    };
+
+    const run = () =>
+      expectSaga(handleDelegationGroupDelivery, requestDelegationGroupDelivery(WS, "group-1"))
+        .provide({
+          select(effect, next) {
+            if (effect.selector === selectDelegationGroupRaw) return desyncedTracker;
+            if (effect.selector === selectSubscriptionRaw) return desyncedSubscription;
+            if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+            if (effect.selector === selectAgentStatus.select) return "idle";
+            if (effect.selector === selectIsAgentDeleted.select) return false;
+            return next();
+          },
+          call(effect, next) {
+            if (effect.fn === formatNotification) return "Event notification";
+            if (effect.fn === sendBackendMessage) return { success: true };
+            if (effect.fn === dispatchWorkspaceEvent) return undefined;
+            if (isDelayEffect(effect)) return undefined;
+            return next();
+          },
+          race() {
+            return { result: { success: true }, timeout: undefined };
+          },
+        })
+        .run();
+
+    await run();
+    await run();
+
+    const subsetWarnings = warnSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("delegation-group-subset-invariant-violation"),
+    );
+    expect(subsetWarnings).toHaveLength(1);
 
     warnSpy.mockRestore();
   });
@@ -2229,5 +2396,73 @@ describe("delegationGroupSaga restart wrapper behavior", () => {
 
     // At least one delay for the restart after the unexpected exit
     expect(delayCallCount).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IPC bridge saga — handleSubscribeToDelegationGroup
+// ---------------------------------------------------------------------------
+
+describe("handleSubscribeToDelegationGroup", () => {
+  const GROUP_ID = "group-1";
+  const PARENT = "parent-1";
+  const CHILD = "child-1";
+
+  const seedRecord: AgentSubscriptionRecord = {
+    id: "seed-1",
+    agentId: PARENT,
+    agentName: "Parent",
+    workspaceId: WS,
+    filter: {
+      eventTypes: ["agent:idle", "agent:completed", "agent:failed", "agent:deleted"],
+      actorIds: [CHILD],
+      priority: "high",
+      delegationGroup: { groupId: GROUP_ID, awaitMode: "all", expectedAgentIds: [CHILD] },
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  it("calls dispatchWorkspaceEvent with 'agent:subscribed' when the seed id is present in state (subscription was created)", () => {
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [seedRecord.id]: seedRecord },
+    };
+    const action = subscribeToDelegationGroup(WS, seedRecord);
+
+    return expectSaga(handleSubscribeToDelegationGroup, action)
+      .provide([
+        [matchers.select(selectWorkspaceSubscriptionState.select, WS), wsState],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
+      ])
+      .call(
+        dispatchWorkspaceEvent,
+        "agent:subscribed",
+        WS,
+        { type: "agent", id: PARENT, name: "Parent" },
+        {
+          agentId: PARENT,
+          agentName: "Parent",
+          subscriptionId: seedRecord.id,
+          eventTypes: seedRecord.filter.eventTypes || [],
+          filterDescription:
+            "types: agent:idle, agent:completed, agent:failed, agent:deleted; watching: child-1",
+        },
+      )
+      .run();
+  });
+
+  it("does NOT call dispatchWorkspaceEvent when the seed id is absent from state (existing subscription was extended)", () => {
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: {},
+    };
+    const action = subscribeToDelegationGroup(WS, seedRecord);
+
+    return expectSaga(handleSubscribeToDelegationGroup, action)
+      .provide([
+        [matchers.select(selectWorkspaceSubscriptionState.select, WS), wsState],
+      ])
+      .not.call.fn(dispatchWorkspaceEvent)
+      .run();
   });
 });

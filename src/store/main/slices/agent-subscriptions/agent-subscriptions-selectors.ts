@@ -171,6 +171,22 @@ export function selectAllSubscriptionsRaw(state: MainStoreState, wsId: string): 
 }
 
 /**
+ * Raw (uncached) subscription read — used by delegation-group-saga to
+ * avoid stale reads caused by createCachedSelector proxy interactions.
+ */
+export function selectSubscriptionRaw(
+  state: MainStoreState,
+  wsId: string,
+  subId: string,
+): AgentSubscriptionRecord | undefined {
+  const slice = (state as any)?.agentSubscriptions;
+  if (!slice) return undefined;
+  const ws = slice.byWorkspaceId[wsId];
+  if (!ws) return undefined;
+  return ws.subscriptions[subId];
+}
+
+/**
  * Raw (uncached) delegation group read — used by delegation-group-saga to
  * avoid stale reads caused by createCachedSelector proxy interactions.
  */

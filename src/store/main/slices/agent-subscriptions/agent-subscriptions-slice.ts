@@ -59,13 +59,32 @@ export const addSubscription = createAction<[wsId: string, subscription: AgentSu
   "agentSubscriptions/addSubscription"
 );
 
-export const updateSubscription = createAction<[wsId: string, subscription: AgentSubscriptionRecord]>(
-  "agentSubscriptions/updateSubscription"
-);
-
 export const removeSubscription = createAction<[wsId: string, subscriptionId: string]>(
   "agentSubscriptions/removeSubscription"
 );
+
+/**
+ * Atomically find-or-create the delegation-group subscription for a
+ * `(parentAgentId, groupId)` pair and extend its filter + tracker with
+ * `delegatedAgentId`.
+ *
+ * `seed` is the fully-formed `AgentSubscriptionRecord` the caller would use
+ * if no prior subscription existed. When a matching subscription is already
+ * present, the reducer IGNORES `seed.id`/`seed.createdAt` and instead adds
+ * the delegated agent (add-to-set) to the existing sub's `filter.actorIds`
+ * and `filter.delegationGroup.expectedAgentIds`. The delegation-group
+ * tracker in `delegationGroups[groupId]` is created or extended in the same
+ * reducer case, so the subscription and tracker can never drift apart.
+ *
+ * This action replaces the two-step `addSubscription` + `setDelegationGroup`
+ * sequence that was vulnerable to races when N concurrent callers all
+ * observed the same "no existing subscription" snapshot and each dispatched
+ * a fresh `addSubscription`, producing N duplicate subscriptions for the
+ * same `groupId`.
+ */
+export const subscribeToDelegationGroup = createAction<
+  [wsId: string, seed: AgentSubscriptionRecord]
+>("agentSubscriptions/subscribeToDelegationGroup");
 
 export const removeAllSubscriptions = createAction<[wsId: string, agentId: string]>(
   "agentSubscriptions/removeAllSubscriptions"
@@ -180,12 +199,91 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
       subscriptions: { ...ws.subscriptions, [subscription.id]: subscription },
     });
   })
-  .with(updateSubscription, (state, { payload: [wsId, subscription] }) => {
+  .with(subscribeToDelegationGroup, (state, { payload: [wsId, seed] }) => {
+    const groupId = seed.filter.delegationGroup?.groupId;
+    if (!groupId) return state;
+    const delegatedAgentId = seed.filter.delegationGroup?.expectedAgentIds[0];
+    if (!delegatedAgentId) return state;
     const ws = getWorkspaceState(state, wsId);
-    if (!ws.subscriptions[subscription.id]) return state;
+
+    const existing = Object.values(ws.subscriptions).find(
+      s => s.agentId === seed.agentId && s.filter.delegationGroup?.groupId === groupId,
+    );
+
+    let nextSubscriptions = ws.subscriptions;
+    let canonicalSubId: string;
+
+    if (existing) {
+      canonicalSubId = existing.id;
+      const currentActorIds = existing.filter.actorIds ?? [];
+      const dg = existing.filter.delegationGroup!;
+      const actorAlready = currentActorIds.includes(delegatedAgentId);
+      const dgAlready = dg.expectedAgentIds.includes(delegatedAgentId);
+      if (!actorAlready || !dgAlready) {
+        const nextActorIds = actorAlready
+          ? currentActorIds
+          : [...currentActorIds, delegatedAgentId];
+        const nextExpected = dgAlready
+          ? dg.expectedAgentIds
+          : [...dg.expectedAgentIds, delegatedAgentId];
+        nextSubscriptions = {
+          ...ws.subscriptions,
+          [existing.id]: {
+            ...existing,
+            filter: {
+              ...existing.filter,
+              actorIds: nextActorIds,
+              delegationGroup: { ...dg, expectedAgentIds: nextExpected },
+            },
+          },
+        };
+      }
+    } else {
+      canonicalSubId = seed.id;
+      nextSubscriptions = { ...ws.subscriptions, [seed.id]: seed };
+    }
+
+    const existingTracker = ws.delegationGroups[groupId];
+    let nextDelegationGroups = ws.delegationGroups;
+    if (existingTracker) {
+      if (!existingTracker.expectedAgentIds.includes(delegatedAgentId)) {
+        nextDelegationGroups = {
+          ...ws.delegationGroups,
+          [groupId]: {
+            ...existingTracker,
+            expectedAgentIds: [...existingTracker.expectedAgentIds, delegatedAgentId],
+          },
+        };
+      }
+    } else {
+      const dgSeed = seed.filter.delegationGroup!;
+      nextDelegationGroups = {
+        ...ws.delegationGroups,
+        [groupId]: {
+          groupId,
+          parentAgentId: seed.agentId,
+          parentAgentName: seed.agentName,
+          awaitMode: dgSeed.awaitMode,
+          expectedAgentIds: [delegatedAgentId],
+          completedAgentIds: [],
+          deletedAgentIds: [],
+          events: [],
+          subscriptionId: canonicalSubId,
+          delivered: false,
+        },
+      };
+    }
+
+    if (
+      nextSubscriptions === ws.subscriptions &&
+      nextDelegationGroups === ws.delegationGroups
+    ) {
+      return state;
+    }
     return setWorkspaceState(state, wsId, {
       ...ws,
-      subscriptions: { ...ws.subscriptions, [subscription.id]: subscription },
+      subscriptions: nextSubscriptions,
+      delegationGroups: nextDelegationGroups,
     });
   })
   .with(removeSubscription, (state, { payload: [wsId, subscriptionId] }) => {

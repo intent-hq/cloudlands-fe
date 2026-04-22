@@ -4,6 +4,7 @@ import {
   initialState,
   emptyWorkspaceSubscriptionState,
   addSubscription,
+  subscribeToDelegationGroup,
   removeSubscription,
   removeAllSubscriptions,
   setSubscriptionsSnapshot,
@@ -83,6 +84,107 @@ describe("agentSubscriptionsReducer", () => {
       const sub = makeSub();
       const next = reduce(addSubscription(WS, sub));
       expect(next.byWorkspaceId[WS]?.subscriptions["sub-1"]).toEqual(sub);
+    });
+  });
+
+  describe("subscribeToDelegationGroup", () => {
+    const GROUP_ID = "group-42";
+    const PARENT_ID = "parent-1";
+    const PARENT_NAME = "Parent";
+
+    const makeSeed = (seedId: string, delegatedAgentId: string): AgentSubscriptionRecord => ({
+      id: seedId,
+      agentId: PARENT_ID,
+      agentName: PARENT_NAME,
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle", "agent:completed", "agent:failed", "agent:deleted"],
+        actorIds: [delegatedAgentId],
+        priority: "high",
+        delegationGroup: { groupId: GROUP_ID, awaitMode: "all", expectedAgentIds: [delegatedAgentId] },
+      },
+      createdAt: "2026-04-20T00:00:00Z",
+    });
+
+    it("creates a new subscription and tracker on first call", () => {
+      const state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions)).toEqual(["seed-1"]);
+      const sub = ws.subscriptions["seed-1"]!;
+      expect(sub.filter.actorIds).toEqual(["child-a"]);
+      expect(sub.filter.delegationGroup?.expectedAgentIds).toEqual(["child-a"]);
+      const tracker = ws.delegationGroups[GROUP_ID]!;
+      expect(tracker.subscriptionId).toBe("seed-1");
+      expect(tracker.parentAgentId).toBe(PARENT_ID);
+      expect(tracker.expectedAgentIds).toEqual(["child-a"]);
+    });
+
+    it("extends the existing subscription on subsequent calls for the same group", () => {
+      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-2", "child-b")), state);
+      state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-3", "child-c")), state);
+      state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-4", "child-d")), state);
+
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions)).toEqual(["seed-1"]);
+      const sub = ws.subscriptions["seed-1"]!;
+      expect(sub.filter.actorIds).toEqual(["child-a", "child-b", "child-c", "child-d"]);
+      expect(sub.filter.delegationGroup?.expectedAgentIds).toEqual([
+        "child-a",
+        "child-b",
+        "child-c",
+        "child-d",
+      ]);
+      const tracker = ws.delegationGroups[GROUP_ID]!;
+      expect(tracker.subscriptionId).toBe("seed-1");
+      expect(tracker.expectedAgentIds).toEqual(["child-a", "child-b", "child-c", "child-d"]);
+    });
+
+    it("is idempotent when the same delegated agent is added twice", () => {
+      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      const next = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-2", "child-a")), state);
+      expect(next).toBe(state);
+    });
+
+    it("uses a prior caller's subscription id even when seeds differ", () => {
+      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-original", "child-a")));
+      state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-later", "child-b")), state);
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions)).toContain("seed-original");
+      expect(Object.keys(ws.subscriptions)).not.toContain("seed-later");
+    });
+
+    it("keeps separate subscriptions for different groups on the same parent", () => {
+      const otherGroup = "group-other";
+      const otherSeed: AgentSubscriptionRecord = {
+        ...makeSeed("seed-other", "child-x"),
+        filter: {
+          ...makeSeed("seed-other", "child-x").filter,
+          delegationGroup: { groupId: otherGroup, awaitMode: "all", expectedAgentIds: ["child-x"] },
+        },
+      };
+      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      state = reduce(subscribeToDelegationGroup(WS, otherSeed), state);
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions).sort()).toEqual(["seed-1", "seed-other"]);
+      expect(Object.keys(ws.delegationGroups).sort()).toEqual([GROUP_ID, otherGroup].sort());
+    });
+
+    it("keeps separate subscriptions for the same group across different parents", () => {
+      const otherParent: AgentSubscriptionRecord = {
+        ...makeSeed("seed-other", "child-y"),
+        agentId: "parent-other",
+      };
+      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      state = reduce(subscribeToDelegationGroup(WS, otherParent), state);
+      const ws = state.byWorkspaceId[WS]!;
+      expect(Object.keys(ws.subscriptions).sort()).toEqual(["seed-1", "seed-other"]);
+    });
+
+    it("ignores seeds with no delegationGroup", () => {
+      const bogus = makeSub({ id: "bogus", filter: { eventTypes: ["agent:idle"] } });
+      const next = reduce(subscribeToDelegationGroup(WS, bogus));
+      expect(next).toBe(initialState);
     });
   });
 

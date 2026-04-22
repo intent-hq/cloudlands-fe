@@ -18,6 +18,7 @@ import { call, select, takeEvery } from "typed-redux-saga";
 import {
   addSubscription,
   bumpVersion,
+  subscribeToDelegationGroup,
 } from "../agent-subscriptions-slice";
 import {
   selectWorkspaceSubscriptionState,
@@ -110,6 +111,42 @@ function* handleAddSubscription(action: ReturnType<typeof addSubscription>) {
 }
 
 /**
+ * On subscribeToDelegationGroup → emit `agent:subscribed` only when the
+ * reducer actually CREATED a new subscription using the caller's seed
+ * record. If the reducer instead extended an existing subscription for the
+ * same `(parentAgentId, groupId)`, the canonical subscription id differs
+ * from `seed.id` and no new subscription exists at `seed.id`.
+ */
+export function* handleSubscribeToDelegationGroup(
+  action: ReturnType<typeof subscribeToDelegationGroup>,
+) {
+  const [wsId, seed] = action.payload;
+  const ws = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+  const created = ws.subscriptions[seed.id];
+  if (!created) return;
+
+  const filter = created.filter;
+  const parts: string[] = [];
+  if (filter.eventTypes?.length) parts.push(`types: ${filter.eventTypes.join(", ")}`);
+  if (filter.actorIds?.length) parts.push(`watching: ${filter.actorIds.join(", ")}`);
+  if (filter.actorTypes?.length) parts.push(`actors: ${filter.actorTypes.join(", ")}`);
+  if (filter.excludeActorIds?.length) parts.push(`excluding: ${filter.excludeActorIds.length} actors`);
+  const desc = parts.length > 0 ? parts.join("; ") : "all events";
+
+  yield* call(dispatchWorkspaceEvent, "agent:subscribed", wsId, {
+    type: "agent",
+    id: created.agentId,
+    name: created.agentName,
+  }, {
+    agentId: created.agentId,
+    agentName: created.agentName,
+    subscriptionId: created.id,
+    eventTypes: filter.eventTypes || [],
+    filterDescription: desc,
+  });
+}
+
+/**
  * On removeSubscription → emit `agent:unsubscribed`.
  * Mirrors emitUnsubscriptionEvent() from the old service.
  *
@@ -149,5 +186,6 @@ function* handleAddSubscription(action: ReturnType<typeof addSubscription>) {
 export function* ipcBridgeSaga() {
   yield* takeEvery(bumpVersion, handleBumpVersion);
   yield* takeEvery(addSubscription, handleAddSubscription);
+  yield* takeEvery(subscribeToDelegationGroup, handleSubscribeToDelegationGroup);
 }
 

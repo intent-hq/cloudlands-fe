@@ -10,9 +10,10 @@ import { createWorkspaceEvent } from '../types';
 import { getMainState, mainDispatch } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
-  addSubscription, updateSubscription, removeSubscription, removeAllSubscriptions,
+  addSubscription, removeSubscription, removeAllSubscriptions,
   setAgentStatus as setAgentStatusAction,
-  setDelegationGroup, addAgentToDelegationGroup,
+  setDelegationGroup,
+  subscribeToDelegationGroup,
   markAgentDeleted as markAgentDeletedAction, bumpVersion,
   type AgentSubscriptionRecord,
   type AgentEventFilter,
@@ -67,35 +68,57 @@ export function agentSubscribe(
   return id;
 }
 
-/** Subscribe a delegated agent to an existing or new delegation group. */
+/**
+ * Subscribe a delegated agent to an existing or new delegation group.
+ *
+ * All find-or-create decisions happen inside a single reducer case
+ * (`subscribeToDelegationGroup`), so N concurrent callers targeting the
+ * same `(parentAgentId, groupId)` pair end up with exactly one subscription
+ * whose `actorIds` and `delegationGroup.expectedAgentIds` contain all N
+ * delegated agents. Without this atomicity, concurrent callers could each
+ * observe an empty snapshot and dispatch `addSubscription`, creating
+ * duplicate subscriptions that would split child-completion events across
+ * unrelated delegation-group trackers.
+ */
 export function agentSubscribeToGroup(
   workspaceId: string, parentAgentId: string, parentAgentName: string,
   groupId: string, delegatedAgentId: string,
 ): string {
-  const subs = selectAgentSubscriptions.select(getMainState(), workspaceId, parentAgentId);
-  const existing = subs.find(s => s.filter.delegationGroup?.groupId === groupId);
-  if (existing) {
-    mainDispatch(addAgentToDelegationGroup(workspaceId, groupId, delegatedAgentId));
-    const updatedFilter = {
-      ...existing.filter,
-      actorIds: [...new Set([...(existing.filter.actorIds || []), delegatedAgentId])],
-      delegationGroup: {
-        ...existing.filter.delegationGroup!,
-        expectedAgentIds: [...new Set([...existing.filter.delegationGroup!.expectedAgentIds, delegatedAgentId])],
-      },
-    };
-    const updatedRecord: AgentSubscriptionRecord = { ...existing, filter: updatedFilter };
-    mainDispatch(updateSubscription(workspaceId, updatedRecord));
-    mainDispatch(bumpVersion(workspaceId));
-    logger.info('Added agent to existing delegation group', { groupId, parentAgentId, delegatedAgentId });
-    return existing.id;
+  if (selectIsAgentDeleted.select(getMainState(), workspaceId, parentAgentId)) {
+    logger.warn('Rejecting delegation-group subscription for deleted agent', {
+      agentId: parentAgentId, groupId, delegatedAgentId,
+    });
+    return '';
   }
-  const filter: AgentEventFilter = {
-    eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
-    actorIds: [delegatedAgentId], priority: 'high',
-    delegationGroup: { groupId, awaitMode: 'all', expectedAgentIds: [delegatedAgentId] },
+  const seed: AgentSubscriptionRecord = {
+    id: uuidv4(),
+    agentId: parentAgentId,
+    agentName: parentAgentName,
+    workspaceId,
+    filter: {
+      eventTypes: ['agent:idle', 'agent:completed', 'agent:failed', 'agent:deleted'],
+      actorIds: [delegatedAgentId],
+      priority: 'high',
+      delegationGroup: { groupId, awaitMode: 'all', expectedAgentIds: [delegatedAgentId] },
+    },
+    createdAt: new Date().toISOString(),
   };
-  return agentSubscribe(workspaceId, parentAgentId, parentAgentName, filter);
+  mainDispatch(subscribeToDelegationGroup(workspaceId, seed));
+  mainDispatch(bumpVersion(workspaceId));
+
+  // Read the canonical subscription id after the reducer has run. It is
+  // `seed.id` when we just created the subscription, or a prior caller's id
+  // when we extended an existing one for the same group.
+  const subs = selectAgentSubscriptions.select(getMainState(), workspaceId, parentAgentId);
+  const canonical = subs.find(s => s.filter.delegationGroup?.groupId === groupId);
+  const canonicalId = canonical?.id ?? seed.id;
+  logger.info(
+    canonicalId === seed.id
+      ? 'Created delegation-group subscription'
+      : 'Added agent to existing delegation-group subscription',
+    { groupId, parentAgentId, delegatedAgentId, subscriptionId: canonicalId },
+  );
+  return canonicalId;
 }
 
 /** Unsubscribe a specific subscription. Returns true if found. */

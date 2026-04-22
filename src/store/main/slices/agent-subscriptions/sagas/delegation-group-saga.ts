@@ -24,6 +24,7 @@ import {
   selectAgentStatus,
   selectDelegationGroupRaw,
   selectIsDelegationGroupCompleteRaw,
+  selectSubscriptionRaw,
 } from "../agent-subscriptions-selectors";
 import {
   requestDelegationGroupDelivery,
@@ -46,6 +47,14 @@ const IDLE_RETRY_DELAY_MS = 2000;
 const MAX_BUSY_POLL_ATTEMPTS = 120;
 const BUSY_POLL_INTERVAL_MS = 500;
 
+/**
+ * Dedup keys for subset-invariant warnings, keyed on
+ * `${groupId}:${sortedMissingIds.join(",")}`. Prevents the saga from flooding
+ * the log every time it runs against a desynced tracker/subscription pair.
+ * Exported for tests that need to reset state between assertions.
+ */
+export const subsetInvariantWarningEmitted = new Set<string>();
+
 // ---------------------------------------------------------------------------
 // Handle delegation group completion check
 // ---------------------------------------------------------------------------
@@ -66,6 +75,32 @@ export function* handleDelegationGroupDelivery(
   if (!tracker) {
     logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=tracker-not-found step=early-return`);
     return;
+  }
+
+  // Subset-invariant check: tracker.expectedAgentIds must be a subset of the
+  // subscription's filter.actorIds. A violation means the subscription and
+  // tracker have drifted apart (historically caused by the updateSubscription
+  // last-writer-wins race fixed in commit 0e0a985c8) and the saga will never
+  // deliver events from the missing agents. Logging-only — deduplicated per
+  // (groupId, missingIds) pair to avoid flooding.
+  const subscription = yield* select(
+    selectSubscriptionRaw,
+    wsId,
+    tracker.subscriptionId,
+  );
+  if (subscription) {
+    const actorIds = subscription.filter.actorIds ?? [];
+    const actorIdSet = new Set(actorIds);
+    const missingIds = tracker.expectedAgentIds.filter((id) => !actorIdSet.has(id));
+    if (missingIds.length > 0) {
+      const dedupKey = `${groupId}:${[...missingIds].sort().join(",")}`;
+      if (!subsetInvariantWarningEmitted.has(dedupKey)) {
+        subsetInvariantWarningEmitted.add(dedupKey);
+        logger.warn(
+          `[subscriptions] delegation-group-subset-invariant-violation workspaceId=${wsId} groupId=${groupId} parentAgentId=${tracker.parentAgentId} subscriptionId=${tracker.subscriptionId} expectedAgentIds=${JSON.stringify(tracker.expectedAgentIds)} actorIds=${JSON.stringify(actorIds)} missingIds=${JSON.stringify(missingIds)}`,
+        );
+      }
+    }
   }
 
   // Already delivered — guard against double-delivery
