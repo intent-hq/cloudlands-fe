@@ -346,7 +346,15 @@ describe('UnifiedPersistence', () => {
       expect(result.data?.name).toBe('My Custom Name');
     });
 
-    it('should allow rename when incoming save also has nameExplicitlySet (user re-rename)', async () => {
+    it('saveAgent does not override an explicit disk name even when incoming save has the flag (renameAgent is required for re-rename)', async () => {
+      // A saveAgent snapshot carrying nameExplicitlySet: true is
+      // indistinguishable from a stale full-session save captured just
+      // after an earlier rename. The defensive re-read inside the write
+      // lock therefore treats the disk as authoritative whenever the
+      // on-disk copy is explicitly set and its name disagrees with the
+      // incoming save — this protects a later rename from being clobbered
+      // by a racing stale save. Explicit re-renames must go through
+      // renameAgent.
       const agent: AgentSession = {
         id: 'agent-890' as any,
         workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
@@ -374,12 +382,13 @@ describe('UnifiedPersistence', () => {
       }
       await fs.writeFile(agentFilePath, JSON.stringify(data, null, 2), 'utf-8');
 
-      // Step 3: Save with nameExplicitlySet (simulating user re-rename)
+      // Step 3: saveAgent with nameExplicitlySet — must NOT clobber the
+      // disk name (treated as a potentially stale save).
       (agent as any).nameExplicitlySet = true;
       agent.name = 'Even Newer Name';
       await persistence.saveAgent(agent, testDir);
 
-      // Step 4: Load and verify the new name took effect
+      // Step 4: Load and verify the disk name survived.
       const result = await persistence.loadAgent(
         agent.id as any,
         agent.workspaceId as any,
@@ -387,7 +396,26 @@ describe('UnifiedPersistence', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.name).toBe('Even Newer Name');
+      expect(result.data?.name).toBe('My Custom Name');
+      expect(result.data?.nameExplicitlySet).toBe(true);
+
+      // Step 5: renameAgent is the authoritative path for an explicit
+      // re-rename and DOES take effect.
+      const renameResult = await persistence.renameAgent(
+        agent.id as string,
+        agent.workspaceId as string,
+        'Even Newer Name',
+        { workspacePath: testDir },
+      );
+      expect(renameResult.ok).toBe(true);
+
+      const renamed = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+      expect(renamed.data?.name).toBe('Even Newer Name');
+      expect(renamed.data?.nameExplicitlySet).toBe(true);
     });
   });
 

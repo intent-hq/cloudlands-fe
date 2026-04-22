@@ -1,9 +1,5 @@
-import * as fs from 'fs/promises';
-
 import type { ProtocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { Logger } from '$shared/logger';
-import { getSessionPath } from '$shared/constants';
-import { WorkspaceConfig } from '$shared/main/config';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
 import type { WorkspaceId } from '$shared/types';
@@ -20,12 +16,18 @@ const logger = new Logger('WsWorkspaceApi');
 interface BuildWorkspaceApiParams {
   workspacePath: string;
   workspaceId: string;
-  workspaceManager?: Pick<ProtocolAdapter, 'getWorkspace' | 'getCurrentContext' | 'updateWorkspace'>;
+  workspaceManager?: Pick<
+    ProtocolAdapter,
+    'getWorkspace' | 'getCurrentContext' | 'updateWorkspace'
+  >;
   call: ToolCall;
 }
 
 function requireWorkspaceManager(
-  workspaceManager?: Pick<ProtocolAdapter, 'getWorkspace' | 'getCurrentContext' | 'updateWorkspace'>,
+  workspaceManager?: Pick<
+    ProtocolAdapter,
+    'getWorkspace' | 'getCurrentContext' | 'updateWorkspace'
+  >,
 ) {
   if (!workspaceManager) {
     throw new Error('Workspace manager not available');
@@ -129,101 +131,18 @@ export function buildWorkspaceApi({
     async setAgentName(name: string) {
       logger.info('ws.workspace.setAgentName', { workspaceId, name });
 
-      if (!name || typeof name !== 'string') {
-        throw new Error('name is required');
-      }
-
       const agentId = call.context?.agentId;
       if (!agentId) {
         throw new Error('Could not determine agent ID from request context');
       }
 
-      const trimmedName = name.trim();
-      if (!trimmedName) {
-        throw new Error('name must not be empty or whitespace-only');
-      }
-      const resolvedBase = WorkspaceConfig.resolveWorkspaceRoot(workspaceId);
-      const sessionPath = getSessionPath(workspaceId, agentId, resolvedBase);
-      const raw = await fs.readFile(sessionPath, 'utf-8');
-      const data = JSON.parse(raw);
-
-      // If the name was already explicitly set (e.g., by a prior user rename or
-      // agent tool call), skip the rename to avoid overwriting it.
-      const existingData = data.version && data.data ? data.data : data;
-      if (existingData.nameExplicitlySet) {
-        logger.info('ws.workspace.setAgentName: skipping — name already explicitly set', {
-          agentId,
-          existingName: existingData.name,
-          requestedName: trimmedName,
-        });
-
-        // Sync the in-memory backend session with the disk name so
-        // backend.getSession() doesn't return a stale pre-rename name.
-        try {
-          const { ConsolidatedBackendService } = await import(
-            '$features/agent/main/consolidated-backend.service'
-          );
-          const backend = ConsolidatedBackendService.getInstance();
-          const session = backend.getSession(agentId);
-          if (session) {
-            session.name = existingData.name;
-            (session as any).nameExplicitlySet = true;
-          }
-        } catch {
-          // Best-effort — disk is the source of truth
-        }
-
-        return { ok: true, name: existingData.name, skipped: true };
-      }
-
-      if (data.version && data.data) {
-        data.data.name = trimmedName;
-        data.data.nameExplicitlySet = true;
-      } else {
-        data.name = trimmedName;
-        data.nameExplicitlySet = true;
-      }
-
-      await fs.writeFile(sessionPath, JSON.stringify(data, null, 2), 'utf-8');
-
-      // Invalidate persistence cache so loadAgent returns fresh data
-      try {
-        const { UnifiedPersistence } = await import(
-          '$features/agent/main/agent-persistence'
-        );
-        const workspaceIdStr = workspaceId as string;
-        UnifiedPersistence.getInstance().invalidateLoadCache(
-          agentId as unknown as import('$shared/types/branded-ids').AgentId,
-          workspaceIdStr as unknown as import('$shared/types/branded-ids').WorkspaceId
-        );
-      } catch (e) {
-        // Cache invalidation is best-effort
-        logger.warn('Failed to invalidate persistence load cache after rename', { agentId, error: e });
-      }
-
-      // Also update the in-memory session in the backend service
-      try {
-        const { ConsolidatedBackendService } = await import(
-          '$features/agent/main/consolidated-backend.service'
-        );
-        const backend = ConsolidatedBackendService.getInstance();
-        const session = backend.getSession(agentId);
-        if (session) {
-          session.name = trimmedName;
-          (session as any).nameExplicitlySet = true;
-        }
-      } catch (e) {
-        // Backend service may not be available; disk write is the primary store
-        logger.warn('Failed to update in-memory session for agent name', { agentId, error: e });
-      }
-
-      sendToWorkspaceWindows(workspaceId, 'agent:renamed', {
-        agentId,
+      const { renameAgentOnDisk } = await import('$features/agent/main/agent-rename');
+      return renameAgentOnDisk({
         workspaceId,
-        name: trimmedName,
+        agentId,
+        name,
+        skipIfExplicitlySet: true,
       });
-
-      return { ok: true, name: trimmedName };
     },
 
     async context() {

@@ -14,7 +14,7 @@
  */
 
 import { invoke } from '$lib/electron-bridge';
-import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS, AGENT_CHANNELS } from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace, CommandResponse, AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -227,6 +227,33 @@ export async function saveSession(
     immediate,
     allowTruncation: options?.allowTruncation,
   });
+}
+
+/**
+ * Rename an agent (lightweight).
+ *
+ * Sends a single IPC call to the main process, which patches only the `name`
+ * and `nameExplicitlySet` fields in the session JSON file, invalidates the
+ * persistence cache, syncs the in-memory session, and broadcasts
+ * `agent:renamed` to every window for this workspace. Avoids the full
+ * saveSession round-trip that previously caused multi-minute UI stalls.
+ */
+export async function renameSession(
+  agentId: string,
+  workspaceId: string,
+  name: string,
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    logger.warn('renameSession: refusing empty name', { agentId });
+    return;
+  }
+  try {
+    await invoke(AGENT_CHANNELS.RENAME, { agentId, workspaceId, name: trimmed });
+  } catch (err) {
+    logger.error('renameSession failed', { agentId, workspaceId, error: err });
+    throw err;
+  }
 }
 
 /** Stop a streaming session. */
@@ -943,6 +970,7 @@ export const agentService = {
 
   // Group 3: IPC + Redux
   saveSession,
+  renameSession,
   stopSession,
   softDeleteSession,
   deleteSession,

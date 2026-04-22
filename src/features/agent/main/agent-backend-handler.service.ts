@@ -4189,20 +4189,27 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       } catch {
         // Ignore - use fallback name
       }
-      // Fallback: load from persistence if backend session didn't have isBackground
-      // (agent may already be stopped but still persisted on disk)
-      if (isBackground === undefined && workspaceId) {
+      // Cache the full session snapshot from disk BEFORE marking as deleted so we
+      // can emit a compensating `agent:restored` event if the durable delete fails.
+      // We also reuse the load result to enrich isBackground/parentAgentId when the
+      // running backend session didn't supply them (agent may already be stopped).
+      let restoreSnapshot: AgentSession | null = null;
+      if (workspaceId) {
         try {
           const loadResult = await agentPersistence.loadAgent(
             agentId as AgentId,
             workspaceId as WorkspaceId,
           );
           if (loadResult.success && loadResult.data) {
-            isBackground = loadResult.data.isBackground === true;
-            parentAgentId = parentAgentId || (loadResult.data.metadata?.createdByAgentId as string | undefined);
+            restoreSnapshot = loadResult.data;
+            if (isBackground === undefined) {
+              isBackground = loadResult.data.isBackground === true;
+            }
+            parentAgentId =
+              parentAgentId || (loadResult.data.metadata?.createdByAgentId as string | undefined);
           }
         } catch {
-          // Ignore - metadata enrichment is best-effort
+          // Ignore - snapshot capture is best-effort; rollback becomes a no-op.
         }
       }
 
@@ -4211,6 +4218,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // cleanup and the emitAgentDeletedEvent call. Also adds to local deletedAgentIds
       // to guard sendBackendInitiatedMessage against resurrection.
       await this.markAgentAsDeleted(agentId, workspaceId);
+
+      // Emit `agent:deleted` to every window BEFORE the (potentially slow)
+      // provider / notes / persistence cleanup runs, so other windows drop
+      // the agent from their UI near-instantly instead of waiting for the
+      // full cleanup chain (which previously took minutes).
+      // `emitAgentDeletedEvent` is fire-and-forget; the actual cleanup below
+      // continues independently.
+      if (workspaceId) {
+        this.emitAgentDeletedEvent(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId);
+      }
 
       // Clean up the ACP provider and its session
       // This is the proper place to clean up the provider (not in cleanupStreamResources)
@@ -4241,54 +4258,95 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Clean up ALL per-agent tracking maps (providers, streams, queues, heartbeats, etc.)
       this.cleanupAllAgentTrackingMaps(agentId);
 
-      // Clean up agent references from task notes
-      if (workspaceId) {
-        try {
-          const { notesService } = await import('../../notes/main/notes.service');
-          const { WorkspaceId: createWorkspaceId, AgentId: createAgentId } =
-            await import('$shared/types/branded-ids');
-          const cleanupResult = await notesService.removeAgentFromAllTasks(
-            createWorkspaceId(workspaceId),
-            createAgentId(agentId),
-          );
-          if (cleanupResult.ok) {
-            logger.info('[AgentBackendHandler] Cleaned up agent references from tasks', {
+      // Notes cleanup + durable `backend.deleteAgent` run inside a try/catch so
+      // we can emit a compensating `agent:restored` event if the durable delete
+      // fails after the early `agent:deleted` broadcast. The inner notes
+      // cleanup still swallows its own errors (best-effort), so only failures
+      // from `backend.deleteAgent` itself (throw or `{success: false}`) trigger
+      // the rollback path.
+      try {
+        // Clean up agent references from task notes
+        if (workspaceId) {
+          try {
+            const { notesService } = await import('../../notes/main/notes.service');
+            const { WorkspaceId: createWorkspaceId, AgentId: createAgentId } =
+              await import('$shared/types/branded-ids');
+            const cleanupResult = await notesService.removeAgentFromAllTasks(
+              createWorkspaceId(workspaceId),
+              createAgentId(agentId),
+            );
+            if (cleanupResult.ok) {
+              logger.info('[AgentBackendHandler] Cleaned up agent references from tasks', {
+                agentId,
+                workspaceId,
+                tasksUpdated: cleanupResult.data,
+              });
+            } else {
+              logger.warn('[AgentBackendHandler] Failed to clean up agent references', {
+                agentId,
+                workspaceId,
+                error: cleanupResult.error,
+              });
+            }
+          } catch (cleanupError) {
+            // Don't fail the deletion if cleanup fails
+            logger.warn('[AgentBackendHandler] Error during agent reference cleanup', {
               agentId,
               workspaceId,
-              tasksUpdated: cleanupResult.data,
-            });
-          } else {
-            logger.warn('[AgentBackendHandler] Failed to clean up agent references', {
-              agentId,
-              workspaceId,
-              error: cleanupResult.error,
+              error: cleanupError,
             });
           }
-        } catch (cleanupError) {
-          // Don't fail the deletion if cleanup fails
-          logger.warn('[AgentBackendHandler] Error during agent reference cleanup', {
+        }
+
+        const backend = await this.getBackend();
+        const result = await backend.deleteAgent(agentId, workspaceId);
+        logger.info('[AgentBackendHandler] Delete result', { agentId, result });
+
+        // Note: `agent:deleted` is emitted earlier (right after markAgentAsDeleted)
+        // so that all windows update their UI immediately rather than waiting for
+        // the provider/notes/persistence cleanup chain to finish.
+
+        if (!result.success) {
+          // Durable delete reported failure — roll back the early broadcast so
+          // the UI matches the on-disk truth again.
+          this.rollbackAgentDeletion(
             agentId,
             workspaceId,
-            error: cleanupError,
-          });
+            agentName,
+            restoreSnapshot,
+            taskNoteId,
+            isBackground,
+            parentAgentId,
+            result.error || 'backend.deleteAgent returned success=false',
+          );
+          return result;
         }
+
+        // Invalidate the persistence list cache since we deleted an agent
+        if (workspaceId) {
+          this.invalidatePersistenceListCache(workspaceId);
+        }
+
+        return result;
+      } catch (durableErr) {
+        const errMessage =
+          durableErr instanceof Error ? durableErr.message : String(durableErr);
+        logger.error(
+          '[AgentBackendHandler] Durable delete failed after agent:deleted broadcast',
+          { agentId, workspaceId, error: durableErr },
+        );
+        this.rollbackAgentDeletion(
+          agentId,
+          workspaceId,
+          agentName,
+          restoreSnapshot,
+          taskNoteId,
+          isBackground,
+          parentAgentId,
+          errMessage,
+        );
+        return { success: false, error: errMessage };
       }
-
-      const backend = await this.getBackend();
-      const result = await backend.deleteAgent(agentId, workspaceId);
-      logger.info('[AgentBackendHandler] Delete result', { agentId, result });
-
-      // Emit agent:deleted event so delegation subscriptions can wake up
-      if (result.success && workspaceId) {
-        this.emitAgentDeletedEvent(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId);
-      }
-
-      // Invalidate the persistence list cache since we deleted an agent
-      if (workspaceId) {
-        this.invalidatePersistenceListCache(workspaceId);
-      }
-
-      return result;
     } catch (error) {
       logger.error('[AgentBackendHandler] Error in handleDeleteAgent', { error, validated });
       return {
@@ -8305,6 +8363,139 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       });
     } catch (err) {
       logger.warn('Failed to emit agent:deleted event', { agentId, error: err });
+    }
+  }
+
+  /**
+   * Roll back an already-broadcast `agent:deleted` when the durable delete
+   * chain fails. Clears the main-process deleted-agent guards (both the
+   * local set and the Redux `deletedAgents` map) and emits a compensating
+   * `agent:restored` event carrying the cached session snapshot so every
+   * window re-adds the agent to its Redux state.
+   */
+  private rollbackAgentDeletion(
+    agentId: string,
+    workspaceId: string | undefined,
+    agentName: string,
+    snapshot: AgentSession | null,
+    taskNoteId: string | undefined,
+    isBackground: boolean | undefined,
+    parentAgentId: string | undefined,
+    error: string,
+  ): void {
+    // Clear the local guard so future backend-initiated messages aren't rejected.
+    this.deletedAgentIds.delete(agentId);
+
+    if (!workspaceId) {
+      logger.warn(
+        '[AgentBackendHandler] Cannot roll back agent deletion without workspaceId',
+        { agentId },
+      );
+      return;
+    }
+
+    // Clear the `deletedAgents` entry in the main Redux store so subsequent
+    // subscribe/deliver paths stop treating this agent as deleted.
+    (async () => {
+      try {
+        const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+        const { evictDeletedAgent } = await import(
+          '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice'
+        );
+        mainDispatch(evictDeletedAgent(workspaceId, agentId));
+      } catch (err) {
+        logger.warn(
+          'Failed to evict deleted agent from subscription state during rollback',
+          { agentId, workspaceId, error: err },
+        );
+      }
+    })().catch(() => {});
+
+    this.emitAgentRestoredEvent(
+      agentId,
+      workspaceId,
+      agentName,
+      snapshot,
+      taskNoteId,
+      isBackground,
+      parentAgentId,
+      error,
+    );
+  }
+
+  /**
+   * Emit agent:restored event (compensating for a failed durable delete).
+   * Mirrors `emitAgentDeletedEvent` — coordinated async chain rather than a
+   * fire-and-forget `import().then()`.
+   */
+  private emitAgentRestoredEvent(
+    agentId: string,
+    workspaceId: string,
+    agentName: string,
+    snapshot: AgentSession | null,
+    taskNoteId?: string,
+    isBackground?: boolean,
+    parentAgentId?: string,
+    error?: string,
+  ): void {
+    this._emitAgentRestoredEventAsync(
+      agentId,
+      workspaceId,
+      agentName,
+      snapshot,
+      taskNoteId,
+      isBackground,
+      parentAgentId,
+      error,
+    ).catch((err) => {
+      logger.warn('Failed in emitAgentRestoredEvent async chain', { agentId, error: err });
+    });
+  }
+
+  private async _emitAgentRestoredEventAsync(
+    agentId: string,
+    workspaceId: string,
+    agentName: string,
+    snapshot: AgentSession | null,
+    taskNoteId?: string,
+    isBackground?: boolean,
+    parentAgentId?: string,
+    error?: string,
+  ): Promise<void> {
+    try {
+      const { mainDispatch } = await import('../../../store/main/redux-store-bridge');
+      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../store/main/slices/workspace-events/workspace-events-slice');
+      mainDispatch(reduxEmitWorkspaceEvent({
+        id: `agent-restored-${agentId}-${uuidv4()}`,
+        type: 'agent:restored',
+        timestamp: new Date().toISOString(),
+        workspaceId,
+        actor: {
+          type: 'agent',
+          id: agentId,
+          name: agentName,
+        },
+        data: {
+          agentId,
+          agentName,
+          workspaceId,
+          session: snapshot,
+          taskNoteId,
+          isBackground,
+          parentAgentId,
+          reason: 'delete_failed',
+          error,
+        },
+      }));
+      logger.info('Emitted agent:restored event via Redux', {
+        agentId,
+        workspaceId,
+        agentName,
+        hasSnapshot: !!snapshot,
+        error,
+      });
+    } catch (err) {
+      logger.warn('Failed to emit agent:restored event', { agentId, error: err });
     }
   }
 

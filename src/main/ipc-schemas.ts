@@ -93,7 +93,9 @@ export const WorkspaceCreateSchema = z.object({
       specialist: z.string().optional(), // Specialist or team coordinator ID (flexible to support any specialist)
       behaviorPrompt: z.string().optional(), // Custom behavior instructions (from team coordinator or specialist)
       contextReferences: z.array(z.any()).optional(),
-      imageBlocks: z.array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() })).optional(),
+      imageBlocks: z
+        .array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }))
+        .optional(),
       metadata: z.record(z.any()).optional(),
     })
     .optional(),
@@ -533,7 +535,10 @@ export const AgentBackendStreamMessageSchema = z
     roleReminder: z.string().optional(), // Critical constraints reminder for the specialist
     // Pre-assigned assistant message ID from the renderer so both sides share the same ID.
     // Must match 'msg_' followed by a UUID (hex + hyphens, 36 chars, case-insensitive).
-    assistantMessageId: z.string().regex(/^msg_[0-9a-f-]{36}$/i).optional(),
+    assistantMessageId: z
+      .string()
+      .regex(/^msg_[0-9a-f-]{36}$/i)
+      .optional(),
   })
   .superRefine((data, ctx) => {
     const hasContent = data.content && data.content.trim().length > 0;
@@ -642,6 +647,12 @@ export const AgentSetModelSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
   modelId: z.string().min(1, 'Model ID is required'),
   workspaceId: z.string().min(1, 'Workspace ID is required'),
+});
+
+export const AgentRenameSchema = z.object({
+  agentId: z.string().min(1, 'Agent ID is required'),
+  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  name: z.string().min(1, 'Name is required'),
 });
 
 // Message Queue Schemas
@@ -2223,21 +2234,23 @@ export const SpecialistListSchema = z.object({
   workspacePath: z.string().optional(),
 });
 
-export const SpecialistWriteSchema = z.object({
-  id: z.string().min(1, 'Specialist ID is required'),
-  name: z.string().min(1, 'Specialist name is required'),
-  description: z.string().min(1, 'Description is required'),
-  codingAgent: z.string().optional(),
-  model: z.string().optional(),
-  modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
-  roleReminder: z.string().optional(),
-  behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
-  scope: z.enum(['user', 'project']).optional(),
-  workspacePath: z.string().optional(),
-}).refine(
-  (data) => data.scope !== 'project' || !!data.workspacePath,
-  { message: 'workspacePath is required when scope is "project"', path: ['workspacePath'] }
-);
+export const SpecialistWriteSchema = z
+  .object({
+    id: z.string().min(1, 'Specialist ID is required'),
+    name: z.string().min(1, 'Specialist name is required'),
+    description: z.string().min(1, 'Description is required'),
+    codingAgent: z.string().optional(),
+    model: z.string().optional(),
+    modelTier: z.enum(['fast', 'balanced', 'smart']).optional(),
+    roleReminder: z.string().optional(),
+    behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
+    scope: z.enum(['user', 'project']).optional(),
+    workspacePath: z.string().optional(),
+  })
+  .refine((data) => data.scope !== 'project' || !!data.workspacePath, {
+    message: 'workspacePath is required when scope is "project"',
+    path: ['workspacePath'],
+  });
 
 export const SpecialistExportBuiltinSchema = z.object({
   id: z.string().min(1, 'Built-in specialist ID is required'),

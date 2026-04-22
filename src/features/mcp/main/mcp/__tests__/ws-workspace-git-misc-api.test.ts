@@ -168,17 +168,16 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('writes name to disk and sends IPC event', async () => {
-    const { getSessionPath: mockGetSessionPath } = await import('$shared/constants');
-    (mockGetSessionPath as any).mockReturnValue('/tmp/session.json');
-
-    vi.doMock('fs/promises', () => ({
-      readFile: vi.fn().mockResolvedValue(JSON.stringify({ name: 'Old Name', id: agentId })),
-      writeFile: vi.fn().mockResolvedValue(undefined),
+  it('delegates to UnifiedPersistence.renameAgent and sends IPC event', async () => {
+    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'My Custom Name' });
+    const invalidateLoadCache = vi.fn();
+    vi.doMock('$features/agent/main/agent-persistence', () => ({
+      UnifiedPersistence: {
+        getInstance: () => ({ renameAgent, invalidateLoadCache }),
+      },
     }));
 
     const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
-    const freshFs = await import('fs/promises');
 
     const api = freshBuildApi({
       workspacePath: '/tmp/test',
@@ -191,14 +190,12 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe('My Custom Name');
 
-    // Verify disk write
-    expect(freshFs.writeFile).toHaveBeenCalledWith(
-      '/tmp/session.json',
-      expect.stringContaining('"name": "My Custom Name"'),
-      'utf-8',
-    );
+    // Delegation to UnifiedPersistence.renameAgent
+    expect(renameAgent).toHaveBeenCalledWith(agentId, workspaceId, 'My Custom Name', {
+      skipIfExplicitlySet: true,
+    });
 
-    // Verify IPC event
+    // IPC event
     const { sendToWorkspaceWindows: mockSend } = await import(
       '$features/system/main/system.ipc'
     );
@@ -208,19 +205,19 @@ describe('buildWorkspaceApi – setAgentName', () => {
       name: 'My Custom Name',
     });
 
-    vi.doUnmock('fs/promises');
+    vi.doUnmock('$features/agent/main/agent-persistence');
   });
 
   it('updates in-memory backend session (regression)', async () => {
-    const { getSessionPath: mockGetSessionPath } = await import('$shared/constants');
-    (mockGetSessionPath as any).mockReturnValue('/tmp/session.json');
-
     // Mock ConsolidatedBackendService to track in-memory update
     const mockSession = { name: 'Old Name', id: agentId };
 
-    vi.doMock('fs/promises', () => ({
-      readFile: vi.fn().mockResolvedValue(JSON.stringify({ name: 'Old Name', id: agentId })),
-      writeFile: vi.fn().mockResolvedValue(undefined),
+    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'Updated Name' });
+    const invalidateLoadCache = vi.fn();
+    vi.doMock('$features/agent/main/agent-persistence', () => ({
+      UnifiedPersistence: {
+        getInstance: () => ({ renameAgent, invalidateLoadCache }),
+      },
     }));
     vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
       ConsolidatedBackendService: {
@@ -244,7 +241,7 @@ describe('buildWorkspaceApi – setAgentName', () => {
     // The in-memory session should have been updated
     expect(mockSession.name).toBe('Updated Name');
 
-    vi.doUnmock('fs/promises');
+    vi.doUnmock('$features/agent/main/agent-persistence');
     vi.doUnmock('$features/agent/main/consolidated-backend.service');
   });
 

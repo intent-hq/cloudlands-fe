@@ -160,6 +160,7 @@ import {
 import { clearCurrentlyViewed } from "../../note-read-tracking/note-read-tracking-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import {
+  addAgent,
   removeAgent,
   renameAgent,
   setAgents,
@@ -174,6 +175,7 @@ import {
   removeSession as removeAgentSession,
   renameSession as renameAgentSession,
   removeWorkspaceSessions,
+  upsertSession as upsertAgentSession,
 } from "../../agent-session/agent-session-slice";
 import {
   ensureFallbackLayout,
@@ -187,6 +189,7 @@ import {
   recoverLateInitialAgentHydrationSaga,
   retroactiveWorkspaceMountCheckSaga,
   watchAgentDeletedSaga,
+  watchAgentRestoredSaga,
   watchFileTrackingLifecycleSaga,
   watchLateInitialAgentHydrationRecoverySaga,
   watchAgentRenamedSaga,
@@ -323,6 +326,65 @@ describe("workspaceAgentsSaga", () => {
       done: false,
     });
   });
+
+  it("re-adds an agent when agent:restored is received with a cached session", () => {
+    const iterator = watchAgentRestoredSaga();
+
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    expect(takeEveryFromElectronChannelMock).toHaveBeenCalledWith(
+      "agent:restored",
+      expect.any(Function),
+    );
+
+    const restoredSession = mockAgent("agent-1", "ws-1", "Restored Agent");
+    const handler = getElectronHandler("agent:restored")({
+      agentId: "agent-1",
+      workspaceId: "ws-1",
+      session: restoredSession,
+      reason: "delete_failed",
+      error: "disk exploded",
+    });
+
+    // Dual-dispatch mirrors the agent:deleted path in reverse: repopulate
+    // the full session, then re-register the agent in the workspace list.
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(upsertAgentSession(restoredSession)),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(addAgent("ws-1", restoredSession)),
+      done: false,
+    });
+    expect(handler.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("ignores agent:restored events that carry no session snapshot", () => {
+    watchAgentRestoredSaga().next();
+
+    const handler = getElectronHandler("agent:restored")({
+      agentId: "agent-1",
+      workspaceId: "ws-1",
+      session: null,
+    });
+    expect(handler.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("ignores agent:restored events missing agentId or workspaceId", () => {
+    watchAgentRestoredSaga().next();
+
+    const noAgent = getElectronHandler("agent:restored")({
+      workspaceId: "ws-1",
+      session: mockAgent("agent-1", "ws-1"),
+    });
+    expect(noAgent.next()).toEqual({ value: undefined, done: true });
+
+    const noWorkspace = getElectronHandler("agent:restored")({
+      agentId: "agent-1",
+      session: mockAgent("agent-1", "ws-1"),
+    });
+    expect(noWorkspace.next()).toEqual({ value: undefined, done: true });
+  });
+
 
   it("renames an agent when agent:renamed is received (global, uses payload workspaceId)", () => {
     const iterator = watchAgentRenamedSaga();

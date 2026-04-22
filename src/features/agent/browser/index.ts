@@ -24,41 +24,101 @@ import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-s
 
 const logger = createLogger('browser/index');
 
-// Per-agent subscribers for efficient updates during streaming
-const agentSubscribers = new Map<string, Set<(session: AgentSession | undefined) => void>>();
+type AgentSubscriberCallback = (session: AgentSession | undefined) => void;
+
+// Per-agent subscribers for efficient updates during streaming.
+const agentSubscribers = new Map<string, Set<AgentSubscriberCallback>>();
+
+// Last session reference observed for each tracked agent id. Used for
+// reference-equality change detection so unrelated store updates do not
+// re-fire callbacks.
+const lastSessionByAgent = new Map<string, AgentSession | undefined>();
+
+// Lazy, shared Redux store subscription. Created on the first
+// `subscribeToAgent` call and torn down when the last subscriber leaves.
+let storeUnsubscribe: (() => void) | undefined;
+
+function dispatchCallbacks(
+  agentId: string,
+  subscribers: Set<AgentSubscriberCallback>,
+  session: AgentSession | undefined,
+) {
+  for (const callback of subscribers) {
+    try {
+      callback(session);
+    } catch (e) {
+      logger.error('Error in agent subscriber callback', { agentId, error: e });
+    }
+  }
+}
+
+function ensureStoreSubscription() {
+  if (storeUnsubscribe) return;
+  storeUnsubscribe = getReduxStore().subscribe(() => {
+    if (agentSubscribers.size === 0) return;
+    const state = getReduxStore().getState();
+    for (const [agentId, subscribers] of agentSubscribers) {
+      const next = selectAgentById.select(state, agentId);
+      if (lastSessionByAgent.get(agentId) === next) continue;
+      lastSessionByAgent.set(agentId, next);
+      dispatchCallbacks(agentId, subscribers, next);
+    }
+  });
+}
+
+function teardownStoreSubscriptionIfEmpty() {
+  if (agentSubscribers.size > 0 || !storeUnsubscribe) return;
+  storeUnsubscribe();
+  storeUnsubscribe = undefined;
+  lastSessionByAgent.clear();
+}
 
 /**
  * Subscribe to updates for a specific agent.
- * Reads from Redux state.
+ *
+ * The callback is invoked synchronously once with the current value (or
+ * `undefined`) and again whenever the Redux agent-session reference for
+ * this agent changes. A single shared Redux subscription is created
+ * lazily and torn down when the last subscriber unregisters.
  */
 export function subscribeToAgent(
   agentId: string,
-  callback: (session: AgentSession | undefined) => void,
+  callback: AgentSubscriberCallback,
   workspaceId?: string,
 ): () => void {
   let subscribers = agentSubscribers.get(agentId);
+  const isNewAgent = !subscribers;
   if (!subscribers) {
     subscribers = new Set();
     agentSubscribers.set(agentId, subscribers);
   }
   subscribers.add(callback);
 
-  // Immediately call with current value from Redux
-  const state = getReduxStore().getState();
-  const wsId = workspaceId ?? selectActiveWorkspaceId.select(state) ?? '';
-  const agent = wsId ? selectAgentById.select(state, agentId) : undefined;
+  // Ensure the shared Redux subscription is active before any callbacks run.
+  ensureStoreSubscription();
 
-  if (agent) {
+  const state = getReduxStore().getState();
+  const current = selectAgentById.select(state, agentId);
+
+  // Seed the last-seen session on first subscriber for this agent so the
+  // shared listener only fires when the reference actually changes.
+  if (isNewAgent) {
+    lastSessionByAgent.set(agentId, current);
+  }
+
+  if (current) {
     logger.debug('[subscribeToAgent] Initial callback data', {
       agentId,
-      workspaceId: wsId || 'current',
+      workspaceId: workspaceId ?? 'current',
       hasSession: true,
     });
-    callback(agent);
   } else {
-    logger.debug('[subscribeToAgent] No session found', { agentId, workspaceId: wsId || 'current' });
-    callback(undefined);
+    logger.debug('[subscribeToAgent] No session found', {
+      agentId,
+      workspaceId: workspaceId ?? 'current',
+    });
   }
+  callback(current);
 
   return () => {
     const subs = agentSubscribers.get(agentId);
@@ -66,22 +126,24 @@ export function subscribeToAgent(
       subs.delete(callback);
       if (subs.size === 0) {
         agentSubscribers.delete(agentId);
+        lastSessionByAgent.delete(agentId);
       }
     }
+    teardownStoreSubscriptionIfEmpty();
   };
 }
 
 /**
- * Notify subscribers for a specific agent.
- * Reads from Redux state.
+ * Force a fresh callback dispatch for a specific agent. Retained for
+ * backwards compatibility with `chat.service.ts`; the shared store
+ * subscription now handles the common case automatically.
  */
 export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
   const subscribers = agentSubscribers.get(agentId);
   if (!subscribers || subscribers.size === 0) return;
 
   const state = getReduxStore().getState();
-  const wsId = targetWorkspaceId ?? selectActiveWorkspaceId.select(state) ?? '';
-  const session = wsId ? selectAgentById.select(state, agentId) : undefined;
+  const session = selectAgentById.select(state, agentId);
 
   if (!session) {
     console.warn('[DIAG notifyAgentSubscribers] Agent NOT FOUND — subscribers get undefined', {
@@ -91,13 +153,10 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
     });
   }
 
-  for (const callback of subscribers) {
-    try {
-      callback(session);
-    } catch (e) {
-      logger.error('Error in agent subscriber callback', { agentId, error: e });
-    }
-  }
+  // Keep the last-seen reference in sync so the shared listener does not
+  // re-fire this same value on the very next store notification.
+  lastSessionByAgent.set(agentId, session);
+  dispatchCallbacks(agentId, subscribers, session);
 }
 
 // Export the config cache proxy (communicates with main process)

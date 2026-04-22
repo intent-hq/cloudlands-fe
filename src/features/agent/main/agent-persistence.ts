@@ -484,7 +484,6 @@ export class UnifiedPersistence {
     const startTime = Date.now();
     const agentId = agent.id as AgentId;
     const agentPath = this.getAgentPath(agentId, agent.workspaceId, workspacePath);
-    let retries = 0;
 
     // Use debug level for routine save operations
     logger.debug('saveAgent called with agent data', {
@@ -717,86 +716,250 @@ export class UnifiedPersistence {
       };
     }
 
-    // Wait for any existing write to complete
-    if (this.writeInProgress.get(agentId)) {
-      logger.debug('Waiting for existing write to complete', { agentId });
-      const existingWrite = this.writeQueue.get(agentId);
-      if (existingWrite) {
-        await existingWrite;
-      }
-    }
-
-    // Mark write as in progress
+    // Chain onto any operation already queued for this agent so that save
+    // and rename serialise on the same per-agent queue. writeInProgress and
+    // writeQueue must be set in the same synchronous tick — otherwise a
+    // concurrent renameAgent could observe writeInProgress=true but
+    // writeQueue=undefined and bypass the wait.
+    const previous = this.writeQueue.get(agentId) ?? Promise.resolve();
     this.writeInProgress.set(agentId, true);
 
-    try {
-      // Retry logic
-      let lastError: Error | undefined;
-      for (let i = 0; i <= (this.config.maxRetries || 3); i++) {
-        if (i > 0) {
-          retries++;
-          await this.delay(this.config.retryDelay || 1000);
-          logger.debug(`Retrying save operation (attempt ${i + 1})`, { agentId });
+    const work: Promise<SaveResult> = previous
+      .catch(() => undefined)
+      .then(async (): Promise<SaveResult> => {
+        let retries = 0;
+
+        // Re-check disk inside the lock for a concurrent rename. We always
+        // perform the re-read regardless of the incoming `nameExplicitlySet`
+        // flag: a stale full-session save captured just after an earlier
+        // rename carries `nameExplicitlySet: true` too, so the flag alone is
+        // not proof the save is authoritative. Promote the disk name only
+        // when the on-disk copy is explicitly set AND its name disagrees
+        // with the incoming save — that combination identifies a rename
+        // that landed while this save was queued.
+        try {
+          const latestRaw = await metadataFS.readFile(agentPath, 'utf-8');
+          const latestParsed = JSON.parse(latestRaw);
+          const latestAgent =
+            latestParsed.version && latestParsed.data ? latestParsed.data : latestParsed;
+          if (
+            latestAgent &&
+            latestAgent.nameExplicitlySet === true &&
+            typeof latestAgent.name === 'string' &&
+            latestAgent.name !== agent.name
+          ) {
+            agent.name = latestAgent.name;
+            agent.nameExplicitlySet = true;
+          }
+        } catch {
+          // File may not exist yet or may be mid-write; fall through to the
+          // main write path which is the authoritative operation.
         }
 
-        try {
-          // Create write promise with timeout
-          const writePromise = this.performAtomicWrite(agentPath, agent, metadataFS);
-          this.writeQueue.set(agentId, writePromise);
+        // Retry logic
+        let lastError: Error | undefined;
+        for (let i = 0; i <= (this.config.maxRetries || 3); i++) {
+          if (i > 0) {
+            retries++;
+            await this.delay(this.config.retryDelay || 1000);
+            logger.debug(`Retrying save operation (attempt ${i + 1})`, { agentId });
+          }
 
-          const result = await Promise.race([
-            writePromise,
+          try {
+            // Create write promise with timeout. Do NOT overwrite
+            // writeQueue here — the single `work` promise registered below
+            // represents the entire save (including retries).
+            const writePromise = this.performAtomicWrite(agentPath, agent, metadataFS);
+
+            const result = await Promise.race([
+              writePromise,
+              new Promise<SaveResult>((_, reject) =>
+                setTimeout(() => reject(new Error('Write timeout')), this.config.writeTimeout),
+              ),
+            ]);
+
+            result.duration = Date.now() - startTime;
+            result.retries = retries;
+
+            // Track operation time
+            this.operationStats.writes.push(result.duration);
+            this.operationStats.successes++;
+
+            // Keep only last 100 operations for stats
+            if (this.operationStats.writes.length > 100) {
+              this.operationStats.writes.shift();
+            }
+
+            logger.debug('Agent saved successfully', {
+              agentId,
+              duration: result.duration,
+              retries,
+            });
+
+            // Clear pending status now that agent is persisted
+            this.clearAgentPending(agentId);
+
+            // OPTIMIZATION: Invalidate load cache since data has changed
+            this.invalidateLoadCache(agentId, agent.workspaceId);
+
+            return result;
+          } catch (error) {
+            lastError = error as Error;
+            logger.warn(`Save attempt ${i + 1} failed`, { agentId, error });
+          }
+        }
+
+        // All retries failed
+        this.operationStats.failures++;
+        logger.error('Failed to save agent after retries', {
+          agentId,
+          retries,
+          error: lastError,
+        });
+        return {
+          success: false,
+          error: lastError?.message || 'Unknown error',
+          retries,
+        };
+      });
+
+    // Register the work in the queue synchronously so any concurrent save/
+    // rename sees an entry to await.
+    this.writeQueue.set(agentId, work);
+
+    try {
+      return await work;
+    } finally {
+      // Only clear the lock if our work is still the current entry —
+      // avoids clobbering a newer save/rename that chained onto us.
+      if (this.writeQueue.get(agentId) === work) {
+        this.writeQueue.delete(agentId);
+        this.writeInProgress.delete(agentId);
+      }
+    }
+  }
+
+  /**
+   * Rename an agent's session file safely.
+   *
+   * Acquires the same per-agent write lock that `saveAgent` uses, loads fresh
+   * state from disk **inside** the lock so it sees any save that just
+   * completed, applies the name patch, and writes via `performAtomicWrite` so
+   * the temp-file rename, backup, and `.checksum` sidecar are all updated.
+   *
+   * When `skipIfExplicitlySet` is true (MCP path), the method short-circuits
+   * without writing if the session already has `nameExplicitlySet: true` and
+   * returns the existing name with `skipped: true`.
+   */
+  async renameAgent(
+    agentId: string,
+    workspaceId: string,
+    name: string,
+    options: { skipIfExplicitlySet?: boolean; workspacePath?: string } = {},
+  ): Promise<{ ok: boolean; name: string; skipped?: boolean; error?: string }> {
+    const { skipIfExplicitlySet = false, workspacePath } = options;
+    const brandedAgentId = agentId as AgentId;
+    const brandedWorkspaceId = workspaceId as WorkspaceId;
+
+    if (!name || typeof name !== 'string') {
+      throw new Error('name is required');
+    }
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new Error('name must not be empty or whitespace-only');
+    }
+
+    // Chain onto any operation already queued for this agent so that rename
+    // and save serialise on the same per-agent queue. writeInProgress and
+    // writeQueue must be set in the same synchronous tick — otherwise a
+    // concurrent saveAgent could observe writeInProgress=true but
+    // writeQueue=undefined and bypass the wait.
+    const previous = this.writeQueue.get(brandedAgentId) ?? Promise.resolve();
+    this.writeInProgress.set(brandedAgentId, true);
+
+    const work: Promise<{ ok: boolean; name: string; skipped?: boolean; error?: string }> =
+      previous
+        .catch(() => undefined)
+        .then(async () => {
+          // Invalidate the load cache before reading so we always see the
+          // latest bytes on disk rather than a stale cached entry.
+          this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
+
+          const loadResult = await this.loadAgent(
+            brandedAgentId,
+            brandedWorkspaceId,
+            workspacePath,
+          );
+          if (!loadResult.success || !loadResult.data) {
+            return {
+              ok: false,
+              name: trimmedName,
+              error: loadResult.error || 'Failed to load agent session',
+            };
+          }
+
+          const session = loadResult.data;
+          const existingName = session.name ?? '';
+          const existingExplicitlySet = Boolean(
+            (session as unknown as { nameExplicitlySet?: boolean }).nameExplicitlySet,
+          );
+
+          if (skipIfExplicitlySet && existingExplicitlySet) {
+            return { ok: true, name: existingName, skipped: true };
+          }
+
+          const patched = {
+            ...(session as unknown as Record<string, unknown>),
+            name: trimmedName,
+            nameExplicitlySet: true,
+          };
+
+          const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
+          const metadataFS = workspacePath
+            ? new LocalMetadataFS()
+            : this.getFS(workspaceId);
+
+          const writeResult = await Promise.race([
+            this.performAtomicWrite(agentPath, patched, metadataFS),
             new Promise<SaveResult>((_, reject) =>
-              setTimeout(() => reject(new Error('Write timeout')), this.config.writeTimeout),
+              setTimeout(
+                () => reject(new Error('Write timeout')),
+                this.config.writeTimeout,
+              ),
             ),
           ]);
 
-          result.duration = Date.now() - startTime;
-          result.retries = retries;
-
-          // Track operation time
-          this.operationStats.writes.push(result.duration);
-          this.operationStats.successes++;
-
-          // Keep only last 100 operations for stats
-          if (this.operationStats.writes.length > 100) {
-            this.operationStats.writes.shift();
+          if (!writeResult.success) {
+            return {
+              ok: false,
+              name: trimmedName,
+              error: writeResult.error,
+            };
           }
 
-          logger.debug('Agent saved successfully', {
-            agentId,
-            duration: result.duration,
-            retries,
-          });
+          // Invalidate the load cache so the next read returns the renamed session.
+          this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
 
-          // Clear pending status now that agent is persisted
-          this.clearAgentPending(agentId);
+          return { ok: true, name: trimmedName };
+        });
 
-          // OPTIMIZATION: Invalidate load cache since data has changed
-          this.invalidateLoadCache(agentId, agent.workspaceId);
+    // Register the work in the queue synchronously so any concurrent save/
+    // rename sees an entry to await. The SaveResult cast is safe because
+    // callers awaiting the queue only need to know when the operation ends.
+    this.writeQueue.set(brandedAgentId, work as unknown as Promise<SaveResult>);
 
-          // Clear queue before returning
-          this.writeInProgress.delete(agentId);
-          this.writeQueue.delete(agentId);
-
-          return result;
-        } catch (error) {
-          lastError = error as Error;
-          logger.warn(`Save attempt ${i + 1} failed`, { agentId, error });
-        }
-      }
-
-      // All retries failed
-      this.operationStats.failures++;
-      logger.error('Failed to save agent after retries', { agentId, retries, error: lastError });
-      return {
-        success: false,
-        error: lastError?.message || 'Unknown error',
-        retries,
-      };
+    try {
+      return await work;
     } finally {
-      this.writeInProgress.delete(agentId);
-      this.writeQueue.delete(agentId);
+      // Only clear the flags if our work is still the current entry —
+      // avoids clobbering a newer operation that may have chained onto us.
+      if (
+        this.writeQueue.get(brandedAgentId) ===
+        (work as unknown as Promise<SaveResult>)
+      ) {
+        this.writeQueue.delete(brandedAgentId);
+        this.writeInProgress.delete(brandedAgentId);
+      }
     }
   }
 

@@ -1,4 +1,9 @@
-import type { AgentDeletedPayload, AgentRenamedPayload } from "$features/events/types";
+import type {
+  AgentDeletedPayload,
+  AgentRenamedPayload,
+  AgentRestoredPayload,
+} from "$features/events/types";
+import type { AgentSession } from "$shared/types";
 import { agentService } from "$features/agent/agent-ipc-bridge";
 import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
@@ -25,6 +30,7 @@ import {
 } from "../workspace-agents-selectors";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
+  addAgent,
   removeAgent,
   renameAgent,
   setAgentsLoaded,
@@ -38,6 +44,7 @@ import {
 import {
   removeSession as removeAgentSession,
   renameSession as renameAgentSession,
+  upsertSession as upsertAgentSession,
 } from "../../agent-session/agent-session-slice";
 import { selectWorkspaceNavigationDrawer } from "../../workspace-navigation/workspace-navigation-selectors";
 import { closeWorkspaceDrawer } from "../../workspace-navigation/workspace-navigation-slice";
@@ -112,6 +119,29 @@ export function* watchAgentDeletedSaga() {
 
       yield* put(removeAgentSession(data.agentId));
       yield* put(removeAgent(data.workspaceId, data.agentId));
+    },
+  );
+}
+
+export function* watchAgentRestoredSaga() {
+  yield* takeEveryFromElectronChannel<MaybeWrappedPayload<AgentRestoredPayload>>(
+    "agent:restored",
+    function* (event) {
+      const data = unwrapPayload(event);
+
+      if (typeof data.agentId !== "string" || typeof data.workspaceId !== "string") {
+        return;
+      }
+
+      const session = data.session as AgentSession | null | undefined;
+      if (!session || typeof session !== "object" || !("id" in session)) {
+        return;
+      }
+
+      // Dual-dispatch mirrors watchAgentDeletedSaga: re-populate the full
+      // session first, then re-index it in the workspace agent list.
+      yield* put(upsertAgentSession(session));
+      yield* put(addAgent(data.workspaceId, session));
     },
   );
 }
@@ -425,6 +455,7 @@ export function* workspaceAgentsSaga() {
     fork(watchAgentCreationSaga),
     fork(retroactiveWorkspaceMountCheckSaga),
     fork(watchAgentDeletedSaga),
+    fork(watchAgentRestoredSaga),
     fork(watchAgentRenamedSaga),
     fork(watchWaitingForFirstMessageSaga),
     fork(watchLateInitialAgentHydrationRecoverySaga),

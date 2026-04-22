@@ -354,7 +354,7 @@
         'agent',
         oldName,
         newName,
-        () => {
+        async () => {
           getReduxStore().dispatch(
             updateAgentSessionFields(agentId, {
               name: newName,
@@ -362,10 +362,25 @@
             } as any),
           );
           layoutManager.updateTabTitle(tab.id, newName);
-          // Save the session to persist the name change
-          agentService.saveSession(agentId, workspaceId, true);
+          // Persist the rename via the lightweight IPC path so other windows
+          // pick it up immediately (full saveSession would stall for minutes).
+          try {
+            await agentService.renameSession(agentId, workspaceId, newName);
+          } catch (err) {
+            // Revert optimistic UI so tab title and Redux match disk, then
+            // rethrow so ReversibleActionManager surfaces the error toast
+            // and skips the undo toast.
+            getReduxStore().dispatch(
+              updateAgentSessionFields(agentId, {
+                name: oldName,
+                nameExplicitlySet: true,
+              } as any),
+            );
+            layoutManager.updateTabTitle(tab.id, oldName);
+            throw err;
+          }
         },
-        () => {
+        async () => {
           // Undo: restore old name with nameExplicitlySet so persistence allows the
           // disk write (without it, the preservation logic blocks the revert).
           getReduxStore().dispatch(
@@ -375,7 +390,20 @@
             } as any),
           );
           layoutManager.updateTabTitle(tab.id, oldName);
-          agentService.saveSession(agentId, workspaceId, true);
+          try {
+            await agentService.renameSession(agentId, workspaceId, oldName);
+          } catch (err) {
+            // Revert the revert: undo failed, so restore the new name in the UI
+            // and rethrow so the user sees the error.
+            getReduxStore().dispatch(
+              updateAgentSessionFields(agentId, {
+                name: newName,
+                nameExplicitlySet: true,
+              } as any),
+            );
+            layoutManager.updateTabTitle(tab.id, newName);
+            throw err;
+          }
         },
       );
     }

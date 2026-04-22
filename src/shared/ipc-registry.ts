@@ -1165,6 +1165,7 @@ export const EVENT_CHANNELS = [
   'agent:stopped',
   'agent:created',
   'agent:deleted',
+  'agent:restored', // Compensating event when durable delete fails after agent:deleted broadcast
   'agent:renamed',
   'agent:status', // Agent status changed (idle, responding, etc.)
   'agent:idle', // Agent entered idle state

@@ -62,6 +62,7 @@ export const WorkspaceEventType = {
   // Agent interaction events (for agent-to-agent communication)
   AgentCreated: 'agent:created',
   AgentDeleted: 'agent:deleted',
+  AgentRestored: 'agent:restored',
   AgentIdle: 'agent:idle',
   AgentStatusChanged: 'agent:status-changed',
   AgentMessageSent: 'agent:message:sent',
@@ -368,6 +369,31 @@ export interface AgentDeletedEvent extends WorkspaceEventBase {
     isBackground?: boolean;
     /** ID of the parent agent that created this agent */
     parentAgentId?: string;
+  };
+}
+
+/**
+ * Emitted when a durable delete fails after `agent:deleted` was already broadcast.
+ * Consumers should re-add the agent to their local state from the cached session
+ * snapshot so the UI matches the on-disk truth again.
+ */
+export interface AgentRestoredEvent extends WorkspaceEventBase {
+  type: 'agent:restored';
+  data: {
+    agentId: string;
+    agentName: string;
+    /** Full cached session snapshot captured before the failed delete */
+    session: unknown;
+    /** Task note ID if agent was working on a task */
+    taskNoteId?: string;
+    /** Whether this was a background agent */
+    isBackground?: boolean;
+    /** ID of the parent agent that created this agent */
+    parentAgentId?: string;
+    /** Why the agent was restored (currently only failed durable delete) */
+    reason?: 'delete_failed';
+    /** Error message from the failed delete, for diagnostics */
+    error?: string;
   };
 }
 
@@ -819,6 +845,10 @@ export function isAgentDeletedEvent(event: WorkspaceEvent): event is AgentDelete
   return event.type === 'agent:deleted';
 }
 
+export function isAgentRestoredEvent(event: WorkspaceEvent): event is AgentRestoredEvent {
+  return event.type === 'agent:restored';
+}
+
 export function isAgentIdleEvent(event: WorkspaceEvent): event is AgentIdleEvent {
   return event.type === 'agent:idle';
 }
@@ -852,6 +882,7 @@ export function isAgentInteractionEvent(event: WorkspaceEvent): boolean {
   return (
     event.type === 'agent:created' ||
     event.type === 'agent:deleted' ||
+    event.type === 'agent:restored' ||
     event.type === 'agent:idle' ||
     event.type === 'agent:status-changed' ||
     event.type === 'agent:message:sent' ||
@@ -982,6 +1013,26 @@ export interface AgentDeletedPayload {
   workspaceId?: string;
   taskNoteId?: string;
   reason?: 'user_action' | 'workspace_deleted' | 'cleanup';
+}
+
+/**
+ * IPC payload for agent:restored events.
+ *
+ * Emitted as a compensating event when a durable delete fails after the
+ * early `agent:deleted` broadcast. Carries the full cached session so
+ * renderers can re-add the agent exactly as it was on disk.
+ */
+export interface AgentRestoredPayload {
+  agentId: string;
+  agentName?: string;
+  workspaceId: string;
+  /** Full cached session snapshot captured before the failed delete */
+  session: unknown;
+  taskNoteId?: string;
+  isBackground?: boolean;
+  parentAgentId?: string;
+  reason?: 'delete_failed';
+  error?: string;
 }
 
 /**
@@ -1149,6 +1200,7 @@ export interface IpcEventWrapper<T = any> {
 export type AgentEventPayload =
   | AgentCreatedPayload
   | AgentDeletedPayload
+  | AgentRestoredPayload
   | AgentRenamedPayload
   | AgentSubscribedPayload
   | AgentUnsubscribedPayload

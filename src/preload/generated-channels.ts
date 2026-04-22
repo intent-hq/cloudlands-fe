@@ -392,6 +392,7 @@ export const EVENT_CHANNELS = [
   'agent:stopped',
   'agent:created',
   'agent:deleted',
+  'agent:restored',
   'agent:renamed',
   'agent:status',
   'agent:loaded',

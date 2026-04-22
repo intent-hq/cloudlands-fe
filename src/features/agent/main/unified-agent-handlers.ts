@@ -14,9 +14,7 @@ import { BrowserWindow } from 'electron';
 import { Logger } from '$shared/logger';
 import { WorkspaceConfig } from '$shared/main/config';
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
-import type {
-  AgentIpc,
-} from '$shared/ipc/contracts';
+import type { AgentIpc } from '$shared/ipc/contracts';
 import { formatIpcError, formatIpcSuccess } from './ipc-response-formatter';
 import { restoreAgentId, restoreWorkspaceId } from '$shared/types/type-guards';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -42,6 +40,7 @@ import {
   AgentMessagingSendSchema,
   AgentMessagingReceiveSchema,
   AgentSetModelSchema,
+  AgentRenameSchema,
   AgentGetSpecializationRulesSchema,
   AgentContextUpdateSchema,
   AgentContextGetByWorkspaceSchema,
@@ -240,9 +239,8 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
       });
 
       // Derive name from instruction/initialMessage if not provided
-      const { generateAgentNameFromText, generateRandomAgentName } = await import(
-        '../../../lib/utils/agent-name-generator'
-      );
+      const { generateAgentNameFromText, generateRandomAgentName } =
+        await import('../../../lib/utils/agent-name-generator');
       if (!normalizedData.name && (normalizedData.initialMessage || data.instruction)) {
         normalizedData.name =
           generateAgentNameFromText(normalizedData.initialMessage || data.instruction) ||
@@ -419,6 +417,27 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         return formatIpcSuccess(response);
       },
       AGENT_CHANNELS.UPDATE_METADATA,
+    ),
+  );
+
+  // Rename — lightweight: patches only name fields in the session file,
+  // invalidates the persistence cache, syncs the in-memory session, and
+  // broadcasts `agent:renamed` to all windows. Avoids the full saveSession
+  // round-trip that was causing multi-minute UI delays.
+  ipcMain.handle(
+    AGENT_CHANNELS.RENAME,
+    createSafeValidatedHandler(
+      AgentRenameSchema,
+      async (_event, validated) => {
+        const { renameAgentOnDisk } = await import('./agent-rename');
+        const response = await renameAgentOnDisk({
+          workspaceId: validated.workspaceId,
+          agentId: validated.agentId,
+          name: validated.name,
+        });
+        return formatIpcSuccess(response);
+      },
+      AGENT_CHANNELS.RENAME,
     ),
   );
 

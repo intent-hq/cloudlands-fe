@@ -7,6 +7,7 @@
    * Listens to streaming events for real-time response updates.
    */
   import { tick } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
@@ -114,13 +115,27 @@
         ? String(workspace.id)
         : selectActiveWorkspaceId.select(getReduxStore().getState());
       if (wsId) {
+        const trimmed = editingValue.trim();
+        // Capture previous values before the optimistic dispatch so a failed
+        // rename can revert back to exactly what the user saw.
+        const previousName = displayName;
+        const previousNameExplicitlySet = agent?.nameExplicitlySet ?? false;
         getReduxStore().dispatch(
           updateAgentSessionFields(agentId, {
-            name: editingValue.trim(),
+            name: trimmed,
             nameExplicitlySet: true,
           } as any),
         );
-        agentService.saveSession(agentId, wsId, true);
+        agentService.renameSession(agentId, wsId, trimmed).catch(() => {
+          // Revert the optimistic dispatch so Redux matches disk, then notify.
+          getReduxStore().dispatch(
+            updateAgentSessionFields(agentId, {
+              name: previousName,
+              nameExplicitlySet: previousNameExplicitlySet,
+            } as any),
+          );
+          toast.error('Failed to rename agent');
+        });
       }
     }
     cancelEdit();
