@@ -189,6 +189,18 @@ export class AgentBackendHandler {
   private interruptedAgentTimeouts = new Map<string, NodeJS.Timeout>();
   /** Safety timeout duration for interruptedAgents (30 seconds). If the flag isn't cleared within this time, it's auto-cleared to prevent permanent queue blocking. */
   private static readonly INTERRUPTED_AGENT_TIMEOUT_MS = 30_000;
+  /**
+   * @property {Set<string>} pendingStopAgents - Agents with a pending stop that arrived while
+   * their provider was still being created. handleSendMessage consumes this flag immediately
+   * after registry.create() completes, tearing down the newly created provider before sending
+   * a prompt. This fixes the "No provider found to interrupt" race where a stop click during
+   * provider creation was silently lost.
+   */
+  private pendingStopAgents = new Set<string>();
+  /** @property {Map<string, NodeJS.Timeout>} pendingStopAgentTimeouts - Safety timeouts that auto-clear pendingStopAgents flags */
+  private pendingStopAgentTimeouts = new Map<string, NodeJS.Timeout>();
+  /** Safety timeout for pendingStopAgents (60 seconds). Longer than INTERRUPTED_AGENT_TIMEOUT_MS because provider creation can take several seconds. */
+  private static readonly PENDING_STOP_AGENT_TIMEOUT_MS = 60_000;
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
   private completedStreams = new Map<string, Set<string>>();
   /** @property {Map<string, { resolve: () => void, reject: (err: Error) => void }>} pendingHandlerReady - Promises waiting for frontend handler ready signal */
@@ -1947,6 +1959,14 @@ export class AgentBackendHandler {
         // This ensures cleanup works even if no message is ever sent
         if (request.workspaceId) {
           this.streamWorkspaceIds.set(request.agentId, request.workspaceId);
+        }
+
+        // RACE CONDITION FIX: If the user clicked "Stop" while registry.create() was running,
+        // handleStopSession queued the agent in pendingStopAgents because no provider existed
+        // to interrupt. Consume that flag here — tear the newly created provider back down
+        // and return without sending a prompt, so the stop click actually takes effect.
+        if (await this.consumePendingStopAfterProviderCreation(request.agentId, provider)) {
+          return { success: true };
         }
 
         // Listen for session:created from the ACP provider to persist the backend session ID.
@@ -4094,6 +4114,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             agentId,
             hasProvider: !!provider,
             hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
+          });
+
+          // RACE CONDITION FIX: A stop click can arrive while handleSendMessage is mid-way
+          // through registry.create() — the provider isn't in this.providers yet, so there's
+          // nothing to interrupt, but the send will finish creation and dispatch a prompt
+          // unless we record the pending stop. handleSendMessage consumes this flag right
+          // after the provider is stored and aborts before any prompt goes out.
+          this.pendingStopAgents.add(agentId);
+          this.startPendingStopSafetyTimeout(agentId);
+          logger.info('Recorded pendingStopAgents flag for in-flight provider creation', {
+            agentId,
           });
         }
 
@@ -6422,6 +6453,81 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       clearTimeout(timeout);
       this.interruptedAgentTimeouts.delete(agentId);
     }
+  }
+
+  /**
+   * Start a safety timeout that auto-clears the pendingStopAgents flag.
+   * If handleSendMessage never reaches the post-creation check (e.g. provider
+   * creation throws), the flag would otherwise linger and abort the next
+   * unrelated send. Bounded at PENDING_STOP_AGENT_TIMEOUT_MS.
+   */
+  private startPendingStopSafetyTimeout(agentId: string): void {
+    this.cancelPendingStopSafetyTimeout(agentId);
+    const timeout = setTimeout(() => {
+      if (this.pendingStopAgents.has(agentId)) {
+        logger.warn(
+          'Safety timeout: auto-clearing pendingStopAgents flag that was not consumed within expected time',
+          { agentId, timeoutMs: AgentBackendHandler.PENDING_STOP_AGENT_TIMEOUT_MS },
+        );
+        this.pendingStopAgents.delete(agentId);
+      }
+      this.pendingStopAgentTimeouts.delete(agentId);
+    }, AgentBackendHandler.PENDING_STOP_AGENT_TIMEOUT_MS);
+    this.pendingStopAgentTimeouts.set(agentId, timeout);
+  }
+
+  /**
+   * Cancel the safety timeout for pendingStopAgents, if one is pending.
+   */
+  private cancelPendingStopSafetyTimeout(agentId: string): void {
+    const timeout = this.pendingStopAgentTimeouts.get(agentId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.pendingStopAgentTimeouts.delete(agentId);
+    }
+  }
+
+  /**
+   * If a Stop click arrived during registry.create(), handleStopSession queued the
+   * agentId in pendingStopAgents because no provider existed yet to interrupt. Once
+   * the provider is finally available, this helper consumes the flag by tearing the
+   * freshly created provider back down (stop with forceCleanup, remove from
+   * `providers` / `providerLastUsed`, run `cleanupStreamResources`) so the caller
+   * can return without dispatching a prompt.
+   *
+   * Returns `true` when a pending stop was consumed (caller should short-circuit),
+   * `false` otherwise (caller should continue normal send flow).
+   */
+  private async consumePendingStopAfterProviderCreation(
+    agentId: string,
+    provider: any,
+  ): Promise<boolean> {
+    if (!this.pendingStopAgents.has(agentId)) return false;
+
+    logger.warn(
+      'Pending stop detected immediately after provider creation - aborting send',
+      { agentId },
+    );
+    this.pendingStopAgents.delete(agentId);
+    this.cancelPendingStopSafetyTimeout(agentId);
+
+    try {
+      if (typeof (provider as any).stop === 'function') {
+        await (provider as any).stop({ forceCleanup: true });
+      } else if (typeof provider.cleanup === 'function') {
+        await provider.cleanup();
+      }
+    } catch (stopError) {
+      logger.warn('Error stopping provider during pending-stop abort', {
+        agentId,
+        error: stopError instanceof Error ? stopError.message : String(stopError),
+      });
+    }
+
+    this.providers.delete(agentId);
+    this.providerLastUsed.delete(agentId);
+    this.cleanupStreamResources(agentId);
+    return true;
   }
 
   /**
