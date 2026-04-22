@@ -25,6 +25,9 @@ const OPENCODE_PATHS = [
         path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
         path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
         path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'opencode.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'opencode.cmd'),
+        path.join(os.homedir(), '.local', 'bin', 'opencode'),
       ]
     : []),
 ];

@@ -23,6 +23,9 @@ const CODEX_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-acp'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-acp.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'codex-acp.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-acp.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-acp.cmd'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-acp'),
   ] : []),
 ];
 
@@ -40,6 +43,9 @@ const CODEX_CLI_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'codex.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex.cmd'),
+    path.join(os.homedir(), '.local', 'bin', 'codex'),
   ] : []),
 ];
 
@@ -57,6 +63,9 @@ const CODEX_MCP_SERVER_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-mcp-server'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-mcp-server.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'codex-mcp-server.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.cmd'),
+    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server'),
   ] : []),
 ];
 

@@ -26,6 +26,9 @@ const CLAUDE_CLI_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'claude.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'claude.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'claude.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'claude.cmd'),
+    path.join(os.homedir(), '.local', 'bin', 'claude'),
   ] : []),
 ];
 
@@ -43,6 +46,9 @@ const CLAUDE_AGENT_ACP_PATHS = [
     path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude-agent-acp'),
     path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'claude-agent-acp.exe'),
     path.join(os.homedir(), 'scoop', 'shims', 'claude-agent-acp.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp.cmd'),
+    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp'),
   ] : []),
 ];
 

@@ -107,6 +107,9 @@ export function getCommonNpmPaths(binaryName: string): string[] {
       path.join(localAppData, 'Programs', binaryName, `${binaryName}.cmd`),
       path.join(localAppData, 'Programs', binaryName, 'bin', `${binaryName}.exe`),
       path.join(localAppData, 'Programs', binaryName, 'bin', `${binaryName}.cmd`),
+      path.join(homeDir, '.local', 'bin', `${binaryName}.exe`),
+      path.join(homeDir, '.local', 'bin', `${binaryName}.cmd`),
+      path.join(homeDir, '.local', 'bin', binaryName),
     ]);
   }
 
