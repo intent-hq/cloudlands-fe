@@ -38,6 +38,7 @@
   } from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+  import { isUserProviderSettled } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
@@ -461,7 +462,15 @@
   }
 
   function toDropdownOptions(
-    models: { value: string; label: string; description?: string; badges?: { color: string; label: string; variant?: string }[]; costTier?: number; effortLevels?: string[]; isDefault?: boolean }[],
+    models: {
+      value: string;
+      label: string;
+      description?: string;
+      badges?: { color: string; label: string; variant?: string }[];
+      costTier?: number;
+      effortLevels?: string[];
+      isDefault?: boolean;
+    }[],
   ): DropdownOption[] {
     return models.map((m) => ({
       value: m.value,
@@ -498,8 +507,8 @@
   const currentModelLabel = $derived.by(() => {
     const label = !hasExplicitModel
       ? (defaultModelId ? getModelLabel(defaultModelId) : undefined) ||
-          availableModels[0]?.label ||
-          'Default model'
+        availableModels[0]?.label ||
+        'Default model'
       : getModelLabel(localModel) || 'Default model';
     return label;
   });
@@ -711,6 +720,31 @@
     if (!agentId) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
+
+    // Guard against transient unavailability. This effect dispatches
+    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
+    // the persisted model on the agent session — including across restarts.
+    // Only proceed once we're confident the user's provider has truly settled;
+    // otherwise a slow/empty per-provider fetch during boot or refresh would
+    // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
+    const { providerId: rawModelProvider } = parseCompoundModelId(localModel ?? '');
+    const modelProvider = getProviderConfig(rawModelProvider).id;
+    if (
+      !isUserProviderSettled({
+        isAgentProviderOverride,
+        agentProviderModels,
+        agentProviderError,
+        enabledProviderIds: $enabledProviderIds$,
+        allProviderModels,
+        modelProvider,
+      })
+    ) {
+      logger.debug('Skipping auto-fallback: user provider has not settled yet', {
+        modelProvider,
+        localModel,
+      });
+      return;
+    }
 
     // Get the name of the unavailable model for the notification
     const unavailableModelName = localModel || 'Selected model';
@@ -1037,7 +1071,7 @@
 
     {#snippet item({ option, selected }: DropdownItemProps)}
       {@const effortLevels = option.data?.effortLevels as string[] | undefined}
-      
+
       <div class="flex gap-2 w-full min-w-0">
         {#if option.value !== USE_DEFAULT_VALUE}
           <ProviderIcon
@@ -1061,7 +1095,9 @@
             {/if}
           </div>
           {#if option.description}
-            <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>{option.description}</div>
+            <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
+              {option.description}
+            </div>
           {/if}
           {#if effortLevels && effortLevels.length > 0}
             <div class="text-xs text-subtle/60 truncate hidden">
@@ -1069,7 +1105,6 @@
             </div>
           {/if}
         </div>
-
       </div>
     {/snippet}
 
@@ -1096,7 +1131,7 @@
                 <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
               </div>
               <!-- Skeleton items -->
-              {#each Array.from(Array(itemCount), (_, i) => i) as j }
+              {#each Array.from(Array(itemCount), (_, i) => i) as j}
                 <div class="px-3 py-2 flex items-center gap-2">
                   <div class="flex-1 min-w-0">
                     <div

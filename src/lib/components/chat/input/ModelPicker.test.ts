@@ -37,13 +37,30 @@ vi.mock('$lib/components/ui/dropdown', async () => {
 
 vi.mock('$features/agent/agent.client', () => ({
   agentClient: {
-    setModel: vi.fn(),
+    setModel: vi.fn(() => Promise.resolve({ ok: true, data: { success: true } })),
   },
 }));
 
 vi.mock('$features/agent/browser', () => ({}));
 
+const mockReduxDispatch = vi.hoisted(() => vi.fn());
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({}),
+    dispatch: mockReduxDispatch,
+  }),
+}));
 
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentById: { select: () => undefined },
+}));
+
+vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+  updateSession: (agentId: string, fields: Record<string, unknown>) => ({
+    type: 'agentSession/updateSession',
+    payload: { agentId, fields },
+  }),
+}));
 
 vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => vi.fn(),
@@ -123,11 +140,13 @@ describe('ModelPicker locked state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'gpt5.4';
-    mockModelState.availableModels = [{
-      value: 'gpt5.4',
-      label: 'GPT 5.4',
-      description: 'Smart model',
-    }];
+    mockModelState.availableModels = [
+      {
+        value: 'gpt5.4',
+        label: 'GPT 5.4',
+        description: 'Smart model',
+      },
+    ];
   });
 
   afterEach(() => {
@@ -252,12 +271,18 @@ describe('ModelPicker multi-provider mode', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie')).toHaveLength(2);
+      expect(
+        vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
+      ).toHaveLength(2);
     });
-    expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex')).toHaveLength(1);
+    expect(
+      vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
+    ).toHaveLength(1);
 
     vi.mocked(getModelsForProvider).mockClear();
-    modelsByProvider.auggie = [{ value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' }];
+    modelsByProvider.auggie = [
+      { value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' },
+    ];
     modelsByProvider.codex = [];
     // Force the component to re-fetch by changing the provider list (busts the
     // dedup cache inside fetchAllProviderModels which skips when the sorted key
@@ -272,9 +297,13 @@ describe('ModelPicker multi-provider mode', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex')).toHaveLength(2);
+      expect(
+        vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
+      ).toHaveLength(2);
     });
-    expect(vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie')).toHaveLength(1);
+    expect(
+      vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
+    ).toHaveLength(1);
   });
 
   it('renders without error in unlocked mode', () => {
