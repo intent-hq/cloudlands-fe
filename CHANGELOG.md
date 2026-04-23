@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6
+
+- Model picker no longer swaps your selected model when a provider is slow to load — auto-fallback now waits for the user's provider to actually settle instead of reacting to transient empty results.
+- Cmd+F in chat now reliably scrolls to every match, including those inside virtualized turns that were previously skipped.
+- Agent renames and deletes propagate to other windows within seconds instead of minutes.
+- Fixes: Stop button clicks during agent creation are honored instead of being silently lost, delegation-group race that left coordinators stuck waiting on already-finished sub-agents, custom agent names preserved across subsequent renames, infinite render loop (`effect_update_depth_exceeded`) when opening some workspaces, hardened PR discovery and assorted changes panel bugs from the underlying git state refactor.
+
 ## 0.3.5
 
 - Homepage workspace list now caps at 10 with a collapsible "Older" section to keep things tidy.
