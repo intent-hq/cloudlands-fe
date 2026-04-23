@@ -19,6 +19,7 @@ export {
 export {
   selectAgentSession,
   selectAgentMessages,
+  selectAgentMessageById,
   selectAgentSessionsByWorkspace,
   selectAllAgentSessions,
   selectAgentIsStreaming,

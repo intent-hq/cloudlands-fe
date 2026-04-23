@@ -27,8 +27,19 @@ import {
   setAgentStreaming,
 } from '../workspace-agents-slice';
 import type { AgentSession } from '$shared/types';
+import { getItems } from '../../../utils/collection-utils';
 
 const AGENT = 'agent-safety-timeout';
+
+/**
+ * The agent-session slice now stores `messages` as a Collection. When a test
+ * pulls a stored session out of state and spreads it back into an
+ * `upsertSession` payload (which expects `AgentSession` with array messages),
+ * we need to materialize the Collection back to an array first.
+ */
+function toDispatchable(stored: any): AgentSession {
+  return { ...stored, messages: getItems(stored.messages) } as unknown as AgentSession;
+}
 
 const dummySession: AgentSession = {
   id: AGENT,
@@ -78,7 +89,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
 
     // Step 2: dispatch upsertSession with both flags cleared (the fix)
     const updatedSession = {
-      ...getSession(state, AGENT),
+      ...toDispatchable(getSession(state, AGENT)),
       isStreaming: false,
       isProcessing: false,
     };
@@ -97,7 +108,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
 
     const oldBehaviorSession = {
-      ...getSession(state, AGENT),
+      ...toDispatchable(getSession(state, AGENT)),
       isStreaming: false,
       // BUG: isProcessing NOT explicitly set to false
     };
@@ -121,7 +132,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     // Safety timeout fires anyway (race condition)
     state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
     const updatedSession = {
-      ...getSession(state, AGENT),
+      ...toDispatchable(getSession(state, AGENT)),
       isStreaming: false,
       isProcessing: false,
     };

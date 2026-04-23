@@ -287,6 +287,9 @@
         class:highlighted={isHighlighted(item.message)}
         data-message-id={item.message.id}
       >
+        <!-- Fallback path: MessageList does not receive `agentId` via props/context,
+             so we can't use ChatMessage's Redux-backed subscription here. Pass the
+             message object directly. -->
         <ChatMessage message={item.message} />
       </div>
     {/if}

@@ -1,6 +1,7 @@
-import type { AgentSession, AgentStatus } from "$shared/types";
+import type { AgentMessage, AgentSession, AgentStatus } from "$shared/types";
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
+import { createCollection } from "../../utils/collection-utils";
 import {
   selectAgentById,
   selectActiveAgent,
@@ -66,10 +67,17 @@ function mockState(
   overrides: Partial<StoreState["workspaceAgents"]> = {},
   sessions: AgentSession[] = [],
 ): StoreState {
-  const byAgentId: Record<string, AgentSession> = {};
+  const byAgentId: Record<string, any> = {};
   const agentIdsByWorkspace: Record<string, string[]> = {};
   for (const s of sessions) {
-    byAgentId[s.id] = s;
+    // The agent-session slice stores `messages` as a Collection. Convert the
+    // array-backed mock session here so selectors that materialize messages
+    // (via getItems) don't blow up on an Array-shaped input.
+    const messages = Array.isArray((s as any).messages) ? (s as any).messages : [];
+    byAgentId[s.id] = {
+      ...s,
+      messages: createCollection<AgentMessage, "id">("id", messages),
+    };
     const wsId = String(s.workspaceId);
     if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
     agentIdsByWorkspace[wsId].push(String(s.id));

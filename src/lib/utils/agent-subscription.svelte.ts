@@ -19,6 +19,7 @@ import {
   selectAgentById,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { upsertAgentSession } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { getItems } from '$lib/store/utils/collection-utils';
 import type { Workspace } from '$shared/types';
 import type { AgentSession as AgentSessionType } from '$shared/types';
 
@@ -351,8 +352,12 @@ export function useAllAgentsSubscription(workspaceId?: WorkspaceIdSource) {
       const sessionsByAgent = reduxState.agentSessions?.byAgentId ?? {};
       for (const wsState of Object.values(reduxState.workspaceAgents.byWorkspaceId)) {
         for (const agentId of wsState.agentIds) {
-          const session = sessionsByAgent[agentId] as AgentSessionType | undefined;
-          if (session) result.push(session as AgentSession);
+          const stored = sessionsByAgent[agentId];
+          if (stored) {
+            // Materialize Collection-backed messages back to an array for consumers.
+            const materialized = { ...stored, messages: getItems(stored.messages) } as AgentSessionType;
+            result.push(materialized as AgentSession);
+          }
         }
       }
       return result;

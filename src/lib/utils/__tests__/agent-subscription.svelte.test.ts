@@ -8,6 +8,16 @@ import { flushSync } from 'svelte';
 import { writable } from 'svelte/store';
 import type { AgentSession } from '$features/agent/agent-ipc-bridge';
 import { AgentStatus } from '$shared/types';
+import { createCollection } from '$lib/store/utils/collection-utils';
+
+// Production code stores messages as a Collection<AgentMessage, 'id'> inside
+// the agent-session slice. Tests that synthesize slice state directly must
+// match that shape, otherwise selectors like `getItems(stored.messages)` blow
+// up trying to iterate `collection.ids`.
+function toStoredSession(session: any) {
+  const messages = Array.isArray(session?.messages) ? session.messages : [];
+  return { ...session, messages: createCollection<any, 'id'>('id', messages) };
+}
 
 const mockDiskAgents = vi.hoisted(() => ({
   agents: [] as Array<{ id: string; name?: string }>,
@@ -856,7 +866,7 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
     const byAgentId: Record<string, any> = {};
     const agentIdsByWorkspace: Record<string, string[]> = {};
     for (const session of mockSessions) {
-      byAgentId[session.id] = session;
+      byAgentId[session.id] = toStoredSession(session);
       const wsId = String(session.workspaceId);
       if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
       if (!agentIdsByWorkspace[wsId].includes(session.id)) agentIdsByWorkspace[wsId].push(session.id);
@@ -952,7 +962,7 @@ describe('useAllAgentsSubscription – workspace isolation', () => {
 
     // Also add to agentSessions
     const agentSessionsState = buildAgentSessionsState();
-    agentSessionsState.byAgentId['agent-a'] = existingSession;
+    agentSessionsState.byAgentId['agent-a'] = toStoredSession(existingSession);
     if (!agentSessionsState.agentIdsByWorkspace['test-workspace']) {
       agentSessionsState.agentIdsByWorkspace['test-workspace'] = [];
     }
@@ -1099,7 +1109,7 @@ describe('useAllAgentsSubscription – loading state', () => {
       const byAgentId: Record<string, any> = {};
       const agentIdsByWorkspace: Record<string, string[]> = {};
       for (const session of mockSessions) {
-        byAgentId[session.id] = session;
+        byAgentId[session.id] = toStoredSession(session);
         const wsId = String(session.workspaceId);
         if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
         if (!agentIdsByWorkspace[wsId].includes(session.id)) agentIdsByWorkspace[wsId].push(session.id);

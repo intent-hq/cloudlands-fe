@@ -30,6 +30,8 @@ import {
 import {
   upsertSession as upsertAgentSessionAction,
 } from "../../agent-session/agent-session-slice";
+import { getItems, type Collection } from "../../../utils/collection-utils";
+import type { AgentMessage } from "$shared/types";
 import {
   getStreamHandlerKeys,
   cleanupStreamHandler,
@@ -62,16 +64,21 @@ function* handleStreamingSafetyCheck(
       result?.success && result?.data ? result.data.map((s: any) => s.agentId) : [],
     );
 
-    // Check all sessions across workspaces for stale streaming state
+    // Check all sessions across workspaces for stale streaming state.
+    // Messages are stored as a Collection in the agent-session slice; materialize
+    // to AgentMessage[] here so downstream action payloads remain array-shaped.
     const state: any = yield* select((s: any) => s);
     const allSessions: AgentSession[] = [];
-    const agentSessionsByAgent = state.agentSessions?.byAgentId || {};
+    const agentSessionsByAgent: Record<string, any> = state.agentSessions?.byAgentId || {};
     for (const wsState of Object.values(state.workspaceAgents?.byWorkspaceId || {})) {
       const ws = wsState as any;
       const agentIds: string[] = ws?.agentIds || [];
       for (const agentId of agentIds) {
-        const session = agentSessionsByAgent[agentId] as AgentSession | undefined;
-        if (session) allSessions.push(session);
+        const stored = agentSessionsByAgent[agentId];
+        if (stored) {
+          const msgs = getItems(stored.messages as Collection<AgentMessage, 'id'>);
+          allSessions.push({ ...stored, messages: msgs } as AgentSession);
+        }
       }
     }
 

@@ -1,7 +1,16 @@
 import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
-import type { AgentSessionState } from './agent-session-types';
+import {
+  createCollection,
+  addItem,
+  removeItem,
+  updateItem,
+  getItem,
+  getItems,
+  type Collection,
+} from '../../utils/collection-utils';
+import type { AgentSessionState, StoredAgentSession } from './agent-session-types';
 import {
   upsertAgentSession,
   setAgentStreaming,
@@ -351,14 +360,26 @@ function sortMessagesByTimestamp(messages: AgentMessage[]): AgentMessage[] {
 // State helpers
 // ============================================================================
 
-function getSession(state: AgentSessionState, agentId: string): AgentSession | undefined {
+/** Build a Collection from a normalized, ordered array of messages. */
+function buildMessagesCollection(messages: AgentMessage[]): Collection<AgentMessage, 'id'> {
+  return createCollection<AgentMessage, 'id'>('id', messages);
+}
+
+/** Normalize incoming session + convert its messages to a Collection. */
+function toStoredSession(session: AgentSession): StoredAgentSession {
+  const normalized = normalizeAgentSession(session);
+  const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
+  return { ...normalized, messages: buildMessagesCollection(deduped) };
+}
+
+function getSession(state: AgentSessionState, agentId: string): StoredAgentSession | undefined {
   return state.byAgentId[agentId];
 }
 
 function setSession(
   state: AgentSessionState,
   agentId: string,
-  session: AgentSession,
+  session: StoredAgentSession,
 ): AgentSessionState {
   return {
     ...state,
@@ -369,7 +390,7 @@ function setSession(
 function updateSessionFields(
   state: AgentSessionState,
   agentId: string,
-  partial: Partial<AgentSession>,
+  partial: Partial<Omit<StoredAgentSession, 'messages'>>,
 ): AgentSessionState {
   const existing = getSession(state, agentId);
   if (!existing) return state;
@@ -397,7 +418,9 @@ function registerInWorkspaceIndex(
  * Compares key scalar fields and message count / last message ID
  * to avoid creating new state references when nothing changed.
  */
-function isSessionEquivalent(a: AgentSession, b: AgentSession): boolean {
+function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): boolean {
+  const aIds = a.messages.ids;
+  const bIds = b.messages.ids;
   return (
     a.status === b.status &&
     a.name === b.name &&
@@ -415,9 +438,8 @@ function isSessionEquivalent(a: AgentSession, b: AgentSession): boolean {
     a.currentTurnNumber === b.currentTurnNumber &&
     a.isBackground === b.isBackground &&
     a.activationState === b.activationState &&
-    a.messages.length === b.messages.length &&
-    (a.messages.length === 0 ||
-      a.messages[a.messages.length - 1].id === b.messages[b.messages.length - 1].id)
+    aIds.length === bIds.length &&
+    (aIds.length === 0 || aIds[aIds.length - 1] === bIds[bIds.length - 1])
   );
 }
 
@@ -540,10 +562,8 @@ export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState)
   .with(upsertSession, (state, { payload: [session] }) => {
-    const normalized = normalizeAgentSession(session);
-    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
-    const finalSession: AgentSession = { ...normalized, messages: deduped };
-    const agentId = String(normalized.id);
+    const finalSession = toStoredSession(session);
+    const agentId = String(finalSession.id);
     const wsId = String(session.workspaceId);
 
     // No-op guard: if the session already exists with equivalent data
@@ -586,66 +606,68 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
-    // Primary guard: exact ID match → skip
-    if (session.messages.some((m) => m.id === normalizedMsg.id)) return state;
+    // Primary guard: exact ID match → skip (O(1) Collection lookup)
+    if (getItem(session.messages, normalizedMsg.id)) return state;
     // Content-match guard: if the arriving message has a canonical `msg_*` ID
     // and a local message matches by content, replace the local copy.
     if (hasCanonicalId(normalizedMsg.id)) {
-      const matchIdx = findContentMatch(session.messages, normalizedMsg);
-      if (matchIdx !== -1 && !hasCanonicalId(session.messages[matchIdx].id)) {
-        const newMessages = [...session.messages];
-        newMessages[matchIdx] = normalizedMsg;
-        return setSession(state, agentId, { ...session, messages: newMessages });
+      const currentList = getItems(session.messages);
+      const matchIdx = findContentMatch(currentList, normalizedMsg);
+      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+        const newList = currentList.slice();
+        newList[matchIdx] = normalizedMsg;
+        return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
       }
     }
-    const updated = pruneMessages([...session.messages, normalizedMsg]);
-    return setSession(state, agentId, { ...session, messages: updated });
+    const appended = getItems(session.messages);
+    appended.push(normalizedMsg);
+    const pruned = pruneMessages(appended);
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(pruned) });
   })
   .with(updateMessage, (state, { payload: [agentId, messageId, updates] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const idx = session.messages.findIndex((m) => m.id === messageId);
-    if (idx === -1) return state;
-    const newMessages = [...session.messages];
-    newMessages[idx] = { ...newMessages[idx], ...updates };
-    return setSession(state, agentId, { ...session, messages: newMessages });
+    if (!getItem(session.messages, messageId)) return state;
+    const nextMessages = updateItem(session.messages, { ...updates, id: messageId });
+    if (nextMessages === session.messages) return state;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
   })
   .with(replaceMessages, (state, { payload: [agentId, messages] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
     const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage))));
-    return setSession(state, agentId, { ...session, messages: deduped });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(deduped) });
   })
   .with(removeMessage, (state, { payload: [agentId, messageId] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const filtered = session.messages.filter((m) => m.id !== messageId);
-    if (filtered.length === session.messages.length) return state;
-    return setSession(state, agentId, { ...session, messages: filtered });
+    const nextMessages = removeItem(session.messages, messageId);
+    if (nextMessages === session.messages) return state;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
   })
   .with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const idx = session.messages.findIndex((m) => m.id === oldId);
-    if (idx === -1) return state;
+    if (!getItem(session.messages, oldId)) return state;
     const normalized = normalizeAgentMessage(newMessage);
-    const swapped = session.messages.map((m, i) => (i === idx ? normalized : m));
-    const newMessages =
+    const currentList = getItems(session.messages);
+    const idx = currentList.findIndex((m) => m.id === oldId);
+    if (idx === -1) return state;
+    const swapped = currentList.map((m, i) => (i === idx ? normalized : m));
+    const newList =
       normalized.id === oldId
         ? swapped
         : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
-    return setSession(state, agentId, { ...session, messages: newMessages });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
   })
   .with(updateSession, (state, { payload: [agentId, updates] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
     const { messages, ...otherUpdates } = updates;
-    let merged: AgentSession = { ...session, ...otherUpdates };
+    let merged: StoredAgentSession = { ...session, ...otherUpdates };
     if (messages && Array.isArray(messages)) {
-      merged = {
-        ...merged,
-        messages: pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage)))),
-      };
+      const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage))));
+      merged = { ...merged, messages: buildMessagesCollection(deduped) };
     }
     return setSession(state, agentId, merged);
   })
@@ -663,10 +685,8 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(bulkUpsertSessions, (state, { payload: [sessions] }) => {
     let next = state;
     for (const session of sessions) {
-      const normalized = normalizeAgentSession(session);
-      const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
-      const finalSession: AgentSession = { ...normalized, messages: deduped };
-      const agentId = String(normalized.id);
+      const finalSession = toStoredSession(session);
+      const agentId = String(finalSession.id);
       const wsId = String(session.workspaceId);
 
       // Preserve in-flight isStreaming/isProcessing flags unconditionally.
@@ -705,10 +725,8 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
   // -----------------------------------------------------------------------
   .with(upsertAgentSession, (state, { payload: [, session] }) => {
-    const normalized = normalizeAgentSession(session);
-    const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(normalized.messages || [])));
-    const finalSession: AgentSession = { ...normalized, messages: deduped };
-    const agentId = String(normalized.id);
+    const finalSession = toStoredSession(session);
+    const agentId = String(finalSession.id);
     const wsId = String(session.workspaceId);
 
     const existing = getSession(state, agentId);
@@ -741,55 +759,59 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
-    // Primary guard: exact ID match → skip
-    if (session.messages.some((m) => m.id === normalizedMsg.id)) return state;
+    // Primary guard: exact ID match → skip (O(1) Collection lookup)
+    if (getItem(session.messages, normalizedMsg.id)) return state;
     // Content-match guard: if the arriving message has a canonical `msg_*` ID
     // and a local message matches by content, replace the local copy.
     if (hasCanonicalId(normalizedMsg.id)) {
-      const matchIdx = findContentMatch(session.messages, normalizedMsg);
-      if (matchIdx !== -1 && !hasCanonicalId(session.messages[matchIdx].id)) {
-        const newMessages = [...session.messages];
-        newMessages[matchIdx] = normalizedMsg;
-        return setSession(state, agentId, { ...session, messages: newMessages });
+      const currentList = getItems(session.messages);
+      const matchIdx = findContentMatch(currentList, normalizedMsg);
+      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+        const newList = currentList.slice();
+        newList[matchIdx] = normalizedMsg;
+        return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
       }
     }
-    const updated = pruneMessages([...session.messages, normalizedMsg]);
-    return setSession(state, agentId, { ...session, messages: updated });
+    const appended = getItems(session.messages);
+    appended.push(normalizedMsg);
+    const pruned = pruneMessages(appended);
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(pruned) });
   })
   .with(replaceAgentMessages, (state, { payload: [, agentId, messages] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
     const deduped = pruneMessages(sortMessagesByTimestamp(deduplicateMessages(messages.map(normalizeAgentMessage))));
-    return setSession(state, agentId, { ...session, messages: deduped });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(deduped) });
   })
   .with(removeAgentMessage, (state, { payload: [, agentId, messageId] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const filtered = session.messages.filter((m) => m.id !== messageId);
-    if (filtered.length === session.messages.length) return state;
-    return setSession(state, agentId, { ...session, messages: filtered });
+    const nextMessages = removeItem(session.messages, messageId);
+    if (nextMessages === session.messages) return state;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
   })
   .with(replaceAgentMessageById, (state, { payload: [, agentId, oldId, newMessage] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const idx = session.messages.findIndex((m) => m.id === oldId);
-    if (idx === -1) return state;
+    if (!getItem(session.messages, oldId)) return state;
     const normalized = normalizeAgentMessage(newMessage);
-    const swapped = session.messages.map((m, i) => (i === idx ? normalized : m));
-    const newMessages =
+    const currentList = getItems(session.messages);
+    const idx = currentList.findIndex((m) => m.id === oldId);
+    if (idx === -1) return state;
+    const swapped = currentList.map((m, i) => (i === idx ? normalized : m));
+    const newList =
       normalized.id === oldId
         ? swapped
         : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
-    return setSession(state, agentId, { ...session, messages: newMessages });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
   })
   .with(updateAgentMessage, (state, { payload: [, agentId, messageId, updates] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    const idx = session.messages.findIndex((m) => m.id === messageId);
-    if (idx === -1) return state;
-    const newMessages = [...session.messages];
-    newMessages[idx] = { ...newMessages[idx], ...updates };
-    return setSession(state, agentId, { ...session, messages: newMessages });
+    if (!getItem(session.messages, messageId)) return state;
+    const nextMessages = updateItem(session.messages, { ...updates, id: messageId });
+    if (nextMessages === session.messages) return state;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
   })
   .with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
     const session = getSession(state, agentId);
@@ -814,13 +836,13 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     // Create a minimal placeholder so the UI can show the processing indicator immediately.
     // The full session will be populated when upsertSession/upsertAgentSession arrives.
     const now = new Date(timestamp).toISOString();
-    const placeholder: AgentSession = {
+    const placeholder: StoredAgentSession = {
       id: agentId as AgentSession['id'],
       backendSessionId: null,
       workspaceId: wsId as AgentSession['workspaceId'],
       name: '',
       status: 'active' as any,
-      messages: [],
+      messages: buildMessagesCollection([]),
       isStreaming: true,
       isProcessing: true,
       createdAt: now,

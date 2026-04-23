@@ -16,6 +16,7 @@ import type { ElectronEventName } from "$shared/ipc-registry";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { StoreState } from "$lib/store/types";
 import type { WorkspaceAgentState } from "../workspace-agents-slice";
+import { getItems } from "../../../utils/collection-utils";
 import { AgentStatus } from "$shared/types";
 import { DEFAULT_AGENT_MODEL } from "$shared/constants/agent-services";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
@@ -582,15 +583,18 @@ function* handleBeforeUnload(): SagaGenerator<void> {
   const state: StoreState = yield* select((s: StoreState) => s);
   const streamingSessionIds = new Set<string>();
 
-  // Collect all sessions across ALL workspaces from agent-session slice
+  // Collect all sessions across ALL workspaces from agent-session slice.
+  // Messages are stored as a Collection; materialize to AgentMessage[] here so
+  // the persistence layer and downstream code keep receiving array-shaped sessions.
   const allSessions: AgentSession[] = [];
   const agentSessionsByAgent = state.agentSessions?.byAgentId || {};
   for (const wsState of Object.values(state.workspaceAgents?.byWorkspaceId || {})) {
     const ws = wsState as WorkspaceAgentState;
     const agentIds: string[] = ws?.agentIds || [];
     for (const agentId of agentIds) {
-      const session = agentSessionsByAgent[agentId] as AgentSession | undefined;
-      if (session) {
+      const stored = agentSessionsByAgent[agentId];
+      if (stored) {
+        const session = { ...stored, messages: getItems(stored.messages) } as AgentSession;
         if (session.isStreaming) streamingSessionIds.add(session.id as string);
         allSessions.push(session);
       }

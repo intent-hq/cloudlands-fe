@@ -71,12 +71,14 @@ export const selectGraphState = createSelector(
     const ws = state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
 
-    // Derive agents from the canonical agent-session slice
+    // Derive agents from the canonical agent-session slice.
+    // Materialize the Collection-backed `messages` field back to an array so
+    // downstream pure helpers (which expect AgentMessage[]) keep working.
     const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
     const agents: Record<string, AgentSession> = {};
     for (const id of agentIds) {
       const session = state.agentSessions?.byAgentId[id];
-      if (session) agents[id] = session;
+      if (session) agents[id] = { ...session, messages: getItems(session.messages) };
     }
 
     // Build a note title lookup from Redux state (replaces old notesStore.notes access)

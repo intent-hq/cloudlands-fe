@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
 import type { AgentSessionState } from './agent-session-types';
 import type { StoreState } from '../../types';
+import { createCollection, getItems } from '../../utils/collection-utils';
 import {
   agentSessionReducer,
   initialState,
@@ -35,6 +36,7 @@ import { chatSendStarted } from '../chat-state/chat-state-slice';
 import {
   selectAgentSession,
   selectAgentMessages,
+  selectAgentMessageById,
   selectAgentSessionsByWorkspace,
   selectAllAgentSessions,
   selectAgentIsStreaming,
@@ -73,8 +75,37 @@ function makeSession(
   };
 }
 
-function storeWith(agentSessions: AgentSessionState): StoreState {
-  return { agentSessions } as unknown as StoreState;
+/**
+ * Accepts a raw agent-session state shape whose sessions still carry
+ * `messages: AgentMessage[]` for test ergonomics and converts each session's
+ * `messages` field into the Collection shape expected by the slice at runtime.
+ */
+function storeWith(agentSessions: {
+  byAgentId: Record<string, AgentSession>;
+  agentIdsByWorkspace: Record<string, string[]>;
+}): StoreState {
+  const converted: AgentSessionState = {
+    byAgentId: {},
+    agentIdsByWorkspace: agentSessions.agentIdsByWorkspace,
+  };
+  for (const [id, session] of Object.entries(agentSessions.byAgentId)) {
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    converted.byAgentId[id] = {
+      ...session,
+      messages: createCollection<AgentMessage, 'id'>('id', messages),
+    };
+  }
+  return { agentSessions: converted } as unknown as StoreState;
+}
+
+/**
+ * Test helper: materialize the Collection-backed `messages` field for a stored
+ * session back to the ordered `AgentMessage[]` shape that tests historically
+ * asserted on. Returns an empty array when the session isn't present.
+ */
+function getMsgs(state: AgentSessionState, agentId: string): AgentMessage[] {
+  const stored = state.byAgentId[agentId];
+  return stored ? getItems(stored.messages) : [];
 }
 
 // ============================================================================
@@ -110,7 +141,7 @@ describe('agent-session-slice reducer', () => {
       const msg = makeMessage('m1');
       const session = makeSession('a1', 'ws-1', { messages: [msg, msg, msg] });
       const state = agentSessionReducer(initialState, upsertSession(session));
-      expect(state.byAgentId['a1'].messages).toHaveLength(1);
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
     it('overwrites existing session', () => {
@@ -158,14 +189,14 @@ describe('agent-session-slice reducer', () => {
     it('adds a message to an existing session', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, addMessage('a1', makeMessage('m1')));
-      expect(state.byAgentId['a1'].messages).toHaveLength(1);
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
     it('skips duplicate messages', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, addMessage('a1', makeMessage('m1')));
       state = agentSessionReducer(state, addMessage('a1', makeMessage('m1')));
-      expect(state.byAgentId['a1'].messages).toHaveLength(1);
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
 
     it('is no-op for unknown agentId', () => {
@@ -182,9 +213,9 @@ describe('agent-session-slice reducer', () => {
       for (const msg of msgs) {
         state = agentSessionReducer(state, addMessage('a1', msg));
       }
-      expect(state.byAgentId['a1'].messages).toHaveLength(500);
+      expect(getMsgs(state, 'a1')).toHaveLength(500);
       // Should keep the latest messages (m1 .. m500), first message m0 should be pruned
-      expect(state.byAgentId['a1'].messages[0].id).toBe('m1');
+      expect(getMsgs(state, 'a1')[0].id).toBe('m1');
     });
   });
 
@@ -196,7 +227,7 @@ describe('agent-session-slice reducer', () => {
         upsertSession(makeSession('a1', 'ws-1', { messages: [msg] })),
       );
       state = agentSessionReducer(state, updateMessage('a1', 'm1', { role: 'assistant' }));
-      expect(state.byAgentId['a1'].messages[0].role).toBe('assistant');
+      expect(getMsgs(state, 'a1')[0].role).toBe('assistant');
     });
 
     it('is no-op for unknown message', () => {
@@ -217,8 +248,8 @@ describe('agent-session-slice reducer', () => {
         upsertSession(makeSession('a1', 'ws-1', { messages: [makeMessage('old')] })),
       );
       state = agentSessionReducer(state, replaceMessages('a1', [msg, msg]));
-      expect(state.byAgentId['a1'].messages).toHaveLength(1);
-      expect(state.byAgentId['a1'].messages[0].id).toBe('m1');
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
+      expect(getMsgs(state, 'a1')[0].id).toBe('m1');
     });
   });
 
@@ -233,7 +264,7 @@ describe('agent-session-slice reducer', () => {
       const msg = makeMessage('m1');
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, updateSession('a1', { messages: [msg, msg] }));
-      expect(state.byAgentId['a1'].messages).toHaveLength(1);
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
     });
   });
 
@@ -434,6 +465,39 @@ describe('agent-session selectors', () => {
     expect(streaming).toHaveLength(1);
     expect(streaming[0].id).toBe('a1');
   });
+
+  describe('selectAgentMessageById', () => {
+    it('returns the matching message when agent and message exist (hit)', () => {
+      const m1 = makeMessage('m1');
+      const m2 = makeMessage('m2', 'assistant');
+      const session = makeSession('a1', 'ws-1', { messages: [m1, m2] });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentMessageById.select(state, 'a1', 'm2')).toEqual(m2);
+    });
+
+    it('returns undefined for an unknown messageId in an existing session (miss)', () => {
+      const session = makeSession('a1', 'ws-1', { messages: [makeMessage('m1')] });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentMessageById.select(state, 'a1', 'unknown')).toBeUndefined();
+    });
+
+    it('returns undefined when the agent session does not exist (no session)', () => {
+      const state = storeWith({ byAgentId: {}, agentIdsByWorkspace: {} });
+      expect(selectAgentMessageById.select(state, 'a1', 'm1')).toBeUndefined();
+    });
+
+    it('returns undefined when agentSessions state is undefined', () => {
+      const state = { agentSessions: undefined } as unknown as StoreState;
+      expect(selectAgentMessageById.select(state, 'a1', 'm1')).toBeUndefined();
+    });
+
+    it('returns undefined when agentId or messageId is empty', () => {
+      const session = makeSession('a1', 'ws-1', { messages: [makeMessage('m1')] });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentMessageById.select(state, '', 'm1')).toBeUndefined();
+      expect(selectAgentMessageById.select(state, 'a1', '')).toBeUndefined();
+    });
+  });
 });
 
 describe('removeMessage (native action)', () => {
@@ -443,8 +507,8 @@ describe('removeMessage (native action)', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
     state = agentSessionReducer(state, removeMessage('a1', 'm2'));
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
-    expect(state.byAgentId['a1'].messages.map((m) => m.id)).toEqual(['m1', 'm3']);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['m1', 'm3']);
   });
 
   it('returns same state when message not found', () => {
@@ -469,8 +533,8 @@ describe('removeAgentMessage (cross-slice action)', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
     state = agentSessionReducer(state, removeAgentMessage('ws-1', 'a1', 'm1'));
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('m2');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('m2');
   });
 
   it('returns same state when message not found', () => {
@@ -526,7 +590,7 @@ describe('chatSendStarted — placeholder session (restored workspace regression
     expect(session).toBeDefined();
     expect(session.isProcessing).toBe(true);
     expect(session.isStreaming).toBe(true);
-    expect(session.messages).toEqual([]);
+    expect(getMsgs(state, 'agent-new')).toEqual([]);
     expect(session.workspaceId).toBe('ws-1');
     // Placeholder should be registered in workspace index
     expect(state.agentIdsByWorkspace['ws-1']).toContain('agent-new');
@@ -1013,7 +1077,7 @@ describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
 
     const session = makeSession('a1', 'ws-1', { messages });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    const result = state.byAgentId['a1'].messages;
+    const result = getMsgs(state, 'a1');
 
     expect(result).toHaveLength(500);
     // The two newest messages MUST survive (they should be at the end after sort+prune)
@@ -1084,8 +1148,8 @@ describe('addMessage content-match dedup', () => {
     const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
     state = agentSessionReducer(state, addMessage('a1', backendMsg));
     // Should still have exactly 1 message, with the canonical ID
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_backend');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_backend');
   });
 
   it('does not replace when content differs', () => {
@@ -1094,7 +1158,7 @@ describe('addMessage content-match dedup', () => {
     const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Goodbye world', '2024-01-01T00:00:02.000Z');
     state = agentSessionReducer(state, addMessage('a1', backendMsg));
     // Should have 2 messages (no match)
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 
   it('does not replace when roles differ', () => {
@@ -1102,7 +1166,7 @@ describe('addMessage content-match dedup', () => {
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
     const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
     state = agentSessionReducer(state, addMessage('a1', backendMsg));
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 
   it('does not replace when timestamps are far apart', () => {
@@ -1110,7 +1174,7 @@ describe('addMessage content-match dedup', () => {
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
     const backendMsg = makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T01:00:00.000Z');
     state = agentSessionReducer(state, addMessage('a1', backendMsg));
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 
   it('does not replace when incoming ID is not canonical', () => {
@@ -1119,7 +1183,7 @@ describe('addMessage content-match dedup', () => {
     const otherMsg = makeContentMessage('local-uuid-2', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z');
     state = agentSessionReducer(state, addMessage('a1', otherMsg));
     // Both should remain since the incoming ID isn't canonical
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 });
 
@@ -1138,8 +1202,8 @@ describe('addAgentMessage (cross-slice) content-match dedup', () => {
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
     const backendMsg = makeContentMessage('msg_canonical', 'assistant', 'Reply text', '2024-01-01T00:00:03.000Z');
     state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', backendMsg));
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
   });
 });
 
@@ -1163,7 +1227,7 @@ describe('replaceMessageById', () => {
       contentBlocks: [{ type: 'text', text: 'Middle' }],
     };
     state = agentSessionReducer(state, replaceMessageById('a1', 'local-uuid-b', canonicalB));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs).toHaveLength(3);
     expect(msgs[0].id).toBe('msg_a');
     expect(msgs[1].id).toBe('msg_b_canonical');
@@ -1204,7 +1268,7 @@ describe('replaceMessageById', () => {
       contentBlocks: [{ type: 'text', text: 'Second' }],
     };
     state = agentSessionReducer(state, replaceMessageById('a1', 'msg_m2', newMsg));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs).toHaveLength(3);
     expect(msgs[0].id).toBe('msg_m1');
     expect(msgs[1].id).toBe('msg_new');
@@ -1225,7 +1289,7 @@ describe('replaceMessageById', () => {
       upsertSession(makeSession('a1', 'ws-1', { messages: [local, canonicalAlreadyThere] })),
     );
     state = agentSessionReducer(state, replaceMessageById('a1', 'local-uuid', canonicalAlreadyThere));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs).toHaveLength(1);
     expect(msgs[0].id).toBe('msg_canonical');
   });
@@ -1251,7 +1315,7 @@ describe('replaceAgentMessageById', () => {
       contentBlocks: [{ type: 'text', text: 'Second' }],
     };
     state = agentSessionReducer(state, replaceAgentMessageById('ws-1', 'a1', 'msg_m2', newMsg));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs).toHaveLength(3);
     expect(msgs[0].id).toBe('msg_m1');
     expect(msgs[1].id).toBe('msg_new');
@@ -1272,7 +1336,7 @@ describe('replaceAgentMessageById', () => {
       upsertSession(makeSession('a1', 'ws-1', { messages: [local, canonicalAlreadyThere] })),
     );
     state = agentSessionReducer(state, replaceAgentMessageById('ws-1', 'a1', 'local-uuid', canonicalAlreadyThere));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs).toHaveLength(1);
     expect(msgs[0].id).toBe('msg_canonical');
   });
@@ -1295,8 +1359,8 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     // upsertSession runs deduplicateMessages internally
     const session = makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
   });
 
   it('keeps both messages when content differs', () => {
@@ -1314,7 +1378,7 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     };
     const session = makeSession('a1', 'ws-1', { messages: [msg1, msg2] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 
   it('collapses multiple non-canonical duplicates when canonical arrives (localA, localB, canonical)', () => {
@@ -1338,8 +1402,8 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     };
     const session = makeSession('a1', 'ws-1', { messages: [localA, localB, canonical] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
   });
 
   it('does NOT collapse same-text messages when one has a missing timestamp (fail-closed)', () => {
@@ -1358,7 +1422,7 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     const session = makeSession('a1', 'ws-1', { messages: [msgA, msgB] });
     const state = agentSessionReducer(initialState, upsertSession(session));
     // Both must survive — missing timestamp prevents content-hash collapse
-    expect(state.byAgentId['a1'].messages).toHaveLength(2);
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
   });
 
   it('collapses multiple non-canonical duplicates when canonical is first (canonical, localA, localB)', () => {
@@ -1382,8 +1446,8 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     };
     const session = makeSession('a1', 'ws-1', { messages: [canonical, localA, localB] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(state.byAgentId['a1'].messages).toHaveLength(1);
-    expect(state.byAgentId['a1'].messages[0].id).toBe('msg_canonical');
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
   });
 });
 
@@ -1401,7 +1465,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
       ],
     });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
@@ -1414,7 +1478,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
       ],
     });
     const state = agentSessionReducer(initialState, upsertAgentSession('ws-1', session));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
@@ -1426,7 +1490,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
       makeUniqueMessage('m2', 'user', '2024-01-01T00:00:02.000Z'),
     ];
     state = agentSessionReducer(state, replaceMessages('a1', messages));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
@@ -1439,7 +1503,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
       ],
     });
     const state = agentSessionReducer(initialState, bulkUpsertSessions([session]));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
@@ -1452,7 +1516,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
       ],
     });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    const msgs = state.byAgentId['a1'].messages;
+    const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 });
@@ -1470,7 +1534,7 @@ describe('fixture regression: agent-b93c1222-corrupted.json', () => {
       workspaceId: fixture.workspaceId as any,
     };
     const state = agentSessionReducer(initialState, upsertSession(session));
-    const msgs = state.byAgentId[fixture.id].messages;
+    const msgs = getMsgs(state, fixture.id);
 
     // Should have collapsed from 6 to 4 (2 duplicate pairs removed)
     expect(msgs).toHaveLength(4);
@@ -1494,7 +1558,7 @@ describe('fixture regression: agent-b93c1222-corrupted.json', () => {
       workspaceId: fixture.workspaceId as any,
     };
     const state = agentSessionReducer(initialState, bulkUpsertSessions([session]));
-    const msgs = state.byAgentId[fixture.id].messages;
+    const msgs = getMsgs(state, fixture.id);
 
     expect(msgs).toHaveLength(4);
 
@@ -1514,7 +1578,7 @@ describe('fixture regression: agent-b93c1222-corrupted.json', () => {
       initialState,
       upsertAgentSession(fixture.workspaceId, session),
     );
-    const msgs = state.byAgentId[fixture.id].messages;
+    const msgs = getMsgs(state, fixture.id);
 
     expect(msgs).toHaveLength(4);
     expect(msgs.map((m) => m.id)).toEqual([

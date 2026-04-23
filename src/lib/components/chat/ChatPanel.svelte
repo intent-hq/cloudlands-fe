@@ -1399,23 +1399,9 @@
     });
   }
 
-  // CRITICAL FIX: Deduplicate messages before grouping to prevent Svelte "duplicate key" error
-  // This is a safety net that catches duplicates regardless of their source (disk, race conditions, etc.)
-  let deduplicatedMessages = $derived.by(() => {
-    const seen = new Set<string>();
-    return chatState.messages.filter((m) => {
-      if (seen.has(m.id)) {
-        logger.warn('[ChatPanel] Filtering duplicate message before render', { messageId: m.id });
-        return false;
-      }
-      seen.add(m.id);
-      return true;
-    });
-  });
-
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
-  let groupedMessages = $derived(groupMessagesByDate(deduplicatedMessages));
+  let groupedMessages = $derived(groupMessagesByDate(chatState.messages));
 
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
@@ -1428,37 +1414,6 @@
       }
     }
     return undefined;
-  });
-
-  // DEBUG: Track message changes to diagnose duplicate flash issue
-  $effect(() => {
-    const messageIds = chatState.messages.map((m) => m.id);
-    const uniqueIds = new Set(messageIds);
-    const hasDuplicateIds = messageIds.length !== uniqueIds.size;
-
-    // Log group first message IDs to check for key stability
-    const groupKeys = groupedMessages.map((g, i) => g.messages[0]?.id ?? `fallback-${i}`);
-
-    logger.debug('[ChatPanel] DEBUG: Message state changed', {
-      instanceId,
-      agentId,
-      messageCount: chatState.messages.length,
-      hasDuplicateIds,
-      isStreaming: chatState.isStreaming,
-      isProcessing: chatState.isProcessing,
-      messageIds: messageIds.slice(-3), // last 3 message IDs
-      groupCount: groupedMessages.length,
-      groupKeys,
-    });
-
-    if (hasDuplicateIds) {
-      logger.warn('[ChatPanel] DUPLICATE MESSAGE IDS DETECTED!', {
-        instanceId,
-        agentId,
-        messageIds,
-        duplicates: messageIds.filter((id, i) => messageIds.indexOf(id) !== i),
-      });
-    }
   });
 
   // PERF: Pre-compute total turn count for lazy loading decisions
@@ -3517,8 +3472,12 @@
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
+                    <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
+                         Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                     <ChatMessage
-                      {message}
+                      message={sandboxMode ? message : undefined}
+                      agentId={sandboxMode ? undefined : agentId}
+                      messageId={sandboxMode ? undefined : message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
@@ -3619,8 +3578,12 @@
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
+                    <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
+                         Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                     <ChatMessage
-                      {message}
+                      message={sandboxMode ? message : undefined}
+                      agentId={sandboxMode ? undefined : agentId}
+                      messageId={sandboxMode ? undefined : message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
@@ -3855,8 +3818,12 @@
                           data-message-index={globalIndex}
                           class="message-nav-target z-20 mb-9 bg-sidebar relative"
                         >
+                          <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
+                               Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                           <ChatMessage
-                            {message}
+                            message={sandboxMode ? message : undefined}
+                            agentId={sandboxMode ? undefined : agentId}
+                            messageId={sandboxMode ? undefined : message.id}
                             {workspace}
                             onEditSubmit={(newText, model) =>
                               handleEditMessage(message.id, newText, model)}
@@ -3912,8 +3879,12 @@
                           data-turn-number={turnNumber}
                           class="message-nav-target"
                         >
+                          <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
+                               Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                           <ChatMessage
-                            {message}
+                            message={sandboxMode ? message : undefined}
+                            agentId={sandboxMode ? undefined : agentId}
+                            messageId={sandboxMode ? undefined : message.id}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
                             onEditSubmit={(newText, model) =>

@@ -22,6 +22,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectAgentMessageById } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
@@ -92,7 +93,17 @@
       };
 
   interface Props {
-    message: AgentMessage;
+    /**
+     * Fallback message object. Used when `agentId` + `messageId` are not both
+     * provided (e.g. pending/optimistic messages, sandbox mode). When both ids
+     * are supplied, the component subscribes to Redux via `selectAgentMessageById`
+     * and the selector result drives rendering instead of this prop.
+     */
+    message?: AgentMessage;
+    /** Agent session id; when paired with `messageId`, enables per-message Redux subscription. */
+    agentId?: string;
+    /** Message id; when paired with `agentId`, enables per-message Redux subscription. */
+    messageId?: string;
     isStreaming?: boolean;
     showTimestamp?: boolean;
     animationDelay?: number;
@@ -121,7 +132,9 @@
   }
 
   let {
-    message,
+    message: messageProp,
+    agentId,
+    messageId,
     isStreaming = false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showTimestamp: _showTimestamp = true,
@@ -142,6 +155,20 @@
     onScrollToPrevious,
     backendSessionId,
   }: Props = $props();
+
+  // Per-message Redux subscription. Must be called at component-init time
+  // (top of <script>) per src/lib/store/AGENTS.md §5. The selector short-circuits
+  // to `undefined` when either id is empty, so subscribing unconditionally with
+  // empty-string fallbacks is safe and avoids a conditional-store gotcha with
+  // Svelte's `$store` auto-subscription.
+  const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
+
+  // Looked-up message drives ALL downstream $derived values, the `data-message-id`
+  // attribute, and the `{#if !message}` guard. When both ids are provided we use
+  // the selector result (live reference from Redux); otherwise we fall back to
+  // the `message` prop to preserve today's behavior for pending/optimistic
+  // messages and sandbox mode where ids may not be Redux-backed.
+  let message = $derived(agentId && messageId ? $storeMessage$ : messageProp);
 
   // Edit mode state
   let isEditing = $state(false);

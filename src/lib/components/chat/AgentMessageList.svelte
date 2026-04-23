@@ -95,6 +95,9 @@
       class:assistant-message={message.role === 'assistant'}
       transition:fade={{ duration: enableTransitions ? animationDuration : 0 }}
     >
+      <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
+           so we can't use ChatMessage's Redux-backed subscription here. Pass the
+           message object directly. -->
       {#if message.role === 'user'}
         <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
       {:else if message.role === 'assistant'}
