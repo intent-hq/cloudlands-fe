@@ -87,7 +87,7 @@
   }
 
   function makeCommitFileClickHandler(commitHash: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     return (_filePath: string, _commitHash?: string, _staged?: boolean) => {
       onOpenCommit?.(commitHash);
     };

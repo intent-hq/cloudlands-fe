@@ -93,7 +93,6 @@ import {
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
-  requestSubscriptionFetch,
 } from '../agent-subscription-ui-slice';
 
 const WS = 'ws-test';

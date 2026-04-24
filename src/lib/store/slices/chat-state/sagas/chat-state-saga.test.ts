@@ -90,8 +90,16 @@ const mockRemoveAgent = Object.assign(
   (...args: any[]) => ({ type: "workspaceAgents/removeAgent", payload: args }),
   { type: "workspaceAgents/removeAgent", toString: () => "workspaceAgents/removeAgent" },
 );
+const mockRemoveWorkspaceAgentState = Object.assign(
+  (...args: any[]) => ({ type: "workspaceAgents/removeWorkspaceAgentState", payload: args }),
+  {
+    type: "workspaceAgents/removeWorkspaceAgentState",
+    toString: () => "workspaceAgents/removeWorkspaceAgentState",
+  },
+);
 vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
   removeAgent: mockRemoveAgent,
+  removeWorkspaceAgentState: mockRemoveWorkspaceAgentState,
 }));
 
 const mockWorkspaceUnmounted = Object.assign(
@@ -102,14 +110,21 @@ vi.mock("../../workspace-lifecycle/workspace-lifecycle-slice", () => ({
   workspaceUnmounted: mockWorkspaceUnmounted,
 }));
 
+const selectAgentByIdMock = vi.fn();
+const selectAllWorkspaceAgentsMock = vi.fn(() => [] as any[]);
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
-  selectAgentById: { select: vi.fn() },
-  selectAllWorkspaceAgents: { select: vi.fn(() => []) },
+  selectAgentById: {
+    select: (state: any, agentId: string) => selectAgentByIdMock(state, agentId),
+  },
+  selectAllWorkspaceAgents: {
+    select: (state: any, wsId: string) => selectAllWorkspaceAgentsMock(state, wsId),
+  },
 }));
 
 import {
   chatSendStarted,
   chatStuckStateCleared,
+  streamCompleted,
 } from "../chat-state-slice";
 import { STATE_RECONCILIATION_INTERVAL_MS } from "../chat-state-types";
 
@@ -244,5 +259,113 @@ describe("chat-state-saga: per-agentId dedup (P2-5)", () => {
     // If dedup works, we shouldn't accumulate tasks — only the latest set runs
     // This test passes as long as it doesn't hang or error from task accumulation
     expect(true).toBe(true);
+  });
+});
+
+
+describe("chat-state-saga: preserve per-agent tasks across workspace unmount (Task C)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    selectAgentByIdMock.mockReset();
+    selectAllWorkspaceAgentsMock.mockReset();
+    selectAllWorkspaceAgentsMock.mockImplementation(() => []);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps watchdog tasks alive on workspaceUnmounted while the agent is still streaming, then cancels them on streamCompleted", async () => {
+    const { chatStateSaga, __getActiveSendTasksForTesting } = await import(
+      "./chat-state-saga"
+    );
+    __getActiveSendTasksForTesting().clear();
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    const sessionA = {
+      id: "agent-X",
+      workspaceId: "ws-A",
+      isStreaming: true,
+      isProcessing: true,
+    };
+
+    selectAllWorkspaceAgentsMock.mockImplementation((_state: any, wsId: string) =>
+      wsId === "ws-A" ? [sessionA] : [],
+    );
+    selectAgentByIdMock.mockImplementation((_state: any, agentId: string) =>
+      agentId === "agent-X" ? sessionA : undefined,
+    );
+
+    const getState = () => ({
+      chatState: {
+        byAgentId: {
+          "agent-X": {
+            isStreaming: true,
+            isProcessing: true,
+            isStalled: false,
+            lastChunkTime: Date.now(),
+            streamingStartTime: Date.now(),
+            lastChunkReceivedAt: Date.now(),
+            statusEvents: [],
+            trackedWorkspaceId: "ws-A",
+          },
+        },
+      },
+      agentSessions: {
+        byAgentId: { "agent-X": sessionA },
+        agentIdsByWorkspace: { "ws-A": ["agent-X"] },
+      },
+      workspaceAgents: { byWorkspaceId: {} },
+    });
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState,
+      },
+      chatStateSaga,
+    );
+
+    channel.put(chatSendStarted("agent-X", "ws-A"));
+    await vi.advanceTimersByTimeAsync(50);
+
+    const mapAfterStart = __getActiveSendTasksForTesting();
+    expect(mapAfterStart.has("agent-X")).toBe(true);
+    const tasksAfterStart = mapAfterStart.get("agent-X")!;
+    expect(tasksAfterStart.length).toBeGreaterThan(0);
+    expect(tasksAfterStart.every((t) => t.isRunning())).toBe(true);
+
+    // Workspace unmounts while the agent is still streaming/processing —
+    // watchdog tasks must remain alive.
+    channel.put(mockWorkspaceUnmounted("ws-A"));
+    await vi.advanceTimersByTimeAsync(50);
+
+    const mapAfterUnmount = __getActiveSendTasksForTesting();
+    expect(mapAfterUnmount.has("agent-X")).toBe(true);
+    const tasksAfterUnmount = mapAfterUnmount.get("agent-X")!;
+    expect(tasksAfterUnmount.every((t) => t.isRunning())).toBe(true);
+
+    // Simulate the agent completing (equivalent to an `agent:completed`
+    // event reaching the chat-state slice): session lifecycle event fires,
+    // watchdogs must be cancelled and the map entry cleared.
+    sessionA.isStreaming = false;
+    sessionA.isProcessing = false;
+    channel.put(
+      streamCompleted("agent-X", {
+        lastAttemptedMessage: null,
+        modelUnavailable: null,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+
+    const mapAfterComplete = __getActiveSendTasksForTesting();
+    expect(mapAfterComplete.has("agent-X")).toBe(false);
+    expect(tasksAfterUnmount.every((t) => !t.isRunning())).toBe(true);
   });
 });

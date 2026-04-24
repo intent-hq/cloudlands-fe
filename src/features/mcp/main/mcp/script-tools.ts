@@ -36,7 +36,7 @@ export class ListScriptsTool extends BaseMCPTool {
     this.workspaceId = workspaceId;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async execute(_call: ToolCall): Promise<ToolResult> {
     try {
       const scripts = await readScripts(this.workspaceId);

@@ -62,7 +62,6 @@ import {
 import {
   handleLoadWorkspaceNotesRequested,
   handleRefreshWorkspaceNotesRequested,
-  handleNoteSequenceCleanup,
   watchNoteUpdatedSaga,
   watchTaskStatusChangedSaga,
   workspaceNotesSaga,
@@ -72,8 +71,6 @@ import {
   watchNoteDeletedSaga,
   _resetNoteUpdateSequence,
 } from "./workspace-notes-saga";
-import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { selectNoteById } from "../workspace-notes-selectors";
 import { notesCrudSaga } from "./notes-crud-saga";
 
 function mockNote(id: string, workspaceId = "ws-1"): Note {

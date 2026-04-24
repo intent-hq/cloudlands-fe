@@ -1,5 +1,4 @@
 import { Marked } from 'marked';
-import { addChoiceBlockSupport } from './tiptap-choice-block-extension';
 import { addTasksBlockSupport } from './tiptap-task-block-extension';
 
 /**

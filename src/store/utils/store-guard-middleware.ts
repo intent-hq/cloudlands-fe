@@ -8,7 +8,7 @@ type StoreTaggedAction = UnknownAction & {
 };
 
 export const createStoreGuardMiddleware = (expectedTarget: StoreTarget): Middleware => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   return (_store) => (next) => (action) => {
     const taggedAction = action as StoreTaggedAction;
 

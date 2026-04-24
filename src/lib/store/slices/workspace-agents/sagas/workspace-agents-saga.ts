@@ -55,6 +55,7 @@ import {
 } from "../../terminals/terminals-selectors";
 import { loadAgentsFromDiskSaga } from "./agent-loading-saga";
 import { watchAgentCreationSaga } from "./agent-creation-saga";
+import { watchEnsureAgentSessionLoadedSaga } from "./ensure-agent-session-saga";
 import { heartbeatSaga } from "./heartbeat-saga";
 
 
@@ -406,6 +407,19 @@ export function* watchWorkspaceAgentEventsForWorkspaceSaga(
   ]);
 }
 
+/**
+ * Cancels workspace-scoped tasks when a workspace unmounts.
+ *
+ * The tasks tracked in `workspaceAgentTasks` are workspace-level
+ * (`watchFileTrackingLifecycleSaga` and `watchDrawerGuardSaga`) — they operate
+ * on UI concerns tied to a workspace being mounted (drawer open state, git
+ * status polling). They do not represent per-agent background work, so it is
+ * safe to cancel them on unmount; their state is rebuilt on remount.
+ *
+ * Per-agent background work lives in `chat-state-saga`'s `activeSendTasks`
+ * map, which has its own unmount handling that preserves watchdogs while
+ * their agent is still streaming or processing.
+ */
 export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
   action: ReturnType<typeof workspaceUnmounted>
 ) {
@@ -461,6 +475,7 @@ export function* workspaceAgentsSaga() {
     fork(watchLateInitialAgentHydrationRecoverySaga),
     fork(heartbeatSaga),
     fork(watchSpecWriteTrackingSaga),
+    fork(watchEnsureAgentSessionLoadedSaga),
   ]);
 }
 

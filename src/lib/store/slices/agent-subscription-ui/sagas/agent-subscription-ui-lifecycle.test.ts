@@ -95,7 +95,6 @@ vi.mock('../../workspace-lifecycle/workspace-lifecycle-slice', () => ({
 import {
   agentSubscriptionUISaga,
   handleWorkspaceMounted,
-  handleWorkspaceUnmounted,
   _getWakeupGeneration,
 } from './agent-subscription-ui-saga';
 import {
@@ -172,7 +171,7 @@ function createSagaRunner() {
   };
 }
 
-const flush = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+const _flush = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
 describe('agent-subscription-ui lifecycle', () => {
   beforeEach(() => {
@@ -193,7 +192,7 @@ describe('agent-subscription-ui lifecycle', () => {
   // 1. workspaceMounted creates exactly one channel task (no duplicates)
   // -----------------------------------------------------------------------
   it('workspaceMounted creates exactly one channel task (no duplicates)', async () => {
-    const listeners = captureListeners();
+    const _listeners = captureListeners();
     const runner = createSagaRunner();
 
     // Mount the same workspace twice
@@ -241,7 +240,7 @@ describe('agent-subscription-ui lifecycle', () => {
 
     // All listeners for WS_A should have been cleaned up
     // Emit another event — state should NOT change
-    const stateBeforeSecondEvent = { ...runner.state };
+    const _stateBeforeSecondEvent = { ...runner.state };
     emitIpcEvent(listeners, 'agent:subscribed', {
       workspaceId: WS_A,
       agentId: AGENT_1,
@@ -263,7 +262,7 @@ describe('agent-subscription-ui lifecycle', () => {
   // 3. Retroactive mount does not create duplicate watcher
   // -----------------------------------------------------------------------
   it('retroactive mount does not create duplicate watcher if normal mount already happened', async () => {
-    const listeners = captureListeners();
+    const _listeners = captureListeners();
     selectActiveWorkspaceIdMock.mockReturnValue(WS_A);
 
     const runner = createSagaRunner();
@@ -358,7 +357,7 @@ describe('agent-subscription-ui lifecycle', () => {
 
     const key = makeKey(WS_A, AGENT_1);
     expect(runner.state.entries[key]?.waitingState).toBe('woken');
-    const firstTimestamp = runner.state.entries[key]?.wokenUpInfo?.timestamp;
+    const _firstTimestamp = runner.state.entries[key]?.wokenUpInfo?.timestamp;
 
     // Advance 3 seconds (before auto-dismiss of first)
     await vi.advanceTimersByTimeAsync(3000);

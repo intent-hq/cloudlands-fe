@@ -10,7 +10,6 @@ import {
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
 import { shouldDeferSpecPanel } from '$lib/store/slices/app-layout/sagas/spec-panel-saga';
-import { acquireAgentLoadLock, releaseAgentLoadLock } from '$lib/utils/agent-subscription.svelte';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { AgentId } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
@@ -27,6 +26,7 @@ import {
 import {
   selectAgentById,
   selectAgentsLoaded,
+  selectForegroundWorkspaceAgents,
   selectInitialAgentId,
   selectInitialAgentConfig,
   selectIsLoadingAgents,
@@ -117,9 +117,7 @@ export function* waitForPanelLayoutRestore(wsId: string) {
  * Race-prevention strategy (mount-race hardening):
  * 1. `isLoadingAgents` is set BEFORE the async work begins, acting as a saga-level
  *    guard that prevents duplicate concurrent loads for the same workspace.
- * 2. `acquireAgentLoadLock` prevents the legacy AgentSubscription disk-sync path
- *    from running a redundant parallel load.
- * 3. Final state publication (`setAgents` + `setAgentsLoaded`) is wrapped in
+ * 2. Final state publication (`setAgents` + `setAgentsLoaded`) is wrapped in
  *    `lockReactiveSelectors` so the sidebar never observes an intermediate state
  *    where agents are set but `agentsLoaded` is still false (or vice-versa).
  */
@@ -134,12 +132,10 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
   const alreadyLoading: boolean = yield* select((s) => selectIsLoadingAgents.select(s, wsId));
   if (alreadyLoaded || alreadyLoading) return;
   yield* put(setIsLoadingAgents(wsId, true));
-  yield* call(acquireAgentLoadLock, wsId);
   try {
-    // 1. Existing agents in memory
-    const existingAgents: AgentSession[] = yield* call(
-      [agentService, agentService.getSessionsForWorkspace],
-      wsId,
+    // 1. Existing foreground agents from Redux
+    const existingAgents: AgentSession[] = yield* select((s) =>
+      selectForegroundWorkspaceAgents.select(s, wsId),
     );
     const existingAgentIds = new Set(existingAgents.filter((a) => a).map((a) => a.id));
     // 2. Load from disk
@@ -181,10 +177,9 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     yield* restoreInitialAgent(wsId, effectiveInitialAgentId, diskAgents, existingAgentIds);
     // 4. Restore remaining agents in parallel
     yield* restoreRemainingAgents(wsId, diskAgents, existingAgentIds, effectiveInitialAgentId);
-    // 5. Collect final agent list from service
-    const restoredAgents: AgentSession[] = yield* call(
-      [agentService, agentService.getSessionsForWorkspace],
-      wsId,
+    // 5. Collect final agent list from Redux
+    const restoredAgents: AgentSession[] = yield* select((s) =>
+      selectForegroundWorkspaceAgents.select(s, wsId),
     );
     const filteredAgents = restoredAgents.filter((a) => a && !String(a.id).startsWith('terminal-'));
     // Publish agents and loaded flag atomically so the sidebar never
@@ -228,7 +223,6 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
       yield* put(setAgentsLoaded(wsId, true));
     });
   } finally {
-    yield* call(releaseAgentLoadLock, wsId);
     yield* put(setIsLoadingAgents(wsId, false));
   }
 }

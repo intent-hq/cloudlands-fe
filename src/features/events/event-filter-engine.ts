@@ -232,7 +232,7 @@ export class EventFilterEngine {
  * Pure utility – builds an EventFilter[] array from a fluent API.
  * Moved here from workspace-event-bus.ts during Redux migration cleanup.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export class EventFilterBuilder<_T extends WorkspaceEvent = WorkspaceEvent> {
   private filters: EventFilter[] = [];
 

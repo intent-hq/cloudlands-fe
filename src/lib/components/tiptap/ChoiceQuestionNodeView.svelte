@@ -13,15 +13,15 @@
 
   // Props are passed directly from SvelteNodeViewRenderer and are reactive via $state
   let {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     node: _node,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     selected: _selected,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     updateAttributes: _updateAttributes,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     getPos: _getPos,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     deleteNode: _deleteNode,
   }: NodeViewProps = $props();
 </script>

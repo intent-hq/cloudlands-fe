@@ -47,7 +47,7 @@ import {
   selectChatLastChunkReceivedAt,
 } from '../chat-state-selectors';
 import { selectAgentById, selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
-import { removeAgent } from '../../workspace-agents/workspace-agents-slice';
+import { removeAgent, removeWorkspaceAgentState } from '../../workspace-agents/workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const logger = createLogger('ChatStateSaga');
@@ -299,6 +299,20 @@ function* clearStatusEventsStorage(agentId: string): SagaGenerator<void> {
  */
 const activeSendTasks = new Map<string, Task[]>();
 
+/** @internal Exposed for tests so they can assert task liveness after dispatches. */
+export function __getActiveSendTasksForTesting(): Map<string, Task[]> {
+  return activeSendTasks;
+}
+
+function* cancelAndForgetTasks(agentId: string, tasks: Task[]): SagaGenerator<void> {
+  for (const task of tasks) {
+    if (task.isRunning()) {
+      yield* cancel(task);
+    }
+  }
+  activeSendTasks.delete(agentId);
+}
+
 /** When a send starts, fork stall detection and state reconciliation for that agent */
 function* watchSendStarted(): SagaGenerator<void> {
   yield* takeEvery(chatSendStarted, function* (action) {
@@ -352,29 +366,75 @@ function* watchAgentRemoved(): SagaGenerator<void> {
     const [, agentId] = action.payload;
     const existing = activeSendTasks.get(agentId);
     if (existing) {
-      for (const task of existing) {
-        yield* cancel(task);
-      }
-      activeSendTasks.delete(agentId);
+      yield* call(cancelAndForgetTasks, agentId, existing);
     }
   });
 }
 
-/** Cancel and remove tracked tasks for all agents in a workspace when it unmounts */
+/**
+ * When a workspace unmounts, cancel per-agent watchdog tasks ONLY for agents
+ * whose session is idle (not streaming and not processing).
+ *
+ * Agents that are still streaming/processing keep their watchdogs alive so
+ * stall detection and state reconciliation continue running in the background
+ * until the agent itself emits a completion/failure/stuck-cleared event
+ * (handled by `watchSessionLifecycleForTaskCleanup`) or the workspace is fully
+ * deleted (handled by `watchWorkspaceAgentStateRemoved`).
+ */
 function* watchWorkspaceUnmountedForCleanup(): SagaGenerator<void> {
   yield* takeEvery(workspaceUnmounted, function* (action) {
     const [wsId] = action.payload;
-    // Look up which agents belong to this workspace so we can clean their entries
     const agents = yield* select(
       (state) => selectAllWorkspaceAgents.select(state, wsId),
     );
     for (const agent of agents) {
       const existing = activeSendTasks.get(agent.id);
+      if (!existing) continue;
+      const stillActive = agent.isStreaming === true || agent.isProcessing === true;
+      if (stillActive) {
+        continue;
+      }
+      yield* call(cancelAndForgetTasks, agent.id, existing);
+    }
+  });
+}
+
+/**
+ * When a chat-session lifecycle event fires (completion, error, stop, reset,
+ * stuck cleared), the `stallDetectionLoop` / `stateReconciliationLoop` loops
+ * self-terminate on their next tick because they guard on `isStreaming` /
+ * `isProcessing`. This watcher proactively cancels any still-running forks
+ * and clears the map entry so that agents which completed while their
+ * workspace was unmounted don't leave stale entries in `activeSendTasks`.
+ */
+function* watchSessionLifecycleForTaskCleanup(): SagaGenerator<void> {
+  yield* takeEvery(
+    [streamCompleted, streamErrored, chatStopCompleted, chatReset, chatInterrupted, chatStuckStateCleared],
+    function* (action) {
+      const [agentId] = action.payload;
+      const existing = activeSendTasks.get(agentId);
       if (existing) {
-        for (const task of existing) {
-          yield* cancel(task);
-        }
-        activeSendTasks.delete(agent.id);
+        yield* call(cancelAndForgetTasks, agentId, existing);
+      }
+    },
+  );
+}
+
+/**
+ * When a workspace is fully deleted (`removeWorkspaceAgentState`), cancel
+ * every tracked watchdog that was running for an agent in that workspace —
+ * even if the agent's session still reports streaming/processing (its state
+ * can no longer be meaningfully observed once the workspace is gone).
+ */
+function* watchWorkspaceAgentStateRemoved(): SagaGenerator<void> {
+  yield* takeEvery(removeWorkspaceAgentState, function* (action) {
+    const [wsId] = action.payload;
+    for (const [agentId, tasks] of Array.from(activeSendTasks.entries())) {
+      const session = yield* select(
+        (state) => selectAgentById.select(state, agentId),
+      );
+      if (!session || String(session.workspaceId) === String(wsId)) {
+        yield* call(cancelAndForgetTasks, agentId, tasks);
       }
     }
   });
@@ -395,5 +455,7 @@ export function* chatStateSaga(): SagaGenerator<void> {
   yield* fork(chatLifecycleSaga);
   yield* fork(watchAgentRemoved);
   yield* fork(watchWorkspaceUnmountedForCleanup);
+  yield* fork(watchSessionLifecycleForTaskCleanup);
+  yield* fork(watchWorkspaceAgentStateRemoved);
 }
 

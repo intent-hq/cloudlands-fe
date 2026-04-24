@@ -289,7 +289,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(removeSubscription, (state, { payload: [wsId, subscriptionId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!ws.subscriptions[subscriptionId]) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [subscriptionId]: _removed, ...rest } = ws.subscriptions;
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -308,9 +308,9 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     for (const [gId, g] of Object.entries(ws.delegationGroups)) {
       if (g.parentAgentId !== agentId) groups[gId] = g;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _q, ...queues } = ws.agentQueues;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _s, ...statuses } = ws.agentStatuses;
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -361,7 +361,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(removeDelegationGroup, (state, { payload: [wsId, groupId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!ws.delegationGroups[groupId]) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [groupId]: _removed, ...rest } = ws.delegationGroups;
     return setWorkspaceState(state, wsId, { ...ws, delegationGroups: rest });
   })
@@ -509,7 +509,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(evictDeletedAgent, (state, { payload: [wsId, agentId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!(agentId in ws.deletedAgents)) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _removed, ...rest } = ws.deletedAgents;
     return setWorkspaceState(state, wsId, { ...ws, deletedAgents: rest });
   })

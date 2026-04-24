@@ -290,7 +290,6 @@ describe('ChatService Race Condition Regressions', () => {
   it('dispatches synthetic start event for backend-initiated streams during setupStreaming', () => {
     // Bug: Backend-initiated streams (delegated agents) never fire a 'start' event,
     // so stall detection and reconciliation timers never activate.
-    const session = makeSession({ isStreaming: true });
     setupDefaultState({ isStreaming: true });
 
     // setupStreamingForSession should detect isStreaming and dispatch synthetic start

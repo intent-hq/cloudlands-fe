@@ -68,7 +68,7 @@
     recordWorkspaceView,
     setActiveWorkspaceId,
   } from '$lib/store/slices/workspace/workspace-slice';
-  import { createAgentRequested, createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';

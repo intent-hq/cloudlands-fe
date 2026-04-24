@@ -66,10 +66,11 @@ function* lookupSession(wsId: string, agentId: string): SagaGenerator<AgentSessi
   );
   if (session) return session;
 
-  // 2. agentService in-memory
-  const tempSession: AgentSession | null = yield* call(
-    [agentService, agentService.getSession],
-    agentId,
+  // 2. Redux state (re-read) — historically a fallback to agentService in-memory,
+  // which itself just delegates to selectAgentById. Kept as a tick-separated
+  // re-read so downstream retries behave the same.
+  const tempSession: AgentSession | undefined | null = yield* select((state) =>
+    selectAgentById.select(state, agentId),
   );
   if (tempSession) return tempSession;
 
@@ -106,8 +107,10 @@ function* retryLookup(wsId: string, agentId: string): SagaGenerator<AgentSession
       selectAgentById.select(state, agentId),
     );
     if (session) return session;
-    // Fallback to agentService
-    const temp: AgentSession | null = yield* call([agentService, agentService.getSession], agentId);
+    // Re-read Redux (historical fallback to agentService, which itself just reads Redux)
+    const temp: AgentSession | undefined | null = yield* select((state) =>
+      selectAgentById.select(state, agentId),
+    );
     if (temp) return temp;
   }
   return null;
@@ -192,7 +195,6 @@ function* handleInitializeChat(
     }
 
     // Step 4: Load messages — resolve from multiple sources
-    const chatState = yield* select((state) => selectChatStateOrDefault.select(state, agentId));
     // Read messages from agent-session slice (canonical source)
     const agentSessionMessages: AgentMessage[] = yield* select((state) =>
       selectAgentMessages.select(state, agentId),

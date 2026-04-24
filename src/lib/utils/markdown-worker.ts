@@ -64,7 +64,7 @@ self.onmessage = async (event: MessageEvent<MarkdownWorkerRequest>) => {
 
     if (pipeline) {
       // Extended pipeline: normalize → legacy syntax → parse → convert anchors
-      let content = pipeline.preserveAnchors
+      const content = pipeline.preserveAnchors
         ? normalizeAnchorPositions(markdown)
         : markdown;
 

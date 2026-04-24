@@ -142,12 +142,12 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
   })
   .with(restoreScriptToUI, (state, { payload: [scriptId] }) => {
     if (!state.pendingDeletions[scriptId]) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return { ...state, pendingDeletions: rest };
   })
   .with(deleteScript, (state, { payload: [scriptId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return {
       ...state,

@@ -136,9 +136,9 @@
     agentId,
     messageId,
     isStreaming = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     showTimestamp: _showTimestamp = true,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     animationDelay: _animationDelay = 0,
     hideToolCalls = false,
     sessionMetadata,

@@ -87,7 +87,7 @@ describe('streamMessage resolve race', () => {
     let resolved = false;
     const messageId = 'msg-3';
 
-    const promise = new Promise<void>((resolve) => {
+    const _promise = new Promise<void>((resolve) => {
       streamingCallbacks.set(messageId, {
         resolveStream: resolve,
         streamGeneration: 1,

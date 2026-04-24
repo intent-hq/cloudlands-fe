@@ -143,9 +143,9 @@
     onStage,
     onUnstage,
     onRevert,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     onStageAll: _onStageAll,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     onUnstageAll: _onUnstageAll,
     isLoading = false,
     commitInfo = null,
@@ -1790,13 +1790,13 @@
 
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
-  let isStuck = $state(false);
+  let _isStuck = $state(false);
 
   // Detect when header becomes stuck using scroll position
   function handleScroll(e: Event) {
     const target = e.target as HTMLElement;
     // Collapse after scrolling down 100px
-    isStuck = target.scrollTop > 100;
+    _isStuck = target.scrollTop > 100;
     updateFirstInViewFile(target);
   }
 

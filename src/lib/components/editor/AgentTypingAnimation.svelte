@@ -21,7 +21,7 @@
 
   let animationController: AbortController | null = null;
   let currentAnimation: Promise<void> | null = null;
-  let animatedText = '';
+  let _animatedText = '';
 
   // Listen for animation events
   onMount(() => {
@@ -70,7 +70,7 @@
       for (let i = 0; i < chars.length; i++) {
         if (signal.aborted) break;
 
-        animatedText += chars[i];
+        _animatedText += chars[i];
         content = content + chars[i];
         onContentChange(content);
 

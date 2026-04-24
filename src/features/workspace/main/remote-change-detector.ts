@@ -203,7 +203,7 @@ export class RemoteChangeDetector extends EventEmitter {
   /**
    * Trigger an immediate check (compatibility with ChangeDetectorManagerImpl).
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async triggerImmediateCheck(_reason?: string): Promise<void> {
     await this.forceCheck();
   }

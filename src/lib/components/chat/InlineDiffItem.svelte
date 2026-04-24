@@ -47,7 +47,7 @@
     change,
     foldUnchanged = true,
     lineWrapping = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     scrollToLine: _scrollToLine,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isAggregate = false,

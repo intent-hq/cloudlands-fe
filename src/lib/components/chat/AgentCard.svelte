@@ -7,10 +7,15 @@
    * Listens to streaming events for real-time response updates.
    */
   import { tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
+  import {
+    selectAgentById,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
@@ -83,12 +88,20 @@
     workspace = null,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const agentPermCount = selectPendingCount(agentId);
 
   // Reactive store subscription for specialist name lookup
   const specialists$ = selectSpecialists();
   $effect(() => {
     void $specialists$;
+  });
+
+  $effect(() => {
+    const wsId = workspace?.id;
+    if (wsId) {
+      dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
   });
 
   // Inline editing state
@@ -249,24 +262,25 @@
     return items;
   }
 
-  // Subscribe to agent updates for real-time streaming
-  // Pass workspace to allow loading from disk when on home page (Redux workspace state may be null)
-  const agentSubscription = useAgentSubscription(agentId, workspace);
-  const agent = $derived(agentSubscription.current);
+  // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
+  // above handles the disk restore.
+  const agent$ = selectAgentById(agentId);
+  const agent = $derived($agent$);
   const agentData = $derived(getAgentPeekData(agent));
 
   // Get parent agent ID from metadata (for delegation info)
   const parentAgentId = $derived(agentData?.parentAgentId);
 
-  // Get parent agent name directly from agentService (reactive via $derived)
-  // Note: We use agentService.getSession() instead of useAgentSubscription because
-  // useAgentSubscription captures the agentId at hook creation time, but parentAgentId
-  // might not be available until the agent metadata loads.
-  const delegatedByName = $derived.by(() => {
-    if (!parentAgentId) return undefined;
-    const parentSession = agentService.getSession(parentAgentId);
-    return parentSession?.name;
+  // Mirror the parent agent ID into a writable so the Redux selector
+  // re-evaluates reactively: the "Delegated by" label appears as soon as
+  // the parent session lands in state (e.g. on workspace restore) without
+  // requiring a re-render of this component.
+  const parentAgentIdStore = writable<string>('');
+  $effect(() => {
+    parentAgentIdStore.set(parentAgentId ?? '');
   });
+  const parentAgent$ = selectAgentById(parentAgentIdStore);
+  const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name : undefined);
 
   // Get line changes for this agent
   const lineChanges$ = selectAgentLineStats(agentId);

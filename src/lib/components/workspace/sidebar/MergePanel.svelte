@@ -4,7 +4,6 @@
    * Shows merge options (via PR or git), squash/push toggles, and merge/auto-fill buttons.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { gitCache } from '$features/git/git-cache';
   import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import {
@@ -41,8 +40,7 @@
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { toast } from '$lib/components/ui/toast';
-  import { track, trackGitOp } from '$lib/services/analytics';
-  import { logger } from '$lib/utils/client-logger';
+  import { trackGitOp } from '$lib/services/analytics';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
     faCheck,
@@ -456,7 +454,7 @@
       value={targetBranch}
       {repoPath}
       {repoType}
-      onchange={(e) => {
+      onchange={(_e) => {
         // Parent handles targetBranch updates
       }}
     />

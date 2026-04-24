@@ -112,7 +112,7 @@ const {
 
 // Import hoisted so it's available in vi.mock factories
 const { hoistedSagaEffects } = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const effects = require("redux-saga/effects") as typeof sagaEffects;
   return { hoistedSagaEffects: effects };
 });

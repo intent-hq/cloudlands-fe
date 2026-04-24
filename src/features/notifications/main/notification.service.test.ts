@@ -6,7 +6,7 @@ import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     constructor(_category?: string) {}
     debug = vi.fn();
     info = vi.fn();
@@ -17,7 +17,7 @@ vi.mock('../../../shared/logger', () => ({
 
 vi.mock('electron-store', () => ({
   default: class {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     constructor(_options?: unknown) {}
     get = vi.fn(() => ({ enabled: true, showWhenFocused: false }));
   },
@@ -57,7 +57,7 @@ vi.mock('electron', () => ({
       }
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     constructor(_opts?: unknown) {
       mockNotificationInstances.push(this as any);
     }

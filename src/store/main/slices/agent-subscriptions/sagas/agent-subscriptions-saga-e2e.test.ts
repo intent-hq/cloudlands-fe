@@ -34,7 +34,6 @@ import {
 import {
   selectAgentQueue,
   selectAgentStatus,
-  selectAllSubscriptions,
   selectAllSubscriptionsRaw,
   selectAllWorkspaceIds,
   selectIsAgentDeleted,

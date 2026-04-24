@@ -65,10 +65,10 @@
   let providerCheckError: string | null = $state(null);
 
   // Error states
-  let statusError: string | null = $state(null);
-  let installError: string | null = $state(null);
-  let installErrorType: InstallErrorType | null = $state(null);
-  let showManualInstall = $state(false);
+  let _statusError: string | null = $state(null);
+  let _installError: string | null = $state(null);
+  let _installErrorType: InstallErrorType | null = $state(null);
+  let _showManualInstall = $state(false);
 
   // Authentication flow states
   let authInProgress = $state(false);
@@ -303,7 +303,7 @@
 
       try {
         if (showLoading) loading = true;
-        if (clearError) statusError = null;
+        if (clearError) _statusError = null;
         const result = await invoke<{ success: boolean; data?: AuggieStatus; error?: string }>(
           AUGGIE_CHANNELS.STATUS,
         );
@@ -357,7 +357,7 @@
           logger.debug('MIMIC_WAITING_FOR_AUTH_PASTE: Simulating waiting for auth token paste');
         }
 
-        statusError = null;
+        _statusError = null;
         // Update last check time on successful check
         lastStatusCheckTime = Date.now();
 
@@ -386,7 +386,7 @@
       } catch (err) {
         const message = (err as Error).message;
         logger.error('Failed to check Auggie status', { error: err });
-        statusError = message;
+        _statusError = message;
         // Still update the timestamp to prevent rapid retries on error
         lastStatusCheckTime = Date.now();
       } finally {
@@ -588,8 +588,8 @@
   async function installAuggie() {
     try {
       actionInProgress = true;
-      installError = null;
-      installErrorType = null;
+      _installError = null;
+      _installErrorType = null;
       const result = await invoke<{
         success: boolean;
         error?: string;
@@ -597,9 +597,9 @@
       }>(AUGGIE_CHANNELS.INSTALL);
       if (!result.success) {
         const message = result.error || 'Installation failed';
-        installError = message;
-        installErrorType = deriveInstallErrorType(result.errorType, message);
-        showManualInstall = true;
+        _installError = message;
+        _installErrorType = deriveInstallErrorType(result.errorType, message);
+        _showManualInstall = true;
         throw new Error(message);
       }
 

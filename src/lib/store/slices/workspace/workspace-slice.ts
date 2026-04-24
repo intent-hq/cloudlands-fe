@@ -236,7 +236,7 @@ function clearBooleanMapEntry(
     return map;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { [key]: _, ...rest } = map;
   return rest;
 }
@@ -249,7 +249,7 @@ function clearPendingCreationEntry(
     return map;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { [key]: _, ...rest } = map;
   return rest;
 }

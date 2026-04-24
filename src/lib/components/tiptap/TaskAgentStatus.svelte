@@ -151,7 +151,7 @@ const logger = createLogger('TaskAgentStatus');
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   function handleStreamEnd(_event: CustomEvent) {
     isStreamActive = false;
 
@@ -221,9 +221,9 @@ const logger = createLogger('TaskAgentStatus');
     // This is more efficient than each component having its own interval
     function pollCallback() {
       pollCount++;
-      const session = agentService.getSession(agentId);
       const pollState = getReduxStore().getState();
       const pollWsId = selectActiveWorkspaceId.select(pollState);
+      const session = selectAgentById.select(pollState, agentId);
       const reduxAgent = pollWsId ? selectAgentById.select(pollState, agentId) : undefined;
 
       if (session || reduxAgent) {
@@ -386,9 +386,9 @@ const logger = createLogger('TaskAgentStatus');
     }
   });
 
-  // Get agent state from Redux and agentService
-  // The `(void version, expr)` pattern forces Svelte to re-evaluate the derived when `version` changes,
-  // even though the external stores don't trigger Svelte's reactivity system directly.
+  // Get agent state from Redux. The `(void version, expr)` pattern forces
+  // Svelte to re-evaluate the derived when `version` changes, in addition to
+  // the reactive subscription on `serviceAgent$` below.
   const storeAgent = $derived.by(() => {
     void version;
     const s = getReduxStore().getState();
@@ -396,7 +396,11 @@ const logger = createLogger('TaskAgentStatus');
     if (!wsId) return undefined;
     return selectAgentById.select(s, agentId);
   });
-  const serviceAgent = $derived((void version, agentService.getSession(agentId)));
+  // Reactive Redux subscription — replaces the previous non-reactive
+  // service lookup so the component re-renders when the agent session
+  // changes in the store.
+  const serviceAgent$ = selectAgentById(agentId);
+  const serviceAgent = $derived((void version, $serviceAgent$));
 
   // Use either source - store takes precedence for live state
   const agent = $derived(storeAgent || serviceAgent);

@@ -18,7 +18,7 @@
   }
 
   let {
-    workspace,
+    workspace: _workspace,
     showPRCreator = false,
     showCreateAgentModal = false,
     creatingAgent = false,

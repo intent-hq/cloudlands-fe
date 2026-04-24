@@ -328,7 +328,7 @@
   // GitHub PRs state
   let githubPRs = $state<GitHubPRLocal[]>([]);
   let isLoadingGitHubPRs = $state(false);
-  let isRefreshingGitHubPRs = $state(false);
+  let _isRefreshingGitHubPRs = $state(false);
 
   // GitHub PR filter - uses GitHub search API @me filter
   let githubPRFilter = $state<'all' | 'assigned' | 'created' | 'review-requested' | 'involves'>(
@@ -809,7 +809,7 @@
         if (cachedPRs) {
           githubPRs = cachedPRs;
           // Still refresh in background, but user sees data instantly
-          isRefreshingGitHubPRs = true;
+          _isRefreshingGitHubPRs = true;
         } else {
           isLoadingGitHubPRs = true;
         }
@@ -829,7 +829,7 @@
           logger.error('Failed to load GitHub PRs', err as Error);
         } finally {
           isLoadingGitHubPRs = false;
-          isRefreshingGitHubPRs = false;
+          _isRefreshingGitHubPRs = false;
         }
       }
     } catch (error) {

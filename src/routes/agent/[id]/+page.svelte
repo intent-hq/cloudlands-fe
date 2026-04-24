@@ -12,6 +12,8 @@
   import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -67,8 +69,9 @@
     loading = true;
 
     try {
-      // First try to get the session from the agent service (in memory)
-      let session = agentService.getSession(agentId);
+      // First try to get the session from the Redux store (in memory)
+      let session: import('$shared/types').AgentSession | null | undefined =
+        selectAgentById.select(getReduxStore().getState(), agentId);
 
       // If not in memory, try to restore from disk
       if (!session) {

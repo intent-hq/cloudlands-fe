@@ -99,6 +99,10 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.getAgents()); return () => {}; } }),
     { select: (_state: unknown, _wsId: string) => mocks.getAgents() },
   ),
+  selectAgentById: Object.assign(
+    () => ({ subscribe: (run: (v: unknown) => void) => { run(undefined); return () => {}; } }),
+    { select: (_state: unknown, _agentId: string) => undefined },
+  ),
 }));
 
 const mockExecute = vi.fn();

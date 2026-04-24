@@ -121,7 +121,6 @@
 
   // Check if we're on a workspace page
   const isWorkspacePage = $derived(page.url.pathname.startsWith('/workspace/'));
-  const isHomePage = $derived(page.url.pathname === '/');
   const onboardingActive$ = selectOnboardingActive();
   const isWorkspaceVisible = $derived(isWorkspacePage && workspaceId && !$onboardingActive$);
 

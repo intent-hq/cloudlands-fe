@@ -77,7 +77,7 @@
     // FIX: Track actual content changes, not just length
     // For arrays, we need to track the text content of text blocks to detect updates
     // Using a simple hash of text lengths and types to detect changes efficiently
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const _contentDep =
       typeof content === 'string'
         ? content

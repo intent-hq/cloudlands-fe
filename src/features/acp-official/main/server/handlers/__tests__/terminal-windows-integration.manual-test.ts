@@ -4,12 +4,15 @@
  * These are intended for local developer execution on Windows and must not be added to CI.
  */
 
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { TerminalHandler } from '../terminal';
+
+const execFileAsync = promisify(execFile);
 
 const TEST_TIMEOUT_MS = 10_000;
 
@@ -66,7 +69,7 @@ async function runTerminalCommand(options: {
   }
 }
 
-function resolvePythonCommand(): string | null {
+async function resolvePythonCommand(): Promise<string | null> {
   const candidates = [
     { command: 'python', checkArgs: ['--version'], runCommand: 'python -c "print(\'hello\')"' },
     { command: 'py', checkArgs: ['-3', '--version'], runCommand: 'py -3 -c "print(\'hello\')"' },
@@ -74,16 +77,18 @@ function resolvePythonCommand(): string | null {
   ];
 
   for (const candidate of candidates) {
-    const result = spawnSync(candidate.command, candidate.checkArgs, { windowsHide: true });
-    if (!result.error && result.status === 0) {
+    try {
+      await execFileAsync(candidate.command, candidate.checkArgs, { windowsHide: true });
       return candidate.runCommand;
+    } catch {
+      // Candidate not available, try the next one.
     }
   }
 
   return null;
 }
 
-const pythonCommand = process.platform === 'win32' ? resolvePythonCommand() : null;
+const pythonCommand = process.platform === 'win32' ? await resolvePythonCommand() : null;
 const pythonIt = pythonCommand ? it : it.skip;
 
 describe.skipIf(process.platform !== 'win32')('TerminalHandler Windows encoded-command integration', () => {

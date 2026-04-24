@@ -901,15 +901,15 @@ export class ChatService implements IDisposable {
       let retryCount = 0;
 
       if (!session) {
-        // Try to get from agent service first (it might be in memory there)
-        const tempSession = agentService.getSession(agentId);
+        // Re-read from Redux in case state changed between the first lookup and now
+        const tempSession = selectAgentById.select(getReduxStore().getState(), agentId);
         agentServiceGetSessionResult = !!tempSession;
-        logger.info('initializeChat: agentService.getSession fallback', {
+        logger.info('initializeChat: selectAgentById fallback', {
           agentId,
           workspaceId: workspace.id,
           found: !!tempSession,
         });
-        rendererLogger.info(LogCategory.AGENT, 'initializeChat: agentService.getSession fallback', {
+        rendererLogger.info(LogCategory.AGENT, 'initializeChat: selectAgentById fallback', {
           agentId,
           workspaceId: workspace.id,
           found: !!tempSession,
@@ -1009,10 +1009,10 @@ export class ChatService implements IDisposable {
             hasSession: !!session,
           });
 
-          // Fall back to agent service
+          // Re-read from Redux via selector (same source as above; kept for parity with fallback logging)
           if (!session) {
-            const tempSession = agentService.getSession(agentId);
-            logger.info('initializeChat: retry agentService.getSession check', {
+            const tempSession = selectAgentById.select(getReduxStore().getState(), agentId);
+            logger.info('initializeChat: retry selectAgentById check', {
               agentId,
               workspaceId: workspace.id,
               retryNumber: retryCount,

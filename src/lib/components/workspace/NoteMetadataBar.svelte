@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Note, AgentMessage } from '$shared/types';
+  import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { writable } from 'svelte/store';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
@@ -16,6 +16,10 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectAgentById,
+    selectAllWorkspaceAgents,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -28,8 +32,15 @@
     note: Note;
   } = $props();
 
-  // Subscribe to all agents. Pass workspaceId to trigger loading from disk if needed.
-  const allAgentsSubscription = useAllAgentsSubscription(() => workspaceId as string);
+  // Mirror workspaceId into a writable so selectors react to prop changes.
+  const workspaceIdStore = writable(workspaceId as string);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId as string);
+  });
+
+  // Reactive list of workspace agents. selectAllWorkspaceAgents already
+  // scopes to the current workspace, so no manual filtering is needed.
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   // Derived state
   const isTask = $derived(!!note.metadata?.task);
@@ -46,16 +57,7 @@
     return allNotes.filter((n) => n.parentId === note.id && n.metadata?.task);
   });
 
-  // Filter agents by workspaceId using $derived - this is reactive to workspaceId prop changes
-  const allAgents = $derived.by(() => {
-    const agents = allAgentsSubscription.all;
-    if (!workspaceId) return agents;
-    const wsIdStr = String(workspaceId);
-    return agents.filter((s) => {
-      const agentWsId = s.workspaceId ? String(s.workspaceId) : '';
-      return agentWsId === wsIdStr;
-    });
-  });
+  const allAgents = $derived($workspaceAgents$);
 
   // Sort assigned agents by creation date (oldest first)
   const assignedAgents = $derived.by(() => {
@@ -128,7 +130,10 @@
 
     for (const agentId of assignedAgents) {
       try {
-        let agent = agentService.getSession(agentId);
+        let agent: AgentSession | null | undefined = selectAgentById.select(
+          getReduxStore().getState(),
+          agentId,
+        );
         if (!agent && workspace) {
           agent = await agentService.restoreSession(agentId, workspace);
         }

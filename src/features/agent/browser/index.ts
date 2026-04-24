@@ -876,13 +876,13 @@ class RecoveryServiceProxy {
     { agentId: string; workspaceId: string; timestamp: number }
   >();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async needsRecovery(agentId: string, _workspaceId: string): Promise<boolean> {
     // Check if there's recovery data for this agent
     return this.recoveryData.has(agentId);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async recoverSession(session: AgentSession, _workspaceId: string): Promise<AgentSession> {
     // Clear recovery data after recovery
     this.recoveryData.delete(session.id);

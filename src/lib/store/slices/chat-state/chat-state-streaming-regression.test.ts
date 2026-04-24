@@ -20,7 +20,6 @@ import {
   chatStuckStateCleared,
   streamStarted,
   streamChunkFlushed,
-  streamChunkReceived,
   streamCompleted,
   streamErrored,
   streamTimedOut,

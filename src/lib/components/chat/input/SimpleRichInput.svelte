@@ -98,7 +98,7 @@
     workspace,
     isStreaming = false,
     contextItems = $bindable([]),
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
     editorSelection = $bindable<string | null>(null),
     selectedModel: propSelectedModel,
@@ -108,9 +108,9 @@
     agentId,
     autoFocus = false,
     editMode = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     panelFocused: _panelFocused = true, // Reserved for future use
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     compactMode: _compactMode = false, // Reserved for future use
     onsubmit,
     onforcesubmit,

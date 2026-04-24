@@ -1103,7 +1103,7 @@ export async function sendMessage(
                 errorBoundary.wrap(
                   async () => {
                     // Re-read session from store (guaranteed to exist after activation above)
-                    let session = getAgentSession(workspace.id, agentId);
+                    const session = getAgentSession(workspace.id, agentId);
                     if (!session) {
                       throw new Error(`Failed to get session for agent ${agentId}`);
                     }

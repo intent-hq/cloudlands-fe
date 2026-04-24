@@ -170,7 +170,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
     })
   )
   .with(clearLoadingStateForProvider, (state, { payload: [providerId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [providerId]: _removed, ...loadingState } = state.loadingState;
 
     return {
@@ -197,7 +197,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
     workspaceModels: { ...state.workspaceModels, [workspaceId]: model },
   }))
   .with(clearWorkspaceModel, (state, { payload: [workspaceId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [workspaceId]: _, ...rest } = state.workspaceModels;
     return { ...state, workspaceModels: rest };
   })

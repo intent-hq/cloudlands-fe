@@ -4,7 +4,6 @@ import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
 import type { WorkspaceId } from '$shared/types';
 
-import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { createWorkspaceEvent } from '../../../events/types';
 import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';

@@ -204,7 +204,7 @@ describe('parseVSCodeTheme', () => {
   });
 
   it('falls back to editor.background heuristic when type is missing', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { type: _type, ...noType } = MINIMAL_DARK_THEME;
     const result = parseVSCodeTheme(noType);
     expect(result.type).toBe('dark');

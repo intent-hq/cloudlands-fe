@@ -177,14 +177,14 @@ describe('Stream Completion Guarantees', () => {
     };
 
     // Simulate stream completion
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const completeStream = (state: MockStreamState, _reason: string) => {
       state.isStreaming = false;
       state.completedAt = Date.now();
       return state;
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const errorStream = (state: MockStreamState, _error: string) => {
       state.isStreaming = false;
       state.hasError = true;

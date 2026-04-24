@@ -1259,7 +1259,7 @@
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   function handleClick(_event: MouseEvent) {
     // Click on whatever is currently hovered (shown in hover card)
     if (hoveredFilePath) {

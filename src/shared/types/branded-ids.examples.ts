@@ -44,14 +44,14 @@ interface Agent {
 }
 
 // Type-safe function - can only accept AgentId
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function getAgent(_id: AgentId): Agent | null {
   // Implementation
   return null;
 }
 
 // Type-safe function - can only accept SessionId
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function getSession(_id: AgentId): any {
   // Implementation
   return null;

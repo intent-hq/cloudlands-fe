@@ -45,7 +45,7 @@ const logger = createLogger("AgentStreamSaga");
 //    Uses saga delay/race instead of setTimeout.
 // ============================================================================
 
-function* handleStreamingSafetyCheck(
+export function* handleStreamingSafetyCheck(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   action: ReturnType<typeof triggerStreamingSafetyCheck>,
 ): SagaGenerator<void> {
@@ -96,28 +96,31 @@ function* handleStreamingSafetyCheck(
           currentlyActiveStreamsCount: currentlyActive.size,
         });
 
-        const wsId = session.workspaceId ||
-          ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
-        if (wsId) {
-          yield* put(setAgentStreaming(wsId, session.id as string, false));
-          // Clear BOTH isStreaming AND isProcessing to prevent the agent
-          // appearing "busy" (spinner) after the safety timeout fires.
-          // setAgentStreaming only clears isStreaming; isProcessing is normally
-          // cleared by ChatService's streamCompleted action, but the safety
-          // timeout bypasses that path.
-          const updatedSession = { ...session, isStreaming: false, isProcessing: false };
-          yield* put(upsertAgentSessionAction(updatedSession));
-          yield* put(upsertAgentSession(wsId, updatedSession));
-
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
-          }
-          clearedCount++;
-        } else {
-          logger.warn("Cannot clear streaming state: no workspaceId available", {
+        // Only write to the workspace that owns the session. Previously we
+        // fell back to selectActiveWorkspaceId when session.workspaceId was
+        // missing, which could land stale flags in a workspace the agent
+        // doesn't belong to.
+        const wsId = session.workspaceId;
+        if (!wsId) {
+          logger.warn("Cannot clear streaming state: session has no workspaceId", {
             agentId: session.id,
           });
+          continue;
         }
+        yield* put(setAgentStreaming(wsId, session.id as string, false));
+        // Clear BOTH isStreaming AND isProcessing to prevent the agent
+        // appearing "busy" (spinner) after the safety timeout fires.
+        // setAgentStreaming only clears isStreaming; isProcessing is normally
+        // cleared by ChatService's streamCompleted action, but the safety
+        // timeout bypasses that path.
+        const updatedSession = { ...session, isStreaming: false, isProcessing: false };
+        yield* put(upsertAgentSessionAction(updatedSession));
+        yield* put(upsertAgentSession(wsId, updatedSession));
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+        }
+        clearedCount++;
       }
     }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 
@@ -18,7 +18,6 @@ import {
   markOneShotFired,
   removeSubscription,
   setAgentStatus,
-  markAgentDeleted,
   emptyWorkspaceSubscriptionState,
   type QueuedEventRecord,
   type DelegationGroupTrackerRecord,
@@ -26,9 +25,7 @@ import {
 } from "../agent-subscriptions-slice";
 import {
   selectAgentStatus,
-  selectAllSubscriptions,
   selectAllSubscriptionsRaw,
-  selectAllWorkspaceIds,
   selectDelegationGroup,
   selectIsAgentDeleted,
   selectIsOneShotFired,
@@ -36,19 +33,13 @@ import {
 } from "../agent-subscriptions-selectors";
 import {
   requestDeliverQueuedEvents,
-  requestEvictStaleAgents,
-  requestValidateSubscriptions,
 } from "./saga-actions";
 import {
-  handleDeliverQueuedEvents,
   watchAgentIdleForDelivery,
   periodicQueueSweep,
-  formatNotification,
-  sendBackendMessage,
 } from "./delivery-saga";
-import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
 
-import { handleMatchEvent, handleNewSubscriptionCatchUp, activeBatchTimers, batchFlushWorker } from "./matching-saga";
+import { handleMatchEvent, handleNewSubscriptionCatchUp } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";

@@ -110,7 +110,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
       }))
       .filter((item: any) => item._score !== -Infinity)
       .sort((a: any, b: any) => (b._score as number) - (a._score as number))
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       .map(({ _score, ...rest }: any) => rest)
       .slice(0, 20);
 

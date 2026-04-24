@@ -30,7 +30,6 @@
 
   // Track previous text to detect changes
   let previousText = '';
-  let previousLength = 0;
 
   // Split text based on animation type
   const getTextUnits = (text: string, type: typeof animationType) => {
@@ -115,7 +114,6 @@
       }
 
       previousText = currentText;
-      previousLength = currentText.length;
     }
   });
 

@@ -59,7 +59,7 @@ vi.mock('$features/events/main/agent-subscription-ops', () => ({
 
 // Also mock the selectors/store bridge for direct Redux access in list_agents/get_agent_status
 vi.mock('../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   selectAgentStatus: { select: (_state: any, _wsId: string, _agentId: string) => 'idle' },
 }));
 

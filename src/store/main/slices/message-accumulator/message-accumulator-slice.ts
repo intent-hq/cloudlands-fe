@@ -70,9 +70,9 @@ export const initialState: MessageAccumulatorState = { ...EMPTY_ACCUMULATOR_STAT
 export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(initialState)
   .with(startAccumulation, (state, { payload: { sessionId, metadata, now } }) => {
     // If accumulator exists, clear it first (restart)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
     const previouslyExisted = sessionId in state.accumulators;
 
@@ -272,9 +272,9 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
 
   .with(clearAccumulator, (state, { payload: [sessionId] }) => {
     if (!(sessionId in state.accumulators)) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
     return {
       ...state,

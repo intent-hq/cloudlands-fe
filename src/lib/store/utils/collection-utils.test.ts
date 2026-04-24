@@ -24,7 +24,7 @@ type TestItem = {
 // Helper to check collection invariants
 const assertCollectionInvariants = <ITEM extends object, K extends keyof ITEM & string>(
   collection: Collection<ITEM, K>,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _description: string
 ) => {
   // Check that ids are unique

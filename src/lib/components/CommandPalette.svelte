@@ -341,7 +341,7 @@
                 (b._score as number) - (a._score as number) ||
                 (b._mru as number) - (a._mru as number),
             )
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+             
             .map(({ _score, _mru, ...rest }: any) => rest)
             .slice(0, 8)
         );

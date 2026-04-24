@@ -125,8 +125,8 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 }));
 
 // Import after mocks
-import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate } from "./agent-ipc-saga";
-import { setAgentStreaming, removeAgentMessage, addAgentMessage, replaceAgentMessageById } from "../workspace-agents-slice";
+import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate, handleStreamDisconnected } from "./agent-ipc-saga";
+import { setAgentStreaming, removeAgentMessage, replaceAgentMessageById } from "../workspace-agents-slice";
 
 const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   id: "agent-1",
@@ -435,6 +435,73 @@ describe("handleExistingSessionUpdate — content-hash collision", () => {
     const replaceOps = dispatched.filter((a) => a.type === "agentSessions/replaceMessageById");
     expect(replaceOps.length).toBe(1);
     expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-only", canonical]);
+  });
+});
+
+
+// ============================================================================
+// handleStreamDisconnected — regression: must not fall back to active workspace
+//
+// Scenario: agent belongs to workspace A, user is viewing workspace B.
+// If the session lacks a workspaceId, the saga must skip — NOT write to
+// the active workspace (B). Writing to B lands stale flags in a workspace
+// the agent doesn't own.
+// ============================================================================
+
+describe("handleStreamDisconnected", () => {
+  beforeEach(() => {
+    sendMock.mockClear();
+    selectState.index = 0;
+    selectState.results = [];
+  });
+
+  it("uses session.workspaceId (agent's workspace A), not active workspace (B)", async () => {
+    // Agent belongs to workspace A; user is viewing active workspace "active-ws-id" (B)
+    const session = makeSession({ workspaceId: "ws-A" as any });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleStreamDisconnected,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
+    expect(streamingAction).toBeDefined();
+    expect(streamingAction.payload[0]).toBe("ws-A");
+    // Must NOT land on the active workspace (B)
+    expect(streamingAction.payload[0]).not.toBe("active-ws-id");
+  });
+
+  it("skips when session has no workspaceId — no state change lands on active workspace (B)", async () => {
+    // Session found in state but missing workspaceId; active workspace is "active-ws-id" (B)
+    const session = makeSession({ workspaceId: "" as any });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleStreamDisconnected,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    // No setAgentStreaming dispatch at all — must not fall back to "active-ws-id"
+    const streamingActions = dispatched.filter((a) => a.type === setAgentStreaming.type);
+    expect(streamingActions).toHaveLength(0);
+  });
+
+  it("skips when session is not found", async () => {
+    selectState.results = [undefined];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleStreamDisconnected,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    expect(dispatched).toHaveLength(0);
   });
 });
 

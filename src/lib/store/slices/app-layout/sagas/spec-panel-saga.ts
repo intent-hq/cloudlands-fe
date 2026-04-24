@@ -105,7 +105,7 @@ function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayout
 
     while (Date.now() - startTime < RESTORE_STATUS_TIMEOUT_MS) {
         // Wait for the next setRestoreStatus action matching our workspace
-        const { timeout } = yield* race({
+        yield* race({
             action: take((action: any) =>
                 action.type === setRestoreStatus.type &&
                 action.payload[0] === wsId

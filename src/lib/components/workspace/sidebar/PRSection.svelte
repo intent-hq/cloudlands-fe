@@ -49,7 +49,6 @@
     clearOlderCommits as ftClearOlderCommits,
   } from '$lib/store/slices/changes/changes-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -58,7 +57,6 @@
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
@@ -137,7 +135,7 @@
     activeFilePath = null,
     activeFileStaged = null,
     hasStaged,
-    hasUnstaged,
+    hasUnstaged: _hasUnstaged,
     hasCommits,
     hasOpenPR,
     hasRemote,
@@ -151,10 +149,10 @@
     targetBranch,
     repoPath,
     repoType,
-    commitMessage,
+    commitMessage: _commitMessage,
     hasUnpushedCommits,
     unpushedCount,
-    hasPushedCommits,
+    hasPushedCommits: _hasPushedCommits,
     isDiverged,
     isBehind,
     behindCount,
@@ -167,7 +165,7 @@
     mergeDrawerOpen,
     onMergeDrawerToggle,
     onOpenFullPanel,
-    onOpenChange,
+    onOpenChange: _onOpenChange,
     mergePanelContent,
   }: Props = $props();
 
@@ -708,7 +706,7 @@
               value={targetBranch}
               {repoPath}
               {repoType}
-              onchange={(e) => {
+              onchange={(_e) => {
                 // targetBranch is a prop — parent handles it
               }}
             />

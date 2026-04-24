@@ -4,8 +4,10 @@
    * Handles file staging, unstaging, reverting, selection, and group commits.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentById,
+    selectAllWorkspaceAgents,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectLockedAgentIds } from '$lib/store/slices/agent-lock/agent-lock-selectors';
   import {
     selectStagedWorkingChanges as selectFtStagedChanges,
@@ -28,7 +30,6 @@
   import {
     type AgentChangeGroup,
     groupFilesByAgent,
-    type UIFileChange,
   } from '$lib/components/file-tracking/accept-changes/types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -38,7 +39,6 @@
   import { faNote } from '$lib/icons/faNote';
   import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
-  import { gitCache } from '$features/git/git-cache';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
     faCodeCommit,
@@ -209,7 +209,7 @@
 
   function getLinkedNoteId(agentId: string | null): string | undefined {
     if (!agentId) return undefined;
-    const session = agentService.getSession(agentId);
+    const session = selectAgentById.select(getReduxStore().getState(), agentId);
     return session?.metadata?.taskNoteId as string | undefined;
   }
 

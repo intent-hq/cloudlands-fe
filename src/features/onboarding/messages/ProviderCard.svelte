@@ -13,10 +13,8 @@
     faPlug,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
   import { cn } from '$lib/utils';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
-  import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -100,9 +98,6 @@
       !needsUpdate &&
       provider.authenticated !== true,
   );
-  const cmd = $derived(
-    needsInstall ? provider.installCommand : needsLogin ? provider.loginCommand : '',
-  );
   const ready = $derived(installed && !needsLogin && !needsUpdate);
   const needsAction = $derived(
     !provider.statusLoading && (needsInstall || needsLogin || needsUpdate),
@@ -135,16 +130,6 @@
     }
   }
 
-  async function copyCommand(e: Event) {
-    e.stopPropagation();
-    if (!cmd) return;
-    try {
-      await navigator.clipboard.writeText(cmd);
-      toast.success('Copied — paste it into your terminal to run');
-    } catch {
-      toast.error('Copy failed');
-    }
-  }
 </script>
 
 <div class="overflow-hidden transition-all flex flex-col flex-1 min-w-66">

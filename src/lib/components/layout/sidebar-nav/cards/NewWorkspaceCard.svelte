@@ -27,7 +27,7 @@
     expanded?: boolean;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   let { expanded: _ = false }: Props = $props();
 
   const hasDraft = $derived($draftPrompt$.trim().length > 0);

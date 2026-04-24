@@ -15,7 +15,7 @@ export const editor = {
       /* no-op */
     },
   }),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   createModel: (_value: string, _language?: string) => ({
     getValue: () => _value,
     dispose: () => {

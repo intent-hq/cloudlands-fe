@@ -41,7 +41,7 @@ export const mockLogger = createMockLogger();
  * Drop-in replacement for the real `createLogger`.
  * Returns the shared `mockLogger` so all callers share the same spies.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function createLogger(_name?: string) {
   return mockLogger;
 }

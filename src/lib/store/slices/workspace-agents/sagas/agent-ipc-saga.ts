@@ -59,17 +59,28 @@ function ec(name: string): ElectronEventName {
 // 1. agent:stream:disconnected
 // ============================================================================
 
+/** Exported for testing */
+export function* handleStreamDisconnected(data: { agentId: string }): SagaGenerator<void> {
+  logger.warn("Stream disconnected", { agentId: data.agentId });
+  const session: AgentSession | undefined = yield* select(selectAgentById.select, data.agentId);
+  if (!session) return;
+  // Only write to the workspace that owns the session. Previously we fell
+  // back to selectActiveWorkspaceId when session.workspaceId was missing,
+  // which could land stale flags in a workspace the agent doesn't belong to.
+  if (!session.workspaceId) {
+    logger.warn("Cannot clear streaming state: session has no workspaceId", {
+      agentId: data.agentId,
+    });
+    return;
+  }
+  yield* put(setAgentStreaming(session.workspaceId, session.id, false));
+}
+
 export function* watchStreamDisconnectedSaga() {
   yield* takeEveryFromElectronChannel<{ agentId: string }>(
     ec("agent:stream:disconnected"),
     function* (data) {
-      logger.warn("Stream disconnected", { agentId: data.agentId });
-      const wsId = (yield* select(selectActiveWorkspaceId.select)) ?? undefined;
-      if (!wsId) return;
-      const session: AgentSession | undefined = yield* select(selectAgentById.select, data.agentId);
-      if (session) {
-        yield* put(setAgentStreaming(session.workspaceId || wsId, session.id, false));
-      }
+      yield* call(handleStreamDisconnected, data);
     },
   );
 }

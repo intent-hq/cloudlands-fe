@@ -105,7 +105,7 @@ export const pipReducer = createReducer<PipState>(initialState)
   .with(pipWindowClosed, (state, { payload: [data] }) => {
     const key = getPipKey(data.workspaceId, data.tabId);
     if (!(key in state.openPipWindows)) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [key]: _, ...rest } = state.openPipWindows;
     return {
       ...state,

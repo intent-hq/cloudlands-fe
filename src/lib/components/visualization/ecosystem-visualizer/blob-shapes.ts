@@ -489,7 +489,7 @@ export function computeBlobShapes(
 
   // Compute Voronoi cells for each sibling group
   const voronoiCells = new Map<string, [number, number][]>();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   for (const [_parentPath, siblings] of foldersByParent) {
     if (siblings.length <= 1) continue; // No clipping needed for single child
 

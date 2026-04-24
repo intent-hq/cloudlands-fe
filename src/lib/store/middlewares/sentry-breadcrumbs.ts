@@ -147,7 +147,7 @@ export function __resetReduxActionBreadcrumbsBufferForTests(): void {
  * the dispatch path.
  */
 export function createSentryBreadcrumbsMiddleware(): Middleware {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   return (_store) => (next) => (action) => {
     try {
       primary.push(action);

@@ -226,7 +226,7 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     },
   }))
   .with(clearModelOverride, (state, { payload: [specialistId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _, ...rest } = state.userOverrides.modelOverrides;
     return {
       ...state,
@@ -248,7 +248,7 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     },
   }))
   .with(clearBehaviorPromptOverride, (state, { payload: [specialistId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _, ...rest } = state.userOverrides.behaviorPromptOverrides;
     return {
       ...state,
@@ -263,7 +263,7 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     },
   }))
   .with(clearCodingAgentOverride, (state, { payload: [specialistId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _, ...rest } = state.userOverrides.codingAgentOverrides;
     return {
       ...state,
@@ -271,11 +271,11 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     };
   })
   .with(clearAllOverrides, (state, { payload: [specialistId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _c, ...codingAgentRest } = state.userOverrides.codingAgentOverrides;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _m, ...modelRest } = state.userOverrides.modelOverrides;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [specialistId]: _b, ...behaviorRest } = state.userOverrides.behaviorPromptOverrides;
     return {
       ...state,

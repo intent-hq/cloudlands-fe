@@ -411,7 +411,7 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
     },
   }))
   .with(clearAgentStats, (state, { payload: [agentId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _as, ...remainingAgentStats } = state.agentStats;
     return {
       ...state,

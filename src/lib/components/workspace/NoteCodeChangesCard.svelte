@@ -9,7 +9,7 @@
   import Fa from 'svelte-fa';
   import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
-  import type { Note, AgentMessage } from '$shared/types';
+  import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
   import { agentService } from '$features/agent/agent-ipc-bridge';
@@ -17,6 +17,7 @@
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import {
     getFileChangesFromMessages,
     type ChatFileChange,
@@ -32,7 +33,7 @@
     note: Note;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   let { workspaceId: _workspaceId, note }: Props = $props();
 
   const ftChanges$ = selectCurrentChanges();
@@ -71,7 +72,10 @@
 
       for (const agentId of assignedAgentIds) {
         try {
-          let agent = agentService.getSession(agentId);
+          let agent: AgentSession | null | undefined = selectAgentById.select(
+            getReduxStore().getState(),
+            agentId,
+          );
           if (!agent && workspace) {
             agent = await agentService.restoreSession(agentId, workspace);
           }

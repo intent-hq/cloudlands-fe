@@ -33,7 +33,7 @@ const agentLockLogger = new Logger({ category: "AgentLockSaga" });
 
 /**
  * Check if an agent is actively working (streaming or task not complete).
- * Uses Redux state and agentService as side effects (appropriate for sagas).
+ * Uses Redux state exclusively (appropriate for sagas).
  */
 function isAgentActivelyWorking(
   agentId: string,
@@ -43,15 +43,7 @@ function isAgentActivelyWorking(
 ): boolean {
   try {
     // Check streaming state from Redux
-    const agentSession = selectAgentById.select(state, agentId);
-    if (agentSession?.isStreaming) {
-      return true;
-    }
-
-    // Fallback: check via agentService for session metadata
-     
-    const { agentService } = require("$features/agent/agent-ipc-bridge");
-    const session = agentService.getSession(agentId);
+    const session = selectAgentById.select(state, agentId);
     if (!session) return false;
 
     if (session.isStreaming) {

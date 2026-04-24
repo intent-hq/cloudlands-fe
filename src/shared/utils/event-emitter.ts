@@ -76,7 +76,7 @@ export class EventEmitter {
     return 10;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   setMaxListeners(_n: number): this {
     // No-op for compatibility
     return this;

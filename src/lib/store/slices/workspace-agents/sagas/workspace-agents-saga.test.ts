@@ -67,17 +67,17 @@ const {
   disposeEventListenerMock: vi.fn(),
   initEventListenerMock: vi.fn(),
   loadStatusMock: vi.fn(),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   getSessionMock: vi.fn((_agentId: string) => null),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   hasAgentMock: vi.fn((_agentId: string) => false),
   setWorkspaceMock: vi.fn(),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   getSessionsForWorkspaceMock: vi.fn((_wsId: string) => []),
   activateInitialAgentMock: vi.fn(async () => null),
   resumeSessionMock: vi.fn(async () => null),
   reconnectStreamHandlersMock: vi.fn(async () => {}),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   getStoredAgentsFromDiskMock: vi.fn(async (_wsId: string) => []),
   hasPanelLayoutManagerMock: vi.fn(() => false),
   getPanelLayoutManagerMock: vi.fn(() => ({
@@ -127,11 +127,6 @@ vi.mock("$lib/store/slices/app-layout/sagas/spec-panel-saga", () => ({
   shouldDeferSpecPanel: () => false,
 }));
 
-vi.mock("$lib/utils/agent-subscription.svelte", () => ({
-  acquireAgentLoadLock: async () => {},
-  releaseAgentLoadLock: async () => {},
-}));
-
 vi.mock("$lib/store/redux-dispatch-bridge", () => ({
   getReduxStore: () => ({ getState: getReduxStateMock, dispatch: vi.fn() }),
 }));
@@ -163,10 +158,8 @@ import {
   addAgent,
   removeAgent,
   renameAgent,
-  setAgents,
   setAgentsLoaded,
   setInitialAgentConfig,
-  setInitialAgentConfigProcessed,
   setInitialAgentId,
   setIsLoadingAgents,
   setWaitingForFirstMessage,
@@ -174,7 +167,6 @@ import {
 import {
   removeSession as removeAgentSession,
   renameSession as renameAgentSession,
-  removeWorkspaceSessions,
   upsertSession as upsertAgentSession,
 } from "../../agent-session/agent-session-slice";
 import {
@@ -858,13 +850,12 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       value: sagaEffects.put(setIsLoadingAgents("ws-restore-sync", true)),
       done: false,
     });
-    expect((gen.next().value as any).type).toBe("CALL");
 
-    expect((gen.next().value as any).type).toBe("CALL");
+    expect((gen.next().value as any).type).toBe("SELECT");
     expect((gen.next([]).value as any).type).toBe("CALL");
     expect((gen.next({ getStoredAgentsFromDisk: getStoredAgentsFromDiskMock }).value as any).type).toBe("SELECT");
     expect((gen.next(null).value as any).type).toBe("CALL");
-    expect((gen.next([]).value as any).type).toBe("CALL");
+    expect((gen.next([]).value as any).type).toBe("SELECT");
     expect((gen.next([]).value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");

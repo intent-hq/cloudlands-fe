@@ -49,7 +49,7 @@
   // Local UI state
   let thirdPartySources: ThirdPartySource[] = $state([]);
   let sourcesLoading = $state(false);
-  let sourcesError = $state<string | null>(null);
+  let _sourcesError = $state<string | null>(null);
   let isDraggingOver = $state(false);
 
   // Initialize notes state when workspace changes
@@ -79,18 +79,18 @@
 
   async function loadThirdPartySources() {
     sourcesLoading = true;
-    sourcesError = null;
+    _sourcesError = null;
 
     try {
       const response = await thirdPartySourcesClient.list(WorkspaceId(workspaceId));
       if (response.success && response.data) {
         thirdPartySources = response.data;
       } else {
-        sourcesError = response.error || 'Failed to load external sources';
+        _sourcesError = response.error || 'Failed to load external sources';
       }
     } catch (err) {
       logger.error('Failed to load third-party sources', err);
-      sourcesError = 'Failed to load external sources';
+      _sourcesError = 'Failed to load external sources';
     } finally {
       sourcesLoading = false;
     }
@@ -174,10 +174,10 @@
         onOpenSource(sourceId);
       },
       (error) => {
-        sourcesError = error;
+        _sourcesError = error;
         // Clear error after a few seconds
         setTimeout(() => {
-          sourcesError = null;
+          _sourcesError = null;
         }, 5000);
       },
     );

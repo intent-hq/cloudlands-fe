@@ -67,7 +67,7 @@ function removeAgentFromUnread(
   const idx = state.unreadAgentIds.indexOf(agentId);
   if (idx === -1) return state;
   const unreadAgentIds = state.unreadAgentIds.filter((id) => id !== agentId);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { [agentId]: _, ...agentWorkspaceMap } = state.agentWorkspaceMap;
   return { ...state, unreadAgentIds, agentWorkspaceMap };
 }
@@ -121,7 +121,7 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
       const oldest = unreadAgentIds[0];
       unreadAgentIds = unreadAgentIds.slice(1);
       if (oldest && nextMap[oldest]) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         const { [oldest]: _, ...rest } = nextMap;
         nextMap = rest;
       }

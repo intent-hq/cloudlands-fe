@@ -7,9 +7,11 @@
  * 3. Apply the layout with appropriate content
  */
 
-import { agentService } from '$features/agent/agent-ipc-bridge';
 import { selectStagedWorkingChanges, selectUnstagedWorkingChanges, selectFileTrackingCommits } from '$lib/store/slices/changes/changes-selectors';
-import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectAllWorkspaceAgents,
+  selectForegroundWorkspaceAgents,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -62,7 +64,7 @@ async function applyPlanningPreset(
   const { workspaceId } = context;
 
   // Find the oldest agent (the initial coordinator)
-  const agents = agentService.getSessionsForWorkspace(workspaceId);
+  const agents = selectForegroundWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
   const orchestrator = agents.length > 0
     ? agents.reduce((oldest, current) => {
       const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
@@ -117,7 +119,7 @@ async function applyAgentsRowPreset(
   const MAX_AGENTS = 6;
 
   // Use Redux store to get ALL agents including background ones
-  // (agentService.getSessionsForWorkspace filters out background agents)
+  // (selectForegroundWorkspaceAgents filters out background agents)
   const allAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
 
   // Helper to check if agent is background
@@ -303,7 +305,7 @@ async function applyReviewPreset(
   const { workspaceId } = context;
 
   // Find the oldest agent (the initial coordinator)
-  const agents = agentService.getSessionsForWorkspace(workspaceId);
+  const agents = selectForegroundWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
   const coordinator = agents.length > 0
     ? agents.reduce((oldest, current) => {
       const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;

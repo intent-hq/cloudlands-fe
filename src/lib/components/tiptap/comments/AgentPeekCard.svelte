@@ -8,7 +8,9 @@
 
   import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
   import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
-  import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
@@ -40,14 +42,22 @@
     onShow,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
 
-  // Use subscription utility for reliable reactivity with Maps
-  // Pass the active workspace so the subscription is scoped to the current workspace
-  // and doesn't accidentally pick up agent data from a different workspace (F9 fix).
-  const agentSubscription = useAgentSubscription(agentId, $activeWorkspace);
-  const agent = $derived(agentSubscription.current);
+  // Reactive agent session from Redux. The ensure saga dispatch below
+  // triggers the disk restore; running it in an effect ensures we
+  // re-dispatch when the active workspace or agentId changes while the
+  // component stays mounted.
+  const agent$ = selectAgentById(agentId);
+  const agent = $derived($agent$);
   const agentData = $derived(getAgentPeekData(agent));
+
+  $effect(() => {
+    const workspace = $activeWorkspace;
+    if (!workspace?.id) return;
+    dispatch(ensureAgentSessionLoaded(String(workspace.id), agentId));
+  });
 
   // Get line change stats
   const lineStats$ = selectAgentLineStats(agentId);

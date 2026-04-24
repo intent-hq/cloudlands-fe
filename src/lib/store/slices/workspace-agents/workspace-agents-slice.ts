@@ -275,6 +275,18 @@ export const cleanupOrphanedStreamHandlersRequested = createAction(
   "workspaceAgents/cleanupOrphanedStreamHandlersRequested"
 );
 
+/**
+ * Saga-only trigger: ensure a single agent session is loaded into Redux.
+ * If the session already exists for the given agentId it is a no-op;
+ * otherwise the saga resolves the workspace and calls
+ * `agentService.restoreSessionWithoutBackend`. Idempotent and debounced
+ * per `(wsId, agentId)` — rapid re-dispatches while a load is in flight
+ * are ignored. Handled in sagas/ensure-agent-session-saga.ts.
+ */
+export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: string]>(
+  "workspaceAgents/ensureAgentSessionLoaded"
+);
+
 
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState)

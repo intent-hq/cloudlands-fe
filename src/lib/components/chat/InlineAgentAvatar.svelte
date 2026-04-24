@@ -5,7 +5,9 @@
    * Subscribes to agent updates to show real-time state.
    */
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { useAgentSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
@@ -20,13 +22,21 @@
 
   let { agentId, workspace = null }: Props = $props();
 
+  const dispatch = getDispatch();
   const permissionCount = selectPendingCount(agentId);
 
-  // Subscribe to agent updates for real-time state
-  // Pass workspace to scope the subscription to the correct workspace context.
-  const agentSubscription = useAgentSubscription(agentId, workspace);
-  const agent = $derived(agentSubscription.current);
+  // Reactive agent session from Redux; the ensure saga handles the
+  // disk restore.
+  const agent$ = selectAgentById(agentId);
+  const agent = $derived($agent$);
   const agentData = $derived(getAgentPeekData(agent));
+
+  $effect(() => {
+    const wsId = workspace?.id;
+    if (wsId) {
+      dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
+  });
 
   // Get avatar state
   const state = $derived(

@@ -73,8 +73,8 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { fade, slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectForegroundWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getShortcutDisplay } from '$lib/utils/shortcuts';
 
@@ -249,20 +249,12 @@
     agents: Array<{ id: string; name: string; status: string }>;
     notes: Array<{ id: string; title: string }>;
   } {
-    // Get agents from the agent service
-    const agents = workspaceId
-      ? agentService.getSessionsForWorkspace(workspaceId).map((s) => ({
-          id: s.id,
-          name: s.name || s.id,
-          status: s.status,
-        }))
-      : [];
+    const state = getReduxStore().getState();
+    // Get agents from the Redux store
+    const agents = selectForegroundWorkspaceAgents.select(state, workspaceId ?? '');
 
     // Get notes from the notes store
-    const notes = selectAllNotes.select(getReduxStore().getState(), workspaceId ?? '').map((n) => ({
-      id: n.id,
-      title: n.title,
-    }));
+    const notes = selectAllNotes.select(state, workspaceId ?? '');
 
     return { agents, notes };
   }
@@ -274,7 +266,7 @@
     const agentsContext =
       context.agents.length > 0
         ? `\nExisting agents in this workspace:
-${context.agents.map((a) => `- "${a.name}" (id: ${a.id}, status: ${a.status})`).join('\n')}`
+${context.agents.map((a) => `- "${a.name || a.id}" (id: ${a.id}, status: ${a.status})`).join('\n')}`
         : '\nNo agents exist yet in this workspace.';
 
     const notesContext =
@@ -390,7 +382,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         // Resolve agent by name
         if (tab.type === 'agent' && tab.agentName && !tab.agentId) {
           const found = context.agents.find(
-            (a) => a.name.toLowerCase() === tab.agentName!.toLowerCase(),
+            (a) => (a.name || a.id).toLowerCase() === tab.agentName!.toLowerCase(),
           );
           if (found) {
             tab.agentId = found.id;
@@ -482,7 +474,11 @@ Only respond with the <layout> tag and valid JSON inside it.`;
 <div class="panel-layout-header flex items-center justify-center gap-1 h-8 px-2 shrink-0">
   <!-- Navigation buttons -->
   <div class="flex items-center gap-0.5 ml-auto">
-    <Tooltip content={`Go Back (${getShortcutDisplay('GO_BACK')})`} side="bottom" delayDuration={300}>
+    <Tooltip
+      content={`Go Back (${getShortcutDisplay('GO_BACK')})`}
+      side="bottom"
+      delayDuration={300}
+    >
       <button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
@@ -495,7 +491,11 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         <Fa icon={faArrowLeft} size="sm" />
       </button>
     </Tooltip>
-    <Tooltip content={`Go Forward (${getShortcutDisplay('GO_FORWARD')})`} side="bottom" delayDuration={300}>
+    <Tooltip
+      content={`Go Forward (${getShortcutDisplay('GO_FORWARD')})`}
+      side="bottom"
+      delayDuration={300}
+    >
       <button
         class={cn(
           'p-1.5 rounded hover:bg-muted transition-colors',
@@ -628,5 +628,4 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       </button>
     </div>
   {/if}
-
 </div>

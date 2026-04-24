@@ -277,7 +277,7 @@ export function createCompoundModelId(providerId: string, modelId: string): stri
 export function buildProviderEnv(
   providerId: string,
   _model?: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _agent?: string,
 ): Record<string, string> {
   // Cortex uses process.execPath (Electron binary) as the command for running

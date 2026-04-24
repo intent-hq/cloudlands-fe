@@ -423,7 +423,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
   )
   .with(chatAgentRemoved, (state, { payload: [agentId] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _, ...restAgents } = state.byAgentId;
     return { ...state, byAgentId: restAgents };
   })

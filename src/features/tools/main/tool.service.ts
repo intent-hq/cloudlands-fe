@@ -423,7 +423,7 @@ export class ToolService implements IToolService {
     });
 
     // Filter out id from updates to avoid type conflicts
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { id: _, ...updateFields } = updates;
 
     const updateRequest = {

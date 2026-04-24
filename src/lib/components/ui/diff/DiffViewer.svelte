@@ -537,7 +537,7 @@
   // Separate effect to handle option changes - need to rerender after setOptions
   $effect(() => {
     // Track all the reactive props that affect options
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const _deps = [
       viewMode,
       diffIndicators,

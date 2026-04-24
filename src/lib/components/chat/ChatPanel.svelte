@@ -252,7 +252,7 @@
     isNewWorkspace = false,
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
     onChatUpdate,
@@ -937,7 +937,7 @@
 
           const { data, mimeType } = await fileToBase64(item.file);
           // Create a new object without the File property, but with base64 data
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+           
           const { file: _file, ...rest } = item;
 
           logger.info('File converted successfully', {

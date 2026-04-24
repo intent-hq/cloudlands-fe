@@ -43,7 +43,7 @@ describe('Message Queue Edge Cases', () => {
       streamStartTimes: new Map(),
       streamWorkspaceIds: new Map(),
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       async processNextQueuedMessage(agentId: string, _workspaceId: string) {
         // Check if agent was intentionally interrupted
         // NOTE: Do NOT delete the flag here — it's cleared in handleSendMessage

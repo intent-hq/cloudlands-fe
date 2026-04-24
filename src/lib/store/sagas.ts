@@ -157,7 +157,7 @@ export type { SagaName } from './types';
 import type { SagaName as _SagaName } from './types';
 type _AssertSagasExtendsName = Record<_SagaName, unknown> extends Record<keyof typeof sagas, unknown> ? true : never;
 type _AssertNameExtendsSagas = Record<keyof typeof sagas, unknown> extends Record<_SagaName, unknown> ? true : never;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const _assertSync: _AssertSagasExtendsName & _AssertNameExtendsSagas = true;
 
 /** All registered saga names, for use by initStore to start all sagas synchronously. */

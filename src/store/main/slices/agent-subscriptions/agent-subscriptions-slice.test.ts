@@ -141,7 +141,7 @@ describe("agentSubscriptionsReducer", () => {
     });
 
     it("is idempotent when the same delegated agent is added twice", () => {
-      let state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
+      const state = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-1", "child-a")));
       const next = reduce(subscribeToDelegationGroup(WS, makeSeed("seed-2", "child-a")), state);
       expect(next).toBe(state);
     });

@@ -44,7 +44,7 @@
     noteId,
     onAddComment,
     onAgentLaunched,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     onCreateSessionComment: _onCreateSessionComment,
     showNoteActions = true,
   }: Props = $props();

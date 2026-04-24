@@ -225,7 +225,7 @@ export function getPanelLayoutManager(workspaceId: string): PanelLayoutAdapter {
 }
 
 /** Check if a layout adapter exists (always true — adapters are created on demand) */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function hasPanelLayoutManager(_workspaceId: string): boolean {
   return true; // Adapters are lazy; state lives in Redux
 }

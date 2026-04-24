@@ -53,7 +53,6 @@
   let fileSaving = $state(false);
   let currentFilePath = $state<string | null>(null);
 
-  let isNewFile = $state(false);
   let isFileBinary = $state(false);
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
   let isMounted = $state(true);
@@ -260,7 +259,6 @@
           fileContent = null;
           originalFileContent = null;
           fileError = null;
-          isNewFile = false;
           currentFilePath = filePath;
         });
       }
@@ -272,7 +270,6 @@
     untrack(() => {
       fileLoading = true;
       fileError = null;
-      isNewFile = false;
       isFileBinary = false;
     });
     try {
@@ -300,7 +297,6 @@
         errorMessage.includes('no such file')
       ) {
         untrack(() => {
-          isNewFile = true;
           fileContent = '';
           originalFileContent = '';
           fileError = null;

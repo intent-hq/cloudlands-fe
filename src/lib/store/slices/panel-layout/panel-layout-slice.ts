@@ -486,7 +486,7 @@ function closePanelHelper(ws: WorkspacePanelLayoutState, panelId: string): Works
   const newRoot = removeFromTree(ws.root, panelId);
   if (!newRoot) return ws;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { [panelId]: _removed, ...remainingPanels } = ws.panels;
   const focusedPanelId =
     ws.focusedPanelId === panelId

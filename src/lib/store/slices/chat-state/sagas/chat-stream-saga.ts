@@ -51,7 +51,7 @@ function* handleCleanupStream(
  * handles the registry-level cleanup for cases where the saga
  * directly triggers cleanup.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 function cleanupStreamFromRegistry(sessionId: string, _preserveContent: boolean): void {
   // 1. Remove stream handler
   const handler = registry.getStreamHandler(sessionId);

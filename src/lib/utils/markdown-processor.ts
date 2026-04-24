@@ -99,7 +99,7 @@ async function parseMarkdownMainThread(
   markdown: string,
   pipeline?: { preserveAnchors: boolean },
 ): Promise<string> {
-  let content = pipeline?.preserveAnchors
+  const content = pipeline?.preserveAnchors
     ? normalizeAnchorPositions(markdown)
     : markdown;
 

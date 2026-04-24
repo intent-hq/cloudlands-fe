@@ -27,7 +27,7 @@ describe("createSelector", () => {
 
     it("should compute and return values with single argument", () => {
       const { store } = init();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const selector = createSelector((state, _id: string) => {
         return state.storeUtility;
       });
@@ -506,22 +506,22 @@ describe("createSelector", () => {
     it("should handle primitive return values", () => {
       const { store } = init();
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const stringSelector = createSelector((_state: StoreState) => "constant");
       expect(stringSelector.select(store.getState())).toBe("constant");
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const numberSelector = createSelector((_state: StoreState) => 42);
       expect(numberSelector.select(store.getState())).toBe(42);
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const booleanSelector = createSelector((_state: StoreState) => true);
       expect(booleanSelector.select(store.getState())).toBe(true);
     });
 
     it("should handle array return values", () => {
       const { store } = init();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const selector = createSelector((_state: StoreState) => {
         return Object.keys(store.getState().tabState.scrollPositions);
       });
@@ -561,7 +561,7 @@ describe("createSelector", () => {
 
     it("should handle empty state access (no properties accessed)", () => {
       const { store } = init();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const computeFn = vi.fn((_state: StoreState) => {
         // Don't access any state properties
         return "constant";

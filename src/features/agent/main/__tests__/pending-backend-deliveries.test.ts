@@ -6,7 +6,7 @@
  * 2. The safety timeout force-clears pendingBackendDeliveries after 5 minutes
  */
 
-import { beforeAll, beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {

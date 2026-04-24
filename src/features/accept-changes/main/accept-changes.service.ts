@@ -472,7 +472,7 @@ export class AcceptChangesService {
    *
    * @returns 'origin' - Let git use the configured remote with local credentials
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private resolvePushRemote(_status: WorkspaceGitStatus, _workspaceId: WorkspaceId, _operation: string): string {
     // Always use 'origin' and let git handle authentication via local credentials
     // (SSH keys, credential manager, etc.). The user's local git config determines

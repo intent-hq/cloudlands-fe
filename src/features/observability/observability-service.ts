@@ -4,7 +4,7 @@ import { Logger } from '../../shared/logger';
 export class ObservabilityService {
   private logger = new Logger('ObservabilityService');
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async ensureWorkspaceInitialized(_workspaceId: string): Promise<void> {
     // No-op: Redux handles event initialization now
   }

@@ -218,7 +218,7 @@ export class PermissionManager extends EventEmitter {
   /**
    * Check cached rules for a permission
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private checkCachedRules(title: string, _sessionId: AgentId): RequestPermissionOutcome | null {
     // Remove expired rules
     this.rules = this.rules.filter((rule) => !rule.expiresAt || rule.expiresAt > Date.now());

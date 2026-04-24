@@ -3,7 +3,6 @@ import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
 import {
   createCollection,
-  addItem,
   removeItem,
   updateItem,
   getItem,
@@ -591,7 +590,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   })
   .with(removeSession, (state, { payload: [agentId] }) => {
     if (!state.byAgentId[agentId]) return state;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [agentId]: _, ...rest } = state.byAgentId;
     let next: AgentSessionState = { ...state, byAgentId: rest };
     next = removeFromWorkspaceIndex(next, agentId);
@@ -716,7 +715,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     for (const id of agentIds) {
       delete byAgentId[id];
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
     return { byAgentId, agentIdsByWorkspace: restWorkspaces };
   })

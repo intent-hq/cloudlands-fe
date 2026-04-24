@@ -181,7 +181,7 @@ async function getStagedDiffs(
 async function prepareCommitContext(
   workspace: Workspace,
   resultTag: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _context?: AgentExecutorContext,
 ): Promise<string> {
   const statusResult = await gitClient.getStatus(workspace.id);
@@ -436,9 +436,9 @@ Wrap your final review in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
  */
 async function prepareWalkthroughContext(
   workspace: Workspace,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _resultTag: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _context?: AgentExecutorContext,
 ): Promise<string> {
   const walkthroughStatusResult = await gitClient.getStatus(workspace.id);

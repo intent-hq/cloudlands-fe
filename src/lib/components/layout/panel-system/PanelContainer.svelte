@@ -334,7 +334,7 @@
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   function handleCornerResizeEnd(_handleIndex: number) {
     handleResizeEnd();
   }

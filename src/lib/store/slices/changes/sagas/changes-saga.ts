@@ -9,7 +9,7 @@
  * - Periodic sync of agent stats with main process (safety net)
  */
 
-import { call, put, takeLatest, delay, fork, take, cancel, cancelled, select, type SagaGenerator } from "typed-redux-saga";
+import { call, put, takeLatest, delay, fork, take, cancel, cancelled, type SagaGenerator } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import { invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
 import { Logger } from "$lib/utils/logger";

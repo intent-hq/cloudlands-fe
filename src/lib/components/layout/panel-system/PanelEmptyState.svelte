@@ -9,7 +9,7 @@
   import { writable } from 'svelte/store';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import Fa from 'svelte-fa';
-  import { faPlus, faTerminal, faGlobe, faFile, faRobot, faGear } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faTerminal, faGlobe, faFile, faRobot } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';

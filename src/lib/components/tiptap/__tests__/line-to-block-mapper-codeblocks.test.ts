@@ -79,7 +79,7 @@ Paragraph after heading.`;
         for (const lineAttr of attrValue.lines) {
           // Find the markdown line number for this attribution
           const lineNum = Array.from(lineAttributionsMap.entries()).find(
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+             
             ([_, attr]) => attr === lineAttr.attribution,
           )?.[0];
           const line = lineNum ? markdown.split('\n')[lineNum - 1] : '';
@@ -93,7 +93,7 @@ Paragraph after heading.`;
       } else {
         // Regular block
         const lineNum = Array.from(lineAttributionsMap.entries()).find(
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+           
           ([_, attr]) => attr === attrValue,
         )?.[0];
         const line = lineNum ? markdown.split('\n')[lineNum - 1] : '';

@@ -1016,9 +1016,9 @@
     {groupHeader}
   >
     {#snippet trigger({
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       open: _open,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       value: _value,
     }: {
       open: boolean;

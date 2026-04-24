@@ -22,8 +22,8 @@
   let messages = $state<AgentMessage[]>([]);
 
   // Internal state
-  let isStreaming = $state(false);
-  let streamingContent = $state<ContentBlock[] | null>(null);
+  let _isStreaming = $state(false);
+  let _streamingContent = $state<ContentBlock[] | null>(null);
   let unsubscribe: (() => void) | null = null;
   let streamStartTime: number | null = null;
   let messageAccumulator: Map<string, ContentBlock[]> = new Map();
@@ -40,7 +40,7 @@
 
   // Methods
   export function startStreaming() {
-    isStreaming = true;
+    _isStreaming = true;
     streamingError = null;
     streamStartTime = Date.now();
     streamStats = {
@@ -53,12 +53,12 @@
   }
 
   export function stopStreaming() {
-    isStreaming = false;
+    _isStreaming = false;
     if (streamStartTime) {
       streamStats.duration = Date.now() - streamStartTime;
       streamStartTime = null;
     }
-    streamingContent = null;
+    _streamingContent = null;
     messageAccumulator.clear();
   }
 
@@ -137,7 +137,7 @@
           });
 
           // Update streaming content
-          streamingContent = [...accumulated];
+          _streamingContent = [...accumulated];
           lastMessageId = messageId;
         }
 

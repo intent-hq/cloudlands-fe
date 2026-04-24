@@ -53,7 +53,7 @@ export function getNoteTitle(note: Note): string {
  * Note: Legacy dependency-based parent mapping has been removed.
  * All notes now use parentId directly for hierarchy.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 function buildParentMap(_notes: Note[]): Map<string, string> {
   // Return empty map - parentId is now the only source of truth for hierarchy
   return new Map<string, string>();

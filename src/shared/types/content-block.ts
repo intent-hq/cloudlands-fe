@@ -139,7 +139,7 @@ export function normalizeContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
     const last = result[result.length - 1];
     if (block.type === 'text' && last?.type === 'text') {
       // Merge adjacent text blocks, stripping stale legacy `content` field
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const { content: _lastContent, ...lastWithoutContent } = last;
       result[result.length - 1] = {
         ...lastWithoutContent,

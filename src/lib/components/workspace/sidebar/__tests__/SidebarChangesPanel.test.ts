@@ -29,11 +29,11 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
   }
 
   function _createMockFtSelector<T>(getter: () => T) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const fn = (..._args: any[]) => _makeReadable(getter);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     fn.select = (_state: any, ..._args: any[]) => getter();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     fn.effect = (..._args: any[]) => { };
     fn.withStore = () => fn;
     return fn;
@@ -238,7 +238,7 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
     },
   ),
   selectWorkspaceActivePullRequest: Object.assign(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     (_workspaceId: any) => createReadable(null),
     { select: () => null },
   ),
@@ -322,6 +322,10 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   selectAllWorkspaceAgents: Object.assign(
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => { }; } }),
     { select: vi.fn().mockReturnValue([]) },
+  ),
+  selectAgentById: Object.assign(
+    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(undefined); return () => { }; } }),
+    { select: vi.fn().mockReturnValue(undefined) },
   ),
 }));
 

@@ -68,7 +68,7 @@ function flattenTree(d: FileType): FileType[] {
 export function createColorScale(
   data: FileType | null,
   colorEncoding: ColorEncoding,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _fileColors: Record<string, string>,
 ) {
   if (!data) return { colorScale: () => '#f4f4f4', colorExtent: [0, 0] as [number, number] };
@@ -618,7 +618,7 @@ export function packData(
       }
       return 0;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _focusedSubtreeCount = countInSubtree(prunedData, focusPath);
   }
 

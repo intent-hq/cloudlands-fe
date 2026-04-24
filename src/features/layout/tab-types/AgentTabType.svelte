@@ -6,6 +6,7 @@
    */
 
   import { untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
@@ -98,13 +99,16 @@
     return selectSpecialistName.select(getReduxStore().getState(), specialistId);
   });
 
-  // Get parent agent info
+  // Get parent agent info. Mirror the parent agent ID into a writable so
+  // selectAgentById re-subscribes when it changes, and the "Delegated by"
+  // label appears reactively once the parent session is loaded into Redux.
   const parentAgentId = $derived((agentSession?.metadata?.createdByAgentId as string) || null);
-  const delegatedByName = $derived.by(() => {
-    if (!parentAgentId) return null;
-    const parentSession = agentService.getSession(parentAgentId);
-    return parentSession?.name || null;
+  const parentAgentIdStore = writable<string>('');
+  $effect(() => {
+    parentAgentIdStore.set(parentAgentId ?? '');
   });
+  const parentAgent$ = selectAgentById(parentAgentIdStore);
+  const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name || null : null);
 
   // Get task note ID
   const agentTaskNoteId = $derived(

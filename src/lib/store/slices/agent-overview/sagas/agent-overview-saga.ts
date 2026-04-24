@@ -9,7 +9,7 @@
  * The component (AgentOverviewPanel.svelte) handles:
  * - Loading historical events via queryEvents()
  * - Subscribing to real-time events via onEventCreated()
- * - Subscribing to agent sessions via useAllAgentsSubscription()
+ * - Subscribing to agent sessions via Redux selectors
  *
  * If any of those are migrated to sagas in the future, they would go here.
  */

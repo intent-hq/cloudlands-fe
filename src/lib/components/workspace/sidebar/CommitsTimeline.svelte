@@ -109,7 +109,6 @@
   // Derived state from Redux
   const allCommits = $derived($ftCommits$ ?? []);
   const commits = $derived((allCommits ?? []).filter((c) => !c.isPushed));
-  const pushedCommits = $derived((allCommits ?? []).filter((c) => c.isPushed));
   const boundarySha = $derived($ftBoundarySha$);
   const olderCommits = $derived($ftOlderCommits$ ?? []);
   const loadingOlderCommits = $derived($ftLoadingOlderCommits$);

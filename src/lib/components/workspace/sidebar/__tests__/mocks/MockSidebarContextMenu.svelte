@@ -1,5 +1,5 @@
 <script lang="ts">
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   let { items, x, y, onClickOutside }: any = $props();
   void x; void y; void onClickOutside;
 </script>

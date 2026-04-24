@@ -4,7 +4,6 @@
    * Shows working branch (editable) and trunk branch (selectable).
    */
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';

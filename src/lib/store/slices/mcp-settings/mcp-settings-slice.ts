@@ -167,7 +167,7 @@ export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
     errorMessages: { ...state.errorMessages, [name]: message },
   }))
   .with(clearServerErrorMessage, (state, { payload: [name] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [name]: _, ...rest } = state.errorMessages;
     return { ...state, errorMessages: rest };
   })
@@ -182,20 +182,20 @@ export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
   .with(toggleServerDisabled, (state, { payload: [name] }) => {
     const isDisabled = name in state.disabledServers;
     if (isDisabled) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const { [name]: _, ...rest } = state.disabledServers;
       return { ...state, disabledServers: rest };
     }
     return { ...state, disabledServers: { ...state.disabledServers, [name]: true as const } };
   })
   .with(removeServerFromState, (state, { payload: [name] }) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [name]: _s, ...restStatus } = state.statusMap;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [name]: _t, ...restTools } = state.toolsMap;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [name]: _e, ...restErrors } = state.errorMessages;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { [name]: _d, ...restDisabled } = state.disabledServers;
     return {
       ...state,

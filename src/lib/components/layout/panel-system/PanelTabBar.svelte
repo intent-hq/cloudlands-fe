@@ -39,7 +39,6 @@
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { filterSpecialistsByGitHubAuth, selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
@@ -47,7 +46,11 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
+  import {
+    selectAgentById,
+    selectAllWorkspaceAgents,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { writable } from 'svelte/store';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
@@ -151,9 +154,17 @@
   let renameInputRef = $state<HTMLInputElement | null>(null);
   let renameValue = $state('');
 
-  // Subscribe to agent updates to reactively update agent tab titles when agents rename
-  // This creates a reactive dependency on the agent store
-  const agentSubscription = useAllAgentsSubscription(() => workspaceId);
+  // Mirror the workspaceId prop into a writable so the Redux selector
+  // re-evaluates when the prop changes while the component stays mounted.
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  // Reactive list of agent sessions for this workspace. Tab titles, avatar
+  // state, specialist, and delegation info all derive from this store so the
+  // UI updates when agents rename or their session metadata changes.
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   // Reactive store subscription for specialist names - ensures re-render when specialists change
   const specialists$ = selectSpecialists();
@@ -186,11 +197,10 @@
         return note.title || 'Untitled';
       }
     }
-    // For agent tabs, look up the name from the reactive subscription
+    // For agent tabs, look up the name from the reactive workspace agents store
     // This ensures the tab title updates when an agent renames itself
     if (tab.type === 'agent' && tab.agentId) {
-      // Use the subscription's reactive data to find the agent
-      const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
+      const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
       if (agent?.name) {
         return agent.name;
       }
@@ -201,24 +211,22 @@
 
   /**
    * Check if an agent tab is for a background agent
-   * Uses agentSubscription.all for reactive updates when session metadata changes
+   * Uses $workspaceAgents$ for reactive updates when session metadata changes
    */
   function isBackgroundAgent(tab: PanelTab): boolean {
     if (tab.type !== 'agent' || !tab.agentId) return false;
-    // Use the reactive subscription to get the agent session
-    const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
+    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     return !!(agent?.isBackground || (agent?.metadata as any)?.isBackground);
   }
 
   /**
    * Get the specialist display name for an agent tab
-   * Uses agentSubscription.all for reactive updates when session metadata changes
+   * Uses $workspaceAgents$ for reactive updates when session metadata changes
    * Uses unified specialist lookup that includes built-in, custom, AND team specialists
    */
   function getAgentSpecialist(tab: PanelTab): string | null {
     if (tab.type !== 'agent' || !tab.agentId) return null;
-    // Use the reactive subscription to get the agent session
-    const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
+    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
     // Use unified specialist lookup from store (includes team specialists like product-voice, dev-partner)
@@ -232,7 +240,7 @@
    */
   function getAgentAvatarState(tab: PanelTab): AvatarState {
     if (tab.type !== 'agent' || !tab.agentId) return 'idle';
-    const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
+    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     if (!agent) return 'idle';
 
     // Use centralized getAvatarState for consistent state determination
@@ -251,31 +259,17 @@
 
   /**
    * Get the specialist ID for an agent tab (for avatar overlay)
-   * Uses agentSubscription.all for reactive updates when session metadata changes
+   * Uses $workspaceAgents$ for reactive updates when session metadata changes
    * Returns any specialist ID (team coordinators included), or null if no specialist
    */
   function getAgentSpecialistType(tab: PanelTab): string | null {
     if (tab.type !== 'agent' || !tab.agentId) return null;
-    // Use the reactive subscription to get the agent session
-    const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
+    const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
     return specialistId || null;
   }
 
-  /**
-   * Get the "Delegated by" agent name for an agent tab
-   * Shows parent agent name when this agent was created by another agent
-   */
-  function getDelegatedByName(tab: PanelTab): string | null {
-    if (tab.type !== 'agent' || !tab.agentId) return null;
-    // Use the reactive subscription to get the agent session
-    const agent = agentSubscription.all.find((a) => a.id === tab.agentId);
-    const parentAgentId = agent?.metadata?.createdByAgentId as string | undefined;
-    if (!parentAgentId) return null;
-    // Look up the parent agent's name
-    const parentSession = agentService.getSession(parentAgentId);
-    return parentSession?.name || null;
-  }
+
 
   /**
    * Get the full file path relative to workspace root, for display in header
@@ -899,6 +893,28 @@
   const categoryLabel = $derived(activeTab ? getCategoryLabel(activeTab.type) : 'Panel');
 
   /**
+   * "Delegated by" parent-agent attribution for the active agent tab.
+   *
+   * The parent agent ID is mirrored into a writable store so selectAgentById
+   * re-evaluates reactively — the label appears as soon as the parent session
+   * lands in Redux (e.g. after a workspace switch loads sessions), without
+   * requiring any user interaction.
+   */
+  const activeAgentParentId = $derived.by(() => {
+    if (!activeTab || activeTab.type !== 'agent' || !activeTab.agentId) return null;
+    const agent = $workspaceAgents$.find((a) => a.id === activeTab.agentId);
+    return (agent?.metadata?.createdByAgentId as string | undefined) ?? null;
+  });
+  const activeAgentParentIdStore = writable<string>('');
+  $effect(() => {
+    activeAgentParentIdStore.set(activeAgentParentId ?? '');
+  });
+  const activeAgentParent$ = selectAgentById(activeAgentParentIdStore);
+  const activeAgentDelegatedByName = $derived(
+    activeAgentParentId ? $activeAgentParent$?.name || null : null,
+  );
+
+  /**
    * Check if a tab can be renamed.
    * Notes, agents, and files can be renamed.
    * Spec notes cannot be renamed.
@@ -1445,7 +1461,7 @@
             <!-- Specialist and Delegated by (for agent tabs) -->
             {#if activeTab.type === 'agent'}
               {@const specialist = getAgentSpecialist(activeTab)}
-              {@const delegatedBy = getDelegatedByName(activeTab)}
+              {@const delegatedBy = activeAgentDelegatedByName}
               {#if specialist || delegatedBy}
                 <span
                   class="text-xs shrink-5 truncate whitespace-nowrap {isFocused

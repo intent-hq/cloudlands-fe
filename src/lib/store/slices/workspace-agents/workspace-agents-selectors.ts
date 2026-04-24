@@ -13,7 +13,9 @@ function getWorkspaceAgentState(state: StoreState, wsId: string) {
 }
 
 /** Derives agent sessions from workspace agentIds + agent-session slice */
-export const selectAllWorkspaceAgents = createSelector((state, wsId: string): AgentSession[] => {
+export const selectAllWorkspaceAgents = createSelector((state, wsId?: string): AgentSession[] => {
+  if (!wsId) return [];
+  
   const agentIds = getWorkspaceAgentState(state, wsId).agentIds;
   const result: AgentSession[] = [];
   for (const id of agentIds) {

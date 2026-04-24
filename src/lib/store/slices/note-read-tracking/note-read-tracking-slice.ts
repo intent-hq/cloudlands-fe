@@ -36,7 +36,7 @@ function withoutUnreadNoteId(
     return unreadNoteIds;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { [noteId]: _removed, ...rest } = unreadNoteIds;
   return rest;
 }

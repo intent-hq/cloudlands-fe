@@ -709,7 +709,7 @@ export class GitWatcherService extends EventEmitter {
   /**
    * Detect git operations from state changes
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private async detectGitOperations(_state: any): Promise<void> {
     // This would compare with previous state to detect:
     // - New commits

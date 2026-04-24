@@ -44,7 +44,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
-  import { useAllAgentsSubscription } from '$lib/utils/agent-subscription.svelte';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 
   interface Props {
     workspaceId: string;
@@ -56,13 +56,19 @@
 
   let { workspaceId, onOpenFileChanges, onShowAgent, onOpenNote }: Props = $props();
 
-  // Subscribe to agent updates to get current agent names (not stale event.actor.name)
-  const agentSubscription = useAllAgentsSubscription(() => workspaceId);
+  // Wrap workspaceId prop in a writable store so selectors react to prop changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  // Reactive list of workspace agents for current agent names in events
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   // Build a reactive map of agent ID -> current name
   const agentNameMap = $derived.by(() => {
     const map = new Map<string, string>();
-    for (const agent of agentSubscription.all) {
+    for (const agent of $workspaceAgents$) {
       if (agent.id && agent.name) {
         map.set(agent.id, agent.name);
       }
@@ -72,27 +78,20 @@
 
   /**
    * Get the current agent name for an event's actor.
-   * Looks up the agent's current name from the agent subscription,
+   * Looks up the agent's current name from the workspace agents store,
    * falling back to the stored event.actor.name if the agent is no longer in the workspace.
    */
   function getCurrentActorName(event: WorkspaceEvent): string | undefined {
     const actorId = event.actor?.id;
     if (!actorId) return event.actor?.name;
 
-    // Try to get current name from agent subscription
+    // Try to get current name from workspace agents store
     const currentName = agentNameMap.get(actorId);
     if (currentName) return currentName;
 
     // Fall back to stored name (for historical events or deleted agents)
     return event.actor?.name;
   }
-
-
-  // Wrap workspaceId prop in a writable store so selectors react to prop changes
-  const workspaceIdStore = writable(workspaceId);
-  $effect(() => {
-    workspaceIdStore.set(workspaceId);
-  });
 
   // Read events and loading state from Redux
   const events$ = selectWorkspaceEvents(workspaceIdStore);

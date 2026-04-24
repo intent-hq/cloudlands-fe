@@ -149,14 +149,14 @@
   const specialistsFolderPath = selectSpecialistsFolderPath();
 
   // Local state for specialist model/coding agent selection
-  let specialistCodingAgentValue = $state('');
+  let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state('');
 
   // Sync specialist model value when specialist changes or file specialists change
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      specialistCodingAgentValue = selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id);
+      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id);
       specialistModelValue = selectEffectiveModel.select(
         getReduxStore().getState(),
         currentSpecialist.id,
@@ -177,7 +177,7 @@
     if (!currentSpecialist || !compoundModelId) return;
 
     const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
-    specialistCodingAgentValue = newProvider;
+    _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
 
     if (isFileBased) {

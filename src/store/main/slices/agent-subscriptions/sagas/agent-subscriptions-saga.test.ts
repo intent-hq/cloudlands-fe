@@ -78,7 +78,6 @@ import {
   sweepCatchUpSeen,
   stuckGroupFirstSeen,
   buildSweepCatchUpEventId,
-  recordDeliveredEventIds,
   filterAlreadyDelivered,
 } from "./delivery-saga";
 import { dispatchWorkspaceEvent, handleSubscribeToDelegationGroup } from "./ipc-bridge-saga";
@@ -258,7 +257,7 @@ describe("handleDeliverEvents", () => {
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           // Simulate the timeout branch winning the race
           return { result: undefined, timeout: true };
@@ -290,7 +289,7 @@ describe("handleDeliverEvents", () => {
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           return { result: undefined, timeout: true };
         },
@@ -374,7 +373,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           return { result: { success: false, error: "Agent is already streaming", errorCode: "ALREADY_STREAMING" }, timeout: undefined };
         },
@@ -400,7 +399,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           return { result: { success: false, error: "Delivery in flight", errorCode: "DELIVERY_IN_FLIGHT" }, timeout: undefined };
         },
@@ -426,7 +425,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           return { result: { success: false, error: "Queued messages pending", errorCode: "QUEUE_PENDING" }, timeout: undefined };
         },
@@ -452,7 +451,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         race(_effect, _next) {
           return { result: { success: false, error: "Agent is already streaming", errorCode: "ALREADY_STREAMING" }, timeout: undefined };
         },
