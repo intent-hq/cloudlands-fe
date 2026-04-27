@@ -781,9 +781,15 @@
               return true;
             }
 
+            const isMac =
+              typeof navigator !== 'undefined' &&
+              navigator.platform.toUpperCase().includes('MAC');
+
             // Emacs-style shortcuts (Ctrl+key on macOS)
-            // Only intercept if Ctrl is pressed without Meta (Cmd)
-            if (event.ctrlKey && !event.metaKey) {
+            // Only intercept if Ctrl is pressed without Meta (Cmd), and only on macOS.
+            // On Windows/Linux, Ctrl+A/E/K/... should fall through to native behavior
+            // (e.g. Ctrl+A selects all).
+            if (isMac && event.ctrlKey && !event.metaKey) {
               // Ctrl+A: Move to beginning of current line
               if (event.key === 'a') {
                 event.preventDefault();
