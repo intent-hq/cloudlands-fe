@@ -9,6 +9,7 @@ import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { PatchPrimitive } from '../../../shared/types/notes-primitives';
 import PatchBlock from '../../components/notes/primitives/PatchBlock.svelte';
 import { decodeBase64Unicode } from './index';
+import { dispatchWindowEvent } from '../window-events';
 
 export interface PatchBlockOptions {
   HTMLAttributes: Record<string, any>;
@@ -222,7 +223,7 @@ export const PatchBlockNode = Node.create<PatchBlockOptions>({
           const primitive = node.attrs.data as PatchPrimitive;
           if (primitive) {
             // Dispatch custom event for applying the patch
-            window.dispatchEvent(new CustomEvent('apply-patch', { detail: primitive }));
+            dispatchWindowEvent('apply-patch', primitive);
             return true;
           }
         }

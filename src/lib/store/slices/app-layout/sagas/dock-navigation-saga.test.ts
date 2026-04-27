@@ -5,6 +5,15 @@ vi.mock("typed-redux-saga", () => ({
   call: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.call(fn, ...args);
   },
+  cancel: function* (task: any) {
+    return yield sagaEffects.cancel(task);
+  },
+  fork: function* (fn: any, ...args: any[]) {
+    return yield sagaEffects.fork(fn, ...args);
+  },
+  getContext: function* (key: string) {
+    return yield sagaEffects.getContext(key);
+  },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
@@ -13,6 +22,13 @@ vi.mock("typed-redux-saga", () => ({
   },
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
+  },
+}));
+
+vi.mock("$lib/store/utils/selector-channel-effects", () => ({
+  takeLatestFromSelector: function* () {
+    // No-op for these tests — return a fake task object.
+    return { id: "fake-task" };
   },
 }));
 
@@ -88,6 +104,10 @@ describe("dockNavigationSaga", () => {
     isStreamingMock.mockReturnValue(false);
   });
 
+  function getDrawerStateForWs1() {
+    return currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer;
+  }
+
   it("emits dock navigation shortcuts from the keydown channel", () => {
     currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer = {
       open: true,
@@ -102,7 +122,7 @@ describe("dockNavigationSaga", () => {
       return { close: vi.fn(() => unsubscribe?.()) };
     });
 
-    const channel = createDockNavigationChannel("ws-1");
+    const channel = createDockNavigationChannel("ws-1", getDrawerStateForWs1);
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     const event = {
       altKey: true,
@@ -133,7 +153,7 @@ describe("dockNavigationSaga", () => {
     });
     isFocusInTerminalMock.mockReturnValue(true);
 
-    createDockNavigationChannel("ws-1");
+    createDockNavigationChannel("ws-1", getDrawerStateForWs1);
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     keydown({
       altKey: true,
@@ -163,7 +183,7 @@ describe("dockNavigationSaga", () => {
     });
     isStreamingMock.mockReturnValue(true);
 
-    createDockNavigationChannel("ws-1");
+    createDockNavigationChannel("ws-1", getDrawerStateForWs1);
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     keydown({
       altKey: true,
@@ -185,7 +205,16 @@ describe("dockNavigationSaga", () => {
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
 
-    expect(iterator.next()).toEqual({ value: sagaEffects.take(channel), done: false });
+    // 1. Initial SELECT for drawer state ref
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
+    // 2. Provide initial drawer state → take(channel)
+    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
+      value: sagaEffects.take(channel),
+      done: false,
+    });
     expect(iterator.next({ type: "dock", direction: "next" })).toEqual({
       value: sagaEffects.select(selectForegroundWorkspaceAgents.select, "ws-1"),
       done: false,
@@ -210,7 +239,8 @@ describe("dockNavigationSaga", () => {
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
 
-    iterator.next();
+    iterator.next(); // initial SELECT for drawer state ref
+    iterator.next({ open: false, type: null, itemId: null }); // → take(channel)
     iterator.next({ type: "dock", direction: "next" });
     iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
     expect(iterator.next([{ id: "terminal-1", type: "terminal" }])).toEqual({
@@ -229,7 +259,16 @@ describe("dockNavigationSaga", () => {
 
     const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
 
-    expect(iterator.next()).toEqual({ value: sagaEffects.take(channel), done: false });
+    // 1. Initial SELECT for drawer state ref
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
+    // 2. Provide initial drawer state → take(channel)
+    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
+      value: sagaEffects.take(channel),
+      done: false,
+    });
     expect(iterator.next({ type: "create-terminal" })).toEqual({
       value: sagaEffects.put(createTerminalRequested("ws-1")),
       done: false,

@@ -1,5 +1,6 @@
 import { parseVSCodeTheme, type ParsedVSCodeTheme } from './vscode-theme-parser';
 import { applyCustomMonacoTheme, revertMonacoTheme } from './monaco-theme';
+import { dispatchWindowEvent } from './window-events';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -267,16 +268,12 @@ export class ThemeManager {
     }
 
     // Dispatch custom event for components to react
-    window.dispatchEvent(
-      new CustomEvent('theme-changed', {
-        detail: {
-          theme: this.currentTheme,
-          isDark,
-          customThemeName: activeTheme?.name ?? null,
-          terminalColors: activeTheme?.terminalColors ?? null,
-        },
-      }),
-    );
+    dispatchWindowEvent('theme-changed', {
+      theme: this.currentTheme,
+      isDark,
+      customThemeName: activeTheme?.name ?? null,
+      terminalColors: activeTheme?.terminalColors ?? null,
+    });
   }
 
   /**

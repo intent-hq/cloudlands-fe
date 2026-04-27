@@ -86,6 +86,10 @@
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
+  import {
+    openAgentTabRequested,
+  } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const dispatch = getDispatch();
 
@@ -396,9 +400,11 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId: prAgentId, sourcePanelId, openInAdjacentPanel },
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, {
+          agentId: prAgentId,
+          sourcePanelId,
+          openInAdjacentPanel,
         }),
       );
     }
@@ -592,11 +598,7 @@
         commitHash: 'PR',
         attribution: { timestamp: Date.now() },
       };
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-diff', {
-          detail: { change, workspaceId },
-        }),
-      );
+      getReduxStore().dispatch(openWorkspaceDiff(workspaceId, change));
     } catch (error) {
       logger.error('[handlePRFileClick] Failed to fetch file content', { error, filePath });
     }

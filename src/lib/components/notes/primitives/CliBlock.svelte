@@ -17,6 +17,11 @@
   import { onDestroy } from 'svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    openAgentTabRequested,
+    openTerminalTabRequested,
+  } from '$lib/store/slices/app-layout/app-layout-slice';
 
   const logger = createLogger('CliBlock');
 
@@ -144,12 +149,9 @@
     e.stopPropagation();
     const tid = terminalId || primitive?.terminalId;
     if (!tid) return;
+    if (!workspaceId) return;
 
-    window.dispatchEvent(
-      new CustomEvent('workspace:openTerminal', {
-        detail: { terminalId: tid },
-      }),
-    );
+    getReduxStore().dispatch(openTerminalTabRequested(workspaceId, { terminalId: tid }));
   }
 </script>
 
@@ -162,10 +164,13 @@
         <button
           type="button"
           class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-          onclick={() =>
-            window.dispatchEvent(
-              new CustomEvent('workspace:open-agent', { detail: { agentId: linkedAgentId } }),
-            )}
+          onclick={() => {
+            if (workspaceId) {
+              getReduxStore().dispatch(
+                openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
+              );
+            }
+          }}
           title="View agent"
         >
           <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />

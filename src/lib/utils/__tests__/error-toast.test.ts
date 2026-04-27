@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   createAgentMock,
   dismissMock,
+  dispatchMock,
   generateReportMock,
   getInstanceMock,
   getReduxStoreMock,
@@ -12,6 +13,7 @@ const {
 } = vi.hoisted(() => ({
   createAgentMock: vi.fn(),
   dismissMock: vi.fn(),
+  dispatchMock: vi.fn(),
   generateReportMock: vi.fn(),
   getInstanceMock: vi.fn(),
   getReduxStoreMock: vi.fn(),
@@ -73,14 +75,13 @@ describe('showErrorToast', () => {
     vi.clearAllMocks();
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
     getInstanceMock.mockReturnValue({ createAgent: createAgentMock });
-    getReduxStoreMock.mockReturnValue({ getState: () => legacyState });
+    getReduxStoreMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
     selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
     createAgentMock.mockResolvedValue({ agentId: 'agent-123' });
   });
 
   it('uses the workspace default selector when launching the debug agent', async () => {
-    const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
     const error = {
       id: 'error-1',
       title: 'Broken',
@@ -104,6 +105,6 @@ describe('showErrorToast', () => {
       legacyState.model.workspaceModels['ws-1'],
     );
     expect(dismissMock).toHaveBeenCalledWith('error-1');
-    expect(dispatchEventSpy).toHaveBeenCalled();
+    expect(dispatchMock).toHaveBeenCalled();
   });
 });

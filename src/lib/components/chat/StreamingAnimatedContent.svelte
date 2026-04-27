@@ -12,9 +12,10 @@
     content: string | ContentBlock[];
     isStreaming?: boolean;
     hideToolCalls?: boolean;
+    workspaceId?: string;
   }
 
-  let { content, isStreaming = false, hideToolCalls = false }: Props = $props();
+  let { content, isStreaming = false, hideToolCalls = false, workspaceId }: Props = $props();
 
   // State for animated text
   let animatedTexts = $state<Map<number, string>>(new Map());
@@ -462,6 +463,7 @@
           toolUse={toolBlock}
           toolState={toolStates.get(toolBlock.id) || 'running'}
           result={toolResults.get(toolBlock.id)}
+          {workspaceId}
         />
       </div>
     {:else if block.type === 'thinking'}

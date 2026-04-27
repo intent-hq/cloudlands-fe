@@ -107,17 +107,14 @@ import CommandPalette from './CommandPalette.svelte';
 import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
 import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+import { commandPaletteNewFileRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [
   { label: 'Agent Chat', actionCreator: createAgentRequested },
   { label: 'Terminal', actionCreator: createTerminalRequested },
   { label: 'Note', actionCreator: createNoteRequested },
-] as const;
-
-// Actions that still use window events
-const windowEventActions = [
-  { label: 'File', eventType: 'app:new-file' },
+  { label: 'File', actionCreator: commandPaletteNewFileRequested },
 ] as const;
 
 describe('CommandPalette new actions', () => {
@@ -129,7 +126,7 @@ describe('CommandPalette new actions', () => {
     localStorage.clear();
   });
 
-  it('dispatches Redux actions for agent, terminal, and note from keyboard', async () => {
+  it('dispatches Redux actions for agent, terminal, note, and file from keyboard', async () => {
     const onClose = vi.fn();
 
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
@@ -151,35 +148,7 @@ describe('CommandPalette new actions', () => {
     }
   });
 
-  it('dispatches window events for file and workspace from keyboard', async () => {
-    const onClose = vi.fn();
-    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
-
-    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain('bg-foreground/[0.04]');
-    });
-
-    const input = screen.getByRole('textbox');
-
-    // Navigate past the 3 Redux actions (Agent Chat, Terminal, Note)
-    for (let i = 0; i < 3; i++) {
-      await fireEvent.keyDown(input, { key: 'ArrowDown' });
-    }
-
-    for (const [index, action] of windowEventActions.entries()) {
-      dispatchSpy.mockClear();
-      if (index > 0) {
-        await fireEvent.keyDown(input, { key: 'ArrowDown' });
-      }
-
-      await fireEvent.keyDown(input, { key: 'Enter' });
-      expect(dispatchSpy).toHaveBeenLastCalledWith(expect.objectContaining({ type: action.eventType }));
-    }
-  });
-
-  it('dispatches Redux actions for agent, terminal, and note from clicks', async () => {
+  it('dispatches Redux actions for agent, terminal, note, and file from clicks', async () => {
     const onClose = vi.fn();
 
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
@@ -189,20 +158,6 @@ describe('CommandPalette new actions', () => {
       const button = await screen.findByRole('button', { name: action.label });
       await fireEvent.click(button);
       expect(reduxDispatchMock).toHaveBeenCalledWith(action.actionCreator('ws-1'));
-    }
-  });
-
-  it('dispatches window events for file and workspace from clicks', async () => {
-    const onClose = vi.fn();
-    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
-
-    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
-
-    for (const action of windowEventActions) {
-      dispatchSpy.mockClear();
-      const button = await screen.findByRole('button', { name: action.label });
-      await fireEvent.click(button);
-      expect(dispatchSpy).toHaveBeenLastCalledWith(expect.objectContaining({ type: action.eventType }));
     }
   });
 });

@@ -175,6 +175,10 @@ export class UnifiedIdService {
     return Branded.NoteId(id);
   }
 
+  generateTerminalId(): string {
+    return `terminal-${this.generateUniqueId()}`;
+  }
+
   // ========================================================================
   // Private Helper Methods
   // ========================================================================

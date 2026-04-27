@@ -11,6 +11,7 @@ import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-se
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
 
@@ -83,9 +84,10 @@ ${report.agentPrompt}`;
   errorHandler.dismiss(error.id);
 
   if (result.agentId) {
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: { agentId: result.agentId, openInAdjacentPanel: false },
+    getReduxStore().dispatch(
+      openAgentTabRequested(workspace.id, {
+        agentId: result.agentId,
+        openInAdjacentPanel: false,
       }),
     );
   }

@@ -12,6 +12,8 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
   import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   const reduxDispatch = getDispatch();
 
@@ -339,11 +341,18 @@
           const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
           const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
           const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-agent', {
-              detail: { agentId: comment.agentId, sourcePanelId, openInAdjacentPanel },
-            }),
-          );
+          const wsId =
+            workspace?.id ??
+            selectActiveWorkspaceId.select(getReduxStore().getState());
+          if (wsId) {
+            getReduxStore().dispatch(
+              openAgentTabRequested(wsId, {
+                agentId: comment.agentId,
+                sourcePanelId,
+                openInAdjacentPanel,
+              }),
+            );
+          }
         }}
         class="mt-2 text-xs text-blue-500 hover:text-blue-600 hover:underline"
         type="button"

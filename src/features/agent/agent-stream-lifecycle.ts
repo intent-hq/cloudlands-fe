@@ -66,6 +66,12 @@ import { workspaceMetrics } from '$lib/store/slices/workspace/utils/workspace-me
 // Import bridge functions needed by sendMessage
 import { resumeSession, saveSession } from './agent-ipc-bridge';
 
+import {
+  dispatchAgentStream,
+  dispatchAgentSessionUpdated,
+  type AgentStreamDetail,
+} from '$lib/utils/window-events';
+
 const logger = createLogger('AgentStreamLifecycle');
 
 // ---------------------------------------------------------------------------
@@ -163,9 +169,8 @@ export function replayPendingEvents(sessionId: string): void {
   );
 
   logger.info('Replaying pending stream events', { sessionId, eventCount: events.length });
-  const eventName = `agent:stream:${sessionId}`;
   for (const pendingEvent of events) {
-    window.dispatchEvent(new CustomEvent(eventName, { detail: pendingEvent.detail }));
+    dispatchAgentStream(sessionId, pendingEvent.detail as AgentStreamDetail);
   }
 }
 
@@ -184,12 +189,10 @@ export function dispatchStreamEvent(sessionId: string, eventType: string, detail
     { eventType },
   );
 
-  const eventName = `agent:stream:${sessionId}`;
-  const event = new CustomEvent(eventName, { detail });
   const hasHandler = hasActiveStreamListener(sessionId);
 
   if (hasHandler) {
-    window.dispatchEvent(event);
+    dispatchAgentStream(sessionId, detail as AgentStreamDetail);
     logger.debug('Dispatched stream event to registered handler', { sessionId, eventType });
   } else {
     pendingEventQueue.queue(sessionId, eventType, detail);
@@ -251,7 +254,7 @@ export function ensureStreamHandler(
   registerStreamHandlerForSession(agentId, existingMessage, resolvedWorkspaceId);
 
   setTimeout(() => {
-    window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+    dispatchAgentSessionUpdated(agentId);
   }, 100);
 
   return { created: true, channel: streamChannel };
@@ -455,10 +458,11 @@ export function registerStreamHandlerForSession(
           }
         }
 
-        const streamEvent = new CustomEvent(`agent:stream:${handlerSessionId}`, {
-          detail: { type: 'chunk', content: data.data, sessionId: handlerSessionId },
+        dispatchAgentStream(handlerSessionId, {
+          type: 'chunk',
+          content: data.data,
+          sessionId: handlerSessionId,
         });
-        window.dispatchEvent(streamEvent);
       } else if (data.type === 'content-blocks' && Array.isArray(data.data)) {
         if (textBuffer) {
           orderedItems.push({ type: 'text', content: textBuffer, sequence: orderedItems.length });
@@ -529,9 +533,10 @@ export function registerStreamHandlerForSession(
             }
           }
 
-          window.dispatchEvent(new CustomEvent(`agent:stream:${handlerSessionId}`, {
-            detail: { type: 'content-blocks', data: data.data },
-          }));
+          dispatchAgentStream(handlerSessionId, {
+            type: 'content-blocks',
+            data: data.data,
+          });
         }
       } else if (data.type === 'complete') {
         if (textBuffer) {
@@ -570,7 +575,7 @@ export function registerStreamHandlerForSession(
               type: 'end',
               message: msgIndex >= 0 ? updatedSession.messages[msgIndex] : null,
             });
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
+            dispatchAgentSessionUpdated(handlerSessionId);
 
             // Track unread
             const sessionForUnread = getStreamSession();
@@ -580,13 +585,13 @@ export function registerStreamHandlerForSession(
             const wsId = resolvedWorkspaceId || requireWorkspaceId('stream:complete:noMsg');
             getReduxStore().dispatch(setAgentStreaming(wsId, agentId, false));
             dispatchStreamEvent(handlerSessionId, 'end', { type: 'end', message: null });
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
+            dispatchAgentSessionUpdated(handlerSessionId);
           }
         } else {
           const wsId = resolvedWorkspaceId || getActiveWsId();
           if (wsId) getReduxStore().dispatch(setAgentStreaming(wsId, agentId, false));
           dispatchStreamEvent(handlerSessionId, 'end', { type: 'end', message: null });
-          window.dispatchEvent(new CustomEvent(`agent:session-updated:${handlerSessionId}`));
+          dispatchAgentSessionUpdated(handlerSessionId);
         }
 
         // Reset accumulated state after stream completion so that if this
@@ -790,7 +795,7 @@ export async function reconnectToBackendStreams(): Promise<string[]> {
         }
 
         const staleSessionId = session.id;
-        setTimeout(() => { window.dispatchEvent(new CustomEvent(`agent:session-updated:${staleSessionId}`)); }, 100);
+        setTimeout(() => { dispatchAgentSessionUpdated(staleSessionId); }, 100);
       }
     }
 
@@ -886,7 +891,7 @@ export async function reconnectToBackendStreams(): Promise<string[]> {
       }
 
       const activeAgentId = agentId;
-      setTimeout(() => { window.dispatchEvent(new CustomEvent(`agent:session-updated:${activeAgentId}`)); }, 100);
+      setTimeout(() => { dispatchAgentSessionUpdated(activeAgentId); }, 100);
     }
 
     startStreamingSafetyTimeout(activeStreamAgentIds);
@@ -1080,7 +1085,7 @@ export async function sendMessage(
             getReduxStore().dispatch(addAgentMessage(workspace.id, session.id, userMessage));
             // Set streaming flag BEFORE dispatching session-updated event so handlers see isStreaming=true
             getReduxStore().dispatch(setAgentStreaming(workspace.id, session.id, true));
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+            dispatchAgentSessionUpdated(session.id);
 
             try {
 
@@ -1221,9 +1226,7 @@ export async function sendMessage(
                         type: 'end',
                         message: null,
                       });
-                      window.dispatchEvent(
-                        new CustomEvent(`agent:session-updated:${handlerSessionId}`),
-                      );
+                      dispatchAgentSessionUpdated(handlerSessionId);
 
                       // Remove from the map after timeout fires
                       streamRegistry.deleteStreamTimeout(agentId);
@@ -1354,14 +1357,11 @@ export async function sendMessage(
 
                           // Forward to ChatService AFTER Redux state is updated
                           // This ensures ChatService reads correct data when flushChunkUpdate() runs
-                          const streamEvent = new CustomEvent(`agent:stream:${handlerSessionId}`, {
-                            detail: {
-                              type: 'chunk',
-                              content: data.data,
-                              sessionId: handlerSessionId,
-                            },
+                          dispatchAgentStream(handlerSessionId, {
+                            type: 'chunk',
+                            content: data.data,
+                            sessionId: handlerSessionId,
                           });
-                          window.dispatchEvent(streamEvent);
                         } else if (data.type === 'content-blocks' && Array.isArray(data.data)) {
                           // When blocks arrive, we need to flush any accumulated text first
                           // to preserve the correct ordering of content
@@ -1522,16 +1522,10 @@ export async function sendMessage(
                             }
 
                             // Dispatch content-blocks event to ChatService
-                            const contentBlocksEvent = new CustomEvent(
-                              `agent:stream:${handlerSessionId}`,
-                              {
-                                detail: {
-                                  type: 'content-blocks',
-                                  data: data.data,
-                                },
-                              },
-                            );
-                            window.dispatchEvent(contentBlocksEvent);
+                            dispatchAgentStream(handlerSessionId, {
+                              type: 'content-blocks',
+                              data: data.data,
+                            });
                           }
                         } else if (data.type === 'complete') {
                           try {
@@ -1687,9 +1681,7 @@ export async function sendMessage(
                                 // Also dispatch session-updated event as a fallback
                                 // This ensures ChatService's sessionUpdatedHandler syncs isProcessing
                                 // even if the stream end event is not received
-                                window.dispatchEvent(
-                                  new CustomEvent(`agent:session-updated:${handlerSessionId}`),
-                                );
+                                dispatchAgentSessionUpdated(handlerSessionId);
                                 logger.debug('Dispatched session-updated event as fallback', {
                                   agentId,
                                   sessionId: handlerSessionId,
@@ -1792,9 +1784,7 @@ export async function sendMessage(
                                 });
 
                                 // Also dispatch session-updated event as a fallback
-                                window.dispatchEvent(
-                                  new CustomEvent(`agent:session-updated:${handlerSessionId}`),
-                                );
+                                dispatchAgentSessionUpdated(handlerSessionId);
                               }
                             } else {
                               // Just mark streaming as complete without updating session
@@ -1831,9 +1821,7 @@ export async function sendMessage(
                               });
 
                               // Also dispatch session-updated event as a fallback
-                              window.dispatchEvent(
-                                new CustomEvent(`agent:session-updated:${handlerSessionId}`),
-                              );
+                              dispatchAgentSessionUpdated(handlerSessionId);
                             }
 
                             // Mark agent as having unread messages (if user isn't currently viewing it)
@@ -1911,9 +1899,7 @@ export async function sendMessage(
                           });
 
                           // Also dispatch session-updated event as a fallback
-                          window.dispatchEvent(
-                            new CustomEvent(`agent:session-updated:${handlerSessionId}`),
-                          );
+                          dispatchAgentSessionUpdated(handlerSessionId);
 
                           // Use workspace-aware method for cross-workspace stream completion
                           getReduxStore().dispatch(setAgentStreaming(workspace.id, agentId, false));
@@ -2224,9 +2210,7 @@ export async function sendMessage(
                 type: 'error',
                 error: finalErrorMsg,
               });
-              window.dispatchEvent(
-                new CustomEvent(`agent:session-updated:${agentId}`),
-              );
+              dispatchAgentSessionUpdated(agentId);
 
               // Don't re-wrap - the error already has a clean user-facing message
               // from the error boundary service

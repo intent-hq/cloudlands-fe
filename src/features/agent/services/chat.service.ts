@@ -35,7 +35,9 @@ import { cleanErrorMessage } from '$shared/errors/messages';
 import { assertStreamingInvariant } from '../utils/streaming-invariants';
 import { shouldAppendStreamingEvent } from '$lib/components/chat/streaming-status-utils';
 import { track } from '$lib/services/analytics';
+import { dispatchAgentMessageSent } from '$lib/utils/window-events';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 import { selectChatAgentState } from '$lib/store/slices/chat-state/chat-state-selectors';
 
 import type { ChatAgentState } from '$lib/store/slices/chat-state/chat-state-types';
@@ -1715,13 +1717,7 @@ export class ChatService implements IDisposable {
     const sessionWorkspaceId = (currentState.session?.workspaceId ?? workspace.id) as string;
 
     // Dispatch event so UI components can show running state immediately
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent(`agent:message-sent:${session.id}`, {
-          detail: { agentId: session.id },
-        }),
-      );
-    }
+    dispatchAgentMessageSent(session.id);
 
     // Lazy activation: if agent is pending, activate it now on first message.
     if (needsActivation) {
@@ -3615,17 +3611,14 @@ export class ChatService implements IDisposable {
     });
 
     // Navigate to the forked session if requested (default: true)
-    // IMPORTANT: We dispatch workspace:open-agent instead of calling this.initializeChat
+    // IMPORTANT: We dispatch openAgentTabRequested instead of calling this.initializeChat
     // to avoid corrupting this (parent) ChatService's state. The forked session will get
     // its own ChatService instance when its view/panel is created.
-    // Using the workspace:open-agent event ensures the fork opens correctly in both
+    // Using the action ensures the fork opens correctly in both
     // panel layout (as a new tab) and drawer layout modes.
     if (options?.switchToForked !== false) {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId: forkedSession.id },
-          bubbles: true,
-        }),
+      getReduxStore().dispatch(
+        openAgentTabRequested(forkedSession.workspaceId, { agentId: forkedSession.id }),
       );
     }
 

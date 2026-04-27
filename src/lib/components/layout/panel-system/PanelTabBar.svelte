@@ -27,6 +27,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
+  import { locateItemInSidebarRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -1015,17 +1016,15 @@
     const sidebarTabId = getSidebarTabId(tab.type);
     if (!sidebarTabId) return;
 
-    // Dispatch event to locate the item in the sidebar
-    window.dispatchEvent(
-      new CustomEvent('sidebar:locate-item', {
-        detail: {
-          sidebarTabId,
-          type: tab.type,
-          noteId: tab.noteId,
-          filePath: tab.filePath,
-          agentId: tab.agentId,
-          terminalId: tab.terminalId,
-        },
+    // Request the sidebar to locate this item via Redux
+    dispatch(
+      locateItemInSidebarRequested(workspaceId, {
+        sidebarTabId,
+        type: tab.type,
+        noteId: tab.noteId,
+        filePath: tab.filePath,
+        agentId: tab.agentId,
+        terminalId: tab.terminalId,
       }),
     );
   }

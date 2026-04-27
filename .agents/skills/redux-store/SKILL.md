@@ -258,6 +258,25 @@ function* handleSearch(action: ReturnType<typeof searchQuery>) {
 - ❌ Never inline lambdas: `yield* select((state) => state.x)` — WRONG, create named selectors
 - ✅ Always create named selectors in `*-selectors.ts` files
 
+### State access in functions reached from sagas
+
+A function that is reached from a saga must follow the same rule as the saga itself. It must either:
+
+- **Be a generator** (`function*`) and read state via `yield* selector.effect(...)`, or
+- **Receive state through its arguments** — the calling saga does the `yield* selector.effect(...)` and passes the value in.
+
+Never call `selector.select(getReduxStore().getState(), ...)` from saga-context code. That bypasses saga effect machinery, breaks `expectSaga.provide()` testing, and can read stale state mid-saga.
+
+This rule applies transitively: a non-generator helper called from a saga that itself calls another helper that reads state must propagate the same fix down the chain.
+
+| Shape | Fix |
+|---|---|
+| Inside a generator | `selector.select(...)` → `yield* selector.effect(...)` |
+| Non-generator helper called from a saga | Convert helper to `function*` (use `yield* effect` inside), **or** lift the read to the caller and pass state in as an argument |
+| Async callback registered from a saga (e.g. event listener) | Lift the read into the registering saga; pass values via closure/argument. The callback must not call `.select()` itself |
+
+(Component event handlers and other non-saga code paths are not affected — they continue to use `.select(getReduxStore().getState(), ...)` per Section 4.)
+
 ### Selector Channel Effects — reacting to state changes in sagas
 
 ```typescript

@@ -16,6 +16,9 @@
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { processMarkdownToHTML, processHTMLToMarkdown, extractFrontMatter } from '$lib/utils/markdown-processor';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
 
   interface Props {
@@ -81,11 +84,12 @@
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
         const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-file', {
-            detail: { path: filePath, openInAdjacentPanel, sourcePanelId },
-          }),
-        );
+        const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+        if (wsId) {
+          getReduxStore().dispatch(
+            openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
+          );
+        }
       },
       useMarkdown: true,
       enableComments: false,

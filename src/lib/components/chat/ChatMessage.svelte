@@ -1066,7 +1066,7 @@
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
       <div class="text-sm leading-relaxed text-foreground">
-        <StreamingMessageContent content={combinedContent} {isStreaming} {hideToolCalls} />
+        <StreamingMessageContent content={combinedContent} {isStreaming} {hideToolCalls} workspaceId={workspace?.id ? String(workspace.id) : undefined} />
 
         <!-- Stopped indicator for interrupted messages -->
         {#if message?.metadata?.interrupted && !isStreaming}

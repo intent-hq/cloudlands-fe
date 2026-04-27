@@ -26,6 +26,8 @@
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -554,7 +556,7 @@
     }
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
     const goToDefinition = () => {
-      window.dispatchEvent(new CustomEvent('editor:go-to-definition'));
+      dispatchWindowEvent('editor:go-to-definition');
     };
     register({ key: 'F12', description: 'Go to Definition', action: goToDefinition });
     // Cmd+P (Mac) / Ctrl+P (Win/Linux)
@@ -659,7 +661,7 @@
       meta: isMac,
       ctrl: !isMac,
       description: 'Enhance Prompt',
-      action: () => window.dispatchEvent(new CustomEvent('chat:enhance-prompt')),
+      action: () => dispatchWindowEvent('chat:enhance-prompt'),
     });
 
     // Cmd+? (Cmd+Shift+/) (Mac) / Ctrl+? (Ctrl+Shift+/) (Win/Linux) -> toggle keyboard shortcuts cheat sheet
@@ -703,9 +705,7 @@
       description: 'Scroll Conversation Up',
       skipInEditableElements: true,
       action: () =>
-        window.dispatchEvent(
-          new CustomEvent('navigate-message', { detail: { direction: 'previous' } }),
-        ),
+        dispatchWindowEvent('navigate-message', { direction: 'previous' }),
     });
 
     // Cmd+Down (Mac) / Ctrl+Down (Win/Linux) -> Scroll to next message
@@ -717,9 +717,7 @@
       description: 'Scroll Conversation Down',
       skipInEditableElements: true,
       action: () =>
-        window.dispatchEvent(
-          new CustomEvent('navigate-message', { detail: { direction: 'next' } }),
-        ),
+        dispatchWindowEvent('navigate-message', { direction: 'next' }),
     });
 
     // Cmd+Alt+. (Mac) / Ctrl+Alt+. (Win/Linux) -> Open Model Picker
@@ -729,7 +727,7 @@
       ctrl: !isMac,
       alt: true,
       description: 'Open Model Picker',
-      action: () => window.dispatchEvent(new CustomEvent('chat:open-model-picker')),
+      action: () => dispatchWindowEvent('chat:open-model-picker'),
     });
 
     // Alt+Enter -> Resend Message (regenerate last response)
@@ -737,7 +735,7 @@
       key: 'Enter',
       alt: true,
       description: 'Resend Message',
-      action: () => window.dispatchEvent(new CustomEvent('chat:resend-message')),
+      action: () => dispatchWindowEvent('chat:resend-message'),
     });
 
     paletteShortcuts.attach();
@@ -788,14 +786,10 @@
 
     // Emit event to notify components that auth succeeded and they should retry their pending action
     if (pendingAuth?.operation && pendingAuth?.workspaceId) {
-      window.dispatchEvent(
-        new CustomEvent('github:auth-success', {
-          detail: {
-            workspaceId: pendingAuth.workspaceId,
-            operation: pendingAuth.operation,
-          },
-        }),
-      );
+      dispatchWindowEvent('github:auth-success', {
+        workspaceId: pendingAuth.workspaceId,
+        operation: pendingAuth.operation,
+      });
     }
 
     import('svelte-sonner')
@@ -995,15 +989,15 @@
       workspaceId={$activeWorkspaceId || undefined}
       onClose={() => dispatch(closePalette())}
       onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-file', {
-            detail: {
-              path: detail.path,
+        const wsId = $activeWorkspaceId;
+        if (wsId) {
+          getReduxStore().dispatch(
+            openWorkspaceFile(wsId, detail.path, {
               line: detail.line,
               openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
-            },
-          }),
-        );
+            }),
+          );
+        }
       }}
     />
 

@@ -1,14 +1,11 @@
 import { call, takeEvery } from "typed-redux-saga";
 import { selectIsCollapsed, selectWidthBeforeCollapse } from "../ui-layout-selectors";
 import { setCollapsed, toggleSidebar } from "../ui-layout-slice";
+import { dispatchWindowEvent } from "$lib/utils/window-events";
 
 function dispatchSidebarEvent(collapsed: boolean, restoreWidth: number): void {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent("workspace:toggle-left-sidebar", {
-        detail: { collapsed, restoreWidth },
-      }),
-    );
+    dispatchWindowEvent("workspace:toggle-left-sidebar", { collapsed, restoreWidth });
   }
 }
 

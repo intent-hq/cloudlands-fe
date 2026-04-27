@@ -42,6 +42,8 @@
   import { faNote } from '$lib/icons/faNote';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import type { TrackedChange } from '$features/file-tracking/types';
 
   interface Props {
     workspaceId: string;
@@ -143,17 +145,13 @@
    */
   function openFileChangeDiff(filePath: string, wsEvent: WorkspaceEvent) {
     const data = wsEvent.data as Record<string, unknown> | undefined;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-diff', {
-        detail: {
-          filePath,
-          change: {
-            file: filePath,
-            relativePath: filePath,
-            ...data,
-          },
-        },
-      }),
+    const change = {
+      file: filePath,
+      relativePath: filePath,
+      ...data,
+    } as unknown as TrackedChange;
+    getReduxStore().dispatch(
+      openWorkspaceDiff(workspaceId, change, { filePath }),
     );
   }
 

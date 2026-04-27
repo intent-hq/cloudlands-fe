@@ -30,6 +30,8 @@
   import { cn } from '$lib/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { loadWorkspacesRequested } from '$lib/store/slices/workspace/workspace-slice';
+  import { locateItemInSidebarConsumed } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { selectPendingLocateInSidebar } from '$lib/store/slices/app-layout/app-layout-selectors';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
     faAsterisk,
@@ -64,6 +66,11 @@
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    openWorkspaceCommitChangeset,
+    openWorkspaceDiff,
+    openWorkspaceLocalChanges,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   interface Props {
     workspaceId: string;
@@ -127,6 +134,9 @@
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
+
+  // Transient signal: panel tab "Reveal in Sidebar" → scroll & highlight.
+  const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   // Tab definitions with metadata for tooltips
   interface TabDefinition {
@@ -705,55 +715,61 @@
       }
     };
 
-    // Handle "Reveal in Sidebar" events from panel tab context menus
-    const handleLocateItem = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      const { sidebarTabId, type, noteId, filePath, agentId } = detail;
-
-      // Switch to the appropriate sidebar tab
-      const targetTab = mapSidebarTabId(sidebarTabId);
-      if (targetTab) {
-        selectedTabs = new Set([targetTab]);
-        saveSelectedTabs();
-      }
-
-      // Scroll to the item after a short delay to allow tab switch to render
-      setTimeout(() => {
-        let selector: string | null = null;
-
-        switch (type) {
-          case 'note':
-            if (noteId) selector = `[data-note-id="${noteId}"]`;
-            break;
-          case 'file':
-          case 'diff':
-            if (filePath) selector = `[data-file-path="${CSS.escape(filePath)}"]`;
-            break;
-          case 'agent':
-            if (agentId) selector = `[data-agent-id="${agentId}"]`;
-            break;
-        }
-
-        if (selector && sidebarElement) {
-          const element = sidebarElement.querySelector(selector);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // Add a brief highlight effect
-            element.classList.add('sidebar-locate-highlight');
-            setTimeout(() => {
-              element.classList.remove('sidebar-locate-highlight');
-            }, 1500);
-          }
-        }
-      }, 150);
-    };
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('sidebar:locate-item', handleLocateItem);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('sidebar:locate-item', handleLocateItem);
+    };
+  });
+
+  // Handle "Reveal in Sidebar" requests dispatched from panel tab context menus.
+  $effect(() => {
+    const pending = $pendingLocateInSidebar$;
+    if (!pending) return;
+    if (pending.workspaceId !== workspaceId) return;
+
+    const { sidebarTabId, type, noteId, filePath, agentId } = pending.target;
+
+    // Switch to the appropriate sidebar tab
+    const targetTab = mapSidebarTabId(sidebarTabId);
+    if (targetTab) {
+      selectedTabs = new Set([targetTab]);
+      saveSelectedTabs();
+    }
+
+    // Scroll to the item after a short delay to allow tab switch to render
+    const timeoutId = setTimeout(() => {
+      let selector: string | null = null;
+
+      switch (type) {
+        case 'note':
+          if (noteId) selector = `[data-note-id="${noteId}"]`;
+          break;
+        case 'file':
+        case 'diff':
+          if (filePath) selector = `[data-file-path="${CSS.escape(filePath)}"]`;
+          break;
+        case 'agent':
+          if (agentId) selector = `[data-agent-id="${agentId}"]`;
+          break;
+      }
+
+      if (selector && sidebarElement) {
+        const element = sidebarElement.querySelector(selector);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Add a brief highlight effect
+          element.classList.add('sidebar-locate-highlight');
+          setTimeout(() => {
+            element.classList.remove('sidebar-locate-highlight');
+          }, 1500);
+        }
+      }
+      dispatch(locateItemInSidebarConsumed(workspaceId));
+    }, 150);
+
+    return () => {
+      clearTimeout(timeoutId);
     };
   });
   // Refresh unread notes — only dispatch when note data actually changes
@@ -1069,20 +1085,14 @@
                     onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
                     onOpenAgent={(agentId) => handleOpenAgentInPanel(agentId)}
                     onOpenFile={(filePath) => {
-                      window.dispatchEvent(
-                        new CustomEvent('workspace:open-diff', {
-                          detail: { filePath },
-                        }),
+                      getReduxStore().dispatch(
+                        openWorkspaceDiff(workspaceId, { file: filePath } as never, { filePath }),
                       );
                     }}
                     onOpenAllChanges={() =>
-                      window.dispatchEvent(new CustomEvent('workspace:open-local-changes'))}
+                      getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId))}
                     onOpenCommit={(hash) => {
-                      window.dispatchEvent(
-                        new CustomEvent('workspace:open-commit-changeset', {
-                          detail: { commitHash: hash },
-                        }),
-                      );
+                      getReduxStore().dispatch(openWorkspaceCommitChangeset(workspaceId, hash));
                     }}
                     onOpenFileInPanel={handleOpenFileInPanel}
                     onOpenAgentOverview={handleOpenAgentOverview}
@@ -1120,14 +1130,10 @@
                         activeFileStaged={effectiveActiveFileStaged}
                         isAllChangesViewActive={effectiveIsAllChangesViewActive}
                         onOpenChange={(change) => {
-                          window.dispatchEvent(
-                            new CustomEvent('workspace:open-diff', {
-                              detail: {
-                                change,
-                                filePath: change.relativePath || change.file,
-                                changeId: change.id,
-                                staged: change.stage === 'staged',
-                              },
+                          getReduxStore().dispatch(
+                            openWorkspaceDiff(workspaceId, change as never, {
+                              filePath: change.relativePath || change.file,
+                              changeId: change.id,
                             }),
                           );
                         }}
@@ -1288,7 +1294,7 @@
     }
   }
 
-  /* Highlight effect for sidebar:locate-item */
+  /* Highlight effect for "Reveal in Sidebar" */
   :global(.sidebar-locate-highlight) {
     animation: sidebar-locate-pulse 1.5s ease-out;
   }

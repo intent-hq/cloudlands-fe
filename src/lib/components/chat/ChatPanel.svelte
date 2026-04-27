@@ -127,6 +127,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { fade, slide } from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
@@ -361,8 +362,8 @@
     const termState = selectWorkspaceTerminalState.select(getReduxStore().getState(), workspace.id);
     const setupTerminal = getItems(termState.terminals).find((t: any) => t.name === 'Setup');
     if (setupTerminal) {
-      window.dispatchEvent(
-        new CustomEvent('workspace:openTerminal', { detail: { terminalId: setupTerminal.id } }),
+      getReduxStore().dispatch(
+        openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }),
       );
     }
   }
@@ -3929,6 +3930,7 @@
                         {#if isLastAssistant}
                           <AutoCommitStatus
                             status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                            workspaceId={workspace.id}
                           />
                         {/if}
                       {/each}

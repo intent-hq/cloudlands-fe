@@ -3,6 +3,10 @@ import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
+import {
+  openTab,
+  openTabInAdjacentOrSplit,
+} from "$lib/store/slices/panel-layout/panel-layout-slice";
 
 function cancelEffect(task: unknown) {
   return {
@@ -30,8 +34,8 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
-  select: function* (selector: any) {
-    return yield sagaEffects.select(selector);
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
   },
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
@@ -58,8 +62,6 @@ const {
   resumeSessionMock,
   reconnectStreamHandlersMock,
   getStoredAgentsFromDiskMock,
-  hasPanelLayoutManagerMock,
-  getPanelLayoutManagerMock,
   getReduxStateMock,
 } = vi.hoisted(() => ({
   takeEveryFromElectronChannelMock: vi.fn(function* () {}),
@@ -79,14 +81,6 @@ const {
   reconnectStreamHandlersMock: vi.fn(async () => {}),
    
   getStoredAgentsFromDiskMock: vi.fn(async (_wsId: string) => []),
-  hasPanelLayoutManagerMock: vi.fn(() => false),
-  getPanelLayoutManagerMock: vi.fn(() => ({
-    focusPanel: vi.fn(),
-    setActiveTab: vi.fn(),
-    openTab: vi.fn(),
-    openTabInAdjacentOrSplit: vi.fn(),
-    reconcileStaleAgentTabs: vi.fn(),
-  })),
   getReduxStateMock: vi.fn(() => ({})),
 }));
 
@@ -114,17 +108,14 @@ vi.mock("$lib/utils/agent-loader", () => ({
   getStoredAgentsFromDisk: getStoredAgentsFromDiskMock,
 }));
 
-vi.mock("$features/layout/panel-layout-adapter", () => ({
-  hasPanelLayoutManager: hasPanelLayoutManagerMock,
-  getPanelLayoutManager: getPanelLayoutManagerMock,
-}));
-
 vi.mock("$lib/store/slices/workspace/utils/workspace-storage-manager", () => ({
   workspaceStorageManager: { loadState: () => null },
 }));
 
 vi.mock("$lib/store/slices/app-layout/sagas/spec-panel-saga", () => ({
-  shouldDeferSpecPanel: () => false,
+  shouldDeferSpecPanel: function* () {
+    return false;
+  },
 }));
 
 vi.mock("$lib/store/redux-dispatch-bridge", () => ({
@@ -218,14 +209,6 @@ function getWindowHandler(eventName: string) {
 describe("workspaceAgentsSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    hasPanelLayoutManagerMock.mockReturnValue(false);
-    getPanelLayoutManagerMock.mockReturnValue({
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab: vi.fn(),
-      openTabInAdjacentOrSplit: vi.fn(),
-      reconcileStaleAgentTabs: vi.fn(),
-    });
     getReduxStateMock.mockReturnValue({});
     const windowStub = Object.assign(new EventTarget(), {
       electronAPI: {},
@@ -870,9 +853,11 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
 });
 
 describe("agent-loading layout guards", () => {
-  it("stops waiting once restore status is complete", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
+  function dispatchedTypes(dispatch: ReturnType<typeof vi.fn>): string[] {
+    return dispatch.mock.calls.map((c) => c[0]?.type);
+  }
 
+  it("stops waiting once restore status is complete", () => {
     const gen = waitForPanelLayoutRestore("ws-layout");
 
     expect((gen.next().value as any).type).toBe("SELECT");
@@ -880,8 +865,6 @@ describe("agent-loading layout guards", () => {
   });
 
   it("polls while restore status is idle", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-
     const gen = waitForPanelLayoutRestore("ws-layout");
 
     expect((gen.next().value as any).type).toBe("SELECT");
@@ -892,16 +875,8 @@ describe("agent-loading layout guards", () => {
     expect((gen.next().value as any).type).toBe("SELECT");
   });
 
-  it("skips restoreLayoutState when layout tabs already exist", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-    const openTabInAdjacentOrSplit = vi.fn();
-    getPanelLayoutManagerMock.mockReturnValue({
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab: vi.fn(),
-      openTabInAdjacentOrSplit,
-      reconcileStaleAgentTabs: vi.fn(),
-    });
+  it("skips restoreLayoutState when layout tabs already exist", async () => {
+    const dispatch = vi.fn();
     getReduxStateMock.mockReturnValue({
       panelLayout: {
         byWorkspaceId: {
@@ -918,21 +893,21 @@ describe("agent-loading layout guards", () => {
       },
     });
 
-    restoreLayoutState("ws-layout", [], [], false, null);
+    await runSaga(
+      { dispatch, getState: getReduxStateMock },
+      restoreLayoutState as any,
+      "ws-layout",
+      [],
+      [],
+      false,
+      null,
+    ).toPromise();
 
-    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+    expect(dispatchedTypes(dispatch)).not.toContain(openTabInAdjacentOrSplit.type);
   });
 
-  it("skips ensureFallbackLayout when layout tabs already exist", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-    const openTabInAdjacentOrSplit = vi.fn();
-    getPanelLayoutManagerMock.mockReturnValue({
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab: vi.fn(),
-      openTabInAdjacentOrSplit,
-      reconcileStaleAgentTabs: vi.fn(),
-    });
+  it("skips ensureFallbackLayout when layout tabs already exist", async () => {
+    const dispatch = vi.fn();
     getReduxStateMock.mockReturnValue({
       panelLayout: {
         byWorkspaceId: {
@@ -949,22 +924,19 @@ describe("agent-loading layout guards", () => {
       },
     });
 
-    ensureFallbackLayout("ws-layout", [], []);
+    await runSaga(
+      { dispatch, getState: getReduxStateMock },
+      ensureFallbackLayout as any,
+      "ws-layout",
+      [],
+      [],
+    ).toPromise();
 
-    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+    expect(dispatchedTypes(dispatch)).not.toContain(openTabInAdjacentOrSplit.type);
   });
 
-  it("does not open spec in restoreLayoutState when restoreStatus is 'restored'", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-    const openTabInAdjacentOrSplit = vi.fn();
-    const openTab = vi.fn();
-    getPanelLayoutManagerMock.mockReturnValue({
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab,
-      openTabInAdjacentOrSplit,
-      reconcileStaleAgentTabs: vi.fn(),
-    });
+  it("does not open spec in restoreLayoutState when restoreStatus is 'restored'", async () => {
+    const dispatch = vi.fn();
     getReduxStateMock.mockReturnValue({
       panelLayout: {
         byWorkspaceId: {
@@ -979,29 +951,27 @@ describe("agent-loading layout guards", () => {
     const restoredAgents = [
       { id: "agent-1", name: "Test Agent", createdAt: new Date().toISOString() },
     ];
-    restoreLayoutState("ws-layout", restoredAgents, [], false, null);
+    await runSaga(
+      { dispatch, getState: getReduxStateMock },
+      restoreLayoutState as any,
+      "ws-layout",
+      restoredAgents,
+      [],
+      false,
+      null,
+    ).toPromise();
 
     // Agent tab should open but spec should NOT open due to restored status
-    expect(openTab).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "agent",
-        agentId: "agent-1",
-      })
+    const openTabCalls = dispatch.mock.calls.filter((c) => c[0]?.type === openTab.type);
+    expect(openTabCalls.length).toBeGreaterThan(0);
+    expect(openTabCalls[0][0].payload.tab).toEqual(
+      expect.objectContaining({ type: "agent", agentId: "agent-1" }),
     );
-    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+    expect(dispatchedTypes(dispatch)).not.toContain(openTabInAdjacentOrSplit.type);
   });
 
-  it("does not open spec in ensureFallbackLayout when restoreStatus is 'restored'", () => {
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-    const openTabInAdjacentOrSplit = vi.fn();
-    const openTab = vi.fn();
-    getPanelLayoutManagerMock.mockReturnValue({
-      focusPanel: vi.fn(),
-      setActiveTab: vi.fn(),
-      openTab,
-      openTabInAdjacentOrSplit,
-      reconcileStaleAgentTabs: vi.fn(),
-    });
+  it("does not open spec in ensureFallbackLayout when restoreStatus is 'restored'", async () => {
+    const dispatch = vi.fn();
     getReduxStateMock.mockReturnValue({
       panelLayout: {
         byWorkspaceId: {
@@ -1016,17 +986,23 @@ describe("agent-loading layout guards", () => {
     const restoredAgents = [
       { id: "agent-1", name: "Test Agent", createdAt: new Date().toISOString() },
     ];
-    ensureFallbackLayout("ws-layout", restoredAgents, []);
+    await runSaga(
+      { dispatch, getState: getReduxStateMock },
+      ensureFallbackLayout as any,
+      "ws-layout",
+      restoredAgents,
+      [],
+    ).toPromise();
 
     // Agent tab should open but spec should NOT open due to restored status
-    expect(openTab).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "agent",
-        agentId: "agent-1",
-      })
+    const openTabCalls = dispatch.mock.calls.filter((c) => c[0]?.type === openTab.type);
+    expect(openTabCalls.length).toBeGreaterThan(0);
+    expect(openTabCalls[0][0].payload.tab).toEqual(
+      expect.objectContaining({ type: "agent", agentId: "agent-1" }),
     );
-    expect(openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+    expect(dispatchedTypes(dispatch)).not.toContain(openTabInAdjacentOrSplit.type);
   });
+
 });
 
 describe("retroactiveWorkspaceMountCheckSaga — early workspaceMounted guard", () => {

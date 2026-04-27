@@ -52,7 +52,11 @@
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import type { TrackedChange } from '$features/file-tracking/types';
+  
+
+import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { setViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-slice';
 
   const foldUnchanged = selectFoldUnchanged();
@@ -1320,31 +1324,35 @@
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
       : null;
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    const detail = {
-      change: change
-        ? {
-            id: `chat-change-${filePath}`,
-            file: filePath,
-            relativePath: filePath,
-            type: 'modified' as const,
-            // Use the staged property from the change object if available
-            stage: change.staged ? ('staged' as const) : ('unstaged' as const),
-            stats: change
-              ? { additions: change.additions, deletions: change.deletions }
-              : { additions: 0, deletions: 0 },
-            attribution: {
-              manual: true,
-              timestamp: Date.now(),
-            },
-            // Don't pass content - let DiffViewer fetch git diff for accurate display
-          }
-        : undefined,
-      filePath,
-      changeId: `chat-change-${filePath}`,
-      openInAdjacentPanel,
-      sourcePanelId,
-    };
-    window.dispatchEvent(new CustomEvent('workspace:open-diff', { detail }));
+    const wsId = $activeWorkspaceId;
+    if (!wsId) return;
+    const diffChange = change
+      ? {
+          id: `chat-change-${filePath}`,
+          file: filePath,
+          relativePath: filePath,
+          type: 'modified' as const,
+          // Use the staged property from the change object if available
+          stage: change.staged ? ('staged' as const) : ('unstaged' as const),
+          stats: change
+            ? { additions: change.additions, deletions: change.deletions }
+            : { additions: 0, deletions: 0 },
+          attribution: {
+            manual: true,
+            timestamp: Date.now(),
+          },
+          // Don't pass content - let DiffViewer fetch git diff for accurate display
+        }
+      : undefined;
+    if (!diffChange) return;
+    getReduxStore().dispatch(
+      openWorkspaceDiff(wsId, diffChange as unknown as TrackedChange, {
+        changeId: `chat-change-${filePath}`,
+        filePath,
+        openInAdjacentPanel,
+        sourcePanelId,
+      }),
+    );
   }
 
   function openFile(filePath: string, event?: MouseEvent) {
@@ -1353,10 +1361,10 @@
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
       : null;
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-file', {
-        detail: { path: filePath, openInAdjacentPanel, sourcePanelId },
-      }),
+    const wsId = $activeWorkspaceId;
+    if (!wsId) return;
+    getReduxStore().dispatch(
+      openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
     );
   }
 
@@ -1595,9 +1603,9 @@
 
   // Handle opening a commit changeset view
   function handleOpenCommit(commitHash: string) {
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-commit-changeset', { detail: { commitHash } }),
-    );
+    const wsId = $activeWorkspaceId;
+    if (!wsId) return;
+    getReduxStore().dispatch(openWorkspaceCommitChangeset(wsId, commitHash));
   }
 
   function toggleFile(expandKey: string) {

@@ -144,6 +144,12 @@ export const createAgentWithSpecialistRequested = createAction<
 export const delegateTaskRequested = createAction<[wsId: string, taskText: string, openAgent?: boolean]>(
   "workspaceAgents/delegateTaskRequested"
 );
+export const delegateExistingTaskRequested = createAction<
+  [wsId: string, noteId: string, taskText: string, openAgent?: boolean]
+>("workspaceAgents/delegateExistingTaskRequested");
+export const runAgentForNoteRequested = createAction<
+  [wsId: string, noteId: string, noteTitle?: string]
+>("workspaceAgents/runAgentForNoteRequested");
 export const agentsLoaded = createAction<[wsId: string]>("workspaceAgents/agentsLoaded");
 export const setWaitingForFirstMessage = createAction<
   [wsId: string, agentId: string, waiting: boolean]

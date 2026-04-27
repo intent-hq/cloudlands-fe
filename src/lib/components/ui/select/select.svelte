@@ -1,6 +1,7 @@
 <script lang="ts">
   import { setContext, onMount, onDestroy } from 'svelte';
   import type { Snippet } from 'svelte';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   let {
     value = $bindable(''),
@@ -30,7 +31,7 @@
     set isOpen(v: boolean) {
       // Close other selects when opening this one
       if (v && !open) {
-        window.dispatchEvent(new CustomEvent('select-open', { detail: selectId }));
+        dispatchWindowEvent('select-open', selectId);
       }
       open = v;
     },

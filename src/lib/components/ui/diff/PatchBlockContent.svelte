@@ -18,12 +18,16 @@
   import { slide } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     patches: FilePatch[];
     label?: string;
     lastApply?: PatchLastApply;
     linkedAgentId?: string;
+    /** Workspace id used to route the workspace:open-agent dispatch. */
+    workspaceId?: string;
     /** Whether apply/revert is in progress */
     applying?: boolean;
     /** Called when user clicks Apply. Omit to hide the button. */
@@ -37,6 +41,7 @@
     label = 'Patch',
     lastApply,
     linkedAgentId,
+    workspaceId,
     applying = false,
     onApply,
     onRevert,
@@ -90,10 +95,10 @@
         <button
           type="button"
           class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-          onclick={() =>
-            window.dispatchEvent(
-              new CustomEvent('workspace:open-agent', { detail: { agentId: linkedAgentId } }),
-            )}
+          onclick={() => {
+            if (!workspaceId) return;
+            getReduxStore().dispatch(openAgentTabRequested(workspaceId, { agentId: linkedAgentId }));
+          }}
           title="View agent"
         >
           <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />

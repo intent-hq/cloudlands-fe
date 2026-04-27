@@ -46,6 +46,7 @@ import {
   hasCanonicalId,
   isTimestampClose,
 } from "../../agent-session/agent-session-slice";
+import { dispatchAgentSessionUpdated } from "$lib/utils/window-events";
 
 const logger = createLogger("AgentIpcSaga");
 const AGENT_CREATED_DEDUP_WINDOW = 500; // ms
@@ -190,7 +191,7 @@ export function* watchPrepareHandlerSaga() {
           }
           yield* put(setAgentStreaming(prepareWsId, agentId, true));
           if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+            dispatchAgentSessionUpdated(agentId);
           }
         }
       } catch (error) {
@@ -478,7 +479,7 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // Set streaming state
   yield* put(setAgentStreaming(wsId, agentId, true));
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+    dispatchAgentSessionUpdated(agentId);
   }
 
   // Persist the queued user message immediately
@@ -548,7 +549,7 @@ export function* handleQueueCancelled(data: { agentId: string; messageId: string
   }
 
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(`agent:session-updated:${agentId}`));
+    dispatchAgentSessionUpdated(agentId);
   }
 
   yield* call([agentService, agentService.clearPendingStreamRegistration], agentId);

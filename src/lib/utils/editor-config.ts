@@ -23,6 +23,8 @@ import { ChoiceQuestion } from '$lib/components/tiptap/ChoiceQuestion';
 import { ChoiceOption } from '$lib/components/tiptap/ChoiceOption';
 import { ChoiceBlockShortcuts } from './choice-block-shortcuts';
 import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
+import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+import { dispatchWindowEvent } from './window-events';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
 import { safeLowlight } from './safe-lowlight';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -955,11 +957,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           onSelectionUpdate(selectedText);
         } else if (typeof window !== 'undefined') {
           // Only dispatch generic event if no callback is provided
-          window.dispatchEvent(
-            new CustomEvent('editor:selection-change', {
-              detail: { text: selectedText, source: 'tiptap' },
-            }),
-          );
+          dispatchWindowEvent('editor:selection-change', { text: selectedText, source: 'tiptap' });
         }
       } else if (editor.isFocused) {
         // Only clear selection if editor still has focus
@@ -967,11 +965,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         if (onSelectionUpdate) {
           onSelectionUpdate('');
         } else if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('editor:selection-change', {
-              detail: { text: '', source: 'tiptap' },
-            }),
-          );
+          dispatchWindowEvent('editor:selection-change', { text: '', source: 'tiptap' });
         }
       }
     },
@@ -1085,28 +1079,22 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
             if (filePath?.startsWith('@')) {
               filePath = filePath.slice(1);
             }
-            if (filePath) {
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-file', {
-                  detail: {
-                    path: filePath,
-                    line: meta.startLine,
-                    openInAdjacentPanel,
-                    sourcePanelId,
-                  },
+            if (filePath && workspace?.id) {
+              getReduxStore().dispatch(
+                openWorkspaceFile(workspace.id, filePath, {
+                  line: meta.startLine,
+                  openInAdjacentPanel,
+                  sourcePanelId,
                 }),
               );
             }
           } else if (mentionType === 'note' || mentionType === 'note-range') {
             // Open note in main content area
-            if (mentionId) {
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-note', {
-                  detail: {
-                    noteId: mentionId,
-                    openInAdjacentPanel,
-                    sourcePanelId,
-                  },
+            if (mentionId && workspace?.id) {
+              getReduxStore().dispatch(
+                openWorkspaceNote(workspace.id, mentionId, {
+                  openInAdjacentPanel,
+                  sourcePanelId,
                 }),
               );
             }
@@ -1124,14 +1112,12 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         // Check if clicking on a file path (e.g., "src/components/Button.tsx")
         // This handles plain text file paths in notes without explicit @mentions
         const filePath = detectFilePathFromClick(target);
-        if (filePath) {
+        if (filePath && workspace?.id) {
           event.preventDefault();
           const openInAdjacentPanel = event.metaKey || event.ctrlKey;
           logger.debug('[EditorConfig] File path clicked', { filePath, openInAdjacentPanel });
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-file', {
-              detail: { path: filePath, openInAdjacentPanel },
-            }),
+          getReduxStore().dispatch(
+            openWorkspaceFile(workspace.id, filePath, { openInAdjacentPanel }),
           );
           return true;
         }

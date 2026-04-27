@@ -1,13 +1,15 @@
 import { agentService } from '$features/agent/agent-ipc-bridge';
 import {
-  getPanelLayoutManager,
-  hasPanelLayoutManager,
-} from '$features/layout/panel-layout-adapter';
+  focusPanel,
+  openTab,
+  openTabInAdjacentOrSplit,
+  reconcileStaleAgentTabs as reconcileStaleAgentTabsAction,
+  setActiveTab,
+} from '$lib/store/slices/panel-layout/panel-layout-slice';
 import {
   selectPanels,
   selectRestoreStatus,
 } from '$lib/store/slices/panel-layout/panel-layout-selectors';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
 import { shouldDeferSpecPanel } from '$lib/store/slices/app-layout/sagas/spec-panel-saga';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
@@ -48,46 +50,47 @@ const PANEL_LAYOUT_RESTORE_TIMEOUT_MS = 2_000;
 /**
  * Open an agent tab in the panel layout manager.
  * Replicates the component-local `openAgentInLayout` using direct layout manager calls.
+ *
+ * Generator: reads `panels` via `yield* selectPanels.effect(wsId)` so saga-context
+ * code never calls `selector.select(getReduxStore().getState(), …)`.
  */
-function openAgentInLayout(
+function* openAgentInLayout(
   agentId: string,
   agentName: string,
   wsId: string,
   options?: {
     focusIfExists?: boolean;
   },
-): void {
-  if (!hasPanelLayoutManager(wsId)) return;
-  const layoutManager = getPanelLayoutManager(wsId);
+) {
   const focusIfExists = options?.focusIfExists ?? true;
-  const panels = selectPanels.select(getReduxStore().getState(), wsId);
+  const panels = yield* selectPanels.effect(wsId);
   for (const [panelId, panel] of Object.entries(panels)) {
     const existingAgentTab = panel.tabs.find((t) => t.type === 'agent' && t.agentId === agentId);
     if (existingAgentTab) {
       if (focusIfExists) {
-        layoutManager.focusPanel(panelId);
-        layoutManager.setActiveTab(existingAgentTab.id, panelId);
+        yield* put(focusPanel(wsId, panelId));
+        yield* put(setActiveTab(wsId, existingAgentTab.id, panelId));
       }
       return;
     }
   }
-  layoutManager.openTab({
-    type: 'agent',
-    title: agentName || 'Agent',
-    agentId,
-    closable: true,
-  });
+  yield* put(
+    openTab(wsId, {
+      type: 'agent',
+      title: agentName || 'Agent',
+      agentId,
+      closable: true,
+    }),
+  );
 }
 
-function getAllTabsForWorkspace(wsId: string) {
-  return Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap(
-    (panel) => panel.tabs,
-  );
+function* getAllTabsForWorkspace(wsId: string) {
+  const panels = yield* selectPanels.effect(wsId);
+  return Object.values(panels).flatMap((panel) => panel.tabs);
 }
 
 /** @internal Exported for testing only. */
 export function* waitForPanelLayoutRestore(wsId: string) {
-  if (!hasPanelLayoutManager(wsId)) return;
   const maxAttempts = PANEL_LAYOUT_RESTORE_TIMEOUT_MS / PANEL_LAYOUT_RESTORE_POLL_MS;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const {
@@ -128,21 +131,17 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
   // and `setIsLoadingAgents(true)` is dispatched immediately after,
   // so a second concurrent fork for the same wsId will see the flag
   // and bail out before reaching the lock or disk I/O.
-  const alreadyLoaded: boolean = yield* select((s) => selectAgentsLoaded.select(s, wsId));
-  const alreadyLoading: boolean = yield* select((s) => selectIsLoadingAgents.select(s, wsId));
+  const alreadyLoaded: boolean = yield* selectAgentsLoaded.effect(wsId);
+  const alreadyLoading: boolean = yield* selectIsLoadingAgents.effect(wsId);
   if (alreadyLoaded || alreadyLoading) return;
   yield* put(setIsLoadingAgents(wsId, true));
   try {
     // 1. Existing foreground agents from Redux
-    const existingAgents: AgentSession[] = yield* select((s) =>
-      selectForegroundWorkspaceAgents.select(s, wsId),
-    );
+    const existingAgents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
     const existingAgentIds = new Set(existingAgents.filter((a) => a).map((a) => a.id));
     // 2. Load from disk
     const { getStoredAgentsFromDisk } = yield* call(() => import('$lib/utils/agent-loader'));
-    const initialAgentId: string | null = yield* select((s) =>
-      selectInitialAgentId.select(s, wsId),
-    );
+    const initialAgentId: string | null = yield* selectInitialAgentId.effect(wsId);
     // Retry loop when expecting an initial agent
     const diskAgents: Awaited<ReturnType<typeof getStoredAgentsFromDisk>> = yield* call(
       async () => {
@@ -178,9 +177,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     // 4. Restore remaining agents in parallel
     yield* restoreRemainingAgents(wsId, diskAgents, existingAgentIds, effectiveInitialAgentId);
     // 5. Collect final agent list from Redux
-    const restoredAgents: AgentSession[] = yield* select((s) =>
-      selectForegroundWorkspaceAgents.select(s, wsId),
-    );
+    const restoredAgents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
     const filteredAgents = restoredAgents.filter((a) => a && !String(a.id).startsWith('terminal-'));
     // Publish agents and loaded flag atomically so the sidebar never
     // sees an intermediate state (agents set but loaded still false,
@@ -192,7 +189,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     });
     yield* call(waitForPanelLayoutRestore, wsId);
     // 6. Reconcile stale agent tabs in panel layout
-    yield* call(reconcileStaleAgentTabs, wsId, restoredAgents);
+    yield* reconcileStaleAgentTabs(wsId, restoredAgents);
     // 7. Reconnect IPC stream handlers
     yield* call([agentService, agentService.reconnectStreamHandlersForWorkspace], wsId);
     // 8. Reconnect to backend streams and open streaming agent if found
@@ -202,7 +199,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
       restoredAgents,
     );
     // 9. Restore persisted drawer / layout state
-    restoreLayoutState(
+    yield* restoreLayoutState(
       wsId,
       restoredAgents,
       diskAgents,
@@ -382,10 +379,9 @@ function* restoreRemainingAgents(
     ),
   );
 }
-function reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]): void {
-  if (restoredAgents.length === 0 || !hasPanelLayoutManager(wsId)) return;
-  const layoutManager = getPanelLayoutManager(wsId);
-  const validAgentIds = new Set(restoredAgents.map((a: AgentSession) => String(a.id)));
+function* reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]) {
+  if (restoredAgents.length === 0) return;
+  const validAgentIds = restoredAgents.map((a: AgentSession) => String(a.id));
   const sortedForReconcile = [...restoredAgents].sort((a, b) => {
     const aTime = new Date(a.createdAt || 0).getTime();
     const bTime = new Date(b.createdAt || 0).getTime();
@@ -393,10 +389,13 @@ function reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]): 
   });
   const replacement = sortedForReconcile[0];
   if (replacement) {
-    layoutManager.reconcileStaleAgentTabs(
-      validAgentIds,
-      String(replacement.id),
-      replacement.name || 'Agent',
+    yield* put(
+      reconcileStaleAgentTabsAction(
+        wsId,
+        validAgentIds,
+        String(replacement.id),
+        replacement.name || 'Agent',
+      ),
     );
   }
 }
@@ -416,22 +415,21 @@ function* handleStreamingAgentReconnect(
   return false;
 }
 /** @internal Exported for testing only. */
-export function restoreLayoutState(
+export function* restoreLayoutState(
   wsId: string,
   restoredAgents: AgentSession[],
   diskAgents: StoredAgent[],
   hasOpenedStreamingAgent: boolean,
   initialAgentId: string | null,
-): void {
-  if (!hasPanelLayoutManager(wsId)) return;
-  const allTabsAtStart = getAllTabsForWorkspace(wsId);
+) {
+  const allTabsAtStart = yield* getAllTabsForWorkspace(wsId);
   if (allTabsAtStart.length > 0) return;
   const hasInitialAgentOpen = !!initialAgentId;
   if (hasInitialAgentOpen && initialAgentId) {
     // Open the initial agent tab directly — the workspace:show-agent event
     // from the page $effect may fire before this saga's event listener is ready
     const agent = restoredAgents.find((a: AgentSession) => String(a.id) === initialAgentId);
-    openAgentInLayout(initialAgentId, agent?.name || 'Agent', wsId);
+    yield* openAgentInLayout(initialAgentId, agent?.name || 'Agent', wsId);
   }
   if (!hasOpenedStreamingAgent && !hasInitialAgentOpen) {
     const persistedState = workspaceStorageManager.loadState(wsId);
@@ -445,13 +443,13 @@ export function restoreLayoutState(
         const agent = restoredAgents.find(
           (a: AgentSession) => a.id === persistedState.drawer?.itemId,
         );
-        openAgentInLayout(persistedState.drawer.itemId, agent?.name || 'Agent', wsId, {
+        yield* openAgentInLayout(persistedState.drawer.itemId, agent?.name || 'Agent', wsId, {
           focusIfExists: false,
         });
       }
     } else if (restoredAgents.length > 0) {
-      const layoutManager = getPanelLayoutManager(wsId);
-      const hasAgentTabs = getAllTabsForWorkspace(wsId).some((t) => t.type === 'agent');
+      const tabsAfterMutations = yield* getAllTabsForWorkspace(wsId);
+      const hasAgentTabs = tabsAfterMutations.some((t) => t.type === 'agent');
       if (!hasAgentTabs) {
         const sortedAgents = [...restoredAgents].sort((a, b) => {
           const aTime = new Date(a.createdAt || 0).getTime();
@@ -460,37 +458,34 @@ export function restoreLayoutState(
         });
         const mostRecentAgent = sortedAgents[0];
         if (mostRecentAgent) {
-          openAgentInLayout(mostRecentAgent.id, mostRecentAgent.name || 'Agent', wsId);
-          const restoreStatus = selectRestoreStatus.select(getReduxStore().getState(), wsId);
-          if (
-            allTabsAtStart.length === 0 &&
-            !shouldDeferSpecPanel(wsId) &&
-            restoreStatus !== 'restored'
-          ) {
-            layoutManager.openTabInAdjacentOrSplit({
-              type: 'note',
-              title: 'Spec',
-              noteId: SPEC_NOTE_ID,
-              closable: true,
-            });
+          yield* openAgentInLayout(mostRecentAgent.id, mostRecentAgent.name || 'Agent', wsId);
+          const restoreStatus = yield* selectRestoreStatus.effect(wsId);
+          const shouldDefer = yield* shouldDeferSpecPanel(wsId);
+          if (allTabsAtStart.length === 0 && !shouldDefer && restoreStatus !== 'restored') {
+            yield* put(
+              openTabInAdjacentOrSplit(wsId, {
+                type: 'note',
+                title: 'Spec',
+                noteId: SPEC_NOTE_ID,
+                closable: true,
+              }),
+            );
           }
         }
       }
     }
   }
   // Ensure panels have content – fallback to agent | spec layout
-  ensureFallbackLayout(wsId, restoredAgents, diskAgents);
+  yield* ensureFallbackLayout(wsId, restoredAgents, diskAgents);
 }
 /** @internal Exported for testing only. */
-export function ensureFallbackLayout(
+export function* ensureFallbackLayout(
   wsId: string,
   restoredAgents: AgentSession[],
   diskAgents: StoredAgent[],
-): void {
-  if (!hasPanelLayoutManager(wsId)) return;
-  const allTabs = getAllTabsForWorkspace(wsId);
+) {
+  const allTabs = yield* getAllTabsForWorkspace(wsId);
   if (allTabs.length > 0) return;
-  const layoutManager = getPanelLayoutManager(wsId);
   const agentsToUse =
     restoredAgents.length > 0
       ? restoredAgents
@@ -506,17 +501,20 @@ export function ensureFallbackLayout(
     });
     const mostRecent = sorted[0];
     if (mostRecent) {
-      openAgentInLayout(mostRecent.id, (mostRecent as any).name || 'Agent', wsId);
+      yield* openAgentInLayout(mostRecent.id, (mostRecent as any).name || 'Agent', wsId);
     }
   }
-  const restoreStatus = selectRestoreStatus.select(getReduxStore().getState(), wsId);
-  if (!shouldDeferSpecPanel(wsId) && restoreStatus !== 'restored') {
-    layoutManager.openTabInAdjacentOrSplit({
-      type: 'note',
-      title: 'Spec',
-      noteId: SPEC_NOTE_ID,
-      closable: true,
-    });
+  const restoreStatus = yield* selectRestoreStatus.effect(wsId);
+  const shouldDefer = yield* shouldDeferSpecPanel(wsId);
+  if (!shouldDefer && restoreStatus !== 'restored') {
+    yield* put(
+      openTabInAdjacentOrSplit(wsId, {
+        type: 'note',
+        title: 'Spec',
+        noteId: SPEC_NOTE_ID,
+        closable: true,
+      }),
+    );
   }
 }
 function* cleanupSessionStorageKeys(wsId: string) {

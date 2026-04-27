@@ -49,6 +49,7 @@
   import type { Workspace } from '$shared/types';
   import StartNewWorkspaceSection from './StartNewWorkspaceSection.svelte';
   import { handleLink } from '$features/navigation/link-handler';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import type { WorkspaceId } from '$shared/types/branded-ids';
 
   interface Props {
@@ -346,9 +347,11 @@
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: { agentId: resolvedAgentId, sourcePanelId, openInAdjacentPanel },
+    getReduxStore().dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: resolvedAgentId,
+        sourcePanelId,
+        openInAdjacentPanel,
       }),
     );
   }

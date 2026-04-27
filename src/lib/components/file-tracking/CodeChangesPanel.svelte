@@ -31,6 +31,10 @@
     loadWorkspaceDataRequested,
   } from '$lib/store/slices/changes/changes-slice';
   import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import {
+    openWorkspaceAcceptChanges,
+    openWorkspaceDiff,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import FileChangesList from './FileChangesList.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import { ListContainer, ListSection } from '../ui/list';
@@ -216,19 +220,16 @@
 
     logger.info('[CodeChangesPanel] setMainPanelView called with diff type');
 
-    // Also dispatch a custom event as a fallback mechanism
-    // This ensures the main panel updates even if the reactive effect doesn't trigger
     const filePath = change.file || change.relativePath;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-diff', {
-        detail: {
-          change,
+    if (workspaceId) {
+      getReduxStore().dispatch(
+        openWorkspaceDiff(workspaceId, change, {
           filePath,
           changeId: change.id,
-        },
-      }),
-    );
-    logger.info('[CodeChangesPanel] Dispatched workspace:open-diff event', {
+        }),
+      );
+    }
+    logger.info('[CodeChangesPanel] Dispatched openWorkspaceDiff', {
       filePath,
       changeId: change.id,
     });
@@ -303,8 +304,9 @@
     // Open the accept changes panel in the main panel
     reduxDispatch(ftSetMainPanelView({ type: 'accept-changes' }));
 
-    // Dispatch event for main panel
-    window.dispatchEvent(new CustomEvent('workspace:open-accept-changes'));
+    if (workspaceId) {
+      getReduxStore().dispatch(openWorkspaceAcceptChanges(workspaceId));
+    }
     logger.info('[CodeChangesPanel] Opened accept changes panel');
   }
 

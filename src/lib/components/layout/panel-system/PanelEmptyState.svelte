@@ -107,7 +107,6 @@
     {
       key: 'mod+shift+]',
       label: 'Cycle through panels',
-      // action: () => window.dispatchEvent(new CustomEvent('app:toggle-sidebar')),
     },
     {
       key: SHORTCUTS.NEW_AGENT.key,

@@ -19,6 +19,13 @@
   import { toast } from '$lib/components/ui/toast';
   import { dialog, invoke } from '$lib/electron-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import {
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -55,16 +62,23 @@
     toSentenceCase(primitive?.label || `${primitive?.grammar} diagram` || 'Diagram'),
   );
 
-  // Handle binding clicks - dispatch custom event for parent to handle
+  // Handle binding clicks - dispatch nav action directly
   function handleBindingClick(e: MouseEvent, binding: { type: string; target: string }) {
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    window.dispatchEvent(
-      new CustomEvent('diagram:binding-click', {
-        detail: { ...binding, openInAdjacentPanel, sourcePanelId },
-      }),
-    );
+    const wsId = $activeWorkspace?.id;
+    if (!wsId) return;
+    const { type, target } = binding;
+    if (type === 'file' && target) {
+      getReduxStore().dispatch(
+        openWorkspaceFile(wsId, target, { openInAdjacentPanel, sourcePanelId }),
+      );
+    } else if (type === 'note' && target) {
+      getReduxStore().dispatch(
+        openWorkspaceNote(wsId, target, { openInAdjacentPanel, sourcePanelId }),
+      );
+    }
   }
 
   // Diagram container ref for copying
@@ -504,24 +518,17 @@
 
       // Emit file:changed event to trigger file tree refresh
       if (wsId) {
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: {
-              workspaceId: wsId,
-              files: [filePath],
-              type: 'create',
-            },
-          }),
-        );
+        dispatchWindowEvent('file:changed', {
+          workspaceId: wsId,
+          files: [filePath],
+          type: 'create',
+        });
       }
 
       // Open the saved file in a new tab
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-file', {
-          detail: { path: filePath, workspaceId: wsId },
-          bubbles: true,
-        }),
-      );
+      if (wsId) {
+        getReduxStore().dispatch(openWorkspaceFile(wsId, filePath));
+      }
 
       saved = true;
       toast.success(`Saved ${format.toUpperCase()} to ${filePath.split('/').pop()}`);
@@ -543,10 +550,14 @@
           <button
             type="button"
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-            onclick={() =>
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-agent', { detail: { agentId: linkedAgentId } }),
-              )}
+            onclick={() => {
+              const agentWsId = $activeWorkspace?.id;
+              if (agentWsId) {
+                getReduxStore().dispatch(
+                  openAgentTabRequested(agentWsId, { agentId: linkedAgentId }),
+                );
+              }
+            }}
             title="View agent"
           >
             <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />

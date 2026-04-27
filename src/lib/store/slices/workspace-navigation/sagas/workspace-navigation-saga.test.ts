@@ -24,27 +24,13 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { takeEveryFromWindowEventMock } = vi.hoisted(() => ({
-  takeEveryFromWindowEventMock: vi.fn(function* () {}),
-}));
-
-vi.mock("$lib/store/utils/ipc-channel", () => ({
-  takeEveryFromWindowEvent: takeEveryFromWindowEventMock,
-}));
-
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { hydrateWorkspaceNavigation, openWorkspaceActivityChanges, openWorkspaceFile, updateWorkspaceCodeReview, workspaceNavigationStorageKey } from "../workspace-navigation-slice";
+import { hydrateWorkspaceNavigation, updateWorkspaceCodeReview, workspaceNavigationStorageKey } from "../workspace-navigation-slice";
 import { selectWorkspaceNavigationState } from "../workspace-navigation-selectors";
 import { panelContextSaga } from "./panel-context-saga";
 import { removeWorkspaceEntity } from "../../workspace/workspace-slice";
-import { cleanupDeletedWorkspaceCacheSaga, hydrateWorkspaceNavigationStateSaga, persistWorkspaceNavigationSaga, retroactiveNavigationMountCheckSaga, watchNavigateToChangesSaga, watchOpenAcceptChangesSaga, watchOpenFileSaga, watchWorkspaceNavigationForWorkspaceSaga, watchWorkspaceNavigationLifecycleSaga, watchWorkspaceNavigationPersistenceSaga, workspaceNavigationSaga } from "./workspace-navigation-saga";
+import { cleanupDeletedWorkspaceCacheSaga, hydrateWorkspaceNavigationStateSaga, persistWorkspaceNavigationSaga, retroactiveNavigationMountCheckSaga, watchWorkspaceNavigationForWorkspaceSaga, watchWorkspaceNavigationLifecycleSaga, watchWorkspaceNavigationPersistenceSaga, workspaceNavigationSaga } from "./workspace-navigation-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
-
-function getWindowHandler(eventName: string) {
-  const call = takeEveryFromWindowEventMock.mock.calls.find(([name]) => name === eventName);
-  expect(call).toBeDefined();
-  return call![1] as (detail: any) => Generator;
-}
 
 describe("workspaceNavigationSaga", () => {
   beforeEach(() => {
@@ -80,13 +66,12 @@ describe("workspaceNavigationSaga", () => {
     expect(result.done).toBe(true);
   });
 
-  it("hydrates persisted workspace navigation state on mount before forking event watchers", () => {
-    testSaga(watchWorkspaceNavigationForWorkspaceSaga, workspaceMounted("ws-1"))
+  it("hydrates persisted workspace navigation state on mount", () => {
+    testSaga(watchWorkspaceNavigationForWorkspaceSaga, workspaceMounted("ws-hydrate"))
       .next()
-      .call(hydrateWorkspaceNavigationStateSaga, "ws-1")
+      .call(hydrateWorkspaceNavigationStateSaga, "ws-hydrate")
       .next()
-      .fork(watchOpenAcceptChangesSaga, "ws-1")
-      .next();
+      .isDone();
   });
 
   it("loads persisted state from localStorage and dispatches hydrate", () => {
@@ -118,22 +103,6 @@ describe("workspaceNavigationSaga", () => {
       selectedNoteId: "note-1",
     });
     expect(iterator.next()).toEqual({ value: undefined, done: true });
-  });
-
-  it("registers a workspace:open-file listener that strips legacy @ prefixes", () => {
-    testSaga(watchOpenFileSaga, "ws-1").next().isDone();
-    expect(takeEveryFromWindowEventMock).toHaveBeenCalledWith("workspace:open-file", expect.any(Function), { capture: true });
-    expect(getWindowHandler("workspace:open-file")({ path: "@src/main.ts", line: 12 }).next().value).toEqual(
-      sagaEffects.put(openWorkspaceFile("ws-1", "src/main.ts", { line: 12 }))
-    );
-  });
-
-  it("routes navigate-to-changes activity events into the slice", () => {
-    testSaga(watchNavigateToChangesSaga, "ws-1").next().isDone();
-    const event = { id: "evt-1", type: "file_changed", timestamp: 10 } as any;
-    expect(
-      getWindowHandler("workspace:navigate-to-changes")({ type: "activity-changes", event }).next().value
-    ).toEqual(sagaEffects.put(openWorkspaceActivityChanges("ws-1", event)));
   });
 
   it("persists workspace navigation changes using the selector snapshot", () => {

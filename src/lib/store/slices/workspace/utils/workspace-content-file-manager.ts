@@ -11,6 +11,7 @@ import { toast } from '$lib/components/ui/toast';
 import { getLanguageFromPath } from '$lib/utils/file-utils';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import type { Workspace } from '$shared/types';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 
 const logger = createLogger('WorkspaceContentFileManager');
 
@@ -203,11 +204,10 @@ export class WorkspaceContentFileManager {
       logger.info('[searchAndLoadFile] Found file, loading:', matchedPath);
 
       // Dispatch event to update the selected file path in the UI
-      window.dispatchEvent(
-        new CustomEvent('workspace:file-resolved', {
-          detail: { originalPath: fileName, resolvedPath: matchedPath },
-        }),
-      );
+      dispatchWindowEvent('workspace:file-resolved', {
+        originalPath: fileName,
+        resolvedPath: matchedPath,
+      });
 
       // Load the file using the resolved path
       const workspacePath = this.workspace?.worktreePath || this.workspace?.repositoryPath;
@@ -318,15 +318,11 @@ export class WorkspaceContentFileManager {
             // This ensures the git status badges update immediately
             // PERF: Changed from INFO to DEBUG - called for every file save
             logger.debug('[saveFileContent] Emitting file:changed event for file tree refresh');
-            window.dispatchEvent(
-              new CustomEvent('file:changed', {
-                detail: {
-                  workspaceId: this.workspace.id,
-                  files: [resolvedPath],
-                  type: 'change',
-                },
-              }),
-            );
+            dispatchWindowEvent('file:changed', {
+              workspaceId: this.workspace.id,
+              files: [resolvedPath],
+              type: 'change',
+            });
           }
         } else {
           logger.warn('[saveFileContent] No workspace ID available, skipping git check trigger');

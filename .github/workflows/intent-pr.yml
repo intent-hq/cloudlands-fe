@@ -138,12 +138,30 @@ jobs:
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
 
+  dispatch-gate:
+    name: Workspace Dispatch Gate
+    runs-on: macos-14
+    timeout-minutes: 10
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: workspace:* dispatcher gate
+        run: node scripts/check-workspace-event-dispatchers.mjs
+      - name: saga panel-layout-adapter bypass gate
+        run: node scripts/check-saga-adapter-bypass.mjs
+
 
   gate:
     name: Type Check & Test
     runs-on: macos-14
     if: always()
-    needs: [typecheck-renderer, typecheck-main, typecheck-preload, test, accessibility]
+    needs: [typecheck-renderer, typecheck-main, typecheck-preload, test, accessibility, dispatch-gate]
     steps:
       - name: Check results
         run: |
@@ -151,7 +169,8 @@ jobs:
              [ "${{ needs.typecheck-main.result }}" != "success" ] || \
              [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.accessibility.result }}" != "success" ]; then
+             [ "${{ needs.accessibility.result }}" != "success" ] || \
+             [ "${{ needs.dispatch-gate.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
           fi

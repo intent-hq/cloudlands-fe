@@ -33,6 +33,16 @@
   import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import {
+    openWorkspaceBrowser,
+    openWorkspaceNote,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    commandPaletteNewFileRequested,
+    openAgentTabRequested,
+    openTerminalTabRequested,
+  } from '$lib/store/slices/app-layout/app-layout-slice';
   import { resetOnboarding } from '$lib/store/slices/onboarding/onboarding-slice';
   import { setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import {
@@ -623,9 +633,7 @@
       // Handle Go to Line mode
       if (isGoToLineMode) {
         if (goToLineNumber != null && goToLineNumber > 0) {
-          window.dispatchEvent(
-            new CustomEvent('workspace:go-to-line', { detail: { line: goToLineNumber } }),
-          );
+          dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });
           onClose?.();
         }
         return;
@@ -695,24 +703,18 @@
 
       switch (item.type) {
         case 'agent':
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-agent', {
-              detail: {
-                agentId: item.id,
-                openInAdjacentPanel,
-              },
-            }),
-          );
+          if (workspaceId) {
+            reduxDispatch(
+              openAgentTabRequested(workspaceId, { agentId: item.id, openInAdjacentPanel }),
+            );
+          }
           break;
         case 'note':
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-note', {
-              detail: {
-                noteId: item.id,
-                openInAdjacentPanel,
-              },
-            }),
-          );
+          if (workspaceId) {
+            reduxDispatch(
+              openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }),
+            );
+          }
           break;
         case 'change':
           if (item.path) {
@@ -720,15 +722,15 @@
           }
           break;
         case 'terminal':
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-terminal', { detail: { terminalId: item.id } }),
-          );
+          if (workspaceId) {
+            reduxDispatch(
+              openTerminalTabRequested(workspaceId, { terminalId: item.id }),
+            );
+          }
           break;
         case 'browser':
-          if (item.url) {
-            window.dispatchEvent(
-              new CustomEvent('workspace:open-browser-url', { detail: { url: item.url } }),
-            );
+          if (item.url && workspaceId) {
+            reduxDispatch(openWorkspaceBrowser(workspaceId, item.url));
           }
           break;
         case 'file':
@@ -763,34 +765,22 @@
         invoke('shell:install-cli')
           .then((result: any) => {
             if (result?.success) {
-              window.dispatchEvent(
-                new CustomEvent('app:show-toast', {
-                  detail: {
-                    message: result.message || 'CLI installed successfully',
-                    type: 'success',
-                  },
-                }),
-              );
+              dispatchWindowEvent('app:show-toast', {
+                message: result.message || 'CLI installed successfully',
+                type: 'success',
+              });
             } else {
-              window.dispatchEvent(
-                new CustomEvent('app:show-toast', {
-                  detail: {
-                    message: result?.message || 'Failed to install CLI',
-                    type: 'error',
-                  },
-                }),
-              );
+              dispatchWindowEvent('app:show-toast', {
+                message: result?.message || 'Failed to install CLI',
+                type: 'error',
+              });
             }
           })
           .catch((err: any) => {
-            window.dispatchEvent(
-              new CustomEvent('app:show-toast', {
-                detail: {
-                  message: 'Failed to install CLI: ' + err.message,
-                  type: 'error',
-                },
-              }),
-            );
+            dispatchWindowEvent('app:show-toast', {
+              message: 'Failed to install CLI: ' + err.message,
+              type: 'error',
+            });
           });
         return true;
       case 'new-agent':
@@ -810,15 +800,13 @@
         return true;
       case 'new-file':
         if (workspaceId) {
-          window.dispatchEvent(new CustomEvent('app:new-file'));
+          reduxDispatch(commandPaletteNewFileRequested(workspaceId));
         }
         return true;
       case 'open-url':
         // Open a browser panel with default URL
         if (workspaceId) {
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-browser-url', { detail: { url: 'about:blank' } }),
-          );
+          reduxDispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
       case 'show-onboarding':
@@ -959,9 +947,7 @@
                 class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
                 onclick={() => {
                   if (goToLineNumber != null && goToLineNumber > 0) {
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:go-to-line', { detail: { line: goToLineNumber } }),
-                    );
+                    dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });
                   }
                   onClose?.();
                 }}

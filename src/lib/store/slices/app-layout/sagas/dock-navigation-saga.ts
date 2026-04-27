@@ -1,5 +1,4 @@
 import { agentService } from "$features/agent/agent-ipc-bridge";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
@@ -9,7 +8,9 @@ import {
     openWorkspaceDrawer,
     type WorkspaceNavigationDrawerState,
 } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
+import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
 import { isFocusInEditableElement, isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
+import { dispatchWindowEvent } from "$lib/utils/window-events";
 import type { AgentSession } from "$shared/types";
 import { eventChannel, type EventChannel } from "redux-saga";
 import { call, put, take } from "typed-redux-saga";
@@ -30,11 +31,7 @@ function isMacPlatform(): boolean {
     // @ts-expect-error Electron platform detection differs across runtimes
     return navigator.userAgentData?.platform === "macOS" || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
-function getCurrentDrawerState(wsId: string): WorkspaceNavigationDrawerState {
-    return selectWorkspaceNavigationDrawer.select(getReduxStore().getState(), wsId);
-}
-function isCurrentAgentStreaming(wsId: string): boolean {
-    const drawerState = getCurrentDrawerState(wsId);
+function isCurrentAgentStreaming(drawerState: WorkspaceNavigationDrawerState): boolean {
     const currentAgentId = drawerState.type === "agent" ? drawerState.itemId : null;
     if (!currentAgentId)
         return false;
@@ -63,9 +60,12 @@ function getNextDockItem(drawerState: WorkspaceNavigationDrawerState, items: Doc
     return items[nextIndex] ?? null;
 }
 function dispatchNavigateMessageEvent(direction: "next" | "previous"): void {
-    window.dispatchEvent(new CustomEvent("navigate-message", { detail: { direction } }));
+    dispatchWindowEvent("navigate-message", { direction });
 }
-export function createDockNavigationChannel(wsId: string): EventChannel<DockShortcutEvent> {
+export function createDockNavigationChannel(
+    wsId: string,
+    getDrawerState: () => WorkspaceNavigationDrawerState,
+): EventChannel<DockShortcutEvent> {
     return eventChannel((emit) => {
         const isMac = isMacPlatform();
         const handleKeydown = (event: KeyboardEvent) => {
@@ -76,7 +76,7 @@ export function createDockNavigationChannel(wsId: string): EventChannel<DockShor
                     return;
                 if (isFocusInTerminal(target))
                     return;
-                if (isCurrentAgentStreaming(wsId)) {
+                if (isCurrentAgentStreaming(getDrawerState())) {
                     return;
                 }
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") {
@@ -118,7 +118,19 @@ export function createDockNavigationChannel(wsId: string): EventChannel<DockShor
 export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
     if (typeof window === "undefined")
         return;
-    const channel = createDockNavigationChannel(wsId);
+    // Maintain a closure-scoped drawer state so the channel's keydown handler
+    // (which runs outside saga context) can read the latest value without
+    // calling the forbidden direct-selector pattern from inside a callback.
+    let drawerStateRef: WorkspaceNavigationDrawerState =
+        yield* selectWorkspaceNavigationDrawer.effect(wsId);
+    yield* takeLatestFromSelector(
+        selectWorkspaceNavigationDrawer,
+        [wsId],
+        function* ({ payload }) {
+            drawerStateRef = payload;
+        },
+    );
+    const channel = createDockNavigationChannel(wsId, () => drawerStateRef);
     try {
         while (true) {
             const shortcut: DockShortcutEvent = yield* take(channel);

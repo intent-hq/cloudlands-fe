@@ -20,6 +20,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   const logger = createLogger('AgentActionBlock');
 
@@ -151,9 +152,11 @@
     if (agentId) {
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', { detail: { agentId, sourcePanelId } }),
-      );
+      if (workspaceId) {
+        getReduxStore().dispatch(
+          openAgentTabRequested(workspaceId, { agentId, sourcePanelId }),
+        );
+      }
     } else {
       runAction();
     }
@@ -164,11 +167,15 @@
     const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: { agentId: targetAgentId, sourcePanelId, openInAdjacentPanel },
-      }),
-    );
+    if (workspaceId) {
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, {
+          agentId: targetAgentId,
+          sourcePanelId,
+          openInAdjacentPanel,
+        }),
+      );
+    }
   }
 </script>
 

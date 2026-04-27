@@ -15,6 +15,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('ReferenceBlock');
 
@@ -246,13 +249,11 @@
     const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
 
-    // Dispatch event to open file in main panel
-    // Note: event handler expects 'path' not 'filePath'
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-file', {
-        detail: { path: filePath, line, openInAdjacentPanel, sourcePanelId },
-      }),
-    );
+    if (workspaceId) {
+      getReduxStore().dispatch(
+        openWorkspaceFile(workspaceId, filePath, { line, openInAdjacentPanel, sourcePanelId }),
+      );
+    }
   }
 </script>
 
@@ -273,9 +274,11 @@
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
             onclick={(e) => {
               e.stopPropagation();
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-agent', { detail: { agentId: linkedAgentId } }),
-              );
+              if (workspaceId) {
+                getReduxStore().dispatch(
+                  openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
+                );
+              }
             }}
             title="View agent"
           >

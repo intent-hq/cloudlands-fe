@@ -18,6 +18,7 @@
   } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   const logger = createLogger('CodeEditor');
 
@@ -307,20 +308,22 @@
               const model = editor?.getModel();
               const selectedText = model?.getValueInRange(selection) || '';
               if (selectedText) {
-                window.dispatchEvent(
-                  new CustomEvent('editor:selection-change', {
-                    detail: { text: selectedText, file: fileName, language, source: 'monaco' },
-                  }),
-                );
+                dispatchWindowEvent('editor:selection-change', {
+                  text: selectedText,
+                  file: fileName,
+                  language,
+                  source: 'monaco',
+                });
               }
             } else if (editor?.hasTextFocus()) {
               // Only clear selection if editor still has focus
               // This preserves the selection when user clicks to another panel
-              window.dispatchEvent(
-                new CustomEvent('editor:selection-change', {
-                  detail: { text: '', file: fileName, language, source: 'monaco' },
-                }),
-              );
+              dispatchWindowEvent('editor:selection-change', {
+                text: '',
+                file: fileName,
+                language,
+                source: 'monaco',
+              });
             }
           });
 
@@ -618,20 +621,22 @@
           const selectedText = model?.getValueInRange(selection) || '';
           if (selectedText) {
             // Dispatch a custom event for components to listen to
-            window.dispatchEvent(
-              new CustomEvent('editor:selection-change', {
-                detail: { text: selectedText, file: fileName, language, source: 'monaco' },
-              }),
-            );
+            dispatchWindowEvent('editor:selection-change', {
+              text: selectedText,
+              file: fileName,
+              language,
+              source: 'monaco',
+            });
           }
         } else if (editor?.hasTextFocus()) {
           // Only clear selection if editor still has focus
           // This preserves the selection when user clicks to another panel
-          window.dispatchEvent(
-            new CustomEvent('editor:selection-change', {
-              detail: { text: '', file: fileName, language, source: 'monaco' },
-            }),
-          );
+          dispatchWindowEvent('editor:selection-change', {
+            text: '',
+            file: fileName,
+            language,
+            source: 'monaco',
+          });
         }
       });
     } catch (err) {
@@ -675,20 +680,22 @@
             const model = editor?.getModel();
             const selectedText = model?.getValueInRange(selection) || '';
             if (selectedText) {
-              window.dispatchEvent(
-                new CustomEvent('editor:selection-change', {
-                  detail: { text: selectedText, file: fileName, language, source: 'monaco' },
-                }),
-              );
+              dispatchWindowEvent('editor:selection-change', {
+                text: selectedText,
+                file: fileName,
+                language,
+                source: 'monaco',
+              });
             }
           } else if (editor?.hasTextFocus()) {
             // Only clear selection if editor still has focus
             // This preserves the selection when user clicks to another panel
-            window.dispatchEvent(
-              new CustomEvent('editor:selection-change', {
-                detail: { text: '', file: fileName, language, source: 'monaco' },
-              }),
-            );
+            dispatchWindowEvent('editor:selection-change', {
+              text: '',
+              file: fileName,
+              language,
+              source: 'monaco',
+            });
           }
         });
       } catch (fallbackErr) {

@@ -67,7 +67,7 @@
   } from '$lib/components/workspace/WorkspaceTableView.svelte';
 
   import { faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, tick, untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
@@ -141,15 +141,6 @@
     }
   });
 
-
-  // Event listener for open-create-workspace-modal
-  onMount(() => {
-    const handleOpenForm = () => {
-      isInitializerExpanded = true;
-    };
-    window.addEventListener('open-create-workspace-modal', handleOpenForm);
-    return () => window.removeEventListener('open-create-workspace-modal', handleOpenForm);
-  });
 
   const showArchived = selectShowArchived();
   const groupByRepo = selectGroupByRepo();

@@ -25,6 +25,8 @@
   import { invoke, listenSync } from '$lib/electron-bridge';
   import type { WorkspaceId, NoteId } from '$shared/types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   interface Props {
     editor: Editor;
@@ -87,9 +89,11 @@
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId: indicator.author.id, sourcePanelId, openInAdjacentPanel },
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, {
+          agentId: indicator.author.id,
+          sourcePanelId,
+          openInAdjacentPanel,
         }),
       );
     }

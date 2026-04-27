@@ -254,13 +254,11 @@ describe('FileChangesSection', () => {
     );
   });
 
-  it('handleStageFile dispatches stage + fires workspace:open-diff for the single file', async () => {
+  it('handleStageFile dispatches stage + openWorkspaceDiff for the single file', async () => {
     const unstagedChange = makeChange('src/a.ts');
     const stagedChange = makeChange('src/a.ts', { id: 'staged-a', stage: ChangeStage.Staged });
     mocks.unstaged.push(unstagedChange);
     const { getAllByTestId } = await renderSection();
-    const listener = vi.fn();
-    window.addEventListener('workspace:open-diff', listener as EventListener);
     // Simulate that after dispatch the file moves to staged (selector re-read).
     mocks.staged.push(stagedChange);
 
@@ -272,20 +270,25 @@ describe('FileChangesSection', () => {
         payload: ['ws-1', ['src/a.ts']],
       }),
     );
-    await waitFor(() => expect(listener).toHaveBeenCalled());
-    const detail = (listener.mock.calls[0][0] as CustomEvent).detail;
-    expect(detail.filePath).toBe('src/a.ts');
-    expect(detail.staged).toBe(true);
-    window.removeEventListener('workspace:open-diff', listener as EventListener);
+    await waitFor(() =>
+      expect(mocks.reduxDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspaceNavigation/openWorkspaceDiff',
+          payload: expect.arrayContaining([
+            'ws-1',
+            expect.objectContaining({ id: 'staged-a' }),
+            expect.objectContaining({ filePath: 'src/a.ts', forceUpdate: true }),
+          ]),
+        }),
+      ),
+    );
   });
 
-  it('handleUnstageFile dispatches unstage + fires workspace:open-diff for the single file', async () => {
+  it('handleUnstageFile dispatches unstage + openWorkspaceDiff for the single file', async () => {
     const stagedChange = makeChange('src/c.ts', { stage: ChangeStage.Staged });
     const unstagedChange = makeChange('src/c.ts', { id: 'unstaged-c' });
     mocks.staged.push(stagedChange);
     const { getAllByTestId } = await renderSection();
-    const listener = vi.fn();
-    window.addEventListener('workspace:open-diff', listener as EventListener);
     mocks.unstaged.push(unstagedChange);
 
     await fireEvent.click(getAllByTestId('unstage-btn')[0]);
@@ -296,11 +299,18 @@ describe('FileChangesSection', () => {
         payload: ['ws-1', ['src/c.ts']],
       }),
     );
-    await waitFor(() => expect(listener).toHaveBeenCalled());
-    const detail = (listener.mock.calls[0][0] as CustomEvent).detail;
-    expect(detail.filePath).toBe('src/c.ts');
-    expect(detail.staged).toBe(false);
-    window.removeEventListener('workspace:open-diff', listener as EventListener);
+    await waitFor(() =>
+      expect(mocks.reduxDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspaceNavigation/openWorkspaceDiff',
+          payload: expect.arrayContaining([
+            'ws-1',
+            expect.objectContaining({ id: 'unstaged-c' }),
+            expect.objectContaining({ filePath: 'src/c.ts', forceUpdate: true }),
+          ]),
+        }),
+      ),
+    );
   });
 
   it('handleRevertFile dispatches revertByPathRequested', async () => {

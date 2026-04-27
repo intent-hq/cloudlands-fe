@@ -15,8 +15,10 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     addRecentUrl,
+    clearBrowserTabZoomRequest,
     updateUrlMetadata,
   } from '$lib/store/slices/browser/browser-slice';
+  import { selectPendingBrowserZoom } from '$lib/store/slices/browser/browser-selectors';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -102,6 +104,12 @@
 
   const dispatch = getDispatch();
 
+  // Reactive readable for per-tab pending zoom requests dispatched by the
+  // menu zoom sagas. The selector form (called at component init) returns a
+  // Svelte readable that updates only when the selected slice value changes,
+  // so the $effect below is not woken by unrelated dispatches.
+  const pendingZoom$ = tabId ? selectPendingBrowserZoom(_workspaceId, tabId) : null;
+
   // Log the URL prop on mount and changes
   $effect(() => {
     logger.info('EmbeddedBrowser URL prop', {
@@ -110,6 +118,33 @@
       appOrigin: typeof window !== 'undefined' ? window.location.origin : 'N/A',
       workspaceId: _workspaceId,
     });
+  });
+
+  // Apply pending zoom requests targeting this tab. Redux is the single
+  // source of truth: a queue of pending actions is drained in order and
+  // then cleared. The effect re-runs when the selected value, webviewRef,
+  // or webviewReady change, so requests that land before the webview is
+  // attached are applied as soon as it is ready.
+  $effect(() => {
+    if (!pendingZoom$ || !tabId) return;
+    const pending = $pendingZoom$;
+    if (!pending || pending.length === 0) return;
+    if (!webviewRef || !webviewReady) return;
+    try {
+      for (const action of pending) {
+        const currentZoom = webviewRef.getZoomLevel?.() ?? 0;
+        if (action === 'in') {
+          webviewRef.setZoomLevel?.(currentZoom + 0.5);
+        } else if (action === 'out') {
+          webviewRef.setZoomLevel?.(currentZoom - 0.5);
+        } else if (action === 'reset') {
+          webviewRef.setZoomLevel?.(0);
+        }
+      }
+    } catch {
+      // WebView not yet attached to DOM
+    }
+    dispatch(clearBrowserTabZoomRequest(_workspaceId, tabId));
   });
 
   // Reference to the URL input for focusing
@@ -395,29 +430,8 @@
     // Use capture phase to intercept shortcuts before other handlers
     window.addEventListener('keydown', handleKeydown, true);
 
-    // Listen for zoom events from main process (routed via +layout.svelte)
-    // Only the focused browser panel should handle these
-    const handleBrowserZoom = (e: Event) => {
-      if (!focusRef.current || !webviewRef || !webviewReady) return;
-      try {
-        const action = (e as CustomEvent).detail?.action;
-        const currentZoom = webviewRef.getZoomLevel?.() ?? 0;
-        if (action === 'in') {
-          webviewRef.setZoomLevel?.(currentZoom + 0.5);
-        } else if (action === 'out') {
-          webviewRef.setZoomLevel?.(currentZoom - 0.5);
-        } else if (action === 'reset') {
-          webviewRef.setZoomLevel?.(0);
-        }
-      } catch {
-        // WebView not yet attached to DOM
-      }
-    };
-    window.addEventListener('browser:zoom', handleBrowserZoom);
-
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
-      window.removeEventListener('browser:zoom', handleBrowserZoom);
       // Clean up webview listeners
       cleanupWebviewListeners();
       // NOTE: We intentionally do NOT unregister the tab from CDP here.

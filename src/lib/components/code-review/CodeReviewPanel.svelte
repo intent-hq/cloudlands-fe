@@ -35,6 +35,7 @@
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();
@@ -120,8 +121,10 @@
       if (onOpenAgent) {
         onOpenAgent(agentId);
       } else {
-        // Fallback to dispatching event (use workspace:open-agent for panel layout support)
-        window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId } }));
+        const wsId = $activeWorkspace?.id;
+        if (wsId) {
+          getReduxStore().dispatch(openAgentTabRequested(wsId, { agentId }));
+        }
       }
     }
   }

@@ -21,6 +21,7 @@ import {
 } from "$lib/store/slices/workspace/workspace-slice";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import { Logger } from "$shared/logger";
+import { dispatchWindowEvent } from "$lib/utils/window-events";
 
 const logger = new Logger("DeepLinkSaga");
 
@@ -180,11 +181,7 @@ export function* handleCreateWorkspace(params: Record<string, string>) {
   yield* call(writeWorkspacePrefill, params);
 
   if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent("app:deep-link-create", {
-        detail: { params },
-      }),
-    );
+    dispatchWindowEvent("app:deep-link-create", { params });
   }
 
   yield* put(deepLinkProcessingComplete());
@@ -309,10 +306,6 @@ export function* handleDeepLinkCreate(event: DeepLinkCreateEvent) {
   yield* put(clearPendingDeepLinkAction());
 }
 
-export function* handleLegacyOpenCreateWorkspaceModal() {
-  yield* put(requestHomePageInitializer({}));
-}
-
 export function* loadInitialPendingDeepLinkSaga() {
   const pendingAction: DeepLinkActionPayload | null = yield* select(
     selectPendingDeepLinkAction.select,
@@ -357,19 +350,9 @@ export function* watchDeepLinkCreateSaga() {
   );
 }
 
-export function* watchLegacyOpenCreateWorkspaceModalSaga() {
-  yield* takeEveryFromWindowEvent<Record<string, never>>(
-    "open-create-workspace-modal",
-    function* () {
-      yield* call(handleLegacyOpenCreateWorkspaceModal);
-    },
-  );
-}
-
 export function* deepLinksSaga() {
   yield* call(loadInitialPendingDeepLinkSaga);
   yield* fork(watchDeepLinkIpcSaga);
   yield* fork(watchLocationSaga);
   yield* fork(watchDeepLinkCreateSaga);
-  yield* fork(watchLegacyOpenCreateWorkspaceModalSaga);
 }

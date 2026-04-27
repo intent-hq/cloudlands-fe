@@ -66,6 +66,7 @@
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import TimelineSection from './TimelineSection.svelte';
+  import { openWorkspaceCommitChangeset, openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import {
     getCommitsToPushCount,
     getCommitsToUndoCount,
@@ -378,9 +379,10 @@
             changeId: change.id, stage: change.stage, commitHash: change.commitHash,
           });
 
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-diff', {
-              detail: { change, filePath, changeId: change.id },
+          getReduxStore().dispatch(
+            openWorkspaceDiff(workspaceId, change, {
+              changeId: change.id,
+              filePath,
             }),
           );
         } catch (error) {
@@ -391,11 +393,7 @@
   }
 
   function handleOpenCommitChangeset(commitHash: string, commitMessage: string) {
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-commit-changeset', {
-        detail: { commitHash, commitMessage },
-      }),
-    );
+    getReduxStore().dispatch(openWorkspaceCommitChangeset(workspaceId, commitHash, commitMessage));
   }
 
   function openCommitInBrowser(hash: string, event?: MouseEvent) {

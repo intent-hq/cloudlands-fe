@@ -22,6 +22,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
   import { themeManager } from '$lib/utils/theme';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Fa from 'svelte-fa';
   import {
@@ -1272,15 +1273,11 @@
         relativePath: filePath,
         workspaceId: wsId,
       });
-      window.dispatchEvent(
-        new CustomEvent('diff-editor:file-saved', {
-          detail: {
-            filePath: absolutePath,
-            relativePath: filePath,
-            workspaceId: wsId,
-          },
-        }),
-      );
+      dispatchWindowEvent('diff-editor:file-saved', {
+        filePath: absolutePath,
+        relativePath: filePath,
+        workspaceId: wsId,
+      });
 
       await invoke('file:write', {
         path: absolutePath,

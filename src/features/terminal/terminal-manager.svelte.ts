@@ -181,6 +181,7 @@ class RendererTerminalManager {
       onCommandFinished?: () => void;
       onCwdChanged?: (cwd: string) => void;
       onSearchResultsChange?: (resultIndex: number, resultCount: number) => void;
+      onToggleSearch?: () => void;
     },
     forceNew: boolean = false, // Add parameter to force creating a new terminal
   ): Promise<TerminalAdapter> {

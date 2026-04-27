@@ -23,6 +23,7 @@
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
   import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -713,11 +714,7 @@
           const layoutManager = getPanelLayoutManager(workspaceId);
           layoutManager.closeTabsByType('file', 'filePath', filePath);
         }
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: { workspaceId, type: 'delete', filePath },
-          }),
-        );
+        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
         track('Deleted File', {
           workspace_id: workspaceId || '',
           file_extension: getFileExtension(filePath),
@@ -729,11 +726,7 @@
           content: savedContent,
           workspaceId,
         });
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: { workspaceId, type: 'create', filePath },
-          }),
-        );
+        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
       },
     );
   }

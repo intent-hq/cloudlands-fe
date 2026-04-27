@@ -22,6 +22,8 @@ import {
   isCmdClickModifier,
   isGitHubUrl,
 } from '$shared/utils/link-helpers';
+import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
 const logger = new Logger('LinkHandler');
 
@@ -62,7 +64,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Handle devspace:// links (internal resources like terminals)
     if (url.startsWith('devspace://')) {
-      return await handleDevspaceLink(url);
+      return await handleDevspaceLink(url, options.workspaceId);
     }
 
     // Handle HTTP/HTTPS links
@@ -125,17 +127,17 @@ async function handleIntentLink(url: string): Promise<boolean> {
  * Currently supports:
  * - devspace://terminal/{id} → open terminal tab
  */
-async function handleDevspaceLink(url: string): Promise<boolean> {
+async function handleDevspaceLink(url: string, workspaceId?: WorkspaceId): Promise<boolean> {
   try {
     const terminalMatch = url.match(/^devspace:\/\/terminal\/(.+)$/);
     if (terminalMatch) {
+      if (!workspaceId) {
+        logger.warn('Cannot open terminal without workspaceId', { url });
+        return false;
+      }
       const terminalId = decodeURIComponent(terminalMatch[1]);
-      logger.debug('Opening terminal from devspace link', { terminalId });
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-terminal', {
-          detail: { terminalId },
-        }),
-      );
+      logger.debug('Opening terminal from devspace link', { terminalId, workspaceId });
+      getReduxStore().dispatch(openTerminalTabRequested(workspaceId, { terminalId }));
       return true;
     }
 

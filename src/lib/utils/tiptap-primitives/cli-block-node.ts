@@ -9,6 +9,7 @@ import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { CliPrimitive } from '../../../shared/types/notes-primitives';
 import CliBlock from '../../components/notes/primitives/CliBlock.svelte';
 import { decodeBase64Unicode } from './index';
+import { dispatchWindowEvent } from '../window-events';
 
 export interface CliBlockOptions {
   HTMLAttributes: Record<string, any>;
@@ -223,7 +224,7 @@ export const CliBlockNode = Node.create<CliBlockOptions>({
           const primitive = node.attrs.data as CliPrimitive;
           if (primitive) {
             // Dispatch custom event for running the command
-            window.dispatchEvent(new CustomEvent('run-cli-command', { detail: primitive }));
+            dispatchWindowEvent('run-cli-command', primitive);
             return true;
           }
         }

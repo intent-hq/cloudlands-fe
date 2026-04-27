@@ -17,15 +17,18 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { focusBrowserTabRequested, openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   interface Props {
     input: Record<string, any>;
     result?: any;
     parsedResult?: ParsedToolResult | null;
     isError?: boolean;
+    workspaceId?: string;
   }
 
-  const { input, result, parsedResult, isError = false }: Props = $props();
+  const { input, result, parsedResult, isError = false, workspaceId }: Props = $props();
 
   let copied = $state(false);
   let showRaw = $state(false);
@@ -233,14 +236,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:open-file', {
-                        detail: {
-                          path: parsedResult?.filePath,
-                          line,
-                          openInAdjacentPanel,
-                          sourcePanelId,
-                        },
+                    if (!workspaceId || !parsedResult?.filePath) return;
+                    getReduxStore().dispatch(
+                      openWorkspaceFile(workspaceId, parsedResult.filePath, {
+                        line,
+                        openInAdjacentPanel,
+                        sourcePanelId,
                       }),
                     );
                   }}
@@ -277,13 +278,11 @@
                   const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                   const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                   const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                  window.dispatchEvent(
-                    new CustomEvent('workspace:open-file', {
-                      detail: {
-                        path: parsedResult?.filePath,
-                        openInAdjacentPanel,
-                        sourcePanelId,
-                      },
+                  if (!workspaceId || !parsedResult?.filePath) return;
+                  getReduxStore().dispatch(
+                    openWorkspaceFile(workspaceId, parsedResult.filePath, {
+                      openInAdjacentPanel,
+                      sourcePanelId,
                     }),
                   );
                 }}
@@ -400,14 +399,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:open-file', {
-                        detail: {
-                          path: parsedResult?.filePath,
-                          line,
-                          openInAdjacentPanel,
-                          sourcePanelId,
-                        },
+                    if (!workspaceId || !parsedResult?.filePath) return;
+                    getReduxStore().dispatch(
+                      openWorkspaceFile(workspaceId, parsedResult.filePath, {
+                        line,
+                        openInAdjacentPanel,
+                        sourcePanelId,
                       }),
                     );
                   }}
@@ -472,12 +469,11 @@
                   type="button"
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
-                    window.dispatchEvent(
-                      new CustomEvent('workspace:open-agent', {
-                        detail: {
-                          agentId: agent.agentId,
-                          openInAdjacentPanel: e.metaKey || e.ctrlKey,
-                        },
+                    if (!workspaceId) return;
+                    getReduxStore().dispatch(
+                      openAgentTabRequested(workspaceId, {
+                        agentId: agent.agentId,
+                        openInAdjacentPanel: e.metaKey || e.ctrlKey,
                       }),
                     );
                   }}
@@ -585,12 +581,11 @@
                     type="button"
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
-                      window.dispatchEvent(
-                        new CustomEvent('workspace:open-agent', {
-                          detail: {
-                            agentId,
-                            openInAdjacentPanel: e.metaKey || e.ctrlKey,
-                          },
+                      if (!workspaceId) return;
+                      getReduxStore().dispatch(
+                        openAgentTabRequested(workspaceId, {
+                          agentId,
+                          openInAdjacentPanel: e.metaKey || e.ctrlKey,
                         }),
                       );
                     }}
@@ -679,13 +674,11 @@
                       const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                       const sourcePanelId =
                         panelElement?.getAttribute('data-panel-id') ?? undefined;
-                      window.dispatchEvent(
-                        new CustomEvent('workspace:open-note', {
-                          detail: {
-                            noteId: note.id,
-                            openInAdjacentPanel,
-                            sourcePanelId,
-                          },
+                      if (!workspaceId) return;
+                      getReduxStore().dispatch(
+                        openWorkspaceNote(workspaceId, note.id, {
+                          openInAdjacentPanel,
+                          sourcePanelId,
                         }),
                       );
                     }}
@@ -792,9 +785,9 @@
                     <button
                       class="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/30 rounded cursor-pointer text-left w-full"
                       onclick={() => {
-                        if (tab.tabId) {
-                          window.dispatchEvent(
-                            new CustomEvent('browser:focus-tab', { detail: { tabId: tab.tabId } }),
+                        if (tab.tabId && workspaceId) {
+                          getReduxStore().dispatch(
+                            focusBrowserTabRequested(workspaceId, tab.tabId),
                           );
                         }
                       }}

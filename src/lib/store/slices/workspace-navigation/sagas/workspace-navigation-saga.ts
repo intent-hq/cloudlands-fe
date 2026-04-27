@@ -1,7 +1,6 @@
 import type { Task } from "redux-saga";
 import { cancel, call, fork, put, select, takeEvery } from "typed-redux-saga";
 import type { ReviewStatus } from "$lib/components/code-review/types";
-import { takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
@@ -173,15 +172,6 @@ function normalizePersistedWorkspaceNavigationState(
   };
 }
 
-function workspaceMatches(detail: unknown, wsId: string): boolean {
-  if (!isRecord(detail) || !isString(detail.workspaceId)) return true;
-  return detail.workspaceId === wsId;
-}
-
-function stripWorkspaceFilePath(filePath: string): string {
-  return filePath.startsWith("@") ? filePath.slice(1) : filePath;
-}
-
 export function* hydrateWorkspaceNavigationStateSaga(wsId: string) {
   const cachedState = workspaceNavigationCache.get(wsId);
   if (cachedState) {
@@ -198,22 +188,7 @@ export function* hydrateWorkspaceNavigationStateSaga(wsId: string) {
 export function* watchWorkspaceNavigationForWorkspaceSaga({ payload: [wsId] }: ReturnType<typeof workspaceMounted>) {
   yield* call(hydrateWorkspaceNavigationStateSaga, wsId);
 
-  const tasks = [
-    yield* fork(watchOpenAcceptChangesSaga, wsId),
-    yield* fork(watchOpenFileSaga, wsId),
-    yield* fork(watchOpenNoteSaga, wsId),
-    yield* fork(watchOpenBrowserSaga, wsId),
-    yield* fork(watchOpenDiffSaga, wsId),
-    yield* fork(watchOpenCommitSaga, wsId),
-    yield* fork(watchNavigateToChangesSaga, wsId),
-    yield* fork(watchOpenChatChangesSaga, wsId),
-    yield* fork(watchOpenLocalChangesSaga, wsId),
-    yield* fork(watchOpenCommitChangesetSaga, wsId),
-    yield* fork(watchOpenCodeReviewSaga, wsId),
-    yield* fork(watchCodeReviewUpdateSaga, wsId),
-  ];
-
-  workspaceNavigationTasks.set(wsId, tasks);
+  workspaceNavigationTasks.set(wsId, []);
 }
 
 export function* cancelWorkspaceNavigationForWorkspaceSaga({
@@ -295,209 +270,6 @@ export function* watchWorkspaceNavigationPersistenceSaga() {
   yield* takeEvery(openWorkspaceLocalChanges, persistWorkspaceNavigationSaga);
   yield* takeEvery(openWorkspaceNote, persistWorkspaceNavigationSaga);
   yield* takeEvery(updateWorkspaceCodeReview, persistWorkspaceNavigationSaga);
-}
-
-export function* watchOpenAcceptChangesSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-accept-changes",
-    function* (detail: unknown) {
-      if (!workspaceMatches(detail, wsId)) return;
-      yield* put(openWorkspaceAcceptChanges(wsId));
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenFileSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-file",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId)) return;
-
-      const rawPath = isString(detail.path) ? detail.path : isString(detail.filePath) ? detail.filePath : undefined;
-      if (!rawPath || detail.openInAdjacentPanel === true) return;
-
-      yield* put(
-        openWorkspaceFile(wsId, stripWorkspaceFilePath(rawPath), {
-          line: isNumber(detail.line) ? detail.line : undefined,
-        })
-      );
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenNoteSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-note",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId)) return;
-      if (!isString(detail.noteId) || detail.openInAdjacentPanel === true) return;
-      yield* put(openWorkspaceNote(wsId, detail.noteId));
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenBrowserSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-browser-url",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId) || !isString(detail.url)) return;
-      yield* put(openWorkspaceBrowser(wsId, detail.url));
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenDiffSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-diff",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId) || !isRecord(detail.change)) return;
-
-      yield* put(
-        openWorkspaceDiff(wsId, detail.change as unknown as TrackedChange, {
-          changeId: isString(detail.changeId) ? detail.changeId : undefined,
-          filePath: isString(detail.filePath) ? detail.filePath : undefined,
-          scrollToLine: isNumber(detail.scrollToLine) ? detail.scrollToLine : undefined,
-          forceUpdate: detail.forceUpdate === true,
-        })
-      );
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenCommitSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-commit",
-    function* (detail: unknown) {
-      if (!workspaceMatches(detail, wsId)) return;
-      yield* put(openWorkspaceChangeSet(wsId));
-    },
-    { capture: true }
-  );
-}
-
-export function* watchNavigateToChangesSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:navigate-to-changes",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId) || !isString(detail.type)) return;
-
-      if (detail.type === "agent-turn-changes" && isString(detail.agentId)) {
-        yield* put(
-          openWorkspaceAgentTurnChanges(wsId, {
-            agentId: detail.agentId,
-            sessionId: isString(detail.sessionId) ? detail.sessionId : undefined,
-            turnNumber: isNumber(detail.turnNumber) ? detail.turnNumber : undefined,
-          })
-        );
-      }
-
-      if (detail.type === "activity-changes" && isRecord(detail.event)) {
-        yield* put(openWorkspaceActivityChanges(wsId, detail.event as unknown as WorkspaceEvent));
-      }
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenChatChangesSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-chat-changes",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId) || !Array.isArray(detail.changes)) return;
-      if (!isString(detail.title)) return;
-
-      yield* put(
-        openWorkspaceChatChanges(wsId, detail.changes as JsonValue[], detail.title, {
-          messageId: isString(detail.messageId) ? detail.messageId : undefined,
-          isAggregate: detail.isAggregate === true,
-          agentId: isString(detail.agentId) ? detail.agentId : undefined,
-          turnNumber: isNumber(detail.turnNumber) ? detail.turnNumber : undefined,
-        })
-      );
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenLocalChangesSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-local-changes",
-    function* (detail: unknown) {
-      if (!workspaceMatches(detail, wsId)) return;
-      yield* put(openWorkspaceLocalChanges(wsId));
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenCommitChangesetSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-commit-changeset",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId)) return;
-      yield* put(
-        openWorkspaceCommitChangeset(
-          wsId,
-          isString(detail.commitHash) ? detail.commitHash : undefined,
-          isString(detail.commitMessage) ? detail.commitMessage : undefined
-        )
-      );
-    },
-    { capture: true }
-  );
-}
-
-export function* watchOpenCodeReviewSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:open-code-review",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId)) return;
-      yield* put(
-        openWorkspaceCodeReview(wsId, {
-          result:
-            detail.result === null || isString(detail.result) ? (detail.result as string | null) : undefined,
-          agentId:
-            detail.agentId === null || isString(detail.agentId)
-              ? (detail.agentId as string | null)
-              : undefined,
-          stagedFiles: Array.isArray(detail.stagedFiles) ? detail.stagedFiles.filter(isString) : undefined,
-          status: isReviewStatus(detail.status) ? detail.status : "running",
-          streamingText: isString(detail.streamingText) ? detail.streamingText : undefined,
-          error: isString(detail.error) ? detail.error : undefined,
-        })
-      );
-    },
-    { capture: true }
-  );
-}
-
-export function* watchCodeReviewUpdateSaga(wsId: string) {
-  yield* takeEveryFromWindowEvent(
-    "workspace:code-review-update",
-    function* (detail: unknown) {
-      if (!isRecord(detail) || !workspaceMatches(detail, wsId)) return;
-      yield* put(
-        updateWorkspaceCodeReview(wsId, {
-          result:
-            detail.result === null || isString(detail.result) ? (detail.result as string | null) : undefined,
-          agentId:
-            detail.agentId === null || isString(detail.agentId)
-              ? (detail.agentId as string | null)
-              : undefined,
-          stagedFiles: Array.isArray(detail.stagedFiles) ? detail.stagedFiles.filter(isString) : undefined,
-          status: isReviewStatus(detail.status) ? detail.status : undefined,
-          streamingText: isString(detail.streamingText) ? detail.streamingText : undefined,
-          error: isString(detail.error) ? detail.error : undefined,
-        })
-      );
-    },
-    { capture: true }
-  );
 }
 
 export function* workspaceNavigationSaga() {

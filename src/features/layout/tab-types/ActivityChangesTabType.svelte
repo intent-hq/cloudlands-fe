@@ -16,6 +16,7 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
@@ -147,11 +148,7 @@
       store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
       const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
       if (focusedId) {
-        window.dispatchEvent(
-          new CustomEvent('panel:request-focus', {
-            detail: { panelId: focusedId },
-          }),
-        );
+        store.dispatch(requestPanelFocus(workspaceId, focusedId));
       }
     } else {
       store.dispatch(openTab(workspaceId, tabData));

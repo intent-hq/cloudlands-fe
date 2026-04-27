@@ -18,6 +18,9 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
 }));
 
 const {
@@ -157,8 +160,17 @@ describe("workspace-ipc-saga", () => {
   describe("watchWorkspaceBeforeUnloadSaga", () => {
     it("registers a beforeunload listener that flushes pending deletions", () => {
       const iterator = watchWorkspaceBeforeUnloadSaga();
-      const callEffect = iterator.next().value as any;
 
+      // 1. Initial snapshot of pending deletions via selector effect
+      const selectEffect = iterator.next().value as any;
+      expect(selectEffect.type).toBe("SELECT");
+
+      // 2. Fork a takeLatestFromSelector subscription to keep snapshot fresh
+      const forkEffect = iterator.next({ "ws-1": true }).value as any;
+      expect(forkEffect.type).toBe("FORK");
+
+      // 3. Register the beforeunload listener via a CALL effect
+      const callEffect = iterator.next().value as any;
       expect(callEffect.type).toBe("CALL");
 
       // Execute the handler function to verify it calls workspaceClient.delete

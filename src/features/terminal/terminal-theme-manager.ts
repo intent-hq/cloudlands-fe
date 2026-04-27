@@ -8,6 +8,7 @@
 import type { ITheme } from '@xterm/xterm';
 import { Logger } from '../../shared/logger';
 import { themeManager } from '$lib/utils/theme';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 
 const logger = new Logger('TerminalThemeManager');
 
@@ -266,11 +267,7 @@ export class TerminalThemeManager {
               // so the check in applyTheme doesn't skip the update
 
               // Emit custom event for components to react
-              window.dispatchEvent(
-                new CustomEvent('terminal-theme-changed', {
-                  detail: { theme: newTheme },
-                }),
-              );
+              dispatchWindowEvent('terminal-theme-changed', { theme: newTheme });
             }
           }
         }
@@ -293,11 +290,7 @@ export class TerminalThemeManager {
         // so the check in applyTheme doesn't skip the update
 
         // Emit custom event
-        window.dispatchEvent(
-          new CustomEvent('terminal-theme-changed', {
-            detail: { theme: newTheme },
-          }),
-        );
+        dispatchWindowEvent('terminal-theme-changed', { theme: newTheme });
       }
     };
     this.darkModeQuery.addEventListener('change', this.darkModeChangeHandler);
@@ -331,11 +324,7 @@ export class TerminalThemeManager {
         // so the check in applyTheme doesn't skip the update
 
         // Emit terminal-specific event
-        window.dispatchEvent(
-          new CustomEvent('terminal-theme-changed', {
-            detail: { theme: newTheme },
-          }),
-        );
+        dispatchWindowEvent('terminal-theme-changed', { theme: newTheme });
       }
     };
     window.addEventListener('theme-changed', this.themeChangeHandler);

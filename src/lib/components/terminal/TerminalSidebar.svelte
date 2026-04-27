@@ -33,6 +33,7 @@
 
   const activeWorkspace = selectActiveWorkspace();
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -848,11 +849,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
-                window.dispatchEvent(
-                  new CustomEvent('workspace:open-agent', {
-                    detail: { agentId: scriptDetectAgentId },
-                  }),
-                );
+                const wsId = $activeWorkspace?.id;
+                if (wsId) {
+                  getReduxStore().dispatch(
+                    openAgentTabRequested(wsId, { agentId: scriptDetectAgentId }),
+                  );
+                }
               }}
               title="View detection agent"
             >

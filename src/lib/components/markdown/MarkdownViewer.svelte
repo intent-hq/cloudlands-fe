@@ -16,6 +16,8 @@
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -289,12 +291,12 @@
         if (onFileClick) {
           onFileClick(filePath);
         } else {
-          // Fallback: dispatch workspace:open-file event
-          window.dispatchEvent(
-            new CustomEvent('workspace:open-file', {
-              detail: { path: filePath, openInAdjacentPanel, sourcePanelId },
-            }),
-          );
+          const wsId = $activeWorkspaceId;
+          if (wsId) {
+            getReduxStore().dispatch(
+              openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
+            );
+          }
         }
       } else if (type === 'note') {
         event.preventDefault();
@@ -309,12 +311,12 @@
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
 
-        // Dispatch workspace:open-note event
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-note', {
-            detail: { noteId, openInAdjacentPanel, sourcePanelId },
-          }),
-        );
+        const wsIdNote = $activeWorkspaceId;
+        if (wsIdNote) {
+          getReduxStore().dispatch(
+            openWorkspaceNote(wsIdNote, noteId, { openInAdjacentPanel, sourcePanelId }),
+          );
+        }
       }
     }
   }

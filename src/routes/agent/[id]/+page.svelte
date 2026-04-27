@@ -315,7 +315,7 @@
                 <!-- Streaming message - content will be updated via DOM manipulation -->
                 <div class="markdown-viewer streaming-content"></div>
               {:else}
-                <MessageContent content={message.contentBlocks || []} />
+                <MessageContent content={message.contentBlocks || []} workspaceId={agent?.workspaceId ? String(agent.workspaceId) : ($activeWorkspace?.id ? String($activeWorkspace.id) : undefined)} />
               {/if}
             </div>
           </div>

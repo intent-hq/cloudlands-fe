@@ -2,13 +2,19 @@ import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import type { BrowserState, BrowserWorkspaceState, RecentUrl } from "./browser-types";
+import type {
+  BrowserState,
+  BrowserWorkspaceState,
+  BrowserZoomAction,
+  RecentUrl,
+} from "./browser-types";
 import { MAX_RECENT_URLS } from "./browser-types";
 
 export const emptyBrowserWorkspaceState: BrowserWorkspaceState = {
   recentUrls: [],
   currentUrl: null,
   isLoading: false,
+  pendingZoomByTabId: {},
 };
 
 export const initialState: BrowserState = {
@@ -50,6 +56,21 @@ export const clearRecentUrls = createAction<[wsId: string]>(
   "browser/clearRecentUrls"
 );
 
+/**
+ * Request a zoom action on a specific browser tab. Dispatched by the menu
+ * zoom sagas after they resolve the focused panel + active tab. The
+ * EmbeddedBrowser instance bound to that tab id consumes the request and
+ * dispatches `clearBrowserTabZoomRequest` once applied.
+ */
+export const browserTabZoomRequested = createAction<
+  [wsId: string, tabId: string, action: BrowserZoomAction]
+>("browser/tabZoomRequested");
+
+/** Clear a previously requested zoom action for a tab. */
+export const clearBrowserTabZoomRequest = createAction<[wsId: string, tabId: string]>(
+  "browser/clearTabZoomRequest"
+);
+
 // ── Reducer ──────────────────────────────────────────────────────────────
 
 export const browserReducer = createReducer<BrowserState>(initialState)
@@ -88,5 +109,22 @@ export const browserReducer = createReducer<BrowserState>(initialState)
     const ws = getWorkspaceState(state, wsId);
     if (ws.recentUrls.length === 0) return state;
     return setWorkspaceState(state, wsId, { ...ws, recentUrls: [] });
+  })
+  .with(browserTabZoomRequested, (state, { payload: [wsId, tabId, action] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const existing = ws.pendingZoomByTabId[tabId];
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      pendingZoomByTabId: {
+        ...ws.pendingZoomByTabId,
+        [tabId]: existing ? [...existing, action] : [action],
+      },
+    });
+  })
+  .with(clearBrowserTabZoomRequest, (state, { payload: [wsId, tabId] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (!(tabId in ws.pendingZoomByTabId)) return state;
+    const { [tabId]: _removed, ...rest } = ws.pendingZoomByTabId;
+    return setWorkspaceState(state, wsId, { ...ws, pendingZoomByTabId: rest });
   })
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));

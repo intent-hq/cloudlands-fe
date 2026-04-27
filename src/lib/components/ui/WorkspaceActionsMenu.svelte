@@ -30,6 +30,7 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
     faBoxArchive,
     faBoxOpen,
@@ -536,15 +537,11 @@
                   content: savedContent,
                   workspaceId,
                 });
-                window.dispatchEvent(
-                  new CustomEvent('file:changed', {
-                    detail: {
-                      workspaceId,
-                      type: 'create',
-                      filePath: pathToDelete,
-                    },
-                  }),
-                );
+                dispatchWindowEvent('file:changed', {
+                  workspaceId,
+                  type: 'create',
+                  filePath: pathToDelete,
+                });
                 toast.dismiss(toastId);
               } catch (err) {
                 logger.error('[WorkspaceActionsMenu] Failed to restore file', err);

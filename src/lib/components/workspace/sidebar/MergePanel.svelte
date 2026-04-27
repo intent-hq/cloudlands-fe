@@ -114,6 +114,8 @@
 
   // Auto-update defaults when reactive conditions change
   import { untrack } from 'svelte';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   $effect(() => {
     const shouldMergeViaPR = hasOpenPR && hasRemote;
     const shouldPush = hasRemote;
@@ -140,11 +142,7 @@
   }
 
   function dispatchPostMergeUpdate(update: Record<string, unknown>) {
-    window.dispatchEvent(
-      new CustomEvent('workspace:post-merge-update', {
-        detail: { workspaceId, ...update },
-      }),
-    );
+    dispatchWindowEvent('workspace:post-merge-update', { workspaceId, ...update });
   }
 
   async function handleAutoFillMerge() {
@@ -173,9 +171,11 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId: mergeAgentId, sourcePanelId, openInAdjacentPanel },
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, {
+          agentId: mergeAgentId,
+          sourcePanelId,
+          openInAdjacentPanel,
         }),
       );
     }

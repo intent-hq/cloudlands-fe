@@ -62,6 +62,7 @@ import { agentSessionReducer } from "./slices/agent-session/agent-session-slice"
 import { agentSubscriptionUIReducer } from "./slices/agent-subscription-ui/agent-subscription-ui-slice";
 import { onboardingReducer } from "./slices/onboarding/onboarding-slice";
 import { agentAvailabilityReducer } from "./slices/agent-availability/agent-availability-slice";
+import { appLayoutReducer } from "./slices/app-layout/app-layout-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -128,5 +129,6 @@ export const reducers = {
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   agentAvailability: agentAvailabilityReducer,
+  appLayout: appLayoutReducer,
 } as const;
 

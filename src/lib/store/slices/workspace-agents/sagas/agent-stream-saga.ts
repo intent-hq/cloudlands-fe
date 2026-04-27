@@ -12,6 +12,7 @@
  */
 
 import { createLogger } from "$lib/utils/client-logger";
+import { dispatchAgentSessionUpdated } from "$lib/utils/window-events";
 import { call, delay, put, select, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import type { AgentSession } from "$shared/types";
@@ -118,7 +119,7 @@ export function* handleStreamingSafetyCheck(
         yield* put(upsertAgentSession(wsId, updatedSession));
 
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent(`agent:session-updated:${session.id}`));
+          dispatchAgentSessionUpdated(session.id);
         }
         clearedCount++;
       }

@@ -21,7 +21,6 @@
     usePanelActions,
     usePanelShortcuts,
     useSidebarState,
-    useTaskDelegationHandlers,
     useTabManagement,
     useWorkspaceLoader,
   } from './composables';
@@ -30,6 +29,13 @@
     handleCommandPaletteCreateFile,
   } from './composables/create-file-command';
   import { hydrateInitialAgentConfig } from './composables/initial-agent-config';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import {
+    commandPaletteActionConsumed,
+    showAgentRequested,
+  } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { selectPendingCommandPaletteAction } from '$lib/store/slices/app-layout/app-layout-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
@@ -95,13 +101,11 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { setSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
     createAgentRequested,
     createAgentWithSpecialistRequested,
-    delegateTaskRequested,
     markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
     setAgents,
     setAgentsLoaded,
@@ -227,6 +231,9 @@
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const sidebarCommits$ = selectSidebarCommits(workspaceIdStore);
 
+  // Transient signal: command palette → create-file dialog
+  const pendingCommandPaletteAction$ = selectPendingCommandPaletteAction();
+
   // File tracking state from Redux
   const ftMainPanelView$ = selectMainPanelView();
   const ftIsInitialized$ = selectCurrentIsInitialized();
@@ -269,11 +276,10 @@
   $effect(() => {
     if (prevShowOnboarding && !showOnboarding) {
       // Onboarding just ended — expand sidebar with animation
-      window.dispatchEvent(
-        new CustomEvent('workspace:toggle-left-sidebar', {
-          detail: { collapsed: false, restoreWidth: 350 },
-        }),
-      );
+      dispatchWindowEvent('workspace:toggle-left-sidebar', {
+        collapsed: false,
+        restoreWidth: 350,
+      });
     }
     prevShowOnboarding = showOnboarding;
   });
@@ -772,8 +778,8 @@
               sessionStorage.removeItem(agentConfigKey);
             } else if (agentId) {
               // Open the agent in panel layout
-              window.dispatchEvent(
-                new CustomEvent('workspace:show-agent', { detail: { agentId } }),
+              getReduxStore().dispatch(
+                showAgentRequested(capturedWorkspaceId, { agentId }),
               );
 
               // For spec-writer agents in new workspaces, the spec panel will be
@@ -889,15 +895,13 @@
   }
 
   $effect(() => {
-    const handleNewFileCommand = () => {
-      handleCommandPaletteCreateFile($workspace, (folderPath) => handleCreateFile(folderPath));
-    };
+    const pending = $pendingCommandPaletteAction$;
+    if (!pending) return;
+    if (pending.workspaceId !== workspaceId) return;
+    if (pending.type !== 'create-file') return;
 
-    window.addEventListener('app:new-file', handleNewFileCommand);
-
-    return () => {
-      window.removeEventListener('app:new-file', handleNewFileCommand);
-    };
+    handleCommandPaletteCreateFile($workspace, (folderPath) => handleCreateFile(folderPath));
+    dispatch(commandPaletteActionConsumed(workspaceId));
   });
 
   async function handleOpenNote(noteId: string) {
@@ -924,27 +928,17 @@
     }
   }
 
-  async function handleDelegateTask(taskText: string, openAgent?: boolean): Promise<string | null> {
-    if (!$workspace) return null;
-    dispatch(delegateTaskRequested($workspace.id, taskText, openAgent));
-    return null;
-  }
-
   // ============================================================================
   // Close handlers + workspace-level event wiring
   // ============================================================================
 
   useCloseHandlers({
+    get workspaceId() {
+      return workspaceId;
+    },
     get workspaceState() {
       return workspaceState;
     },
-    onOpenTerminal: openTerminal,
-  });
-
-  useTaskDelegationHandlers({
-    workspace: () => $workspace,
-    delegateTask: handleDelegateTask,
-    onOpenAgent: openAgent,
   });
 
   // ============================================================================

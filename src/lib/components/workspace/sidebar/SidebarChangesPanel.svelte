@@ -50,6 +50,7 @@
     selectWorkspaceActivePullRequest,
   } from '$lib/store/slices/workspace/workspace-selectors';
   import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
+  import { openWorkspaceLocalChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   import { getDispatch } from '$lib/store/utils/svelte-context';
 
@@ -549,7 +550,7 @@
 
   // Open all changes in main panel
   function handleOpenAllChanges() {
-    window.dispatchEvent(new CustomEvent('workspace:open-local-changes'));
+    getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId));
   }
 
   // Multi-select state for bulk staging/unstaging

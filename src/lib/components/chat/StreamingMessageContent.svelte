@@ -28,6 +28,8 @@
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
@@ -39,6 +41,7 @@
     isStreaming?: boolean;
     hideToolCalls?: boolean;
     hideSetupScripts?: boolean;
+    workspaceId?: string;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -51,6 +54,7 @@
     isStreaming = false,
     hideToolCalls = false,
     hideSetupScripts = false,
+    workspaceId,
     onSetupScriptGenerated,
   }: Props = $props();
 
@@ -280,15 +284,13 @@
     sourcePanelId?: string;
   }) {
     logger.info('Opening file from code snippet', detail);
-    // Dispatch workspace:open-file event with openInAdjacentPanel and sourcePanelId for panel layout support
-    const event = new CustomEvent('workspace:open-file', {
-      detail: {
-        path: detail.path,
+    if (!workspaceId) return;
+    getReduxStore().dispatch(
+      openWorkspaceFile(workspaceId, detail.path, {
         openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
         sourcePanelId: detail.sourcePanelId,
-      },
-    });
-    window.dispatchEvent(event);
+      }),
+    );
   }
 
   // Handle diagram binding clicks (file, note, etc.)
@@ -300,14 +302,9 @@
     if (binding.type === 'file') {
       handleOpenFile({ path: binding.target, openInAdjacentPanel, sourcePanelId });
     } else if (binding.type === 'note') {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-note', {
-          detail: {
-            noteId: binding.target,
-            openInAdjacentPanel,
-            sourcePanelId,
-          },
-        }),
+      if (!workspaceId) return;
+      getReduxStore().dispatch(
+        openWorkspaceNote(workspaceId, binding.target, { openInAdjacentPanel, sourcePanelId }),
       );
     }
   }
@@ -451,7 +448,7 @@
 <!-- Use animated component when streaming with animations enabled -->
 <!-- Temporarily disabled streaming animation due to issues -->
 <!-- {#if isStreaming && useAnimations}
-  <StreamingAnimatedContent {content} {isStreaming} {hideToolCalls} />
+  <StreamingAnimatedContent {content} {isStreaming} {hideToolCalls} {workspaceId} />
 {:else} -->
 {#if true}
   {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
@@ -602,6 +599,7 @@
           toolUse={toolBlock}
           toolState={toolStates.get(toolBlock.id) || 'running'}
           result={resultContent}
+          {workspaceId}
         />
       </div>
     {:else if block.type === 'tool_result'}

@@ -338,12 +338,20 @@ export const setWorkspaceMainPanel = createAction<
 >("workspaceNavigation/setWorkspaceMainPanel");
 
 export const openWorkspaceFile = createAction<
-  [wsId: string, filePath: string, options?: { line?: number }]
+  [
+    wsId: string,
+    filePath: string,
+    options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
+  ]
 >("workspaceNavigation/openWorkspaceFile");
 
-export const openWorkspaceNote = createAction<[wsId: string, noteId: string]>(
-  "workspaceNavigation/openWorkspaceNote"
-);
+export const openWorkspaceNote = createAction<
+  [
+    wsId: string,
+    noteId: string,
+    options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+  ]
+>("workspaceNavigation/openWorkspaceNote");
 
 export const openWorkspaceBrowser = createAction<[wsId: string, url: string]>(
   "workspaceNavigation/openWorkspaceBrowser"
@@ -357,7 +365,14 @@ export const openWorkspaceDiff = createAction<
   [
     wsId: string,
     change: TrackedChange,
-    options?: { changeId?: string; filePath?: string; scrollToLine?: number; forceUpdate?: boolean },
+    options?: {
+      changeId?: string;
+      filePath?: string;
+      scrollToLine?: number;
+      forceUpdate?: boolean;
+      openInAdjacentPanel?: boolean;
+      sourcePanelId?: string;
+    },
   ]
 >("workspaceNavigation/openWorkspaceDiff");
 
@@ -387,7 +402,12 @@ export const openWorkspaceLocalChanges = createAction<[wsId: string]>(
 );
 
 export const openWorkspaceCommitChangeset = createAction<
-  [wsId: string, commitHash?: string, commitMessage?: string]
+  [
+    wsId: string,
+    commitHash?: string,
+    commitMessage?: string,
+    options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+  ]
 >("workspaceNavigation/openWorkspaceCommitChangeset");
 
 export const openWorkspaceCodeReview = createAction<

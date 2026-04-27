@@ -1,99 +1,99 @@
 import { goto } from "$app/navigation";
 import type { PanelTab } from "$lib/store/slices/panel-layout/panel-layout-types";
-import { selectFocusedPanelId, selectPanels, selectAllTabs, selectPanel } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import { selectFocusedPanelId, selectPanels, selectAllTabs, selectPanel, selectActiveTabInPanel } from "$lib/store/slices/panel-layout/panel-layout-selectors";
 import { openTab, openTabInAdjacentOrSplit, closeActiveTab, reopenClosedTab, setActiveTab, focusPanel, selectPreviousTab, selectNextTab, updateTabBrowserUrl } from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { getFileExtension, track } from "$lib/services/analytics";
-import { takeEveryFromElectronChannel, takeEveryFromWindowEvent, } from "$lib/store/utils/ipc-channel";
+import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import { isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
 import { watchDockNavigationForWorkspaceSaga } from "./dock-navigation-saga";
 import { specPanelSaga } from "./spec-panel-saga";
 import { getSettingsPreviousPath, navigateToSettings } from "$lib/utils/workspace-navigation";
 import type { Task } from "redux-saga";
-import { cancel, call, fork, put, select, takeEvery } from "typed-redux-saga";
+import { cancel, call, delay, fork, put, select, takeEvery } from "typed-redux-saga";
 import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import { createTerminalRequested } from "../../terminals/terminals-slice";
 import { createNoteRequested, markNoteRead, } from "../../note-read-tracking/note-read-tracking-slice";
-import { createFileRequested } from "../app-layout-slice";
+import { createFileRequested, createWorkspaceForRepoRequested, focusBrowserTabRequested, openAgentTabRequested, openNewSpaceModalRequested, openTerminalTabRequested, requestPanelFocus, showAgentRequested, } from "../app-layout-slice";
+import { openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceNote, } from "../../workspace-navigation/workspace-navigation-slice";
 import { notesIpc } from "../../workspace-notes/sagas/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { reloadNotes } from "../../workspace-notes/workspace-notes-slice";
 import type { Note } from "$shared/types";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import { invoke } from "$lib/electron-bridge";
-import { selectActiveWorkspace, selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
+import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
 import { selectNoteById } from "../../workspace-notes/workspace-notes-selectors";
 import { selectAgentById } from "../../workspace-agents/workspace-agents-selectors";
 import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
-const workspaceWindowTasks = new Map<string, Task[]>();
+import { browserTabZoomRequested } from "../../browser/browser-slice";
+import type { BrowserZoomAction } from "../../browser/browser-types";
+import { dispatchWindowEvent } from "$lib/utils/window-events";
+const dockNavigationTasks = new Map<string, Task>();
 type BrowserOpenTabEvent = {
     url: string;
     position?: "adjacent" | "replace" | "same";
     workspaceId?: string;
 };
-type WorkspaceCreateForRepoEvent = {
-    repositoryPath: string;
-    workspaceId?: string;
-    workspaceTitle?: string;
-};
-type OpenNewSpaceOnboardingEvent = {
-    initialRepo?: {
-        repoPath?: string;
-    };
-};
-type WorkspaceShowAgentDetail = {
-    agentId?: string;
-};
-type WorkspaceOpenFileDetail = {
-    path?: string;
-    filePath?: string;
-    openInAdjacentPanel?: boolean;
-    sourcePanelId?: string;
-};
-type WorkspaceOpenDiffDetail = {
-    change?: Record<string, unknown> & {
-        file?: string;
-        relativePath?: string;
-    };
-    filePath?: string;
-    openInAdjacentPanel?: boolean;
-    sourcePanelId?: string;
-};
-type WorkspaceOpenCommitChangesetDetail = {
-    commitHash?: string;
-    commitMessage?: string;
-    openInAdjacentPanel?: boolean;
-    sourcePanelId?: string;
-};
-type WorkspaceOpenNoteDetail = {
-    noteId?: string;
-    openInAdjacentPanel?: boolean;
-    sourcePanelId?: string;
-};
-type WorkspaceOpenAgentDetail = {
-    agentId?: string;
-    openInAdjacentPanel?: boolean;
-    sourcePanelId?: string;
-};
-type WorkspaceOpenTerminalDetail = {
-    terminalId?: string;
-};
-
-function requestFocusedPanelFocus(wsId: string) {
-    const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), wsId);
+const FOCUSABLE_TAB_TYPES = new Set<string>(["agent", "note", "file"]);
+const PANEL_FOCUS_DELAY_MS = 100;
+function* requestFocusedPanelFocus(wsId: string) {
+    const focusedId = yield* selectFocusedPanelId.effect(wsId);
     if (!focusedId) {
         return;
     }
-    window.dispatchEvent(new CustomEvent("panel:request-focus", {
-        detail: { panelId: focusedId },
-    }));
+    yield* put(requestPanelFocus(wsId, focusedId));
 }
-function openWorkspaceTab(wsId: string, tab: Omit<PanelTab, "id">, openInAdjacentPanel = false, sourcePanelId?: string) {
+function* handleRequestPanelFocus(wsId: string, panelId: string) {
+    const activeTab = yield* selectActiveTabInPanel.effect(wsId, panelId);
+    yield* delay(PANEL_FOCUS_DELAY_MS);
+    if (activeTab && FOCUSABLE_TAB_TYPES.has(activeTab.type)) {
+        dispatchWindowEvent("panel:focus-content", {
+            panelId,
+            tabId: activeTab.id,
+            tabType: activeTab.type,
+            agentId: activeTab.agentId,
+            noteId: activeTab.noteId,
+            workspaceId: wsId,
+        });
+        return;
+    }
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
+}
+export function* watchRequestPanelFocusSaga() {
+    yield* takeEvery(requestPanelFocus.type, function* ({ payload }: ReturnType<typeof requestPanelFocus>) {
+        const [wsId, panelId] = payload;
+        if (!wsId || !panelId) {
+            return;
+        }
+        yield* handleRequestPanelFocus(wsId, panelId);
+    });
+}
+export function* watchFocusBrowserTabSaga() {
+    yield* takeEvery(focusBrowserTabRequested.type, function* ({ payload }: ReturnType<typeof focusBrowserTabRequested>) {
+        const [wsId, tabId] = payload;
+        if (!wsId || !tabId) {
+            return;
+        }
+        const panels = yield* selectPanels.effect(wsId);
+        for (const [panelId, panel] of Object.entries(panels)) {
+            const tab = panel.tabs.find((t) => t.id === tabId);
+            if (tab) {
+                yield* put(focusPanel(wsId, panelId));
+                yield* put(setActiveTab(wsId, tabId, panelId));
+                return;
+            }
+        }
+    });
+}
+function* openWorkspaceTab(wsId: string, tab: Omit<PanelTab, "id">, openInAdjacentPanel = false, sourcePanelId?: string) {
     const store = getReduxStore();
     if (openInAdjacentPanel) {
         store.dispatch(openTabInAdjacentOrSplit(wsId, tab, sourcePanelId, { force: true }));
-        requestFocusedPanelFocus(wsId);
+        yield* requestFocusedPanelFocus(wsId);
         return;
     }
     store.dispatch(openTab(wsId, tab, sourcePanelId, undefined, true));
@@ -118,110 +118,113 @@ function showAgentInLayout(workspaceId: string, agentId: string) {
         closable: true,
     }));
 }
-const routedWorkspaceWindowEventChannelOptions = {
-    capture: true,
-    stopImmediatePropagation: true,
-} as const;
-export function* watchShowAgentSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceShowAgentDetail>("workspace:show-agent", function* (detail) {
-        if (!detail?.agentId) {
+export function* watchShowAgentSaga() {
+    yield* takeEvery(showAgentRequested.type, function* ({ payload }: ReturnType<typeof showAgentRequested>) {
+        const [wsId, detail] = payload;
+        if (!wsId || !detail?.agentId) {
             return;
         }
         showAgentInLayout(wsId, detail.agentId);
     });
 }
-export function* watchOpenFileSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenFileDetail>("workspace:open-file", function* (detail) {
-        const filePath = detail?.path || detail?.filePath;
-        if (!filePath) {
+export function* watchOpenFileSaga() {
+    yield* takeEvery(openWorkspaceFile.type, function* ({ payload }: ReturnType<typeof openWorkspaceFile>) {
+        const [wsId, filePath, options] = payload;
+        if (!wsId || !filePath) {
             return;
         }
-        openWorkspaceTab(wsId, {
+        yield* openWorkspaceTab(wsId, {
             type: "file",
             title: filePath.split("/").pop() || "File",
             filePath,
             closable: true,
-        }, detail?.openInAdjacentPanel ?? false, detail?.sourcePanelId);
+            data: options?.line ? { line: options.line, jumpTimestamp: Date.now() } : undefined,
+        }, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
         track("Opened File", {
             workspace_id: wsId,
             file_extension: getFileExtension(filePath),
         });
-    }, routedWorkspaceWindowEventChannelOptions);
+    });
 }
-export function* watchOpenDiffSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenDiffDetail>("workspace:open-diff", function* (detail) {
-        const filePath = detail?.filePath || detail?.change?.file || detail?.change?.relativePath;
-        if (!filePath) {
+export function* watchOpenDiffSaga() {
+    yield* takeEvery(openWorkspaceDiff.type, function* ({ payload }: ReturnType<typeof openWorkspaceDiff>) {
+        const [wsId, change, options] = payload;
+        const filePath = options?.filePath || change?.file || change?.relativePath;
+        if (!wsId || !filePath) {
             return;
         }
-        openWorkspaceTab(wsId, {
+        yield* openWorkspaceTab(wsId, {
             type: "diff",
             title: filePath.split("/").pop() || "Diff",
             diffPath: filePath,
             closable: true,
-            data: { change: detail?.change },
-        }, detail?.openInAdjacentPanel ?? false, detail?.sourcePanelId);
-    }, routedWorkspaceWindowEventChannelOptions);
+            data: { change },
+        }, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
+    });
 }
-export function* watchOpenCommitChangesetSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenCommitChangesetDetail>("workspace:open-commit-changeset", function* (detail) {
-        if (!detail?.commitHash) {
+export function* watchOpenCommitChangesetSaga() {
+    yield* takeEvery(openWorkspaceCommitChangeset.type, function* ({ payload }: ReturnType<typeof openWorkspaceCommitChangeset>) {
+        const [wsId, commitHash, commitMessage, options] = payload;
+        if (!wsId || !commitHash) {
             return;
         }
-        const shortHash = detail.commitHash.substring(0, 7);
-        const title = detail.commitMessage
-            ? `${shortHash}: ${detail.commitMessage.substring(0, 20)}${detail.commitMessage.length > 20 ? "..." : ""}`
+        const shortHash = commitHash.substring(0, 7);
+        const title = commitMessage
+            ? `${shortHash}: ${commitMessage.substring(0, 20)}${commitMessage.length > 20 ? "..." : ""}`
             : `Commit ${shortHash}`;
-        openWorkspaceTab(wsId, {
+        yield* openWorkspaceTab(wsId, {
             type: "changes",
             title,
             closable: true,
             data: {
-                commitHash: detail.commitHash,
-                commitMessage: detail.commitMessage,
+                commitHash,
+                commitMessage,
             },
-        }, detail.openInAdjacentPanel ?? false, detail.sourcePanelId);
-    }, routedWorkspaceWindowEventChannelOptions);
+        }, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
+    });
 }
-export function* watchOpenNoteSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenNoteDetail>("workspace:open-note", function* (detail) {
-        if (!detail?.noteId) {
+export function* watchOpenNoteSaga() {
+    yield* takeEvery(openWorkspaceNote.type, function* ({ payload }: ReturnType<typeof openWorkspaceNote>) {
+        const [wsId, noteId, options] = payload;
+        if (!wsId || !noteId) {
             return;
         }
-        let openInAdjacentPanel = detail.openInAdjacentPanel ?? false;
-        if (!openInAdjacentPanel && detail.sourcePanelId) {
-            const sourcePanel = selectPanel.select(getReduxStore().getState(), wsId, detail.sourcePanelId);
+        let openInAdjacentPanel = options?.openInAdjacentPanel ?? false;
+        if (!openInAdjacentPanel && options?.sourcePanelId) {
+            const sourcePanel = yield* selectPanel.effect(wsId, options.sourcePanelId);
             const activeTab = sourcePanel?.tabs.find((tab) => tab.id === sourcePanel.activeTabId);
             if (activeTab?.type === "agent") {
                 openInAdjacentPanel = true;
             }
         }
-        const note = selectNoteById.select(getReduxStore().getState(), wsId, detail.noteId);
-        openWorkspaceTab(wsId, {
+        const note = yield* selectNoteById.effect(wsId, noteId);
+        yield* openWorkspaceTab(wsId, {
             type: "note",
-            title: note?.title || detail.noteId,
-            noteId: detail.noteId,
+            title: note?.title || noteId,
+            noteId,
             closable: true,
-        }, openInAdjacentPanel, detail.sourcePanelId);
-    }, routedWorkspaceWindowEventChannelOptions);
+        }, openInAdjacentPanel, options?.sourcePanelId);
+    });
 }
-export function* watchOpenAgentSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenAgentDetail>("workspace:open-agent", function* (detail) {
-        if (!detail?.agentId) {
+export function* watchOpenAgentSaga() {
+    yield* takeEvery(openAgentTabRequested.type, function* ({ payload }: ReturnType<typeof openAgentTabRequested>) {
+        const [wsId, detail] = payload;
+        if (!wsId || !detail?.agentId) {
             return;
         }
-        const agent = selectAgentById.select(getReduxStore().getState(), detail.agentId);
-        openWorkspaceTab(wsId, {
+        const agent = yield* selectAgentById.effect(detail.agentId);
+        yield* openWorkspaceTab(wsId, {
             type: "agent",
             title: agent?.name || "Agent",
             agentId: detail.agentId,
             closable: true,
         }, detail.openInAdjacentPanel ?? false, detail.sourcePanelId);
-    }, routedWorkspaceWindowEventChannelOptions);
+    });
 }
-export function* watchOpenTerminalSaga(wsId: string) {
-    yield* takeEveryFromWindowEvent<WorkspaceOpenTerminalDetail>("workspace:open-terminal", function* (detail) {
-        if (!detail?.terminalId) {
+export function* watchOpenTerminalSaga() {
+    yield* takeEvery(openTerminalTabRequested.type, function* ({ payload }: ReturnType<typeof openTerminalTabRequested>) {
+        const [wsId, detail] = payload;
+        if (!wsId || !detail?.terminalId) {
             return;
         }
         getReduxStore().dispatch(openTab(wsId, {
@@ -230,68 +233,34 @@ export function* watchOpenTerminalSaga(wsId: string) {
             terminalId: detail.terminalId,
             closable: true,
         }));
-    }, routedWorkspaceWindowEventChannelOptions);
+    });
 }
-export function* watchWorkspaceWindowEventsSaga(wsId: string) {
-    yield* fork(watchShowAgentSaga, wsId);
-    yield* fork(watchOpenFileSaga, wsId);
-    yield* fork(watchOpenDiffSaga, wsId);
-    yield* fork(watchOpenCommitChangesetSaga, wsId);
-    yield* fork(watchOpenNoteSaga, wsId);
-    yield* fork(watchOpenAgentSaga, wsId);
-    yield* fork(watchOpenTerminalSaga, wsId);
+export function* watchWorkspaceWindowEventsSaga() {
+    yield* fork(watchShowAgentSaga);
+    yield* fork(watchOpenFileSaga);
+    yield* fork(watchOpenDiffSaga);
+    yield* fork(watchOpenCommitChangesetSaga);
+    yield* fork(watchOpenNoteSaga);
+    yield* fork(watchOpenAgentSaga);
+    yield* fork(watchOpenTerminalSaga);
 }
-export function* watchWorkspaceWindowEventsForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
+function* startDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
     const [wsId] = action.payload;
-    const task = yield* fork(watchWorkspaceWindowEventsSaga, wsId);
-    const dockNavigationTask = yield* fork(watchDockNavigationForWorkspaceSaga, wsId);
-    workspaceWindowTasks.set(wsId, [task, dockNavigationTask]);
+    const task = yield* fork(watchDockNavigationForWorkspaceSaga, wsId);
+    dockNavigationTasks.set(wsId, task);
 }
-export function* cancelWorkspaceWindowEventsForWorkspaceSaga(action: ReturnType<typeof workspaceUnmounted>) {
+function* cancelDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceUnmounted>) {
     const [wsId] = action.payload;
-    const tasks = workspaceWindowTasks.get(wsId);
-    if (!tasks) {
+    const task = dockNavigationTasks.get(wsId);
+    if (!task) {
         return;
     }
-    for (const task of tasks) {
-        yield* cancel(task);
-    }
-    workspaceWindowTasks.delete(wsId);
+    yield* cancel(task);
+    dockNavigationTasks.delete(wsId);
 }
 export function* watchWorkspaceWindowEventLifecyclesSaga() {
-    yield* takeEvery(workspaceMounted, watchWorkspaceWindowEventsForWorkspaceSaga);
-    yield* takeEvery(workspaceUnmounted, cancelWorkspaceWindowEventsForWorkspaceSaga);
-}
-/**
- * Guard against early `workspaceMounted` dispatch.
- *
- * If the component dispatches `workspaceMounted` before the saga middleware
- * has registered its `takeEvery`, the action is silently dropped and per-workspace
- * window event handlers never start. This saga runs once at startup: after the
- * `takeEvery` is registered, it checks whether a workspace is already active in
- * Redux state. If one exists and no handlers have been forked for it, it manually
- * forks the workspace watcher with a synthetic action.
- */
-/** @internal Exported for testing only. */
-export function* retroactiveAppLayoutMountCheckSaga() {
-    const activeWsId = yield* select(selectActiveWorkspaceId.select);
-
-    if (!activeWsId) {
-        return;
-    }
-
-    // Skip invalid workspace IDs (empty, "new", "optimistic-*", "undefined")
-    if (!activeWsId || activeWsId === "new" || activeWsId.startsWith("optimistic-") || activeWsId === "undefined") {
-        return;
-    }
-
-    // If the normal takeEvery already processed the mount, tasks will exist.
-    if (workspaceWindowTasks.has(activeWsId)) {
-        return;
-    }
-
-    // The workspace was mounted before the saga started — replay.
-    yield* fork(watchWorkspaceWindowEventsForWorkspaceSaga, workspaceMounted(activeWsId));
+    yield* takeEvery(workspaceMounted, startDockNavigationForWorkspaceSaga);
+    yield* takeEvery(workspaceUnmounted, cancelDockNavigationForWorkspaceSaga);
 }
 export function* watchNavigateSaga() {
     yield* takeEveryFromElectronChannel<string>("navigate", function* (path) {
@@ -314,13 +283,13 @@ export function* watchNavigateToSettingsSaga() {
 export function* watchMenuNewAgentSaga() {
     yield* takeEveryFromElectronChannel<null>("menu:new-agent", function* () {
         const focusInTerminal: boolean = yield* call(isFocusInTerminal);
-        if (focusInTerminal) {
-            window.dispatchEvent(new CustomEvent("terminal:create-new"));
-            return;
-        }
         const currentWorkspace = yield* selectActiveWorkspace.effect();
         const wsId = currentWorkspace?.id;
         if (!wsId) {
+            return;
+        }
+        if (focusInTerminal) {
+            dispatchWindowEvent("workspace:new-terminal", { workspaceId: wsId });
             return;
         }
         yield* put(createAgentRequested(wsId));
@@ -443,23 +412,40 @@ export function* watchMenuSelectNextTabSaga() {
         yield* put(selectNextTab(wsId));
     });
 }
+function* dispatchBrowserTabZoom(action: BrowserZoomAction) {
+    const currentWorkspace = yield* selectActiveWorkspace.effect();
+    const wsId = currentWorkspace?.id;
+    if (!wsId) {
+        return;
+    }
+    const focusedPanelId = yield* selectFocusedPanelId.effect(wsId);
+    if (!focusedPanelId) {
+        return;
+    }
+    const activeTab = yield* selectActiveTabInPanel.effect(wsId, focusedPanelId);
+    if (!activeTab || activeTab.type !== "browser") {
+        return;
+    }
+    yield* put(browserTabZoomRequested(wsId, activeTab.id, action));
+}
 export function* watchMenuZoomInSaga() {
     yield* takeEveryFromElectronChannel<null>("menu:zoom-in", function* () {
-        window.dispatchEvent(new CustomEvent("browser:zoom", { detail: { action: "in" } }));
+        yield* dispatchBrowserTabZoom("in");
     });
 }
 export function* watchMenuZoomOutSaga() {
     yield* takeEveryFromElectronChannel<null>("menu:zoom-out", function* () {
-        window.dispatchEvent(new CustomEvent("browser:zoom", { detail: { action: "out" } }));
+        yield* dispatchBrowserTabZoom("out");
     });
 }
 export function* watchMenuResetZoomSaga() {
     yield* takeEveryFromElectronChannel<null>("menu:reset-zoom", function* () {
-        window.dispatchEvent(new CustomEvent("browser:zoom", { detail: { action: "reset" } }));
+        yield* dispatchBrowserTabZoom("reset");
     });
 }
 export function* watchWorkspaceCreateForRepoSaga() {
-    yield* takeEveryFromWindowEvent<WorkspaceCreateForRepoEvent>("workspace:create-for-repo", function* (data) {
+    yield* takeEvery(createWorkspaceForRepoRequested.type, function* ({ payload }: ReturnType<typeof createWorkspaceForRepoRequested>) {
+        const [data] = payload;
         const currentWorkspace = yield* selectActiveWorkspace.effect();
         if (data.repositoryPath) {
             sessionStorage.setItem("workspace-prefill", JSON.stringify({
@@ -474,7 +460,8 @@ export function* watchWorkspaceCreateForRepoSaga() {
     });
 }
 export function* watchOpenNewSpaceOnboardingSaga() {
-    yield* takeEveryFromWindowEvent<OpenNewSpaceOnboardingEvent>("app:open-new-space-modal", function* (data) {
+    yield* takeEvery(openNewSpaceModalRequested.type, function* ({ payload }: ReturnType<typeof openNewSpaceModalRequested>) {
+        const [data] = payload;
         if (data.initialRepo?.repoPath) {
             sessionStorage.setItem("workspace-prefill", JSON.stringify({ repoPath: data.initialRepo.repoPath }));
         }
@@ -547,19 +534,13 @@ function* handleCreateFileRequestedSaga(wsId: string, folderPath: string, fileNa
         if (result?.success) {
             yield* call(showCreateFileSuccessToast, fileName);
             // Notify file tree to refresh
-            window.dispatchEvent(new CustomEvent("file:changed", {
-                detail: {
-                    workspaceId: wsId,
-                    type: "create",
-                    filePath: newFilePath,
-                },
-            }));
+            dispatchWindowEvent("file:changed", {
+                workspaceId: wsId,
+                type: "create",
+                filePath: newFilePath,
+            });
             // Open the newly created file
-            window.dispatchEvent(new CustomEvent("workspace:open-file", {
-                detail: {
-                    path: newFilePath,
-                },
-            }));
+            yield* put(openWorkspaceFile(wsId, newFilePath));
             track("Created File", {
                 workspace_id: wsId,
                 file_extension: getFileExtension(fileName),
@@ -596,9 +577,11 @@ export function* appLayoutSaga() {
     yield* fork(watchMenuResetZoomSaga);
     yield* fork(watchWorkspaceCreateForRepoSaga);
     yield* fork(watchOpenNewSpaceOnboardingSaga);
+    yield* fork(watchWorkspaceWindowEventsSaga);
     yield* fork(watchWorkspaceWindowEventLifecyclesSaga);
-    yield* fork(retroactiveAppLayoutMountCheckSaga);
     yield* fork(specPanelSaga);
     yield* fork(watchCreateNoteRequestedSaga);
     yield* fork(watchCreateFileRequestedSaga);
+    yield* fork(watchRequestPanelFocusSaga);
+    yield* fork(watchFocusBrowserTabSaga);
 }

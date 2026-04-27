@@ -7,6 +7,7 @@
 
 import { browser } from '$app/environment';
 import { createLogger } from './client-logger';
+import { dispatchWindowEvent } from './window-events';
 
 const logger = createLogger('TaskAgentAssociations');
 
@@ -72,7 +73,7 @@ function saveAssociationsForNote(
     const key = getStorageKey(workspaceId, noteId);
     localStorage.setItem(key, JSON.stringify(associations));
     // Dispatch event to notify other components (like ChatPanel) of the change
-    window.dispatchEvent(new CustomEvent(TASK_ASSOCIATION_CHANGED_EVENT));
+    dispatchWindowEvent(TASK_ASSOCIATION_CHANGED_EVENT);
   } catch (e) {
     logger.warn('Failed to save task-agent associations', { workspaceId, noteId, error: e });
   }
@@ -189,13 +190,9 @@ export function removeAssociationsForAgent(workspaceId: string, agentId: string)
               localStorage.setItem(key, JSON.stringify(filtered));
             }
             // Dispatch event to notify other components
-            window.dispatchEvent(new CustomEvent(TASK_ASSOCIATION_CHANGED_EVENT));
+            dispatchWindowEvent(TASK_ASSOCIATION_CHANGED_EVENT);
             // Dispatch specific event for agent removal so editor can clean up delegatedAgentId
-            window.dispatchEvent(
-              new CustomEvent(AGENT_ASSOCIATIONS_REMOVED_EVENT, {
-                detail: { agentId, noteId, workspaceId },
-              }),
-            );
+            dispatchWindowEvent(AGENT_ASSOCIATIONS_REMOVED_EVENT, { agentId, noteId, workspaceId });
           }
         }
       } catch (e) {

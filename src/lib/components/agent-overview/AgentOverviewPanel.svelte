@@ -20,6 +20,8 @@
   } from '$lib/store/slices/agent-overview/agent-overview-slice';
   import { convertToInteractionEvent } from './graph-helpers';
   import type { InteractionEvent } from './types';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   interface Props {
     workspaceId: string;
@@ -63,13 +65,11 @@
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
     const sourcePanelId = findSourcePanelId(event.target);
 
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: {
-          agentId,
-          sourcePanelId,
-          openInAdjacentPanel,
-        },
+    getReduxStore().dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId,
+        sourcePanelId,
+        openInAdjacentPanel,
       }),
     );
   }

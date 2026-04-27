@@ -22,11 +22,14 @@ import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { track } from '$lib/services/analytics';
 import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$lib/store/slices/tab-state/tab-state-selectors';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
+  openWorkspaceFile,
+  openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
 const logger = new Logger('WorkspaceNavigation');
@@ -146,17 +149,10 @@ export async function navigateToNote(noteId: string, options?: OpenInPanelOption
     return;
   }
 
-  // Dispatch event that can be intercepted by panel layout or unified workspace state
-  // This allows the panel layout to open notes as tabs while still working with classic layout
-  window.dispatchEvent(
-    new CustomEvent('workspace:open-note', {
-      detail: {
-        noteId,
-        workspaceId,
-        openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
-        sourcePanelId: options?.sourcePanelId,
-      },
-      bubbles: true,
+  dispatch(
+    openWorkspaceNote(workspaceId, noteId, {
+      openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
+      sourcePanelId: options?.sourcePanelId,
     }),
   );
 }
@@ -194,18 +190,11 @@ export async function navigateToFile(
     return;
   }
 
-  // Dispatch event that can be intercepted by panel layout or unified workspace state
-  // This allows the panel layout to open files as tabs while still working with classic layout
-  window.dispatchEvent(
-    new CustomEvent('workspace:open-file', {
-      detail: {
-        filePath,
-        workspaceId,
-        line,
-        openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
-        sourcePanelId: options?.sourcePanelId,
-      },
-      bubbles: true,
+  dispatch(
+    openWorkspaceFile(workspaceId, filePath, {
+      line,
+      openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
+      sourcePanelId: options?.sourcePanelId,
     }),
   );
 }
@@ -289,15 +278,10 @@ export async function navigateToTask(
 
   // Dispatch scroll-to-task event with retries to handle editor mount timing
   const dispatchScrollEvent = () => {
-    window.dispatchEvent(
-      new CustomEvent('scroll-to-task', {
-        detail: {
-          noteId,
-          taskPosition,
-          taskText,
-        },
-        bubbles: true,
-      }),
+    dispatchWindowEvent(
+      'scroll-to-task',
+      { noteId, taskPosition, taskText },
+      { bubbles: true },
     );
     logger.debug('[navigateToTask] Dispatched scroll-to-task event', { noteId, taskPosition });
   };

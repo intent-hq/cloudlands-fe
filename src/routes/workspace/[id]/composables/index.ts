@@ -13,8 +13,4 @@ export { useTabManagement, type UseTabManagementOptions } from './use-tab-manage
 export { useWorkspaceLoader, type UseWorkspaceLoaderOptions } from './use-workspace-loader.svelte';
 export { usePanelActions, type UsePanelActionsOptions } from './use-panel-actions.svelte';
 export { useCloseHandlers, type UseCloseHandlersOptions } from './use-close-handlers.svelte';
-export {
-  useTaskDelegationHandlers,
-  type UseTaskDelegationHandlersOptions,
-} from './use-task-delegation-handlers.svelte';
 export { usePanelShortcuts, type UsePanelShortcutsOptions } from './use-panel-shortcuts.svelte';

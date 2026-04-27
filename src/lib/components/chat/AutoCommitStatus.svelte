@@ -9,6 +9,8 @@
 
   import Fa from 'svelte-fa';
   import { faCodeCommit, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceCommitChangeset } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -18,19 +20,15 @@
   interface Props {
     /** The status to display, or null/undefined if no auto-commit for this turn */
     status?: CommitStatus | null;
+    workspaceId: string;
   }
 
-  let { status = null }: Props = $props();
+  let { status = null, workspaceId }: Props = $props();
 
   function handleOpenCommitChangeset() {
     if (status?.state === 'committed') {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-commit-changeset', {
-          detail: {
-            commitHash: status.hash,
-            commitMessage: status.message,
-          },
-        }),
+      getReduxStore().dispatch(
+        openWorkspaceCommitChangeset(workspaceId, status.hash, status.message),
       );
     }
   }

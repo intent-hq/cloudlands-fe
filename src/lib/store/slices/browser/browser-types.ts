@@ -17,6 +17,11 @@ export type RecentUrl = {
 };
 
 /**
+ * Zoom action requested for a specific browser tab.
+ */
+export type BrowserZoomAction = "in" | "out" | "reset";
+
+/**
  * Browser state scoped to a single workspace
  */
 export type BrowserWorkspaceState = {
@@ -26,6 +31,15 @@ export type BrowserWorkspaceState = {
   currentUrl: string | null;
   /** Whether the browser is loading a page */
   isLoading: boolean;
+  /**
+   * Pending zoom actions keyed by browser tab id, stored as a queue so
+   * multiple requests dispatched in the same microtask are not lost. Each
+   * `browserTabZoomRequested` appends to the queue; the EmbeddedBrowser
+   * drains the entire queue in order and dispatches a single
+   * `clearBrowserTabZoomRequest` to remove the entry. Workspace-scoped so
+   * closing the workspace clears pending entries automatically.
+   */
+  pendingZoomByTabId: Record<string, BrowserZoomAction[]>;
 };
 
 /**

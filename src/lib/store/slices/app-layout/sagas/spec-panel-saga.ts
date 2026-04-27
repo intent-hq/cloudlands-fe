@@ -1,13 +1,16 @@
-import { getPanelLayoutManager, hasPanelLayoutManager, } from "$features/layout/panel-layout-adapter";
 import { selectPanels, selectRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-selectors";
 import type { PanelLayoutRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-types";
-import { setRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-slice";
+import {
+    openTabInAdjacentOrSplit,
+    setDeferSpecTab,
+    setRestoreStatus,
+} from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { selectSpec } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
 import { selectIsInitialSpecWriteInProgress } from "../../workspace-agents/workspace-agents-selectors";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import type { Task } from "redux-saga";
-import { cancel, call, delay, fork, race, select, take, takeEvery } from "typed-redux-saga";
+import { cancel, call, delay, fork, put, race, select, take, takeEvery } from "typed-redux-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { clearInitialAgentConfig } from "../../workspace-agents/workspace-agents-slice";
@@ -23,16 +26,20 @@ const specSlideInCompleted = new Set<string>();
  * Check whether the spec panel should be deferred for this workspace.
  * Returns true when an initial spec-writer agent exists — the spec panel
  * will slide in reactively once spec generation actually starts.
+ *
+ * Generator: reads Redux state via `yield* selector.effect(...)` so saga-context
+ * code never calls `selector.select(getReduxStore().getState(), …)`.
  */
-export function shouldDeferSpecPanel(wsId: string): boolean {
+export function* shouldDeferSpecPanel(wsId: string) {
     if (specSlideInCompleted.has(wsId)) {
         return false;
     }
-    if (selectIsInitialSpecWriteInProgress.select(getReduxStore().getState(), wsId)) {
+    const isInitialSpecWriteInProgress = yield* selectIsInitialSpecWriteInProgress.effect(wsId);
+    if (isInitialSpecWriteInProgress) {
         return true;
     }
     // Check Redux first (primary source)
-    const reduxConfig = selectInitialAgentConfig.select(getReduxStore().getState(), wsId);
+    const reduxConfig = yield* selectInitialAgentConfig.effect(wsId);
     if (reduxConfig) {
         const isSpecWriter = reduxConfig.config.specialist === "spec-writer" ||
             reduxConfig.config.metadata?.specialist === "spec-writer";
@@ -76,27 +83,22 @@ function cleanupDeferralKeys(wsId: string) {
     sessionStorage.removeItem(`workspace:${wsId}:initial-agent-pending`);
     specSlideInCompleted.add(wsId);
 }
-function isSpecAlreadyOpen(wsId: string): boolean {
-    if (!hasPanelLayoutManager(wsId))
-        return false;
-    const allTabs = Object.values(selectPanels.select(getReduxStore().getState(), wsId)).flatMap((p) => p.tabs);
+function* isSpecAlreadyOpen(wsId: string) {
+    const panels = yield* selectPanels.effect(wsId);
+    const allTabs = Object.values(panels).flatMap((p) => p.tabs);
     return allTabs.some((t) => t.type === "note" && t.noteId === SPEC_NOTE_ID);
 }
-function getSpecContent(wsId?: string): string {
-    const state = getReduxStore().getState();
+function* getSpecContent(wsId?: string) {
     // Try to find spec for a specific workspace, or scan all workspaces
     if (wsId) {
-        const specNote = selectSpec.select(state, wsId);
+        const specNote = yield* selectSpec.effect(wsId);
         return specNote?.content?.trim() || "";
     }
     return "";
 }
-function getRestoreStatus(wsId: string): PanelLayoutRestoreStatus {
-    return selectRestoreStatus.select(getReduxStore().getState(), wsId);
-}
 function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayoutRestoreStatus, any> {
     // First check if status already settled (e.g., if handleWorkspaceMountedRestore ran first)
-    let restoreStatus = getRestoreStatus(wsId);
+    let restoreStatus: PanelLayoutRestoreStatus = yield* selectRestoreStatus.effect(wsId);
 
     // Always wait for at least one setRestoreStatus action for THIS workspace,
     // with a timeout. This guarantees we see the real dispatch from
@@ -113,7 +115,7 @@ function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayout
             timeout: delay(RESTORE_STATUS_POLL_INTERVAL_MS),
         });
 
-        restoreStatus = getRestoreStatus(wsId);
+        restoreStatus = yield* selectRestoreStatus.effect(wsId);
 
         // Terminal states: "restored", "empty", "invalid"
         if (restoreStatus !== "idle" && restoreStatus !== "pending") {
@@ -124,29 +126,26 @@ function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayout
     // Timed out — return whatever we have
     return restoreStatus;
 }
-function slideInSpecPanel(wsId: string): void {
-    if (isSpecAlreadyOpen(wsId)) {
+function* slideInSpecPanel(wsId: string) {
+    if (yield* isSpecAlreadyOpen(wsId)) {
         cleanupDeferralKeys(wsId);
         return;
     }
-    const layoutManager = getPanelLayoutManager(wsId);
-    layoutManager.setDeferSpecTab(false);
-    layoutManager.openTabInAdjacentOrSplit({ type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true });
+    yield* put(setDeferSpecTab(wsId, false));
+    yield* put(openTabInAdjacentOrSplit(wsId, { type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true }));
     cleanupDeferralKeys(wsId);
 }
-function openSpecNormally(wsId: string, isDeferring: boolean): void {
-    if (isSpecAlreadyOpen(wsId)) {
+function* openSpecNormally(wsId: string, isDeferring: boolean) {
+    if (yield* isSpecAlreadyOpen(wsId)) {
         if (isDeferring) {
-            const layoutManager = getPanelLayoutManager(wsId);
-            layoutManager.setDeferSpecTab(false);
+            yield* put(setDeferSpecTab(wsId, false));
         }
         cleanupDeferralKeys(wsId);
         return;
     }
-    const layoutManager = getPanelLayoutManager(wsId);
     if (isDeferring)
-        layoutManager.setDeferSpecTab(false);
-    layoutManager.openTabInAdjacentOrSplit({ type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true }, undefined);
+        yield* put(setDeferSpecTab(wsId, false));
+    yield* put(openTabInAdjacentOrSplit(wsId, { type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true }, undefined));
     cleanupDeferralKeys(wsId);
 }
 /**
@@ -158,14 +157,12 @@ function openSpecNormally(wsId: string, isDeferring: boolean): void {
 export function* watchSpecPanelForWorkspace(wsId: string) {
     if (typeof window === "undefined")
         return;
-    if (!hasPanelLayoutManager(wsId))
-        return;
     const MAX_WAIT_MS = 90_000;
     const POLL_INTERVAL_MS = 2_000;
     try {
         const startTime = Date.now();
         while (Date.now() - startTime < MAX_WAIT_MS) {
-            const content = getSpecContent(wsId);
+            const content: string = yield* call(getSpecContent, wsId);
             if (content && content.length > 0) {
                 yield* call(slideInSpecPanel, wsId);
                 return;
@@ -173,17 +170,14 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
             yield* delay(POLL_INTERVAL_MS);
         }
         // Timed out — check one final time in case content appeared during last interval
-        const finalContent = getSpecContent(wsId);
+        const finalContent: string = yield* call(getSpecContent, wsId);
         if (finalContent && finalContent.length > 0) {
             yield* call(slideInSpecPanel, wsId);
         }
     }
     finally {
         // Safety: always clear deferSpecTab on any exit (success, crash, cancellation)
-        if (hasPanelLayoutManager(wsId)) {
-            const lm = getPanelLayoutManager(wsId);
-            lm.setDeferSpecTab(false);
-        }
+        yield* put(setDeferSpecTab(wsId, false));
         cleanupDeferralKeys(wsId);
     }
 }
@@ -193,8 +187,9 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
 export function* specPanelForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
     const [wsId] = action.payload;
     const restoreStatus: PanelLayoutRestoreStatus = yield* call(waitForRestoreStatusToSettle, wsId);
-    if (isSpecAlreadyOpen(wsId)) {
-        getPanelLayoutManager(wsId)?.setDeferSpecTab(false);
+    const specAlreadyOpen: boolean = yield* call(isSpecAlreadyOpen, wsId);
+    if (specAlreadyOpen) {
+        yield* put(setDeferSpecTab(wsId, false));
         cleanupDeferralKeys(wsId);
         return;
     }
@@ -204,18 +199,13 @@ export function* specPanelForWorkspaceSaga(action: ReturnType<typeof workspaceMo
     }
     // Set up deferral if needed (equivalent to the $effect that set deferSpecTab)
     const shouldDefer: boolean = yield* call(shouldDeferSpecPanel, wsId);
-    const specContent = getSpecContent(wsId);
+    const specContent: string = yield* call(getSpecContent, wsId);
     if (specContent.length > 0) {
-        if (!hasPanelLayoutManager(wsId)) {
-            // Layout manager not ready; fall through to watcher/polling path
-        } else {
-            yield* call(openSpecNormally, wsId, shouldDefer);
-            return;
-        }
+        yield* call(openSpecNormally, wsId, shouldDefer);
+        return;
     }
-    if (shouldDefer && hasPanelLayoutManager(wsId)) {
-        const layoutManager = getPanelLayoutManager(wsId);
-        layoutManager.setDeferSpecTab(true);
+    if (shouldDefer) {
+        yield* put(setDeferSpecTab(wsId, true));
     }
     const task = yield* fork(watchSpecPanelForWorkspace, wsId);
     specPanelTasks.set(wsId, [task]);
@@ -230,15 +220,11 @@ export function* cancelSpecPanelForWorkspaceSaga(action: ReturnType<typeof works
         specPanelTasks.delete(wsId);
     }
     // Clean up: cancel the watcher and clear deferral
-    if (hasPanelLayoutManager(wsId)) {
-        const layoutManager = getPanelLayoutManager(wsId);
-        layoutManager.setDeferSpecTab(false);
-    }
+    yield* put(setDeferSpecTab(wsId, false));
 }
 /**
  * Retroactive mount check: if a workspace was already mounted before this saga
  * started (race condition on startup), replay the mount handler.
- * Pattern follows retroactiveAppLayoutMountCheckSaga in app-layout-saga.ts.
  */
 /** @internal Exported for testing only. */
 export function* retroactiveSpecPanelMountCheckSaga() {

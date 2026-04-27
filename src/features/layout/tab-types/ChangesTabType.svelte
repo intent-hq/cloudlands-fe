@@ -16,6 +16,8 @@
   import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import Fa from 'svelte-fa';
   import { faTextWidth, faMap, faColumns, faCompressAlt } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
@@ -199,21 +201,15 @@
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId, openInAdjacentPanel, sourcePanelId },
-        }),
+      dispatch(
+        openAgentTabRequested(workspaceId, { agentId, openInAdjacentPanel, sourcePanelId }),
       );
     }}
     onOpenNote={(noteId, event) => {
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-note', {
-          detail: { noteId, openInAdjacentPanel, sourcePanelId },
-        }),
-      );
+      dispatch(openWorkspaceNote(workspaceId, noteId, { openInAdjacentPanel, sourcePanelId }));
     }}
   />
 {/key}

@@ -43,12 +43,10 @@ import { initialState } from "../deep-links-slice";
 import {
   deepLinksSaga,
   handleDeepLinkCreate,
-  handleLegacyOpenCreateWorkspaceModal,
   handleLocationChange,
   loadInitialPendingDeepLinkSaga,
   watchDeepLinkCreateSaga,
   watchDeepLinkIpcSaga,
-  watchLegacyOpenCreateWorkspaceModalSaga,
   watchLocationSaga,
 } from "./deep-links-saga";
 
@@ -88,8 +86,6 @@ describe("deepLinksSaga", () => {
       .fork(watchLocationSaga)
       .next()
       .fork(watchDeepLinkCreateSaga)
-      .next()
-      .fork(watchLegacyOpenCreateWorkspaceModalSaga)
       .next()
       .isDone();
   });
@@ -139,12 +135,6 @@ describe("deepLinksSaga", () => {
     expect(sessionStorage.getItem("workspace-prefill")).toBe(
       JSON.stringify({ repoPath: "/repo/intent", branch: "main", prompt: "", specialist: "", githubUrl: "", title: "", autoCreate: "" })
     );
-  });
-
-  it("handles the legacy open-create-workspace-modal event", async () => {
-    await expectSaga(handleLegacyOpenCreateWorkspaceModal)
-      .put(requestHomePageInitializer({}))
-      .run();
   });
 
   it("replays a pending create action on startup when state has one", async () => {

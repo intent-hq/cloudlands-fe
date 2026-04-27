@@ -25,6 +25,7 @@
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
@@ -227,10 +228,8 @@
       });
 
       if (result.agentId) {
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-agent', {
-            detail: { agentId: result.agentId },
-          }),
+        getReduxStore().dispatch(
+          openAgentTabRequested(workspaceId, { agentId: result.agentId }),
         );
       }
     } catch {

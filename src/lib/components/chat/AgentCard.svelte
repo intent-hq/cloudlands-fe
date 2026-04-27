@@ -23,6 +23,7 @@
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
@@ -208,7 +209,12 @@
         label: 'Open',
         icon: faArrowUpRightFromSquare,
         onClick: () => {
-          window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId } }));
+          {
+            const wsId = agent?.workspaceId ? String(agent.workspaceId) : (workspace?.id ? String(workspace.id) : undefined);
+            if (wsId) {
+              getReduxStore().dispatch(openAgentTabRequested(wsId, { agentId }));
+            }
+          }
           closeContextMenu();
         },
       },
@@ -428,16 +434,15 @@
     if (onclick) {
       onclick();
     } else {
-      // Use workspace:open-agent event for panel layout support (no toggle behavior)
       const sourcePanelId = findSourcePanelId(event.target);
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: {
-            agentId,
-            sourcePanelId,
-            openInAdjacentPanel,
-          },
+      const wsId = agent?.workspaceId ? String(agent.workspaceId) : (workspace?.id ? String(workspace.id) : undefined);
+      if (!wsId) return;
+      getReduxStore().dispatch(
+        openAgentTabRequested(wsId, {
+          agentId,
+          sourcePanelId,
+          openInAdjacentPanel,
         }),
       );
     }

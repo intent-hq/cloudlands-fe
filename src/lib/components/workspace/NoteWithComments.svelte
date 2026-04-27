@@ -86,8 +86,10 @@
   import { selectNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceNavigationHistory } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
+  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();
@@ -225,8 +227,6 @@
     showVersionHistory = $bindable(false),
     initialScrollPosition,
     onScrollPositionSave,
-    onUpdateSpec,
-     
     onAttachContent: _onAttachContent,
     onagentlaunched,
     onnavigatetoagent,
@@ -245,7 +245,6 @@
     initialScrollPosition?: number;
     /** Callback to save scroll position before unmounting */
     onScrollPositionSave?: (scrollTop: number) => void;
-    onUpdateSpec?: (event: CustomEvent<string>) => void;
     onAttachContent?: (event: CustomEvent<{ query: string }>) => void;
     onagentlaunched?: (data: any) => void;
     onnavigatetoagent?: (data: { agentId: string }) => void;
@@ -718,10 +717,6 @@
       // not when the debounce save fires. This prevents stale external updates from
       // overwriting recent editor changes (e.g., when multiple tasks are delegated rapidly).
 
-      if (onUpdateSpec) {
-        onUpdateSpec(new CustomEvent('updateSpec', { detail: markdownContent }));
-      }
-
       // Update note content via Redux dispatch
       {
         const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
@@ -991,16 +986,12 @@
         // Dispatch custom event with note info for ChatPanel to pick up
         // This handles both selection and deselection (when editor is focused)
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('editor:selection-change', {
-              detail: {
-                text: selectedText,
-                file: noteLabel,
-                language: 'markdown',
-                source: 'note',
-              },
-            }),
-          );
+          dispatchWindowEvent('editor:selection-change', {
+            text: selectedText,
+            file: noteLabel,
+            language: 'markdown',
+            source: 'note',
+          });
         }
       },
       onSuggestionClick: handleSuggestionClick,
@@ -1013,11 +1004,12 @@
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
         const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-file', {
-            detail: { path: filePath, openInAdjacentPanel, sourcePanelId },
-          }),
-        );
+        const wsId = workspace?.id;
+        if (wsId) {
+          getReduxStore().dispatch(
+            openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
+          );
+        }
       },
       useMarkdown: true,
       enableComments: showComments,
@@ -1083,21 +1075,6 @@
         }
       }, 100);
     }
-
-    // Add event listeners for the new task action buttons
-    const handleTaskDelegate = (event: CustomEvent) => {
-      const taskData = event.detail;
-      handleTaskMenuAction('assign-agent', taskData);
-    };
-
-    const handleTaskSplit = (event: CustomEvent) => {
-      const taskData = event.detail;
-      handleTaskMenuAction('task-breakdown', taskData);
-    };
-
-    // Listen for custom events from task buttons (they bubble up to document)
-    document.addEventListener('task-delegate', handleTaskDelegate as EventListener);
-    document.addEventListener('task-split', handleTaskSplit as EventListener);
 
     // Add click handler for comment marks (wait for view to be ready)
     cleanupCommentClickHandler?.();
@@ -1180,9 +1157,6 @@
         window.removeEventListener('scroll-to-task', taskScrollHandler as any);
         taskScrollHandler = null;
       }
-      // Remove task action event listeners from document
-      document.removeEventListener('task-delegate', handleTaskDelegate as EventListener);
-      document.removeEventListener('task-split', handleTaskSplit as EventListener);
       cleanupCommentClickHandler?.();
       cleanupCommentClickHandler = null;
       if (editor) {

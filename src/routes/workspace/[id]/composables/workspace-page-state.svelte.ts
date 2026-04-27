@@ -10,6 +10,8 @@ import {
   openWorkspaceBrowser,
   openWorkspaceDiff,
   openWorkspaceDrawer,
+  openWorkspaceFile,
+  openWorkspaceNote,
   setWorkspaceMainPanel,
   setWorkspaceNavigationWorkspaceStatus,
   type WorkspaceNavigationMainPanelState,
@@ -20,6 +22,7 @@ import { getDispatch } from '$lib/store/utils/svelte-context';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 import { fromStore } from 'svelte/store';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 
 const logger = createLogger('workspace-page-state');
 
@@ -74,21 +77,13 @@ export function createWorkspacePageState(workspaceId: string) {
 
   function restoreNoteScrollPosition(noteId: string, scrollPosition: number) {
     requestAnimationFrame(() => {
-      window.dispatchEvent(
-        new CustomEvent('note:restore-scroll-position', {
-          detail: { noteId, scrollPosition },
-        }),
-      );
+      dispatchWindowEvent('note:restore-scroll-position', { noteId, scrollPosition });
     });
   }
 
   function restoreFileScrollPosition(filePath: string, scrollPosition: number) {
     requestAnimationFrame(() => {
-      window.dispatchEvent(
-        new CustomEvent('file:restore-scroll-position', {
-          detail: { filePath, scrollPosition },
-        }),
-      );
+      dispatchWindowEvent('file:restore-scroll-position', { filePath, scrollPosition });
     });
   }
 
@@ -181,33 +176,14 @@ export function createWorkspacePageState(workspaceId: string) {
       filePath: string,
       options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-file', {
-          detail: {
-            workspaceId,
-            path: filePath,
-            line: options?.line,
-            openInAdjacentPanel: options?.openInAdjacentPanel,
-            sourcePanelId: options?.sourcePanelId,
-          },
-        }),
-      );
+      dispatch(openWorkspaceFile(workspaceId, filePath, options));
     },
 
     async openNote(
       noteId: string,
       options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-note', {
-          detail: {
-            workspaceId,
-            noteId,
-            openInAdjacentPanel: options?.openInAdjacentPanel,
-            sourcePanelId: options?.sourcePanelId,
-          },
-        }),
-      );
+      dispatch(openWorkspaceNote(workspaceId, noteId, options));
     },
 
     clearCommitView() {

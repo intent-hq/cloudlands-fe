@@ -21,6 +21,7 @@
   import { get, writable } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { track } from '$lib/services/analytics';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
@@ -48,6 +49,9 @@
     selectPanelIds,
     selectRestoreStatus,
   } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { focusBrowserTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { closeActiveTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   const logger = createLogger('PanelLayout');
   const isCollapsed = selectIsCollapsed();
@@ -444,18 +448,14 @@
     setTimeout(() => {
       if (focusableTypes.includes(activeTab.type)) {
         // Dispatch event with panel and tab info - content components will handle focus
-        window.dispatchEvent(
-          new CustomEvent('panel:focus-content', {
-            detail: {
-              panelId,
-              tabId: activeTab.id,
-              tabType: activeTab.type,
-              agentId: activeTab.agentId,
-              noteId: activeTab.noteId,
-              workspaceId,
-            },
-          }),
-        );
+        dispatchWindowEvent('panel:focus-content', {
+          panelId,
+          tabId: activeTab.id,
+          tabType: activeTab.type,
+          agentId: activeTab.agentId,
+          noteId: activeTab.noteId,
+          workspaceId,
+        });
       } else {
         // For other tab types (terminal, file, diff, browser, etc.),
         // blur any currently focused element to defocus from previous content
@@ -552,7 +552,10 @@
       if (get(terminalOverlayOpen) && terminalAreaFocused) {
         e.preventDefault();
         e.stopPropagation();
-        window.dispatchEvent(new CustomEvent('terminal:close-active'));
+        const activeWsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+        if (activeWsId) {
+          dispatch(closeActiveTerminalRequested(activeWsId));
+        }
         return;
       }
 
@@ -685,83 +688,6 @@
       }
     };
 
-    // Listen for workspace:open-note events to open notes as tabs in panels
-    const handleOpenNote = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail;
-      const noteId = detail?.noteId;
-      const openInAdjacentPanel = detail?.openInAdjacentPanel ?? false;
-      const sourcePanelId = detail?.sourcePanelId;
-
-      if (noteId) {
-        logger.debug('Received workspace:open-note event, opening in panel', {
-          noteId,
-          openInAdjacentPanel,
-          sourcePanelId,
-        });
-
-        const tab = {
-          type: 'note' as const,
-          title: 'Note', // Title will be updated when the note loads
-          closable: true,
-          noteId,
-          workspaceId,
-        };
-
-        if (openInAdjacentPanel) {
-          layoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId);
-          // Focus the new panel after opening in adjacent
-          const newFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
-          if (newFocusedId) {
-            dispatchFocusPanelContent(newFocusedId);
-          }
-        } else {
-          layoutManager.openTab(tab);
-        }
-      }
-    };
-
-    // Listen for workspace:open-file events to open files as tabs in panels
-    const handleOpenFile = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail;
-      // Support both 'path' and 'filePath' for compatibility with different event sources
-      const filePath = detail?.path || detail?.filePath;
-      const line = detail?.line as number | undefined;
-      const openInAdjacentPanel = detail?.openInAdjacentPanel ?? false;
-      const sourcePanelId = detail?.sourcePanelId;
-
-      if (filePath) {
-        logger.debug('Received workspace:open-file event, opening in panel', {
-          filePath,
-          line,
-          openInAdjacentPanel,
-          sourcePanelId,
-        });
-        const fileName = filePath.split('/').pop() || filePath;
-
-        const tab = {
-          type: 'file' as const,
-          title: fileName,
-          closable: true,
-          filePath,
-          workspaceId,
-          // Pass line number in data for CodeEditor to jump to
-          // Include timestamp to force re-trigger even when navigating to same line
-          data: line ? { line, jumpTimestamp: Date.now() } : undefined,
-        };
-
-        if (openInAdjacentPanel) {
-          layoutManager.openTabInAdjacentOrSplit(tab, sourcePanelId);
-          // Focus the new panel after opening in adjacent
-          const newFocusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
-          if (newFocusedId) {
-            dispatchFocusPanelContent(newFocusedId);
-          }
-        } else {
-          layoutManager.openTab(tab);
-        }
-      }
-    };
-
     // Listen for layout:configure-panels events from AI-generated layouts
     const handleConfigurePanels = async (event: Event) => {
       const detail = (event as CustomEvent)?.detail;
@@ -832,68 +758,6 @@
       });
     };
 
-    // Listen for workspace:open-local-changes events to open local changes as a tab
-    const handleOpenLocalChanges = () => {
-      logger.debug('Received workspace:open-local-changes event, opening in panel');
-      layoutManager.openTab({
-        type: 'local-changes',
-        title: 'Space changes',
-        closable: true,
-        workspaceId,
-      });
-    };
-
-    // Listen for workspace:open-chat-changes events to open chat changes as a tab
-    const handleOpenChatChanges = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail as {
-        changes: any[];
-        title: string;
-        messageId?: string;
-        isAggregate?: boolean;
-        agentId?: string;
-        turnNumber?: number;
-      };
-
-      if (!detail?.changes) {
-        logger.warn('workspace:open-chat-changes missing changes', { detail });
-        return;
-      }
-
-      logger.debug('Received workspace:open-chat-changes event, opening in panel', {
-        changesCount: detail.changes.length,
-        title: detail.title,
-      });
-
-      layoutManager.openTab({
-        type: 'chat-changes',
-        title: detail.title || 'File Changes',
-        closable: true,
-        workspaceId,
-        data: {
-          changes: detail.changes,
-          title: detail.title,
-          messageId: detail.messageId,
-          isAggregate: detail.isAggregate,
-          agentId: detail.agentId,
-          turnNumber: detail.turnNumber,
-        },
-      });
-    };
-
-    // Handle focus requests from other components
-    const handleRequestFocus = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail;
-      const panelId = detail?.panelId;
-      if (panelId) {
-        dispatchFocusPanelContent(panelId);
-      }
-    };
-
-    window.addEventListener('workspace:open-note', handleOpenNote);
-    window.addEventListener('workspace:open-file', handleOpenFile);
-    window.addEventListener('workspace:open-local-changes', handleOpenLocalChanges);
-    window.addEventListener('workspace:open-chat-changes', handleOpenChatChanges);
-    window.addEventListener('panel:request-focus', handleRequestFocus);
     document.addEventListener('layout:configure-panels', handleConfigurePanels);
 
     // Use listenSync for proper cleanup without race conditions
@@ -901,39 +765,16 @@
       handleTerminalCreated(event.payload || event);
     });
 
-    // Shared logic for focusing a browser tab by ID
-    function focusBrowserTab(tabId: string) {
-      if (!tabId) return;
-      logger.debug('Focusing browser tab request', { tabId });
-      const currentPanels = selectPanels.select(getReduxStore().getState(), workspaceId);
-      for (const [panelId, panel] of Object.entries(currentPanels)) {
-        const tab = panel.tabs.find((t) => t.id === tabId);
-        if (tab) {
-          logger.info('Focusing browser tab', { tabId, panelId });
-          layoutManager.focusPanel(panelId);
-          layoutManager.setActiveTab(tabId, panelId);
-          return;
-        }
-      }
-      logger.warn('Browser tab not found for focus request', { tabId });
-    }
-
-    // Listen for browser tab focus requests from main process (CDP agent)
+    // Listen for browser tab focus requests from main process (CDP agent).
+    // Translate the IPC payload into a Redux action handled by the app-layout saga.
     const unsubBrowserFocus = listenSync('browser:focus-tab', (event: any) => {
       const tabId = event?.payload?.tabId;
       if (!tabId) {
         logger.warn('browser:focus-tab received without tabId', { event });
         return;
       }
-      focusBrowserTab(tabId);
+      dispatch(focusBrowserTabRequested(workspaceId, tabId));
     });
-
-    // Listen for browser tab focus requests from renderer components (e.g., ToolDetails tab list)
-    function handleBrowserFocusTabDom(e: Event) {
-      const tabId = (e as CustomEvent).detail?.tabId;
-      if (tabId) focusBrowserTab(tabId);
-    }
-    window.addEventListener('browser:focus-tab', handleBrowserFocusTabDom);
 
     // Listen for browser tab list requests from main process
     const unsubBrowserListTabs = listenSync('browser:list-tabs-request', () => {
@@ -954,12 +795,6 @@
     });
 
     return () => {
-      window.removeEventListener('workspace:open-note', handleOpenNote);
-      window.removeEventListener('workspace:open-file', handleOpenFile);
-      window.removeEventListener('workspace:open-local-changes', handleOpenLocalChanges);
-      window.removeEventListener('workspace:open-chat-changes', handleOpenChatChanges);
-      window.removeEventListener('panel:request-focus', handleRequestFocus);
-      window.removeEventListener('browser:focus-tab', handleBrowserFocusTabDom);
       document.removeEventListener('layout:configure-panels', handleConfigurePanels);
       unsubTerminalCreated();
       unsubBrowserFocus();

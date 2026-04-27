@@ -6,6 +6,8 @@
  * content changes.
  */
 
+import { dispatchWindowEvent } from "$lib/utils/window-events";
+
 /**
  * Dispatch a window CustomEvent for editor content synchronization.
  *
@@ -21,10 +23,6 @@ export function dispatchContentUpdateEvent(
   workspaceId: string,
 ): void {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent("note-content-update", {
-        detail: { noteId, content, source, workspaceId },
-      }),
-    );
+    dispatchWindowEvent("note-content-update", { noteId, content, source, workspaceId });
   }
 }

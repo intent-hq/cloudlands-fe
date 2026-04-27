@@ -10,6 +10,7 @@
   import type { TabTypeComponentProps } from './registry';
   import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { selectFileTrackingChanges } from '$lib/store/slices/changes/changes-selectors';
@@ -252,11 +253,7 @@
       store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
       const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
       if (focusedId) {
-        window.dispatchEvent(
-          new CustomEvent('panel:request-focus', {
-            detail: { panelId: focusedId },
-          }),
-        );
+        store.dispatch(requestPanelFocus(workspaceId, focusedId));
       }
     } else {
       store.dispatch(openTab(workspaceId, tabData));

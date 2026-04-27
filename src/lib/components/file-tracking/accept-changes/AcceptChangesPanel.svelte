@@ -71,6 +71,18 @@
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { handleLink } from '$features/navigation/link-handler';
+  import {
+    openWorkspaceCodeReview,
+    openWorkspaceDiff,
+    openWorkspaceLocalChanges,
+    updateWorkspaceCodeReview,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    createWorkspaceForRepoRequested,
+    openAgentTabRequested,
+    openNewSpaceModalRequested,
+  } from '$lib/store/slices/app-layout/app-layout-slice';
+  import type { TrackedChange } from '$features/file-tracking/types';
   import { track, trackGitOp } from '$lib/services/analytics';
   import {
     addTerminal,
@@ -97,9 +109,6 @@
     startBackgroundOperation,
     updateBackgroundOperationPhase,
   } from '$lib/store/slices/changes/changes-slice';
-  import {
-    resetExecutor,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
 
   const dispatch = getDispatch();
   const selectedModel$ = selectSelectedModel();
@@ -374,15 +383,11 @@
         agentId: state.agentId || null,
         status: 'running',
       };
-      window.dispatchEvent(
-        new CustomEvent('workspace:code-review-update', {
-          detail: {
-            agentId: state.agentId,
-            stagedFiles: stagedFiles.map((f: any) => f.path),
-            status: 'running',
-          },
-        }),
-      );
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
+        agentId: state.agentId,
+        stagedFiles: stagedFiles.map((f: any) => f.path),
+        status: 'running',
+      }));
     }
 
     if (state.status === 'success' && state.result && state.result !== prevReviewResult) {
@@ -397,16 +402,12 @@
       };
       codeReviewState = newReviewState;
       reviewArchive = [{ ...newReviewState, timestamp: Date.now() }, ...reviewArchive.slice(0, 4)];
-      window.dispatchEvent(
-        new CustomEvent('workspace:code-review-update', {
-          detail: {
-            result: state.result,
-            agentId: state.agentId,
-            stagedFiles: stagedFiles.map((f: any) => f.path),
-            status: 'complete',
-          },
-        }),
-      );
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
+        result: state.result,
+        agentId: state.agentId,
+        stagedFiles: stagedFiles.map((f: any) => f.path),
+        status: 'complete',
+      }));
       toast.success('Code review complete');
     }
 
@@ -416,14 +417,10 @@
         error: state.error,
         status: 'error',
       };
-      window.dispatchEvent(
-        new CustomEvent('workspace:code-review-update', {
-          detail: {
-            error: state.error,
-            status: 'error',
-          },
-        }),
-      );
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
+        error: state.error,
+        status: 'error',
+      }));
     }
   });
 
@@ -483,9 +480,12 @@
         logger.info('Reconnecting to running code review executor', { agentId, savedStatus });
 
         codeReviewState = { ...codeReviewState, agentId, status: 'running' };
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-code-review', {
-            detail: { result: null, agentId, stagedFiles: codeReviewState.stagedFiles, status: 'running' },
+        getReduxStore().dispatch(
+          openWorkspaceCodeReview(workspaceId, {
+            result: null,
+            agentId,
+            stagedFiles: codeReviewState.stagedFiles,
+            status: 'running',
           }),
         );
         dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
@@ -549,41 +549,6 @@
     if (stored.pendingPRContext && !prExec.agentId) {
       dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
     }
-  });
-
-  // Event listeners for code review actions from other components
-  $effect(() => {
-    // Handler for re-triggering code review
-    const handleTriggerCodeReview = () => {
-      logger.info('Received workspace:trigger-code-review event');
-      handleReviewStaged(true); // Force new review
-    };
-
-    // Handler for stopping code review
-    const handleStopCodeReview = () => {
-      logger.info('Received workspace:stop-code-review event');
-      dispatch(cancelExecution(workspaceId, 'review'));
-      codeReviewState = {
-        ...codeReviewState,
-        status: 'idle',
-      };
-      dispatch(resetExecutor(workspaceId, 'review'));
-      window.dispatchEvent(
-        new CustomEvent('workspace:code-review-update', {
-          detail: {
-            status: 'idle',
-          },
-        }),
-      );
-    };
-
-    window.addEventListener('workspace:trigger-code-review', handleTriggerCodeReview);
-    window.addEventListener('workspace:stop-code-review', handleStopCodeReview);
-
-    return () => {
-      window.removeEventListener('workspace:trigger-code-review', handleTriggerCodeReview);
-      window.removeEventListener('workspace:stop-code-review', handleStopCodeReview);
-    };
   });
 
   // Streaming preview data for commit message generation
@@ -975,14 +940,12 @@
 
   function handleOpenExistingReview() {
     // Open the existing review in the main panel
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-code-review', {
-        detail: {
-          result: codeReviewState.result,
-          agentId: codeReviewState.agentId,
-          stagedFiles: codeReviewState.stagedFiles,
-          status: codeReviewState.status,
-        },
+    getReduxStore().dispatch(
+      openWorkspaceCodeReview(workspaceId, {
+        result: codeReviewState.result,
+        agentId: codeReviewState.agentId,
+        stagedFiles: codeReviewState.stagedFiles,
+        status: codeReviewState.status,
       }),
     );
   }
@@ -1022,14 +985,12 @@
     };
 
     // Open the review panel immediately when starting
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-code-review', {
-        detail: {
-          result: null,
-          agentId: $reviewExecState$.agentId,
-          stagedFiles: stagedFiles.map((f) => f.path),
-          status: 'running',
-        },
+    getReduxStore().dispatch(
+      openWorkspaceCodeReview(workspaceId, {
+        result: null,
+        agentId: $reviewExecState$.agentId,
+        stagedFiles: stagedFiles.map((f) => f.path),
+        status: 'running',
       }),
     );
 
@@ -1043,15 +1004,12 @@
   }
 
   function handleOpenArchivedReview(review: CodeReviewState & { timestamp: number }) {
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-code-review', {
-        detail: {
-          result: review.result,
-          agentId: review.agentId,
-          stagedFiles: review.stagedFiles,
-          status: 'complete', // Archived reviews are always shown as complete
-          isArchived: true,
-        },
+    getReduxStore().dispatch(
+      openWorkspaceCodeReview(workspaceId, {
+        result: review.result,
+        agentId: review.agentId,
+        stagedFiles: review.stagedFiles,
+        status: 'complete', // Archived reviews are always shown as complete
       }),
     );
   }
@@ -1257,14 +1215,10 @@
     // Navigate to the new workspace creation page with the same repo context
     const repo = $workspace?.repositoryPath;
     if (repo) {
-      // Dispatch event to start new workspace with same repo
-      window.dispatchEvent(
-        new CustomEvent('workspace:create-for-repo', {
-          detail: { repositoryPath: repo },
-        }),
-      );
+      // Dispatch action to start new workspace with same repo
+      getReduxStore().dispatch(createWorkspaceForRepoRequested({ repositoryPath: repo }));
     } else {
-      window.dispatchEvent(new CustomEvent('app:open-new-space-modal', { detail: {} }));
+      getReduxStore().dispatch(openNewSpaceModalRequested({}));
     }
   }
 
@@ -1579,11 +1533,14 @@
       status: fileStatus,
       stage,
       commitHash, // Include commit hash for committed files
-    };
+    } as unknown as TrackedChange;
 
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-diff', {
-        detail: { change, filePath, changeId: change.id, openInAdjacentPanel, sourcePanelId },
+    getReduxStore().dispatch(
+      openWorkspaceDiff(workspaceId, change, {
+        filePath,
+        changeId: change.id,
+        openInAdjacentPanel,
+        sourcePanelId,
       }),
     );
   }
@@ -1616,10 +1573,8 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId, sourcePanelId, openInAdjacentPanel },
-        }),
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, { agentId, sourcePanelId, openInAdjacentPanel }),
       );
     }
   }
@@ -1630,10 +1585,8 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId, sourcePanelId, openInAdjacentPanel },
-        }),
+      getReduxStore().dispatch(
+        openAgentTabRequested(workspaceId, { agentId, sourcePanelId, openInAdjacentPanel }),
       );
     }
   }
@@ -1988,7 +1941,7 @@
       onOpenCommit={handleOpenCommit}
       onOpenPR={handleOpenPR}
       onOpenLocalChanges={() => {
-        window.dispatchEvent(new CustomEvent('workspace:open-local-changes'));
+        getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId));
       }}
       commitMessageAgentId={$commitExecState$.agentId}
       prDescriptionAgentId={$prExecState$.agentId}

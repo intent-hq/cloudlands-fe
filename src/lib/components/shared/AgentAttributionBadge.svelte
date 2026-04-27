@@ -8,6 +8,10 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { AgentAttribution } from '$features/file-tracking/types';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   const logger = createLogger('AgentAttributionBadge');
 
@@ -42,23 +46,24 @@
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
     // First, open the agent in panel
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: { agentId: attribution.agentId, sourcePanelId, openInAdjacentPanel },
-      }),
-    );
+    const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+    if (wsId) {
+      getReduxStore().dispatch(
+        openAgentTabRequested(wsId, {
+          agentId: attribution.agentId,
+          sourcePanelId,
+          openInAdjacentPanel,
+        }),
+      );
+    }
 
     // Then scroll to the specific turn after a delay to let drawer open
     setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent('agent:scroll-to-turn', {
-          detail: {
-            agentId: attribution.agentId,
-            turnNumber: attribution.turnNumber,
-            sessionId: attribution.sessionId,
-          },
-        }),
-      );
+      dispatchWindowEvent('agent:scroll-to-turn', {
+        agentId: attribution.agentId,
+        turnNumber: attribution.turnNumber,
+        sessionId: attribution.sessionId,
+      });
     }, 300);
   }
 

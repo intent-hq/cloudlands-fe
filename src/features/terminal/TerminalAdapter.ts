@@ -18,6 +18,12 @@ import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
+import { dispatch } from '$lib/store/redux-dispatch-bridge';
+import {
+  closeActiveTerminalRequested,
+  toggleTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
 
 const logger = new Logger('TerminalAdapter');
 
@@ -29,6 +35,7 @@ export interface TerminalCallbacks {
   onCwdChanged?: (cwd: string) => void;
   onError?: (error: Error) => void;
   onSearchResultsChange?: (resultIndex: number, resultCount: number) => void;
+  onToggleSearch?: () => void;
 }
 
 export interface TerminalOptions extends TerminalCallbacks {
@@ -125,6 +132,7 @@ export class TerminalAdapter {
       onCommandFinished: options.onCommandFinished,
       onCwdChanged: options.onCwdChanged,
       onError: options.onError,
+      onToggleSearch: options.onToggleSearch,
     };
 
     // Initialize state machine
@@ -442,26 +450,22 @@ export class TerminalAdapter {
       }
 
       // Cmd+J (Mac) / Ctrl+J (Win/Linux) - toggle terminal overlay
-      // Dispatch a custom event that the overlay can listen for, since xterm captures
-      // keyboard events before they can bubble to document-level handlers.
-      // Include workspaceId so only the matching overlay (workspace vs root) reacts —
-      // both are mounted simultaneously on workspace pages.
+      // Dispatch the Redux action directly because xterm captures keyboard
+      // events before they can bubble to document-level handlers. The matching
+      // overlay (workspace vs root) reacts via its own selector subscription.
       if (isMod && event.key === 'j' && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:toggle-overlay', {
-            detail: { workspaceId: this.workspaceId },
-          }));
+          dispatch(toggleTerminalOverlay(this.workspaceId));
         }
         return false;
       }
 
       // Cmd+F (Mac) / Ctrl+F (Win/Linux) - toggle search
-      // Include terminalId so only the originating terminal's search bar toggles
+      // Routed via per-terminal callback so only the originating terminal's
+      // search bar toggles.
       if (isMod && event.key === 'f' && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:toggle-search', {
-            detail: { terminalId: this.terminalId }
-          }));
+          this.callbacks.onToggleSearch?.();
         }
         return false; // Prevent terminal from handling
       }
@@ -471,9 +475,7 @@ export class TerminalAdapter {
       // instead of the default "new tab" behavior
       if (isMod && (event.key === 't' || event.key === 'T') && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:create-new', {
-            detail: { workspaceId: this.workspaceId },
-          }));
+          dispatchWindowEvent('workspace:new-terminal', { workspaceId: this.workspaceId });
         }
         return false;
       }
@@ -481,9 +483,7 @@ export class TerminalAdapter {
       // Cmd+W (Mac) / Ctrl+W (Win/Linux) - close active terminal tab
       if (isMod && (event.key === 'w' || event.key === 'W') && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          window.dispatchEvent(new CustomEvent('terminal:close-active', {
-            detail: { workspaceId: this.workspaceId },
-          }));
+          dispatch(closeActiveTerminalRequested(this.workspaceId));
         }
         return false;
       }
@@ -496,7 +496,6 @@ export class TerminalAdapter {
       }
 
       // Ctrl+` or Ctrl+Shift+` (tilde) - toggle/create terminal
-      // Dispatch custom events for these as well
       if (
         event.ctrlKey &&
         !event.metaKey &&
@@ -505,13 +504,9 @@ export class TerminalAdapter {
       ) {
         if (event.type === 'keydown') {
           if (event.shiftKey || event.key === '~') {
-            window.dispatchEvent(new CustomEvent('terminal:create-new', {
-              detail: { workspaceId: this.workspaceId },
-            }));
+            dispatchWindowEvent('workspace:new-terminal', { workspaceId: this.workspaceId });
           } else {
-            window.dispatchEvent(new CustomEvent('terminal:toggle-overlay', {
-              detail: { workspaceId: this.workspaceId },
-            }));
+            dispatch(toggleTerminalOverlay(this.workspaceId));
           }
         }
         return false;

@@ -46,6 +46,8 @@ import { get } from 'svelte/store';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
+  openWorkspaceFile,
+  openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
 describe('workspace-navigation', () => {
@@ -131,97 +133,65 @@ describe('workspace-navigation', () => {
   });
 
   describe('navigateToNote', () => {
-    it('should dispatch workspace:open-note event', async () => {
-      // The implementation now uses CustomEvents instead of direct URL manipulation
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-note', eventHandler);
-
+    it('should dispatch openWorkspaceNote action', async () => {
       await navigateToNote('note-456');
 
-      expect(eventHandler).toHaveBeenCalled();
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.noteId).toBe('note-456');
-      expect(event.detail.workspaceId).toBe('test-workspace-id');
-
-      window.removeEventListener('workspace:open-note', eventHandler);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceNote('test-workspace-id', 'note-456', {
+          openInAdjacentPanel: false,
+          sourcePanelId: undefined,
+        }),
+      );
     });
 
-    it('should include workspaceId in event detail', async () => {
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-note', eventHandler);
-
+    it('should include workspaceId in dispatched action', async () => {
       await navigateToNote('note-456');
 
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.workspaceId).toBe('test-workspace-id');
-
-      window.removeEventListener('workspace:open-note', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[0]).toBe('test-workspace-id');
     });
 
     it('should handle spec note', async () => {
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-note', eventHandler);
-
       await navigateToNote('spec');
 
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.noteId).toBe('spec');
-
-      window.removeEventListener('workspace:open-note', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[1]).toBe('spec');
     });
   });
 
   describe('navigateToFile', () => {
-    it('should dispatch workspace:open-file event', async () => {
-      // The implementation now uses CustomEvents instead of direct state manipulation
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-file', eventHandler);
-
+    it('should dispatch openWorkspaceFile action', async () => {
       await navigateToFile('src/index.ts');
 
-      expect(eventHandler).toHaveBeenCalled();
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.filePath).toBe('src/index.ts');
-      expect(event.detail.workspaceId).toBe('test-workspace-id');
-
-      window.removeEventListener('workspace:open-file', eventHandler);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceFile('test-workspace-id', 'src/index.ts', {
+          line: undefined,
+          openInAdjacentPanel: false,
+          sourcePanelId: undefined,
+        }),
+      );
     });
 
-    it('should include line number in event when provided', async () => {
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-file', eventHandler);
-
+    it('should include line number in action when provided', async () => {
       await navigateToFile('src/index.ts', 42);
 
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.filePath).toBe('src/index.ts');
-      expect(event.detail.line).toBe(42);
-
-      window.removeEventListener('workspace:open-file', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[1]).toBe('src/index.ts');
+      expect(action.payload[2]?.line).toBe(42);
     });
 
     it('should not include line number when not provided', async () => {
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-file', eventHandler);
-
       await navigateToFile('src/index.ts');
 
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.line).toBeUndefined();
-
-      window.removeEventListener('workspace:open-file', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[2]?.line).toBeUndefined();
     });
 
-    it('should include workspaceId in event detail', async () => {
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-file', eventHandler);
-
+    it('should include workspaceId in dispatched action', async () => {
       await navigateToFile('src/index.ts', 42);
 
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.workspaceId).toBe('test-workspace-id');
-
-      window.removeEventListener('workspace:open-file', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[0]).toBe('test-workspace-id');
     });
   });
 
@@ -253,19 +223,13 @@ describe('workspace-navigation', () => {
   });
 
   describe('navigateToSpec', () => {
-    it('should dispatch workspace:open-note event with spec noteId', async () => {
+    it('should dispatch openWorkspaceNote action with spec noteId', async () => {
       // navigateToSpec is a convenience function that calls navigateToNote('spec')
-      const eventHandler = vi.fn();
-      window.addEventListener('workspace:open-note', eventHandler);
-
       await navigateToSpec();
 
-      expect(eventHandler).toHaveBeenCalled();
-      const event = eventHandler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail.noteId).toBe('spec');
-      expect(event.detail.workspaceId).toBe('test-workspace-id');
-
-      window.removeEventListener('workspace:open-note', eventHandler);
+      const action = mockDispatch.mock.calls[0][0];
+      expect(action.payload[0]).toBe('test-workspace-id');
+      expect(action.payload[1]).toBe('spec');
     });
   });
 

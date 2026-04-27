@@ -22,22 +22,26 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
+  race: function* (effects: any) {
+    return yield sagaEffects.race(effects);
+  },
   select: function* (selector: any, ...args: any[]) {
     return yield sagaEffects.select(selector, ...args);
+  },
+  take: function* (pattern: any) {
+    return yield sagaEffects.take(pattern);
   },
   takeEvery: function* (pattern: any, saga: any) {
     return yield sagaEffects.takeEvery(pattern, saga);
   },
 }));
 
-const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+const { getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
   vi.hoisted(() => {
     const dispatchMock = vi.fn();
     const storeStateRef = { current: {} as any };
 
     return {
-      hasPanelLayoutManagerMock: vi.fn(),
-      getPanelLayoutManagerMock: vi.fn(),
       dispatchMock,
       storeStateRef,
       getReduxStoreMock: vi.fn(() => ({
@@ -51,11 +55,6 @@ const { hasPanelLayoutManagerMock, getPanelLayoutManagerMock, getReduxStoreMock,
       selectActiveWorkspaceIdMock: vi.fn(() => null),
     };
   });
-
-vi.mock("$features/layout/panel-layout-adapter", () => ({
-  getPanelLayoutManager: getPanelLayoutManagerMock,
-  hasPanelLayoutManager: hasPanelLayoutManagerMock,
-}));
 
 vi.mock("$shared/constants/notes", () => ({
   SPEC_NOTE_ID: "spec",
@@ -72,18 +71,30 @@ vi.mock("$lib/store/redux-dispatch-bridge", () => ({
 vi.mock("$lib/store/slices/workspace-notes/workspace-notes-selectors", () => ({
   selectSpec: {
     select: (...args: any[]) => selectSpecMock(...args),
+    effect: function* (...args: any[]) {
+      return selectSpecMock(undefined, ...args);
+    },
   },
 }));
 
 vi.mock("$lib/store/slices/panel-layout/panel-layout-selectors", () => ({
   selectPanels: {
     select: (...args: any[]) => selectPanelsMock(...args),
+    effect: function* (...args: any[]) {
+      return selectPanelsMock(undefined, ...args);
+    },
   },
   selectRestoreStatus: {
     select: (...args: any[]) => selectRestoreStatusMock(...args),
+    effect: function* (...args: any[]) {
+      return selectRestoreStatusMock(undefined, ...args);
+    },
   },
   selectDeferSpecTab: {
     select: (...args: any[]) => selectDeferSpecTabSelectorMock(...args),
+    effect: function* (...args: any[]) {
+      return selectDeferSpecTabSelectorMock(undefined, ...args);
+    },
   },
 }));
 
@@ -94,12 +105,23 @@ vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
   })),
 }));
 
+const { selectInitialAgentConfigMock, selectIsInitialSpecWriteInProgressMock } = vi.hoisted(() => ({
+  selectInitialAgentConfigMock: vi.fn(() => null),
+  selectIsInitialSpecWriteInProgressMock: vi.fn(() => false),
+}));
+
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
   selectInitialAgentConfig: {
-    select: vi.fn(() => null),
+    select: selectInitialAgentConfigMock,
+    effect: function* (...args: any[]) {
+      return selectInitialAgentConfigMock(undefined, ...args);
+    },
   },
   selectIsInitialSpecWriteInProgress: {
-    select: vi.fn(() => false),
+    select: selectIsInitialSpecWriteInProgressMock,
+    effect: function* (...args: any[]) {
+      return selectIsInitialSpecWriteInProgressMock(undefined, ...args);
+    },
   },
 }));
 
@@ -120,21 +142,12 @@ import {
   watchSpecPanelForWorkspace,
   retroactiveSpecPanelMountCheckSaga,
 } from "./spec-panel-saga";
+import { setDeferSpecTab } from "$lib/store/slices/panel-layout/panel-layout-slice";
 
 describe("specPanelSaga", () => {
-  let setDeferSpecTabMock: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
     storeStateRef.current = {};
-    hasPanelLayoutManagerMock.mockReturnValue(true);
-    setDeferSpecTabMock = vi.fn();
-    getPanelLayoutManagerMock.mockReturnValue({
-      isDeferringSpecTab: false,
-      setDeferSpecTab: setDeferSpecTabMock,
-      layout: { panels: {} },
-      openTabInAdjacentOrSplit: vi.fn(),
-    });
 
     // Default: no spec content, no panels, not deferring
     selectSpecMock.mockReturnValue(undefined);
@@ -170,17 +183,19 @@ describe("specPanelSaga", () => {
     const task = { id: "mock-task" };
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-123"));
 
-    // First: wait briefly for restore status to settle
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
-
-    // Then: call shouldDeferSpecPanel for a fresh workspace
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="empty"
     expect(iterator.next("empty").done).toBe(false);
-
-    // shouldDeferSpecPanel returns false, but watcher still starts for fresh workspaces
-    const forkEffect = iterator.next(false);
+    // 3. CALL shouldDeferSpecPanel — provide specAlreadyOpen=false
+    expect(iterator.next(false).done).toBe(false);
+    // 4. CALL getSpecContent — provide shouldDefer=false
+    expect(iterator.next(false).done).toBe(false);
+    // 5. FORK watchSpecPanelForWorkspace — provide specContent=""
+    const forkEffect = iterator.next("");
     expect(forkEffect.done).toBe(false);
+    expect((forkEffect.value as any)?.type).toBe("FORK");
 
-    // Should fork watchSpecPanelForWorkspace
     expect(iterator.next(task)).toEqual({ value: undefined, done: true });
 
     const cancelIterator = cancelSpecPanelForWorkspaceSaga(workspaceUnmounted("ws-123"));
@@ -193,16 +208,23 @@ describe("specPanelSaga", () => {
       },
       done: false,
     });
+    // PUT setDeferSpecTab(wsId, false) before the saga returns
+    const putStep = cancelIterator.next();
+    expect((putStep.value as any)?.type).toBe("PUT");
+    expect((putStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-123", false));
     expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
-    expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
   });
 
   it("trusts restored layouts without spec and does not re-open the spec tab", () => {
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-restored"));
     selectSpecMock.mockReturnValue({ content: "# Restored spec" });
 
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
-    expect(iterator.next("restored")).toEqual({ value: undefined, done: true });
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="restored"
+    expect(iterator.next("restored").done).toBe(false);
+    // 3. specAlreadyOpen=false, restoreStatus="restored" → done
+    expect(iterator.next(false)).toEqual({ value: undefined, done: true });
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: "workspace-agents/clearInitialAgentConfig",
@@ -210,7 +232,7 @@ describe("specPanelSaga", () => {
     });
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
-    expect(getPanelLayoutManagerMock().openTabInAdjacentOrSplit).not.toHaveBeenCalled();
+    // The saga returned without dispatching openTabInAdjacentOrSplit (iterator already done)
   });
 
   it("skips re-opening when a restored layout already includes spec", () => {
@@ -224,8 +246,15 @@ describe("specPanelSaga", () => {
 
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-restored"));
 
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
-    expect(iterator.next("restored")).toEqual({ value: undefined, done: true });
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="restored"
+    expect(iterator.next("restored").done).toBe(false);
+    // 3. specAlreadyOpen=true → PUT setDeferSpecTab(wsId, false) then done
+    const putStep = iterator.next(true);
+    expect((putStep.value as any)?.type).toBe("PUT");
+    expect((putStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-restored", false));
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: "workspace-agents/clearInitialAgentConfig",
@@ -239,10 +268,16 @@ describe("specPanelSaga", () => {
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-new-with-spec"));
     selectSpecMock.mockReturnValue({ content: "# Existing spec" });
 
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="empty"
     expect(iterator.next("empty").done).toBe(false);
-    const openEffect = iterator.next(false);
-
+    // 3. CALL shouldDeferSpecPanel — provide specAlreadyOpen=false
+    expect(iterator.next(false).done).toBe(false);
+    // 4. CALL getSpecContent — provide shouldDefer=false
+    expect(iterator.next(false).done).toBe(false);
+    // 5. CALL openSpecNormally — provide specContent="# Existing spec"
+    const openEffect = iterator.next("# Existing spec");
     expect(openEffect.done).toBe(false);
     expect((openEffect.value as any)?.type).toBe("CALL");
     expect((openEffect.value as any)?.payload?.args).toEqual(["ws-new-with-spec", false]);
@@ -253,9 +288,16 @@ describe("specPanelSaga", () => {
     const task = { id: "new-watch-task" };
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-new-empty"));
 
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="empty"
     expect(iterator.next("empty").done).toBe(false);
-    const forkEffect = iterator.next(false);
+    // 3. CALL shouldDeferSpecPanel — provide specAlreadyOpen=false
+    expect(iterator.next(false).done).toBe(false);
+    // 4. CALL getSpecContent — provide shouldDefer=false
+    expect(iterator.next(false).done).toBe(false);
+    // 5. FORK watchSpecPanelForWorkspace — provide specContent=""
+    const forkEffect = iterator.next("");
 
     expect(forkEffect.done).toBe(false);
     expect((forkEffect.value as any)?.type).toBe("FORK");
@@ -266,12 +308,22 @@ describe("specPanelSaga", () => {
     const task = { id: "mock-task" };
     const iterator = specPanelForWorkspaceSaga(workspaceMounted("ws-defer"));
 
+    // 1. CALL waitForRestoreStatusToSettle
     expect(iterator.next().done).toBe(false);
+    // 2. CALL isSpecAlreadyOpen — provide restoreStatus="empty"
     expect(iterator.next("empty").done).toBe(false);
-    const forkEffect = iterator.next(true);
-
+    // 3. CALL shouldDeferSpecPanel — provide specAlreadyOpen=false
+    expect(iterator.next(false).done).toBe(false);
+    // 4. CALL getSpecContent — provide shouldDefer=true
+    expect(iterator.next(true).done).toBe(false);
+    // 5. PUT setDeferSpecTab(true) — provide specContent=""
+    const putStep = iterator.next("");
+    expect((putStep.value as any)?.type).toBe("PUT");
+    expect((putStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-defer", true));
+    // 6. FORK watchSpecPanelForWorkspace
+    const forkEffect = iterator.next();
     expect(forkEffect.done).toBe(false);
-    expect(setDeferSpecTabMock).toHaveBeenCalledWith(true);
+    expect((forkEffect.value as any)?.type).toBe("FORK");
     expect(iterator.next(task)).toEqual({ value: undefined, done: true });
   });
 
@@ -281,66 +333,53 @@ describe("specPanelSaga", () => {
 
       const firstStep = iterator.next();
 
+      // First effect is now CALL getSpecContent (no PUT setDeferSpecTab(true) ever yielded)
       expect((firstStep.value as any)?.type).toBe("CALL");
-      expect((firstStep.value as any)?.payload?.fn?.name).toBe("delayP");
-      expect(setDeferSpecTabMock).not.toHaveBeenCalledWith(true);
+      expect((firstStep.value as any)?.payload?.fn?.name).toBe("getSpecContent");
     });
 
     it("calls slideInSpecPanel when spec content is available on first poll", () => {
-      // Set up spec content via selector mock
-      selectSpecMock.mockReturnValue({ content: "# My Spec\nSome content here" });
-
       const iterator = watchSpecPanelForWorkspace("ws-test");
 
-      // Step through — the saga should find content on first poll and call slideInSpecPanel
-      let step = iterator.next();
-      while (!step.done) {
-        const value = step.value as any;
-        if (value?.type === "CALL") {
-          // Should be calling slideInSpecPanel
-          expect(value.payload?.args).toEqual(["ws-test"]);
-          return;
-        }
-        step = iterator.next();
-      }
-      expect.fail("Expected a CALL to slideInSpecPanel but saga completed without one");
+      // Step 1: CALL getSpecContent
+      const getContentStep = iterator.next();
+      expect((getContentStep.value as any)?.type).toBe("CALL");
+      expect((getContentStep.value as any)?.payload?.fn?.name).toBe("getSpecContent");
+
+      // Step 2: provide content → CALL slideInSpecPanel
+      const slideStep = iterator.next("# My Spec\nSome content here");
+      expect((slideStep.value as any)?.type).toBe("CALL");
+      expect((slideStep.value as any)?.payload?.fn?.name).toBe("slideInSpecPanel");
+      expect((slideStep.value as any)?.payload?.args).toEqual(["ws-test"]);
     });
 
     it("yields delay(2000) when no content found and keeps polling", () => {
       const iterator = watchSpecPanelForWorkspace("ws-test");
 
-      // Step through effects looking for the delay effect (fn name is "delayP" in redux-saga)
-      let step = iterator.next();
-      let foundDelay = false;
-      let iterations = 0;
-      const MAX_ITERATIONS = 20;
-      while (!step.done && iterations < MAX_ITERATIONS) {
-        iterations++;
-        const value = step.value as any;
-        if (value?.type === "CALL" && value?.payload?.fn?.name === "delayP") {
-          expect(value.payload.args[0]).toBe(2000);
-          foundDelay = true;
-          break;
-        }
-        step = iterator.next();
-      }
-      expect(foundDelay).toBe(true);
+      // Step 1: CALL getSpecContent
+      const getContentStep = iterator.next();
+      expect((getContentStep.value as any)?.type).toBe("CALL");
+      expect((getContentStep.value as any)?.payload?.fn?.name).toBe("getSpecContent");
+
+      // Step 2: provide empty content → CALL delay(2000)
+      const delayStep = iterator.next("");
+      expect((delayStep.value as any)?.type).toBe("CALL");
+      expect((delayStep.value as any)?.payload?.fn?.name).toBe("delayP");
+      expect((delayStep.value as any)?.payload?.args[0]).toBe(2000);
     });
 
     it("clears deferSpecTab in finally block on normal exit", () => {
-      // Set up spec content so saga completes normally
-      selectSpecMock.mockReturnValue({ content: "# Spec content" });
-
       const iterator = watchSpecPanelForWorkspace("ws-test");
 
-      // Run to completion
-      let step = iterator.next();
-      while (!step.done) {
-        step = iterator.next();
-      }
-
-      // setDeferSpecTab should have been called with false in the finally block
-      expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
+      // Step 1: CALL getSpecContent — provide content to make saga complete
+      iterator.next();
+      // Step 2: CALL slideInSpecPanel — provide undefined return
+      iterator.next("# Spec content");
+      // Step 3: slideInSpecPanel returns → finally runs → PUT setDeferSpecTab(false)
+      const finallyStep = iterator.next();
+      expect((finallyStep.value as any)?.type).toBe("PUT");
+      expect((finallyStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-test", false));
+      expect(iterator.next()).toEqual({ value: undefined, done: true });
     });
 
     it("clears deferSpecTab in finally block on cancellation (via return)", () => {
@@ -349,11 +388,10 @@ describe("specPanelSaga", () => {
       // Start the saga
       iterator.next();
 
-      // Simulate cancellation by calling return
-      iterator.return(undefined);
-
-      // setDeferSpecTab should have been called with false in the finally block
-      expect(setDeferSpecTabMock).toHaveBeenCalledWith(false);
+      // Simulate cancellation by calling return — finally yields a PUT
+      const finallyStep = iterator.return(undefined);
+      expect((finallyStep.value as any)?.type).toBe("PUT");
+      expect((finallyStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-test", false));
     });
   });
 

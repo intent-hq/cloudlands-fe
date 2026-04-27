@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import type { WorkspaceId } from '$shared/types/branded-ids';
+
+const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 
 // Mock the dynamic imports used by handleLink
 vi.mock('$lib/utils/workspaces-link-handler', () => ({
@@ -18,53 +22,51 @@ vi.mock('$lib/components/ui/tooltip/link-tooltip-state.svelte', () => ({
   hideLinkTooltip: vi.fn(),
 }));
 
+const reduxDispatchMock = vi.fn();
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ dispatch: reduxDispatchMock, getState: () => ({}) }),
+}));
+
 describe('handleLink – devspace://terminal routing', () => {
-  let dispatchSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    reduxDispatchMock.mockClear();
   });
 
-  afterEach(() => {
-    dispatchSpy.mockRestore();
-  });
-
-  it('should dispatch workspace:open-terminal for devspace://terminal/{id}', async () => {
-    const result = await handleLink('devspace://terminal/term-123', {});
+  it('should dispatch openTerminalTabRequested for devspace://terminal/{id}', async () => {
+    const result = await handleLink('devspace://terminal/term-123', { workspaceId: TEST_WORKSPACE_ID });
 
     expect(result).toBe(true);
-    expect(dispatchSpy).toHaveBeenCalledOnce();
-
-    const event = dispatchSpy.mock.calls[0][0] as CustomEvent;
-    expect(event.type).toBe('workspace:open-terminal');
-    expect(event.detail).toEqual({ terminalId: 'term-123' });
+    expect(reduxDispatchMock).toHaveBeenCalledOnce();
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'term-123' }),
+    );
   });
 
   it('should decode URI-encoded terminal IDs', async () => {
-    const result = await handleLink('devspace://terminal/terminal%20with%20spaces', {});
+    const result = await handleLink('devspace://terminal/terminal%20with%20spaces', {
+      workspaceId: TEST_WORKSPACE_ID,
+    });
 
     expect(result).toBe(true);
-    const event = dispatchSpy.mock.calls[0][0] as CustomEvent;
-    expect(event.detail).toEqual({ terminalId: 'terminal with spaces' });
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'terminal with spaces' }),
+    );
   });
 
   it('should return false for unhandled devspace:// types', async () => {
-    const result = await handleLink('devspace://unknown/some-id', {});
+    const result = await handleLink('devspace://unknown/some-id', { workspaceId: TEST_WORKSPACE_ID });
 
     expect(result).toBe(false);
-    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
   });
 
   it('should not interfere with intent:// links', async () => {
-    const result = await handleLink('intent://local/note/spec', {});
+    const result = await handleLink('intent://local/note/spec', { workspaceId: TEST_WORKSPACE_ID });
 
     // intent:// links are handled by handleIntentLink (mocked to return true)
     expect(result).toBe(true);
-    // No workspace:open-terminal event should be dispatched
-    const terminalEvents = dispatchSpy.mock.calls.filter(
-      (call) => (call[0] as Event).type === 'workspace:open-terminal',
-    );
-    expect(terminalEvents).toHaveLength(0);
+    // No terminal action should be dispatched
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -96,52 +98,44 @@ function clickOn(el: HTMLElement): MouseEvent {
 }
 
 describe('createGlobalLinkClickHandler – click-path regression', () => {
-  let dispatchSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    reduxDispatchMock.mockClear();
   });
 
   afterEach(() => {
-    dispatchSpy.mockRestore();
     // Clean up any containers appended to body
     document.body.innerHTML = '';
   });
 
-  it('should route devspace://terminal links to workspace:open-terminal via click', async () => {
+  it('should route devspace://terminal links to openTerminalTabRequested via click', async () => {
     const { container, anchor } = buildContainerWithLink('devspace://terminal/abc-456');
-    const cleanup = createGlobalLinkClickHandler(container, {});
+    const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
 
     // Simulate a click on the anchor
     anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
     // Allow the async handler to settle
     await vi.waitFor(() => {
-      expect(dispatchSpy).toHaveBeenCalled();
+      expect(reduxDispatchMock).toHaveBeenCalled();
     });
 
-    const terminalEvents = dispatchSpy.mock.calls.filter(
-      (call) => (call[0] as Event).type === 'workspace:open-terminal',
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'abc-456' }),
     );
-    expect(terminalEvents).toHaveLength(1);
-    expect((terminalEvents[0][0] as CustomEvent).detail).toEqual({ terminalId: 'abc-456' });
 
     cleanup();
   });
 
   it('should still route intent:// links without dispatching terminal events', async () => {
     const { container, anchor } = buildContainerWithLink('intent://local/note/spec');
-    const cleanup = createGlobalLinkClickHandler(container, {});
+    const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
 
     anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
-    await vi.waitFor(() => {
-      // handleIntentLink mock resolves — no terminal event should fire
-      const terminalEvents = dispatchSpy.mock.calls.filter(
-        (call) => (call[0] as Event).type === 'workspace:open-terminal',
-      );
-      expect(terminalEvents).toHaveLength(0);
-    });
+    // Give async handler a tick
+    await new Promise((r) => setTimeout(r, 20));
+    // handleIntentLink mock resolves — no terminal action should fire
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
 
     cleanup();
   });
@@ -153,7 +147,7 @@ describe('createGlobalLinkClickHandler – click-path regression', () => {
     container.appendChild(span);
     document.body.appendChild(container);
 
-    const cleanup = createGlobalLinkClickHandler(container, {});
+    const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
 
     span.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
@@ -161,17 +155,14 @@ describe('createGlobalLinkClickHandler – click-path regression', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     // Nothing should have been dispatched
-    const terminalEvents = dispatchSpy.mock.calls.filter(
-      (call) => (call[0] as Event).type === 'workspace:open-terminal',
-    );
-    expect(terminalEvents).toHaveLength(0);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
 
     cleanup();
   });
 
   it('cleanup should remove the click listener', async () => {
     const { container, anchor } = buildContainerWithLink('devspace://terminal/cleanup-test');
-    const cleanup = createGlobalLinkClickHandler(container, {});
+    const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
 
     // Remove the handler
     cleanup();
@@ -180,27 +171,21 @@ describe('createGlobalLinkClickHandler – click-path regression', () => {
     anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     await new Promise((r) => setTimeout(r, 20));
 
-    const terminalEvents = dispatchSpy.mock.calls.filter(
-      (call) => (call[0] as Event).type === 'workspace:open-terminal',
-    );
-    expect(terminalEvents).toHaveLength(0);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
   });
 });
 
 describe('createLinkClickHandler (deprecated) – click-path regression', () => {
-  let dispatchSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    reduxDispatchMock.mockClear();
   });
 
   afterEach(() => {
-    dispatchSpy.mockRestore();
     document.body.innerHTML = '';
   });
 
   it('should route devspace://terminal links through handleLink', async () => {
-    const handler = createLinkClickHandler({});
+    const handler = createLinkClickHandler({ workspaceId: TEST_WORKSPACE_ID });
 
     const { anchor } = buildContainerWithLink('devspace://terminal/legacy-term');
 
@@ -208,11 +193,9 @@ describe('createLinkClickHandler (deprecated) – click-path regression', () => 
     const event = clickOn(anchor);
     await handler(event);
 
-    const terminalEvents = dispatchSpy.mock.calls.filter(
-      (call) => (call[0] as Event).type === 'workspace:open-terminal',
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openTerminalTabRequested(TEST_WORKSPACE_ID, { terminalId: 'legacy-term' }),
     );
-    expect(terminalEvents).toHaveLength(1);
-    expect((terminalEvents[0][0] as CustomEvent).detail).toEqual({ terminalId: 'legacy-term' });
   });
 });
 

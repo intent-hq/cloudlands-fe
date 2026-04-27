@@ -26,6 +26,8 @@
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   interface Props {
     agents?: AgentSession[];
@@ -86,13 +88,11 @@
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: {
-            agentId: agent.id,
-            sourcePanelId,
-            openInAdjacentPanel,
-          },
+      getReduxStore().dispatch(
+        openAgentTabRequested(agent.workspaceId, {
+          agentId: agent.id,
+          sourcePanelId,
+          openInAdjacentPanel,
         }),
       );
     }

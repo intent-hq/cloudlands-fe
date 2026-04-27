@@ -26,15 +26,18 @@
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('MessageContent');
 
   interface Props {
     content: ContentBlock[];
     isStreaming?: boolean;
+    workspaceId?: string;
   }
 
-  let { content, isStreaming = false }: Props = $props();
+  let { content, isStreaming = false, workspaceId }: Props = $props();
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -191,15 +194,13 @@
     sourcePanelId?: string;
   }) {
     logger.info('Opening file from message content', detail);
-    // Dispatch workspace:open-file event with openInAdjacentPanel and sourcePanelId for panel layout support
-    const event = new CustomEvent('workspace:open-file', {
-      detail: {
-        path: detail.path,
+    if (!workspaceId) return;
+    getReduxStore().dispatch(
+      openWorkspaceFile(workspaceId, detail.path, {
         openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
         sourcePanelId: detail.sourcePanelId,
-      },
-    });
-    window.dispatchEvent(event);
+      }),
+    );
   }
 
   // Handle diagram binding clicks (file, note, etc.)
@@ -211,14 +212,9 @@
     if (binding.type === 'file') {
       handleOpenFile({ path: binding.target, openInAdjacentPanel, sourcePanelId });
     } else if (binding.type === 'note') {
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-note', {
-          detail: {
-            noteId: binding.target,
-            openInAdjacentPanel,
-            sourcePanelId,
-          },
-        }),
+      if (!workspaceId) return;
+      getReduxStore().dispatch(
+        openWorkspaceNote(workspaceId, binding.target, { openInAdjacentPanel, sourcePanelId }),
       );
     }
   }
@@ -338,7 +334,7 @@
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = toolResult ? toolResult.content : null}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} />
+      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
     </div>
   {:else if block.type === 'tool_result'}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
@@ -367,6 +363,7 @@
                 toolUse={nestedToolBlock}
                 toolState={nestedToolState}
                 result={nestedResultContent}
+                {workspaceId}
               />
             {/if}
           {/each}

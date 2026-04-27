@@ -11,6 +11,8 @@
   import { fly } from 'svelte/transition';
   import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 
   interface Props {
     workspaceId: string;
@@ -515,9 +517,9 @@
                 {workspaceId}
                 {handleFileSelect}
                 onShowAgent={(agentId) => {
-                  // Dispatch event to open agent in panel
-                  window.dispatchEvent(
-                    new CustomEvent('workspace:open-agent', { detail: { agentId } }),
+                  // Dispatch action to open agent in panel
+                  getReduxStore().dispatch(
+                    openAgentTabRequested(workspaceId, { agentId }),
                   );
                 }}
               />

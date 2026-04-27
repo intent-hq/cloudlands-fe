@@ -19,6 +19,7 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -30,9 +31,10 @@
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
+    workspaceId?: string;
   }
 
-  let { toolUse, toolState = 'completed', result = null }: Props = $props();
+  let { toolUse, toolState = 'completed', result = null, workspaceId }: Props = $props();
 
   // Check if this is a context engine tool (special Augment branding)
   const isContextEngine = $derived(isContextEngineTool(toolUse.name));
@@ -179,15 +181,14 @@
             const openInAdjacentPanel = e.metaKey || e.ctrlKey;
             if (openInAdjacentPanel) {
               const sourcePanelId = getPanelIdFromEvent(e);
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-note', {
-                  detail: {
-                    noteId: toolDisplay.noteId,
+              if (workspaceId && toolDisplay.noteId) {
+                getReduxStore().dispatch(
+                  openWorkspaceNote(workspaceId, toolDisplay.noteId, {
                     openInAdjacentPanel,
                     sourcePanelId,
-                  },
-                }),
-              );
+                  }),
+                );
+              }
             } else {
               await handleIntentLink(noteUrl(toolDisplay.noteId!));
             }
@@ -220,16 +221,15 @@
               e.stopPropagation();
               const openInAdjacentPanel = e.metaKey || e.ctrlKey;
               const sourcePanelId = getPanelIdFromEvent(e);
-              window.dispatchEvent(
-                new CustomEvent('workspace:open-file', {
-                  detail: {
-                    path: toolDisplay.filePath,
-                    line: toolDisplay.fileLine,
+              if (workspaceId && toolDisplay.filePath) {
+                getReduxStore().dispatch(
+                  openWorkspaceFile(workspaceId, toolDisplay.filePath, {
+                    line: toolDisplay.fileLine ?? undefined,
                     openInAdjacentPanel,
                     sourcePanelId,
-                  },
-                }),
-              );
+                  }),
+                );
+              }
             }}
           >
             <span
@@ -289,7 +289,7 @@
 
   {#if expanded}
     <div class="ml-1" transition:expand>
-      <ToolDetails input={toolUse.input} {result} {parsedResult} isError={toolState === 'error'} />
+      <ToolDetails input={toolUse.input} {result} {parsedResult} isError={toolState === 'error'} {workspaceId} />
     </div>
   {/if}
 {/if}

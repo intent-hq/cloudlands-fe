@@ -23,6 +23,7 @@
   import { selectSelectedNoteId, selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { getReduxStore, getReduxDispatch, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
   import { reloadNotes, updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { delegateExistingTaskRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
   import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
   import { NOTES_CHANNELS } from '$shared/ipc/channels';
@@ -259,12 +260,11 @@
 
   function emitLinkedTaskDelegateEvent() {
     if (!linkedTaskNoteId) return;
-    window.dispatchEvent(
-      new CustomEvent('delegate-task', {
-        detail: { taskText: linkedTaskTitle, noteId: linkedTaskNoteId, openAgent: false },
-        bubbles: true,
-      }),
-    );
+    // Prefer the linked note's own workspaceId (it may differ from the active workspace
+    // if the task lives in a different workspace), fall back to the active workspace.
+    const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
+    if (!wsId) return;
+    reduxDispatch(delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false));
   }
 
   function convertToInlineTask() {

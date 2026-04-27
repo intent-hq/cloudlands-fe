@@ -1,9 +1,9 @@
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import {
   takeEveryFromElectronChannel,
   takeEveryFromListenSync,
 } from "$lib/store/utils/ipc-channel";
+import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import { call, delay, fork, put } from "typed-redux-saga";
 import type {
@@ -25,13 +25,6 @@ function registerBeforeUnloadFlush(handler: () => void): () => void {
   return () => {
     window.removeEventListener("beforeunload", handler);
   };
-}
-
-function flushPendingWorkspaceDeletions(): void {
-  const pendingDeletions = selectWorkspacePendingDeletions.select(getReduxStore().getState());
-  for (const wsId of Object.keys(pendingDeletions)) {
-    void workspaceClient.delete(WorkspaceId(wsId));
-  }
 }
 
 export function* watchWorkspaceUpdatedSaga() {
@@ -60,8 +53,19 @@ export function* watchTaskStatusChangedSaga() {
 }
 
 export function* watchWorkspaceBeforeUnloadSaga() {
+  // Capture the latest pending deletions in a closure so the beforeunload
+  // handler (a non-saga callback) can read them without calling .select().
+  // Initial snapshot, then keep updated via selector channel.
+  let latestPendingDeletions = yield* selectWorkspacePendingDeletions.effect();
+
+  yield* takeLatestFromSelector(selectWorkspacePendingDeletions, function* ({ payload }) {
+    latestPendingDeletions = payload;
+  });
+
   const removeListener: () => void = yield* call(registerBeforeUnloadFlush, () => {
-    flushPendingWorkspaceDeletions();
+    for (const wsId of Object.keys(latestPendingDeletions)) {
+      void workspaceClient.delete(WorkspaceId(wsId));
+    }
   });
 
   try {

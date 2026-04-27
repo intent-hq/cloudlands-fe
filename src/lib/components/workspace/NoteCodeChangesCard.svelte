@@ -25,6 +25,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
+  import { openWorkspaceChatChanges, openWorkspaceDiff, type JsonValue } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('NoteCodeChangesCard');
 
@@ -33,8 +34,7 @@
     note: Note;
   }
 
-   
-  let { workspaceId: _workspaceId, note }: Props = $props();
+  let { workspaceId, note }: Props = $props();
 
   const ftChanges$ = selectCurrentChanges();
 
@@ -178,22 +178,18 @@
           : undefined,
     };
 
-    const detail = {
-      change: changeData,
-      filePath: change.filePath,
-      changeId: trackedChange?.id || `chat-change-${change.filePath}`,
-    };
-    window.dispatchEvent(new CustomEvent('workspace:open-diff', { detail }));
+    getReduxStore().dispatch(
+      openWorkspaceDiff(workspaceId, changeData, {
+        changeId: trackedChange?.id || `chat-change-${change.filePath}`,
+        filePath: change.filePath,
+      }),
+    );
   }
 
   function handleViewAllClick() {
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-chat-changes', {
-        detail: {
-          changes,
-          title: `Changes from: ${note.title || 'Task'}`,
-          isAggregate: true,
-        },
+    getReduxStore().dispatch(
+      openWorkspaceChatChanges(workspaceId, changes as unknown as JsonValue[], `Changes from: ${note.title || 'Task'}`, {
+        isAggregate: true,
       }),
     );
   }

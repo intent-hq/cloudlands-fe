@@ -65,6 +65,7 @@
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
+  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const dispatch = getDispatch();
 
@@ -379,15 +380,11 @@
       );
       if (stagedChange) {
         logger.info('[handleStageFile] Updating selection to staged version', { path });
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-diff', {
-            detail: {
-              change: stagedChange,
-              filePath: stagedChange.relativePath || stagedChange.file,
-              changeId: stagedChange.id,
-              staged: true,
-              forceUpdate: true,
-            },
+        getReduxStore().dispatch(
+          openWorkspaceDiff(workspaceId, stagedChange, {
+            changeId: stagedChange.id,
+            filePath: stagedChange.relativePath || stagedChange.file,
+            forceUpdate: true,
           }),
         );
       }
@@ -412,15 +409,11 @@
       );
       if (unstagedChange) {
         logger.info('[handleUnstageFile] Updating selection to unstaged version', { path });
-        window.dispatchEvent(
-          new CustomEvent('workspace:open-diff', {
-            detail: {
-              change: unstagedChange,
-              filePath: unstagedChange.relativePath || unstagedChange.file,
-              changeId: unstagedChange.id,
-              staged: false,
-              forceUpdate: true,
-            },
+        getReduxStore().dispatch(
+          openWorkspaceDiff(workspaceId, unstagedChange, {
+            changeId: unstagedChange.id,
+            filePath: unstagedChange.relativePath || unstagedChange.file,
+            forceUpdate: true,
           }),
         );
       }

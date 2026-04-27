@@ -26,6 +26,8 @@
   import { selectLineWrapping, selectDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { toggleLineWrapping, toggleDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faPaintbrush, faTextWidth, faPencil, faTrash, faEye, faCode } from '@fortawesome/free-solid-svg-icons';
@@ -370,15 +372,11 @@
       if (result.success) {
         originalFileContent = fileContent;
         // Emit file:changed for listeners like specialist reload saga
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: {
-              workspaceId,
-              files: [fileAbsolutePath],
-              type: 'change',
-            },
-          }),
-        );
+        dispatchWindowEvent('file:changed', {
+          workspaceId,
+          files: [fileAbsolutePath],
+          type: 'change',
+        });
       }
     } catch (err) {
       logger.error('[FileTabType] Error saving file', { filePath: fileAbsolutePath, error: err });
@@ -455,15 +453,12 @@
     const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
     const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-diff', {
-        detail: {
-          change: fileChange,
-          filePath: tab.filePath,
-          changeId: fileChange.id,
-          openInAdjacentPanel,
-          sourcePanelId,
-        },
+    dispatch(
+      openWorkspaceDiff(workspaceId, fileChange, {
+        filePath: tab.filePath,
+        changeId: fileChange.id,
+        openInAdjacentPanel,
+        sourcePanelId,
       }),
     );
   }
@@ -489,11 +484,7 @@
         }
         // Close the tab
         getReduxStore().dispatch(closeTab(workspaceId, tab.id));
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: { workspaceId, type: 'delete', filePath },
-          }),
-        );
+        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
         track('Deleted File', {
           workspace_id: workspaceId,
           file_extension: getFileExtension(filePath),
@@ -506,11 +497,7 @@
           content: savedContent,
           workspaceId,
         });
-        window.dispatchEvent(
-          new CustomEvent('file:changed', {
-            detail: { workspaceId, type: 'create', filePath },
-          }),
-        );
+        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
       },
     );
   }

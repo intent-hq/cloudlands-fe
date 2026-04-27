@@ -29,7 +29,6 @@
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
-    toggleTerminalOverlay,
     selectTerminal as selectTerminalAction,
     addTerminal,
     removeTerminal,
@@ -290,31 +289,15 @@
       return !window.location.pathname.startsWith('/workspace/');
     }
 
-    function handleToggle(event: Event) {
-      if (!isForRootOverlay(event)) return;
-      dispatch(toggleTerminalOverlay(ROOT_WORKSPACE_ID));
-    }
-
     function handleCreateNew(event: Event) {
       if (!isForRootOverlay(event)) return;
       createNewTerminal();
     }
 
-    function handleCloseActive(event: Event) {
-      if (!isForRootOverlay(event)) return;
-      if ($activeTerminalId) {
-        closeTerminal($activeTerminalId);
-      }
-    }
-
-    window.addEventListener('terminal:toggle-overlay', handleToggle);
-    window.addEventListener('terminal:create-new', handleCreateNew);
-    window.addEventListener('terminal:close-active', handleCloseActive);
+    window.addEventListener('workspace:new-terminal', handleCreateNew);
 
     return () => {
-      window.removeEventListener('terminal:toggle-overlay', handleToggle);
-      window.removeEventListener('terminal:create-new', handleCreateNew);
-      window.removeEventListener('terminal:close-active', handleCloseActive);
+      window.removeEventListener('workspace:new-terminal', handleCreateNew);
     };
   });
 

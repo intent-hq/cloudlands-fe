@@ -317,8 +317,17 @@ describe("workspaceSaga", () => {
 
   it("registers a beforeunload listener that flushes pending deletions", () => {
     const iterator = watchWorkspaceBeforeUnloadSaga();
-    const effect = iterator.next().value as any;
 
+    // 1. Initial snapshot via selector effect
+    const selectEffect = iterator.next().value as any;
+    expect(selectEffect.type).toBe("SELECT");
+
+    // 2. Fork a takeLatestFromSelector subscription
+    const forkEffect = iterator.next({ "ws-1": true }).value as any;
+    expect(forkEffect.type).toBe("FORK");
+
+    // 3. Register the beforeunload listener via CALL
+    const effect = iterator.next().value as any;
     expect(effect.type).toBe("CALL");
     const handler = effect.payload.args[0] as () => void;
     handler();

@@ -343,7 +343,7 @@ describe('CommitsTimeline', () => {
     });
   });
 
-  it('handleCommitFileClick: fetches file contents and dispatches workspace:open-diff CustomEvent', async () => {
+  it('handleCommitFileClick: fetches file contents and dispatches openWorkspaceDiff', async () => {
     mocks.ftCommits.push(
       makeCommit('abc', 'feat: one', {
         files: [{ path: 'src/a.ts', additions: 1, deletions: 0 } as unknown as CommitInfo['files'][number]],
@@ -357,10 +357,6 @@ describe('CommitsTimeline', () => {
       return { success: true };
     });
 
-    const diffEvents: CustomEvent[] = [];
-    const listener = (e: Event) => diffEvents.push(e as CustomEvent);
-    window.addEventListener('workspace:open-diff', listener);
-
     const { container } = await renderTimeline();
     const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
       b.getAttribute('title') === 'Toggle file list',
@@ -371,14 +367,25 @@ describe('CommitsTimeline', () => {
     const fileClick = container.querySelector('[data-testid="file-click"]') as HTMLButtonElement;
     await fireEvent.click(fileClick);
 
-    await waitFor(() => expect(diffEvents.length).toBeGreaterThan(0));
-    const detail = diffEvents[0].detail as { change: Record<string, unknown>; filePath: string };
-    expect(detail.filePath).toBe('src/a.ts');
-    expect(detail.change.commitHash).toBe('abc');
-    expect(detail.change.stage).toBeDefined();
-    expect((detail.change.content as { newContent: string }).newContent).toBe('new');
-    expect((detail.change.content as { oldContent: string }).oldContent).toBe('old');
+    await waitFor(() => {
+      const diffCall = reduxDispatch.mock.calls.find(
+        ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
+      );
+      expect(diffCall).toBeDefined();
+    });
 
-    window.removeEventListener('workspace:open-diff', listener);
+    const diffCall = reduxDispatch.mock.calls.find(
+      ([action]) => action?.type === 'workspaceNavigation/openWorkspaceDiff',
+    )!;
+    const [, change, options] = diffCall[0].payload as [
+      string,
+      Record<string, unknown>,
+      { filePath?: string },
+    ];
+    expect(options.filePath).toBe('src/a.ts');
+    expect(change.commitHash).toBe('abc');
+    expect(change.stage).toBeDefined();
+    expect((change.content as { newContent: string }).newContent).toBe('new');
+    expect((change.content as { oldContent: string }).oldContent).toBe('old');
   });
 });

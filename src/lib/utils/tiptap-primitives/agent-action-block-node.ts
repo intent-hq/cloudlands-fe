@@ -9,6 +9,7 @@ import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { AgentActionPrimitive } from '../../../shared/types/notes-primitives';
 import AgentActionBlock from '../../components/notes/primitives/AgentActionBlock.svelte';
 import { decodeBase64Unicode } from './index';
+import { dispatchWindowEvent } from '../window-events';
 
 export interface AgentActionBlockOptions {
   HTMLAttributes: Record<string, any>;
@@ -222,7 +223,7 @@ export const AgentActionBlockNode = Node.create<AgentActionBlockOptions>({
           const primitive = node.attrs.data as AgentActionPrimitive;
           if (primitive) {
             // Dispatch custom event for running the action
-            window.dispatchEvent(new CustomEvent('run-agent-action', { detail: primitive }));
+            dispatchWindowEvent('run-agent-action', primitive);
             return true;
           }
         }

@@ -12,6 +12,7 @@
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   
 const logger = createLogger('TaskAgentStatus');
 
@@ -608,11 +609,16 @@ const logger = createLogger('TaskAgentStatus');
       const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-agent', {
-          detail: { agentId, sourcePanelId, openInAdjacentPanel },
-        }),
-      );
+      const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+      if (wsId) {
+        getReduxStore().dispatch(
+          openAgentTabRequested(wsId, {
+            agentId,
+            sourcePanelId,
+            openInAdjacentPanel,
+          }),
+        );
+      }
     }
   };
 </script>

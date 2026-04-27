@@ -43,28 +43,16 @@
     }
   });
 
-  // Listen for terminal:toggle-search event from TerminalAdapter
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-
-    function handleToggleSearch(e: CustomEvent<{ terminalId: string }>) {
-      // Only respond if this event is for our terminal
-      if (e.detail?.terminalId !== terminalId) return;
-
-      if (searchOpen) {
-        // Already open - close it
-        handleSearchClose();
-      } else {
-        searchOpen = true;
-      }
+  // Toggle the search bar in response to the per-terminal callback
+  // wired up in loadTerminal(). The callback is invoked by TerminalAdapter
+  // when Cmd+F is pressed inside the matching terminal.
+  function handleToggleSearch() {
+    if (searchOpen) {
+      handleSearchClose();
+    } else {
+      searchOpen = true;
     }
-
-    window.addEventListener('terminal:toggle-search', handleToggleSearch as EventListener);
-
-    return () => {
-      window.removeEventListener('terminal:toggle-search', handleToggleSearch as EventListener);
-    };
-  });
+  }
 
   /**
    * Load terminal
@@ -113,6 +101,7 @@
             totalMatches = resultCount;
             hasMatches = resultCount > 0;
           },
+          onToggleSearch: handleToggleSearch,
         },
         false, // Never force new - let the manager decide based on whether it exists
       );

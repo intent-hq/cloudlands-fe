@@ -20,6 +20,9 @@
     selectAgentById,
     selectAllWorkspaceAgents,
   } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openWorkspaceChatChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { runAgentForNoteRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -105,22 +108,19 @@
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-    window.dispatchEvent(
-      new CustomEvent('workspace:open-agent', {
-        detail: { agentId, sourcePanelId, openInAdjacentPanel },
+    getReduxStore().dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId,
+        sourcePanelId,
+        openInAdjacentPanel,
       }),
     );
   }
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
-    window.dispatchEvent(
-      new CustomEvent('run-agent-for-note', {
-        detail: {
-          noteId: note.id,
-          noteTitle: note.title || 'Task',
-        },
-      }),
+    getReduxStore().dispatch(
+      runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'),
     );
   }
 
@@ -155,14 +155,13 @@
       const changes = await getAggregateChanges();
       if (changes.length === 0) return;
 
-      window.dispatchEvent(
-        new CustomEvent('workspace:open-chat-changes', {
-          detail: {
-            changes,
-            title: `Changes from task: ${note.title || 'Task'}`,
-            isAggregate: true,
-          },
-        }),
+      getReduxStore().dispatch(
+        openWorkspaceChatChanges(
+          workspaceId as string,
+          changes as never,
+          `Changes from task: ${note.title || 'Task'}`,
+          { isAggregate: true },
+        ),
       );
     } catch (error) {
       logger.error('Error viewing all changes', error);

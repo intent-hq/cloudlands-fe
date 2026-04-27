@@ -17,6 +17,7 @@
     enableTransitions?: boolean;
     animationDuration?: number;
     onCopy?: (content: string) => void;
+    workspaceId?: string;
   }
 
   let {
@@ -31,6 +32,7 @@
     enableTransitions = true,
     animationDuration = 300,
     onCopy,
+    workspaceId,
   }: Props = $props();
 
   // PERF: Cache for filtered messages to avoid re-filtering on unrelated updates
@@ -107,6 +109,7 @@
             <StreamingMessageContent
               content={streamingContent || message.contentBlocks || []}
               isStreaming={true}
+              {workspaceId}
             />
           {:else}
             <!-- Completed message -->

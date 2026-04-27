@@ -12,6 +12,8 @@
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
@@ -202,11 +204,16 @@
             const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
             const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
             const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            window.dispatchEvent(
-              new CustomEvent('workspace:open-agent', {
-                detail: { agentId: agentData.id, sourcePanelId, openInAdjacentPanel },
-              }),
-            );
+            const wsId = $activeWorkspace?.id;
+            if (wsId) {
+              getReduxStore().dispatch(
+                openAgentTabRequested(wsId, {
+                  agentId: agentData.id,
+                  sourcePanelId,
+                  openInAdjacentPanel,
+                }),
+              );
+            }
           }}
         >
           <Fa icon={faArrowRight} class="h-3 w-3" />

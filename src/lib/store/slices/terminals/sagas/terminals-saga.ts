@@ -9,6 +9,7 @@ import {
 } from "./persistence-saga";
 import { watchTerminalCreated, watchTerminalDisposed } from "./ipc-saga";
 import { watchSetWorkspace, watchOpenWithWorkspace } from "./workspace-init-saga";
+import { watchCloseActiveTerminal } from "./close-active-saga";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -48,6 +49,9 @@ export function* terminalsSaga() {
 
   // Fork IPC listener for terminal:disposed events (uses saga channel)
   yield* fork(watchTerminalDisposed);
+
+  // Fork keyboard-triggered close-active terminal watcher
+  yield* fork(watchCloseActiveTerminal);
 
   // Fork workspace init watchers
   yield* fork(watchSetWorkspace);

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
+const takeEveryActionMock = vi.fn();
+
 vi.mock("typed-redux-saga", () => ({
   cancel: function* (task: any) {
     return yield {
@@ -26,7 +28,7 @@ vi.mock("typed-redux-saga", () => ({
     return yield sagaEffects.take(patternOrChannel);
   },
   takeEvery: function* (pattern: any, saga: any, ...args: any[]) {
-    return yield sagaEffects.takeEvery(pattern, saga, ...args);
+    takeEveryActionMock(pattern, saga, ...args);
   },
 }));
 
@@ -139,17 +141,21 @@ import {
   updateTabBrowserUrl as updateTabBrowserUrlAction,
 } from "../../panel-layout/panel-layout-slice";
 import { selectAllTabs } from "../../panel-layout/panel-layout-selectors";
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
 import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from "../../workspace-navigation/workspace-navigation-slice";
+import {
+  createWorkspaceForRepoRequested,
+  openNewSpaceModalRequested,
+  requestPanelFocus,
+  showAgentRequested,
+} from "../app-layout-slice";
+import {
   appLayoutSaga,
-  cancelWorkspaceWindowEventsForWorkspaceSaga,
-  retroactiveAppLayoutMountCheckSaga,
   watchBrowserOpenTabSaga,
   watchMenuNewAgentSaga,
   watchNavigateSaga,
@@ -174,22 +180,20 @@ import {
   watchOpenTerminalSaga,
   watchShowAgentSaga,
   watchWorkspaceWindowEventLifecyclesSaga,
-  watchWorkspaceWindowEventsForWorkspaceSaga,
   watchWorkspaceWindowEventsSaga,
 } from "./app-layout-saga";
-import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { specPanelSaga } from "./spec-panel-saga";
-
-function getWindowEventHandler(eventName: string) {
-  const call = takeEveryFromWindowEventMock.mock.calls.find(([name]) => name === eventName);
-  expect(call).toBeDefined();
-  return call![1] as (data: any) => Generator;
-}
 
 function getElectronHandler(eventName: string) {
   const call = takeEveryFromElectronChannelMock.mock.calls.find(([name]) => name === eventName);
   expect(call).toBeDefined();
   return call![1] as (data: any) => Generator;
+}
+
+function getTakeEveryHandler(actionType: string) {
+  const call = takeEveryActionMock.mock.calls.find(([pattern]) => pattern === actionType);
+  expect(call).toBeDefined();
+  return call![1] as (action: { payload: unknown }) => Generator;
 }
 
 
@@ -227,7 +231,11 @@ describe("appLayoutSaga", () => {
     };
     reduxState.agentSessions = {
       byAgentId: {
-        "agent-1": { id: "agent-1", name: "Agent One" },
+        "agent-1": {
+          id: "agent-1",
+          name: "Agent One",
+          messages: { ids: [], map: {} },
+        },
       },
     };
     getFileExtensionMock.mockReturnValue("ts");
@@ -287,20 +295,22 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
+      value: sagaEffects.fork(watchWorkspaceWindowEventsSaga),
       done: false,
     });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(retroactiveAppLayoutMountCheckSaga),
+      value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
       done: false,
     });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(specPanelSaga), done: false });
     expect((iterator.next().value as any)?.type).toBe("FORK");
     expect((iterator.next().value as any)?.type).toBe("FORK");
+    expect((iterator.next().value as any)?.type).toBe("FORK");
+    expect((iterator.next().value as any)?.type).toBe("FORK");
     expect(iterator.next()).toEqual({ value: undefined, done: true });
   });
 
-  it("forks the workspace window event lifecycle watcher", () => {
+  it("forks the workspace window event watcher and lifecycle watcher", () => {
     const iterator = appLayoutSaga();
 
     for (let index = 0; index < 16; index += 1) {
@@ -308,78 +318,28 @@ describe("appLayoutSaga", () => {
     }
 
     expect(iterator.next()).toEqual({
+      value: sagaEffects.fork(watchWorkspaceWindowEventsSaga),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({
       value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
       done: false,
     });
   });
 
   it("forks individual workspace window watchers", () => {
-    const iterator = watchWorkspaceWindowEventsSaga("ws-current");
+    const iterator = watchWorkspaceWindowEventsSaga();
 
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchShowAgentSaga, "ws-current"), done: false });
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenFileSaga, "ws-current"), done: false });
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenDiffSaga, "ws-current"), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchShowAgentSaga), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenFileSaga), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenDiffSaga), done: false });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchOpenCommitChangesetSaga, "ws-current"),
+      value: sagaEffects.fork(watchOpenCommitChangesetSaga),
       done: false,
     });
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenNoteSaga, "ws-current"), done: false });
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenAgentSaga, "ws-current"), done: false });
-    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenTerminalSaga, "ws-current"), done: false });
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-  });
-
-  it("registers workspace window watchers on mount and cancels them from the unmount handler", () => {
-    const task = { id: "task-1" };
-    const dockNavigationTask = { id: "task-2" };
-    const mountIterator = watchWorkspaceWindowEventsForWorkspaceSaga(workspaceMounted("ws-current"));
-
-    expect(mountIterator.next()).toEqual({
-      value: sagaEffects.fork(watchWorkspaceWindowEventsSaga, "ws-current"),
-      done: false,
-    });
-    expect(mountIterator.next(task)).toEqual({
-      value: sagaEffects.fork(createDockNavigationWatcherMock, "ws-current"),
-      done: false,
-    });
-    expect(mountIterator.next(dockNavigationTask)).toEqual({ value: undefined, done: true });
-
-    const cancelIterator = cancelWorkspaceWindowEventsForWorkspaceSaga(
-      workspaceUnmounted("ws-current")
-    );
-
-    expect(cancelIterator.next()).toEqual({
-      value: {
-        "@@redux-saga/IO": true,
-        combinator: false,
-        type: "CANCEL",
-        payload: task,
-      },
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
-      value: {
-        "@@redux-saga/IO": true,
-        combinator: false,
-        type: "CANCEL",
-        payload: dockNavigationTask,
-      },
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
-  });
-
-  it("subscribes to workspace mount and unmount events for window routing", () => {
-    const iterator = watchWorkspaceWindowEventLifecyclesSaga();
-
-    expect(iterator.next()).toEqual({
-      value: sagaEffects.takeEvery(workspaceMounted, watchWorkspaceWindowEventsForWorkspaceSaga),
-      done: false,
-    });
-    expect(iterator.next()).toEqual({
-      value: sagaEffects.takeEvery(workspaceUnmounted, cancelWorkspaceWindowEventsForWorkspaceSaga),
-      done: false,
-    });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenNoteSaga), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenAgentSaga), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenTerminalSaga), done: false });
     expect(iterator.next()).toEqual({ value: undefined, done: true });
   });
 
@@ -409,16 +369,17 @@ describe("appLayoutSaga", () => {
       },
     };
 
-    const iterator = watchShowAgentSaga("ws-current");
-
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(takeEveryFromWindowEventMock).toHaveBeenCalledWith(
-      "workspace:show-agent",
+    const iterator = watchShowAgentSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      showAgentRequested.type,
       expect.any(Function),
     );
 
-    const handler = getWindowEventHandler("workspace:show-agent");
-    expect(handler({ agentId: "agent-1" }).next()).toEqual({ value: undefined, done: true });
+    const handler = getTakeEveryHandler(showAgentRequested.type);
+    expect(
+      handler({ payload: ["ws-current", { agentId: "agent-1" }] }).next(),
+    ).toEqual({ value: undefined, done: true });
 
     // The saga now dispatches Redux actions directly via store.dispatch()
     expect(dispatchMock).toHaveBeenCalledWith(focusPanelAction("ws-current", "panel-1"));
@@ -446,26 +407,33 @@ describe("appLayoutSaga", () => {
       },
     };
 
-    const iterator = watchOpenFileSaga("ws-current");
-
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(takeEveryFromWindowEventMock).toHaveBeenCalledWith(
-      "workspace:open-file",
+    const iterator = watchOpenFileSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      openWorkspaceFile.type,
       expect.any(Function),
-      {
-        capture: true,
-        stopImmediatePropagation: true,
-      },
     );
 
-    const handler = getWindowEventHandler("workspace:open-file");
-    expect(
-      handler({
-        filePath: "src/main.ts",
-        openInAdjacentPanel: true,
-        sourcePanelId: "panel-1",
-      }).next(),
-    ).toEqual({ value: undefined, done: true });
+    const handler = getTakeEveryHandler(openWorkspaceFile.type);
+    const handlerIterator = handler({
+      payload: [
+        "ws-current",
+        "src/main.ts",
+        { openInAdjacentPanel: true, sourcePanelId: "panel-1" },
+      ],
+    });
+    // openWorkspaceTab dispatches synchronously, then yields selectFocusedPanelId.effect()
+    let step = handlerIterator.next();
+    expect(step.done).toBe(false);
+    // Provide focused panel id; handler then yields a put(requestPanelFocus(...)) effect.
+    step = handlerIterator.next("panel-2");
+    expect(step.done).toBe(false);
+    expect(step.value).toEqual(
+      sagaEffects.put(requestPanelFocus("ws-current", "panel-2")),
+    );
+    // After the put effect, track runs synchronously and the handler completes.
+    step = handlerIterator.next();
+    expect(step.done).toBe(true);
 
     // The saga now dispatches Redux actions directly via store.dispatch()
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -486,9 +454,6 @@ describe("appLayoutSaga", () => {
       workspace_id: "ws-current",
       file_extension: "ts",
     });
-    expect(windowStub.dispatchEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "panel:request-focus" }),
-    );
   });
 
   it("opens notes in an adjacent panel when launched from an active agent tab", () => {
@@ -518,26 +483,38 @@ describe("appLayoutSaga", () => {
       },
     };
 
-    const iterator = watchOpenNoteSaga("ws-current");
-
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(takeEveryFromWindowEventMock).toHaveBeenCalledWith(
-      "workspace:open-note",
+    const iterator = watchOpenNoteSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      openWorkspaceNote.type,
       expect.any(Function),
-      {
-        capture: true,
-        stopImmediatePropagation: true,
-      },
     );
 
-    const handler = getWindowEventHandler("workspace:open-note");
-    expect(
-      handler({
-        noteId: "note-1",
-        openInAdjacentPanel: false,
-        sourcePanelId: "panel-1",
-      }).next(),
-    ).toEqual({ value: undefined, done: true });
+    const handler = getTakeEveryHandler(openWorkspaceNote.type);
+    const handlerIterator = handler({
+      payload: [
+        "ws-current",
+        "note-1",
+        { openInAdjacentPanel: false, sourcePanelId: "panel-1" },
+      ],
+    });
+    // selectPanel.effect → selectNoteById.effect → dispatch openTabInAdjacentOrSplit → selectFocusedPanelId.effect
+    let step = handlerIterator.next();
+    expect(step.done).toBe(false);
+    step = handlerIterator.next({
+      tabs: [{ id: "tab-agent", type: "agent" }],
+      activeTabId: "tab-agent",
+    });
+    expect(step.done).toBe(false);
+    step = handlerIterator.next({ id: "note-1", title: "Note One" });
+    expect(step.done).toBe(false);
+    step = handlerIterator.next("panel-2");
+    expect(step.done).toBe(false);
+    expect(step.value).toEqual(
+      sagaEffects.put(requestPanelFocus("ws-current", "panel-2")),
+    );
+    step = handlerIterator.next();
+    expect(step.done).toBe(true);
 
     // The saga detects the active tab is an agent tab and opens in adjacent panel
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -624,10 +601,20 @@ describe("appLayoutSaga", () => {
       value: sagaEffects.call(isFocusInTerminalMock),
       done: false,
     });
-    expect(handlerIterator.next(true)).toEqual({ value: undefined, done: true });
+    expect(handlerIterator.next(true)).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(handlerIterator.next(reduxState.workspace.workspaces.map["ws-current"])).toEqual({
+      value: undefined,
+      done: true,
+    });
     expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
     expect(dispatchSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "terminal:create-new" }),
+      expect.objectContaining({
+        type: "workspace:new-terminal",
+        detail: { workspaceId: "ws-current" },
+      }),
     );
   });
 
@@ -717,14 +704,21 @@ describe("appLayoutSaga", () => {
 
   it("navigates to onboarding from workspace:create-for-repo with environment carry-over", () => {
     const iterator = watchWorkspaceCreateForRepoSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      createWorkspaceForRepoRequested.type,
+      expect.any(Function),
+    );
 
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-
-    const handler = getWindowEventHandler("workspace:create-for-repo");
+    const handler = getTakeEveryHandler(createWorkspaceForRepoRequested.type);
     const handlerIterator = handler({
-      repositoryPath: "/repo/intent",
-      workspaceId: "ws-old",
-      workspaceTitle: "Old Space",
+      payload: [
+        {
+          repositoryPath: "/repo/intent",
+          workspaceId: "ws-old",
+          workspaceTitle: "Old Space",
+        },
+      ],
     });
     expect(handlerIterator.next()).toEqual({
       value: sagaEffects.select(selectActiveWorkspace.select),
@@ -745,17 +739,24 @@ describe("appLayoutSaga", () => {
 
   it("navigates to onboarding from app:open-new-space-modal", () => {
     const iterator = watchOpenNewSpaceOnboardingSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      openNewSpaceModalRequested.type,
+      expect.any(Function),
+    );
 
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-
-    const handler = getWindowEventHandler("app:open-new-space-modal");
+    const handler = getTakeEveryHandler(openNewSpaceModalRequested.type);
     expect(
       handler({
-        initialRepo: {
-          repoPath: "/repo/intent",
-          owner: "augmentcode",
-          name: "intent",
-        },
+        payload: [
+          {
+            initialRepo: {
+              repoPath: "/repo/intent",
+              owner: "augmentcode",
+              name: "intent",
+            },
+          },
+        ],
       }).next(),
     ).toEqual({
       value: sagaEffects.put(setShowCreateModal(true)),
@@ -766,39 +767,4 @@ describe("appLayoutSaga", () => {
     });
   });
 
-  describe("retroactiveAppLayoutMountCheckSaga", () => {
-    it("forks workspace window events when a workspace is already active but no tasks exist", () => {
-      const iterator = retroactiveAppLayoutMountCheckSaga();
-
-      expect(iterator.next()).toEqual({
-        value: sagaEffects.select(selectActiveWorkspaceId.select),
-        done: false,
-      });
-      // Provide active workspace ID
-      const forkResult = iterator.next("ws-current");
-      expect(forkResult.done).toBe(false);
-      expect((forkResult.value as any).type).toBe("FORK");
-      expect((forkResult.value as any).payload.args[0]).toEqual(
-        workspaceMounted("ws-current"),
-      );
-    });
-
-    it("does nothing when no workspace is active", () => {
-      const iterator = retroactiveAppLayoutMountCheckSaga();
-
-      expect(iterator.next()).toEqual({
-        value: sagaEffects.select(selectActiveWorkspaceId.select),
-        done: false,
-      });
-      expect(iterator.next(null)).toEqual({ value: undefined, done: true });
-    });
-
-    it("skips invalid workspace IDs", () => {
-      for (const invalidId of ["", "new", "optimistic-abc123", "undefined"]) {
-        const iterator = retroactiveAppLayoutMountCheckSaga();
-        iterator.next(); // select
-        expect(iterator.next(invalidId)).toEqual({ value: undefined, done: true });
-      }
-    });
-  });
 });

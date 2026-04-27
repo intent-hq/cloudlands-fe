@@ -139,6 +139,10 @@ export const createTerminalRequested = createAction<[wsId: string]>(
   "terminals/createTerminalRequested"
 );
 
+export const closeActiveTerminalRequested = createAction<[wsId: string]>(
+  "terminals/closeActiveTerminalRequested"
+);
+
 export const setTerminalsList = createAction<[wsId: string, terminals: TerminalTab[]]>(
   "terminals/setTerminalsList"
 );
