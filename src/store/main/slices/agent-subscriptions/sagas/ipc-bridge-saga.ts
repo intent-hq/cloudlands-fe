@@ -1,14 +1,10 @@
 /**
  * IPC Bridge Saga — emits workspace events via Redux dispatch.
  *
- * Watches Redux actions (addSubscription, removeSubscription, removeAllSubscriptions,
- * bumpVersion, setAgentStatus) and emits the SAME IPC events the old
- * AgentEventSubscriptionService used to emit:
+ * Watches Redux actions (addSubscription, subscribeToDelegationGroup) and
+ * emits the matching IPC events:
  *
- * - `agent:subscriptions-changed` on bumpVersion
- * - `agent:subscribed` on addSubscription
- * - `agent:unsubscribed` on removeSubscription
- * - `agent:status-changed` on setAgentStatus (when status actually changes)
+ * - `agent:subscribed` on addSubscription / subscribeToDelegationGroup
  *
  * Events are dispatched through Redux (emitWorkspaceEvent action) which handles
  * persistence and broadcast to renderer windows via sagas.
@@ -17,7 +13,6 @@
 import { call, select, takeEvery } from "typed-redux-saga";
 import {
   addSubscription,
-  bumpVersion,
   subscribeToDelegationGroup,
 } from "../agent-subscriptions-slice";
 import {
@@ -53,33 +48,6 @@ export async function dispatchWorkspaceEvent(
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
-
-/**
- * On bumpVersion → emit `agent:subscriptions-changed`.
- *
- * The service's bumpVersionAndEmit() used to do this inline.
- * We read the new version from state after the reducer has run.
- *
- * NOTE: bumpVersion actions don't carry an agentId. We emit with agentId=''
- * which matches the old behaviour where the renderer only cares about the
- * version number for stale detection. If a specific agentId is needed, the
- * caller should dispatch a separate saga action. For now the service always
- * dispatches bumpVersion right after addSubscription/removeSubscription which
- * carry the agentId, so the renderer gets the agentId from the more specific
- * agent:subscribed / agent:unsubscribed events.
- */
-function* handleBumpVersion(action: ReturnType<typeof bumpVersion>) {
-  const [wsId] = action.payload;
-  const ws = yield* select(selectWorkspaceSubscriptionState.select, wsId);
-  yield* call(dispatchWorkspaceEvent, "agent:subscriptions-changed", wsId, {
-    type: "system",
-    id: "subscription-service",
-    name: "Subscription Service",
-  }, {
-    subscriptionVersion: ws.version,
-    reason: "version-bump",
-  });
-}
 
 /**
  * On addSubscription → emit `agent:subscribed`.
@@ -184,7 +152,6 @@ export function* handleSubscribeToDelegationGroup(
 // ---------------------------------------------------------------------------
 
 export function* ipcBridgeSaga() {
-  yield* takeEvery(bumpVersion, handleBumpVersion);
   yield* takeEvery(addSubscription, handleAddSubscription);
   yield* takeEvery(subscribeToDelegationGroup, handleSubscribeToDelegationGroup);
 }

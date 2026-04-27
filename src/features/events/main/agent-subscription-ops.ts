@@ -14,7 +14,7 @@ import {
   setAgentStatus as setAgentStatusAction,
   setDelegationGroup,
   subscribeToDelegationGroup,
-  markAgentDeleted as markAgentDeletedAction, bumpVersion,
+  markAgentDeleted as markAgentDeletedAction,
   type AgentSubscriptionRecord,
   type AgentEventFilter,
 } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
@@ -63,7 +63,6 @@ export function agentSubscribe(
       }));
     }
   }
-  mainDispatch(bumpVersion(workspaceId));
   logger.info('Agent subscribed', { subscriptionId: id, agentId, agentName });
   return id;
 }
@@ -104,7 +103,6 @@ export function agentSubscribeToGroup(
     createdAt: new Date().toISOString(),
   };
   mainDispatch(subscribeToDelegationGroup(workspaceId, seed));
-  mainDispatch(bumpVersion(workspaceId));
 
   // Read the canonical subscription id after the reducer has run. It is
   // `seed.id` when we just created the subscription, or a prior caller's id
@@ -130,7 +128,6 @@ export function agentUnsubscribe(
   const sub = ws.subscriptions[subscriptionId];
   if (!sub) return false;
   mainDispatch(removeSubscription(workspaceId, subscriptionId));
-  mainDispatch(bumpVersion(workspaceId));
   // Emit unsubscription event (saga can't do this — record already removed from state)
   mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
     'agent:unsubscribed', workspaceId,
@@ -165,7 +162,6 @@ export function agentUnsubscribeAll(workspaceId: string, agentId: string): numbe
   const count = subs.length;
   if (count > 0) {
     mainDispatch(removeAllSubscriptions(workspaceId, agentId));
-    mainDispatch(bumpVersion(workspaceId));
     notifyPendingWorkClearedForAgent(agentId);
   }
   return count;

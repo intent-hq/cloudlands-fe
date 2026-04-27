@@ -17,7 +17,6 @@ import {
   markDelegationDelivered,
   removeDelegationGroup,
   removeSubscription,
-  bumpVersion,
   enqueueEvent,
 } from "../agent-subscriptions-slice";
 import {
@@ -239,7 +238,6 @@ function* deliverWithRetry(
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
   }
-  yield* put(bumpVersion(wsId));
 
   // Trigger delivery of the re-enqueued events. If the agent is idle,
   // watchAgentIdleForDelivery won't fire (it reacts to setAgentStatus
@@ -293,7 +291,6 @@ function* pollAndDeliver(
   if (subscriptionId) {
     yield* put(removeSubscription(wsId, subscriptionId));
   }
-  yield* put(bumpVersion(wsId));
 
   // Trigger delivery attempt for re-enqueued events
   yield* put(requestDeliverQueuedEvents(wsId, agentId));
@@ -307,10 +304,6 @@ function* pollAndDeliver(
 export function* watchDelegationAgentCompleted() {
   yield* takeEvery(markDelegationAgentCompleted, function* (action) {
     const [wsId, groupId] = action.payload;
-    // Bump version so the IPC bridge emits agent:subscriptions-changed,
-    // allowing the renderer to refresh delegation group progress (e.g. 1/4 → 2/4)
-    // even before the group is fully complete.
-    yield* put(bumpVersion(wsId));
     yield* put(requestDelegationGroupDelivery(wsId, groupId));
   });
 }

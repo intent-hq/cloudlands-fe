@@ -11,7 +11,6 @@ import {
   evictDeletedAgent,
   removeAllSubscriptions,
   clearAgentQueue,
-  bumpVersion,
 } from "../agent-subscriptions-slice";
 import {
   selectWorkspaceSubscriptionState,
@@ -44,18 +43,12 @@ export function* handleEvictStaleAgents(
   const deletedAgents = ws.deletedAgents;
 
   const now = Date.now();
-  let evicted = 0;
 
   for (const [agentId, deletedAt] of Object.entries(deletedAgents)) {
     if (now - Number(deletedAt) > STALE_AGENT_TTL_MS) {
       yield* put(evictDeletedAgent(wsId, agentId));
       yield* put(clearAgentQueue(wsId, agentId));
-      evicted++;
     }
-  }
-
-  if (evicted > 0) {
-    yield* put(bumpVersion(wsId));
   }
 }
 
@@ -97,19 +90,13 @@ export function* handleValidateSubscriptions(
   const subscriptions = Object.values(ws.subscriptions);
   const agentIds = [...new Set(subscriptions.map((s) => s.agentId))];
 
-  let removed = 0;
   for (const agentId of agentIds) {
     const isActive: boolean = yield* call(isAgentSessionActive, agentId, wsId);
     if (!isActive) {
       yield* put(removeAllSubscriptions(wsId, agentId));
       yield* put(clearAgentQueue(wsId, agentId));
       yield* put(markAgentDeleted(wsId, agentId, Date.now()));
-      removed++;
     }
-  }
-
-  if (removed > 0) {
-    yield* put(bumpVersion(wsId));
   }
 }
 

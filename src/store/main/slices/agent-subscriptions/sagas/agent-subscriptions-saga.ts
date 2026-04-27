@@ -11,6 +11,7 @@ import { delegationGroupSaga } from "./delegation-group-saga";
 import { cleanupSaga } from "./cleanup-saga";
 import { ipcBridgeSaga } from "./ipc-bridge-saga";
 import { matchingSaga } from "./matching-saga";
+import { subscriptionsChangedEmitterSaga } from "./subscriptions-changed-emitter-saga";
 import { Logger } from "../../../../../shared/logger";
 
 const logger = new Logger("AgentSubscriptionsSaga");
@@ -30,6 +31,7 @@ export function* agentSubscriptionsSaga() {
   });
   yield* fork(cleanupSaga);
   yield* fork(ipcBridgeSaga);
+  yield* fork(subscriptionsChangedEmitterSaga);
   yield* spawn(function* () {
     while (true) {
       try {

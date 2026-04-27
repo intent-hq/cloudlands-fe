@@ -348,7 +348,7 @@ export function setupEventsIPC(): void {
     EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS,
     async (_event, params: { workspaceId: string; agentId: string }) => {
       try {
-        const { selectAgentSubscriptions, selectDelegationGroupsForParent, selectAgentStatus, selectWorkspaceSubscriptionState } =
+        const { selectAgentSubscriptions, selectDelegationGroupsForParent, selectAgentStatus } =
           await import('../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
         const { getMainState } = await import('../../../store/main/redux-store-bridge');
         const state = getMainState();
@@ -416,8 +416,6 @@ export function setupEventsIPC(): void {
             }),
           // Include real-time status for all watched agents (for 'any' mode subscriptions)
           agentStatuses,
-          // Monotonically increasing version for stale response detection
-          version: selectWorkspaceSubscriptionState.select(state, params.workspaceId).version,
         };
       } catch (error) {
         logger.error('Failed to get agent subscriptions', { error, params });

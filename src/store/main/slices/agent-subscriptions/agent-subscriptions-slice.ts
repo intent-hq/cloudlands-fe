@@ -37,7 +37,6 @@ import type {
   AgentSubscriptionRecord,
   QueuedEventRecord,
   DelegationGroupTrackerRecord,
-  WorkspaceSubscriptionState,
   AgentSubscriptionsState,
 } from "./types";
 import { emptyWorkspaceSubscriptionState, initialState } from "./types";
@@ -90,11 +89,6 @@ export const removeAllSubscriptions = createAction<[wsId: string, agentId: strin
   "agentSubscriptions/removeAllSubscriptions"
 );
 
-// --- Snapshot / bulk replacement ---
-export const setSubscriptionsSnapshot = createAction<
-  [wsId: string, snapshot: WorkspaceSubscriptionState]
->("agentSubscriptions/setSubscriptionsSnapshot");
-
 // --- Agent status ---
 export const setAgentStatus = createAction<[wsId: string, agentId: string, status: AgentStatus]>(
   "agentSubscriptions/setAgentStatus"
@@ -125,10 +119,6 @@ export const markDelegationAgentCompleted = createAction<
 export const markDelegationAgentDeleted = createAction<
   [wsId: string, groupId: string, agentId: string]
 >("agentSubscriptions/markDelegationAgentDeleted");
-
-export const addAgentToDelegationGroup = createAction<
-  [wsId: string, groupId: string, agentId: string]
->("agentSubscriptions/addAgentToDelegationGroup");
 
 export const appendDelegationGroupEvent = createAction<
   [wsId: string, groupId: string, event: WorkspaceEvent]
@@ -167,11 +157,6 @@ export const markAgentDeleted = createAction<[wsId: string, agentId: string, del
 
 export const evictDeletedAgent = createAction<[wsId: string, agentId: string]>(
   "agentSubscriptions/evictDeletedAgent"
-);
-
-// --- Version bump ---
-export const bumpVersion = createAction<[wsId: string]>(
-  "agentSubscriptions/bumpVersion"
 );
 
 // --- Workspace cleanup ---
@@ -320,10 +305,6 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
       agentStatuses: statuses,
     });
   })
-  // --- Snapshot ---
-  .with(setSubscriptionsSnapshot, (state, { payload: [wsId, snapshot] }) => {
-    return setWorkspaceState(state, wsId, snapshot);
-  })
   // --- Agent status ---
   .with(setAgentStatus, (state, { payload: [wsId, agentId, status] }) => {
     const ws = getWorkspaceState(state, wsId);
@@ -393,22 +374,6 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         [groupId]: {
           ...tracker,
           deletedAgentIds: [...tracker.deletedAgentIds, agentId],
-        },
-      },
-    });
-  })
-  .with(addAgentToDelegationGroup, (state, { payload: [wsId, groupId, agentId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const tracker = ws.delegationGroups[groupId];
-    if (!tracker) return state;
-    if (tracker.expectedAgentIds.includes(agentId)) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      delegationGroups: {
-        ...ws.delegationGroups,
-        [groupId]: {
-          ...tracker,
-          expectedAgentIds: [...tracker.expectedAgentIds, agentId],
         },
       },
     });
@@ -512,11 +477,6 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
      
     const { [agentId]: _removed, ...rest } = ws.deletedAgents;
     return setWorkspaceState(state, wsId, { ...ws, deletedAgents: rest });
-  })
-  // --- Version bump ---
-  .with(bumpVersion, (state, { payload: [wsId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, version: ws.version + 1 });
   })
   // --- Workspace cleanup ---
   .with(clearWorkspace, (state, { payload: [wsId] }) => {

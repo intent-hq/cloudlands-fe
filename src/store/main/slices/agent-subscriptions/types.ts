@@ -98,8 +98,6 @@ export interface WorkspaceSubscriptionState {
   deliveryStats: DeliveryStats;
   /** Recently deleted agents: agentId → deletedAt timestamp (ms) */
   deletedAgents: Record<string, number>;
-  /** Monotonically increasing version counter */
-  version: number;
 }
 
 /** Root state shape for the agent-subscriptions slice */
@@ -126,7 +124,6 @@ export const emptyWorkspaceSubscriptionState: WorkspaceSubscriptionState = {
   firedOneShotSubscriptions: [],
   deliveryStats: { ...emptyDeliveryStats },
   deletedAgents: {},
-  version: 0,
 };
 
 export const initialState: AgentSubscriptionsState = {

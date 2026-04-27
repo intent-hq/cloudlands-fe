@@ -131,6 +131,18 @@ export const hasStateChanged = <STATE>(
   return false;
 };
 
+/**
+ * Registry of cache-reset callbacks, used by `__resetAllCachedSelectorsForTests`
+ * so test suites that recreate stores do not see stale memoized results from
+ * prior tests (initial slice state refs are often shared across stores).
+ */
+const cachedSelectorResets = new Set<() => void>();
+
+/** Test-only hook to clear every cached selector's memoized state. */
+export function __resetAllCachedSelectorsForTests(): void {
+  for (const reset of cachedSelectorResets) reset();
+}
+
 export const createCachedSelector = <STATE, ARGS extends unknown[] = [], R = undefined>(
   selectorFunc: CachedSelector<STATE, R, ARGS>,
   options?: CreateCachedSelectorOptions<STATE>
@@ -140,6 +152,14 @@ export const createCachedSelector = <STATE, ARGS extends unknown[] = [], R = und
   let previousState: STATE | undefined = undefined;
   let accessedPaths: Set<string> = new Set();
   const parsedPaths = new Map<string, AccessedPath>();
+
+  cachedSelectorResets.add(() => {
+    previousSelectResult = undefined;
+    previousArgs = undefined;
+    previousState = undefined;
+    accessedPaths = new Set();
+    parsedPaths.clear();
+  });
 
   return (state: STATE, ...args: ARGS): R => {
     const rawValue = getRawValue(state);

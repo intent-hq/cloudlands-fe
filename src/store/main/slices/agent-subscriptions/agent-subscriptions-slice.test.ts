@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   agentSubscriptionsReducer,
   initialState,
-  emptyWorkspaceSubscriptionState,
   addSubscription,
   subscribeToDelegationGroup,
   removeSubscription,
   removeAllSubscriptions,
-  setSubscriptionsSnapshot,
   setAgentStatus,
   enqueueEvent,
   clearAgentQueue,
@@ -15,7 +13,6 @@ import {
   removeDelegationGroup,
   markDelegationAgentCompleted,
   markDelegationAgentDeleted,
-  addAgentToDelegationGroup,
   markDelegationDelivered,
   markOneShotFired,
   recordDeliverySuccess,
@@ -24,12 +21,10 @@ import {
   recordDroppedEvents,
   markAgentDeleted,
   evictDeletedAgent,
-  bumpVersion,
   clearWorkspace,
   type AgentSubscriptionRecord,
   type DelegationGroupTrackerRecord,
   type QueuedEventRecord,
-  type WorkspaceSubscriptionState,
 } from "./agent-subscriptions-slice";
 
 const WS = "ws-1";
@@ -222,17 +217,6 @@ describe("agentSubscriptionsReducer", () => {
     });
   });
 
-  describe("setSubscriptionsSnapshot", () => {
-    it("replaces entire workspace state", () => {
-      const snapshot: WorkspaceSubscriptionState = {
-        ...emptyWorkspaceSubscriptionState,
-        version: 42,
-      };
-      const next = reduce(setSubscriptionsSnapshot(WS, snapshot));
-      expect(next.byWorkspaceId[WS]).toEqual(snapshot);
-    });
-  });
-
   describe("setAgentStatus", () => {
     it("sets agent status", () => {
       const next = reduce(setAgentStatus(WS, "a1", "responding"));
@@ -315,21 +299,6 @@ describe("agentSubscriptionsReducer", () => {
     });
   });
 
-  describe("addAgentToDelegationGroup", () => {
-    it("adds agent to expectedAgentIds", () => {
-      let state = reduce(setDelegationGroup(WS, makeTracker()));
-      state = reduce(addAgentToDelegationGroup(WS, "group-1", "agent-4"), state);
-      expect(state.byWorkspaceId[WS]?.delegationGroups["group-1"]?.expectedAgentIds).toContain("agent-4");
-    });
-
-    it("is idempotent", () => {
-      let state = reduce(setDelegationGroup(WS, makeTracker()));
-      state = reduce(addAgentToDelegationGroup(WS, "group-1", "agent-2"), state);
-      const next = reduce(addAgentToDelegationGroup(WS, "group-1", "agent-2"), state);
-      expect(next).toBe(state);
-    });
-  });
-
   describe("markDelegationDelivered", () => {
     it("sets delivered flag to true", () => {
       let state = reduce(setDelegationGroup(WS, makeTracker()));
@@ -398,15 +367,6 @@ describe("agentSubscriptionsReducer", () => {
       const state = reduce(markAgentDeleted(WS, "a1", 1000));
       const next = reduce(evictDeletedAgent(WS, "a2"), state);
       expect(next).toBe(state);
-    });
-  });
-
-  describe("bumpVersion", () => {
-    it("increments version by 1", () => {
-      let state = reduce(bumpVersion(WS));
-      expect(state.byWorkspaceId[WS]?.version).toBe(1);
-      state = reduce(bumpVersion(WS), state);
-      expect(state.byWorkspaceId[WS]?.version).toBe(2);
     });
   });
 

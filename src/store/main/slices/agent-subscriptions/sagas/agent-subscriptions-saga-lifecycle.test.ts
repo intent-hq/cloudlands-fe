@@ -13,7 +13,6 @@ import {
   addSubscription,
   appendDelegationGroupEvent,
   enqueueEvent,
-  bumpVersion,
   markDelegationAgentCompleted,
   markOneShotFired,
   removeSubscription,
@@ -247,7 +246,6 @@ describe("handleNewSubscriptionCatchUp", () => {
       .put(requestDeliverQueuedEvents(WS, AGENT))
       .put(markOneShotFired(WS, sub.id))
       .put(removeSubscription(WS, sub.id))
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -403,7 +401,6 @@ describe("handleMatchEvent — multi-round oneShot lifecycle", () => {
       .put(requestDeliverQueuedEvents(WS, AGENT_PARENT))
       .put(markOneShotFired(WS, "sub-1"))
       .put(removeSubscription(WS, "sub-1"))
-      .put(bumpVersion(WS))
       .run();
 
     // Round 2: sub-2 for agent-C (sub-1 already removed, not in subscriptions list)
@@ -426,7 +423,6 @@ describe("handleMatchEvent — multi-round oneShot lifecycle", () => {
       .put(requestDeliverQueuedEvents(WS, AGENT_PARENT))
       .put(markOneShotFired(WS, "sub-2"))
       .put(removeSubscription(WS, "sub-2"))
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -511,7 +507,6 @@ describe("handleNewSubscriptionCatchUp — after oneShot removal", () => {
       .put(requestDeliverQueuedEvents(WS, AGENT))
       .put(markOneShotFired(WS, "sub-new"))
       .put(removeSubscription(WS, "sub-new"))
-      .put(bumpVersion(WS))
       .run();
   });
 });

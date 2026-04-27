@@ -228,7 +228,7 @@ const COMPLETED_DISPLAY_DURATION = 3000;
 export function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEvent) {
   const { eventName, agentId, data } = event;
 
-  // System-level subscription changes (e.g. bumpVersion cleanup) have no agentId.
+  // System-level subscription changes have no agentId.
   // Refresh all tracked agents so the UI picks up removals.
   if (!agentId) {
     if (eventName === 'agent:subscriptions-changed') {

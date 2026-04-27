@@ -36,7 +36,6 @@ import {
   recordDeliverySuccess,
   recordDeliveryTimeout,
   recordDroppedEvents,
-  bumpVersion,
   markDelegationDelivered,
   markOneShotFired,
   removeDelegationGroup,
@@ -59,6 +58,7 @@ import {
   selectIsOneShotFired,
   selectDelegationGroupRaw,
   selectIsDelegationGroupCompleteRaw,
+  selectSubscriptionRaw,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
@@ -83,7 +83,6 @@ import {
 import { dispatchWorkspaceEvent, handleSubscribeToDelegationGroup } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery, delegationGroupSaga, subsetInvariantWarningEmitted } from "./delegation-group-saga";
 import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
-import { selectSubscriptionRaw } from "../agent-subscriptions-selectors";
 import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots, matchingSaga } from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
@@ -133,7 +132,6 @@ describe("handleDeliverEvents", () => {
         ],
         [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
-      .put(bumpVersion(WS))
       .put.actionType(recordDeliverySuccess.type)
       .run();
   });
@@ -265,7 +263,6 @@ describe("handleDeliverEvents", () => {
       })
       .put.actionType(enqueueEvent.type)
       .put.actionType(recordDeliveryTimeout.type)
-      .put(bumpVersion(WS))
       .not.put.actionType(recordDeliveryFailure.type)
       .not.put.actionType(recordDeliverySuccess.type)
       .run({ timeout: 5000 });
@@ -379,7 +376,6 @@ describe("handleDeliverEvents", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       .not.put.actionType(recordDeliveryFailure.type)
       .not.put.actionType(recordDeliverySuccess.type)
       .run({ timeout: 5000 });
@@ -405,7 +401,6 @@ describe("handleDeliverEvents", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       .not.put.actionType(recordDeliveryFailure.type)
       .not.put.actionType(recordDeliverySuccess.type)
       .run({ timeout: 5000 });
@@ -431,7 +426,6 @@ describe("handleDeliverEvents", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       .not.put.actionType(recordDeliveryFailure.type)
       .run({ timeout: 5000 });
   });
@@ -457,7 +451,6 @@ describe("handleDeliverEvents", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       .put(requestDeliverQueuedEvents(WS, AGENT))
       .not.put.actionType(recordDeliveryFailure.type)
       .run({ timeout: 5000 });
@@ -579,6 +572,7 @@ describe("handleDelegationGroupDelivery", () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
 
     return expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return tracker;
@@ -618,6 +612,7 @@ describe("handleDelegationGroupDelivery", () => {
     };
 
     return expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return trackerWithEvents;
@@ -643,7 +638,6 @@ describe("handleDelegationGroupDelivery", () => {
       .put.actionType(enqueueEvent.type)
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
-      .put(bumpVersion(WS))
       .run({ timeout: 10000 });
   });
 
@@ -652,6 +646,7 @@ describe("handleDelegationGroupDelivery", () => {
     const deliveredTracker = { ...tracker, delivered: true };
 
     return expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide([
         [matchers.select(selectDelegationGroupRaw, WS, "group-1"), deliveredTracker],
       ])
@@ -663,6 +658,7 @@ describe("handleDelegationGroupDelivery", () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
 
     return expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide([
         [matchers.select(selectDelegationGroupRaw, WS, "group-1"), tracker],
         [matchers.select(selectIsDelegationGroupCompleteRaw, WS, "group-1"), false],
@@ -678,6 +674,7 @@ describe("handleDelegationGroupDelivery", () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
 
     await expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return tracker;
@@ -695,7 +692,6 @@ describe("handleDelegationGroupDelivery", () => {
       .put(markDelegationDelivered(WS, "group-1"))
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
-      .put(bumpVersion(WS))
       .not.call.fn(handleDeliverEvents)
       .run({ timeout: 10000 });
 
@@ -898,7 +894,6 @@ describe("handleEvictStaleAgents", () => {
         lastFailureTime: null,
       },
       deletedAgents: { "agent-old": staleTime, "agent-new": now },
-      version: 0,
     };
 
     return expectSaga(handleEvictStaleAgents, action)
@@ -908,7 +903,6 @@ describe("handleEvictStaleAgents", () => {
       .put(evictDeletedAgent(WS, "agent-old"))
       .put(clearAgentQueue(WS, "agent-old"))
       .not.put(evictDeletedAgent(WS, "agent-new"))
-      .put(bumpVersion(WS))
       .run();
   });
 });
@@ -940,7 +934,6 @@ describe("handleValidateSubscriptions", () => {
         lastFailureTime: null,
       },
       deletedAgents: {},
-      version: 0,
     };
     const action = requestValidateSubscriptions(WS);
 
@@ -952,7 +945,6 @@ describe("handleValidateSubscriptions", () => {
       .put(removeAllSubscriptions(WS, "dead-agent"))
       .put(clearAgentQueue(WS, "dead-agent"))
       .put.actionType(markAgentDeleted.type)
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -982,7 +974,6 @@ describe("handleValidateSubscriptions", () => {
         lastFailureTime: null,
       },
       deletedAgents: {},
-      version: 0,
     };
     const action = requestValidateSubscriptions(WS);
 
@@ -994,7 +985,6 @@ describe("handleValidateSubscriptions", () => {
       ])
       // Agent is active so no removals should happen
       .not.put.actionType(removeAllSubscriptions.type)
-      .not.put.actionType(bumpVersion.type)
       .run();
   });
 });
@@ -1497,7 +1487,6 @@ describe("handleMatchEvent", () => {
       // oneShot cleanup fires
       .put(markOneShotFired(WS, sub1.id))
       .put(removeSubscription(WS, sub1.id))
-      .put(bumpVersion(WS))
       .run();
 
     // --- Step 2: sub1 is gone, sub2 now exists for VERIFIER ---
@@ -1534,7 +1523,6 @@ describe("handleMatchEvent", () => {
       .put.actionType("agentSubscriptions/enqueueEvent")
       .put(markOneShotFired(WS, sub2.id))
       .put(removeSubscription(WS, sub2.id))
-      .put(bumpVersion(WS))
       .run();
   });
 });
@@ -1742,7 +1730,7 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
     sweepCatchUpSeen.clear();
   });
 
-  it("oneShot sweep catch-up enqueues event AND performs cleanup (markOneShotFired + removeSubscription + bumpVersion)", () => {
+  it("oneShot sweep catch-up enqueues event AND performs cleanup (markOneShotFired + removeSubscription)", () => {
     const sub = makeSweepSub({
       filter: {
         eventTypes: ["agent:idle"],
@@ -1763,7 +1751,6 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
       .put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
       .put(markOneShotFired(WS, sub.id))
       .put(removeSubscription(WS, sub.id))
-      .put(bumpVersion(WS))
       .run({ silenceTimeout: true });
   });
 
@@ -1877,6 +1864,10 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
         if (effect.selector === selectDelegationGroupRaw && effect.args?.[0] === WS) {
           const groupId = effect.args[1];
           return wsState.delegationGroups[groupId];
+        }
+        if (effect.selector === selectSubscriptionRaw && effect.args?.[0] === WS) {
+          const subId = effect.args[1];
+          return wsState.subscriptions[subId];
         }
         if (effect.selector === selectIsDelegationGroupCompleteRaw && effect.args?.[0] === WS) {
           const groupId = effect.args[1];

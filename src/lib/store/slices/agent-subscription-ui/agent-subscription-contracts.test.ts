@@ -23,7 +23,6 @@ import {
   agentSubscriptionsReducer,
   initialState as mainInitialState,
   addSubscription,
-  bumpVersion,
   markAgentDeleted,
   type AgentSubscriptionRecord,
 } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
@@ -109,18 +108,15 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
   });
 
   // 2. subscriptions-changed refreshes tracked agents
-  it('bumpVersion version appears in subscriptions-changed event payload', () => {
+  it('subscriptionVersion appears in subscriptions-changed event payload', () => {
     mainState = agentSubscriptionsReducer(mainState, addSubscription(WS, makeSubRecord()));
-    mainState = agentSubscriptionsReducer(mainState, bumpVersion(WS));
-    const ws = mainState.byWorkspaceId[WS]!;
-    expect(ws.version).toBeGreaterThan(0);
 
     const event = createWorkspaceEvent('agent:subscriptions-changed' as any, WS,
       { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
-      { subscriptionVersion: ws.version, reason: 'version-bump' });
+      { subscriptionVersion: 1, reason: 'subscriptions-updated' });
     const data = extractEventData({ payload: event });
-    expect(data.subscriptionVersion).toBe(ws.version);
-    expect(data.reason).toBe('version-bump');
+    expect(data.subscriptionVersion).toBe(1);
+    expect(data.reason).toBe('subscriptions-updated');
     const eventWsId = extractEventData({ payload: event }, 'workspaceId') ?? data?.workspaceId;
     expect(eventWsId).toBe(WS);
   });
@@ -176,7 +172,7 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
   it('extractEventData correctly unwraps WorkspaceEvent payloads', () => {
     const testCases = [
       { type: 'agent:subscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', eventTypes: ['file:changed'], filterDescription: 'types: file:changed' } },
-      { type: 'agent:subscriptions-changed', data: { subscriptionVersion: 5, reason: 'version-bump' } },
+      { type: 'agent:subscriptions-changed', data: { subscriptionVersion: 5, reason: 'subscriptions-updated' } },
       { type: 'agent:woken-by-subscription', data: { agentId: AGENT, eventCount: 2, eventTypes: ['file:changed'] } },
       { type: 'agent:status-changed', data: { agentId: AGENT, previousStatus: 'idle', status: 'responding' } },
       { type: 'agent:unsubscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', reason: 'manual-unsubscribe' } },

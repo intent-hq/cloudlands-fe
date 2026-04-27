@@ -13,7 +13,6 @@ import { workspaceEventAccepted } from "../../workspace-events/workspace-events-
 import {
   addSubscription,
   appendDelegationGroupEvent,
-  bumpVersion,
   enqueueEvent,
   markDelegationAgentCompleted,
   markDelegationAgentDeleted,
@@ -483,7 +482,6 @@ export function* handleMatchEvent(
       logger.debug(`[subscriptions] cleanup subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} step=cleanup reason=oneShot`);
       yield* put(markOneShotFired(wsId, sub.id));
       yield* put(removeSubscription(wsId, sub.id));
-      yield* put(bumpVersion(wsId));
       processingOneShots.delete(sub.id);
       claimedOneShotIds.delete(sub.id);
     }
@@ -637,7 +635,6 @@ export function* handleNewSubscriptionCatchUp(
       if (filter.oneShot) {
         yield* put(markOneShotFired(wsId, record.id));
         yield* put(removeSubscription(wsId, record.id));
-        yield* put(bumpVersion(wsId));
       }
     }
   }

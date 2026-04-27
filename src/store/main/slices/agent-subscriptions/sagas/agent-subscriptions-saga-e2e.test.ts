@@ -20,7 +20,6 @@ import {
   markDelegationAgentCompleted,
   recordDeliveryFailure,
   recordDeliverySuccess,
-  bumpVersion,
   markDelegationDelivered,
   markOneShotFired,
   removeDelegationGroup,
@@ -120,7 +119,6 @@ describe("E2E: multi-round coordinator wake-up", () => {
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-impl"))
       .put(removeSubscription(WS, "sub-impl"))
-      .put(bumpVersion(WS))
       .run();
 
     // --- Round 2: coordinator subscribes to verifier (sub-impl is gone) ---
@@ -141,7 +139,6 @@ describe("E2E: multi-round coordinator wake-up", () => {
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-verif"))
       .put(removeSubscription(WS, "sub-verif"))
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -212,7 +209,6 @@ describe("E2E: DELIVERY_IN_FLIGHT retry → eventual success", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       // Agent is "responding" so no immediate re-delivery
       .not.put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .run({ timeout: 5000 });
@@ -263,7 +259,6 @@ describe("E2E: DELIVERY_IN_FLIGHT retry → eventual success", () => {
         },
       })
       .put.actionType(enqueueEvent.type)
-      .put(bumpVersion(WS))
       // Agent is already idle so should dispatch re-delivery
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .run({ timeout: 5000 });
@@ -315,7 +310,6 @@ describe("E2E: rapid agent completion before subscription catch-up", () => {
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-fast"))
       .put(removeSubscription(WS, "sub-fast"))
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -363,7 +357,6 @@ describe("E2E: rapid agent completion before subscription catch-up", () => {
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-live"))
       .put(removeSubscription(WS, "sub-live"))
-      .put(bumpVersion(WS))
       .run();
   });
 
@@ -442,6 +435,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       handleDelegationGroupDelivery,
       requestDelegationGroupDelivery(WS, "deleg-impl"),
     )
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return delegTracker;
@@ -519,7 +513,6 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-verifier"))
       .put(removeSubscription(WS, "sub-verifier"))
-      .put(bumpVersion(WS))
       .run();
 
     // Verify queued event delivery works
@@ -581,6 +574,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       handleDelegationGroupDelivery,
       requestDelegationGroupDelivery(WS, "deleg-impl"),
     )
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) {
@@ -651,7 +645,6 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-verif-catchup"))
       .put(removeSubscription(WS, "sub-verif-catchup"))
-      .put(bumpVersion(WS))
       .run();
   });
 });
@@ -700,6 +693,7 @@ describe("E2E: no-window delegation group wakeup (regression)", () => {
       handleDelegationGroupDelivery,
       requestDelegationGroupDelivery(WS, "deleg-nowin"),
     )
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return delegTracker;
@@ -729,7 +723,6 @@ describe("E2E: no-window delegation group wakeup (regression)", () => {
       // Group and subscription cleaned up
       .put(removeDelegationGroup(WS, "deleg-nowin"))
       .put(removeSubscription(WS, "sub-deleg-nowin"))
-      .put(bumpVersion(WS))
       // Trigger delivery of re-enqueued events
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .run();
@@ -1001,7 +994,6 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .put(markOneShotFired(WS, "sub-nowin"))
       .put(removeSubscription(WS, "sub-nowin"))
-      .put(bumpVersion(WS))
       .run();
 
     // Step 2: Queued event delivery proceeds but backend delivery fails
@@ -1152,6 +1144,7 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
       handleDelegationGroupDelivery,
       requestDelegationGroupDelivery(WS, "deleg-match-nowin"),
     )
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
           if (effect.selector === selectDelegationGroupRaw) return delegTracker;
@@ -1177,7 +1170,6 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
       // Group and subscription cleaned up
       .put(removeDelegationGroup(WS, "deleg-match-nowin"))
       .put(removeSubscription(WS, "sub-deleg-nowin"))
-      .put(bumpVersion(WS))
       // Delivery of re-enqueued events triggered
       .put(requestDeliverQueuedEvents(WS, COORDINATOR))
       .run();

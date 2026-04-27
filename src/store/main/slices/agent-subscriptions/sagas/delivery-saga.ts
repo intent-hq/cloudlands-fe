@@ -26,7 +26,6 @@ import {
   recordDroppedEvents,
   removeSubscription,
   setAgentStatus,
-  bumpVersion,
   type QueuedEventRecord,
 } from "../agent-subscriptions-slice";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
@@ -241,13 +240,10 @@ export function* handleDeliverEvents(
   const eventIds = events.map((e) => (e as any).id as string | undefined);
   logger.debug(`[subscriptions] deliver agentId=${agentId} workspaceId=${wsId} eventCount=${events.length} eventIds=${eventIds.join(",")} step=deliver`);
 
-  yield* put(bumpVersion(wsId));
-
   // Format the notification once
   const notification: string = yield* call(formatNotification, events);
   if (!notification) {
     yield* put(recordDroppedEvents(wsId, events.length));
-    yield* put(bumpVersion(wsId));
     return;
   }
 
@@ -283,14 +279,12 @@ export function* handleDeliverEvents(
           }));
         }
         yield* put(recordDeliveryTimeout(wsId));
-        yield* put(bumpVersion(wsId));
         return;
       }
 
       if (result!.success) {
         logger.debug(`[subscriptions] success agentId=${agentId} workspaceId=${wsId} eventCount=${events.length} attempt=${attempt} step=success`);
         yield* put(recordDeliverySuccess(wsId));
-        yield* put(bumpVersion(wsId));
 
         const deliveredEventIds = events.map((e) => e.id).filter(Boolean) as string[];
 
@@ -342,7 +336,6 @@ export function* handleDeliverEvents(
             oneShot: false,
           }));
         }
-        yield* put(bumpVersion(wsId));
 
         // If the agent is already idle, watchAgentIdleForDelivery won't fire
         // (it only triggers on the setAgentStatus ACTION). Dispatch delivery
@@ -373,7 +366,6 @@ export function* handleDeliverEvents(
   // All retries exhausted
   logger.error(`[subscriptions] deliver agentId=${agentId} workspaceId=${wsId} step=deliver status=failed retriesExhausted=true`);
   yield* put(recordDeliveryFailure(wsId));
-  yield* put(bumpVersion(wsId));
 }
 
 // ---------------------------------------------------------------------------
@@ -695,7 +687,6 @@ export function* periodicQueueSweep() {
               );
               yield* put(markOneShotFired(wsId, sub.id));
               yield* put(removeSubscription(wsId, sub.id));
-              yield* put(bumpVersion(wsId));
               purgeSweepCatchUpForSubscription(sub.id);
               break; // subscription removed, stop iterating actorIds
             }
