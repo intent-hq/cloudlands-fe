@@ -9,7 +9,7 @@
  * - Periodic sync of agent stats with main process (safety net)
  */
 
-import { call, put, takeLatest, delay, fork, take, cancel, cancelled, type SagaGenerator } from "typed-redux-saga";
+import { all, call, put, takeLatest, delay, fork, take, cancel, cancelled, type SagaGenerator } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import { invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
 import { Logger } from "$lib/utils/logger";
@@ -19,8 +19,9 @@ import {
   setLoading,
   setError,
   setHasLoadedInitialData,
-  updateAgentStats as updateAgentStatsAction,
+  updateAgentStatsBatch,
 } from "../changes-slice";
+import type { LineChangeStats } from "../changes-types";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { selectAllWorkspaceAgents } from "../../workspace-agents/workspace-agents-selectors";
 import { createElectronChannel } from "$lib/store/utils/ipc-channel";
@@ -108,23 +109,40 @@ function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
 // Agent stats periodic sync (absorbed from line-changes-saga)
 // ---------------------------------------------------------------------------
 
-function* syncAgentStatsFromMain() {
+function* fetchAgentStatsWorker(
+  agentId: string
+): SagaGenerator<{ id: string; stats: LineChangeStats } | null> {
+  try {
+    const stats = yield* call([lineChangesClient, lineChangesClient.getAgentStats], agentId as any);
+    return stats ? { id: agentId, stats } : null;
+  } catch {
+    // Best effort: one agent's failure must not abort the batch
+    return null;
+  }
+}
+
+export function* syncAgentStatsFromMain() {
   try {
     const wsId = yield* selectActiveWorkspaceId.effect();
     if (!wsId) return;
 
     // Use canonical workspace agents list instead of only already-known stats keys
     const agents = yield* selectAllWorkspaceAgents.effect(wsId);
+    if (agents.length === 0) return;
 
-    for (const agent of agents) {
-      try {
-        const stats = yield* call([lineChangesClient, lineChangesClient.getAgentStats], agent.id as any);
-        if (stats) {
-          yield* put(updateAgentStatsAction(agent.id, stats));
-        }
-      } catch {
-        // Best effort
+    const results = yield* all(
+      agents.map((agent) => call(fetchAgentStatsWorker, agent.id))
+    );
+
+    const batch: Record<string, LineChangeStats> = {};
+    for (const result of results) {
+      if (result) {
+        batch[result.id] = result.stats;
       }
+    }
+
+    if (Object.keys(batch).length > 0) {
+      yield* put(updateAgentStatsBatch(batch));
     }
   } catch (error) {
     agentStatsLogger.error("Failed to sync agent stats from main process:", error as Error);

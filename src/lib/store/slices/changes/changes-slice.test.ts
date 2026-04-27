@@ -20,6 +20,7 @@ import {
   setMainPanelView,
   clearMainPanelView,
   updateAgentStats,
+  updateAgentStatsBatch,
   clearAgentStats,
   setCommitMessage,
   setTargetBranch,
@@ -228,6 +229,40 @@ describe("fileTrackingReducer", () => {
     state = fileTrackingReducer(state, clearAgentStats("agent-1"));
     expect(state.agentStats["agent-1"]).toBeUndefined();
     expect(state.agentStats["agent-2"]).toBeDefined();
+  });
+
+  it("updateAgentStatsBatch with empty batch returns the same state reference", () => {
+    const next = fileTrackingReducer(initialState, updateAgentStatsBatch({}));
+    expect(next).toBe(initialState);
+  });
+
+  it("updateAgentStatsBatch merges multiple agents in one update", () => {
+    const stats1: LineChangeStats = { additions: 1, deletions: 0, timestamp: "t1" };
+    const stats2: LineChangeStats = { additions: 5, deletions: 2, timestamp: "t2" };
+    const state = fileTrackingReducer(
+      initialState,
+      updateAgentStatsBatch({ "agent-1": stats1, "agent-2": stats2 }),
+    );
+    expect(state.agentStats["agent-1"]).toEqual(stats1);
+    expect(state.agentStats["agent-2"]).toEqual(stats2);
+  });
+
+  it("updateAgentStatsBatch merges with pre-existing entries (overwrites overlap, preserves others)", () => {
+    const existing1: LineChangeStats = { additions: 1, deletions: 0, timestamp: "t1" };
+    const existing2: LineChangeStats = { additions: 2, deletions: 0, timestamp: "t2" };
+    let state = fileTrackingReducer(initialState, updateAgentStats("agent-1", existing1));
+    state = fileTrackingReducer(state, updateAgentStats("agent-2", existing2));
+
+    const updated1: LineChangeStats = { additions: 10, deletions: 5, timestamp: "t3" };
+    const new3: LineChangeStats = { additions: 7, deletions: 3, timestamp: "t4" };
+    state = fileTrackingReducer(
+      state,
+      updateAgentStatsBatch({ "agent-1": updated1, "agent-3": new3 }),
+    );
+
+    expect(state.agentStats["agent-1"]).toEqual(updated1);
+    expect(state.agentStats["agent-2"]).toEqual(existing2);
+    expect(state.agentStats["agent-3"]).toEqual(new3);
   });
 
   // Accept changes tests (moved from transient-ui slice)

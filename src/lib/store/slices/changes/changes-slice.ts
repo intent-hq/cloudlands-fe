@@ -217,6 +217,11 @@ export const updateAgentStats = createAction(
   (agentId: string, stats: LineChangeStats) => ({ agentId, stats }),
 );
 
+/** Update agent stats for many agents in one action (merge with existing) */
+export const updateAgentStatsBatch = createAction<[Record<string, LineChangeStats>]>(
+  "changes/updateAgentStatsBatch",
+);
+
 /** Clear agent stats */
 export const clearAgentStats = createAction<[agentId: string]>(
   "changes/clearAgentStats",
@@ -410,6 +415,13 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
       [payload.agentId]: payload.stats,
     },
   }))
+  .with(updateAgentStatsBatch, (state, { payload: [batch] }) => {
+    if (Object.keys(batch).length === 0) return state;
+    return {
+      ...state,
+      agentStats: { ...state.agentStats, ...batch },
+    };
+  })
   .with(clearAgentStats, (state, { payload: [agentId] }) => {
      
     const { [agentId]: _as, ...remainingAgentStats } = state.agentStats;
