@@ -34,7 +34,7 @@
   <!-- File Explorer -->
   <div class="flex-1 overflow-hidden">
     {#if workspacePath}
-      <FileExplorerLayout {workspacePath} />
+      <FileExplorerLayout {workspacePath} {workspaceId} />
     {:else}{/if}
   </div>
 </div>

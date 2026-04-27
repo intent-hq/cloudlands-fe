@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { listenSync } from '$lib/electron-bridge';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
@@ -21,8 +20,14 @@
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import type { FileNode } from '$shared/types';
-  import { createFileExplorerStore } from './file-explorer-adapter';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import {
+    initializeFileExplorer,
+    setWorkspacePathRequested,
+    toggleDirectoryRequested,
+    refreshFileExplorer,
+  } from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
     selectFileExplorerRootNode,
     selectFileExplorerIsLoading,
@@ -41,16 +46,20 @@
 
   let { workspacePath, workspaceId, onFileSelect, selectedFile = $bindable('') }: Props = $props();
 
-  const store = createFileExplorerStore(workspacePath, workspaceId);
+  // Capture dispatch at component init time (getDispatch reads Svelte context,
+  // which is only valid during component initialization).
+  const dispatch = getDispatch();
+
   const wsIdStore = writable(workspaceId || workspacePath || '');
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);
   const feIsLoading$ = selectFileExplorerIsLoading(wsIdStore);
   const feError$ = selectFileExplorerError(wsIdStore);
   const fileCount$ = selectFileExplorerFileCount(wsIdStore);
 
+  // Effective workspace id used for dispatches.
+  const effectiveWsId = $derived(workspaceId || workspacePath || '');
+
   let searchQuery = $state('');
-  let fileWatcher: any = null;
-  let workspaceChangesWatcher: any = null;
 
   // Get file icon based on extension
   function getFileIcon(fileName: string) {
@@ -90,7 +99,7 @@
       selectedFile = node.path;
       onFileSelect?.(node.path);
     } else {
-      store.toggleDirectory(node);
+      dispatch(toggleDirectoryRequested(effectiveWsId, node.path));
     }
   }
 
@@ -113,50 +122,24 @@
     });
   }
 
-  // Watch for file changes
-  function setupFileWatcher() {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    fileWatcher = listenSync('file:changed', (event: any) => {
-      // Reload the tree when files change
-      store.refresh();
-    });
-  }
-
-  // Watch for workspace changes (handles file saves and other changes)
-  function setupWorkspaceChangesWatcher() {
-    workspaceChangesWatcher = listenSync('workspace-changes', (event: any) => {
-      // Extract workspaceId from event (handle both wrapped and unwrapped formats)
-      const eventWorkspaceId = event?.payload?.workspaceId || event?.workspaceId;
-
-      // Check if the event is for our workspace
-      // Only refresh if we have a workspace ID and it matches
-      if (eventWorkspaceId && eventWorkspaceId === workspaceId) {
-        // Refresh the file tree when workspace changes are detected
-        store.refresh();
-      }
-      // Note: We don't refresh if there's no workspace ID to avoid unnecessary updates
-    });
-  }
-
-  onMount(async () => {
-    await store.initialize();
-    setupFileWatcher();
-    setupWorkspaceChangesWatcher();
+  onMount(() => {
+    // Dispatch initialization — the file-explorer saga owns IPC listeners
+    // (file:changed, workspace-changes, file-tracking:changes-updated) and
+    // will refresh state when those events fire for the active workspace.
+    dispatch(
+      initializeFileExplorer(effectiveWsId, { workspacePath, workspaceId }),
+    );
   });
 
-  onDestroy(() => {
-    if (fileWatcher) {
-      fileWatcher();
-    }
-    if (workspaceChangesWatcher) {
-      workspaceChangesWatcher();
-    }
+  // Keep the reactive selector arg in sync with the prop.
+  $effect(() => {
+    wsIdStore.set(workspaceId || workspacePath || '');
   });
 
   // React to workspace path changes
   $effect(() => {
     if (workspacePath) {
-      store.setWorkspacePath(workspacePath);
+      dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
     }
   });
 </script>
@@ -165,7 +148,12 @@
   <Sidebar.Header>
     <div class="flex items-center gap-2 px-2">
       <Input bind:value={searchQuery} placeholder="Search files..." class="h-8" />
-      <Button size="icon" variant="ghost" onclick={() => store.refresh()} title="Refresh">
+      <Button
+        size="icon"
+        variant="ghost"
+        onclick={() => dispatch(refreshFileExplorer(effectiveWsId))}
+        title="Refresh"
+      >
         <Fa icon={faArrowsRotate} size="1x" class="w-4 h-4" />
       </Button>
     </div>

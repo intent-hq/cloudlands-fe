@@ -1,9 +1,11 @@
 import type { FileNode, FileGitStatus, EnvironmentConfig } from "$shared/types";
+import { shallowEqual } from "fast-equals";
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { FileExplorerWorkspaceState, FileExplorerState } from "./file-explorer-types";
 import { setChildrenAtPath } from "./file-explorer-utils";
+import type { StoreAction } from "../../types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 
@@ -66,12 +68,35 @@ export const refreshFileExplorer = createAction<[wsId: string]>(
   "fileExplorer/refreshFileExplorer",
 );
 
+/**
+ * Trigger a targeted reload of a single directory's children in response to a
+ * file create/delete event. The caller passes the PATH of the file that was
+ * created or deleted; the saga computes the parent directory itself.
+ *
+ * Pure saga-trigger action — no reducer entry. The saga reloads one directory
+ * and dispatches setChildrenAtPathAction so rows outside that directory keep
+ * object identity.
+ */
+export const refreshDirectoryRequested = createAction<[wsId: string, filePath: string]>(
+  "fileExplorer/refreshDirectoryRequested",
+);
+
 export const refreshGitStatusRequested = createAction<[wsId: string]>(
   "fileExplorer/refreshGitStatusRequested",
 );
 
 export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
   "fileExplorer/syncGitStatusFromStoresRequested",
+);
+
+/**
+ * Wrapper action used by the file-explorer saga to debounce rapid
+ * file-tracking IPC events. Dispatch as
+ * `debouncedFileTrackingSync(syncGitStatusFromStoresRequested(wsId))` — the
+ * inner action is fired after the debounce window elapses.
+ */
+export const debouncedFileTrackingSync = createAction<[inner: StoreAction<any>]>(
+  "fileExplorer/debouncedFileTrackingSync",
 );
 
 // ---------------------------------------------------------------------------
@@ -109,6 +134,41 @@ export const setGitStatusMap = createAction<[wsId: string, gitStatus: Record<str
 export const setAgentFileEditsAction = createAction<
   [wsId: string, edits: Record<string, string[]>]
 >("fileExplorer/setAgentFileEdits");
+
+/**
+ * Shallow-merge per-entry git-status updates into ws.gitStatus.
+ * - No-op (returns identical state ref) when every provided key's value deep-equals existing.
+ * - Does NOT increment treeVersion — selectors recompute off the gitStatus reference.
+ * - Keys absent from `entries` are NOT deleted; use removeGitStatusEntries for that.
+ */
+export const updateGitStatusEntries = createAction<
+  [wsId: string, entries: Record<string, FileGitStatus>]
+>("fileExplorer/updateGitStatusEntries");
+
+/**
+ * Remove the listed paths from ws.gitStatus.
+ * No-op (returns identical state ref) when none of the paths exist.
+ * Does NOT increment treeVersion.
+ */
+export const removeGitStatusEntries = createAction<[wsId: string, paths: string[]]>(
+  "fileExplorer/removeGitStatusEntries",
+);
+
+/**
+ * Shallow-merge per-entry agent-file-edits updates into ws.agentFileEdits.
+ * Same no-op semantics as updateGitStatusEntries.
+ */
+export const updateAgentFileEditsEntries = createAction<
+  [wsId: string, entries: Record<string, string[]>]
+>("fileExplorer/updateAgentFileEditsEntries");
+
+/**
+ * Remove the listed paths from ws.agentFileEdits.
+ * Same no-op semantics as removeGitStatusEntries.
+ */
+export const removeAgentFileEditsEntries = createAction<[wsId: string, paths: string[]]>(
+  "fileExplorer/removeAgentFileEditsEntries",
+);
 
 export const addExpandedPath = createAction<[wsId: string, path: string]>(
   "fileExplorer/addExpandedPath",
@@ -169,6 +229,45 @@ export const clearFileExplorerForWorkspace = createAction<[wsId: string]>(
 );
 
 // ---------------------------------------------------------------------------
+// Reducer helpers
+// ---------------------------------------------------------------------------
+
+// Local helpers — immutable merge/remove on Record<string, V> with
+// identity-stable no-op semantics. If nothing changes, the same reference
+// is returned; otherwise a new object with the changes applied.
+function mergeRecordEntries<V>(
+  record: Record<string, V>,
+  entries: Record<string, V>,
+  equals: (a: V, b: V) => boolean,
+): Record<string, V> {
+  const keys = Object.keys(entries);
+  if (keys.length === 0) return record;
+  let draft: Record<string, V> | null = null;
+  for (const key of keys) {
+    const incoming = entries[key];
+    const existing = record[key];
+    if (existing !== undefined && equals(existing, incoming)) continue;
+    if (!draft) draft = { ...record };
+    draft[key] = incoming;
+  }
+  return draft ?? record;
+}
+
+function removeRecordKeys<V>(
+  record: Record<string, V>,
+  keys: readonly string[],
+): Record<string, V> {
+  if (keys.length === 0) return record;
+  let draft: Record<string, V> | null = null;
+  for (const k of keys) {
+    if (!(k in record)) continue;
+    if (!draft) draft = { ...record };
+    delete draft[k];
+  }
+  return draft ?? record;
+}
+
+// ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
@@ -218,6 +317,30 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
   .with(setAgentFileEditsAction, (state, { payload: [wsId, edits] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, agentFileEdits: edits });
+  })
+  .with(updateGitStatusEntries, (state, { payload: [wsId, entries] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const gitStatus = mergeRecordEntries(ws.gitStatus, entries, shallowEqual);
+    if (gitStatus === ws.gitStatus) return state;
+    return setWorkspaceState(state, wsId, { ...ws, gitStatus });
+  })
+  .with(removeGitStatusEntries, (state, { payload: [wsId, paths] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const gitStatus = removeRecordKeys(ws.gitStatus, paths);
+    if (gitStatus === ws.gitStatus) return state;
+    return setWorkspaceState(state, wsId, { ...ws, gitStatus });
+  })
+  .with(updateAgentFileEditsEntries, (state, { payload: [wsId, entries] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const agentFileEdits = mergeRecordEntries(ws.agentFileEdits, entries, shallowEqual);
+    if (agentFileEdits === ws.agentFileEdits) return state;
+    return setWorkspaceState(state, wsId, { ...ws, agentFileEdits });
+  })
+  .with(removeAgentFileEditsEntries, (state, { payload: [wsId, paths] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const agentFileEdits = removeRecordKeys(ws.agentFileEdits, paths);
+    if (agentFileEdits === ws.agentFileEdits) return state;
+    return setWorkspaceState(state, wsId, { ...ws, agentFileEdits });
   })
   .with(addExpandedPath, (state, { payload: [wsId, path] }) => {
     const ws = getWorkspaceState(state, wsId);

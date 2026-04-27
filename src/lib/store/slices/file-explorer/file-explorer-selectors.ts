@@ -1,4 +1,5 @@
 import type { FileNode, FileGitStatus } from "$shared/types";
+import { shallowEqual } from "fast-equals";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import { createSelector } from "../../utils/create-selector";
 import { emptyFileExplorerWorkspaceState } from "./file-explorer-slice";
@@ -52,10 +53,6 @@ export const selectFileExplorerIsBulkOperation = createSelector<[wsId: string], 
   (state, wsId) => selectFileExplorerState.select(state, wsId).isBulkOperation,
 );
 
-export const selectFileExplorerTreeVersion = createSelector<[wsId: string], number>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).treeVersion,
-);
-
 export const selectFileExplorerIsStoreActive = createSelector<[wsId: string], boolean>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).isStoreActive,
 );
@@ -93,16 +90,43 @@ export const selectHasExpandedDirectories = createSelector<[wsId: string], boole
 );
 
 /**
+ * Per-row memoization cache for selectFlattenedNodes. Keyed by the underlying
+ * FileNode reference. The cache is implicitly invalidated whenever a FileNode
+ * is replaced by setRootNode or setChildrenAtPathAction (those actions produce
+ * a new FileNode object for the affected subtree, giving a new WeakMap key).
+ *
+ * A single shared WeakMap is safe across workspaces — FileNode identities are
+ * unique per workspace's tree.
+ */
+interface FlattenedNodeCacheEntry {
+  inputs: {
+    isExpanded: boolean;
+    isLoading: boolean;
+    agentEdits: string[] | undefined;
+    gitStatus: FileGitStatus | undefined;
+    directoryHasChanges: boolean;
+    displayPath: string | undefined;
+    depth: number;
+  };
+  result: FlattenedFileNode;
+}
+
+const flattenedNodeCache = new WeakMap<FileNode, FlattenedNodeCacheEntry>();
+
+/**
  * Computed flattened nodes for virtualized rendering.
- * Depends on rootNode, expandedPaths, loadingPaths, treeVersion, agentFileEdits, and gitStatus.
+ * Depends on rootNode, expandedPaths, loadingPaths, agentFileEdits, and gitStatus.
  * Enriches each flattened node with agentEdits, gitStatus (files only), and
  * directoryHasChanges (directories only) derived from the workspace-level records.
+ *
+ * Each produced FlattenedFileNode has stable object identity across dispatches
+ * when its per-row inputs (isExpanded, isLoading, gitStatus[relPath],
+ * agentFileEdits[relPath], directoryHasChanges, displayPath) are unchanged.
+ * Only the outer array identity may change.
  */
 export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFileNode[]>(
   (state, wsId) => {
     const ws = selectFileExplorerState.select(state, wsId);
-    // Read treeVersion to create a dependency for recomputation
-    void ws.treeVersion;
     if (!ws.rootNode || !ws.rootNode.children) return [];
     const expandedSet = new Set(ws.expandedPaths);
     const loadingSet = new Set(ws.loadingPaths);
@@ -131,20 +155,39 @@ export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFile
       const fileGitStatus = isFile ? gitStatus[relativePath] : undefined;
       const dirHasChanges = !isFile && changedDirs.has(relativePath);
 
-      if (
-        (edits && edits.length > 0) ||
-        fileGitStatus !== undefined ||
-        dirHasChanges
-      ) {
-        return {
-          ...flatNode,
-          ...(edits && edits.length > 0 ? { agentEdits: edits } : {}),
-          ...(fileGitStatus !== undefined ? { gitStatus: fileGitStatus } : {}),
-          ...(dirHasChanges ? { directoryHasChanges: true } : {}),
-        };
+      const nextInputs: FlattenedNodeCacheEntry["inputs"] = {
+        isExpanded: flatNode.isExpanded,
+        isLoading: flatNode.isLoading,
+        agentEdits: edits && edits.length > 0 ? edits : undefined,
+        gitStatus: fileGitStatus,
+        directoryHasChanges: dirHasChanges,
+        displayPath: flatNode.displayPath,
+        depth: flatNode.depth,
+      };
+
+      const cached = flattenedNodeCache.get(flatNode.node);
+      if (cached && shallowEqual(cached.inputs, nextInputs)) {
+        return cached.result;
       }
-      return flatNode;
+
+      const enriched: FlattenedFileNode =
+        (edits && edits.length > 0) || fileGitStatus !== undefined || dirHasChanges
+          ? {
+              node: flatNode.node,
+              depth: flatNode.depth,
+              displayPath: flatNode.displayPath,
+              isExpanded: flatNode.isExpanded,
+              isLoading: flatNode.isLoading,
+              ...(edits && edits.length > 0 ? { agentEdits: edits } : {}),
+              ...(fileGitStatus !== undefined ? { gitStatus: fileGitStatus } : {}),
+              ...(dirHasChanges ? { directoryHasChanges: true } : {}),
+            }
+          : flatNode;
+
+      flattenedNodeCache.set(flatNode.node, { inputs: nextInputs, result: enriched });
+      return enriched;
     });
   },
 );
+
 

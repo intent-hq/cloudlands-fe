@@ -8,7 +8,7 @@
  * - Agent file edits loading
  * - Tree expansion / collapse
  */
-import { call, fork, put, select, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import { call, delay, fork, put, select, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import type { FileNode, FileGitStatus } from "$shared/types";
 import { GitFileStatus } from "$shared/types";
 import { WorkspaceId as WorkspaceIdFn, isValidWorkspaceId } from "$shared/types/branded-ids";
@@ -31,15 +31,20 @@ import {
   expandToPathRequested,
   expandAllRequested,
   refreshFileExplorer,
+  refreshDirectoryRequested,
   refreshGitStatusRequested,
   syncGitStatusFromStoresRequested,
+  debouncedFileTrackingSync,
   setFileExplorerLoading,
   setFileExplorerInitialized,
   setRootNode,
   setChildrenAtPathAction,
   setGitignorePatterns,
   setGitStatusMap,
-  setAgentFileEditsAction,
+  updateGitStatusEntries,
+  removeGitStatusEntries,
+  updateAgentFileEditsEntries,
+  removeAgentFileEditsEntries,
   addExpandedPath,
   removeExpandedPath,
   addLoadingPath,
@@ -51,6 +56,8 @@ import {
   setEnvironmentConfigAction,
   setRemoteConnectionIdAction,
   setIsRemoteInitializedAction,
+  setIsStoreActive,
+  clearFileExplorerForWorkspace,
 } from "../file-explorer-slice";
 import { selectFileExplorerState } from "../file-explorer-selectors";
 import {
@@ -63,7 +70,12 @@ import {
   CACHE_TTL,
 } from "../file-explorer-utils";
 import type { FileExplorerWorkspaceState } from "../file-explorer-types";
-import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
+import { debounceSaga } from "$lib/store/utils/debounce-saga";
 
 const logger = new Logger("FileExplorerSaga");
 
@@ -208,6 +220,29 @@ async function loadDirectoryCoreRemote(
 // Git status loading
 // ---------------------------------------------------------------------------
 
+/**
+ * Apply a freshly computed git-status snapshot by diffing against the
+ * currently stored map. Dispatches the narrow update/remove actions so
+ * unchanged rows retain object identity and treeVersion is not bumped.
+ */
+export function* applyGitStatusSnapshot(
+  wsId: string,
+  snapshot: Record<string, FileGitStatus>,
+): SagaGenerator<void> {
+  const ws = yield* getWsState(wsId);
+  const previous = ws.gitStatus;
+  const stalePaths: string[] = [];
+  for (const key of Object.keys(previous)) {
+    if (!(key in snapshot)) stalePaths.push(key);
+  }
+  if (stalePaths.length > 0) {
+    yield* put(removeGitStatusEntries(wsId, stalePaths));
+  }
+  if (Object.keys(snapshot).length > 0) {
+    yield* put(updateGitStatusEntries(wsId, snapshot));
+  }
+}
+
 function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
   const ws = yield* getWsState(wsId);
   if (!ws.workspacePath) {
@@ -275,7 +310,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
         }
       }
 
-      yield* put(setGitStatusMap(wsId, newGitStatus));
+      yield* call(applyGitStatusSnapshot, wsId, newGitStatus);
       return;
     }
 
@@ -310,7 +345,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
           }
         }
       }
-      yield* put(setGitStatusMap(wsId, newGitStatus));
+      yield* call(applyGitStatusSnapshot, wsId, newGitStatus);
     }
   } catch (error) {
     logger.error("Failed to load git status:", error);
@@ -361,7 +396,20 @@ function* loadAgentFileEditsSaga(wsId: string): SagaGenerator<void> {
         }
       }
     }
-    yield* put(setAgentFileEditsAction(wsId, editsRecord));
+    // Diff against prior state so unchanged entries keep their array identity
+    // (per-row selector memoization depends on ===-stability of agentEdits refs).
+    const freshState = yield* getWsState(wsId);
+    const previous = freshState.agentFileEdits;
+    const stalePaths: string[] = [];
+    for (const key of Object.keys(previous)) {
+      if (!(key in editsRecord)) stalePaths.push(key);
+    }
+    if (stalePaths.length > 0) {
+      yield* put(removeAgentFileEditsEntries(wsId, stalePaths));
+    }
+    if (Object.keys(editsRecord).length > 0) {
+      yield* put(updateAgentFileEditsEntries(wsId, editsRecord));
+    }
   } catch (error) {
     logger.error("Failed to load agent file edits:", error);
   }
@@ -614,30 +662,84 @@ function* handleRefresh(
 }
 
 // ---------------------------------------------------------------------------
+// Targeted directory refresh (create/delete of a single file)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the parent directory of a file path.
+ * - Trailing "/" → treat the path itself as the directory.
+ * - Equal to the workspace root → the directory IS the workspace root.
+ * - Otherwise strip the final segment.
+ * Returns null when the path has no usable separator.
+ */
+function computeParentDir(filePath: string, workspacePath: string): string | null {
+  if (!filePath) return null;
+  if (filePath === workspacePath) return workspacePath;
+  if (filePath.endsWith("/")) {
+    const trimmed = filePath.slice(0, -1);
+    return trimmed || null;
+  }
+  const lastSlash = filePath.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  return filePath.slice(0, lastSlash);
+}
+
+export function* handleRefreshDirectory(
+  action: ReturnType<typeof refreshDirectoryRequested>,
+): SagaGenerator<void> {
+  const [wsId, filePath] = action.payload;
+  const ws = yield* getWsState(wsId);
+  if (!ws.workspacePath) return;
+
+  const parentDir = computeParentDir(filePath, ws.workspacePath);
+  if (!parentDir) return;
+
+  // Guard: events for paths outside the workspace are ignored defensively.
+  if (parentDir !== ws.workspacePath && !parentDir.startsWith(ws.workspacePath + "/")) {
+    return;
+  }
+
+  // If the directory is not currently loaded in the tree, lazy-expand will
+  // populate it when the user opens it. No-op here.
+  const node = ws.rootNode ? findNodeByPath(ws.rootNode, ws.workspacePath, parentDir) : null;
+  if (!node || node.type !== "directory") return;
+
+  // Invalidate only this directory's cache entry — not the whole workspace.
+  const cache = getWsCache(wsId);
+  cache.delete(parentDir);
+
+  const children = yield* call(loadDirectoryCore, wsId, parentDir);
+  cache.set(parentDir, { nodes: children, timestamp: Date.now() });
+  yield* put(setChildrenAtPathAction(wsId, parentDir, children));
+
+  // Keep git-status badges in sync surgically via the Wave 2 machinery
+  // (applyGitStatusSnapshot under the hood). Avoids the full-tree path.
+  yield* put(refreshGitStatusRequested(wsId));
+}
+
+// ---------------------------------------------------------------------------
 // Refresh git status only
 // ---------------------------------------------------------------------------
 
-function* handleRefreshGitStatus(
+export function* handleRefreshGitStatus(
   action: ReturnType<typeof refreshGitStatusRequested>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   yield* call(loadGitStatusSaga, wsId);
-  // selectFlattenedNodes reactively picks up changes from ws.gitStatus
-  yield* put(incrementTreeVersion(wsId));
+  // Per-row selector memoization picks up only the changed rows — no treeVersion bump.
 }
 
 // ---------------------------------------------------------------------------
 // Sync git status from other stores
 // ---------------------------------------------------------------------------
 
-function* handleSyncGitStatusFromStores(
+export function* handleSyncGitStatusFromStores(
   action: ReturnType<typeof syncGitStatusFromStoresRequested>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   yield* call(loadGitStatusSaga, wsId);
-  // selectFlattenedNodes reactively picks up changes from ws.gitStatus
   yield* call(loadAgentFileEditsSaga, wsId);
-  yield* put(incrementTreeVersion(wsId));
+  // Per-row selector memoization picks up only the changed rows — no treeVersion bump.
 }
 
 // ---------------------------------------------------------------------------
@@ -655,14 +757,175 @@ function* handleSetWorkspacePath(
 }
 
 // ---------------------------------------------------------------------------
-// Workspace unmount cleanup
+// Workspace lifecycle — mount/unmount
 // ---------------------------------------------------------------------------
+
+function* watchWorkspaceMountedForStore(): SagaGenerator<void> {
+  yield* takeEvery(workspaceMounted, function* (action) {
+    const [wsId] = action.payload;
+    yield* put(setIsStoreActive(wsId, true));
+  });
+}
 
 function* watchWorkspaceUnmountedForCache(): SagaGenerator<void> {
   yield* takeEvery(workspaceUnmounted, function* (action) {
     const [wsId] = action.payload;
+    yield* put(setIsStoreActive(wsId, false));
     directoryCache.delete(wsId);
+    yield* put(clearFileExplorerForWorkspace(wsId));
   });
+}
+
+// ---------------------------------------------------------------------------
+// IPC listeners
+// ---------------------------------------------------------------------------
+
+type WorkspaceChangesEvent = { workspaceId?: string };
+type FileTrackingChangesEvent = { workspaceId?: string };
+
+export function* handleWorkspaceChangesEvent(data: WorkspaceChangesEvent): SagaGenerator<void> {
+  const eventWsId = data?.workspaceId;
+  if (!eventWsId) return;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (eventWsId !== activeWsId) return;
+  yield* put(syncGitStatusFromStoresRequested(eventWsId));
+}
+
+function* watchWorkspaceChangesIPC() {
+  yield* takeEveryFromElectronChannel<WorkspaceChangesEvent>(
+    "workspace-changes",
+    handleWorkspaceChangesEvent,
+  );
+}
+
+export function* handleFileTrackingChangesEvent(data: FileTrackingChangesEvent): SagaGenerator<void> {
+  const eventWsId = data?.workspaceId;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  // Match legacy gating: allow events without a workspaceId, or scoped to the
+  // active workspace. Fall back to active workspace id when none provided.
+  if (eventWsId && eventWsId !== activeWsId) return;
+  const targetWsId = eventWsId || activeWsId;
+  if (!targetWsId) return;
+  // Route through the wrapper action so repeated events inside the debounce
+  // window collapse to a single sync.
+  yield* put(debouncedFileTrackingSync(syncGitStatusFromStoresRequested(targetWsId)));
+}
+
+function* watchFileTrackingChangesIPC() {
+  yield* takeEveryFromElectronChannel<FileTrackingChangesEvent>(
+    "file-tracking:changes-updated",
+    handleFileTrackingChangesEvent,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Window event listener — file:changed
+// ---------------------------------------------------------------------------
+
+type FileChangedDetail = {
+  workspaceId?: string;
+  type?: "change" | "create" | "add" | "delete" | string;
+  filePath?: string;
+  files?: string[];
+};
+
+const FILE_CHANGED_REFRESH_DELAY_MS = 300;
+
+/**
+ * Pick the first concrete file path from a file:changed event payload.
+ * Emitters vary: some use `files: string[]` (saves, diagram creates), others
+ * use `filePath: string` (create/delete/undo from tabs and the file tree).
+ */
+function extractFilePath(detail: FileChangedDetail): string | undefined {
+  if (detail.files && detail.files.length > 0) return detail.files[0];
+  return detail.filePath;
+}
+
+export function* handleFileChangedWindowEvent(detail: FileChangedDetail): SagaGenerator<void> {
+  const eventWsId = detail?.workspaceId;
+  if (!eventWsId) return;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (eventWsId !== activeWsId) return;
+
+  const changeType = detail?.type;
+  if (changeType === "create" || changeType === "add" || changeType === "delete") {
+    yield* delay(FILE_CHANGED_REFRESH_DELAY_MS);
+    const filePath = extractFilePath(detail);
+    if (filePath) {
+      yield* put(refreshDirectoryRequested(eventWsId, filePath));
+    } else {
+      // Defensive fallback: emitter didn't include a path, fall back to the
+      // full-tree reload so the change doesn't get dropped.
+      yield* put(refreshFileExplorer(eventWsId));
+    }
+  } else if (changeType === "change") {
+    yield* put(refreshGitStatusRequested(eventWsId));
+  }
+}
+
+function* watchFileChangedWindowEvent() {
+  yield* takeEveryFromWindowEvent<FileChangedDetail>(
+    "file:changed",
+    handleFileChangedWindowEvent,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// IPC listener — file:changed (main-process WorkspaceEvent)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape of `file:changed` events sent from the main process via
+ * `broadcastEvent` (see `src/store/main/slices/workspace-events/sagas/broadcast-saga.ts`).
+ * These are full `FileChangedEvent` payloads keyed off `data.action`, distinct
+ * from the window CustomEvent shape emitted by Svelte components.
+ */
+type MainProcessFileChangedEvent = {
+  workspaceId?: string;
+  data?: {
+    path?: string;
+    relativePath?: string;
+    action?: "create" | "modify" | "delete" | "rename" | string;
+    oldPath?: string;
+  };
+};
+
+function normalizeMainProcessFileChanged(
+  event: MainProcessFileChangedEvent,
+): FileChangedDetail | null {
+  const action = event?.data?.action;
+  if (!action) return null;
+  // Map the main-process action vocabulary onto the window-event type vocabulary
+  // so the shared handler handles both flows identically. 'rename' has no direct
+  // analogue — refresh the new path's parent directory, same as 'create'.
+  const type =
+    action === "modify"
+      ? "change"
+      : action === "rename"
+        ? "create"
+        : action;
+  return {
+    workspaceId: event.workspaceId,
+    type,
+    filePath: event?.data?.path,
+  };
+}
+
+export function* handleFileChangedIPCEvent(
+  event: MainProcessFileChangedEvent,
+): SagaGenerator<void> {
+  const detail = normalizeMainProcessFileChanged(event);
+  if (!detail) return;
+  // Delegate to the shared handler so the workspace-id gate, 300ms debounce,
+  // refreshDirectoryRequested path, and full-refresh fallback all apply.
+  yield* call(handleFileChangedWindowEvent, detail);
+}
+
+function* watchFileChangedIPC() {
+  yield* takeEveryFromElectronChannel<MainProcessFileChangedEvent>(
+    "file:changed",
+    handleFileChangedIPCEvent,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -673,12 +936,19 @@ export function* fileExplorerSaga(): SagaGenerator<void> {
   // Reset module-level cache on (re)start to avoid stale data from previous runs
   directoryCache.clear();
 
+  yield* fork(watchWorkspaceMountedForStore);
   yield* fork(watchWorkspaceUnmountedForCache);
+  yield* fork(watchWorkspaceChangesIPC);
+  yield* fork(watchFileTrackingChangesIPC);
+  yield* fork(watchFileChangedWindowEvent);
+  yield* fork(watchFileChangedIPC);
+  yield* fork(debounceSaga, debouncedFileTrackingSync, 300);
   yield* takeLatest(initializeFileExplorer.type, initializeFileExplorerSaga);
   yield* takeEvery(toggleDirectoryRequested.type, handleToggleDirectory);
   yield* takeLatest(expandToPathRequested.type, handleExpandToPath);
   yield* takeLatest(expandAllRequested.type, handleExpandAll);
   yield* takeLatest(refreshFileExplorer.type, handleRefresh);
+  yield* takeEvery(refreshDirectoryRequested.type, handleRefreshDirectory);
   yield* takeLatest(refreshGitStatusRequested.type, handleRefreshGitStatus);
   yield* takeLatest(syncGitStatusFromStoresRequested.type, handleSyncGitStatusFromStores);
   yield* takeLatest(setWorkspacePathRequested.type, handleSetWorkspacePath);

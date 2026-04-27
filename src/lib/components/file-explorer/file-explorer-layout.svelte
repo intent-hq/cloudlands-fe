@@ -20,10 +20,11 @@
 
   interface Props {
     workspacePath: string;
+    workspaceId?: string;
     initialFile?: string;
   }
 
-  let { workspacePath, initialFile }: Props = $props();
+  let { workspacePath, workspaceId, initialFile }: Props = $props();
 
   // State for open files
   let openFiles = $state<Map<string, { content: string; modified: boolean }>>(new Map());
@@ -202,7 +203,12 @@
 </script>
 
 <Sidebar.Provider>
-  <FileExplorerSidebar {workspacePath} onFileSelect={handleFileSelect} bind:selectedFile />
+  <FileExplorerSidebar
+    {workspacePath}
+    {workspaceId}
+    onFileSelect={handleFileSelect}
+    bind:selectedFile
+  />
 
   <Sidebar.Inset>
     <!-- Header with breadcrumb and tabs -->

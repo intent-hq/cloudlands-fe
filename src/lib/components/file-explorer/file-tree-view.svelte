@@ -1,26 +1,30 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
 
-  // Constants
-  const GIT_STATUS_REFRESH_DELAY = 300; // ms to wait for git to detect changes
-  import { listenSync, invoke } from '$lib/electron-bridge';
+  import { invoke } from '$lib/electron-bridge';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import type { EnvironmentConfig } from '$shared/types';
-  import {
-    getFileExplorerStore,
-    deactivateFileExplorerStore,
-    reactivateFileExplorerStore,
-  } from './file-explorer-adapter';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import {
+    initializeFileExplorer,
+    setWorkspacePathRequested,
+    toggleDirectoryRequested,
+    expandToPathRequested,
+    expandAllRequested,
+    refreshFileExplorer,
+    clearExpandedPathsExceptRoot,
+    syncGitStatusFromStoresRequested,
+  } from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
     selectFileExplorerRootNode,
     selectFileExplorerIsLoading,
@@ -90,28 +94,22 @@
   // Ref to VirtualizedFileTree for delegating method calls
   let virtualizedTreeRef: VirtualizedFileTree | null = $state(null);
 
-  // Mutable reference to current workspace ID for use in event listener closures
-  // This allows event callbacks to check the CURRENT workspace ID, not the captured one
-  // Note: This is intentionally initialized from prop and then synced via effect below
-  // svelte-ignore state_referenced_locally
-  let currentWorkspaceIdRef = workspaceId;
+  // Capture dispatch at component init time (getDispatch reads Svelte context,
+  // which is only valid during component initialization).
+  const dispatch = getDispatch();
 
-  // Keep the mutable reference in sync with the prop and wsIdStore
+  // Keep wsIdStore in sync with prop — drives reactive selector subscriptions.
   $effect(() => {
-    currentWorkspaceIdRef = workspaceId;
     wsIdStore.set(workspaceId || workspacePath || '');
   });
 
-  // Use singleton store - cached per workspace for sharing with cmd+k etc.
-  // Initial store retrieval is side-effect free (just creates or returns cached store)
-  // State updates are deferred inside getFileExplorerStore using queueMicrotask
-  const store = $derived(getFileExplorerStore(workspacePath || '', workspaceId, environmentConfig));
+  // Effective workspace id used for dispatches. Derived so it reacts to prop
+  // changes without requiring a separate mutable ref.
+  const effectiveWsId = $derived(workspaceId || workspacePath || '');
 
   // Track the last workspaceId we initialized for, to handle workspace switches
   let lastInitializedWorkspaceId: string | undefined = undefined;
 
-  let fileWatcher: any = null;
-  let customFileChangeHandler: ((event: CustomEvent) => void) | null = null;
   let modifiedFiles = $state<Set<string>>(new Set());
 
   // Search state - for querying all files when filtering
@@ -327,102 +325,6 @@
   // Filter nodes by search query and changed files filter
   // isRoot parameter indicates if we're filtering the root level (for adding missing git files)
 
-  // Watch for file changes
-  // Use listenSync for synchronous cleanup - no race conditions on unmount
-  function setupFileWatcher() {
-    // Listen for IPC file:changed events
-    fileWatcher = listenSync('file:changed', (event: any) => {
-      logger.debug('[FileTreeView] Received file:changed event', event);
-      // Reload the tree when files change
-      store.refresh();
-    });
-
-    // Also listen for custom file:changed events from the workspace content manager
-    customFileChangeHandler = (event: CustomEvent) => {
-      logger.debug('[FileTreeView] Received custom file:changed event', event.detail);
-      // Check if the event is for our workspace using the mutable reference
-      // to get the CURRENT workspace ID, not the one captured at listener creation
-      if (event.detail?.workspaceId === currentWorkspaceIdRef) {
-        const changeType = event.detail?.type;
-        logger.info('[FileTreeView] File changed, refreshing', { type: changeType });
-
-        // If this is a file creation or deletion, refresh the whole tree
-        // Otherwise just refresh git status
-        if (changeType === 'create' || changeType === 'add' || changeType === 'delete') {
-          setTimeout(() => {
-            store.refresh().catch((error) => {
-              logger.error('[FileTreeView] Failed to refresh file tree after file creation', error);
-            });
-          }, GIT_STATUS_REFRESH_DELAY);
-        } else {
-          // Immediately refresh git status for file saves
-          // Add a small delay to ensure git has detected the changes
-          setTimeout(() => {
-            store.refreshGitStatus().catch((error) => {
-              logger.error(
-                '[FileTreeView] Failed to refresh git status after file save',
-                error as Error,
-              );
-            });
-          }, GIT_STATUS_REFRESH_DELAY);
-        }
-      }
-    };
-
-    window.addEventListener('file:changed', customFileChangeHandler as EventListener);
-  }
-
-  // Watch for workspace changes (line changes updates)
-  let workspaceChangesWatcher: (() => void) | null = null;
-  function setupWorkspaceChangesWatcher() {
-    workspaceChangesWatcher = listenSync('workspace-changes', (event: any) => {
-      logger.debug('[FileTreeView] Received workspace-changes event', event);
-      // Extract workspaceId from event (handle both wrapped and unwrapped formats)
-      const eventWorkspaceId = event?.payload?.workspaceId || event?.workspaceId;
-
-      // Check if the event is for our workspace using the mutable reference
-      // to get the CURRENT workspace ID, not the one captured at listener creation
-      if (eventWorkspaceId && eventWorkspaceId === currentWorkspaceIdRef) {
-        logger.info('[FileTreeView] Syncing git status from stores due to workspace changes', {
-          workspaceId: currentWorkspaceIdRef,
-          eventWorkspaceId,
-        });
-        // Use syncGitStatusFromStores to avoid triggering network calls that would
-        // cause an infinite loop (refreshGitStatus -> syncWithGit -> changes-tracked -> repeat)
-        store.syncGitStatusFromStores();
-      }
-      // Note: We don't refresh if there's no workspace ID to avoid unnecessary updates
-    });
-  }
-
-  // Watch for file tracking changes (same as CodeChangesPanel)
-  let fileTrackingWatcher: (() => void) | null = null;
-  let fileTrackingRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
-  function setupFileTrackingWatcher() {
-    fileTrackingWatcher = listenSync('file-tracking:changes-updated', (event: any) => {
-      logger.debug('[FileTreeView] Received file-tracking:changes-updated event', event);
-      const eventWorkspaceId = event?.payload?.workspaceId || event?.workspaceId;
-
-      // Check using the mutable reference to get the CURRENT workspace ID
-      if (!eventWorkspaceId || eventWorkspaceId === currentWorkspaceIdRef) {
-        // Debounce rapid file tracking events - clear existing timeout before scheduling new one
-        if (fileTrackingRefreshTimeout) {
-          clearTimeout(fileTrackingRefreshTimeout);
-        }
-        // Use a debounced timeout to batch rapid file tracking updates
-        fileTrackingRefreshTimeout = setTimeout(() => {
-          fileTrackingRefreshTimeout = null;
-          logger.debug(
-            '[FileTreeView] File tracking changes detected, syncing git status from stores',
-          );
-          // Use syncGitStatusFromStores to avoid triggering network calls that would
-          // cause an infinite loop (refreshGitStatus -> syncWithGit -> changes-tracked -> repeat)
-          store.syncGitStatusFromStores();
-        }, 300); // 300ms debounce to batch rapid updates
-      }
-    });
-  }
-
   let initialized = false;
   let isInitializing = false; // Guard against concurrent initialization
   let lastSyncTime = 0;
@@ -447,17 +349,15 @@
         });
         // Just update local display from stores - DON'T trigger a refresh which causes cascade
         // The stores are already updated by event listeners or other components
-        store.syncGitStatusFromStores();
+        dispatch(syncGitStatusFromStoresRequested(workspaceId));
       }
     }
   });
 
-  // Helper function to initialize the file explorer for a workspace
-  async function initializeForWorkspace(
-    wsPath: string,
-    wsId: string | undefined,
-    currentStore: ReturnType<typeof getFileExplorerStore>,
-  ) {
+  // Helper function to initialize the file explorer for a workspace.
+  // IPC/window listeners and workspace lifecycle are now owned by the saga, so
+  // this function only needs to dispatch the initialize action.
+  function initializeForWorkspace(wsPath: string, wsId: string | undefined) {
     // Prevent concurrent initialization
     if (isInitializing) {
       logger.debug('[FileTreeView] Initialization already in progress, skipping', { wsId });
@@ -470,6 +370,7 @@
       return;
     }
 
+    const targetWsId = wsId || wsPath;
     isInitializing = true;
     logger.info('[FileTreeView] Initializing for workspace', {
       workspacePath: wsPath,
@@ -485,20 +386,23 @@
       // the state and cause other components to get stuck on loading skeleton.
       if (wsId) {
         try {
-          getReduxStore().dispatch(loadGitStatus(wsId));
+          dispatch(loadGitStatus(wsId));
         } catch (storeError) {
           logger.warn('[FileTreeView] Failed to load git status:', storeError);
           // Continue with file tree initialization even if store fails
         }
       }
 
-      await currentStore.initialize();
+      dispatch(
+        initializeFileExplorer(targetWsId, {
+          workspacePath: wsPath,
+          workspaceId: wsId,
+          environmentConfig,
+        }),
+      );
       initialized = true;
       lastInitializedWorkspaceId = wsId;
-      await setupFileWatcher();
-      await setupWorkspaceChangesWatcher();
-      await setupFileTrackingWatcher();
-      logger.info('[FileTreeView] Initialization complete');
+      logger.info('[FileTreeView] Initialization dispatched');
     } catch (error) {
       logger.error('[FileTreeView] Failed to initialize:', error);
     } finally {
@@ -517,7 +421,7 @@
     // Only initialize if we have a workspace path
     if (workspacePath) {
       // Initialize asynchronously to prevent UI blocking
-      Promise.resolve().then(() => initializeForWorkspace(workspacePath, workspaceId, store));
+      Promise.resolve().then(() => initializeForWorkspace(workspacePath, workspaceId));
     } else {
       logger.warn('[FileTreeView] No workspace path provided, skipping initialization');
     }
@@ -529,7 +433,6 @@
     // Read workspaceId and workspacePath to create reactive dependencies
     const currentWsId = workspaceId;
     const currentWsPath = workspacePath;
-    const currentStore = store;
 
     // If workspace ID changed and we have a valid path, reinitialize
     if (
@@ -544,58 +447,27 @@
         workspacePath: currentWsPath,
       });
 
-      // Deactivate the previous workspace's store to abort any pending async operations
-      // This prevents the old store from querying/updating for the wrong workspace
-      deactivateFileExplorerStore(lastInitializedWorkspaceId);
-
-      // Reactivate the new store (in case it was previously deactivated)
-      reactivateFileExplorerStore(currentWsId);
-
-      // Reset initialized flag since we're switching workspaces
+      // Reset initialized flag since we're switching workspaces. The saga
+      // handles deactivate/reactivate via workspaceMounted/Unmounted.
       initialized = false;
 
       // Initialize the new workspace
-      initializeForWorkspace(currentWsPath, currentWsId, currentStore);
+      initializeForWorkspace(currentWsPath, currentWsId);
     }
-  });
-
-  onDestroy(() => {
-    // Clean up IPC listeners
-    if (fileWatcher) {
-      fileWatcher();
-    }
-    if (workspaceChangesWatcher) {
-      workspaceChangesWatcher();
-    }
-    if (fileTrackingWatcher) {
-      fileTrackingWatcher();
-    }
-
-    // Clean up debounce timeouts
-    if (fileTrackingRefreshTimeout) {
-      clearTimeout(fileTrackingRefreshTimeout);
-    }
-
-    // Clean up custom event listener
-    if (customFileChangeHandler) {
-      window.removeEventListener('file:changed', customFileChangeHandler as EventListener);
-    }
-
-    store.cleanup();
   });
 
   // Export refresh function for parent components
   export function refresh() {
-    store.refresh();
+    dispatch(refreshFileExplorer(effectiveWsId));
   }
 
   // Export expand/collapse all functions for parent components
-  export async function expandAll() {
-    await store.expandAll();
+  export function expandAll() {
+    dispatch(expandAllRequested(effectiveWsId));
   }
 
   export function collapseAll() {
-    store.collapseAll();
+    dispatch(clearExpandedPathsExceptRoot(effectiveWsId));
   }
 
   // Export getter to check if any directories are expanded
@@ -611,21 +483,10 @@
   // React to workspace path changes
   $effect(() => {
     if (workspacePath && workspacePath !== $feWorkspacePath$) {
-      // setWorkspacePath is now async and handles initialization
-      store
-        .setWorkspacePath(workspacePath)
-        .then(() => {
-          initialized = true;
-          if (!fileWatcher) {
-            setupFileWatcher();
-          }
-          if (!workspaceChangesWatcher) {
-            setupWorkspaceChangesWatcher();
-          }
-        })
-        .catch((error) => {
-          logger.error('[file-tree-view] Failed to set workspace path:', error);
-        });
+      // Saga owns the path-change handling (clear cache, reinitialize, set up
+      // listeners); we just dispatch and mark the component as initialized.
+      dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
+      initialized = true;
     }
   });
 
@@ -667,29 +528,32 @@
       // Use a small delay to ensure any pending refreshes have completed
       // This prevents the race condition where expandToPath runs before a refresh
       // and the expanded state is lost when the refresh replaces the tree
+      const targetWsId = effectiveWsId;
+      const targetFile = selectedFile;
       setTimeout(() => {
-        // Expand to the selected file
-        store.expandToPath(selectedFile).then((success) => {
-          if (success) {
-            // Wait for the DOM to update, then scroll to the element
-            requestAnimationFrame(() => {
-              // Try both absolute and relative path selectors
-              let fileElement = document.querySelector(
-                `[data-file-path="${CSS.escape(selectedFile)}"]`,
+        // Expand to the selected file via the saga (fire-and-forget).
+        dispatch(expandToPathRequested(targetWsId, targetFile));
+        // Wait for the expansion + DOM update, then scroll to the element.
+        // We cannot synchronously know whether expansion succeeded, so we
+        // best-effort scroll on the next animation frame after a short delay.
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            // Try both absolute and relative path selectors
+            let fileElement = document.querySelector(
+              `[data-file-path="${CSS.escape(targetFile)}"]`,
+            );
+            // If not found and path is relative, try with workspace prefix
+            if (!fileElement && !targetFile.startsWith('/') && workspacePath) {
+              const absolutePath = `${workspacePath}/${targetFile}`;
+              fileElement = document.querySelector(
+                `[data-file-path="${CSS.escape(absolutePath)}"]`,
               );
-              // If not found and path is relative, try with workspace prefix
-              if (!fileElement && !selectedFile.startsWith('/') && workspacePath) {
-                const absolutePath = `${workspacePath}/${selectedFile}`;
-                fileElement = document.querySelector(
-                  `[data-file-path="${CSS.escape(absolutePath)}"]`,
-                );
-              }
-              if (fileElement) {
-                fileElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            });
-          }
-        });
+            }
+            if (fileElement) {
+              fileElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          });
+        }, 50);
       }, 100);
     }
   });
@@ -787,7 +651,7 @@
           selectedFile = path;
           onFileSelect?.(path);
         }}
-        onToggleDirectory={(node) => store.toggleDirectory(node)}
+        onToggleDirectory={(node) => dispatch(toggleDirectoryRequested(effectiveWsId, node.path))}
         {onCreateFile}
         {onRenameFile}
         {onSelectAgent}
