@@ -90,7 +90,10 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
       // Send a chunk on the new session — must reach the new callbacks
       await streaming.handleSessionUpdate({
         sessionId: sessionId2,
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'recovered' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'recovered' },
+        },
       });
 
       expect(onChunk2).toHaveBeenCalledWith('recovered');
@@ -331,6 +334,250 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
       expect(toolResults).toHaveLength(1);
       expect((toolResults[0] as any).tool_use_id).toBe('tc_good');
     });
+
+    it('emits content-array tool_call_update results using the top-level toolCallId', async () => {
+      const sessionId = 'ses_v031_content_array_id';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_real',
+          status: 'completed',
+          content: [
+            { type: 'text', text: 'hello ' },
+            { type: 'text', text: 'world' },
+          ],
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_real');
+      expect((toolResults[0] as any).content).toBe('hello world');
+    });
+
+    it('recovers content-array tool_call_update results from lastPendingToolId when toolCallId is missing', async () => {
+      const sessionId = 'ses_v031_content_array_fallback';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_recoverable_array',
+          title: 'Read file',
+          name: 'read_file',
+          kind: 'read',
+          rawInput: { path: '/tmp/example.txt' },
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          status: 'completed',
+          content: [
+            { type: 'text', text: 'file ' },
+            { type: 'text', text: 'contents' },
+          ],
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_recoverable_array');
+      expect((toolResults[0] as any).content).toBe('file contents');
+    });
+
+    it('emits rawOutput-only tool_call_update results using rawOutput.output', async () => {
+      const sessionId = 'ses_v031_raw_output';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_raw_output',
+          status: 'completed',
+          rawOutput: { output: 'raw tool output' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_raw_output');
+      expect((toolResults[0] as any).content).toBe('raw tool output');
+    });
+
+    it('preserves legacy plain-object content tool_call_update results', async () => {
+      const sessionId = 'ses_v031_legacy_content';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          status: 'completed',
+          content: { result: 'ok', toolCallId: 'tc_legacy' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      expect(toolResults).toHaveLength(1);
+      expect((toolResults[0] as any).tool_use_id).toBe('tc_legacy');
+      expect((toolResults[0] as any).content).toBe('ok');
+    });
+
+    it('correlates reverse-order multi-tool updates by each top-level toolCallId', async () => {
+      const sessionId = 'ses_v031_multi_tool_correlation';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_first',
+          title: 'First tool',
+          name: 'first_tool',
+          kind: 'read',
+          rawInput: { path: '/tmp/first.txt' },
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_second',
+          title: 'Second tool',
+          name: 'second_tool',
+          kind: 'read',
+          rawInput: { path: '/tmp/second.txt' },
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_second',
+          status: 'completed',
+          rawOutput: { output: 'second result' },
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_first',
+          status: 'completed',
+          rawOutput: { output: 'first result' },
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolUses = partial.contentBlocks.filter((b) => b.type === 'tool_use');
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      const nonEmptyToolResults = toolResults.filter((b) => (b as any).content);
+
+      expect(toolUses.map((b) => (b as any).id)).toEqual(['tc_first', 'tc_second']);
+      expect(nonEmptyToolResults).toHaveLength(2);
+      expect(nonEmptyToolResults.map((b) => (b as any).tool_use_id)).toEqual([
+        'tc_second',
+        'tc_first',
+      ]);
+      expect(nonEmptyToolResults.map((b) => (b as any).content)).toEqual([
+        'second result',
+        'first result',
+      ]);
+      for (const result of nonEmptyToolResults) {
+        expect(
+          toolUses.some((toolUse) => (toolUse as any).id === (result as any).tool_use_id),
+        ).toBe(true);
+      }
+    });
+
+    it('correlates reverse-order Task tool content-array updates by top-level id', async () => {
+      vi.useFakeTimers();
+      const sessionId = 'ses_v031_task_tool_correlation';
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'A',
+          title: 'Task',
+          name: 'Task',
+          kind: 'execute',
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'B',
+          title: 'Task',
+          name: 'Task',
+          kind: 'execute',
+        } as any,
+      });
+
+      await vi.advanceTimersByTimeAsync(300);
+      vi.useRealTimers();
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'B',
+          status: 'completed',
+          content: [{ type: 'text', text: 'subagent B done' }],
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'A',
+          status: 'completed',
+          content: [{ type: 'text', text: 'subagent A done' }],
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolUses = partial.contentBlocks.filter((b) => b.type === 'tool_use');
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+
+      expect(toolUses.map((b) => (b as any).id)).toEqual(['A', 'B']);
+      expect(toolUses.map((b) => (b as any).name)).toEqual(['Task', 'Task']);
+      expect(toolResults).toHaveLength(2);
+      expect(toolResults.map((b) => (b as any).tool_use_id)).toEqual(['B', 'A']);
+      expect(toolResults.map((b) => (b as any).content)).toEqual([
+        'subagent B done',
+        'subagent A done',
+      ]);
+      for (const result of toolResults) {
+        expect(
+          toolUses.some((toolUse) => (toolUse as any).id === (result as any).tool_use_id),
+        ).toBe(true);
+      }
+    });
   });
 });
-

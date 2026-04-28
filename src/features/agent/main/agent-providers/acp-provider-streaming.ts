@@ -51,6 +51,49 @@ function getDevServerHint(command: string | undefined): string {
   return DEV_SERVER_PATTERNS.some((pattern) => pattern.test(command)) ? DEV_SERVER_HINT : '';
 }
 
+function isNonArrayObject(value: unknown): value is Record<string, any> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function nonBlankString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function isLegacyToolCallUpdateContent(content: unknown): content is Record<string, any> {
+  return isNonArrayObject(content) && ('toolCallId' in content || 'result' in content);
+}
+
+/**
+ * Extract a tool call id using ACP precedence: first the canonical top-level
+ * `update.toolCallId`, then Intent's legacy plain-object test content shape,
+ * then `update.id` as a legacy skeleton fallback. The `lastPendingToolId`
+ * recovery is intentionally not included here and remains at the call site.
+ */
+export function extractToolCallId(update: any): string {
+  const legacyContentToolCallId = isLegacyToolCallUpdateContent(update?.content)
+    ? nonBlankString(update.content.toolCallId)
+    : undefined;
+
+  return (
+    nonBlankString(update?.toolCallId) ||
+    legacyContentToolCallId ||
+    nonBlankString(update?.id) ||
+    ''
+  );
+}
+
+function extractContentArrayText(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+
+  return content
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (!isNonArrayObject(item)) return '';
+      return nonBlankString(item.text) || nonBlankString(item.content) || '';
+    })
+    .join('');
+}
+
 // Track tool kinds for pending tool calls to know when file edits complete
 // Key: toolId, Value: { kind: string, agentId: string, timestamp: number }
 interface PendingToolKind {
@@ -719,7 +762,10 @@ export class ACPProviderStreaming {
       } else {
         try {
           const { notesService } = await import('../../../notes/main/notes.service');
-          const noteResult = await notesService.getNote(session.workspaceId as any, noteIdStr as any);
+          const noteResult = await notesService.getNote(
+            session.workspaceId as any,
+            noteIdStr as any,
+          );
           if (noteResult.ok && noteResult.data?.title) {
             enrichedInput._noteTitle = noteResult.data.title;
             noteTitleCache.set(`${session.workspaceId}:${noteIdStr}`, noteResult.data.title);
@@ -1105,15 +1151,11 @@ export class ACPProviderStreaming {
           );
 
           // Also emit file-tracking:agent-file-changed for components that listen to that
-          sendToWorkspaceWindows(
-            pendingEdit.workspaceId,
-            'file-tracking:agent-file-changed',
-            {
-              workspaceId: pendingEdit.workspaceId,
-              filePath: pendingEdit.filePath,
-              source: 'agent',
-            },
-          );
+          sendToWorkspaceWindows(pendingEdit.workspaceId, 'file-tracking:agent-file-changed', {
+            workspaceId: pendingEdit.workspaceId,
+            filePath: pendingEdit.filePath,
+            source: 'agent',
+          });
 
           logger.debug('Emitted file content change events to renderer for agent edit', {
             filePath: pendingEdit.filePath,
@@ -1139,8 +1181,7 @@ export class ACPProviderStreaming {
           let additions = 0;
           let deletions = 0;
           for (const line of patch.split('\n')) {
-            if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++'))
-              continue;
+            if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++')) continue;
             if (line.startsWith('+')) additions++;
             else if (line.startsWith('-')) deletions++;
           }
@@ -1151,19 +1192,14 @@ export class ACPProviderStreaming {
             id: pendingEdit.agentId,
             name: pendingEdit.agentName || 'Agent',
           };
-          const fileEvent = createWorkspaceEvent(
-            'file:changed',
-            pendingEdit.workspaceId,
-            actor,
-            {
-              path: pendingEdit.filePath,
-              relativePath: pendingEdit.filePath,
-              action,
-              additions,
-              deletions,
-              diff: patch,
-            },
-          );
+          const fileEvent = createWorkspaceEvent('file:changed', pendingEdit.workspaceId, actor, {
+            path: pendingEdit.filePath,
+            relativePath: pendingEdit.filePath,
+            action,
+            additions,
+            deletions,
+            diff: patch,
+          });
           mainDispatch(emitWorkspaceEvent(fileEvent));
 
           logger.info('Emitted file:changed event with diff to activity log', {
@@ -1201,7 +1237,10 @@ export class ACPProviderStreaming {
       hasName: !!update?.name,
       hasStatus: !!update?.status,
       agentId: session?.agentId,
-      rawInputKeys: update?.rawInput && typeof update.rawInput === 'object' ? Object.keys(update.rawInput) : 'none',
+      rawInputKeys:
+        update?.rawInput && typeof update.rawInput === 'object'
+          ? Object.keys(update.rawInput)
+          : 'none',
       rawInputPath: (update?.rawInput as any)?.path || 'none',
       locationsCount: Array.isArray(update?.locations) ? update.locations.length : 0,
     });
@@ -1257,8 +1296,7 @@ export class ACPProviderStreaming {
       }
 
       // Store skeleton info — the follow-up call with real input will create the block
-      const skeletonToolId =
-        update?.toolCallId || update?.id || `tool_${Date.now()}`;
+      const skeletonToolId = extractToolCallId(update) || `tool_${Date.now()}`;
       const skeletonTitle = update?.title || update?.name || 'unknown';
       this.pendingSkeleton = {
         toolName: update?.name || update?.title || 'unknown',
@@ -1296,7 +1334,7 @@ export class ACPProviderStreaming {
     } else if (this.emittedSkeletonToolId) {
       // The skeleton was already emitted via timeout before this follow-up arrived.
       // We need to UPDATE the existing skeleton block instead of creating a duplicate.
-      const followUpToolId = update?.toolCallId || update?.id;
+      const followUpToolId = extractToolCallId(update);
       if (followUpToolId === this.emittedSkeletonToolId) {
         isFollowUpForEmittedSkeleton = true;
         this.emittedSkeletonToolId = undefined;
@@ -1352,18 +1390,19 @@ export class ACPProviderStreaming {
     let toolInput = {};
     let toolId = `tool_${Date.now()}`;
 
+    const extractedToolCallId = extractToolCallId(update);
     if (update?.content && typeof update.content === 'object' && !Array.isArray(update.content)) {
       // Test format: tool info is in content (object, not array)
       toolName = update.content.name || update.content.title || 'unknown';
       toolTitle = update.content.title || update.content.name || 'unknown';
       toolInput = update.content.input || update.content.rawInput || {};
-      toolId = update.content.id || update.content.toolCallId || toolId;
+      toolId = extractedToolCallId || update.content.id || toolId;
     } else {
       // Production format: tool info is in update directly
       toolName = update?.name || update?.title || 'unknown';
       toolTitle = update?.title || update?.name || 'unknown';
       toolInput = update?.rawInput || update?.input || {};
-      toolId = update?.toolCallId || update?.id || toolId;
+      toolId = extractedToolCallId || toolId;
     }
 
     // Safety: if toolInput is a JSON string (can happen with some transports), parse it
@@ -1444,7 +1483,11 @@ export class ACPProviderStreaming {
     // We only override for specific, unambiguous input patterns to avoid false positives.
     // The classifier (tool-classifier.ts) also uses input parameters as a fallback,
     // so we focus on the most critical cases here.
-    if (input.command === 'str_replace' || input.command === 'insert' || input.command === 'create') {
+    if (
+      input.command === 'str_replace' ||
+      input.command === 'insert' ||
+      input.command === 'create'
+    ) {
       // str-replace-editor is the only tool with command='str_replace' or 'insert'
       actualToolName = 'str-replace-editor';
     } else if (
@@ -1477,31 +1520,74 @@ export class ACPProviderStreaming {
     // derive the actual workspace tool name from input parameters so the UI
     // classifier can produce detailed display text.
     // ORDER MATTERS: more specific parameter combinations must come first.
-    else if (input.noteId !== undefined && input.old_text !== undefined && input.new_text !== undefined) {
+    else if (
+      input.noteId !== undefined &&
+      input.old_text !== undefined &&
+      input.new_text !== undefined
+    ) {
       // edit_note: has noteId + old_text + new_text
       actualToolName = 'workspace-mcp_edit_note';
-    } else if (input.noteId !== undefined && input.start_line !== undefined && input.new_content !== undefined) {
+    } else if (
+      input.noteId !== undefined &&
+      input.start_line !== undefined &&
+      input.new_content !== undefined
+    ) {
       // edit_note_lines: has noteId + start_line + new_content
       actualToolName = 'workspace-mcp_edit_note_lines';
-    } else if (input.noteId !== undefined && input.content !== undefined && input.confirm_replacement !== undefined) {
+    } else if (
+      input.noteId !== undefined &&
+      input.content !== undefined &&
+      input.confirm_replacement !== undefined
+    ) {
       // set_note_content with explicit confirm: has noteId + content + confirm_replacement
       actualToolName = 'workspace-mcp_set_note_content';
-    } else if (input.noteId !== undefined && input.heading !== undefined && input.content !== undefined) {
+    } else if (
+      input.noteId !== undefined &&
+      input.heading !== undefined &&
+      input.content !== undefined
+    ) {
       // add_to_note: has noteId + heading + content (param is 'heading', not 'section_heading')
       actualToolName = 'workspace-mcp_add_to_note';
-    } else if (input.noteId !== undefined && input.content !== undefined && !input.old_text && !input.start_line && !input.heading) {
+    } else if (
+      input.noteId !== undefined &&
+      input.content !== undefined &&
+      !input.old_text &&
+      !input.start_line &&
+      !input.heading
+    ) {
       // set_note_content (without confirm): has noteId + content, but NOT old_text/start_line/heading
       actualToolName = 'workspace-mcp_set_note_content';
-    } else if (input.noteId !== undefined && input.lineNumber !== undefined && input.status !== undefined) {
+    } else if (
+      input.noteId !== undefined &&
+      input.lineNumber !== undefined &&
+      input.status !== undefined
+    ) {
       // update_task: has noteId + lineNumber + status (updates a task line within a note)
       actualToolName = 'workspace-mcp_update_task';
-    } else if (input.noteId !== undefined && input.status !== undefined && !input.content && !input.old_text && !input.lineNumber) {
+    } else if (
+      input.noteId !== undefined &&
+      input.status !== undefined &&
+      !input.content &&
+      !input.old_text &&
+      !input.lineNumber
+    ) {
       // update_note_task_status: has noteId + status but NO content/old_text/lineNumber
       actualToolName = 'workspace-mcp_update_note_task_status';
-    } else if (input.noteId !== undefined && !input.content && !input.old_text && !input.start_line && !input.status && !input.lineNumber) {
+    } else if (
+      input.noteId !== undefined &&
+      !input.content &&
+      !input.old_text &&
+      !input.start_line &&
+      !input.status &&
+      !input.lineNumber
+    ) {
       // read_note: has noteId but NO editing/status params
       actualToolName = 'workspace-mcp_read_note';
-    } else if (input.taskNoteId !== undefined && !toolName.includes('get_my_task') && (input.agentInstructions !== undefined || input.specialist !== undefined)) {
+    } else if (
+      input.taskNoteId !== undefined &&
+      !toolName.includes('get_my_task') &&
+      (input.agentInstructions !== undefined || input.specialist !== undefined)
+    ) {
       // delegate_task: has taskNoteId + agentInstructions/specialist, but NOT get_my_task
       actualToolName = 'workspace-mcp_delegate_task';
     } else if (input.taskNoteId !== undefined && !input.agentInstructions && !input.specialist) {
@@ -1598,7 +1684,10 @@ export class ACPProviderStreaming {
       } else {
         try {
           const { notesService } = await import('../../../notes/main/notes.service');
-          const noteResult = await notesService.getNote(session.workspaceId as any, noteIdStr as any);
+          const noteResult = await notesService.getNote(
+            session.workspaceId as any,
+            noteIdStr as any,
+          );
           if (noteResult.ok && noteResult.data?.title) {
             (toolInput as Record<string, any>)._noteTitle = noteResult.data.title;
             noteTitleCache.set(`${session.workspaceId}:${noteIdStr}`, noteResult.data.title);
@@ -1666,12 +1755,10 @@ export class ACPProviderStreaming {
       input.command === 'str_replace' ||
       input.file_content !== undefined ||
       (typeof toolName === 'string' &&
-        (
-          toolName.startsWith('Save ') ||
+        (toolName.startsWith('Save ') ||
           toolName.startsWith('Edit ') ||
           toolName.startsWith('Update ') ||
-          toolName.startsWith('Apply patch')
-        )) ||
+          toolName.startsWith('Apply patch'))) ||
       FILE_EDIT_TOOLS.has(actualToolName);
 
     logger.info('[ACPProviderStreaming] File edit detection', {
@@ -1682,12 +1769,10 @@ export class ACPProviderStreaming {
       hasFileContent: input.file_content !== undefined,
       startsWithSaveOrEdit:
         typeof toolName === 'string' &&
-        (
-          toolName.startsWith('Save ') ||
+        (toolName.startsWith('Save ') ||
           toolName.startsWith('Edit ') ||
           toolName.startsWith('Update ') ||
-          toolName.startsWith('Apply patch')
-        ),
+          toolName.startsWith('Apply patch')),
       inFileEditTools: FILE_EDIT_TOOLS.has(actualToolName),
       toolId,
     });
@@ -1773,8 +1858,11 @@ export class ACPProviderStreaming {
       // When a tool fails with an empty result, extract the error message so the UI
       // shows a meaningful error instead of a blank "Tool Error:" line
       if (!output && status === 'failed') {
-        const errorMsg = update?.error?.message || update?.content?.error?.message
-          || update?.error || update?.content?.error;
+        const errorMsg =
+          update?.error?.message ||
+          update?.content?.error?.message ||
+          update?.error ||
+          update?.content?.error;
         if (errorMsg) {
           try {
             output = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
@@ -1815,16 +1903,28 @@ export class ACPProviderStreaming {
       // Codex never sends tool_call_update events, so without this the auto-complete mechanism
       // would create a synthetic empty tool_result and the UI would show "Completed" instead of
       // the actual note content / note list / task data.
-      const CODEX_READABLE_TOOLS = new Set(['read_note', 'list_notes', 'list_note_tasks', 'get_my_task']);
+      const CODEX_READABLE_TOOLS = new Set([
+        'read_note',
+        'list_notes',
+        'list_note_tasks',
+        'get_my_task',
+      ]);
       let fetchedResult = false;
 
-      if (isCodexWorkspaceMcp && session?.workspaceId && CODEX_READABLE_TOOLS.has(codexResolvedToolName)) {
+      if (
+        isCodexWorkspaceMcp &&
+        session?.workspaceId &&
+        CODEX_READABLE_TOOLS.has(codexResolvedToolName)
+      ) {
         try {
           const { notesService } = await import('../../../notes/main/notes.service');
           let resultContent = '';
 
           if (codexResolvedToolName === 'read_note' && input.noteId) {
-            const noteResult = await notesService.getNote(session.workspaceId as any, String(input.noteId) as any);
+            const noteResult = await notesService.getNote(
+              session.workspaceId as any,
+              String(input.noteId) as any,
+            );
             if (noteResult.ok && noteResult.data) {
               const note = noteResult.data;
               const contentWithLineNumbers = (note.content || '')
@@ -1849,34 +1949,53 @@ export class ACPProviderStreaming {
               resultContent = JSON.stringify(notesList, null, 2);
             }
           } else if (codexResolvedToolName === 'list_note_tasks' && input.noteId) {
-            const noteResult = await notesService.getNote(session.workspaceId as any, String(input.noteId) as any);
+            const noteResult = await notesService.getNote(
+              session.workspaceId as any,
+              String(input.noteId) as any,
+            );
             if (noteResult.ok && noteResult.data) {
               const note = noteResult.data;
               const content = note.content || '';
               const lines = content.split('\n');
               const TASK_LINE_REGEX = /^(\s*[-*]\s*)\[([ xX\/])\]\s*(.+)$/;
               const TASK_LINK_PATTERN = /\[([^\]]+)\]\(intent:\/\/local\/task\/([a-f0-9-]+)\)/;
-              const tasks: Array<{ lineNumber: number; text: string; status: string; taskNoteId: string | null }> = [];
+              const tasks: Array<{
+                lineNumber: number;
+                text: string;
+                status: string;
+                taskNoteId: string | null;
+              }> = [];
               for (let i = 0; i < lines.length; i++) {
                 const match = lines[i].match(TASK_LINE_REGEX);
                 if (!match) continue;
                 const [, , checkbox, taskText] = match;
-                const status = checkbox === 'x' || checkbox === 'X' ? 'done' : checkbox === '/' ? 'in-progress' : 'todo';
+                const status =
+                  checkbox === 'x' || checkbox === 'X'
+                    ? 'done'
+                    : checkbox === '/'
+                      ? 'in-progress'
+                      : 'todo';
                 const linkMatch = taskText.match(TASK_LINK_PATTERN);
                 const taskNoteId = linkMatch ? linkMatch[2] : null;
-                const cleanText = linkMatch ? linkMatch[1] : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
+                const cleanText = linkMatch
+                  ? linkMatch[1]
+                  : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
                 tasks.push({ lineNumber: i + 1, text: cleanText, status, taskNoteId });
               }
               let text = `Tasks in "${note.title || input.noteId}" (${tasks.length} task${tasks.length !== 1 ? 's' : ''}):\n`;
               for (const task of tasks) {
-                const cb = task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[/]' : '[ ]';
+                const cb =
+                  task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[/]' : '[ ]';
                 const linkInfo = task.taskNoteId ? ` → task note: ${task.taskNoteId}` : '';
                 text += `\n  Line ${task.lineNumber}: ${cb} ${task.text}${linkInfo}`;
               }
               resultContent = text;
             }
           } else if (codexResolvedToolName === 'get_my_task' && input.taskNoteId) {
-            const taskResult = await notesService.getNote(session.workspaceId as any, String(input.taskNoteId) as any);
+            const taskResult = await notesService.getNote(
+              session.workspaceId as any,
+              String(input.taskNoteId) as any,
+            );
             if (taskResult.ok && taskResult.data) {
               const note = taskResult.data;
               resultContent = JSON.stringify({
@@ -1922,28 +2041,25 @@ export class ACPProviderStreaming {
    */
   private async handleToolCallUpdate(update: any, session: any): Promise<void> {
     // The backend sends the result in different formats
-    // Test format: update.content.result
-    // Production format: update.rawOutput.output
-    let output = '';
-    let toolCallId = '';
-
-    if (update?.content) {
-      // Test format
+    // Production format: update.rawOutput.output, update.result, or string content[]
+    // Legacy test format: update.content.result (plain object only)
+    let output =
+      update?.rawOutput?.output || update?.result || extractContentArrayText(update?.content);
+    if (!output && isLegacyToolCallUpdateContent(update?.content)) {
       output = update.content.result || '';
-      toolCallId = update.content.toolCallId || '';
-    } else {
-      // Production format
-      output = update?.rawOutput?.output || update?.result || '';
-      toolCallId = update?.toolCallId || '';
     }
+    let toolCallId = extractToolCallId(update);
 
     // When output is empty but the update carries an error (e.g., MCP connection lost,
     // timeout, bridge unavailable), extract the error message so the UI shows something
     // meaningful instead of a blank "Tool Error:" line
     const isError = update?.status === 'failed' || update?.isError;
     if (!output && isError) {
-      const errorMsg = update?.error?.message || update?.content?.error?.message
-        || update?.error || update?.content?.error;
+      const errorMsg =
+        update?.error?.message ||
+        update?.content?.error?.message ||
+        update?.error ||
+        update?.content?.error;
       if (errorMsg) {
         try {
           output = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
@@ -1960,20 +2076,26 @@ export class ACPProviderStreaming {
     // persist a malformed tool_result block.
     if (!toolCallId || !toolCallId.trim()) {
       if (this.lastPendingToolId && this.lastPendingToolId.trim()) {
-        logger.warn('[ACPProviderStreaming] Tool call update missing toolCallId; recovering from lastPendingToolId', {
-          recoveredToolId: this.lastPendingToolId,
-          agentId: session.agentId,
-          status: update?.status,
-          isError,
-        });
+        logger.warn(
+          '[ACPProviderStreaming] Tool call update missing toolCallId; recovering from lastPendingToolId',
+          {
+            recoveredToolId: this.lastPendingToolId,
+            agentId: session.agentId,
+            status: update?.status,
+            isError,
+          },
+        );
         toolCallId = this.lastPendingToolId;
       } else {
-        logger.warn('[ACPProviderStreaming] Dropping tool call update with blank toolCallId and no recoverable pending id', {
-          agentId: session.agentId,
-          status: update?.status,
-          isError,
-          hasOutput: typeof output === 'string' && output.length > 0,
-        });
+        logger.warn(
+          '[ACPProviderStreaming] Dropping tool call update with blank toolCallId and no recoverable pending id',
+          {
+            agentId: session.agentId,
+            status: update?.status,
+            isError,
+            hasOutput: typeof output === 'string' && output.length > 0,
+          },
+        );
         return;
       }
     }
@@ -2034,10 +2156,13 @@ export class ACPProviderStreaming {
         }
 
         if (backfilledFields.length > 0) {
-          logger.info('[ACPProviderStreaming] Backfilled input fields on tool_use from tool_call_update', {
-            toolCallId,
-            backfilledFields,
-          });
+          logger.info(
+            '[ACPProviderStreaming] Backfilled input fields on tool_use from tool_call_update',
+            {
+              toolCallId,
+              backfilledFields,
+            },
+          );
         }
       }
     }
@@ -2104,7 +2229,12 @@ export class ACPProviderStreaming {
       }
     }
 
-    await this.processPendingFileEdit(toolCallId, update?.status || '', Boolean(toolResultBlock.is_error), session);
+    await this.processPendingFileEdit(
+      toolCallId,
+      update?.status || '',
+      Boolean(toolResultBlock.is_error),
+      session,
+    );
 
     // Clean up pending tool kind and file edit
     if (toolCallId) {
@@ -2290,5 +2420,3 @@ export class ACPProviderStreaming {
     this.frontendSessionId = undefined;
   }
 }
-
-
