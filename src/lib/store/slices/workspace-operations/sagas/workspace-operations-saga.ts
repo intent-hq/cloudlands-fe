@@ -5,7 +5,9 @@ import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { removeKnownRepo } from "$lib/store/slices/known-repos/known-repos-slice";
 import {
   clearActiveWorkspace,
+  clearWorkspacePendingDeletion,
   loadWorkspacesRequested,
+  markWorkspacePendingDeletion,
   openWorkspaceRequested,
   removeWorkspaceEntity,
   setWorkspaceEntity,
@@ -87,6 +89,7 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
   let toastId: string | number | undefined;
 
   store.dispatch(removeWorkspaceEntity(workspace.id));
+  store.dispatch(markWorkspacePendingDeletion(workspace.id));
   if (currentWorkspace?.id === workspace.id) {
     store.dispatch(clearActiveWorkspace());
   }
@@ -98,12 +101,14 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
 
     const result = await workspaceClient.delete(workspace.id);
     if (!result.ok) {
+      store.dispatch(clearWorkspacePendingDeletion(workspace.id));
       store.dispatch(setWorkspaceEntity(workspace));
       store.dispatch(loadWorkspacesRequested());
       toast.error("Failed to delete space");
       return;
     }
 
+    store.dispatch(clearWorkspacePendingDeletion(workspace.id));
     store.dispatch(loadWorkspacesRequested());
   }, 15000);
 
@@ -114,6 +119,7 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
       onClick: async () => {
         undone = true;
         globalThis.clearTimeout(timeoutId);
+        store.dispatch(clearWorkspacePendingDeletion(workspace.id));
         store.dispatch(setWorkspaceEntity(workspace));
         if (toastId !== undefined) {
           toast.dismiss(toastId);
