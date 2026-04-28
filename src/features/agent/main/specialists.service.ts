@@ -621,14 +621,14 @@ You have access to the following agent specialists. When delegating work, you ca
 |------------|-------|-------|---------|
 ${rows}
 
-**Examples:**
+**Examples** (call via the \`workspace_api\` tool):
 
 \`\`\`
 // To implement work
-delegate_task(taskNoteId="abc-123", specialist="implementor")
+ws.agent.delegate({ taskNoteId: "abc-123", specialist: "implementor" })
 
 // To review work
-create_agent(name="Review changes", specialist="verifier", initialMessage="Check the implementation...")
+ws.agent.create("Review changes", "Check the implementation...", { specialist: "verifier" })
 \`\`\`
 
 The specialist parameter sets the model and adds role-specific instructions. Override with \`model\` or \`behaviorPrompt\` if needed.`;

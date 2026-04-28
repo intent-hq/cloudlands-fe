@@ -4,7 +4,7 @@ import { Logger } from '$shared/logger';
 
 import { BaseMCPTool, createInputSchema, stringProperty } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
-import type { PRContext } from './pr-comment-tools';
+import type { PRContext } from './ws-pr-api';
 import { AVAILABLE_TOPICS } from './reference-docs';
 import { buildAgentApi } from './ws-agent-api';
 import { buildWsEventApi } from './ws-event-api';

@@ -5,9 +5,17 @@ import { augmentApiClient } from '../../../../shared/augment-api/augment-api.cli
 import { githubService } from '../../../git-tracking/main/github.service';
 import { prCommentService, type ReviewThread } from '../../../git-tracking/main/pr-comment.service';
 import type { PullRequest } from '../../../git-tracking/types';
-import type { PRContext } from './pr-comment-tools';
 
 const logger = new Logger('WsPrApi');
+
+/**
+ * Context required for PR comment operations
+ */
+export interface PRContext {
+  owner: string;
+  repo: string;
+  prNumber: number;
+}
 
 const GITHUB_TOOL_ID = 8;
 const NO_ACTIVE_PR_ERROR = 'No active PR';

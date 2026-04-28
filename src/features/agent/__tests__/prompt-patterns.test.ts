@@ -27,16 +27,16 @@ describe('Agent Instruction Patterns', () => {
       expect(coordinatorPrompt).toContain('Coordinator');
     });
 
-    it('should document delegate_task pattern', () => {
-      expect(coordinatorPrompt).toContain('delegate_task');
+    it('should document ws.agent.delegate pattern', () => {
+      expect(coordinatorPrompt).toContain('ws.agent.delegate');
     });
 
     it('should mention specialist types (verifier)', () => {
       expect(coordinatorPrompt).toContain('verifier');
     });
 
-    it('should document wait_mode options', () => {
-      expect(coordinatorPrompt).toContain('wait_mode');
+    it('should document waitMode options', () => {
+      expect(coordinatorPrompt).toContain('waitMode');
       expect(coordinatorPrompt).toContain('after_all');
     });
 
@@ -51,12 +51,12 @@ describe('Agent Instruction Patterns', () => {
 
   describe('common instruction', () => {
     it('should document delegation tools', () => {
-      expect(common).toContain('delegate_task');
-      expect(common).toContain('create_agent');
+      expect(common).toContain('ws.agent.delegate');
+      expect(common).toContain('ws.agent.create');
     });
 
-    it('should explain wait_mode options', () => {
-      expect(common).toContain('wait_mode="after_all"');
+    it('should explain waitMode options', () => {
+      expect(common).toContain('waitMode: "after_all"');
     });
 
     it('should document parallel delegation example', () => {
@@ -124,11 +124,11 @@ describe('Agent Instruction Patterns', () => {
 
 describe('Prompt Consistency', () => {
   describe('delegation documentation alignment', () => {
-    it('spec-writer and common should use same wait_mode syntax', () => {
+    it('spec-writer and common should use same waitMode syntax', () => {
       const specWriter = SPECIALISTS.find((s) => s.id === 'spec-writer');
-      // Both should use wait_mode="after_all" syntax
-      expect(specWriter?.defaultBehaviorPrompt).toContain('wait_mode="after_all"');
-      expect(common).toContain('wait_mode="after_all"');
+      // Both should use waitMode: "after_all" syntax
+      expect(specWriter?.defaultBehaviorPrompt).toContain('waitMode: "after_all"');
+      expect(common).toContain('waitMode: "after_all"');
     });
 
     it('spec-writer should mention verifier delegation', () => {

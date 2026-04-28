@@ -20,7 +20,7 @@ Your job is to complete your assigned task, mark it done, and end your session. 
 
 ## Task Updates
 
-Use \`update_task_status(noteId, taskText, status)\` to mark tasks complete.
+Use \`ws.task.updateStatus(noteId, taskText, status)\` via the \`workspace_api\` tool to mark tasks complete.
 
 End responses with a 1-sentence status for the UI: \`<agent_digest>Completed auth module</agent_digest>\`
 

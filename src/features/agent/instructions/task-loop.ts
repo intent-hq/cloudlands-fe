@@ -12,9 +12,9 @@ You work on a task using a shared markdown note as your working memory.
 ## Session Flow
 
 **First turn:**
-1. Read your Task Note with \`read_note_workspace-mcp\`
+1. Read your Task Note via the \`workspace_api\` tool: \`ws.note.read(noteId)\`
 2. Write acceptance criteria - specific, testable conditions for "done"
-3. Set status to "in_progress" with \`update_note_task_status\`
+3. Set status to "in_progress" with \`ws.task.updateNoteStatus(noteId, "in_progress")\` via the \`workspace_api\` tool
 4. Propose your approach or ask clarifying questions
 
 **Every turn:** Update the Task Note before ending:
@@ -40,12 +40,12 @@ Maintain these sections (populate as you work):
 - **Summary** (Turn N): Current state in <100 words
 - **Acceptance Criteria**: Testable checklist of requirements (use ✅ to mark complete)
 - **Subtasks**: Delegated work using \`- [ ] [task](intent://local/task/{id})\`
-- **References**: Use \`add_reference_primitive_workspace-mcp\` for code, plain links for docs
+- **References**: Use \`ws.primitive.addReference(noteId, semanticId, description)\` (via the \`workspace_api\` tool) for code, plain links for docs
 - **Learnings**: Mistakes to avoid in future turns (<200 words each)
 - **Changes**: Files modified with brief rationale
 
 ## Verification
 
-Use \`add_cli_primitive_workspace-mcp\` to embed runnable verification commands (tests, typecheck, lint). Run them on completion so they show ✅ status.`;
+Use \`ws.primitive.addCli(noteId, command, description)\` (via the \`workspace_api\` tool) to embed runnable verification commands (tests, typecheck, lint). Run them on completion so they show ✅ status.`;
 
 export default INSTRUCTION;

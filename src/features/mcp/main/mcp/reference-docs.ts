@@ -84,14 +84,14 @@ Add \`"states": [...]\` array:
 
   'ws-blocks': `# Rich Blocks (ws-blocks) Reference
 
-Embed interactive blocks in notes using MCP tools or markdown syntax.
+Embed interactive blocks in notes using the \`workspace_api\` tool or markdown syntax.
 
-## MCP Tools
+## API Calls (via the \`workspace_api\` tool)
 
-- \`add_reference_primitive_workspace-mcp(noteId, semanticId, description)\` - Live code reference
-- \`add_cli_primitive_workspace-mcp(noteId, command, description)\` - Runnable command
-- \`add_patch_primitive_workspace-mcp(noteId, filePath, diff, description)\` - Applyable code change
-- \`add_agent_action_primitive_workspace-mcp(noteId, goal, description)\` - Agent trigger button
+- \`ws.primitive.addReference(noteId, semanticId, description, snapshot?)\` - Live code reference
+- \`ws.primitive.addCli(noteId, command, description, workingDirectory?)\` - Runnable command
+- \`ws.primitive.addPatch(noteId, filePath, diff, description)\` - Applyable code change
+- \`ws.primitive.addAgentAction(noteId, agentId, goal, description)\` - Agent trigger button
 
 ## Markdown Syntax
 
@@ -216,7 +216,7 @@ Set up PostgreSQL with Drizzle ORM.
 Each \`@@@task\` block is replaced with a linked checkbox:
 \`- [ ] [Task Title](intent://local/task/{id})\`
 
-You can then delegate these tasks using \`delegate_task(taskNoteId="...")\`.
+You can then delegate these tasks via the \`workspace_api\` tool using \`ws.agent.delegate({ taskNoteId: "..." })\`.
 `,
 };
 

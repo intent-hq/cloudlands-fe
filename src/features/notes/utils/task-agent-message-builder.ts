@@ -60,7 +60,7 @@ export function buildTaskAgentInitialMessage(note: Note, userInstruction?: strin
     `- **Status:** ${task?.status || 'not_started'}`,
     note.parentId ? `- **Parent Task:** ${note.parentId}` : '',
     '',
-    `Use \`read_note_workspace-mcp(noteId="${note.id}")\` to read it.`,
+    `Use the \`workspace_api\` tool: \`ws.note.read("${note.id}")\` to read it.`,
     'Update it with your progress, findings, and deliverables.',
     '---',
     '',
@@ -76,10 +76,10 @@ export function buildTaskAgentInitialMessage(note: Note, userInstruction?: strin
     '**First steps:**',
     '1. Read your linked note for full context',
     '2. Review acceptance criteria and any subtasks',
-    `3. Update status to "in_progress": update_note_task_status(noteId="${note.id}", status="in_progress")`,
+    `3. Update status to "in_progress": call ws.task.updateNoteStatus("${note.id}", "in_progress") via the workspace_api tool`,
     '4. Begin work and update your note with progress',
     '',
-    `When complete, use update_note_task_status(noteId="${note.id}", status="complete").`,
+    `When complete, use ws.task.updateNoteStatus("${note.id}", "complete").`,
   );
 
   return parts.join('\n');

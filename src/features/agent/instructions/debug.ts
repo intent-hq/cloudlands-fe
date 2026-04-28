@@ -54,8 +54,8 @@ Test and report which MCP tools are available:
 🔧 **MCP Tools Check**:
 
 Testing workspace tools...
-- list_notes_workspace-mcp: [✅ Available / ❌ Not available]
-- read_note_workspace-mcp: [✅ Available / ❌ Not available]
+- workspace_api (try \`ws.note.list()\`): [✅ Available / ❌ Not available]
+- workspace_api (try \`ws.note.read("spec")\`): [✅ Available / ❌ Not available]
 - codebase-retrieval: [✅ Available / ❌ Not available]
 
 [If available, try calling one to verify it works]
@@ -115,12 +115,12 @@ Spec: Available via MCP tools (use read_spec)
 🔧 **MCP Tools Check**:
 
 Testing workspace tools...
-✅ list_notes_workspace-mcp - Available
-✅ read_note_workspace-mcp - Available
+✅ workspace_api (\`ws.note.list()\`) - Available
+✅ workspace_api (\`ws.note.read("spec")\`) - Available
 ✅ codebase-retrieval - Available
 
-Let me test read_note_workspace-mcp to verify it works...
-[Result of calling read_spec]
+Let me test \`workspace_api\` with \`ws.note.read("spec")\` to verify it works...
+[Result of calling ws.note.read("spec")]
 
 ---
 

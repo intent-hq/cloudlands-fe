@@ -119,22 +119,22 @@ describe('Agent Instructions', () => {
       // Delegation instructions - these ensure agents list tasks before delegating
       expect(common).toContain('Before delegating');
       expect(common).toContain('list the tasks');
-      expect(common).toContain('delegate_task(taskNoteId=');
-      expect(common).toContain('Never use `create_agent` for tasks that already have IDs');
+      expect(common).toContain('ws.agent.delegate(');
+      expect(common).toContain('Never use `ws.agent.create` for tasks that already have IDs');
     });
 
     it('forces breakdown agents to use task blocks (not checkbox lists) and to materialize spec tasks', () => {
       expect(taskBreakdown).toContain('Do not use markdown checkbox lists');
       expect(taskBreakdown).toContain('task block');
-      expect(taskBreakdown).toContain('convert_task_blocks_workspace-mcp(noteId="spec")');
+      expect(taskBreakdown).toContain('ws.task.convertBlocks("spec")');
     });
 
     it('workspace instruction contains core workspace concepts', () => {
       // workspace.ts contains shared instructions for workspace agents
       expect(workspace).toContain('Space');
       expect(workspace).toContain('notes');
-      expect(workspace).toContain('delegate_task');
-      expect(workspace).toContain('read_note_workspace-mcp');
+      expect(workspace).toContain('ws.agent.delegate');
+      expect(workspace).toContain('ws.note.read');
     });
   });
 });

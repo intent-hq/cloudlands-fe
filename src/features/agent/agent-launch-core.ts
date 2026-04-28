@@ -59,7 +59,7 @@ export function buildWorkspaceContext(
       lines.push('');
     }
     lines.push(
-      "Spec: Available as a note with ID 'spec' (use read_note with noteId='spec' to read, add_to_note to add content, edit_note to modify)",
+      "Spec: Available as a note with ID 'spec' (use ws.note.read with noteId='spec' to read, ws.note.add to add content, ws.note.edit to modify)",
     );
   }
 
@@ -182,7 +182,7 @@ export function buildDynamicMessage(
   if (!workspaceTitle || workspaceTitle.trim() === '') {
     lines.push('⚠️ **IMPORTANT - FIRST STEP:**');
     lines.push(
-      'The space title is empty. You MUST rename it immediately using `set_workspace_title_workspace-mcp`.',
+      'The space title is empty. You MUST rename it immediately using `ws.workspace.setTitle`.',
     );
     lines.push('Extract a short, descriptive name (1-5 words) from the task/spec goal.');
     lines.push("Examples: 'Dark Mode Feature', 'Fix Login Bug', 'Add Search', 'Refactor Database'");
@@ -259,18 +259,18 @@ export function buildDynamicMessage(
           lines.push('');
           lines.push("The space specification (stored as a note with ID 'spec').");
           lines.push('');
-          lines.push('**IMPORTANT: Use MCP tools to read/write the spec:**');
-          lines.push('- Read the spec: read_note_workspace-mcp(noteId="spec")');
-          lines.push('- Add to the spec: add_to_note_workspace-mcp(noteId="spec", content="...")');
+          lines.push('**IMPORTANT: Use the `workspace_api` tool to read/write the spec:**');
+          lines.push('- Read the spec: ws.note.read("spec")');
+          lines.push('- Add to the spec: ws.note.add("spec", { content: "..." })');
           lines.push(
-            '- Add comments/suggestions: add_note_comment_workspace-mcp(noteId="spec", ...)',
+            '- Add comments/suggestions: ws.comment.add("spec", { ... })',
           );
           lines.push('- The spec contains the goals, requirements, and features for this space');
           lines.push('');
           lines.push('**Space Naming:**');
-          lines.push('- Check if space has a title: get_workspace_details_workspace-mcp()');
+          lines.push('- Check if space has a title: ws.workspace.details()');
           lines.push(
-            '- If hasTitle is false or title is generic, use set_workspace_title_workspace-mcp()',
+            '- If hasTitle is false or title is generic, use ws.workspace.setTitle()',
           );
           lines.push('- Keep the name short (1-5 words) and descriptive of the goal');
           break;
@@ -280,8 +280,8 @@ export function buildDynamicMessage(
             lines.push('');
             lines.push(`Note ID: ${ref.noteId}`);
             lines.push('');
-            lines.push('**IMPORTANT: Use MCP tools to read the note:**');
-            lines.push(`- Read the note: read_note_workspace-mcp(noteId="${ref.noteId}")`);
+            lines.push('**IMPORTANT: Use the `workspace_api` tool to read the note:**');
+            lines.push(`- Read the note: ws.note.read("${ref.noteId}")`);
             lines.push('- The note contains context relevant to your task');
           }
           break;

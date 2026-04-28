@@ -8,18 +8,18 @@
 const INSTRUCTION = `## Delegating Tasks
 
 Before delegating, list the tasks to find existing task IDs:
-1. List tasks: \`list_note_tasks_workspace-mcp(noteId="spec")\`
+1. List tasks via the \`workspace_api\` tool: \`ws.note.listTasks("spec")\`
 2. Use the returned task note IDs directly
-3. Delegate by ID: \`delegate_task(taskNoteId="{id}", specialist="implementor")\`
+3. Delegate by ID: \`ws.agent.delegate({ taskNoteId: "{id}", specialist: "implementor" })\`
 
-Use \`list_note_tasks\` instead of \`read_note\` when you only need task IDs — it's much faster and returns just the tasks.
+Use \`ws.note.listTasks\` instead of \`ws.note.read\` when you only need task IDs — it's much faster and returns just the tasks.
 
-**Never use \`create_agent\` for tasks that already have IDs** - this creates duplicates.
+**Never use \`ws.agent.create\` for tasks that already have IDs** - this creates duplicates.
 
-Use \`wait_mode="after_all"\` for parallel delegation when you want to review all results together:
+Use \`waitMode: "after_all"\` for parallel delegation when you want to review all results together:
 \`\`\`
-delegate_task(taskNoteId="abc-123", wait_mode="after_all")
-delegate_task(taskNoteId="def-456", wait_mode="after_all")
+ws.agent.delegate({ taskNoteId: "abc-123", waitMode: "after_all" })
+ws.agent.delegate({ taskNoteId: "def-456", waitMode: "after_all" })
 \`\`\`
 
 Keep delegated tasks visible in the note - users need to see what's being worked on.
@@ -28,13 +28,13 @@ Keep delegated tasks visible in the note - users need to see what's being worked
 
 | Goal | Tool |
 |------|------|
-| Add content | \`add_to_note\` ✅ |
-| Fix a section | \`edit_note\` ✅ |
-| Update task status | \`update_task\` ✅ |
-| Change title/tags | \`update_note_metadata\` ✅ |
-| Replace entire note | \`set_note_content\` ⚠️ |
+| Add content | \`ws.note.add\` ✅ |
+| Fix a section | \`ws.note.edit\` ✅ |
+| Update task status | \`ws.task.update\` ✅ |
+| Change title/tags | \`ws.note.updateMetadata\` ✅ |
+| Replace entire note | \`ws.note.setContent\` ⚠️ |
 
-**CRITICAL**: "Add to the spec" means \`add_to_note\`, not \`set_note_content\` (which replaces everything).
+**CRITICAL**: "Add to the spec" means \`ws.note.add\`, not \`ws.note.setContent\` (which replaces everything).
 
 ## Response Organization
 

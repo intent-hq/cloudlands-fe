@@ -198,7 +198,7 @@ describe('Specialist Configuration', () => {
       expect(prompt).toMatch(/wave/i);
 
       // Wait mode
-      expect(prompt).toContain('wait_mode="after_all"');
+      expect(prompt).toContain('waitMode: "after_all"');
 
       // Workflow instructions
       expect(prompt).toContain('Workflow');

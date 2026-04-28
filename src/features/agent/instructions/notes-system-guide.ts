@@ -8,54 +8,56 @@ const INSTRUCTION = `# Notes System Guide
 
 Notes are markdown documents for specs, plans, and documentation. The spec (ID: "spec") is the main planning document.
 
-## Key Tools
+All note and comment calls below run through the \`workspace_api\` tool — invoke \`workspace_api\` and pass JavaScript that calls the \`ws.*\` API (e.g. \`return await ws.note.read("spec")\`).
+
+## Key APIs
 
 ### Reading Notes
-- \`read_note_workspace-mcp(noteId)\` — Read a note (use "spec" for the specification)
-- \`list_notes_workspace-mcp()\` — List all notes
-- \`list_note_tasks_workspace-mcp(noteId)\` — List just the tasks in a note (returns task IDs, status, and text without the full note content — use this instead of read_note when you only need task IDs for delegation)
+- \`ws.note.read(id)\` — Read a note (use "spec" for the specification)
+- \`ws.note.list()\` — List all notes
+- \`ws.note.listTasks(id)\` — List just the tasks in a note (returns task IDs, status, and text without the full note content — use this instead of \`ws.note.read\` when you only need task IDs for delegation)
 
-### Editing Notes (Choose the Right Tool!)
+### Editing Notes (Choose the Right API!)
 
-**SAFE tools (preserves existing content):**
-- \`add_to_note_workspace-mcp(noteId, content, heading?, position?)\` — **SAFEST**: Add content (default: end)
+**SAFE APIs (preserves existing content):**
+- \`ws.note.add(id, { content, heading?, position? })\` — **SAFEST**: Add content (default: end)
   - position: "end" (default), "start", or "after:## Heading"
-- \`edit_note_workspace-mcp(noteId, old_text, new_text)\` — Surgical str_replace style editing
-- \`edit_note_lines_workspace-mcp(noteId, start_line, end_line, new_content)\` — Line-based editing
-- \`update_note_metadata_workspace-mcp(noteId, title?, tags?)\` — Update only title/tags
-- \`update_task_workspace-mcp(noteId, taskLine, newStatus)\` — Update a single task status
+- \`ws.note.edit(id, { old, new })\` — Surgical str_replace style editing
+- \`ws.note.editLines(id, { start, end, content })\` — Line-based editing
+- \`ws.note.updateMetadata(id, { title?, tags? })\` — Update only title/tags
+- \`ws.task.update(noteId, line, { status })\` — Update a single task status
 
-**DANGEROUS tools (full replacement):**
-- \`set_note_content_workspace-mcp(noteId, content)\` — ⚠️ **REPLACES ENTIRE NOTE** - requires confirmation!
+**DANGEROUS APIs (full replacement):**
+- \`ws.note.setContent(id, content, confirmReplacement?)\` — ⚠️ **REPLACES ENTIRE NOTE** - requires confirmation!
 
 ### Creating/Deleting Notes
-- \`create_note_workspace-mcp(title, content)\` — Create a new note
-- \`delete_note_workspace-mcp(noteId)\` — Delete a note
+- \`ws.note.create(title, content, tags?)\` — Create a new note
+- \`ws.note.delete(id)\` — Delete a note
 
-### When to Use Each Editing Tool
-| User Request | Use This Tool |
+### When to Use Each Editing API
+| User Request | Use This API |
 |--------------|---------------|
-| "Add this to the spec" | \`add_to_note\` |
-| "Put this information in the note" | \`add_to_note\` |
-| "Insert after Phase 1" | \`add_to_note(position="after:## Phase 1")\` |
-| "Fix this typo" | \`edit_note\` |
-| "Update lines 5-10" | \`edit_note_lines\` |
-| "Change the title" | \`update_note_metadata\` |
-| "Mark task as done" | \`update_task\` |
-| "Rewrite the entire spec" | \`set_note_content\` (requires confirm_replacement="true") |
+| "Add this to the spec" | \`ws.note.add\` |
+| "Put this information in the note" | \`ws.note.add\` |
+| "Insert after Phase 1" | \`ws.note.add(id, { content, position: "after:## Phase 1" })\` |
+| "Fix this typo" | \`ws.note.edit\` |
+| "Update lines 5-10" | \`ws.note.editLines\` |
+| "Change the title" | \`ws.note.updateMetadata\` |
+| "Mark task as done" | \`ws.task.update\` |
+| "Rewrite the entire spec" | \`ws.note.setContent\` (call again with \`confirmReplacement=true\` if much shorter) |
 
 ## Comments
 
-Use \`add_note_comment_workspace-mcp\` to comment on specific text:
+Use \`ws.comment.add(noteId, { searchContext, commentTarget, comment })\` to comment on specific text:
 - \`searchContext\`: A unique phrase from the document
 - \`commentTarget\`: The specific text within that context to anchor to
 
-Use \`list_note_comments_workspace-mcp\` to see threads, \`respond_to_comment_thread_workspace-mcp\` to reply.
+Use \`ws.comment.list(noteId, { ... })\` to see threads, \`ws.comment.respond(noteId, { ... })\` to reply.
 
 ## Tips
 
 - Always read before updating to avoid overwriting changes
-- Prefer \`add_to_note\` and \`edit_note\` over \`set_note_content\`
+- Prefer \`ws.note.add\` and \`ws.note.edit\` over \`ws.note.setContent\`
 - Use \`intent://local/note/{noteId}\` links to reference notes
 - Use tags to organize notes
 `;

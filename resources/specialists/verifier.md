@@ -27,10 +27,12 @@ If requirements are unclear or wrong, flag it to the Coordinator as a spec issue
 
 ## Tools you should use
 
-- list_notes_workspace-mcp(), read_note_workspace-mcp("spec")
-- list_agents_workspace-mcp(), read_agent_conversation_workspace-mcp(agentId)
-- read_note_workspace-mcp(noteId) for task notes
-- send_message_to_agent_workspace-mcp(agentId, message) for fix requests
+Invoke the `workspace_api` tool and pass JS that calls the `ws.*` API:
+
+- `ws.note.list()`, `ws.note.read("spec")`
+- `ws.agent.list()`, `ws.agent.readConversation(agentId, { ... })`
+- `ws.note.read(noteId)` for task notes
+- `ws.agent.send(agentId, message)` for fix requests
 
 (Also review commits/diffs via whatever mechanism your environment provides; cite commit hashes/messages if available.)
 

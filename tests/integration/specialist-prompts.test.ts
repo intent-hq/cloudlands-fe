@@ -116,12 +116,12 @@ describe('Specialist Prompts Verification', () => {
     it('common instructions should contain delegation guidance', () => {
       expect(common).toContain('Before delegating');
       expect(common).toContain('list the tasks');
-      expect(common).toContain('delegate_task');
-      expect(common).toContain('Never use `create_agent` for tasks that already have IDs');
+      expect(common).toContain('ws.agent.delegate');
+      expect(common).toContain('Never use `ws.agent.create` for tasks that already have IDs');
     });
 
-    it('common instructions should contain wait_mode examples', () => {
-      expect(common).toContain('wait_mode="after_all"');
+    it('common instructions should contain waitMode examples', () => {
+      expect(common).toContain('waitMode: "after_all"');
     });
 
     // Note: implement instruction tests removed - implement.ts was deleted as unused
@@ -137,8 +137,8 @@ describe('Specialist Prompts Verification', () => {
       // Tests updated to match current workspace.ts content
       expect(workspace).toContain('Space');
       expect(workspace).toContain('notes');
-      expect(workspace).toContain('delegate_task');
-      expect(workspace).toContain('read_note_workspace-mcp');
+      expect(workspace).toContain('ws.agent.delegate');
+      expect(workspace).toContain('ws.note.read');
     });
   });
 
@@ -159,9 +159,9 @@ describe('Specialist Prompts Verification', () => {
     it('should include usage examples', async () => {
       const formatted = await formatSpecialistsForPrompt();
 
-      expect(formatted).toContain('delegate_task');
-      expect(formatted).toContain('specialist=');
-      expect(formatted).toContain('Examples:');
+      expect(formatted).toContain('ws.agent.delegate');
+      expect(formatted).toContain('specialist:');
+      expect(formatted).toContain('Examples');
     });
   });
 

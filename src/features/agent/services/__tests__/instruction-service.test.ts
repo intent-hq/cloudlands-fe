@@ -229,7 +229,7 @@ describe('InstructionService', () => {
       // Should contain common instructions (prepended to bundled defaults)
       // The common.ts file contains delegation and note editing instructions
       expect(rules).toContain('Delegating Tasks');
-      expect(rules).toContain('delegate_task');
+      expect(rules).toContain('ws.agent.delegate');
 
       // Cleanup
       freshService.destroy();
