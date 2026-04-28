@@ -41,6 +41,18 @@ export const selectAgentSession = createSelector(
     materializeSession(state.agentSessions?.byAgentId[agentId]),
 );
 
+/** Select specific agent sessions by agent IDs. */
+export const selectAgentSessionsByIds = createSelector(
+  (state: StoreState, agentIds: string[]): AgentSession[] => {
+    const result: AgentSession[] = [];
+    for (const id of agentIds) {
+      const materialized = materializeSession(state.agentSessions?.byAgentId[id]);
+      if (materialized) result.push(materialized);
+    }
+    return result;
+  },
+);
+
 /** Select messages for a given agent (ordered array) */
 export const selectAgentMessages = createSelector(
   (state: StoreState, agentId: string): AgentMessage[] => {

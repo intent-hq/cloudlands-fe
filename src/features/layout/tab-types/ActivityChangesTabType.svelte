@@ -4,7 +4,7 @@
    *
    * Shows diff for a file from an activity event.
    * ALWAYS shows the historical diff from the event, not current git status.
-   * Uses MonacoDiffViewer for consistent diff display with the sidebar changes panel.
+   * Uses TrackedChangeDiffViewer for consistent diff display with the sidebar changes panel.
    */
 
   import type { TabTypeComponentProps } from './registry';
@@ -12,7 +12,7 @@
   import { eventToTrackedChange } from '$features/file-tracking/change-converters';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 
-  import MonacoDiffViewer from '$lib/components/file-tracking/MonacoDiffViewer.svelte';
+  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
@@ -105,7 +105,7 @@
   // Whether this is a partial file diff (starts after line 1)
   const isPartialDiff = $derived(lineOffset !== undefined && lineOffset > 1);
 
-  // Build a TrackedChange with embedded content for MonacoDiffViewer
+  // Build a TrackedChange with embedded content for TrackedChangeDiffViewer
   const change: TrackedChange = $derived.by(() => {
     const path = filePath || '';
     const data = (activityEvent?.data || {}) as any;
@@ -244,14 +244,13 @@
     {/if}
     <div class="flex-1 min-h-0">
       {#key `${activityEvent?.id}-${filePath}`}
-        <MonacoDiffViewer
+        <TrackedChangeDiffViewer
           {change}
           {workspaceId}
-          sideBySide={$diffSideBySide}
+          viewMode={$diffSideBySide ? 'split' : 'unified'}
           foldUnchanged={$foldUnchanged}
           lineWrapping={$lineWrapping}
-          readOnly={true}
-          {lineOffset}
+          lineOffset={lineOffset}
         />
       {/key}
     </div>

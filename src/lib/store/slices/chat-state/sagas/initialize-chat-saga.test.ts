@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 import { runSaga, stdChannel } from "redux-saga";
 
@@ -36,6 +36,9 @@ vi.mock("typed-redux-saga", () => ({
   race: function* (effects: any) {
     return yield sagaEffects.race(effects);
   },
+  getContext: function* (prop: string) {
+    return yield sagaEffects.getContext(prop);
+  },
 }));
 
 vi.mock("$lib/utils/client-logger", () => ({
@@ -63,22 +66,20 @@ vi.mock("$features/agent/agent-ipc-bridge", () => ({
   },
 }));
 
+class MockMessageGuardError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageGuardError';
+  }
+}
 const mockSetupStreaming = vi.fn();
+const mockSendMessage = vi.fn().mockResolvedValue(undefined);
 vi.mock("$features/agent/services/chat.service", () => ({
+  MessageGuardError: MockMessageGuardError,
   getChatService: vi.fn(() => ({
     setupStreamingForSession: mockSetupStreaming,
+    sendMessage: mockSendMessage,
   })),
-}));
-
-vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
-  addAgent: Object.assign(
-    (...args: any[]) => ({ type: "workspaceAgents/addAgent", payload: args }),
-    { type: "workspaceAgents/addAgent", toString: () => "workspaceAgents/addAgent" },
-  ),
-  upsertAgentSession: (...args: any[]) => ({
-    type: "workspaceAgents/upsertAgentSession",
-    payload: args,
-  }),
 }));
 
 vi.mock("../../workspace/workspace-selectors", () => ({
@@ -90,9 +91,14 @@ vi.mock("../../workspace/workspace-selectors", () => ({
 
 // These need to return functions that work as selectors
 const mockSelectAgentById = vi.fn();
+const mockSelectWorkspaceAgentReadySession = vi.fn();
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
   selectAgentById: {
     select: (...args: any[]) => mockSelectAgentById(...args),
+  },
+  selectWorkspaceAgentReadySession: {
+    select: (...args: any[]) => mockSelectWorkspaceAgentReadySession(...args),
+    effect: function* (...args: any[]) { return mockSelectWorkspaceAgentReadySession(...args); },
   },
   selectIsInitialSpecWriteInProgress: {
     select: () => false,
@@ -100,17 +106,24 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
 }));
 
 const mockSelectAgentMessages = vi.fn();
+const mockSelectAgentSession = vi.fn();
 vi.mock("../../agent-session/agent-session-selectors", () => ({
   selectAgentMessages: {
     select: (...args: any[]) => mockSelectAgentMessages(...args),
   },
+  selectAgentSession: {
+    select: (...args: any[]) => mockSelectAgentSession(...args),
+  },
 }));
 
 vi.mock("../../agent-session/agent-session-slice", () => ({
-  upsertSession: (session: any) => ({
-    type: "agentSessions/upsertSession",
-    payload: session,
-  }),
+  upsertSession: Object.assign(
+    (session: any) => ({
+      type: "agentSessions/upsertSession",
+      payload: [session],
+    }),
+    { type: "agentSessions/upsertSession", toString: () => "agentSessions/upsertSession" },
+  ),
   replaceMessages: (agentId: any, messages: any) => ({
     type: "agentSessions/replaceMessages",
     payload: [agentId, messages],
@@ -124,7 +137,27 @@ vi.mock("../chat-state-selectors", () => ({
   },
 }));
 
-import { initializeChatRequested } from "../chat-state-slice";
+function getLatestDispatchedMessageIds(dispatched: any[]): string[] {
+  const replaceMessagesActions = dispatched.filter(
+    (a) => a.type === "agentSessions/replaceMessages",
+  );
+  if (replaceMessagesActions.length > 0) {
+    const [, replacedMessages] = replaceMessagesActions[replaceMessagesActions.length - 1].payload;
+    return replacedMessages.map((m: any) => m.id);
+  }
+
+  const upsertActions = dispatched.filter((a) => a.type === "agentSessions/upsertSession");
+  expect(upsertActions.length).toBeGreaterThanOrEqual(1);
+  const [upsertedSession] = upsertActions[upsertActions.length - 1].payload;
+  return upsertedSession.messages.map((m: any) => m.id);
+}
+
+import {
+  initializeChatRequested,
+  sendInitialMessageRequested,
+  chatSendStarted,
+  chatSendFailed,
+} from "../chat-state-slice";
 
 
 function makeMsg(id: string, role: "user" | "assistant" = "user", text = "hello") {
@@ -149,6 +182,117 @@ describe("initialize-chat-saga: disk message merge regression", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSelectChatState.mockReturnValue(defaultChatState);
+    mockSelectAgentSession.mockReturnValue(undefined);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(null);
+    mockSendMessage.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends initial message through saga after session is ready", async () => {
+    const { initializeChatSaga } = await import("./initialize-chat-saga");
+    const session = {
+      id: "agent-1",
+      workspaceId: "ws-1",
+      name: "Test Agent",
+      status: "idle",
+      isStreaming: false,
+      messages: [],
+    };
+    mockSelectAgentSession.mockReturnValue(session);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(session);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      initializeChatSaga as any,
+    );
+
+    const storage = new Map<string, string>();
+    storage.set("workspace:ws-1:agent-config", JSON.stringify({
+      agentId: "agent-1",
+      prompt: "Initial prompt",
+      imageBlocks: [{ type: "image", data: "img", mimeType: "image/png" }],
+      contextReferences: [{ type: "file", path: "src/file.ts" }],
+    }));
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    channel.put(sendInitialMessageRequested("agent-1", { wsId: "ws-1" }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(true);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage.mock.calls[0][0]).toBe("Initial prompt");
+    expect(mockSendMessage.mock.calls[0][2]).toBe("agent-1");
+    expect(mockSendMessage.mock.calls[0][3]).toMatchObject({
+      agentId: "agent-1",
+      contextReferences: [{ type: "file", path: "src/file.ts" }],
+    });
+    expect(mockSendMessage.mock.calls[0][3].contextItems[0]).toMatchObject({
+      imageData: "img",
+      imageMimeType: "image/png",
+    });
+    expect(storage.has("workspace:ws-1:agent-config")).toBe(false);
+  });
+
+  it("fails initial message request when session readiness times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const { initializeChatSaga } = await import("./initialize-chat-saga");
+      mockSelectAgentSession.mockReturnValue(undefined);
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          context: {
+            readableStoreState: {
+              subscribe: (run: (state: any) => void) => {
+                run({});
+                return () => {};
+              },
+            },
+          },
+          getState: () => ({}),
+        },
+        initializeChatSaga as any,
+      );
+
+      channel.put(sendInitialMessageRequested("agent-1", {
+        wsId: "ws-1",
+        message: "Initial prompt",
+      }));
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(dispatched.some((a) => a.type === chatSendFailed.type)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("merges missing initial messages from disk when Redux has stale subset", async () => {
@@ -217,14 +361,7 @@ describe("initialize-chat-saga: disk message merge regression", () => {
     // bypassCache ensures we read fresh data from disk, not a stale cached session
     expect(mockLoadSession).toHaveBeenCalledWith("agent-1", "ws-1", { bypassCache: true });
 
-    // Find the upsertSession dispatch — it should contain all 3 messages
-    const upsertActions = dispatched.filter(
-      (a) => a.type === "agentSessions/upsertSession",
-    );
-    expect(upsertActions.length).toBeGreaterThanOrEqual(1);
-
-    const upsertedSession = upsertActions[upsertActions.length - 1].payload;
-    const messageIds = upsertedSession.messages.map((m: any) => m.id);
+    const messageIds = getLatestDispatchedMessageIds(dispatched);
 
     // The critical assertion: msg-1 (the initial message) must be present
     expect(messageIds).toContain("msg-1");
@@ -336,13 +473,7 @@ describe("initialize-chat-saga: disk message merge regression", () => {
     // Verify loadSession was called with correct args (including bypassCache) despite failure
     expect(mockLoadSession).toHaveBeenCalledWith("agent-1", "ws-1", { bypassCache: true });
 
-    // Should still dispatch upsertSession with the in-memory message
-    const upsertActions = dispatched.filter(
-      (a) => a.type === "agentSessions/upsertSession",
-    );
-    expect(upsertActions.length).toBeGreaterThanOrEqual(1);
-
-    const upsertedSession = upsertActions[upsertActions.length - 1].payload;
-    expect(upsertedSession.messages.map((m: any) => m.id)).toContain("msg-1");
+    const messageIds = getLatestDispatchedMessageIds(dispatched);
+    expect(messageIds).toContain("msg-1");
   });
 });

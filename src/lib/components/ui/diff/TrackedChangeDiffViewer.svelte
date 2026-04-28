@@ -9,8 +9,7 @@
    * - Real-time updates when file content changes
    */
   import { onMount, untrack } from 'svelte';
-  import { invoke, listenSync } from '$lib/electron-bridge';
-  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
+  import { invoke } from '$lib/electron-bridge';
   import {
     selectActiveWorkspace,
     selectActiveWorkspaceId,
@@ -20,7 +19,11 @@
   import DiffViewer from './DiffViewer.svelte';
   import type { HunkData, ExpansionDirections } from '@pierre/diffs';
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
+  import { subscribeFileContentChange } from './file-content-watcher';
+  import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
+  import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
+  import { getChangedLineNumbersFromContent } from './line-staging';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -46,14 +49,30 @@
     onOpenCommit?: (commitHash: string) => void;
     /** Optional refresh key to force reload */
     refreshKey?: number;
+    /** Branch base ref for aggregate committed branch diffs */
+    branchBaseRef?: string;
+    /** Resolved branch boundary SHA for aggregate committed branch diffs */
+    branchBaseCommitSha?: string;
     /** When true, use provided content from change.content instead of fetching from git */
     useProvidedContent?: boolean;
+    /**
+     * Starting line number for partial/snippet diffs (1-based). When > 1,
+     * blank lines are prepended so real file line numbers are rendered in the gutter.
+     */
+    lineOffset?: number;
     /** Per-line stage indicators for multi-stage diffs */
     lineStageIndicators?: LineStageIndicator[];
     /** Line annotations for custom per-line content */
     annotations?: PureDiffLineAnnotation<any>[];
     /** Custom render function for annotations */
     renderAnnotation?: (annotation: PureDiffLineAnnotation<any>) => HTMLElement | undefined;
+    /**
+     * Optional pierre `Virtualizer`. When supplied, the underlying `DiffViewer`
+     * instantiates a `VirtualizedFileDiff` so off-screen diffs collapse to
+     * height-preserving placeholders. Used by multi-file lists like
+     * `ChatChangesPanel`; single-diff callsites leave this unset.
+     */
+    virtualizer?: import('@pierre/diffs').Virtualizer;
   }
 
   let {
@@ -68,11 +87,15 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCommit,
     refreshKey,
+    branchBaseRef,
+    branchBaseCommitSha,
     useProvidedContent = false,
+    lineOffset = 1,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lineStageIndicators,
     annotations = [],
     renderAnnotation,
+    virtualizer,
   }: Props = $props();
 
   // Unique instance ID for debugging
@@ -92,6 +115,13 @@
   let lastChangeFile = $state<string | undefined>(undefined);
   // Guard against duplicate loadDiffContent calls
   let isLoadingDiff = $state(false);
+
+  // For partial/snippet diffs, prepend blank lines so pierre's gutter shows
+  // real file line numbers. Combined with foldUnchanged, the padding collapses
+  // into a folded region.
+  const linePadding = $derived(lineOffset > 1 ? '\n'.repeat(lineOffset - 1) : '');
+  const displayOldContent = $derived(linePadding + oldContent);
+  const displayNewContent = $derived(linePadding + newContent);
 
   // Line selection state
   let selectedLines = $state<{
@@ -122,6 +152,19 @@
   // File info
   const fileName = $derived(change?.relativePath || change?.file || 'file');
   const language = $derived(getLanguageFromFileName(fileName));
+
+  // Hash the unpadded content so the @pierre/diffs worker AST cache hits on
+  // re-mount. Padding bytes change with lineOffset; folding them into the
+  // hash would generate a fresh cache key every time the offset moves. We
+  // still append `:off${lineOffset}` so a real offset change (which affects
+  // what pierre renders) still invalidates the cached entry.
+  const hasPadding = $derived(lineOffset > 1);
+  const oldDiffCacheKey = $derived(
+    hasPadding ? `${fileName}:${hashContent(oldContent)}:off${lineOffset}` : undefined,
+  );
+  const newDiffCacheKey = $derived(
+    hasPadding ? `${fileName}:${hashContent(newContent)}:off${lineOffset}` : undefined,
+  );
 
   function getLanguageFromFileName(name: string): string | undefined {
     const ext = name.split('.').pop()?.toLowerCase();
@@ -253,6 +296,12 @@
         hasProvidedContent &&
         !contentIsRawDiff &&
         (useProvidedContent || change.stage === 'committed');
+      const shouldUseBranchBaseDiff =
+        !forceRefresh &&
+        !useProvidedContent &&
+        !change.commitHash &&
+        change.stage === 'committed' &&
+        Boolean(branchBaseRef || branchBaseCommitSha);
 
       if (shouldUseProvidedContent) {
         logger.info('[loadDiffContent] Using provided content', {
@@ -269,6 +318,26 @@
           oldContentLength: oldContent.length,
           newContentLength: newContent.length,
         });
+      } else if (shouldUseBranchBaseDiff) {
+        logger.info('[loadDiffContent] Fetching branch-base diff content', {
+          baseRef: branchBaseRef,
+          baseCommitSha: branchBaseCommitSha,
+          filePath,
+        });
+
+        const wsIdForBranchBase = workspaceId || workspace?.id || '';
+        const diffChunk = await batchedGitBranchBaseDiff(
+          wsIdForBranchBase,
+          { baseRef: branchBaseRef, baseCommitSha: branchBaseCommitSha },
+          filePath,
+        );
+
+        oldContent = diffChunk?.oldContent || '';
+        newContent = diffChunk?.newContent || '';
+
+        if (!newContent && !oldContent) {
+          noChangesAtStage = true;
+        }
       } else if (change.stage === 'committed' && change.commitHash) {
         // For committed changes without provided content, fetch using git:show-file
         logger.info('[loadDiffContent] Fetching committed file content', {
@@ -276,19 +345,13 @@
           filePath,
         });
 
-        // Fetch new content at the commit
-        const newContentResult = (await invoke('git:show-file', {
-          workspaceId: workspaceId || workspace?.id,
-          filePath,
-          ref: change.commitHash,
-        })) as { success: boolean; data?: string; error?: string };
-
-        // Fetch old content from parent commit
-        const oldContentResult = (await invoke('git:show-file', {
-          workspaceId: workspaceId || workspace?.id,
-          filePath,
-          ref: `${change.commitHash}^`,
-        })) as { success: boolean; data?: string; error?: string };
+        const wsIdForShow = workspaceId || workspace?.id || '';
+        // Parallel show-file fetches via the dedup cache so overlapping
+        // mounts for the same file+commit share a single IPC round-trip.
+        const [newContentResult, oldContentResult] = await Promise.all([
+          dedupedShowFile(wsIdForShow, change.commitHash, filePath),
+          dedupedShowFile(wsIdForShow, `${change.commitHash}^`, filePath),
+        ]);
 
         newContent = newContentResult?.success ? newContentResult.data || '' : '';
         oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
@@ -307,53 +370,58 @@
           stage: change.stage,
           stagedValue,
         });
-        // Fetch via git:diff
-        const diffResult = (await invoke('git:diff', {
-          workspaceId: workspaceId || workspace?.id,
-          staged: stagedValue,
-          paths: [filePath],
-        })) as { success: boolean; data?: any[]; error?: string };
+        const wsIdForDiff = workspaceId || workspace?.id || '';
 
-        if (diffResult?.success && diffResult?.data && diffResult.data.length > 0) {
-          const diffChunk = diffResult.data[0];
-          const hasValidOld = diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
-          const hasValidNew = diffChunk.newContent !== undefined && diffChunk.newContent !== '';
+        // Helper: fill oldContent/newContent from git at a given `staged`
+        // flag via the batcher + show-file dedup cache. Returns true when the
+        // diff chunk (or its fallback) populated both sides.
+        const tryLoadAtStage = async (stagedFlag: boolean): Promise<boolean> => {
+          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath);
 
-          if (hasValidOld && hasValidNew) {
-            oldContent = diffChunk.oldContent || '';
-            newContent = diffChunk.newContent || '';
-          } else {
-            // Fallback: fetch content manually
-            const gitRef = stagedValue ? 'HEAD' : ':0';
-            const oldResult = (await invoke('git:show-file', {
-              workspaceId: workspaceId || workspace?.id,
-              filePath,
-              ref: gitRef,
-            })) as { success: boolean; data?: string };
+          if (diffChunk) {
+            const hasValidOld =
+              diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
+            const hasValidNew =
+              diffChunk.newContent !== undefined && diffChunk.newContent !== '';
 
+            if (hasValidOld && hasValidNew) {
+              oldContent = diffChunk.oldContent || '';
+              newContent = diffChunk.newContent || '';
+              return true;
+            }
+
+            // Fallback: fetch content manually via show-file / file:read.
+            // Old side always comes from a git ref; new side comes from the
+            // working copy for unstaged changes.
+            const gitRef = stagedFlag ? 'HEAD' : ':0';
+            const oldResult = await dedupedShowFile(wsIdForDiff, gitRef, filePath);
             if (oldResult?.success) oldContent = oldResult.data || '';
 
-            if (stagedValue) {
-              const indexResult = (await invoke('git:show-file', {
-                workspaceId: workspaceId || workspace?.id,
-                filePath,
-                ref: ':0',
-              })) as { success: boolean; data?: string };
+            if (stagedFlag) {
+              const indexResult = await dedupedShowFile(wsIdForDiff, ':0', filePath);
               if (indexResult?.success) newContent = indexResult.data || '';
             } else {
               const fileResult = (await invoke('file:read', {
-                workspaceId: workspaceId || workspace?.id,
+                workspaceId: wsIdForDiff,
                 path: `${workspacePath}/${filePath}`,
               })) as { success: boolean; data?: { content: string } | string } | string;
               if (typeof fileResult === 'string') {
                 newContent = fileResult;
               } else if (fileResult?.success && fileResult?.data) {
                 newContent =
-                  typeof fileResult.data === 'string' ? fileResult.data : fileResult.data.content;
+                  typeof fileResult.data === 'string'
+                    ? fileResult.data
+                    : fileResult.data.content;
               }
             }
+            return true;
           }
-        } else {
+          return false;
+        };
+
+        const loadedAtRequested = await tryLoadAtStage(stagedValue);
+
+        if (!loadedAtRequested) {
           // git:diff returned no changes for the requested stage
           // Try the opposite stage (e.g., if unstaged returned nothing, try staged)
           // This handles cases where the tracked change has stale stage info
@@ -365,61 +433,14 @@
             tryingStaged: oppositeStaged,
           });
 
-          const oppositeDiffResult = (await invoke('git:diff', {
-            workspaceId: workspaceId || workspace?.id,
-            staged: oppositeStaged,
-            paths: [filePath],
-          })) as { success: boolean; data?: any[]; error?: string };
-
-          if (
-            oppositeDiffResult?.success &&
-            oppositeDiffResult?.data &&
-            oppositeDiffResult.data.length > 0
-          ) {
-            const diffChunk = oppositeDiffResult.data[0];
-            const hasValidOld = diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
-            const hasValidNew = diffChunk.newContent !== undefined && diffChunk.newContent !== '';
-
-            if (hasValidOld && hasValidNew) {
-              oldContent = diffChunk.oldContent || '';
-              newContent = diffChunk.newContent || '';
-              logger.info('[loadDiffContent] Found changes at opposite stage', {
-                instanceId,
-                stage: oppositeStaged ? 'staged' : 'unstaged',
-                oldContentLength: oldContent.length,
-                newContentLength: newContent.length,
-              });
-            } else {
-              // Fallback: fetch content manually for the opposite stage
-              const gitRef = oppositeStaged ? 'HEAD' : ':0';
-              const oldResult = (await invoke('git:show-file', {
-                workspaceId: workspaceId || workspace?.id,
-                filePath,
-                ref: gitRef,
-              })) as { success: boolean; data?: string };
-
-              if (oldResult?.success) oldContent = oldResult.data || '';
-
-              if (oppositeStaged) {
-                const indexResult = (await invoke('git:show-file', {
-                  workspaceId: workspaceId || workspace?.id,
-                  filePath,
-                  ref: ':0',
-                })) as { success: boolean; data?: string };
-                if (indexResult?.success) newContent = indexResult.data || '';
-              } else {
-                const fileResult = (await invoke('file:read', {
-                  workspaceId: workspaceId || workspace?.id,
-                  path: `${workspacePath}/${filePath}`,
-                })) as { success: boolean; data?: { content: string } | string } | string;
-                if (typeof fileResult === 'string') {
-                  newContent = fileResult;
-                } else if (fileResult?.success && fileResult?.data) {
-                  newContent =
-                    typeof fileResult.data === 'string' ? fileResult.data : fileResult.data.content;
-                }
-              }
-            }
+          const loadedAtOpposite = await tryLoadAtStage(oppositeStaged);
+          if (loadedAtOpposite) {
+            logger.info('[loadDiffContent] Found changes at opposite stage', {
+              instanceId,
+              stage: oppositeStaged ? 'staged' : 'unstaged',
+              oldContentLength: oldContent.length,
+              newContentLength: newContent.length,
+            });
           } else {
             // Neither stage has changes - fall back to provided content if available
             // This handles cases where changes have been committed, reverted, or modified
@@ -483,6 +504,9 @@
   ): string | null {
     const filePath = resolvedFilePath || change.relativePath || change.file;
     const contextLines = 3;
+    const lineDelta = lineOffset > 1 ? Math.floor(lineOffset) - 1 : 0;
+    const localStartLine = Math.max(1, startLine - lineDelta);
+    const localEndLine = Math.max(localStartLine, endLine - lineDelta);
 
     const fullPatch = Diff.createPatch(filePath, oldContent, newContent, '', '', {
       context: contextLines,
@@ -493,7 +517,7 @@
 
     // Build proper git-format headers (jsdiff doesn't create git-compatible headers)
     // For new files (empty oldContent), use /dev/null as the old file
-    const isNewFile = oldContent === '';
+    const isNewFile = oldContent === '' && lineDelta === 0;
     const gitHeaders = isNewFile
       ? [
           `diff --git a/${filePath} b/${filePath}`,
@@ -571,6 +595,8 @@
     logger.info('[generateLinePatch] Searching for target lines', {
       startLine,
       endLine,
+      localStartLine,
+      localEndLine,
       side,
       allHunkLinesCount: allHunkLines.length,
       allHunkLinesSample: allHunkLines.slice(0, 10).map((hl) => ({
@@ -585,7 +611,7 @@
     for (let i = 0; i < allHunkLines.length; i++) {
       const hl = allHunkLines[i];
       const lineNum = hl.newLine ?? hl.oldLine;
-      if (lineNum !== null && lineNum >= startLine && lineNum <= endLine) {
+      if (lineNum !== null && lineNum >= localStartLine && lineNum <= localEndLine) {
         // Check if this line type matches the requested side
         const isAddition = hl.type === 'addition';
         const isDeletion = hl.type === 'deletion';
@@ -668,11 +694,16 @@
         // For unstaging, we apply --reverse, so context must match newContent (INDEX)
         // Find the last new line number from our selection
         let lastNewLine = 0;
-        for (let i = targetEndIdx; i >= 0; i--) {
-          const hl = allHunkLines[i];
-          if (hl.newLine !== null) {
-            lastNewLine = hl.newLine;
-            break;
+        const lastContextAfter = contextAfter[contextAfter.length - 1];
+        if (lastContextAfter?.newLine) {
+          lastNewLine = lastContextAfter.newLine;
+        } else {
+          for (let i = targetEndIdx; i >= 0; i--) {
+            const hl = allHunkLines[i];
+            if (hl.newLine !== null) {
+              lastNewLine = hl.newLine;
+              break;
+            }
           }
         }
         // For deletions-only, use the line number from context
@@ -702,11 +733,16 @@
         // For staging, we apply forward, so context must match oldContent (INDEX)
         // Find the last old line number from our selection
         let lastOldLine = 0;
-        for (let i = targetEndIdx; i >= 0; i--) {
-          const hl = allHunkLines[i];
-          if (hl.oldLine !== null) {
-            lastOldLine = hl.oldLine;
-            break;
+        const lastContextAfter = contextAfter[contextAfter.length - 1];
+        if (lastContextAfter?.oldLine) {
+          lastOldLine = lastContextAfter.oldLine;
+        } else {
+          for (let i = targetEndIdx; i >= 0; i--) {
+            const hl = allHunkLines[i];
+            if (hl.oldLine !== null) {
+              lastOldLine = hl.oldLine;
+              break;
+            }
           }
         }
         // For additions-only, use the line number where they would be inserted
@@ -776,7 +812,7 @@
       }
     }
 
-    const hunkHeader = `@@ -${firstOldLine},${oldCount} +${firstNewLine},${newCount} @@`;
+    const hunkHeader = `@@ -${firstOldLine + lineDelta},${oldCount} +${firstNewLine + lineDelta},${newCount} @@`;
     const patchContent = selectedLines.map((hl) => hl.content).join('\n');
 
     const patch = [...gitHeaders, hunkHeader, patchContent].join('\n') + '\n';
@@ -857,46 +893,35 @@
     return wrapper;
   }
 
-  // Get a set of changed line numbers (additions or deletions)
-  const changedLineNumbers = $derived.by((): { additions: Set<number>; deletions: Set<number> } => {
-    if (!oldContent && !newContent)
-      return { additions: new Set<number>(), deletions: new Set<number>() };
+  // Changed-line computation is lazy + memoized. It used to be a
+  // `$derived.by` that re-ran whenever content, file path, or dependencies
+  // changed — even when the user never interacted with the diff. For the
+  // "all changes" view that's N expensive patch-parse runs on mount. Now we
+  // compute on demand from the hover effect and the selection action bar,
+  // and cache by (filePath, contentHash-old, contentHash-new, lineOffset).
+  const EMPTY_CHANGED = {
+    additions: new Set<number>(),
+    deletions: new Set<number>(),
+  };
+  let changedLineMemoKey = '';
+  let changedLineMemoValue: { additions: Set<number>; deletions: Set<number> } = EMPTY_CHANGED;
+  function getChangedLineNumbers(): { additions: Set<number>; deletions: Set<number> } {
+    if (!oldContent && !newContent) return EMPTY_CHANGED;
 
     const filePath = resolvedFilePath || change.relativePath || change.file;
-    const fullPatch = Diff.createPatch(filePath, oldContent, newContent, '', '', { context: 3 });
+    const key = `${filePath}|${hashContent(oldContent)}|${hashContent(newContent)}|${lineOffset}`;
+    if (key === changedLineMemoKey) return changedLineMemoValue;
 
-    const additions = new Set<number>();
-    const deletions = new Set<number>();
-
-    const lines = fullPatch.split('\n');
-    let currentNewLine = 0;
-    let currentOldLine = 0;
-    let inHunk = false;
-
-    for (const line of lines) {
-      if (line.startsWith('@@')) {
-        inHunk = true;
-        const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-        if (match) {
-          currentOldLine = parseInt(match[1], 10);
-          currentNewLine = parseInt(match[2], 10);
-        }
-      } else if (inHunk) {
-        if (line.startsWith('+')) {
-          additions.add(currentNewLine);
-          currentNewLine++;
-        } else if (line.startsWith('-')) {
-          deletions.add(currentOldLine);
-          currentOldLine++;
-        } else if (line.startsWith(' ')) {
-          currentNewLine++;
-          currentOldLine++;
-        }
-      }
-    }
-
-    return { additions, deletions };
-  });
+    const { additions, deletions } = getChangedLineNumbersFromContent(
+      filePath,
+      oldContent,
+      newContent,
+      lineOffset,
+    );
+    changedLineMemoKey = key;
+    changedLineMemoValue = { additions, deletions };
+    return changedLineMemoValue;
+  }
 
   // Load content on mount
   onMount(() => {
@@ -909,31 +934,26 @@
     });
     loadDiffContent();
 
-    // Subscribe to file changes
+    // Subscribe to file changes via the shared module-scoped watcher.
+    // The watcher keeps a single IPC listener per workspace and fans out
+    // (debounced) callbacks to each mounted diff — previously each
+    // TrackedChangeDiffViewer registered its own listenSync + debounce timer.
     const filePath = change?.relativePath || change?.file;
     const wsId = workspaceId || $activeWorkspaceId;
-    let debounce: NodeJS.Timeout;
     let unsubscribe: (() => void) | undefined;
 
     if (wsId && filePath) {
-      unsubscribe = listenSync(`file:content-changed:${wsId}`, (event: any) => {
-        const data = event.payload || event;
-        const changedPath = data.path || data.relativePath;
-        if (filePathsMatch(changedPath, filePath)) {
-          logger.debug('[file:content-changed] File changed, scheduling reload', {
-            instanceId,
-            changedPath,
-            filePath,
-          });
-          clearTimeout(debounce);
-          debounce = setTimeout(() => loadDiffContent(), 300);
-        }
+      unsubscribe = subscribeFileContentChange(wsId, filePath, () => {
+        logger.debug('[file:content-changed] File changed, reloading', {
+          instanceId,
+          filePath,
+        });
+        loadDiffContent();
       });
     }
 
     return () => {
       unsubscribe?.();
-      clearTimeout(debounce);
     };
   });
 
@@ -1002,9 +1022,9 @@
     // Use untrack to read other state without creating reactive dependencies
     // This prevents infinite loops when changedLineNumbers, loading, etc. change
     untrack(() => {
-      // Check if this is a changed line
-      const lineSet =
-        line.side === 'additions' ? changedLineNumbers.additions : changedLineNumbers.deletions;
+      // Check if this is a changed line (lazy: first call triggers the memoized compute)
+      const changed = getChangedLineNumbers();
+      const lineSet = line.side === 'additions' ? changed.additions : changed.deletions;
       if (!lineSet.has(line.lineNumber)) return;
 
       // Don't show button if operation is in progress
@@ -1118,10 +1138,11 @@
     <div class="diff-wrapper">
       <!-- Selection action bar -->
       {#if selectedLines}
+        {@const changedLines = getChangedLineNumbers()}
         {@const lineSet =
           selectedLines.side === 'additions'
-            ? changedLineNumbers.additions
-            : changedLineNumbers.deletions}
+            ? changedLines.additions
+            : changedLines.deletions}
         {@const modifiedCount = Array.from(
           { length: selectedLines!.end - selectedLines!.start + 1 },
           (_, i) => selectedLines!.start + i,
@@ -1153,8 +1174,10 @@
 
       <div class="diff-content">
         <DiffViewer
-          {oldContent}
-          {newContent}
+          oldContent={displayOldContent}
+          newContent={displayNewContent}
+          oldCacheKey={oldDiffCacheKey}
+          newCacheKey={newDiffCacheKey}
           {fileName}
           {language}
           {viewMode}
@@ -1181,6 +1204,7 @@
           }}
           {annotations}
           {renderAnnotation}
+          {virtualizer}
           unsafeCSS={`
           /* Make line number column relative for hover button positioning */
           [data-column-number] {

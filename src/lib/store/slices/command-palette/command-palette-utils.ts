@@ -88,7 +88,7 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
 }
 
 /** Format a date string as a relative time label. */
-export function formatRelativeTime(dateStr: string | undefined): string {
+export function formatRelativeTime(dateStr: Date | string | undefined): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
   const now = new Date();

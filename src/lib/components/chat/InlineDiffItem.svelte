@@ -2,13 +2,9 @@
   /**
    * Inline Diff Item
    *
-   * Displays a file diff inline. Uses:
-   * - DiffViewer (read-only, @pierre/diffs) for snippet content from tool calls
-   * - MonacoDiffViewer (editable) for full file diffs fetched from git
-   *
-   * This distinction is critical: snippet content is just a portion of the file,
-   * so it must NOT be editable to prevent accidentally overwriting the full file
-   * with just the snippet.
+   * Displays a file diff inline using TrackedChangeDiffViewer (@pierre/diffs).
+   * Content comes from the chat tool call (oldContent/newContent) and is rendered
+   * read-only via the provided-content path.
    *
    * Implements "click to focus and scroll" pattern to prevent accidental scrolling
    * when the user is trying to scroll the parent page.
@@ -21,12 +17,13 @@
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
-  import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
+  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
+  import type { LocalFileChange } from './types';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
   interface Props {
-    change: ChatFileChange;
+    change: ChatFileChange | LocalFileChange;
     foldUnchanged?: boolean;
     lineWrapping?: boolean;
     /** @deprecated - scrollToLine is not supported by the new DiffViewer */
@@ -41,6 +38,12 @@
     onUnstageHunk?: (filePath: string, hunkPatch: string) => void;
     /** Callback when user wants to open a commit changeset */
     onOpenCommit?: (commitHash: string) => void;
+    /**
+     * Optional pierre `Virtualizer`. Forwarded to `TrackedChangeDiffViewer`
+     * so the parent list can manage virtualization across all mounted
+     * file diffs from a single virtualizer instance.
+     */
+    virtualizer?: import('@pierre/diffs').Virtualizer;
   }
 
   let {
@@ -56,6 +59,7 @@
     onUnstageHunk,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCommit,
+    virtualizer,
   }: Props = $props();
 
   const sideBySide = selectDiffSideBySide();
@@ -66,6 +70,11 @@
   let showScrollHint = $state(false);
   let scrollDelta = $state(0);
   let containerRef: HTMLDivElement | undefined = $state(undefined);
+
+  // Note: lazy-mounting via IntersectionObserver was previously done here AND
+  // in the parent (ChatChangesPanel). As of Wave 3 the parent owns the single
+  // visibility gate — this component mounts its TrackedChangeDiffViewer
+  // unconditionally once the parent decides to render it.
 
   // Scroll hint threshold (pixels of scroll before showing hint)
   const SCROLL_THRESHOLD = 80;
@@ -171,7 +180,7 @@
           ? {
               oldContent: oldContent ?? '',
               newContent: newContent ?? '',
-              // Pass through isFullFileContent so MonacoDiffViewer knows if it can use git:diff to refresh
+              // Pass through isFullFileContent so the diff viewer knows if it can use git:diff to refresh
               isFullFileContent,
             }
           : undefined,
@@ -179,15 +188,10 @@
   });
 
   let workspaceId = $derived($activeWorkspaceId);
-
-  // Extract line offset from chunks for proper line number display
-  // The first chunk's newStart tells us where the changes begin in the file
-  let lineOffset = $derived.by(() => {
-    if ('chunks' in change && Array.isArray(change.chunks) && change.chunks.length > 0) {
-      // newStart is the starting line number in the new file
-      return change.chunks[0].newStart || 1;
-    }
-    return undefined;
+  const lineOffset = $derived.by(() => {
+    if (change.isFullFileContent) return 1;
+    const firstChunkLine = 'chunks' in change ? change.chunks?.[0]?.newStart : undefined;
+    return firstChunkLine ?? change.startLineNumber ?? 1;
   });
 
 </script>
@@ -206,19 +210,17 @@
   aria-label="File diff viewer - click to enable scrolling"
 >
   {#if workspaceId}
-    <MonacoDiffViewer
+    <TrackedChangeDiffViewer
       change={trackedChange}
       {workspaceId}
-      sideBySide={$sideBySide}
+      viewMode={$sideBySide ? 'split' : 'unified'}
       {foldUnchanged}
       {lineWrapping}
-      {lineOffset}
       {onStageHunk}
       {onUnstageHunk}
-      compact={true}
-      readOnly={true}
-      handleMouseWheel={true}
-      alwaysConsumeMouseWheel={focused}
+      useProvidedContent={true}
+      {lineOffset}
+      {virtualizer}
     />
 
     <!-- Scroll hint overlay -->

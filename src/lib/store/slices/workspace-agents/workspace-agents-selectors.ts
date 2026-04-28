@@ -80,6 +80,20 @@ export const selectAgentById = createSelector(
   }
 );
 
+/**
+ * Returns the ready session for an agent within a workspace, or null until the
+ * agent-session slice has hydrated the session for that workspace.
+ */
+export const selectWorkspaceAgentReadySession = createSelector(
+  (state, wsId: string, agentId: string): AgentSession | null => {
+    const session = selectAgentSession.select(state, agentId);
+    if (!session) return null;
+    if (String(session.workspaceId) === String(wsId)) return session;
+
+    return null;
+  }
+);
+
 /** Get the active agent session for a workspace — reads from agent-session slice */
 export const selectActiveAgent = createSelector(
   (state, wsId: string): AgentSession | undefined => {

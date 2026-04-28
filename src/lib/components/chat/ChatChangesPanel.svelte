@@ -1,3 +1,165 @@
+<script module lang="ts">
+  import type { ChangeCategory as _ChangeCategory, LocalFileChange as _LocalFileChange } from './types';
+
+  type _NumstatEntry = { filePath: string; additions: number; deletions: number };
+
+  /**
+   * Get the category for a change, with consistent fallback logic.
+   * Prioritizes explicit category, then derives from staged boolean.
+   *
+   * Exported from the module context so unit tests (and the instance script
+   * below) can reuse the same classification without duplication.
+   */
+  export function getChangeCategory(change: _LocalFileChange): _ChangeCategory {
+    if (change.category) return change.category;
+    if (change.staged === true) return 'staged';
+    return 'unstaged';
+  }
+
+  /**
+   * Identify file paths that will render through UnifiedMultiStageDiff (i.e.
+   * the `isMerged` branch of mergeChangesByFilePath). Mirrors the conditions
+   * in mergeChangesByFilePath so fetchContent can guarantee these files are
+   * enriched before mergedChanges is derived, regardless of
+   * MAX_UPFRONT_FETCH_COUNT. Without this, over-cap merged files arrive at
+   * UnifiedMultiStageDiff with no chunks/oldContent/newContent and render
+   * "No changes to display" because no TrackedChangeDiffViewer is ever mounted
+   * to self-fetch. See audit:
+   * intent://local/note/83b58f2d-e095-4576-82b8-bb434a5f909f
+   */
+  export function computeMergedDestinedPaths(
+    source: _LocalFileChange[],
+    groupByCommitMode: boolean,
+  ): Set<string> {
+    const byPath = new Map<
+      string,
+      { hasStaged: boolean; hasUnstaged: boolean; committedCount: number }
+    >();
+
+    for (const change of source) {
+      const category = getChangeCategory(change);
+      const existing = byPath.get(change.filePath) || {
+        hasStaged: false,
+        hasUnstaged: false,
+        committedCount: 0,
+      };
+
+      if (category === 'committed') {
+        existing.committedCount++;
+      } else if (category === 'staged') {
+        existing.hasStaged = true;
+      } else {
+        existing.hasUnstaged = true;
+      }
+
+      byPath.set(change.filePath, existing);
+    }
+
+    const mergedPaths = new Set<string>();
+    for (const [filePath, info] of byPath) {
+      const hasNonCommittedParts = info.hasStaged || info.hasUnstaged;
+      const totalParts =
+        (info.hasStaged ? 1 : 0) + (info.hasUnstaged ? 1 : 0) + info.committedCount;
+
+      // Mixed stages: staged/unstaged + anything else (matches mergeChangesByFilePath condition).
+      if (hasNonCommittedParts && totalParts > 1) {
+        mergedPaths.add(filePath);
+        continue;
+      }
+      // Committed-only, combined mode, >1 commit.
+      if (!hasNonCommittedParts && info.committedCount > 1 && !groupByCommitMode) {
+        mergedPaths.add(filePath);
+      }
+    }
+
+    return mergedPaths;
+  }
+
+  /**
+   * Identify committed file groups that should be collapsed to a single
+   * branch-base diff before renderer-side merging. Per-commit hunks use the
+   * post-state of each commit, so multiple committed parts for the same file can
+   * share line numbers that refer to different file states. By-commit mode keeps
+   * the original per-commit entries intentionally.
+   */
+  export function computeBranchBaseCollapsedCommittedPaths(
+    source: _LocalFileChange[],
+    groupByCommitMode: boolean,
+  ): Set<string> {
+    if (groupByCommitMode) return new Set();
+
+    const committedCounts = new Map<string, number>();
+    for (const change of source) {
+      if (getChangeCategory(change) !== 'committed') continue;
+      committedCounts.set(change.filePath, (committedCounts.get(change.filePath) ?? 0) + 1);
+    }
+
+    const collapsed = new Set<string>();
+    for (const [filePath, count] of committedCounts) {
+      if (count > 1) collapsed.add(filePath);
+    }
+    return collapsed;
+  }
+
+  export function computeBranchBaseCommittedFallbacks(
+    source: _LocalFileChange[],
+    collapsedPaths: Set<string>,
+  ): Map<string, _LocalFileChange[]> {
+    const fallbackByPath = new Map<string, _LocalFileChange[]>();
+    for (const change of source) {
+      if (!collapsedPaths.has(change.filePath) || getChangeCategory(change) !== 'committed') {
+        continue;
+      }
+      const fallbackChanges = fallbackByPath.get(change.filePath) ?? [];
+      fallbackChanges.push(change);
+      fallbackByPath.set(change.filePath, fallbackChanges);
+    }
+    return fallbackByPath;
+  }
+
+  function findNumstatForPath(
+    statsByPath: Map<string, _NumstatEntry>,
+    stats: _NumstatEntry[],
+    filePath: string,
+  ): _NumstatEntry | undefined {
+    const exact = statsByPath.get(filePath);
+    if (exact) return exact;
+
+    const normalizedPath = filePath.replace(/^\/+/, '');
+    return stats.find((stat) => {
+      const statPath = stat.filePath.replace(/^\/+/, '');
+      return normalizedPath.endsWith(`/${statPath}`) || statPath.endsWith(`/${normalizedPath}`);
+    });
+  }
+
+  export function applyNumstatStats(
+    source: _LocalFileChange[],
+    localStats: _NumstatEntry[],
+    committedStats: _NumstatEntry[] = [],
+  ): _LocalFileChange[] {
+    const localByPath = new Map(localStats.map((stat) => [stat.filePath, stat]));
+    const committedByPath = new Map(committedStats.map((stat) => [stat.filePath, stat]));
+    const consumedLocalStats = new Set<string>();
+    const consumedCommittedStats = new Set<string>();
+
+    return source.map((change) => {
+      const category = getChangeCategory(change);
+      const stats = category === 'committed' ? committedStats : localStats;
+      const statsByPath = category === 'committed' ? committedByPath : localByPath;
+      const stat = findNumstatForPath(statsByPath, stats, change.filePath);
+      if (!stat) return change;
+      const consumedStats = category === 'committed' ? consumedCommittedStats : consumedLocalStats;
+      if (consumedStats.has(stat.filePath)) {
+        if (change.additions === 0 && change.deletions === 0) return change;
+        return { ...change, additions: 0, deletions: 0 };
+      }
+      consumedStats.add(stat.filePath);
+      if (change.additions === stat.additions && change.deletions === stat.deletions) return change;
+      return { ...change, additions: stat.additions, deletions: stat.deletions };
+    });
+  }
+</script>
+
 <script lang="ts">
 /* eslint-disable max-lines */
   /**
@@ -31,7 +193,8 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
-  import { tick, untrack, onMount, onDestroy } from 'svelte';
+  import { untrack } from 'svelte';
+  import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
@@ -45,7 +208,13 @@
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectCurrentCommits } from '$lib/store/slices/changes/changes-selectors';
-  import { invoke, listenSync } from '$lib/electron-bridge';
+  import { listenSync } from '$lib/electron-bridge';
+  import {
+    batchedGitBranchBaseDiff,
+    batchedGitDiff,
+    dedupedGitNumstat,
+    dedupedShowFile,
+  } from '$lib/components/ui/diff/diff-ipc-batcher';
   import { toast } from '$lib/components/ui/toast';
   import { type WorkspaceId } from '$shared/types/branded-ids';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
@@ -70,16 +239,6 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-
-  /**
-   * Get the category for a change, with consistent fallback logic.
-   * Prioritizes explicit category, then derives from staged boolean.
-   */
-  function getChangeCategory(change: LocalFileChange): ChangeCategory {
-    if (change.category) return change.category;
-    if (change.staged === true) return 'staged';
-    return 'unstaged';
-  }
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -134,6 +293,10 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     onOpenNote?: (noteId: string, event?: MouseEvent) => void;
     /** Initial group-by-commit mode (default: false = combined view) */
     groupByCommit?: boolean;
+    /** Branch base ref for collapsing multi-commit committed file groups */
+    branchBaseRef?: string | null;
+    /** Resolved branch boundary SHA for collapsing multi-commit committed file groups */
+    branchBaseCommitSha?: string | null;
   }
 
   let {
@@ -147,14 +310,14 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     onStage,
     onUnstage,
     onRevert,
-     
     onStageAll: _onStageAll,
-     
     onUnstageAll: _onUnstageAll,
     isLoading = false,
     commitInfo = null,
     onOpenNote,
     groupByCommit: initialGroupByCommit = false,
+    branchBaseRef = null,
+    branchBaseCommitSha = null,
   }: Props = $props();
 
   // Group-by-commit toggle state (default: combined view)
@@ -259,84 +422,8 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     }
   });
 
-  // Listen for agent file changes and refresh the affected diff in-place
-  // Track files recently saved by the diff editor (to skip refreshing/re-rendering them)
-  // This prevents scroll jump when editing in the diff viewer
-  // This is module-level so it persists across effect re-runs and is shared across all instances
-  const diffEditorSavedFiles = new Map<string, number>();
-  const DIFF_EDITOR_SAVE_COOLDOWN = 1000; // 1 second cooldown
-
-  // Helper to check if a path was recently saved by the diff editor
-  // Handles both absolute and relative path comparisons
-  const wasRecentlySavedByDiffEditor = (pathToCheck: string): boolean => {
-    const now = Date.now();
-    for (const [savedPath, savedTime] of diffEditorSavedFiles) {
-      if (now - savedTime >= DIFF_EDITOR_SAVE_COOLDOWN) continue;
-      if (filePathsMatch(savedPath, pathToCheck)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // Listen for diff editor saves - this must run for ALL views (not just staging controls)
-  // to prevent scroll jump when editing in any diff viewer
-  // Using onMount/onDestroy instead of $effect for more reliable event listener setup
-  let diffEditorSaveHandler: ((event: Event) => void) | null = null;
-
-  onMount(() => {
-    logger.debug('ChatChangesPanel: Setting up diff-editor:file-saved listener (onMount)', {
-      instanceId,
-      showStagingControls,
-      workspaceId: $activeWorkspaceId,
-    });
-
-    // Handler for diff editor saves - track these to skip refreshing
-    // We listen for ALL events and filter by workspace ID inside the handler
-    // This ensures we don't miss events due to effect timing issues
-    diffEditorSaveHandler = (event: Event) => {
-      const customEvent = event as CustomEvent<{
-        filePath: string;
-        relativePath: string;
-        workspaceId: string;
-      }>;
-      const { filePath, relativePath, workspaceId } = customEvent.detail;
-      const wsId = $activeWorkspaceId;
-      logger.debug('ChatChangesPanel: Received diff-editor:file-saved event', {
-        filePath,
-        relativePath,
-        eventWorkspaceId: workspaceId,
-        ourWorkspaceId: wsId,
-        match: workspaceId === wsId,
-      });
-      // If no workspace ID, still track the file (it might match later)
-      // Or if workspace IDs match
-      if (wsId && workspaceId !== wsId) return;
-
-      // Track both absolute and relative paths
-      const now = Date.now();
-      diffEditorSavedFiles.set(filePath, now);
-      diffEditorSavedFiles.set(relativePath, now);
-      logger.debug('ChatChangesPanel: Diff editor saved file, will skip refresh', {
-        filePath,
-        relativePath,
-      });
-    };
-
-    window.addEventListener('diff-editor:file-saved', diffEditorSaveHandler);
-  });
-
-  onDestroy(() => {
-    if (diffEditorSaveHandler) {
-      window.removeEventListener('diff-editor:file-saved', diffEditorSaveHandler);
-    }
-    if (summaryBarHoverTimeout) {
-      clearTimeout(summaryBarHoverTimeout);
-    }
-  });
-
   // This ensures the diff updates when a file is edited externally (e.g., in another panel)
-  // We handle this at the ChatChangesPanel level because MonacoDiffViewer instances may be
+  // We handle this at the ChatChangesPanel level because diff viewer instances may be
   // destroyed/recreated during re-renders, losing their individual debounce timers.
   $effect(() => {
     // Only listen when we have staging controls enabled (local changes view)
@@ -359,31 +446,11 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       const changedPath = data.filePath || data.path;
       if (!changedPath) return;
 
-      // Check if this file was recently saved by the diff editor - skip refresh if so
-      if (wasRecentlySavedByDiffEditor(changedPath)) {
-        logger.debug('ChatChangesPanel: Skipping refresh - file was saved by diff editor', {
-          changedPath,
-        });
-        return;
-      }
-
       // Check if this file is in our changes list and get the matching change
       const matchingChange = untrack(() =>
         enrichedChanges.find((c) => filePathsMatch(changedPath, c.filePath)),
       );
       if (!matchingChange) return;
-
-      // Also check if the matching change's path was recently saved by diff editor
-      if (wasRecentlySavedByDiffEditor(matchingChange.filePath)) {
-        logger.debug(
-          'ChatChangesPanel: Skipping refresh - matching file was saved by diff editor',
-          {
-            changedPath,
-            matchingFilePath: matchingChange.filePath,
-          },
-        );
-        return;
-      }
 
       logger.debug('ChatChangesPanel: Agent file change detected', {
         changedPath,
@@ -543,10 +610,22 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       .map((c) => {
         // Use filePath + staging info as the stable key
         // category is 'staged' | 'unstaged' | 'committed', or fall back to staged boolean
-        return `${c.filePath}|${c.category || c.staged}`;
+        return `${c.filePath}|${c.category || c.staged}|${c.commitHash || ''}`;
       })
       .sort()
       .join(';;');
+  }
+
+  function calculateDiffHunkStats(chunks: DiffHunk[] | undefined): { additions: number; deletions: number } {
+    let additions = 0;
+    let deletions = 0;
+    for (const hunk of chunks || []) {
+      for (const line of hunk.lines || []) {
+        if (line.type === 'Addition') additions++;
+        else if (line.type === 'Deletion') deletions++;
+      }
+    }
+    return { additions, deletions };
   }
 
   // Fetch diff content for all changes (both local and agent changes)
@@ -554,6 +633,8 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     // Capture dependencies at the start
     const currentChanges = changes;
     const currentShowStagingControls = showStagingControls;
+    const currentBranchBaseRef = branchBaseRef ?? undefined;
+    const currentBranchBaseCommitSha = branchBaseCommitSha ?? undefined;
     const workspaceId = $activeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
@@ -569,7 +650,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
 
     // Check if changes have actually changed by comparing keys
     // Line counts are excluded from the key to avoid re-fetching when content is edited
-    const newChangesKey = generateChangesKey(currentChanges);
+    const newChangesKey = `${currentBranchBaseRef ?? ''}|${currentBranchBaseCommitSha ?? ''}::${generateChangesKey(currentChanges)}`;
     // Use untrack to read current length without creating a dependency (prevents infinite loop)
     const currentEnrichedLength = untrack(() => enrichedChanges.length);
     if (newChangesKey === lastChangesKey && currentEnrichedLength > 0) {
@@ -646,184 +727,301 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       );
     }
 
-    // Fetch content for each file (limited to MAX_UPFRONT_FETCH_COUNT to prevent OOM)
-    // Files beyond this limit will have their content fetched by TrackedChangeDiffViewer when rendered
+    // Fetch content for each file (limited to MAX_UPFRONT_FETCH_COUNT to prevent OOM).
+    // Files beyond this limit will have their content fetched by TrackedChangeDiffViewer
+    // when rendered. Wave 4: classify first, then fire all IPCs in parallel via the
+    // batcher so same-tick requests coalesce into one `git:diff` per (workspace, staged)
+    // group instead of N serial round-trips.
     const fetchContent = async () => {
-      const enriched: LocalFileChange[] = [];
-      let fetchedCount = 0;
+      type PlanItem =
+        | { kind: 'skip-refreshed' }
+        | { kind: 'push-raw'; change: LocalFileChange }
+        | { kind: 'fetch-committed'; change: LocalFileChange; commitHash: string }
+        | {
+            kind: 'fetch-branch-committed';
+            change: LocalFileChange;
+            baseRef?: string;
+            baseCommitSha?: string;
+            fallbackChanges: LocalFileChange[];
+          }
+        | { kind: 'fetch-local'; change: LocalFileChange; staged: boolean };
+
+      const plan: PlanItem[] = [];
+      let slotsUsed = 0;
+      const fetchStart = performance.now();
+
+      // Files destined for the UnifiedMultiStageDiff (`isMerged`) branch must
+      // be enriched upfront: the merger runs before any TrackedChangeDiffViewer
+      // is mounted, so the on-demand fetch that covers over-cap single-stage
+      // files never runs for merged rows. Only relevant when the renderer
+      // actually merges (i.e. showStagingControls === true — see mergedChanges
+      // effect). Read groupByCommit via untrack so toggling grouping doesn't
+      // re-trigger this effect. See audit:
+      // intent://local/note/83b58f2d-e095-4576-82b8-bb434a5f909f
+      const currentGroupByCommit = untrack(() => groupByCommit);
+      const mergedDestinedPaths = currentShowStagingControls
+        ? computeMergedDestinedPaths(currentChanges, currentGroupByCommit)
+        : new Set<string>();
+      const branchBaseCollapsedCommittedPaths =
+        currentShowStagingControls && (currentBranchBaseRef || currentBranchBaseCommitSha)
+          ? computeBranchBaseCollapsedCommittedPaths(currentChanges, currentGroupByCommit)
+          : new Set<string>();
+      const branchBaseCommittedFallbacks = computeBranchBaseCommittedFallbacks(
+        currentChanges,
+        branchBaseCollapsedCommittedPaths,
+      );
+      const plannedBranchBaseCommittedPaths = new Set<string>();
 
       for (const change of currentChanges) {
-        // Check if we've been superseded by a newer fetch
-        if (thisVersion !== fetchVersion) return;
+        if (!currentShowStagingControls) {
+          // For agent changes:
+          // - Per-turn views (isAggregate=false): use snippet content directly.
+          //   The snippet oldContent/newContent accurately represents what this turn changed.
+          // - Aggregate views: handled separately by the gitDiffChanges effect
+          //   which fetches git:diff to get the cumulative changes.
+          //
+          // We do NOT fetch fullFileContent for per-turn views because:
+          // 1. The current file reflects ALL changes from ALL turns.
+          // 2. We only want to show what THIS turn changed.
+          plan.push({ kind: 'push-raw', change });
+          continue;
+        }
 
-        // Limit upfront fetching to prevent OOM with many files
-        // Files beyond this limit will be fetched on-demand when they become visible
-        const shouldFetchContent = fetchedCount < MAX_UPFRONT_FETCH_COUNT;
+        // Skip files that were recently refreshed via refreshFileDiff.
+        // We'll add our local entries for these files at the end.
+        if (recentlyRefreshedFilePaths.has(change.filePath)) {
+          plan.push({ kind: 'skip-refreshed' });
+          continue;
+        }
 
-        try {
-          if (currentShowStagingControls) {
-            // Skip files that were recently refreshed via refreshFileDiff
-            // We'll add our local entries for these files at the end
-            if (recentlyRefreshedFilePaths.has(change.filePath)) {
-              continue;
-            }
+        const category = getChangeCategory(change);
+        const commitHash = change.commitHash;
 
-            // Skip committed changes - git:diff only works for working directory changes.
-            // Committed changes will have their content loaded by TrackedChangeDiffViewer
-            // using git:show-file with the commit hash.
-            const category = 'category' in change ? change.category : undefined;
-            const commitHash = 'commitHash' in change ? change.commitHash : undefined;
-            logger.debug('[fetchContent] Processing change', {
-              filePath: change.filePath,
-              category,
-              hasCommitHash: !!commitHash,
-              commitHash: commitHash ? String(commitHash).substring(0, 8) : undefined,
-              staged: change.staged,
-              shouldFetchContent,
-              fetchedCount,
-            });
+        if (category === 'committed' && branchBaseCollapsedCommittedPaths.has(change.filePath)) {
+          if (plannedBranchBaseCommittedPaths.has(change.filePath)) {
+            continue;
+          }
+          plannedBranchBaseCommittedPaths.add(change.filePath);
+          plan.push({
+            kind: 'fetch-branch-committed',
+            change,
+            baseRef: currentBranchBaseRef,
+            baseCommitSha: currentBranchBaseCommitSha,
+            fallbackChanges: branchBaseCommittedFallbacks.get(change.filePath) ?? [change],
+          });
+          continue;
+        }
 
-            // If we've hit the limit, add the change without content (will be fetched on-demand)
-            if (!shouldFetchContent) {
-              enriched.push(change);
-              continue;
-            }
+        const mustEnrich = mergedDestinedPaths.has(change.filePath);
 
-            if (category === 'committed' && commitHash) {
-              // Fetch content for committed changes using git:show-file
-              // This is needed for the visualization hover cards
-              logger.debug('[fetchContent] Fetching committed change content', {
-                filePath: change.filePath,
-                commitHash: String(commitHash).substring(0, 8),
-              });
+        // If we've hit the upfront limit, add the change without content
+        // (will be fetched on-demand by TrackedChangeDiffViewer via the batcher).
+        // Merged-destined files bypass the cap — they never reach
+        // TrackedChangeDiffViewer and must be enriched here.
+        if (!mustEnrich && slotsUsed >= MAX_UPFRONT_FETCH_COUNT) {
+          plan.push({ kind: 'push-raw', change });
+          continue;
+        }
 
-              try {
-                // Fetch new content at the commit and old content from parent
-                const [newContentResult, oldContentResult] = await Promise.all([
-                  window.electronAPI?.invoke('git:show-file', {
-                    workspaceId,
-                    filePath: change.filePath,
-                    ref: commitHash,
-                  }) as Promise<{ success: boolean; data?: string; error?: string }>,
-                  window.electronAPI?.invoke('git:show-file', {
-                    workspaceId,
-                    filePath: change.filePath,
-                    ref: `${commitHash}^`,
-                  }) as Promise<{ success: boolean; data?: string; error?: string }>,
-                ]);
+        // Merged-destined files are mandatory enrichments and do not count
+        // toward the single-stage cap — otherwise a burst of merged rows could
+        // starve single-stage files of their slots.
+        if (category === 'committed' && commitHash) {
+          plan.push({
+            kind: 'fetch-committed',
+            change,
+            commitHash: String(commitHash),
+          });
+          if (!mustEnrich) slotsUsed++;
+          continue;
+        }
 
-                // Check again after async operation
-                if (thisVersion !== fetchVersion) return;
+        // Already-enriched local change: keep chunks, no IPC needed.
+        if (change.chunks && change.chunks.length > 0) {
+          plan.push({ kind: 'push-raw', change });
+          if (!mustEnrich) slotsUsed++;
+          continue;
+        }
 
-                const newContent = newContentResult?.success ? newContentResult.data || '' : '';
-                const oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
+        plan.push({
+          kind: 'fetch-local',
+          change,
+          staged: change.staged === true,
+        });
+        if (!mustEnrich) slotsUsed++;
+      }
 
-                logger.debug('[fetchContent] Committed content fetched', {
-                  filePath: change.filePath,
-                  oldContentLength: oldContent.length,
-                  newContentLength: newContent.length,
-                });
-
-                enriched.push({
-                  ...change,
-                  oldContent,
-                  newContent,
-                  // Mark as full file content so MonacoDiffViewer knows it can use git:show-file to refresh
-                  isFullFileContent: true,
-                });
-                fetchedCount++;
-              } catch (error) {
+      // Fire every IPC in parallel. `batchedGitDiff` coalesces same-tick requests
+      // that share (workspaceId, staged) into a single `git:diff` call, so up to
+      // `MAX_UPFRONT_FETCH_COUNT` local files collapse into at most 2 IPC calls
+      // (one staged, one unstaged). `dedupedShowFile` dedupes concurrent calls
+      // for the same (workspace, ref, path).
+      const localNumstatPromise = currentShowStagingControls
+        ? dedupedGitNumstat(workspaceId).catch((error) => {
+            logger.warn('[fetchContent] Failed to fetch local numstat', { error });
+            return [];
+          })
+        : Promise.resolve([]);
+      const committedNumstatPromise =
+        currentShowStagingControls &&
+        !currentGroupByCommit &&
+        (currentBranchBaseRef || currentBranchBaseCommitSha)
+          ? dedupedGitNumstat(workspaceId, {
+              baseRef: currentBranchBaseRef,
+              baseCommitSha: currentBranchBaseCommitSha,
+              targetRef: 'HEAD',
+            }).catch((error) => {
+              logger.warn('[fetchContent] Failed to fetch branch-base numstat', { error });
+              return [];
+            })
+          : Promise.resolve([]);
+      const resolved = await Promise.all(
+        plan.map((item) => {
+          if (item.kind === 'fetch-committed') {
+            return Promise.all([
+              dedupedShowFile(workspaceId, item.commitHash, item.change.filePath),
+              dedupedShowFile(workspaceId, `${item.commitHash}^`, item.change.filePath),
+            ])
+              .then(([newRes, oldRes]) => ({ item, newRes, oldRes }))
+              .catch((error) => {
                 logger.warn('[fetchContent] Failed to fetch committed content', {
-                  filePath: change.filePath,
+                  filePath: item.change.filePath,
                   error,
                 });
-                enriched.push(change);
-              }
-              continue;
-            }
-
-            // For local changes, fetch diff from git (always needed for chunks)
-            // Skip if we already have chunks from a previous fetch
-            if (change.chunks && change.chunks.length > 0) {
-              enriched.push(change);
-              fetchedCount++;
-              continue;
-            }
-
-            logger.debug('[fetchContent] Fetching git:diff', {
-              filePath: change.filePath,
-              staged: change.staged === true,
-            });
-
-            const diffResult = (await window.electronAPI?.invoke('git:diff', {
-              workspaceId,
-              paths: [change.filePath],
-              staged: change.staged === true,
-            })) as
-              | {
-                  success: boolean;
-                  data?: Array<{
-                    file: string;
-                    oldContent?: string;
-                    newContent?: string;
-                    chunks?: DiffHunk[];
-                  }>;
-                }
-              | undefined;
-
-            // Check again after async operation
-            if (thisVersion !== fetchVersion) return;
-
-            if (diffResult?.success && diffResult.data && diffResult.data.length > 0) {
-              const diffData = diffResult.data[0];
-              logger.debug('[fetchContent] git:diff returned content', {
-                filePath: change.filePath,
-                oldContentLength: diffData.oldContent?.length || 0,
-                newContentLength: diffData.newContent?.length || 0,
+                return { item, newRes: undefined, oldRes: undefined };
               });
-              enriched.push({
-                ...change,
-                oldContent: diffData.oldContent || '',
-                newContent: diffData.newContent || '',
-                chunks: diffData.chunks,
-                // Mark as full file content so MonacoDiffViewer knows it can use git:diff to refresh
-                isFullFileContent: true,
-              });
-              fetchedCount++;
-            } else {
-              logger.debug('[fetchContent] git:diff returned NO content', {
-                filePath: change.filePath,
-                success: diffResult?.success,
-                dataLength: diffResult?.data?.length,
-              });
-              enriched.push(change);
-            }
-          } else {
-            // For agent changes:
-            // - Per-turn views (isAggregate=false): use snippet content directly
-            //   The snippet oldContent/newContent accurately represents what this turn changed
-            // - Aggregate views: handled separately by the gitDiffChanges effect
-            //   which fetches git:diff to get the cumulative changes
-            //
-            // We do NOT fetch fullFileContent for per-turn views because:
-            // 1. The current file reflects ALL changes from ALL turns
-            // 2. We only want to show what THIS turn changed
-            enriched.push(change);
           }
-        } catch (error) {
-          logger.warn('Failed to fetch content', { filePath: change.filePath, error });
-          enriched.push(change);
+          if (item.kind === 'fetch-branch-committed') {
+            return batchedGitBranchBaseDiff(
+              workspaceId,
+              { baseRef: item.baseRef, baseCommitSha: item.baseCommitSha },
+              item.change.filePath,
+            )
+              .then((chunk) => ({ item, chunk }))
+              .catch((error) => {
+                logger.warn('[fetchContent] Failed to fetch branch-base committed diff', {
+                  filePath: item.change.filePath,
+                  error,
+                });
+                return { item, chunk: undefined };
+              });
+          }
+          if (item.kind === 'fetch-local') {
+            return batchedGitDiff(workspaceId, item.staged, item.change.filePath)
+              .then((chunk) => ({ item, chunk }))
+              .catch((error) => {
+                logger.warn('[fetchContent] Failed to fetch local diff', {
+                  filePath: item.change.filePath,
+                  error,
+                });
+                return { item, chunk: undefined };
+              });
+          }
+          return Promise.resolve({ item });
+        }),
+      );
+
+      // Check cancellation after all fetches settle.
+      if (thisVersion !== fetchVersion) return;
+
+      const enriched: LocalFileChange[] = [];
+      for (const result of resolved) {
+        const { item } = result;
+        if (item.kind === 'skip-refreshed') continue;
+
+        if (item.kind === 'push-raw') {
+          enriched.push(item.change);
+          continue;
+        }
+
+        if (item.kind === 'fetch-committed') {
+          const { newRes, oldRes } = result as {
+            item: typeof item;
+            newRes?: { success: boolean; data?: string };
+            oldRes?: { success: boolean; data?: string };
+          };
+          const newContent = newRes?.success ? newRes.data || '' : '';
+          const oldContent = oldRes?.success ? oldRes.data || '' : '';
+          enriched.push({
+            ...item.change,
+            oldContent,
+            newContent,
+            // Mark as full file content so diff viewer knows it can use git:show-file to refresh
+            isFullFileContent: true,
+          });
+          continue;
+        }
+
+        if (item.kind === 'fetch-branch-committed') {
+          const { chunk } = result as {
+            item: Extract<PlanItem, { kind: 'fetch-branch-committed' }>;
+            chunk?: { oldContent?: string; newContent?: string; chunks?: unknown[] };
+          };
+          if (chunk) {
+            const chunks = chunk.chunks as DiffHunk[] | undefined;
+            const stats = calculateDiffHunkStats(chunks);
+            enriched.push({
+              ...item.change,
+              additions: stats.additions,
+              deletions: stats.deletions,
+              oldContent: chunk.oldContent || '',
+              newContent: chunk.newContent || '',
+              chunks,
+              // Mark as full file content so diff viewer can render the collapsed branch diff directly.
+              isFullFileContent: true,
+            });
+          } else {
+            enriched.push(...item.fallbackChanges);
+          }
+          continue;
+        }
+
+        if (item.kind === 'fetch-local') {
+          const { chunk } = result as {
+            item: typeof item;
+            chunk?: {
+              oldContent?: string;
+              newContent?: string;
+              chunks?: unknown[];
+            };
+          };
+          if (chunk) {
+            enriched.push({
+              ...item.change,
+              oldContent: chunk.oldContent || '',
+              newContent: chunk.newContent || '',
+              chunks: chunk.chunks as DiffHunk[] | undefined,
+              // Mark as full file content so diff viewer knows it can use git:diff to refresh
+              isFullFileContent: true,
+            });
+          } else {
+            enriched.push(item.change);
+          }
         }
       }
 
-      // Add back the locally refreshed entries that we captured at the start of the effect
-      // This ensures we use our local data for recently refreshed files instead of stale parent data
+      // Add back the locally refreshed entries that we captured at the start of the effect.
+      // This ensures we use our local data for recently refreshed files instead of stale parent data.
       enriched.push(...localEntriesForRefreshedFiles);
 
-      // Only update if this is still the current fetch
+      // Only update if this is still the current fetch.
       if (thisVersion === fetchVersion) {
-        enrichedChanges = enriched;
+        const [localStats, committedStats] = await Promise.all([
+          localNumstatPromise,
+          committedNumstatPromise,
+        ]);
+        if (thisVersion !== fetchVersion) return;
+
+        enrichedChanges = applyNumstatStats(enriched, localStats, committedStats);
         isEnrichingChanges = false;
+        logger.debug('[ChatChangesPanel:fetchContent] batched fetch complete', {
+          files: currentChanges.length,
+          fetchedLocal: plan.filter((p) => p.kind === 'fetch-local').length,
+          fetchedCommitted: plan.filter((p) => p.kind === 'fetch-committed').length,
+          fetchedBranchCommitted: plan.filter((p) => p.kind === 'fetch-branch-committed').length,
+          skippedRefreshed: plan.filter((p) => p.kind === 'skip-refreshed').length,
+          elapsedMs: Math.round(performance.now() - fetchStart),
+        });
       }
     };
 
@@ -872,20 +1070,6 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       return pathA.filename.localeCompare(pathB.filename);
     });
   }
-
-  // Whether any committed changes exist (for showing the group-by-commit toggle)
-  let hasCommittedChanges = $derived(
-    changes.some((c) => getChangeCategory(c) === 'committed'),
-  );
-
-  // Count unique commits for the header bar
-  let commitCount = $derived.by(() => {
-    const hashes = new Set<string>();
-    for (const c of changes) {
-      if (c.commitHash) hashes.add(c.commitHash);
-    }
-    return hashes.size;
-  });
 
   // Use enriched changes for display - no category sorting needed since we merge staged/unstaged
   let reactiveChanges = $derived(categoryFilteredChanges);
@@ -1071,52 +1255,41 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     }
     lastAggregateChangesKey = newAggregateKey;
 
-    // Fetch git diff for each file
+    // Fetch git diff for each file. Wave 4: use `batchedGitDiff` so same-tick
+    // requests for (workspaceId, staged=false) collapse into one IPC instead of N.
     const fetchGitDiffs = async () => {
-      const results: LocalFileChange[] = [];
+      const fetchStart = performance.now();
+      const chunks = await Promise.all(
+        reactiveChanges.map((change) =>
+          batchedGitDiff(workspaceId, false, change.filePath).catch((error) => {
+            logger.warn('Failed to fetch git diff', { filePath: change.filePath, error });
+            return undefined;
+          }),
+        ),
+      );
 
-      for (const change of reactiveChanges) {
-        try {
-          const diffResult = (await invoke('git:diff', {
-            workspaceId,
-            paths: [change.filePath],
-            staged: false,
-          })) as {
-            success: boolean;
-            data?: Array<{
-              file: string;
-              oldContent?: string;
-              newContent?: string;
-              chunks?: any[];
-            }>;
-          };
-
-          if (diffResult?.success && diffResult?.data && diffResult.data.length > 0) {
-            const diffChunk = diffResult.data[0];
-            if (diffChunk.oldContent !== undefined && diffChunk.newContent !== undefined) {
-              // Use git diff content with proper full file content
-              results.push({
-                ...change,
-                oldContent: diffChunk.oldContent,
-                newContent: diffChunk.newContent,
-                // Pass chunks for proper line-by-line diff visualization
-                chunks: diffChunk.chunks,
-                // Mark as full file content so MonacoDiffViewer knows it can use git:diff to refresh
-                isFullFileContent: true,
-              } as LocalFileChange);
-            } else {
-              results.push(change);
-            }
-          } else {
-            results.push(change);
-          }
-        } catch (error) {
-          logger.warn('Failed to fetch git diff', { filePath: change.filePath, error });
-          results.push(change);
+      const results: LocalFileChange[] = reactiveChanges.map((change, i) => {
+        const diffChunk = chunks[i];
+        if (diffChunk && diffChunk.oldContent !== undefined && diffChunk.newContent !== undefined) {
+          // Use git diff content with proper full file content
+          return {
+            ...change,
+            oldContent: diffChunk.oldContent,
+            newContent: diffChunk.newContent,
+            // Pass chunks for proper line-by-line diff visualization
+            chunks: diffChunk.chunks as DiffHunk[] | undefined,
+            // Mark as full file content so diff viewer knows it can use git:diff to refresh
+            isFullFileContent: true,
+          } as LocalFileChange;
         }
-      }
+        return change;
+      });
 
       gitDiffChanges = results;
+      logger.debug('[ChatChangesPanel:fetchGitDiffs] batched aggregate fetch complete', {
+        files: reactiveChanges.length,
+        elapsedMs: Math.round(performance.now() - fetchStart),
+      });
     };
 
     fetchGitDiffs();
@@ -1125,12 +1298,23 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   // Use git diff changes for visualization when aggregate, otherwise use merged changes
 
 
+  // File-count threshold above which we DO NOT auto-expand all files on
+  // initial load. The user's explicit "expand all" header button still works.
+  // Prevents scheduling N placeholder IOs + a cascade of diff mounts in one
+  // frame when the workspace has dozens of changed files.
+  const AUTO_EXPAND_THRESHOLD = 30;
+
+  // When the change set exceeds AUTO_EXPAND_THRESHOLD and the user has no
+  // explicit preference, expand this many leading files so the panel still
+  // shows diffs on load instead of feeling empty.
+  const AUTO_EXPAND_INITIAL_COUNT = 10;
+
   // Track expanded state for each file - start EXPANDED by default for better UX
   // Performance is handled by lazy-loading DiffViewers via Intersection Observer
   let expandedFiles = $state<Set<string>>(new Set());
 
   // Track user's expansion preference: 'expanded' = all files expanded, 'collapsed' = all files collapsed
-  // null means use default behavior (expand all on first load)
+  // null means use default behavior (expand when below AUTO_EXPAND_THRESHOLD)
   // This preference is preserved when switching between commits/changesets
   let userExpansionPreference = $state<'expanded' | 'collapsed' | null>(null);
 
@@ -1142,6 +1326,20 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   let viewedFiles = $state<Set<string>>(new Set());
   let viewedCount = $derived(viewedFiles.size);
   let totalFileCount = $derived(new Set(mergedChanges.map((c) => c.filePath)).size);
+
+  // Whether any committed changes exist (for showing the group-by-commit toggle)
+  let hasCommittedChanges = $derived(
+    changes.some((c) => getChangeCategory(c) === 'committed'),
+  );
+
+  // Count unique commits for the header bar
+  let commitCount = $derived.by(() => {
+    const hashes = new Set<string>();
+    for (const c of changes) {
+      if (c.commitHash) hashes.add(c.commitHash);
+    }
+    return hashes.size;
+  });
 
   // Track which commit groups are expanded in "By commit" mode (default: all expanded)
   let expandedCommits = $state<Set<string>>(new Set());
@@ -1223,25 +1421,45 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     // If files changed completely (switching commits/modes) or it's the first load,
     // apply the user's preference or default to expanded
     if (currentKeys.size > 0 && !hasOverlap) {
+      // Auto-expand guardrail: opening "all changes" with many files used to
+      // auto-expand every row, scheduling N placeholder IOs + a cascade of
+      // diff mounts in the same frame. When the count exceeds the threshold
+      // and the user hasn't opted in, expand only the first few files so
+      // there's something to look at — the header expand-all button still
+      // works and individual files can be opened.
       if (preference === 'collapsed') {
-        // User prefers collapsed - keep all files collapsed
+        // Keep all files collapsed
         expandedFiles = new Set();
         visibleFiles = new Set();
       } else {
-        // Default: expand files (preference is 'expanded' or null)
-        // In by-commit mode, only expand files belonging to expanded commit groups
+        // In by-commit mode, only consider files belonging to expanded commit groups
         const currentExpandedCommits = untrack(() => expandedCommits);
-        let keysToExpand: Set<string>;
-        if (groupByCommit && currentExpandedCommits.size > 0) {
-          keysToExpand = new Set(
-            mergedChanges
-              .filter((c) => c.commitHash && currentExpandedCommits.has(c.commitHash))
-              .map((c) => getExpandKey(c)),
-          );
+        const inScopeChanges =
+          groupByCommit && currentExpandedCommits.size > 0
+            ? mergedChanges.filter(
+                (c) => c.commitHash && currentExpandedCommits.has(c.commitHash),
+              )
+            : mergedChanges;
+
+        const shouldExpandAll =
+          preference === 'expanded' ||
+          (preference == null && currentKeys.size <= AUTO_EXPAND_THRESHOLD);
+
+        if (shouldExpandAll) {
+          expandedFiles = new Set(inScopeChanges.map((c) => getExpandKey(c)));
         } else {
-          keysToExpand = currentKeys;
+          // preference == null && currentKeys.size > AUTO_EXPAND_THRESHOLD:
+          // partial-expand the leading files so the panel isn't empty on load.
+          // Files marked viewed stay collapsed.
+          const currentViewed = untrack(() => viewedFiles);
+          const partialKeys = new Set<string>();
+          for (const change of inScopeChanges) {
+            if (partialKeys.size >= AUTO_EXPAND_INITIAL_COUNT) break;
+            if (currentViewed.has(change.filePath)) continue;
+            partialKeys.add(getExpandKey(change));
+          }
+          expandedFiles = partialKeys;
         }
-        expandedFiles = keysToExpand;
         // Let IntersectionObserver lazily populate visibleFiles as elements
         // scroll into view. Pre-populating with all keys causes OOM when
         // there are 100+ files (each mounts a Monaco diff editor).
@@ -1296,7 +1514,11 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       },
       {
         root: null,
-        rootMargin: '100px', // Start loading slightly before visible
+        // Generous margin so slow scrolls never show a loading flash.
+        // Wave 3: this is now the ONLY IntersectionObserver between the
+        // panel and TrackedChangeDiffViewer — InlineDiffItem's inner IO
+        // has been removed to avoid redundant visibility gating.
+        rootMargin: '400px',
         threshold: 0,
       },
     );
@@ -1326,6 +1548,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
+    const category = change ? getChangeCategory(change) : undefined;
     const diffChange = change
       ? {
           id: `chat-change-${filePath}`,
@@ -1333,7 +1556,12 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
           relativePath: filePath,
           type: 'modified' as const,
           // Use the staged property from the change object if available
-          stage: change.staged ? ('staged' as const) : ('unstaged' as const),
+          stage:
+            category === 'committed'
+              ? ('committed' as const)
+              : change.staged
+                ? ('staged' as const)
+                : ('unstaged' as const),
           stats: change
             ? { additions: change.additions, deletions: change.deletions }
             : { additions: 0, deletions: 0 },
@@ -1351,6 +1579,8 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         filePath,
         openInAdjacentPanel,
         sourcePanelId,
+        branchBaseRef: branchBaseRef ?? undefined,
+        branchBaseCommitSha: branchBaseCommitSha ?? undefined,
       }),
     );
   }
@@ -1384,52 +1614,18 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       // effect to skip this file and wait for our fresh data
       recentlyRefreshedFiles.set(filePath, Date.now());
 
-      // Fetch both staged and unstaged diffs for this file
-      const [stagedResult, unstagedResult] = await Promise.all([
-        window.electronAPI?.invoke('git:diff', {
-          workspaceId,
-          paths: [filePath],
-          staged: true,
-        }) as Promise<
-          | {
-              success: boolean;
-              data?: Array<{
-                file: string;
-                oldContent?: string;
-                newContent?: string;
-                chunks?: DiffHunk[];
-              }>;
-            }
-          | undefined
-        >,
-        window.electronAPI?.invoke('git:diff', {
-          workspaceId,
-          paths: [filePath],
-          staged: false,
-        }) as Promise<
-          | {
-              success: boolean;
-              data?: Array<{
-                file: string;
-                oldContent?: string;
-                newContent?: string;
-                chunks?: DiffHunk[];
-              }>;
-            }
-          | undefined
-        >,
+      // Fetch both staged and unstaged diffs for this file. Wave 4: route through
+      // `batchedGitDiff` so concurrent refreshes for different files on the same
+      // tick coalesce into one IPC per staging group.
+      const [stagedChunk, unstagedChunk] = await Promise.all([
+        batchedGitDiff(workspaceId, true, filePath).catch(() => undefined),
+        batchedGitDiff(workspaceId, false, filePath).catch(() => undefined),
       ]);
 
       const hasStagedChanges =
-        stagedResult?.success &&
-        stagedResult.data &&
-        stagedResult.data.length > 0 &&
-        (stagedResult.data[0].chunks?.length ?? 0) > 0;
+        !!stagedChunk && (((stagedChunk.chunks as DiffHunk[] | undefined)?.length) ?? 0) > 0;
       const hasUnstagedChanges =
-        unstagedResult?.success &&
-        unstagedResult.data &&
-        unstagedResult.data.length > 0 &&
-        (unstagedResult.data[0].chunks?.length ?? 0) > 0;
+        !!unstagedChunk && (((unstagedChunk.chunks as DiffHunk[] | undefined)?.length) ?? 0) > 0;
 
       // Helper to calculate additions/deletions from chunks
       function calculateStats(chunks: DiffHunk[] | undefined): {
@@ -1451,9 +1647,9 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       const existingEntries = enrichedChanges.filter((c) => c.filePath === filePath);
       const newEntries: LocalFileChange[] = [];
 
-      if (hasUnstagedChanges && unstagedResult?.data?.[0]) {
-        const diffData = unstagedResult.data[0];
-        const stats = calculateStats(diffData.chunks);
+      if (hasUnstagedChanges && unstagedChunk) {
+        const unstagedChunks = unstagedChunk.chunks as DiffHunk[] | undefined;
+        const stats = calculateStats(unstagedChunks);
         // Find existing unstaged entry to preserve toolName, toolCallId, action
         const existingUnstaged = existingEntries.find((e) => !e.staged);
         newEntries.push({
@@ -1462,10 +1658,10 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
           deletions: stats.deletions,
           staged: false,
           category: 'unstaged' as ChangeCategory,
-          oldContent: diffData.oldContent || '',
-          newContent: diffData.newContent || '',
-          chunks: diffData.chunks,
-          // Mark as full file content so MonacoDiffViewer knows it can use git:diff to refresh
+          oldContent: unstagedChunk.oldContent || '',
+          newContent: unstagedChunk.newContent || '',
+          chunks: unstagedChunks,
+          // Mark as full file content so diff viewer knows it can use git:diff to refresh
           isFullFileContent: true,
           // Preserve required fields from existing entry or use defaults
           action: existingUnstaged?.action || 'modify',
@@ -1474,9 +1670,9 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         });
       }
 
-      if (hasStagedChanges && stagedResult?.data?.[0]) {
-        const diffData = stagedResult.data[0];
-        const stats = calculateStats(diffData.chunks);
+      if (hasStagedChanges && stagedChunk) {
+        const stagedChunks = stagedChunk.chunks as DiffHunk[] | undefined;
+        const stats = calculateStats(stagedChunks);
         // Find existing staged entry to preserve toolName, toolCallId, action
         const existingStaged = existingEntries.find((e) => e.staged);
         newEntries.push({
@@ -1485,10 +1681,10 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
           deletions: stats.deletions,
           staged: true,
           category: 'staged' as ChangeCategory,
-          oldContent: diffData.oldContent || '',
-          newContent: diffData.newContent || '',
-          chunks: diffData.chunks,
-          // Mark as full file content so MonacoDiffViewer knows it can use git:diff to refresh
+          oldContent: stagedChunk.oldContent || '',
+          newContent: stagedChunk.newContent || '',
+          chunks: stagedChunks,
+          // Mark as full file content so diff viewer knows it can use git:diff to refresh
           isFullFileContent: true,
           // Preserve required fields from existing entry or use defaults
           action: existingStaged?.action || 'modify',
@@ -1688,174 +1884,39 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         .every((c) => expandedFiles.has(getExpandKey(c))),
   );
 
-  // File refs for visualization navigation
-  let fileRefs = $state<Map<string, HTMLDivElement>>(new Map());
-
-  // Commit group refs for scroll-to-commit navigation
-  let commitGroupRefs = $state<Map<string, HTMLDivElement>>(new Map());
-
-  // Svelte action to register commit group element refs for scroll-to-commit
-  function registerCommitGroupRef(node: HTMLDivElement, hash: string) {
-    commitGroupRefs.set(hash, node);
-    return {
-      destroy() {
-        commitGroupRefs.delete(hash);
-      },
-    };
-  }
-
-  // Scroll to a commit group and expand it
-  function scrollToCommitGroup(hash: string) {
-    // Close the dropdown
-    isSummaryBarHovered = false;
-
-    // Expand the commit group if not already expanded
-    if (!expandedCommits.has(hash)) {
-      expandedCommits = new Set([...expandedCommits, hash]);
-    }
-
-    // Scroll to the commit group header after a tick to allow DOM updates
-    requestAnimationFrame(() => {
-      const ref = commitGroupRefs.get(hash);
-      if (ref && scrollContainerRef) {
-        const containerRect = scrollContainerRef.getBoundingClientRect();
-        const elRect = ref.getBoundingClientRect();
-        const offset = elRect.top - containerRect.top + scrollContainerRef.scrollTop - 53;
-        scrollContainerRef.scrollTo({ top: offset, behavior: 'smooth' });
-        // Brief highlight effect
-        ref.classList.add('bg-accent/20');
-        setTimeout(() => {
-          ref.classList.remove('bg-accent/20');
-        }, 1500);
-      }
-    });
-  }
-
-  // Svelte action to register file element refs for scroll-to-file
-  function registerRef(node: HTMLDivElement, filePath: string) {
-    fileRefs.set(filePath, node);
-    return {
-      destroy() {
-        fileRefs.delete(filePath);
-      },
-    };
-  }
-
   // Track which file/line to scroll to in the diff viewer
   let scrollTarget = $state<{ filePath: string; lineNumber: number } | null>(null);
 
-  // Handle visualization click - scroll to file in list and highlight
-  // Accepts union type from ChangeSetVisualization
-
-  // Handle visualization line click - scroll to file AND specific line
-
-  // Common logic for scrolling to a file
-  async function scrollToFile(filePath: string) {
-    // In by-commit mode, ensure the commit group containing this file is expanded first
-    if (groupByCommit && commitGroups) {
-      let needsTick = false;
-      for (const group of commitGroups) {
-        if (group.hash && group.changes.some((c) => c.filePath === filePath)) {
-          if (!expandedCommits.has(group.hash)) {
-            const newSet = new Set(expandedCommits);
-            newSet.add(group.hash);
-            expandedCommits = newSet;
-            needsTick = true;
-          }
-          break;
-        }
-      }
-      // Wait for DOM to update after expanding the commit group
-      if (needsTick) {
-        await tick();
-      }
-    }
-
-    const ref = fileRefs.get(filePath);
-    if (ref && scrollContainerRef) {
-      const containerRect = scrollContainerRef.getBoundingClientRect();
-      const elRect = ref.getBoundingClientRect();
-      // Scroll so the file sits 20px below the sticky summary bar (~33px)
-      const offset = elRect.top - containerRect.top + scrollContainerRef.scrollTop - 53;
-      scrollContainerRef.scrollTo({ top: offset, behavior: 'smooth' });
-      // Brief highlight effect using background color instead of ring
-      ref.classList.add('bg-accent/20');
-      setTimeout(() => {
-        ref.classList.remove('bg-accent/20');
-      }, 1500);
-    }
-    // Expand the file if collapsed - find matching expand key(s) for this file
-    const matchingKeys = mergedChanges
-      .filter((c) => c.filePath === filePath)
-      .map((c) => getExpandKey(c));
-    const anyExpanded = matchingKeys.some((key) => expandedFiles.has(key));
-    if (!anyExpanded && matchingKeys.length > 0) {
-      toggleFile(matchingKeys[0]);
-    }
-  }
-
-  // Sticky header collapse behavior
-
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
-  let _isStuck = $state(false);
 
-  // Detect when header becomes stuck using scroll position
-  function handleScroll(e: Event) {
-    const target = e.target as HTMLElement;
-    // Collapse after scrolling down 100px
-    _isStuck = target.scrollTop > 100;
-    updateFirstInViewFile(target);
-  }
+  // Wave 5a: Single pierre `Virtualizer` instance scoped to this panel's
+  // scroll container. `VirtualizedFileDiff` (inside each `DiffViewer`)
+  // connects to it so off-screen files collapse to height-preserving
+  // placeholders, keeping live hunk DOM bounded to O(viewport) rather
+  // than growing linearly with `expandedFiles.size`.
+  //
+  // The outer 400 px `observeVisibility` gate below is preserved — it
+  // still decides *when* to fetch per-file content (IPC) and mount the
+  // underlying `DiffViewer`. Once mounted, the virtualizer takes over
+  // fine-grained real-DOM vs placeholder management inside that file.
+  let virtualizerContentRef: HTMLDivElement | null = $state(null);
+  let virtualizer = $state<Virtualizer | undefined>(undefined);
 
-  // Derived state for whether header should be collapsed
+  $effect(() => {
+    const scrollRoot = scrollContainerRef;
+    const content = virtualizerContentRef;
+    if (!scrollRoot || !content) return;
 
-  // Track which file is first in view in the scroll container
-  let firstInViewFilePath = $state<string | null>(null);
+    const instance = new Virtualizer();
+    instance.setup(scrollRoot, content);
+    virtualizer = instance;
 
-  function updateFirstInViewFile(scrollContainer: HTMLElement) {
-    const containerRect = scrollContainer.getBoundingClientRect();
-    // Account for sticky summary bar height (~33px)
-    const topEdge = containerRect.top + 33;
-    let topmost: string | null = null;
-    let topmostTop = Infinity;
-
-    for (const [filePath, el] of fileRefs) {
-      const rect = el.getBoundingClientRect();
-      // File is in view if its bottom is below the top edge and top is above the container bottom
-      if (rect.bottom > topEdge && rect.top < containerRect.bottom) {
-        // Pick the file whose top is closest to (but not necessarily above) the top edge
-        if (rect.top < topmostTop) {
-          topmostTop = rect.top;
-          topmost = filePath;
-        }
-      }
-    }
-    firstInViewFilePath = topmost;
-  }
-
-  // Hover state for summary bar file list
-  let isSummaryBarHovered = $state(false);
-  let summaryBarHoverTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  function handleSummaryBarMouseEnter() {
-    if (summaryBarHoverTimeout) {
-      clearTimeout(summaryBarHoverTimeout);
-      summaryBarHoverTimeout = null;
-    }
-    isSummaryBarHovered = true;
-  }
-
-  function handleSummaryBarMouseLeave() {
-    summaryBarHoverTimeout = setTimeout(() => {
-      isSummaryBarHovered = false;
-    }, 200);
-  }
-
-  function handleSummaryFileClick(filePath: string) {
-    isSummaryBarHovered = false;
-    scrollToFile(filePath);
-  }
+    return () => {
+      instance.cleanUp();
+      if (virtualizer === instance) virtualizer = undefined;
+    };
+  });
 
   // State for copy SHA functionality
   let copiedSha = $state(false);
@@ -1932,7 +1993,13 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
 <!-- header is managed by panel tab bar -->
 <div class="h-full w-full flex flex-col overflow-hidden">
   <!-- Scroll container -->
-  <div class="h-full overflow-auto p-5 pt-0" onscroll={handleScroll} bind:this={scrollContainerRef}>
+  <div class="h-full overflow-auto p-5 pt-0" bind:this={scrollContainerRef}>
+    <!--
+      Single content wrapper for the pierre Virtualizer's `resizeObserver`.
+      All diff rows must live inside this wrapper so the virtualizer can
+      measure total content height and reconcile visible instances.
+    -->
+    <div bind:this={virtualizerContentRef}>
     <!-- Commit Details Section -->
     {#if commitInfo}
       {@render commitDetailsSection()}
@@ -1964,17 +2031,10 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         No changes to display
       </div>
     {:else}
-      <!-- Sticky summary bar: "N files changed" with hover file list -->
-      <div
-        class="sticky top-0 z-20 -mx-5 px-5"
-      >
+      <!-- Sticky summary bar: "N files changed" -->
+      <div class="sticky top-0 z-20 -mx-5 px-5">
         <div class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border">
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span
-            class="text-xs font-medium text-subtle whitespace-nowrap"
-            onmouseenter={handleSummaryBarMouseEnter}
-            onmouseleave={handleSummaryBarMouseLeave}
-          >
+          <span class="text-xs font-medium text-subtle whitespace-nowrap">
             {totalFileCount} file{totalFileCount === 1 ? '' : 's'} changed
             {#if groupByCommit && commitCount > 0}
               , {commitCount} commit{commitCount === 1 ? '' : 's'}
@@ -2005,78 +2065,6 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
             {/if}
           </div>
         </div>
-
-        <!-- Expandable file list on hover (absolute overlay, doesn't push content) -->
-        {#if isSummaryBarHovered}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="absolute left-0 right-0 bg-background/95 backdrop-blur-sm border-b border-border shadow-lg py-1 px-3 overflow-y-auto"
-            style="max-height: 80vh;"
-            transition:slide={{ axis: 'y', duration: 150 }}
-            onmouseenter={handleSummaryBarMouseEnter}
-            onmouseleave={handleSummaryBarMouseLeave}
-          >
-            {#if groupByCommit && commitGroups}
-              <!-- Show files grouped by commit -->
-              {#each commitGroups as group (group.hash || 'working')}
-                {#if group.hash}
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left text-ui text-muted-foreground font-medium mt-1 first:mt-0 cursor-pointer hover:text-foreground transition-colors"
-                    onclick={() => scrollToCommitGroup(group.hash)}
-                    title="Scroll to commit"
-                  >
-                    <span class="truncate">{group.message.split('\n')[0]}</span>
-                    <span class="shrink-0 text-ghost">·</span>
-                    <span class="shrink-0">{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
-                  </button>
-                {:else}
-                  <div class="px-2 py-1 text-ui text-subtle font-medium mt-1 first:mt-0">
-                    Working changes
-                  </div>
-                {/if}
-                {#each group.changes as change (change.filePath + '-summary-' + group.hash)}
-                  {@const displayPath = getDisplayPath(change.filePath)}
-                  {@const isActive = firstInViewFilePath === change.filePath}
-                  {@const isViewed = viewedFiles.has(change.filePath)}
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2 px-2 pl-5 py-1 rounded text-left transition-colors cursor-pointer text-xs hover:bg-muted/50 {isActive ? 'bg-accent/15 text-foreground' : 'text-muted-foreground'} {isViewed ? 'opacity-50' : ''}"
-                    onclick={() => handleSummaryFileClick(change.filePath)}
-                  >
-                    <span class="truncate flex-1 min-w-0">
-                      <span class="font-medium">{getFileName(displayPath)}</span>
-                      {#if getDirectoryPath(displayPath)}
-                        <span class="text-subtle ml-1">{getDirectoryPath(displayPath)}</span>
-                      {/if}
-                    </span>
-                    <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
-                  </button>
-                {/each}
-              {/each}
-            {:else}
-              <!-- Flat file list -->
-              {#each mergedChanges as change (change.filePath + '-summary')}
-                {@const displayPath = getDisplayPath(change.filePath)}
-                {@const isActive = firstInViewFilePath === change.filePath}
-                {@const isViewed = viewedFiles.has(change.filePath)}
-                <button
-                  type="button"
-                  class="w-full flex items-center gap-2 px-2 py-1 rounded text-left transition-colors cursor-pointer text-xs hover:bg-muted/50 {isActive ? 'bg-accent/15 text-foreground' : 'text-muted-foreground'} {isViewed ? 'opacity-50' : ''}"
-                  onclick={() => handleSummaryFileClick(change.filePath)}
-                >
-                  <span class="truncate flex-1 min-w-0">
-                    <span class="font-medium">{getFileName(displayPath)}</span>
-                    {#if getDirectoryPath(displayPath)}
-                      <span class="text-subtle ml-1">{getDirectoryPath(displayPath)}</span>
-                    {/if}
-                  </span>
-                  <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />
-                </button>
-              {/each}
-            {/if}
-          </div>
-        {/if}
       </div>
       <div class="flex flex-col gap-2 py-6">
         {#if groupByCommit && commitGroups}
@@ -2084,7 +2072,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
           {#each commitGroups as group, i (group.hash || 'working-' + i)}
             {#if group.hash}
               <!-- Commit group with sticky collapsible header -->
-              <div class="mb-2" use:registerCommitGroupRef={group.hash}>
+              <div class="mb-2">
                 <div class="sticky top-[31.5px] z-[11] bg-background/95 backdrop-blur-sm rounded-md">
                   <div class="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-muted/30">
                     <button
@@ -2162,6 +2150,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         {/if}
       </div>
     {/if}
+    </div><!-- /virtualizerContentRef -->
   </div>
 </div>
 
@@ -2300,7 +2289,6 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   <div
     class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed ? 'opacity-50' : ''}"
     style="overflow-anchor: none;"
-    use:registerRef={change.filePath}
   >
     <!-- File Header (sticky within scroll container) -->
     <div class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar" style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey) ? 'var(--border)' : 'transparent'}">
@@ -2480,6 +2468,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
               onStageHunk={showStagingControls ? handleStageHunk : undefined}
               onUnstageHunk={showStagingControls ? handleUnstageHunk : undefined}
               onOpenCommit={handleOpenCommit}
+              {virtualizer}
             />
           {:else}
             <!-- Single change (only staged or only unstaged) -->
@@ -2499,6 +2488,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
                 ? handleUnstageHunk
                 : undefined}
               onOpenCommit={category === 'committed' ? handleOpenCommit : undefined}
+              {virtualizer}
             />
           {/if}
         {:else}

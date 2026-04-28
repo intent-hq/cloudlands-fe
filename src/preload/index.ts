@@ -364,6 +364,7 @@ const ALLOWED_CHANNELS = [
   "git:keychain-consent-respond",
   "git:check-keychain-risk",
   "git:diff",
+  "git:numstat",
   "git:commit",
   "git:commit-details",
   "git:push",

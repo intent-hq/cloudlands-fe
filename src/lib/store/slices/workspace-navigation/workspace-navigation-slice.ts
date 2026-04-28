@@ -77,6 +77,8 @@ export interface WorkspaceNavigationHistoryEntry {
   scrollPosition?: number;
   filePath?: string;
   trackedChange?: TrackedChange;
+  branchBaseRef?: string;
+  branchBaseCommitSha?: string;
   selectedCommit?: WorkspaceNavigationCommit;
   selectedSourceId?: string;
   agentTurnData?: WorkspaceNavigationAgentTurn;
@@ -117,6 +119,8 @@ export interface WorkspaceNavigationMainPanelState {
   scrollToLine?: number;
   commitHash?: string;
   commitMessage?: string;
+  branchBaseRef?: string;
+  branchBaseCommitSha?: string;
   result?: string | null;
   agentId?: string | null;
   stagedFiles?: string[];
@@ -372,6 +376,8 @@ export const openWorkspaceDiff = createAction<
       forceUpdate?: boolean;
       openInAdjacentPanel?: boolean;
       sourcePanelId?: string;
+      branchBaseRef?: string;
+      branchBaseCommitSha?: string;
     },
   ]
 >("workspaceNavigation/openWorkspaceDiff");
@@ -663,6 +669,8 @@ export const workspaceNavigationReducer = createReducer(initialState)
             selectedFile: filePath,
             selectedChangeId: options?.changeId || change.id,
             scrollToLine: options?.scrollToLine,
+            branchBaseRef: options?.branchBaseRef,
+            branchBaseCommitSha: options?.branchBaseCommitSha,
           }),
         }),
         {
@@ -671,6 +679,8 @@ export const workspaceNavigationReducer = createReducer(initialState)
           label: filePath?.split("/").pop() || "Diff",
           trackedChange: change,
           filePath,
+          branchBaseRef: options?.branchBaseRef,
+          branchBaseCommitSha: options?.branchBaseCommitSha,
         }
       );
     })

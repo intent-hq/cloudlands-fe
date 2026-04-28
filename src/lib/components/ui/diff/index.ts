@@ -21,9 +21,6 @@
  *   viewMode="split"
  * />
  * ```
- *
- * For Monaco-based editable diffs, see:
- * - `$lib/components/editor/UnifiedDiffViewer.svelte`
  */
 
 export { default as DiffViewer } from './DiffViewer.svelte';

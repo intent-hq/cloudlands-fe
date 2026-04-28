@@ -36,10 +36,6 @@
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import {
-    selectSpecialists,
-    selectSpecialistName,
-  } from '$lib/store/slices/specialists/specialists-selectors';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
@@ -91,12 +87,6 @@
 
   const dispatch = getDispatch();
   const agentPermCount = selectPendingCount(agentId);
-
-  // Reactive store subscription for specialist name lookup
-  const specialists$ = selectSpecialists();
-  $effect(() => {
-    void $specialists$;
-  });
 
   $effect(() => {
     const wsId = workspace?.id;
@@ -381,14 +371,6 @@
   const specialist = $derived.by(() => {
     const specialistId = agent?.metadata?.specialist || agent?.agentMetadata?.specialist;
     return specialistId || null;
-  });
-
-  // Map specialist ID to display name using unified lookup
-  // Includes built-in and custom specialists
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const specialistDisplayName = $derived.by(() => {
-    if (!specialist) return null;
-    return selectSpecialistName.select(getReduxStore().getState(), specialist);
   });
 
   // Show streaming content if actively streaming, otherwise show last response.

@@ -87,11 +87,19 @@ export function getDiffWorkerPool(): WorkerPoolManager {
   const startTime = performance.now();
   logger.debug('Initializing diff highlighter worker pool...');
 
+  const hwConcurrency =
+    typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
+      ? navigator.hardwareConcurrency
+      : 4;
+  // Cap at 8 to match pierre's default pool size — higher counts mostly add
+  // worker-boot overhead without reducing highlight latency for our workloads.
+  const poolSize = Math.min(Math.max(hwConcurrency, 2), 8);
+
   workerPool = getOrCreateWorkerPoolSingleton({
     poolOptions: {
       workerFactory,
-      poolSize: 4, // 4 workers should be enough for most cases
-      totalASTLRUCacheSize: 100, // Cache up to 100 rendered diffs
+      poolSize,
+      totalASTLRUCacheSize: 250, // Chat-heavy sessions can touch many diffs; larger LRU keeps repeats warm.
     },
     highlighterOptions: {
       theme: THEMES,
@@ -100,9 +108,25 @@ export function getDiffWorkerPool(): WorkerPoolManager {
   });
 
   const duration = performance.now() - startTime;
-  logger.info(`Diff highlighter worker pool created in ${duration.toFixed(0)}ms`);
+  logger.info(`Diff highlighter worker pool created in ${duration.toFixed(0)}ms (poolSize=${poolSize})`);
 
   return workerPool;
+}
+
+/**
+ * Inspect the current state of the worker pool's file and diff caches.
+ * Returns `null` if the pool has not been created yet.
+ *
+ * Intended for perf smoke-tests / dev tooling — the return value exposes the
+ * LRUMap instances from the installed @pierre/diffs version.
+ */
+export function inspectDiffCaches(): { fileCacheSize: number; diffCacheSize: number } | null {
+  if (!workerPool) return null;
+  const caches = workerPool.inspectCaches();
+  return {
+    fileCacheSize: caches.fileCache.size,
+    diffCacheSize: caches.diffCache.size,
+  };
 }
 
 /**

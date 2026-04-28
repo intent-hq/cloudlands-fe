@@ -249,6 +249,22 @@ export interface PureDiffProps<TAnnotation = undefined> {
   /** Custom CSS to inject into the shadow DOM (for @pierre/diffs web component) */
   unsafeCSS?: string;
 
+  // === Cache keys ===
+  /**
+   * Optional pre-built cache key for the old-content side of the diff.
+   * When provided, DiffViewer skips its own `hashContent(oldContent)` call and
+   * uses this value as the `@pierre/diffs` cache key. Callers that synthesise
+   * content (e.g. prepending blank-line padding for partial/snippet diffs)
+   * should hash the un-synthesised content and pass it in here so the
+   * worker-pool AST cache keys stay stable across mounts.
+   */
+  oldCacheKey?: string;
+  /**
+   * Optional pre-built cache key for the new-content side of the diff.
+   * See `oldCacheKey` for when to use this.
+   */
+  newCacheKey?: string;
+
   // === Performance options ===
   /**
    * Maximum number of total lines before disabling syntax highlighting.
@@ -262,4 +278,17 @@ export interface PureDiffProps<TAnnotation = undefined> {
    * Useful for performance-critical scenarios or when highlighting is not needed.
    */
   disableHighlighting?: boolean;
+
+  // === Virtualization ===
+  /**
+   * Optional pierre `Virtualizer` instance. When provided, DiffViewer
+   * instantiates a `VirtualizedFileDiff` bound to this virtualizer instead
+   * of a plain `FileDiff`. The virtualizer is responsible for swapping
+   * off-screen files to height-preserving placeholders, so multi-file diff
+   * lists only hold O(viewport) worth of live hunk DOM at a time.
+   *
+   * Callers that mount a single diff (tabs, patch blocks, note history)
+   * should leave this unset — the default non-virtualized path is unchanged.
+   */
+  virtualizer?: import('@pierre/diffs').Virtualizer;
 }

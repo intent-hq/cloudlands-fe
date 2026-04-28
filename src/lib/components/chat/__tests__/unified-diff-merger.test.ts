@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildContentFromMergedHunks,
   buildSyntheticChunks,
   mergeChangeParts,
 } from '../unified-diff-merger';
@@ -151,5 +152,139 @@ describe('mergeChangeParts', () => {
     expect(result[0].lines.every((l) => l.type === 'Addition')).toBe(true);
     expect(result[0].lines).toHaveLength(2);
   });
-});
 
+  it('dedupes repeated full-file parts before building merged content', () => {
+    const oldContent = '<script lang="ts">\n  const value = 1;\n</script>';
+    const newContent = '<script lang="ts">\n  const value = 2;\n</script>';
+    const parts: ChangePart[] = Array.from({ length: 5 }, (_, index) => ({
+      change: {
+        filePath: 'ChatChangesPanel.svelte',
+        action: 'modify',
+        additions: 1,
+        deletions: 1,
+        toolName: 'git',
+        toolCallId: `duplicate-${index}`,
+        oldContent,
+        newContent,
+      },
+      category: 'committed',
+    }));
+
+    const mergedContent = buildContentFromMergedHunks(mergeChangeParts(parts));
+
+    expect(mergedContent.oldContent).toBe(oldContent);
+    expect(mergedContent.newContent).toBe(newContent);
+    expect(
+      mergedContent.oldContent.split('\n').filter((line) => line === '<script lang="ts">'),
+    ).toHaveLength(1);
+    expect(
+      mergedContent.newContent.split('\n').filter((line) => line === '<script lang="ts">'),
+    ).toHaveLength(1);
+  });
+
+  it('pads gaps between non-overlapping snippet hunks from multiple parts', () => {
+    const parts: ChangePart[] = [
+      {
+        change: {
+          filePath: 'ChatChangesPanel.svelte',
+          action: 'modify',
+          additions: 1,
+          deletions: 1,
+          toolName: 't',
+          toolCallId: 'module-snippet',
+          chunks: [
+            {
+              oldStart: 1,
+              oldLines: 3,
+              newStart: 1,
+              newLines: 3,
+              lines: [
+                { type: 'Context', content: '<script module lang="ts">' },
+                { type: 'Deletion', content: '  /** old module docs' },
+                { type: 'Addition', content: '  /** new module docs' },
+                { type: 'Context', content: '   */' },
+              ],
+            },
+          ],
+        },
+        category: 'committed',
+      },
+      {
+        change: {
+          filePath: 'ChatChangesPanel.svelte',
+          action: 'modify',
+          additions: 0,
+          deletions: 0,
+          toolName: 't',
+          toolCallId: 'instance-snippet',
+          chunks: [
+            {
+              oldStart: 77,
+              oldLines: 2,
+              newStart: 77,
+              newLines: 2,
+              lines: [
+                { type: 'Context', content: '<script lang="ts">' },
+                { type: 'Context', content: '  /** instance docs' },
+              ],
+            },
+          ],
+        },
+        category: 'committed',
+      },
+    ];
+
+    const mergedContent = buildContentFromMergedHunks(mergeChangeParts(parts));
+    const newLines = mergedContent.newContent.split('\n');
+
+    expect(newLines[0]).toBe('<script module lang="ts">');
+    expect(newLines[1]).toBe('  /** new module docs');
+    expect(newLines[76]).toBe('<script lang="ts">');
+    expect(newLines[77]).toBe('  /** instance docs');
+    expect(newLines.slice(3, 76).every((line) => line === '')).toBe(true);
+    expect(mergedContent.newContent).not.toContain('  /** new module docs\n<script lang="ts">');
+  });
+
+  it('preserves branch-base collapsed committed content for colliding commit coordinates', () => {
+    const parts: ChangePart[] = [
+      {
+        change: {
+          filePath: 'icons.ts',
+          action: 'modify',
+          additions: 3,
+          deletions: 0,
+          toolName: 'git',
+          toolCallId: 'branch-base-collapsed',
+          chunks: [
+            {
+              oldStart: 22,
+              oldLines: 2,
+              newStart: 22,
+              newLines: 5,
+              lines: [
+                { type: 'Context', content: 'import { BaseIcon } from "./base";' },
+                { type: 'Addition', content: '/** Search icon shown in the command menu. */' },
+                { type: 'Addition', content: 'import { SearchIcon } from "./search";' },
+                { type: 'Addition', content: 'import { SparklesIcon } from "./sparkles";' },
+                { type: 'Context', content: 'export const icons = {' },
+              ],
+            },
+          ],
+        },
+        category: 'committed',
+      },
+    ];
+
+    const mergedContent = buildContentFromMergedHunks(mergeChangeParts(parts));
+    const newLines = mergedContent.newContent.split('\n');
+
+    expect(newLines.slice(0, 5)).toEqual([
+      'import { BaseIcon } from "./base";',
+      '/** Search icon shown in the command menu. */',
+      'import { SearchIcon } from "./search";',
+      'import { SparklesIcon } from "./sparkles";',
+      'export const icons = {',
+    ]);
+    expect(mergedContent.newContent).not.toContain('import { SearchIcon } from "./search";\n/** Search icon');
+  });
+});

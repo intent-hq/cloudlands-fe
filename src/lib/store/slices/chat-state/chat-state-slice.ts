@@ -7,6 +7,7 @@ import type {
   LastAttemptedMessage,
   ModelUnavailableInfo,
   SendMessagePayload,
+  InitialMessagePayload,
   InitializeChatOptions,
 } from './chat-state-types';
 
@@ -238,6 +239,12 @@ export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsI
 export const initializeChatRequested = createAction(
   'chatState/initializeChatRequested',
   (agentId: string, payload: { wsId: string; options?: InitializeChatOptions }) => ({ agentId, ...payload }),
+);
+
+/** Trigger the initial-message saga after ChatPanel detects pending workspace config. */
+export const sendInitialMessageRequested = createAction(
+  'chatState/sendInitialMessageRequested',
+  (agentId: string, payload: InitialMessagePayload) => ({ agentId, payload }),
 );
 
 // --- Send message saga trigger (no reducer state change) ---

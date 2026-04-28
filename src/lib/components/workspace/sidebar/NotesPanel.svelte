@@ -33,12 +33,10 @@
     getAvatarState,
     isAgentActivelyWorking,
   } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { selectAgentSessionsByIds } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { AgentStatus } from '$shared/types/agent.types';
-  
-
-import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -260,12 +258,37 @@ import { onMount, tick } from 'svelte';
   }
 
   // Sorted notes
-  const sortedNotes = $derived(sortNotes(notes, customNoteOrder));
+  function collectAssignedAgentIds(sourceNotes: Note[]): string[] {
+    const ids = new Set<string>();
+    for (const note of sourceNotes) {
+      for (const agentId of note.metadata?.task?.assignedAgentIds ?? []) {
+        ids.add(agentId);
+      }
+    }
+    return Array.from(ids).sort();
+  }
 
-  // Check if a note has unread changes (reactive via store subscription)
+  const sortedNotes = $derived(sortNotes(notes, customNoteOrder));
+  const renderedNotes = $derived(sortedNotes.filter((note) => !isHiddenByCollapsedParent(note)));
+
+  // Check if a note has unread changes (reactive via selector readable)
   // NOTE: The refresh is triggered by the parent component (WorkspaceDetailSidebar)
   // to avoid duplicate IPC calls from multiple components.
   const unreadNoteIds = selectUnreadNoteIds();
+  const relevantAgentIds = $derived(collectAssignedAgentIds(renderedNotes));
+  const initialRelevantAgentIds = collectAssignedAgentIds(notes);
+  const relevantAgentIdsStore = writable<string[]>(initialRelevantAgentIds);
+  let relevantAgentIdsKey = initialRelevantAgentIds.join('\0');
+  $effect(() => {
+    const nextKey = relevantAgentIds.join('\0');
+    if (nextKey === relevantAgentIdsKey) return;
+    relevantAgentIdsKey = nextKey;
+    relevantAgentIdsStore.set(relevantAgentIds);
+  });
+  const relevantAgentSessions$ = selectAgentSessionsByIds(relevantAgentIdsStore);
+  const agentSessionsById = $derived.by(() => {
+    return new Map($relevantAgentSessions$.map((agent) => [agent.id, agent]));
+  });
 
   // Helper to check if a note can be dragged (only top-level non-spec notes)
   function canDrag(note: Note): boolean {
@@ -332,22 +355,6 @@ import { onMount, tick } from 'svelte';
     dragOverNoteId = null;
   }
 
-  // Reactive trigger for streaming state changes
-  // This counter increments whenever any agent's streaming state changes
-  let streamingStateVersion = $state(0);
-
-  // Subscribe to streaming state changes from Redux store
-  onMount(() => {
-    const unsubscribe = getReduxStore().subscribe(() => {
-      // Increment version to trigger reactivity on any agent state change
-      streamingStateVersion++;
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  });
-
   // Get active agents working on a note
   function getActiveAgentsForNote(note: Note): Array<{
     agentId: string;
@@ -355,13 +362,8 @@ import { onMount, tick } from 'svelte';
     onClick: () => void;
     specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
   }> {
-    // Access streamingStateVersion to ensure reactivity
-    void streamingStateVersion;
-
     const assignedAgentIds = note.metadata?.task?.assignedAgentIds || [];
     if (assignedAgentIds.length === 0) return [];
-
-    const reduxState = getReduxStore().getState();
 
     const activeAgents: Array<{
       agentId: string;
@@ -371,7 +373,7 @@ import { onMount, tick } from 'svelte';
     }> = [];
 
     for (const agentId of assignedAgentIds) {
-      const agent = selectAgentById.select(reduxState, agentId);
+      const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
       const isStreaming = agent.isStreaming ?? false;

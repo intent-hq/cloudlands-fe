@@ -4,27 +4,57 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { gotoMock, navigateToSettingsMock, invokeMock, trackMock, workspaceItemsState, sessionSessions, reduxDispatchMock, browserRecentUrls } = vi.hoisted(() => ({
-  gotoMock: vi.fn(),
-  navigateToSettingsMock: vi.fn(),
-  invokeMock: vi.fn().mockResolvedValue({ files: [] }),
-  trackMock: vi.fn(),
-  workspaceItemsState: { value: [] as any[] },
-  sessionSessions: { value: [] as any[] },
-  reduxDispatchMock: vi.fn(),
-  browserRecentUrls: { value: [] as any[] },
-}));
+const {
+  gotoMock,
+  navigateToSettingsMock,
+  invokeMock,
+  trackMock,
+  workspaceItemsState,
+  sessionSessions,
+  reduxDispatchMock,
+  browserRecentUrls,
+  createSelectorReadable,
+} = vi.hoisted(() => {
+  const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
+    subscribe: (fn: (value: TValue) => void) => {
+      if (arg && typeof (arg as any).subscribe === 'function') {
+        return (arg as any).subscribe((value: any) => fn(resolver(value)));
+      }
+
+      fn(resolver(arg));
+      return () => {};
+    },
+  });
+
+  return {
+    gotoMock: vi.fn(),
+    navigateToSettingsMock: vi.fn(),
+    invokeMock: vi.fn().mockResolvedValue({ files: [] }),
+    trackMock: vi.fn(),
+    workspaceItemsState: { value: [] as any[] },
+    sessionSessions: { value: [] as any[] },
+    reduxDispatchMock: vi.fn(),
+    browserRecentUrls: { value: [] as any[] },
+    createSelectorReadable,
+  };
+});
 
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/store/slices/browser/browser-selectors', () => ({
-  selectBrowserRecentUrls: {
-    select: () => browserRecentUrls.value,
-  },
+  selectBrowserRecentUrls: Object.assign(
+    vi.fn((workspaceIdArg: any) =>
+      createSelectorReadable(workspaceIdArg, () => browserRecentUrls.value),
+    ),
+    { select: vi.fn(() => browserRecentUrls.value) },
+  ),
 }));
 vi.mock('$lib/store/slices/browser/browser-slice', () => ({
-  initBrowserWorkspace: vi.fn((...args: any[]) => ({ type: 'browser/initBrowserWorkspace', payload: args })),
+  initBrowserWorkspace: vi.fn((...args: any[]) => ({
+    type: 'browser/initBrowserWorkspace',
+    payload: args,
+  })),
 }));
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
@@ -36,34 +66,76 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$features/agent/browser', () => ({}));
 
-vi.mock('$features/terminal/terminal-manager.svelte', () => ({ terminalManager: { loadTerminalMetadata: vi.fn(() => []) } }));
-vi.mock('$features/terminal/terminal-history-tracker', () => ({ terminalHistoryTracker: { getLastCommand: vi.fn(() => undefined) } }));
-vi.mock('$shared/types/agent-message.conversion', () => ({ extractContentFromBlocks: vi.fn(() => '') }));
+vi.mock('$features/terminal/terminal-manager.svelte', () => ({
+  terminalManager: { loadTerminalMetadata: vi.fn(() => []) },
+}));
+vi.mock('$features/terminal/terminal-history-tracker', () => ({
+  terminalHistoryTracker: { getLastCommand: vi.fn(() => undefined) },
+}));
+vi.mock('$shared/types/agent-message.conversion', () => ({
+  extractContentFromBlocks: vi.fn(() => ''),
+}));
 vi.mock('$lib/services/analytics', () => ({ track: trackMock }));
-vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   dispatch: reduxDispatchMock,
   getReduxStore: () => ({
-    getState: () => ({ workspaceNotes: { byWorkspaceId: {} }, workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'ws-1' } }),
+    getState: () => ({
+      workspaceNotes: { byWorkspaceId: {} },
+      workspaceAgents: { byWorkspaceId: {} },
+      workspace: { activeWorkspaceId: 'ws-1' },
+    }),
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     subscribe: (listener: () => void) => () => {},
     dispatch: reduxDispatchMock,
   }),
 }));
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
-  createAgentRequested: vi.fn((...args: any[]) => ({ type: 'workspaceAgents/createAgentRequested', payload: args })),
-  emptyWorkspaceAgentState: { agents: { ids: [], map: {} }, agentsLoaded: false, isLoadingAgents: false, initialAgentId: null, initialAgentConfigProcessed: false },
-}));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAllWorkspaceAgents: {
-    select: (_state: any, wsId: string) => sessionSessions.value.filter((s: any) => s.workspaceId === wsId),
+  createAgentRequested: vi.fn((...args: any[]) => ({
+    type: 'workspaceAgents/createAgentRequested',
+    payload: args,
+  })),
+  emptyWorkspaceAgentState: {
+    agents: { ids: [], map: {} },
+    agentsLoaded: false,
+    isLoadingAgents: false,
+    initialAgentId: null,
+    initialAgentConfigProcessed: false,
   },
 }));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: Object.assign(
+    vi.fn((workspaceIdArg: any) =>
+      createSelectorReadable(workspaceIdArg, (wsId) =>
+        sessionSessions.value.filter((s: any) => s.workspaceId === wsId),
+      ),
+    ),
+    {
+      select: vi.fn((_state: any, wsId: string) =>
+        sessionSessions.value.filter((s: any) => s.workspaceId === wsId),
+      ),
+    },
+  ),
+}));
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectAllNotes: Object.assign(
+    vi.fn((workspaceIdArg: any) => createSelectorReadable(workspaceIdArg, () => [])),
+    { select: vi.fn(() => []) },
+  ),
+}));
 vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
-  createTerminalRequested: vi.fn((...args: any[]) => ({ type: 'terminals/createTerminalRequested', payload: args })),
+  createTerminalRequested: vi.fn((...args: any[]) => ({
+    type: 'terminals/createTerminalRequested',
+    payload: args,
+  })),
 }));
 vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-slice', () => ({
-  createNoteRequested: vi.fn((...args: any[]) => ({ type: 'noteReadTracking/createNoteRequested', payload: args })),
+  createNoteRequested: vi.fn((...args: any[]) => ({
+    type: 'noteReadTracking/createNoteRequested',
+    payload: args,
+  })),
 }));
 vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectCurrentChanges: () => ({
@@ -80,12 +152,14 @@ vi.mock('svelte-fa', async () => {
 });
 
 vi.mock('./ui/skeleton', async () => {
-  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default;
   return { Skeleton: MockSimple };
 });
 
 vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => {
-  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default;
   return { default: MockSimple };
 });
 
@@ -132,7 +206,9 @@ describe('CommandPalette new actions', () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain('bg-foreground/[0.04]');
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain(
+        'bg-foreground/[0.04]',
+      );
     });
 
     const input = screen.getByRole('textbox');

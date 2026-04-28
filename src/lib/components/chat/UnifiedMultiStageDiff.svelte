@@ -13,7 +13,7 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import type { ChangePart } from './types';
   import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
-  import MonacoDiffViewer from '../file-tracking/MonacoDiffViewer.svelte';
+  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
@@ -31,6 +31,8 @@
     onUnstageHunk?: (filePath: string, hunkPatch: string) => void;
     /** Callback when user wants to view a commit */
     onOpenCommit?: (commitHash: string) => void;
+    /** Optional virtualizer forwarded to the underlying TrackedChangeDiffViewer */
+    virtualizer?: import('@pierre/diffs').Virtualizer;
   }
 
   let {
@@ -40,6 +42,7 @@
     onStageHunk,
     onUnstageHunk,
     onOpenCommit: _onOpenCommit,
+    virtualizer,
   }: Props = $props();
 
   // Silence unused variable warnings (onOpenCommit not yet implemented for merged view)
@@ -56,9 +59,9 @@
   // File path from the first part
   const filePath = $derived(parts[0]?.change.filePath || 'file');
 
-  // Get the starting line number from the first merged hunk for proper line number display
-  // This is the line number in the working tree (new file) where the snippet starts
-  const lineOffset = $derived(mergedHunks.length > 0 ? mergedHunks[0].wtStart : 1);
+  // Starting line number in the working tree for the merged snippet. Used so
+  // the diff viewer gutter shows real file line numbers.
+  const lineOffset = $derived(mergedHunks[0]?.wtStart ?? 1);
 
   // Build a TrackedChange that represents the merged diff
   const mergedTrackedChange = $derived.by<TrackedChange>(() => {
@@ -95,18 +98,17 @@
   </div>
 {:else if workspaceId}
   <div class="unified-multi-stage-diff">
-    <MonacoDiffViewer
+    <TrackedChangeDiffViewer
       change={mergedTrackedChange}
       {workspaceId}
-      sideBySide={$sideBySide}
+      viewMode={$sideBySide ? 'split' : 'unified'}
       {foldUnchanged}
       {lineWrapping}
       {onStageHunk}
       {onUnstageHunk}
+      useProvidedContent={true}
       {lineOffset}
-      compact={true}
-      readOnly={false}
-      handleMouseWheel={false}
+      {virtualizer}
     />
   </div>
 {:else}

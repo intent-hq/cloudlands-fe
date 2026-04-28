@@ -16,7 +16,7 @@ import { createAgentRequested } from "../../workspace-agents/workspace-agents-sl
 import { createTerminalRequested } from "../../terminals/terminals-slice";
 import { createNoteRequested, markNoteRead, } from "../../note-read-tracking/note-read-tracking-slice";
 import { createFileRequested, createWorkspaceForRepoRequested, focusBrowserTabRequested, openAgentTabRequested, openNewSpaceModalRequested, openTerminalTabRequested, requestPanelFocus, showAgentRequested, } from "../app-layout-slice";
-import { openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceNote, } from "../../workspace-navigation/workspace-navigation-slice";
+import { openWorkspaceChatChanges, openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceLocalChanges, openWorkspaceNote, } from "../../workspace-navigation/workspace-navigation-slice";
 import { notesIpc } from "../../workspace-notes/sagas/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { reloadNotes } from "../../workspace-notes/workspace-notes-slice";
@@ -158,7 +158,11 @@ export function* watchOpenDiffSaga() {
             title: filePath.split("/").pop() || "Diff",
             diffPath: filePath,
             closable: true,
-            data: { change },
+            data: {
+                change,
+                branchBaseRef: options?.branchBaseRef,
+                branchBaseCommitSha: options?.branchBaseCommitSha,
+            },
         }, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
     });
 }
@@ -181,6 +185,40 @@ export function* watchOpenCommitChangesetSaga() {
                 commitMessage,
             },
         }, options?.openInAdjacentPanel ?? false, options?.sourcePanelId);
+    });
+}
+export function* watchOpenChatChangesSaga() {
+    yield* takeEvery(openWorkspaceChatChanges.type, function* ({ payload }: ReturnType<typeof openWorkspaceChatChanges>) {
+        const [wsId, changes, title, options] = payload;
+        if (!wsId || !changes) {
+            return;
+        }
+        yield* openWorkspaceTab(wsId, {
+            type: "chat-changes",
+            title,
+            closable: true,
+            data: {
+                changes,
+                title,
+                messageId: options?.messageId,
+                isAggregate: options?.isAggregate,
+                agentId: options?.agentId,
+                turnNumber: options?.turnNumber,
+            },
+        });
+    });
+}
+export function* watchOpenLocalChangesSaga() {
+    yield* takeEvery(openWorkspaceLocalChanges.type, function* ({ payload }: ReturnType<typeof openWorkspaceLocalChanges>) {
+        const [wsId] = payload;
+        if (!wsId) {
+            return;
+        }
+        yield* openWorkspaceTab(wsId, {
+            type: "local-changes",
+            title: "All changes",
+            closable: true,
+        });
     });
 }
 export function* watchOpenNoteSaga() {
@@ -240,6 +278,8 @@ export function* watchWorkspaceWindowEventsSaga() {
     yield* fork(watchOpenFileSaga);
     yield* fork(watchOpenDiffSaga);
     yield* fork(watchOpenCommitChangesetSaga);
+    yield* fork(watchOpenChatChangesSaga);
+    yield* fork(watchOpenLocalChangesSaga);
     yield* fork(watchOpenNoteSaga);
     yield* fork(watchOpenAgentSaga);
     yield* fork(watchOpenTerminalSaga);

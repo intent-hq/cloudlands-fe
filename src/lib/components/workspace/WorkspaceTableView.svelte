@@ -1,7 +1,6 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { selectUnreadAgentIdsByWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -83,29 +82,19 @@
     onRemoveRepo,
   }: Props = $props();
 
-  // Track streaming and unread state for reactivity
-  let stateVersion = $state(0);
+  // Track streaming state for reactivity. Unread state comes from a Redux selector readable.
+  let activeStreamsVersion = $state(0);
+  const unreadAgentIdsByWorkspace$ = selectUnreadAgentIdsByWorkspace();
 
   onMount(() => {
     // Start polling for active streams (if not already started)
     activeStreamsTracker.startPolling();
     const unsubStreams = activeStreamsTracker.subscribe(() => {
-      stateVersion++;
-    });
-    // Subscribe to unread-tracking Redux state so the component re-renders
-    const store = getReduxStore();
-    let prevUnreadTracking = store.getState().unreadTracking;
-    const unsubStore = store.subscribe(() => {
-      const state = store.getState();
-      if (state.unreadTracking !== prevUnreadTracking) {
-        prevUnreadTracking = state.unreadTracking;
-        stateVersion++;
-      }
+      activeStreamsVersion++;
     });
 
     return () => {
       unsubStreams();
-      unsubStore();
     };
   });
 
@@ -113,7 +102,7 @@
   // Only returns agents that are ACTIVE (streaming/busy) or have UNREAD messages
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version for reactivity
-    void stateVersion;
+    void activeStreamsVersion;
     const summary = ws.agentSummary;
     const summaryAgents = summary?.agents || [];
 
@@ -122,7 +111,7 @@
     }
 
     // Get unread agent IDs for this workspace
-    const unreadAgentIds = new Set(selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), ws.id));
+    const unreadAgentIds = new Set($unreadAgentIdsByWorkspace$[ws.id] ?? []);
 
     return summaryAgents
       .map((agent) => {

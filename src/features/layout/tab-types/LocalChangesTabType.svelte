@@ -9,6 +9,7 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
+    selectFileTrackingBoundarySha,
     selectFileTrackingChanges,
     selectFileTrackingCommits,
     selectFileTrackingLoading,
@@ -39,6 +40,7 @@
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
+  const ftBoundarySha$ = selectFileTrackingBoundarySha(workspaceId);
   const ftLoading$ = selectFileTrackingLoading(workspaceId);
   const allCommits = $derived($ftCommits$ || []);
 
@@ -174,6 +176,8 @@
   bind:this={changesPanelRef}
   isLoading={$ftLoading$}
   changes={localChangesForPanel}
+  branchBaseRef={$workspace?.baseRef ?? null}
+  branchBaseCommitSha={$ftBoundarySha$ || $workspace?.baseCommitSha || null}
   showStagingControls={true}
   showCategoryFilter={true}
   onStage={(path) => getReduxStore().dispatch(stageByPathRequested(workspaceId, [path]))}

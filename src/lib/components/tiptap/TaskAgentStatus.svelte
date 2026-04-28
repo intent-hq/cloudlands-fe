@@ -39,11 +39,14 @@ const logger = createLogger('TaskAgentStatus');
     compact?: boolean;
   } = $props();
 
+  const activeWorkspaceId$ = selectActiveWorkspaceId();
+  const serviceAgent$ = selectAgentById(agentId);
+
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let streamListenerCleanup: (() => void) | undefined;
-  let agentStateCleanup: (() => void) | undefined;
+  let prevAgentRef: import('$shared/types').AgentSession | undefined;
   let pollCount = 0;
   let isPollingActive = false; // Track if we're registered with the polling manager
 
@@ -302,59 +305,6 @@ const logger = createLogger('TaskAgentStatus');
     taskAgentPollingManager.register(agentId, pollCallback);
     isPollingActive = true;
 
-    // Subscribe to Redux store for event-driven agent state updates
-    // This triggers updates when agent state changes instead of waiting for poll cycle
-    let prevAgentRef: import('$shared/types').AgentSession | undefined;
-    const unsubRedux = getReduxStore().subscribe(() => {
-      const subState = getReduxStore().getState();
-      const subWsId = selectActiveWorkspaceId.select(subState);
-      if (!subWsId) return;
-      const currentAgent = selectAgentById.select(subState, agentId);
-      if (!currentAgent || currentAgent === prevAgentRef) return;
-
-      let needsUpdate = false;
-
-      // Mark as found if this is the first time
-      if (!agentFound) {
-        logger.debug('[TaskAgentStatus] Agent found via Redux', { agentId });
-        agentFound = true;
-        needsUpdate = true;
-      }
-
-      // Handle streaming state changes
-      const prevStreaming = prevAgentRef?.isStreaming ?? false;
-      const curStreaming = currentAgent.isStreaming ?? false;
-      if (curStreaming && !prevStreaming && !isStreamActive) {
-        isStreamActive = true;
-        needsUpdate = true;
-      } else if (!curStreaming && prevStreaming && isStreamActive) {
-        isStreamActive = false;
-        needsUpdate = true;
-      }
-
-      // Handle status changes
-      if (currentAgent.status === AgentStatus.Completed && !finalStatus) {
-        finalStatus = 'complete';
-        needsUpdate = true;
-      } else if (currentAgent.status === AgentStatus.Error && !finalStatus) {
-        finalStatus = 'error';
-        needsUpdate = true;
-      }
-
-      if (needsUpdate) {
-        version++;
-      }
-
-      // Stop polling once agent is found and stable (not streaming and has final status)
-      if (agentFound && !isStreamActive && finalStatus && isPollingActive) {
-        taskAgentPollingManager.unregister(agentId);
-        isPollingActive = false;
-      }
-
-      prevAgentRef = currentAgent;
-    });
-    agentStateCleanup = unsubRedux;
-
     // Stop polling after max timeout
     timeoutId = setTimeout(() => {
       if (!agentFound && isPollingActive) {
@@ -369,6 +319,54 @@ const logger = createLogger('TaskAgentStatus');
     }, MAX_POLL_TIMEOUT_MS);
   });
 
+  // React to Redux agent state through the readable selector initialized above.
+  $effect(() => {
+    const activeWorkspaceId = $activeWorkspaceId$;
+    const currentAgent = $serviceAgent$;
+    if (!activeWorkspaceId || !currentAgent || currentAgent === prevAgentRef) return;
+
+    let needsUpdate = false;
+
+    // Mark as found if this is the first time
+    if (!agentFound) {
+      logger.debug('[TaskAgentStatus] Agent found via Redux', { agentId });
+      agentFound = true;
+      needsUpdate = true;
+    }
+
+    // Handle streaming state changes
+    const prevStreaming = prevAgentRef?.isStreaming ?? false;
+    const curStreaming = currentAgent.isStreaming ?? false;
+    if (curStreaming && !prevStreaming && !isStreamActive) {
+      isStreamActive = true;
+      needsUpdate = true;
+    } else if (!curStreaming && prevStreaming && isStreamActive) {
+      isStreamActive = false;
+      needsUpdate = true;
+    }
+
+    // Handle status changes
+    if (currentAgent.status === AgentStatus.Completed && !finalStatus) {
+      finalStatus = 'complete';
+      needsUpdate = true;
+    } else if (currentAgent.status === AgentStatus.Error && !finalStatus) {
+      finalStatus = 'error';
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      version++;
+    }
+
+    // Stop polling once agent is found and stable (not streaming and has final status)
+    if (agentFound && !isStreamActive && finalStatus && isPollingActive) {
+      taskAgentPollingManager.unregister(agentId);
+      isPollingActive = false;
+    }
+
+    prevAgentRef = currentAgent;
+  });
+
   onDestroy(() => {
     // Unregister from the shared polling manager
     if (isPollingActive) {
@@ -381,26 +379,12 @@ const logger = createLogger('TaskAgentStatus');
     if (streamListenerCleanup) {
       streamListenerCleanup();
     }
-    // Clean up event-driven state listener
-    if (agentStateCleanup) {
-      agentStateCleanup();
-    }
   });
 
-  // Get agent state from Redux. The `(void version, expr)` pattern forces
-  // Svelte to re-evaluate the derived when `version` changes, in addition to
-  // the reactive subscription on `serviceAgent$` below.
-  const storeAgent = $derived.by(() => {
-    void version;
-    const s = getReduxStore().getState();
-    const wsId = selectActiveWorkspaceId.select(s);
-    if (!wsId) return undefined;
-    return selectAgentById.select(s, agentId);
-  });
   // Reactive Redux subscription — replaces the previous non-reactive
   // service lookup so the component re-renders when the agent session
   // changes in the store.
-  const serviceAgent$ = selectAgentById(agentId);
+  const storeAgent = $derived((void version, $activeWorkspaceId$ ? $serviceAgent$ : undefined));
   const serviceAgent = $derived((void version, $serviceAgent$));
 
   // Use either source - store takes precedence for live state

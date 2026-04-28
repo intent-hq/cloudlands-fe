@@ -53,6 +53,12 @@ interface KeychainConsentDecision {
   willTriggerKeychain?: boolean;
 }
 
+interface GitNumstatEntry {
+  filePath: string;
+  additions: number;
+  deletions: number;
+}
+
 export class GitService {
   private readonly workspaceRepository: WorkspaceRepository;
   private statusCache = new Map<string, { status: GitStatus; timestamp: number }>();
@@ -2870,6 +2876,200 @@ export class GitService {
   }
 
   /**
+   * Get committed branch diff for files, comparing the resolved workspace branch
+   * base to HEAD. This intentionally excludes staged/unstaged working-tree
+   * changes so renderer-side local-changes merging can treat all branch commits
+   * as one committed part in HEAD coordinates.
+   */
+  async getBranchBaseDiff(
+    workspaceId: WorkspaceId,
+    paths?: string[],
+    baseRef?: string,
+    baseCommitSha?: string,
+    targetRef = 'HEAD',
+  ): Promise<Result<DiffChunk[], string>> {
+    if (!workspaceId) {
+      logger.warn('getBranchBaseDiff called with undefined workspaceId');
+      return { ok: false, error: 'Invalid workspace ID' };
+    }
+
+    if (!baseRef && !baseCommitSha) {
+      return { ok: false, error: 'Branch base information is required' };
+    }
+
+    try {
+      const worktreePath = this.getWorktreePath(workspaceId);
+      const normalizedPaths = paths?.map((p) => {
+        if (p.startsWith('/')) {
+          if (worktreePath && (p === worktreePath || p.startsWith(worktreePath + '/'))) {
+            return p === worktreePath ? '' : p.slice(worktreePath.length + 1);
+          }
+          const workspacesMatch = p.match(/(?:intent|\.workspaces)\/[^/]+\/[^/]+\/(.+)$/);
+          if (workspacesMatch) return workspacesMatch[1];
+          return path.basename(p);
+        }
+        return p;
+      });
+
+      let diffablePaths = normalizedPaths;
+      const chunks: DiffChunk[] = [];
+      if (normalizedPaths && normalizedPaths.length > 0) {
+        const filtered = await filterDiffableFiles(worktreePath, normalizedPaths);
+        diffablePaths = filtered.diffable;
+        for (const { path: skippedPath, reason } of filtered.skipped) {
+          chunks.push({
+            file: skippedPath,
+            chunks: [],
+            oldContent: '',
+            newContent:
+              reason === 'binary' || reason === 'binary-content'
+                ? '[Binary file - content not shown]'
+                : '[File too large to display diff]',
+            isBinary: reason === 'binary' || reason === 'binary-content',
+          } as DiffChunk);
+        }
+
+        if (diffablePaths.length === 0) {
+          return { ok: true, data: chunks };
+        }
+      }
+
+      const { stdout: currentBranchOut } = await execFileAsync('git', ['branch', '--show-current'], {
+        cwd: worktreePath,
+      });
+      const currentBranch = currentBranchOut.trim() || targetRef;
+
+      const [mergeBaseSha, validBaseCommitSha] = await Promise.all([
+        (async (): Promise<string | null> => {
+          if (!baseRef || currentBranch === baseRef) return null;
+          const refsToTry = baseRef.includes('/') ? [baseRef] : [`origin/${baseRef}`, baseRef];
+          for (const ref of refsToTry) {
+            try {
+              await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: worktreePath });
+              const { stdout } = await execFileAsync('git', ['merge-base', targetRef, ref], {
+                cwd: worktreePath,
+              });
+              const result = stdout.trim();
+              if (result) return result;
+            } catch {
+              // Try the next candidate ref.
+            }
+          }
+          return null;
+        })(),
+        (async (): Promise<string | null> => {
+          if (!baseCommitSha) return null;
+          try {
+            await execFileAsync('git', ['merge-base', '--is-ancestor', baseCommitSha, targetRef], {
+              cwd: worktreePath,
+            });
+            return baseCommitSha;
+          } catch {
+            return null;
+          }
+        })(),
+      ]);
+
+      // Match getHistory boundary resolution: prefer merge-base so rebased
+      // branches collapse only the commits currently unique to this branch.
+      // baseCommitSha remains a fallback for cases where merge-base cannot be
+      // resolved (for example shallow or orphaned worktrees).
+      const boundary = mergeBaseSha ?? validBaseCommitSha;
+      if (!boundary) {
+        logger.warn('getBranchBaseDiff: failed to resolve branch boundary', {
+          workspaceId,
+          baseRef,
+          baseCommitSha: baseCommitSha?.substring(0, 8),
+          targetRef,
+        });
+        return { ok: true, data: chunks };
+      }
+
+      const diffArgs = ['diff', `${boundary}..${targetRef}`];
+      if (diffablePaths && diffablePaths.length > 0) {
+        diffArgs.push('--', ...diffablePaths);
+      }
+
+      const { stdout: diffOutput } = await execFileAsync('git', diffArgs, {
+        cwd: worktreePath,
+        maxBuffer: 50 * 1024 * 1024,
+      });
+
+      chunks.push(...this.parseDiff(diffOutput));
+      for (const chunk of chunks) {
+        if (chunk.oldContent !== undefined && chunk.newContent !== undefined) continue;
+        try {
+          const { stdout } = await execFileAsync('git', ['show', `${boundary}:${chunk.file}`], {
+            cwd: worktreePath,
+          });
+          chunk.oldContent = stdout;
+        } catch {
+          chunk.oldContent = '';
+        }
+        try {
+          const { stdout } = await execFileAsync('git', ['show', `${targetRef}:${chunk.file}`], {
+            cwd: worktreePath,
+          });
+          chunk.newContent = stdout;
+        } catch {
+          chunk.newContent = '';
+        }
+      }
+
+      return { ok: true, data: chunks };
+    } catch (error) {
+      logger.error('getBranchBaseDiff error', error as Error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to get branch-base diff',
+      };
+    }
+  }
+
+  /**
+   * Get cheap line-count stats without loading full file contents.
+   */
+  async getNumstat(
+    workspaceId: WorkspaceId,
+    paths?: string[],
+    staged?: boolean,
+    baseRef?: string,
+    baseCommitSha?: string,
+    targetRef = 'HEAD',
+  ): Promise<Result<GitNumstatEntry[], string>> {
+    if (!workspaceId) {
+      logger.warn('getNumstat called with undefined workspaceId');
+      return { ok: false, error: 'Invalid workspace ID' };
+    }
+
+    try {
+      const worktreePath = this.getWorktreePath(workspaceId);
+      const normalizedPaths = this.normalizeDiffPaths(worktreePath, paths);
+      const args = await this.buildNumstatArgs(
+        worktreePath,
+        normalizedPaths,
+        staged,
+        baseRef,
+        baseCommitSha,
+        targetRef,
+      );
+
+      const { stdout } = await execFileAsync('git', args, {
+        cwd: worktreePath,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+
+      return { ok: true, data: this.parseNumstat(stdout) };
+    } catch (error) {
+      logger.error('getNumstat error', error as Error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to get numstat',
+      };
+    }
+  }
+
+  /**
    * Get commit history
    */
   async getHistory(
@@ -3700,6 +3900,97 @@ export class GitService {
     }
 
     return chunks;
+  }
+
+  private normalizeDiffPaths(worktreePath: string, paths?: string[]): string[] | undefined {
+    return paths?.map((p) => {
+      if (p.startsWith('/')) {
+        if (worktreePath && (p === worktreePath || p.startsWith(worktreePath + '/'))) {
+          return p === worktreePath ? '' : p.slice(worktreePath.length + 1);
+        }
+        const workspacesMatch = p.match(/(?:intent|\.workspaces)\/[^/]+\/[^/]+\/(.+)$/);
+        if (workspacesMatch) return workspacesMatch[1];
+        return path.basename(p);
+      }
+      return p;
+    });
+  }
+
+  private async buildNumstatArgs(
+    worktreePath: string,
+    paths: string[] | undefined,
+    staged: boolean | undefined,
+    baseRef: string | undefined,
+    baseCommitSha: string | undefined,
+    targetRef: string,
+  ): Promise<string[]> {
+    const args = ['diff', '--numstat'];
+    if (baseRef || baseCommitSha) {
+      const boundary = await this.resolveBranchBoundary(worktreePath, baseRef, baseCommitSha, targetRef);
+      if (!boundary) return ['diff', '--numstat', '--no-index', '/dev/null', '/dev/null'];
+      args.push(`${boundary}..${targetRef}`);
+    } else if (staged === true) {
+      args.push('--cached');
+    } else if (staged !== false) {
+      args.push('HEAD');
+    }
+
+    if (paths && paths.length > 0) args.push('--', ...paths);
+    return args;
+  }
+
+  private async resolveBranchBoundary(
+    worktreePath: string,
+    baseRef: string | undefined,
+    baseCommitSha: string | undefined,
+    targetRef: string,
+  ): Promise<string | null> {
+    const [mergeBaseSha, validBaseCommitSha] = await Promise.all([
+      (async (): Promise<string | null> => {
+        if (!baseRef) return null;
+        const refsToTry = baseRef.includes('/') ? [baseRef] : [`origin/${baseRef}`, baseRef];
+        for (const ref of refsToTry) {
+          try {
+            await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: worktreePath });
+            const { stdout } = await execFileAsync('git', ['merge-base', targetRef, ref], {
+              cwd: worktreePath,
+            });
+            const result = stdout.trim();
+            if (result) return result;
+          } catch {
+            // Try the next candidate ref.
+          }
+        }
+        return null;
+      })(),
+      (async (): Promise<string | null> => {
+        if (!baseCommitSha) return null;
+        try {
+          await execFileAsync('git', ['merge-base', '--is-ancestor', baseCommitSha, targetRef], {
+            cwd: worktreePath,
+          });
+          return baseCommitSha;
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+    return mergeBaseSha ?? validBaseCommitSha;
+  }
+
+  private parseNumstat(output: string): GitNumstatEntry[] {
+    return output
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [rawAdditions, rawDeletions, ...pathParts] = line.split('\t');
+        return {
+          filePath: pathParts.join('\t'),
+          additions: Number.parseInt(rawAdditions, 10) || 0,
+          deletions: Number.parseInt(rawDeletions, 10) || 0,
+        };
+      });
   }
 
   async getCommitDetails(

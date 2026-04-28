@@ -85,6 +85,16 @@ export interface SendMessagePayload {
   isInitialWorkspaceAgent?: boolean;
 }
 
+/** Payload for the initial workspace message saga-trigger action. */
+export interface InitialMessagePayload {
+  wsId: string;
+  message?: string | null;
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }> | null;
+  contextReferences?: ContextReference[] | null;
+  /** True when backend already sent the message before ChatPanel hydration. */
+  alreadySent?: boolean;
+}
+
 /**
  * Options for the initializeChat saga-trigger action.
  * Optional parameters for the initializeChatRequested action.

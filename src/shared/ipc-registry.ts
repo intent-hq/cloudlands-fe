@@ -446,6 +446,7 @@ export const IPC_CHANNELS = {
     KEYCHAIN_CONSENT_RESPOND: 'git:keychain-consent-respond',
     CHECK_KEYCHAIN_RISK: 'git:check-keychain-risk',
     DIFF: 'git:diff',
+    NUMSTAT: 'git:numstat',
     COMMIT: 'git:commit',
     COMMIT_DETAILS: 'git:commit-details',
     PUSH: 'git:push',

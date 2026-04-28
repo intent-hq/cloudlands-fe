@@ -21,6 +21,8 @@
     onStageHunk?: (filePath: string, hunkPatch: string) => void;
     onUnstageHunk?: (filePath: string, hunkPatch: string) => void;
     onOpenCommit?: (commitHash: string) => void;
+    /** Optional virtualizer forwarded to the underlying UnifiedMultiStageDiff */
+    virtualizer?: import('@pierre/diffs').Virtualizer;
   }
 
   let {
@@ -31,6 +33,7 @@
     onStageHunk,
     onUnstageHunk,
     onOpenCommit,
+    virtualizer,
   }: Props = $props();
 
   // isAggregate is not used by UnifiedMultiStageDiff but kept for API compat
@@ -44,4 +47,5 @@
   {onStageHunk}
   {onUnstageHunk}
   {onOpenCommit}
+  {virtualizer}
 />

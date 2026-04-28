@@ -145,7 +145,9 @@ import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
 import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import {
+  openWorkspaceChatChanges,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from "../../workspace-navigation/workspace-navigation-slice";
 import {
@@ -173,9 +175,11 @@ import {
   watchMenuNewTerminalSaga,
   watchMenuZoomOutSaga,
   watchOpenAgentSaga,
+  watchOpenChatChangesSaga,
   watchOpenCommitChangesetSaga,
   watchOpenDiffSaga,
   watchOpenFileSaga,
+  watchOpenLocalChangesSaga,
   watchOpenNoteSaga,
   watchOpenTerminalSaga,
   watchShowAgentSaga,
@@ -337,6 +341,8 @@ describe("appLayoutSaga", () => {
       value: sagaEffects.fork(watchOpenCommitChangesetSaga),
       done: false,
     });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenChatChangesSaga), done: false });
+    expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenLocalChangesSaga), done: false });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenNoteSaga), done: false });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenAgentSaga), done: false });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(watchOpenTerminalSaga), done: false });
@@ -528,6 +534,75 @@ describe("appLayoutSaga", () => {
             closable: true,
           }),
           sourcePanelId: "panel-1",
+        }),
+      }),
+    );
+  });
+
+  it("opens chat changes through Redux dispatch", () => {
+    const changes = [{ file: "src/main.ts" }];
+
+    const iterator = watchOpenChatChangesSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      openWorkspaceChatChanges.type,
+      expect.any(Function),
+    );
+
+    const handler = getTakeEveryHandler(openWorkspaceChatChanges.type);
+    expect(
+      handler({
+        payload: [
+          "ws-current",
+          changes,
+          "Agent changes",
+          { messageId: "msg-1", isAggregate: true, agentId: "agent-1", turnNumber: 3 },
+        ],
+      }).next(),
+    ).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "panelLayout/openTab",
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: "chat-changes",
+            title: "Agent changes",
+            closable: true,
+            data: {
+              changes,
+              title: "Agent changes",
+              messageId: "msg-1",
+              isAggregate: true,
+              agentId: "agent-1",
+              turnNumber: 3,
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("opens local changes through Redux dispatch", () => {
+    const iterator = watchOpenLocalChangesSaga();
+    iterator.next();
+    expect(takeEveryActionMock).toHaveBeenCalledWith(
+      openWorkspaceLocalChanges.type,
+      expect.any(Function),
+    );
+
+    const handler = getTakeEveryHandler(openWorkspaceLocalChanges.type);
+    expect(handler({ payload: ["ws-current"] }).next()).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "panelLayout/openTab",
+        payload: expect.objectContaining({
+          tab: expect.objectContaining({
+            type: "local-changes",
+            title: "All changes",
+            closable: true,
+          }),
         }),
       }),
     );

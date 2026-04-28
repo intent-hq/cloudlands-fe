@@ -208,7 +208,7 @@ declare module '@pierre/diffs' {
 
   export class FileDiff<LAnnotation = undefined> {
     options: FileDiffOptions<LAnnotation>;
-    constructor(options?: FileDiffOptions<LAnnotation>);
+    constructor(options?: FileDiffOptions<LAnnotation>, workerManager?: unknown, isContainerManaged?: boolean);
     setOptions(options: FileDiffOptions<LAnnotation> | undefined): void;
     setThemeType(themeType: ThemeTypes): void;
     getHoveredLine: () => GetHoveredLineResult | undefined;
@@ -219,6 +219,39 @@ declare module '@pierre/diffs' {
     expandHunk(hunkIndex: number, direction: ExpansionDirections): void;
     render(props: FileDiffRenderProps<LAnnotation>): void;
     getFileContainer(): HTMLElement | undefined;
+  }
+
+  // Virtualization API (added in @pierre/diffs 1.1.x).
+  // See https://diffs.com/docs#virtualization-vanilla-javascript
+  export interface VirtualizerConfig {
+    overscrollSize: number;
+    intersectionObserverMargin: number;
+    resizeDebugging: boolean;
+  }
+
+  export interface VirtualFileMetrics {
+    lineHeight: number;
+    fileGap: number;
+    diffHeaderHeight: number;
+    hunkSeparatorHeight: number;
+  }
+
+  export class Virtualizer {
+    readonly __id: string;
+    readonly config: VirtualizerConfig;
+    constructor(config?: Partial<VirtualizerConfig>);
+    setup(root: HTMLElement | Document, contentContainer?: Element): void;
+    cleanUp(): void;
+  }
+
+  export class VirtualizedFileDiff<LAnnotation = undefined> extends FileDiff<LAnnotation> {
+    constructor(
+      options: FileDiffOptions<LAnnotation> | undefined,
+      virtualizer: Virtualizer,
+      metrics?: Partial<VirtualFileMetrics>,
+      workerManager?: unknown,
+      isContainerManaged?: boolean,
+    );
   }
 
   export function parsePatchFiles(data: string, cacheKeyPrefix?: string): ParsedPatch[];

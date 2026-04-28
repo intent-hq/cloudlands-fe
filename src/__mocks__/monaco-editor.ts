@@ -1,4 +1,4 @@
-// Minimal stub of the monaco-editor API used by UnifiedDiffViewer.svelte.
+// Minimal stub of the monaco-editor API used by CodeEditor.svelte.
 // This keeps vitest/unit tests lightweight while allowing the Svelte module graph to resolve.
 
 export const KeyMod = { CtrlCmd: 1 };

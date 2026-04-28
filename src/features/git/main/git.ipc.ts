@@ -50,7 +50,12 @@ const DiffSchema = z.object({
   workspaceId: z.string(),
   paths: z.array(z.string()).optional(),
   staged: z.boolean().optional(),
+  baseRef: z.string().optional(),
+  baseCommitSha: z.string().optional(),
+  targetRef: z.string().optional(),
 });
+
+const NumstatSchema = DiffSchema;
 
 const HistorySchema = z.object({
   workspaceId: z.string(),
@@ -182,8 +187,8 @@ export function setupGitIPC() {
           return { success: false, error: 'Invalid workspace ID' };
         }
 
-        // Check if this is a remote workspace
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
+        // Check if this is a remote workspace
         if (gitInfo?.isRemote) {
           try {
             const remoteGit = getRemoteGitManager(
@@ -697,8 +702,29 @@ export function setupGitIPC() {
           return { success: false, error: 'Invalid workspace ID' };
         }
 
-        // Check if this is a remote workspace
+        // Branch-base diffs are side-effect-free committed-branch comparisons
+        // used by the local-changes aggregate view to collapse per-commit hunks
+        // into one HEAD-coordinate diff before renderer-side merging.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
+        if (validated.baseRef || validated.baseCommitSha) {
+          if (gitInfo?.isRemote) {
+            return { success: false, error: 'Branch-base diff is not supported for remote workspaces' };
+          }
+
+          const result = await gitService.getBranchBaseDiff(
+            workspaceId as WorkspaceId,
+            validated.paths,
+            validated.baseRef,
+            validated.baseCommitSha,
+            validated.targetRef,
+          );
+          if (result.ok) {
+            return { success: true, data: result.data };
+          }
+          return { success: false, error: result.error };
+        }
+
+        // Check if this is a remote workspace
         if (gitInfo?.isRemote) {
           try {
             const remoteGit = getRemoteGitManager(
@@ -778,6 +804,39 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.DIFF,
+    ),
+  );
+
+  // Get numstat line counts without full diff content
+  ipcMain.handle(
+    IPC_CHANNELS.GIT.NUMSTAT,
+    createSafeValidatedHandler(
+      NumstatSchema,
+      async (_, validated) => {
+        const workspaceId = restoreWorkspaceId(validated.workspaceId);
+        if (!workspaceId) {
+          return { success: false, error: 'Invalid workspace ID' };
+        }
+
+        const gitInfo = await getWorkspaceGitInfo(workspaceId);
+        if (gitInfo?.isRemote) {
+          return { success: false, error: 'Git numstat is not supported for remote workspaces' };
+        }
+
+        const result = await gitService.getNumstat(
+          workspaceId as WorkspaceId,
+          validated.paths,
+          validated.staged,
+          validated.baseRef,
+          validated.baseCommitSha,
+          validated.targetRef,
+        );
+        if (result.ok) {
+          return { success: true, data: result.data };
+        }
+        return { success: false, error: result.error };
+      },
+      IPC_CHANNELS.GIT.NUMSTAT,
     ),
   );
 

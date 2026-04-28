@@ -66,6 +66,32 @@ describe("workspaceNavigationReducer", () => {
     expect(workspaceState.navigation.history).toHaveLength(1);
   });
 
+  it("stores branch-base context for diff panels and history entries", () => {
+    const state = workspaceNavigationReducer(
+      baseState,
+      openWorkspaceDiff("ws-1", trackedChange, {
+        branchBaseRef: "origin/main",
+        branchBaseCommitSha: "abc123",
+      })
+    );
+    const workspaceState = state.byWorkspaceId["ws-1"]!;
+
+    expect(workspaceState.mainPanel).toEqual(
+      expect.objectContaining({
+        type: "file-tracking-diff",
+        branchBaseRef: "origin/main",
+        branchBaseCommitSha: "abc123",
+      })
+    );
+    expect(workspaceState.navigation.history[0]).toEqual(
+      expect.objectContaining({
+        type: "diff",
+        branchBaseRef: "origin/main",
+        branchBaseCommitSha: "abc123",
+      })
+    );
+  });
+
   it("merges code review updates into the current review panel and history", () => {
     const withReview = workspaceNavigationReducer(
       baseState,

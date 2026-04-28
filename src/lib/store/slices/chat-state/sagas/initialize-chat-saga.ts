@@ -7,7 +7,7 @@
  * Flow:
  * 1. Look up session from Redux state, agentService memory, disk restore
  * 2. Retry with backoff if not found
- * 3. Wait for session to appear via Redux action if retries exhausted
+ * 3. Wait for session readiness via selector channel if retries exhausted
  * 4. Load and deduplicate messages, detect streaming state
  * 5. Dispatch chatInitialized to Redux
  * 6. Set up instance-local state on ChatService (workspaceId, streaming content, DOM handlers)
@@ -30,22 +30,39 @@ import type { Task } from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
 import { agentService } from '$features/agent/agent-ipc-bridge';
 import { persistenceService } from '$features/agent/browser/index';
-import { getChatService } from '$features/agent/services/chat.service';
+import {
+  getChatService,
+  MessageGuardError,
+  type SendMessageOptions,
+} from '$features/agent/services/chat.service';
 import {
   selectAgentById,
+  selectWorkspaceAgentReadySession,
   selectIsInitialSpecWriteInProgress,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
-import { addAgent, upsertAgentSession } from '../../workspace-agents/workspace-agents-slice';
-import { initializeChatRequested, chatInitialized, chatInitFailed } from '../chat-state-slice';
 import {
-  upsertSession as upsertAgentSessionData,
+  initializeChatRequested,
+  sendInitialMessageRequested,
+  chatInitialized,
+  chatInitFailed,
+  chatSendStarted,
+  chatSendFailed,
+} from '../chat-state-slice';
+import {
+  upsertSession,
   replaceMessages,
 } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
+import { createChannelFromSelector } from '../../../utils/selector-channel-effects';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
-import type { InitializeChatOptions, LastAttemptedMessage } from '../chat-state-types';
+import type {
+  InitializeChatOptions,
+  InitialMessagePayload,
+  LastAttemptedMessage,
+} from '../chat-state-types';
+import { cleanErrorMessage } from '$shared/errors/messages';
 
 const logger = createLogger('InitializeChatSaga');
 
@@ -138,6 +155,186 @@ function getTextLength(blocks: ContentBlock[]): number {
   );
 }
 
+function showErrorToast(message: string): void {
+  import('svelte-sonner').then(({ toast }) => {
+    toast.error(message);
+  });
+}
+
+function clearInitialAgentConfigFields(wsId: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  const agentConfigKey = `workspace:${wsId}:agent-config`;
+  const agentConfigData = sessionStorage.getItem(agentConfigKey);
+  if (!agentConfigData) return;
+
+  try {
+    const config = JSON.parse(agentConfigData);
+    config.prompt = null;
+    config.imageBlocks = null;
+    config.contextReferences = null;
+    config.messageSent = null;
+    sessionStorage.setItem(agentConfigKey, JSON.stringify(config));
+  } catch (err) {
+    logger.warn('Failed to clear initial agent config fields', { wsId, error: err });
+  }
+}
+
+function cleanupInitialAgentArtifacts(wsId: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(`workspace:${wsId}:initial-agent-pending`);
+  sessionStorage.removeItem(`workspace:${wsId}:agent-config`);
+}
+
+function readInitialAgentConfig(wsId: string, agentId: string): InitialMessagePayload | null {
+  if (typeof sessionStorage === 'undefined') return null;
+
+  const agentConfigKey = `workspace:${wsId}:agent-config`;
+  const agentConfigData = sessionStorage.getItem(agentConfigKey);
+  if (!agentConfigData) return null;
+
+  try {
+    const config = JSON.parse(agentConfigData);
+    const payload: InitialMessagePayload = {
+      wsId,
+      message: config.prompt,
+      imageBlocks: config.imageBlocks,
+      contextReferences: config.contextReferences,
+      alreadySent: !!config.messageSent,
+    };
+
+    if (config.agentId !== agentId || !hasInitialMessageContent(payload)) {
+      return null;
+    }
+
+    return payload;
+  } catch (err) {
+    logger.warn('Failed to parse agent config', err);
+    return null;
+  }
+}
+
+function hasInitialMessageContent(payload: InitialMessagePayload): boolean {
+  return !!(
+    payload.message?.trim() ||
+    payload.contextReferences?.length ||
+    payload.imageBlocks?.length
+  );
+}
+
+function buildInitialMessage(payload: InitialMessagePayload): string {
+  const hasContextReferences = !!payload.contextReferences?.length;
+  const hasImageBlocks = !!payload.imageBlocks?.length;
+  const message = payload.message?.trim() || '';
+  if (message) return message;
+  if (hasImageBlocks && !hasContextReferences) return '[Image attached]';
+  if (hasContextReferences) {
+    return 'I have linked some context above. Please review it and help me with this task.';
+  }
+  return '';
+}
+
+function* waitForInitialSession(
+  wsId: string,
+  agentId: string,
+  timeoutMs = 5000,
+): SagaGenerator<AgentSession | null> {
+  const currentSession = yield* selectWorkspaceAgentReadySession.effect(wsId, agentId);
+  if (currentSession) return currentSession;
+
+  const channel = yield* createChannelFromSelector(selectWorkspaceAgentReadySession, wsId, agentId);
+  try {
+    const waitResult = yield* race({
+      sessionReady: take(channel),
+      timeout: delay(timeoutMs),
+    });
+
+    return waitResult.sessionReady?.payload ?? null;
+  } finally {
+    channel.close();
+  }
+}
+
+function* handleSendInitialMessage(
+  action: ReturnType<typeof sendInitialMessageRequested>,
+): SagaGenerator<void> {
+  const { agentId, payload } = action.payload;
+  const { wsId } = payload;
+  const initialPayload = hasInitialMessageContent(payload)
+    ? payload
+    : yield* call(readInitialAgentConfig, wsId, agentId);
+
+  if (!initialPayload) return;
+
+  if (initialPayload.alreadySent) {
+    logger.info('Initial message already sent before hydration, reconciling send state', {
+      agentId,
+      wsId,
+    });
+    yield* put(chatSendStarted(agentId, wsId));
+    yield* call(clearInitialAgentConfigFields, wsId);
+    return;
+  }
+
+  const session = yield* call(waitForInitialSession, wsId, agentId, 5000);
+  if (!session) {
+    logger.error('Failed to send initial message - session not ready before timeout', { agentId, wsId });
+    const errorMsg = 'Chat session timed out — please try again.';
+    yield* put(chatSendFailed(agentId, errorMsg));
+    yield* call(showErrorToast, errorMsg);
+    return;
+  }
+
+  const workspace = yield* selectWorkspaceById.effect(wsId);
+  if (!workspace) {
+    logger.error('Workspace not found for initial message send', { agentId, wsId });
+    const errorMsg = 'Workspace not found. Please try again.';
+    yield* put(chatSendFailed(agentId, errorMsg));
+    yield* call(showErrorToast, errorMsg);
+    return;
+  }
+
+  const messageWithContext = buildInitialMessage(initialPayload);
+  const imageContextItems = initialPayload.imageBlocks?.map((block, index) => ({
+    id: `initial-image-${index}`,
+    type: 'file' as const,
+    label: `Image ${index + 1}`,
+    imageData: block.data,
+    imageMimeType: block.mimeType,
+  })) ?? [];
+
+  try {
+    yield* put(chatSendStarted(agentId, wsId));
+    const chatServiceInstance = yield* call(getChatService, agentId);
+    yield* call(
+      chatServiceInstance.sendMessage.bind(chatServiceInstance),
+      messageWithContext,
+      workspace,
+      agentId,
+      {
+        contextItems: imageContextItems.length > 0
+          ? (imageContextItems as SendMessageOptions['contextItems'])
+          : undefined,
+        contextReferences: initialPayload.contextReferences ?? undefined,
+        agentId,
+      },
+    );
+    yield* call(cleanupInitialAgentArtifacts, wsId);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to send initial message';
+    if (error instanceof MessageGuardError) {
+      logger.info('Initial message blocked by guard, clearing send state', { agentId, reason: errorMessage });
+      yield* put(chatSendFailed(agentId, ''));
+      return;
+    }
+    if (!errorMessage.includes('Agent interrupted')) {
+      const cleanMessage = cleanErrorMessage(errorMessage);
+      logger.error('Failed to send initial message', { agentId, error });
+      yield* put(chatSendFailed(agentId, cleanMessage));
+      yield* call(showErrorToast, cleanMessage);
+    }
+  }
+}
+
 // ============================================================================
 // Main saga
 // ============================================================================
@@ -163,28 +360,10 @@ function* handleInitializeChat(
       session = yield* retryLookup(wsId, agentId);
     }
 
-    // Step 3: If still not found, wait for session to appear via Redux action
+    // Step 3: If still not found, wait for session to become ready in Redux
     if (!session) {
-      logger.warn('Session not found after retries, waiting for Redux action', { wsId, agentId });
-      const waitResult = yield* race({
-        agentAdded: take((a: any) => {
-          if (a.type === addAgent.type) {
-            const [aWsId, agent] = a.payload;
-            return aWsId === wsId && agent.id === agentId;
-          }
-          if (a.type === upsertAgentSession.type) {
-            const [aWsId, s] = a.payload;
-            return aWsId === wsId && s.id === agentId;
-          }
-          return false;
-        }),
-        timeout: delay(30_000),
-      });
-
-      if (waitResult.agentAdded) {
-        // Session appeared — re-lookup from Redux
-        session = yield* select((state) => selectAgentById.select(state, agentId) ?? null);
-      }
+      logger.warn('Session not found after retries, waiting for selector readiness', { wsId, agentId });
+      session = yield* call(waitForInitialSession, wsId, agentId, 30_000);
 
       if (!session) {
         // Timed out or session still not found
@@ -368,7 +547,7 @@ function* handleInitializeChat(
       ? { ...session, isStreaming: session.isStreaming ?? false, messages: deduplicatedMessages }
       : null;
     if (normalizedSession) {
-      yield* put(upsertAgentSessionData(normalizedSession));
+      yield* put(upsertSession(normalizedSession));
     } else if (deduplicatedMessages.length > 0) {
       yield* put(replaceMessages(agentId, deduplicatedMessages));
     }
@@ -415,6 +594,8 @@ function* handleInitializeChat(
  */
 export function* initializeChatSaga(): SagaGenerator<void> {
   const runningTasks = new Map<string, Task>();
+
+  yield* takeEvery(sendInitialMessageRequested, handleSendInitialMessage);
 
   yield* takeEvery(
     initializeChatRequested,

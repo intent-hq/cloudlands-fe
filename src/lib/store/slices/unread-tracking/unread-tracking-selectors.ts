@@ -27,6 +27,23 @@ export const selectUnreadAgentIdsForWorkspace = createSelector(
   }
 );
 
+/** Unread agent IDs grouped by workspace. */
+export const selectUnreadAgentIdsByWorkspace = createSelector(
+  (state): Record<string, string[]> => {
+    const { unreadAgentIds, agentWorkspaceMap } = state.unreadTracking;
+    const result: Record<string, string[]> = {};
+
+    for (const id of unreadAgentIds) {
+      const workspaceId = agentWorkspaceMap[id];
+      if (!workspaceId) continue;
+      result[workspaceId] ??= [];
+      result[workspaceId].push(id);
+    }
+
+    return result;
+  }
+);
+
 /** Get the workspace ID for a specific agent (if known). */
 export const selectWorkspaceForAgent = createSelector(
   (state, agentId: string) => state.unreadTracking.agentWorkspaceMap[agentId] as string | undefined

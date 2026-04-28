@@ -7,6 +7,7 @@
    * in text inputs.
    */
   import { onMount, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { fly } from 'svelte/transition';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -26,7 +27,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { dispatch as reduxDispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
@@ -86,9 +87,17 @@
     onSelectFile,
   }: Props = $props();
 
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const currentChanges$ = selectCurrentChanges();
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const allNotes$ = selectAllNotes(workspaceIdStore);
+  const browserRecentUrls$ = selectBrowserRecentUrls(workspaceIdStore);
   let selectedIndex = $state(0);
   let searchResults: any[] = $state([]);
   let inputRef: HTMLInputElement | undefined = $state(undefined);
@@ -119,12 +128,92 @@
   let resultComputeRaf: number | null = null;
 
   // Workspace objects state
-  let agents: WorkspaceObject[] = $state([]);
-  let notes: WorkspaceObject[] = $state([]);
-  let changes: WorkspaceObject[] = $state([]);
+  let agents: WorkspaceObject[] = $derived.by(() => {
+    if (!workspaceId) return [];
+
+    return $workspaceAgents$
+      .filter((s) => !s.id?.startsWith('terminal-'))
+      .map((s) => {
+        // Get the latest message content
+        const messages = s.messages || [];
+        const latestMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        let description = '';
+        if (latestMessage?.contentBlocks) {
+          // Extract text from content blocks
+          const content = extractContentFromBlocks(latestMessage.contentBlocks);
+          // Truncate to ~60 chars
+          description = content.length > 60 ? content.slice(0, 60) + '...' : content;
+        }
+
+        return {
+          id: s.id,
+          type: 'agent' as const,
+          label: s.name || 'Untitled Agent',
+          description,
+          icon: faCommentDots,
+          timestamp: new Date(s.updatedAt || s.createdAt).getTime(),
+          _time: formatRelativeTime(s.updatedAt || s.createdAt),
+        };
+      })
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  });
+  let notes: WorkspaceObject[] = $derived.by(() => {
+    const activeNotes = $allNotes$.filter((n) => !n.isArchived);
+
+    return activeNotes
+      .map((n) => ({
+        id: n.id,
+        type: 'note' as const,
+        label: n.title,
+        description: n.tags?.join(', '),
+        breadcrumbs: buildNoteBreadcrumbs(n, activeNotes),
+        icon: faFileAlt,
+        timestamp: new Date(n.updatedAt).getTime(),
+        _time: formatRelativeTime(n.updatedAt),
+      }))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  });
+  let changes: WorkspaceObject[] = $derived.by(() => {
+    if (!workspaceId) return [];
+
+    return $currentChanges$.slice(0, 10).map((c) => ({
+      id: c.id,
+      type: 'change' as const,
+      label: c.relativePath.split('/').pop() || c.relativePath,
+      description: `+${c.stats.additions || 0} -${c.stats.deletions || 0}`,
+      icon: faCodeBranch,
+      path: c.relativePath,
+      timestamp: new Date(c.attribution.timestamp).getTime(),
+      _time: formatRelativeTime(new Date(c.attribution.timestamp).toISOString()),
+    }));
+  });
   let terminals: WorkspaceObject[] = $state([]);
-  let browserUrls: WorkspaceObject[] = $state([]);
-  let recentItems: WorkspaceObject[] = $state([]);
+  let browserUrls: WorkspaceObject[] = $derived.by(() =>
+    $browserRecentUrls$.map((url) => {
+      // Extract domain from URL for display
+      let domain = url.url;
+      try {
+        const urlObj = new URL(url.url);
+        domain = urlObj.hostname;
+      } catch {
+        // If URL parsing fails, use the full URL
+      }
+
+      return {
+        id: url.url,
+        type: 'browser' as const,
+        label: url.title || domain,
+        description: url.url,
+        url: url.url,
+        icon: faGlobe,
+        timestamp: new Date(url.lastVisited).getTime(),
+        _time: formatRelativeTime(url.lastVisited),
+      };
+    }),
+  );
+  let recentItems: WorkspaceObject[] = $derived(
+    workspaceId ? buildRecentItems([...agents, ...notes, ...changes, ...terminals, ...browserUrls]) : [],
+  );
 
   // Commands available in command mode
   const commands = [
@@ -146,14 +235,8 @@
   // Load workspace objects when workspace changes
   $effect(() => {
     if (!workspaceId) {
-      // Use untrack to avoid effect loops when resetting state
       untrack(() => {
-        agents = [];
-        notes = [];
-        changes = [];
         terminals = [];
-        browserUrls = [];
-        recentItems = [];
       });
       return;
     }
@@ -166,76 +249,8 @@
       reduxDispatch(initBrowserWorkspace(wsId));
     });
 
-    // Load agents from Redux store
-    // Use Redux subscribe to reactively update agents when store changes
-    function loadAgentsFromRedux() {
-      const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), wsId);
-      const newAgents = sessions
-        .filter((s: any) => !s.id?.startsWith('terminal-'))
-        .map((s: any) => {
-          // Get the latest message content
-          const messages = s.messages || [];
-          const latestMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-          let description = '';
-          if (latestMessage?.contentBlocks) {
-            // Extract text from content blocks
-            const content = extractContentFromBlocks(latestMessage.contentBlocks);
-            // Truncate to ~60 chars
-            description = content.length > 60 ? content.slice(0, 60) + '...' : content;
-          }
-
-          return {
-            id: s.id,
-            type: 'agent' as const,
-            label: s.name || 'Untitled Agent',
-            description,
-            icon: faCommentDots,
-            timestamp: new Date(s.updatedAt || s.createdAt).getTime(),
-            _time: formatRelativeTime(s.updatedAt || s.createdAt),
-          };
-        })
-        .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
-      // Update state inside untrack to prevent re-triggering this effect
-      untrack(() => {
-        agents = newAgents;
-      });
-    }
-    loadAgentsFromRedux();
-    const unsubscribe = getReduxStore().subscribe(loadAgentsFromRedux);
-
-    // Load notes from Redux store
-    // Use untrack to read stores and update state to avoid triggering this effect
+    // Load non-Redux terminal metadata for this workspace.
     untrack(() => {
-      const allNotes = selectAllNotes
-        .select(getReduxStore().getState(), wsId)
-        .filter((n) => !n.isArchived);
-      notes = allNotes
-        .map((n) => ({
-          id: n.id,
-          type: 'note' as const,
-          label: n.title,
-          description: n.tags?.join(', '),
-          breadcrumbs: buildNoteBreadcrumbs(n, allNotes),
-          icon: faFileAlt,
-          timestamp: new Date(n.updatedAt).getTime(),
-          _time: formatRelativeTime(n.updatedAt),
-        }))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      // Load changes from Redux file tracking state
-      const trackedChanges = $currentChanges$;
-      changes = trackedChanges.slice(0, 10).map((c) => ({
-        id: c.id,
-        type: 'change' as const,
-        label: c.relativePath.split('/').pop() || c.relativePath,
-        description: `+${c.stats.additions || 0} -${c.stats.deletions || 0}`,
-        icon: faCodeBranch,
-        path: c.relativePath,
-        timestamp: new Date(c.attribution.timestamp).getTime(),
-        _time: formatRelativeTime(new Date(c.attribution.timestamp).toISOString()),
-      }));
-
-      // Load terminals from terminalManager
       const terminalMetadata = terminalManager.loadTerminalMetadata(wsId);
       terminals = terminalMetadata
         .map((t: any) => {
@@ -258,58 +273,6 @@
           };
         })
         .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      // Load browser URLs from Redux store
-      const recentUrls = selectBrowserRecentUrls.select(getReduxStore().getState(), wsId);
-      browserUrls = recentUrls.map((url) => {
-        // Extract domain from URL for display
-        let domain = url.url;
-        try {
-          const urlObj = new URL(url.url);
-          domain = urlObj.hostname;
-        } catch {
-          // If URL parsing fails, use the full URL
-        }
-
-        return {
-          id: url.url,
-          type: 'browser' as const,
-          label: url.title || domain,
-          description: url.url,
-          url: url.url,
-          icon: faGlobe,
-          timestamp: new Date(url.lastVisited).getTime(),
-          _time: formatRelativeTime(url.lastVisited),
-        };
-      });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  });
-
-  // Build recent items from MRU - uses extracted buildRecentItems utility
-  $effect(() => {
-    if (!workspaceId) {
-      untrack(() => {
-        recentItems = [];
-      });
-      return;
-    }
-
-    // Use untrack to read the reactive state without creating dependencies
-    const allObjects = untrack(() => [
-      ...agents,
-      ...notes,
-      ...changes,
-      ...terminals,
-      ...browserUrls,
-    ]);
-    const newRecentItems = buildRecentItems(allObjects);
-    // Update state in untrack to avoid effect loops
-    untrack(() => {
-      recentItems = newRecentItems;
     });
   });
 

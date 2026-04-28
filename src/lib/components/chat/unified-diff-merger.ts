@@ -45,6 +45,16 @@ export interface MergedHunk {
   stages: Set<ChangeCategory>;
 }
 
+function getMergedLineKey(line: MergedDiffLine): string {
+  return [
+    line.stage,
+    line.type,
+    line.oldLineNumber ?? '',
+    line.newLineNumber ?? '',
+    line.content,
+  ].join('\0');
+}
+
 /**
  * Compute line numbers for a hunk's lines based on the hunk header.
  * The server doesn't always include line numbers, so we compute them.
@@ -227,9 +237,11 @@ function mergeTwo(a: MergedHunk, b: MergedHunk): MergedHunk {
   // Build a map of lines by their "new" line number to detect duplicates
   const linesByNewNum = new Map<number, MergedDiffLine>();
   const linesByOldNum = new Map<number, MergedDiffLine>();
+  const seenLineKeys = new Set<string>();
 
   // Process hunk A first
   for (const line of a.lines) {
+    seenLineKeys.add(getMergedLineKey(line));
     if (line.newLineNumber !== undefined) {
       linesByNewNum.set(line.newLineNumber, line);
     }
@@ -242,6 +254,11 @@ function mergeTwo(a: MergedHunk, b: MergedHunk): MergedHunk {
   const mergedLines: MergedDiffLine[] = [...a.lines];
 
   for (const line of b.lines) {
+    const lineKey = getMergedLineKey(line);
+    if (seenLineKeys.has(lineKey)) {
+      continue;
+    }
+
     // For context lines, check if we already have this line
     if (line.type === 'Context') {
       const existingByNew =
@@ -251,11 +268,13 @@ function mergeTwo(a: MergedHunk, b: MergedHunk): MergedHunk {
 
       if (existingByNew?.type === 'Context' || existingByOld?.type === 'Context') {
         // Skip duplicate context line
+        seenLineKeys.add(lineKey);
         continue;
       }
     }
 
     mergedLines.push(line);
+    seenLineKeys.add(lineKey);
 
     // Track this line
     if (line.newLineNumber !== undefined) {
@@ -361,15 +380,46 @@ export function buildContentFromMergedHunks(hunks: MergedHunk[]): {
   const oldLines: string[] = [];
   const newLines: string[] = [];
 
+  let oldCursor = hunks[0]?.headStart ?? 1;
+  let newCursor = hunks[0]?.wtStart ?? 1;
+
+  const padToLine = (lines: string[], cursor: number, targetLine: number): number => {
+    let nextCursor = cursor;
+    while (nextCursor < targetLine) {
+      lines.push('');
+      nextCursor++;
+    }
+    return nextCursor;
+  };
+
   for (const hunk of hunks) {
+    oldCursor = padToLine(oldLines, oldCursor, hunk.headStart);
+    newCursor = padToLine(newLines, newCursor, hunk.wtStart);
+
     for (const line of hunk.lines) {
       if (line.type === 'Context') {
+        if (line.oldLineNumber !== undefined) {
+          oldCursor = padToLine(oldLines, oldCursor, line.oldLineNumber);
+        }
+        if (line.newLineNumber !== undefined) {
+          newCursor = padToLine(newLines, newCursor, line.newLineNumber);
+        }
         oldLines.push(line.content);
         newLines.push(line.content);
+        oldCursor++;
+        newCursor++;
       } else if (line.type === 'Deletion') {
+        if (line.oldLineNumber !== undefined) {
+          oldCursor = padToLine(oldLines, oldCursor, line.oldLineNumber);
+        }
         oldLines.push(line.content);
+        oldCursor++;
       } else if (line.type === 'Addition') {
+        if (line.newLineNumber !== undefined) {
+          newCursor = padToLine(newLines, newCursor, line.newLineNumber);
+        }
         newLines.push(line.content);
+        newCursor++;
       }
     }
   }

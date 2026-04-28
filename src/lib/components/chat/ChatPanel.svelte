@@ -80,10 +80,10 @@
   import {
     sendMessage,
     initializeChatRequested,
+    sendInitialMessageRequested,
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
-    chatSendStarted,
   } from '$lib/store/slices/chat-state/chat-state-slice';
   import { selectChatStateOrDefault } from '$lib/store/slices/chat-state/chat-state-selectors';
   import type { SendMessagePayload } from '$lib/store/slices/chat-state/chat-state-types';
@@ -367,8 +367,6 @@
       );
     }
   }
-
-  let waitForSessionUnsub: (() => void) | null = null;
 
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
   // This prevents "N is not a function" errors when Svelte's reactive system tries to call
@@ -1356,50 +1354,6 @@
       : null,
   );
 
-  // Note: pendingInitialPrompt is cleared in sendInitialMessage() after the message is sent
-  // We don't need a reactive effect here as it can cause infinite loops
-
-  function cleanupInitialAgentArtifacts() {
-    if (!workspace) return;
-    const pendingAgentKey = `workspace:${workspace.id}:initial-agent-pending`;
-    const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-
-    sessionStorage.removeItem(pendingAgentKey);
-    sessionStorage.removeItem(agentConfigKey);
-  }
-
-  async function waitForSessionReady(timeoutMs = 5000): Promise<boolean> {
-    if (chatState.session) return true;
-
-    return new Promise((resolve) => {
-      const start = performance.now();
-
-      waitForSessionUnsub?.();
-      const store = getReduxStore();
-      // Check agent-session slice for session readiness
-      let prevSession = selectAgentSession.select(store.getState(), agentId ?? '');
-      const checkReady = (session: typeof prevSession) => {
-        const ready = !!session;
-        const expired = performance.now() - start >= timeoutMs;
-
-        if (ready || expired) {
-          waitForSessionUnsub?.();
-          waitForSessionUnsub = null;
-          resolve(ready);
-        }
-      };
-      // Check initial state immediately
-      checkReady(prevSession);
-      waitForSessionUnsub = store.subscribe(() => {
-        const nextSession = selectAgentSession.select(store.getState(), agentId ?? '');
-        if (nextSession !== prevSession) {
-          prevSession = nextSession;
-          checkReady(nextSession);
-        }
-      });
-    });
-  }
-
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate(chatState.messages));
@@ -1793,87 +1747,10 @@
     // Chat state is now fully reactive via the selectChatStateOrDefault selector.
     // No manual Redux store subscription needed — the selector provides always-current state.
 
-    // Initialize chat session (skip if already done above)
-    if (workspace && agentId) {
-      // rebindTracker.recordMount() is already called above before dispatch
-
-      (async () => {
-        try {
-          // We've already dispatched initializeChatRequested above, so just check for pending messages
-
-          // Check for pending initial message from workspace creation
-          if (workspace && agentId && chatState.messages.length === 0) {
-            // Check for initial agent config
-            const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-            const agentConfigData = sessionStorage.getItem(agentConfigKey);
-
-            if (agentConfigData) {
-              try {
-                const config = JSON.parse(agentConfigData);
-
-                // Check if this is the initial agent and has a prompt, context references, or images
-                const hasPrompt = !!config.prompt;
-                const hasContextReferences =
-                  config.contextReferences && config.contextReferences.length > 0;
-                const hasImageBlocks = config.imageBlocks && config.imageBlocks.length > 0;
-                // Check if message was already sent before chat-panel hydration.
-                const alreadySent = !!config.messageSent;
-
-                if (
-                  config.agentId === agentId &&
-                  (hasPrompt || hasContextReferences || hasImageBlocks)
-                ) {
-                  if (alreadySent) {
-                    // Message was already sent before hydration, just clear the config.
-                    logger.info('Initial message already sent before hydration, skipping', {
-                      agentId,
-                      promptLength: config.prompt?.length || 0,
-                    });
-
-                    // IMPORTANT: Since the message was already sent, streaming should be in progress.
-                    // Dispatch chatSendStarted to set streaming state in Redux immediately
-                    // so the StreamingStatus indicator shows right away.
-                    getReduxStore().dispatch(chatSendStarted(agentId, workspace.id));
-
-                    // Clear the prompt, images, and context refs from config now that we've displayed them
-                    config.prompt = null;
-                    config.imageBlocks = null;
-                    config.contextReferences = null;
-                    config.messageSent = null;
-                    sessionStorage.setItem(agentConfigKey, JSON.stringify(config));
-                  } else {
-                    logger.info('Found initial prompt/context from workspace creation', {
-                      agentId,
-                      promptLength: config.prompt?.length || 0,
-                      hasImageBlocks,
-                      hasContextReferences,
-                      contextReferenceCount: config.contextReferences?.length || 0,
-                    });
-
-                    // Send the initial message once the session is ready, including any images and context refs
-                    await sendInitialMessage(
-                      config.prompt,
-                      config.imageBlocks,
-                      config.contextReferences,
-                    );
-                    // Clear the prompt, images, and context refs from config to prevent re-sending (retain other metadata)
-                    config.prompt = null;
-                    config.imageBlocks = null;
-                    config.contextReferences = null;
-                    sessionStorage.setItem(agentConfigKey, JSON.stringify(config));
-                  }
-                }
-              } catch (err) {
-                logger.warn('Failed to parse agent config', err);
-              }
-            }
-          }
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          logger.error('Failed to initialize chat', error);
-          toast.error(cleanErrorMessage(msg));
-        }
-      })();
+    // Request initial message send if workspace creation left pending config.
+    // The saga owns readiness waiting, sending, and storage cleanup.
+    if (workspace && agentId && chatState.messages.length === 0) {
+      multiPanelDispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
     }
 
     // Scroll handling on mount
@@ -2465,7 +2342,6 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
-    waitForSessionUnsub?.();
     queueListenerCleanup?.();
     // Pause background timers (state reconciliation, stall detection) to prevent
     // false positives during workspace switches. The timers would otherwise keep
@@ -3107,85 +2983,6 @@
     };
   });
 
-  // Track retry attempts for initial message
-  export async function sendInitialMessage(
-    message: string | undefined,
-    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
-    contextReferences?: any[],
-  ) {
-    // Allow sending with just context references or images (no message text)
-    const hasMessage = !!message?.trim();
-    const hasContextReferences = contextReferences && contextReferences.length > 0;
-    const hasImageBlocks = imageBlocks && imageBlocks.length > 0;
-
-    if (!hasMessage && !hasContextReferences && !hasImageBlocks) {
-      logger.debug('Cannot send initial message without message, context references, or images');
-      return;
-    }
-
-    if (!workspace) {
-      logger.debug('Cannot send initial message without workspace');
-      return;
-    }
-
-    logger.info('sendInitialMessage called', {
-      agentId,
-      hasMessage,
-      messageLength: message?.length || 0,
-      hasImageBlocks,
-      hasContextReferences,
-      contextReferenceCount: contextReferences?.length || 0,
-    });
-
-    const ready = await waitForSessionReady(5000);
-
-    if (!ready) {
-      logger.error('Failed to send initial message - session not ready before timeout');
-      toast.error('Chat session timed out — please try again.');
-      return;
-    }
-
-    // Build the actual message to send
-    // If no message text but we have context references (not just images), create a prompt asking about the context
-    // For image-only messages, use a minimal prompt that doesn't add unnecessary text to the conversation
-    let actualMessage = message?.trim() || '';
-
-    if (!actualMessage) {
-      if (hasImageBlocks && !hasContextReferences) {
-        // Image-only: minimal prompt that signals the agent should look at the image
-        actualMessage = '[Image attached]';
-      } else if (hasContextReferences) {
-        // Context references without images: explain the linked context
-        actualMessage =
-          'I have linked some context above. Please review it and help me with this task.';
-      }
-    }
-
-    // For initial messages, don't add workspace context string
-    // The workspace was just created, so "Currently viewing: Spec" is misleading -
-    // the user isn't actually viewing the spec, they're just starting a new workspace
-    const messageWithContext = actualMessage;
-
-    // If we have image blocks, convert them to context items
-    const imageContextItems = imageBlocks?.map((block, index) => ({
-      id: `initial-image-${index}`,
-      type: 'file' as const,
-      label: `Image ${index + 1}`,
-      imageData: block.data,
-      imageMimeType: block.mimeType,
-    }));
-
-    // Pass agentId to ensure message goes to the correct agent
-    await chatService.sendMessage(messageWithContext, workspace, agentId, {
-      contextItems: imageContextItems,
-      contextReferences,
-      agentId,
-    });
-
-    // Cleanup pending artifacts now that the initial message has been sent
-    cleanupInitialAgentArtifacts();
-    pendingInitialData = { prompt: null, contextReferences: null };
-  }
 </script>
 
 <svelte:window

@@ -1,3 +1,96 @@
+<script module lang="ts">
+  /**
+   * Module-scoped hash cache shared across all DiffViewer instances.
+   * Wave 3: previously kept per-component-instance, which defeated dedup
+   * across the N mounted diffs in "all changes". Keep the same FNV-1a
+   * string-hash behaviour and the same 512-entry LRU-ish eviction.
+   */
+
+  /**
+   * FNV-1a 32-bit hash of a string.
+   * Used only to generate stable cache keys for @pierre/diffs — never to key
+   * security-sensitive data. Collisions are acceptable; the cache still stays
+   * correct because @pierre/diffs reparses when the backing content differs.
+   */
+  function fnv1a32(str: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      // 32-bit FNV prime multiply via adds and shifts
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    return hash.toString(36);
+  }
+
+  const contentHashCache = new Map<string, string>();
+
+  export function hashContent(str: string): string {
+    if (str.length === 0) return '0';
+    const cached = contentHashCache.get(str);
+    if (cached !== undefined) return cached;
+    const h = fnv1a32(str);
+    if (contentHashCache.size > 512) {
+      // Drop the oldest half — cheap eviction, no priority queue required.
+      const keys = Array.from(contentHashCache.keys());
+      for (let i = 0; i < keys.length >> 1; i++) {
+        contentHashCache.delete(keys[i]);
+      }
+    }
+    contentHashCache.set(str, h);
+    return h;
+  }
+
+  /**
+   * Shared theme-change subscription for all DiffViewer instances.
+   *
+   * Previously every DiffViewer's onMount attached its own `theme-changed`
+   * window listener AND a MutationObserver on `<html>`. Opening a 40-file
+   * commit meant ~40 observers all watching the same element for the same
+   * class change. This singleton installs exactly one listener + one
+   * observer and fans out to the set of active subscribers.
+   */
+  type ThemeSubscriber = () => void;
+  const themeSubscribers = new Set<ThemeSubscriber>();
+  let themeWindowListener: (() => void) | undefined;
+  let themeMutationObserver: MutationObserver | undefined;
+
+  function notifyThemeSubscribers() {
+    for (const cb of themeSubscribers) cb();
+  }
+
+  function installSharedThemeListeners() {
+    if (typeof window === 'undefined') return;
+    if (themeWindowListener || themeMutationObserver) return;
+
+    themeWindowListener = () => notifyThemeSubscribers();
+    window.addEventListener('theme-changed', themeWindowListener);
+
+    themeMutationObserver = new MutationObserver(() => notifyThemeSubscribers());
+    themeMutationObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+  }
+
+  function teardownSharedThemeListeners() {
+    if (themeWindowListener && typeof window !== 'undefined') {
+      window.removeEventListener('theme-changed', themeWindowListener);
+    }
+    themeWindowListener = undefined;
+    themeMutationObserver?.disconnect();
+    themeMutationObserver = undefined;
+  }
+
+  function subscribeDiffThemeChange(cb: ThemeSubscriber): () => void {
+    themeSubscribers.add(cb);
+    if (themeSubscribers.size === 1) installSharedThemeListeners();
+    return () => {
+      themeSubscribers.delete(cb);
+      if (themeSubscribers.size === 0) teardownSharedThemeListeners();
+    };
+  }
+</script>
+
 <script lang="ts">
   /**
    * DiffViewer - The canonical diff viewer component
@@ -17,12 +110,11 @@
    * - Expandable unchanged regions
    * - Search within diff (Cmd+F)
    * - Sticky line numbers and change gutter for horizontal scrolling
-   *
-   * For Monaco-based editable diffs, see UnifiedDiffViewer in $lib/components/editor/
    */
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import {
     FileDiff,
+    VirtualizedFileDiff,
     parsePatchFiles,
     parseDiffFromFile,
     type FileContents,
@@ -50,6 +142,40 @@
    * Files larger than this will show a "too large" message to prevent OOM.
    */
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+
+  // `hashContent` is now imported from the module-scope block above so the
+  // content-hash LRU is shared across all DiffViewer instances (Wave 3 perf).
+
+  /**
+   * Hoisted default hunk separator — referentially stable across renders so the
+   * options-diff check in buildFileDiffOptions() can skip rebuild/rerender when
+   * the consumer hasn't provided a custom renderer.
+   */
+  function defaultHunkSeparator(hunk: HunkData, instance: FileDiff) {
+    const lineCount = hunk.lines ?? 0;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.gridColumn = 'span 2';
+    wrapper.className = 'hunk-separator-wrapper';
+
+    const container = document.createElement('div');
+    container.className = 'hunk-separator-default';
+
+    const chevron = document.createElement('span');
+    chevron.className = 'hunk-separator-chevron';
+    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5 5.3-5 5.4z"/></svg>';
+
+    const text = document.createElement('span');
+    text.className = 'hunk-separator-text';
+    text.textContent = `${lineCount} unmodified line${lineCount !== 1 ? 's' : ''}`;
+
+    container.appendChild(chevron);
+    container.appendChild(text);
+    container.onclick = () => instance.expandHunk(hunk.hunkIndex, 'both');
+
+    wrapper.appendChild(container);
+    return wrapper;
+  }
 
   let {
     // Input
@@ -104,9 +230,14 @@
     class: className = '',
     style = '',
     unsafeCSS,
+    // Cache keys
+    oldCacheKey,
+    newCacheKey,
     // Performance options
     maxHighlightLines = 5000,
     disableHighlighting = false,
+    // Virtualization (multi-file lists only)
+    virtualizer,
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
@@ -159,14 +290,19 @@
     collapsed = initialCollapsed;
   });
 
-  // Derive the diff metadata from inputs
+  // Derive the diff metadata from inputs.
+  // Stable cacheKey values (derived from content hashes, never the raw content)
+  // are threaded through so the @pierre/diffs worker-pool LRU can hit on repeat
+  // renders of the same file.
   const diffData = $derived.by(() => {
     // Skip expensive computation if content is too large
     if (contentTooLarge) return null;
 
     if (patch) {
-      // Parse patch string
-      const parsed = parsePatchFiles(patch);
+      // Parse patch string. `cacheKeyPrefix` lets the parser key per-file
+      // cache entries on a stable identifier rather than re-parsing each mount.
+      const patchKey = `${fileName}:${hashContent(patch)}`;
+      const parsed = parsePatchFiles(patch, patchKey);
       if (parsed.length > 0 && parsed[0].files.length > 0) {
         const fileDiff = parsed[0].files[0];
         // Validate the language extracted from the patch file extension.
@@ -189,15 +325,22 @@
       // Generate diff from content
       // Use getSafeDiffLanguage to validate language - unsupported languages fall back to plain text
       const safeLang = getSafeDiffLanguage(language);
+      // Callers that prepend padding (e.g. partial-diff snippets with a
+      // non-1 line offset) pass pre-built keys hashed from the un-padded
+      // content so the worker AST cache stays warm across re-mounts.
+      const oldKey = oldCacheKey ?? `${oldFileName || fileName}:${hashContent(oldContent)}`;
+      const newKey = newCacheKey ?? `${fileName}:${hashContent(newContent)}`;
       const oldFile: FileContents = {
         name: oldFileName || fileName,
         contents: oldContent,
         lang: safeLang as any,
+        cacheKey: oldKey,
       };
       const newFile: FileContents = {
         name: fileName,
         contents: newContent,
         lang: safeLang as any,
+        cacheKey: newKey,
       };
       const fileDiff = parseDiffFromFile(oldFile, newFile);
       return { fileDiff, oldFile, newFile };
@@ -217,37 +360,31 @@
     return { additions, deletions };
   });
 
-  // Default hunk separator with chevron
-  function defaultHunkSeparator(hunk: HunkData, instance: FileDiff) {
-    const lineCount = hunk.lines ?? 0;
-
-    // Outer wrapper spans grid columns (for split view)
-    const wrapper = document.createElement('div');
-    wrapper.style.gridColumn = 'span 2';
-    wrapper.className = 'hunk-separator-wrapper';
-
-    // Inner content with sticky positioning
-    const container = document.createElement('div');
-    container.className = 'hunk-separator-default';
-
-    const chevron = document.createElement('span');
-    chevron.className = 'hunk-separator-chevron';
-    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5 5.3-5 5.4z"/></svg>';
-
-    const text = document.createElement('span');
-    text.className = 'hunk-separator-text';
-    text.textContent = `${lineCount} unmodified line${lineCount !== 1 ? 's' : ''}`;
-
-    container.appendChild(chevron);
-    container.appendChild(text);
-    container.onclick = () => instance.expandHunk(hunk.hunkIndex, 'both');
-
-    wrapper.appendChild(container);
-    return wrapper;
+  // Cache concatenated unsafeCSS by the caller-provided suffix so we don't
+  // re-stringify the template literal on every options rebuild.
+  const UNSAFE_CSS_BASE = `
+        pre[data-diffs] {
+          --diffs-bg: hsl(var(--background)) !important;
+          background: hsl(var(--background)) !important;
+        }
+        [data-column-number] {
+          position: sticky;
+          left: 0;
+        }
+      `;
+  let lastUnsafeSuffix: string | undefined;
+  let lastUnsafeCombined = UNSAFE_CSS_BASE;
+  function getUnsafeCSS(suffix: string | undefined): string {
+    if (suffix === lastUnsafeSuffix) return lastUnsafeCombined;
+    lastUnsafeSuffix = suffix;
+    lastUnsafeCombined = suffix ? `${UNSAFE_CSS_BASE}${suffix}` : UNSAFE_CSS_BASE;
+    return lastUnsafeCombined;
   }
 
-  // Build FileDiff options function - returns fresh options each time
-   
+  // Build FileDiff options. Callers pass a stable custom hunk separator in
+  // `renderHunkSeparator` — if absent we use the hoisted `defaultHunkSeparator`
+  // so the returned options object is structurally stable across renders when
+  // no prop has changed.
   function buildFileDiffOptions(): any {
     return {
       diffStyle: viewMode,
@@ -259,7 +396,7 @@
             renderHunkSeparator(hunk, (dir: ExpansionDirections) =>
               instance.expandHunk(hunk.hunkIndex, dir),
             )
-        : (hunk: HunkData, instance: FileDiff) => defaultHunkSeparator(hunk, instance),
+        : defaultHunkSeparator,
       expandUnchanged,
       // disableBackground: true,
       expansionLineCount,
@@ -278,25 +415,14 @@
       // Performance: Disable highlighting for large files to avoid blocking the main thread
       // When disabled, the diff will render with plain text (no syntax colors)
       disableHighlighting: shouldDisableHighlighting,
-      // Use worker pool for syntax highlighting to avoid blocking the main thread
-      workerPool: getDiffWorkerPool(),
+      // Worker pool is passed at construction time (see `new FileDiff` below).
       theme: {
         dark: 'github-dark',
         light: 'github-light',
       },
       // Use the app's theme setting instead of OS preference
       themeType: (isDarkMode ? 'dark' : 'light') as ThemeTypes,
-      unsafeCSS: `
-        pre[data-diffs] {
-          --diffs-bg: hsl(var(--background)) !important;
-          background: hsl(var(--background)) !important;
-        }
-        [data-column-number] {
-          position: sticky;
-          left: 0;
-        }
-        ${unsafeCSS || ''}
-      `,
+      unsafeCSS: getUnsafeCSS(unsafeCSS),
     };
   }
 
@@ -505,39 +631,109 @@
     };
   });
 
-  // Track if this is the first render
-  let isFirstRender = true;
+  // Structural signature used to gate expensive `rerender()` calls. Callback
+  // refs are applied via `setOptions` (cheap) regardless of signature, so the
+  // FileDiff stays consistent even when consumers pass inline closures.
+  let lastStructuralSig: string | null = null;
+  // Track last rendered diff identity so we only call `render(...)` on real
+  // structural changes, not on every reactive re-read inside the init effect.
+  let lastDiffDataRef: typeof diffData | null = null;
+  let lastContainerRef: HTMLElement | undefined;
+  let lastVirtualizerRef: typeof virtualizer | undefined;
 
-  // Initialize FileDiff instance on first render
+  function createFileDiffInstance(options: ReturnType<typeof buildFileDiffOptions>): FileDiff {
+    // When a Virtualizer is supplied (multi-file diff list, e.g.
+    // `ChatChangesPanel`), use `VirtualizedFileDiff` so the virtualizer
+    // swaps off-screen files to height-preserving placeholders and only
+    // on-screen files hold live hunk DOM. Otherwise fall back to the
+    // plain `FileDiff` path used by single-diff callsites.
+    return virtualizer
+      ? new VirtualizedFileDiff(options, virtualizer, undefined, getDiffWorkerPool())
+      : new FileDiff(options, getDiffWorkerPool());
+  }
+
+  // Initialize / update the FileDiff instance.
+  // Reuses the same instance across prop changes — `FileDiff.render()` is only
+  // invoked when the underlying diff data or container has actually changed.
   $effect(() => {
     if (!containerRef || !diffData) return;
 
-    // Track annotations to re-render when they change
-    const _annotations = annotations;
+    const sameDiff =
+      diffData === lastDiffDataRef &&
+      containerRef === lastContainerRef &&
+      virtualizer === lastVirtualizerRef;
+    if (sameDiff && fileDiffInstance) return;
 
+    // Build options once per structural change and snapshot the signature so
+    // the options-effect downstream knows it matches the current render.
     const options = buildFileDiffOptions();
+    lastStructuralSig = getStructuralSignature();
 
-    if (!fileDiffInstance) {
-      fileDiffInstance = new FileDiff(options);
-      isFirstRender = true;
+    if (fileDiffInstance && virtualizer !== lastVirtualizerRef) {
+      fileDiffInstance.cleanUp();
+      fileDiffInstance = undefined;
     }
 
-    // Render the diff - use containerWrapper for the DOM target
+    if (!fileDiffInstance) {
+      fileDiffInstance = createFileDiffInstance(options);
+      lastVirtualizerRef = virtualizer;
+    } else {
+      fileDiffInstance.setOptions(options);
+    }
+
+    // Read annotations without subscribing — the dedicated annotations effect
+    // below handles subsequent updates via the cheaper setLineAnnotations path.
+    const initialAnnotations = untrack(() => annotations);
+
     fileDiffInstance!.render({
       fileDiff: diffData.fileDiff,
       oldFile: diffData.oldFile,
       newFile: diffData.newFile,
       containerWrapper: containerRef,
-      lineAnnotations: _annotations as any,
+      lineAnnotations: initialAnnotations as any,
     });
 
-    isFirstRender = false;
+    lastDiffDataRef = diffData;
+    lastContainerRef = containerRef;
+    lastVirtualizerRef = virtualizer;
   });
 
-  // Separate effect to handle option changes - need to rerender after setOptions
+  // Annotations effect: use `setLineAnnotations` (targeted update) instead of
+  // the full `render()` path so annotation churn in chat doesn't blow the
+  // worker-pool cache warmup on every tick.
   $effect(() => {
-    // Track all the reactive props that affect options
-     
+    const currentAnnotations = annotations;
+    if (!fileDiffInstance || !lastDiffDataRef) return;
+    untrack(() => {
+      fileDiffInstance!.setLineAnnotations((currentAnnotations ?? []) as any);
+    });
+  });
+
+  // Compute a structural signature for the options that, when they change,
+  // require a full `rerender()`. Callback identity is intentionally excluded
+  // — callbacks are refreshed via `setOptions` on every effect run but do not
+  // themselves drive a rerender.
+  function getStructuralSignature(): string {
+    return [
+      viewMode,
+      diffIndicators,
+      showLineNumbers,
+      overflow,
+      expandUnchanged,
+      expansionLineCount,
+      lineDiffType,
+      maxLineDiffLength,
+      enableLineSelection,
+      enableHoverUtility,
+      shouldDisableHighlighting,
+      isDarkMode,
+      unsafeCSS ?? '',
+    ].join('|');
+  }
+
+  // Options effect: refreshes callback refs cheaply via setOptions, and only
+  // triggers a full rerender if the structural signature has changed.
+  $effect(() => {
     const _deps = [
       viewMode,
       diffIndicators,
@@ -551,14 +747,19 @@
       enableLineSelection,
       enableHoverUtility,
       renderHoverUtility,
+      renderAnnotation,
     ];
 
-    // Skip if no instance yet or first render (handled by other effect)
-    if (!fileDiffInstance || isFirstRender) return;
+    if (!fileDiffInstance) return;
 
+    const sig = getStructuralSignature();
     const options = buildFileDiffOptions();
     fileDiffInstance.setOptions(options);
-    fileDiffInstance.rerender();
+
+    if (sig !== lastStructuralSig) {
+      lastStructuralSig = sig;
+      fileDiffInstance.rerender();
+    }
   });
 
   // Update selected lines when prop changes
@@ -576,44 +777,23 @@
   // Theme change listener cleanup function
   let themeCleanup: (() => void) | undefined;
 
-  // Set up theme change listeners on mount
+  // Subscribe to the shared theme-change singleton (Wave 5d).
+  // The singleton owns the single window listener + MutationObserver and
+  // fans out to all mounted DiffViewer instances.
   onMount(() => {
-    if (typeof window !== 'undefined') {
-      // Listen for custom theme-changed event from the app's ThemeManager
-      const handleThemeChange = () => {
-        const newTheme = detectCurrentTheme();
-        if (newTheme !== isDarkMode) {
-          isDarkMode = newTheme;
-          // Update the FileDiff theme
-          if (fileDiffInstance) {
-            fileDiffInstance.setThemeType(newTheme ? 'dark' : 'light');
-          }
+    if (typeof window === 'undefined') return;
+
+    const handleThemeChange = () => {
+      const newTheme = detectCurrentTheme();
+      if (newTheme !== isDarkMode) {
+        isDarkMode = newTheme;
+        if (fileDiffInstance) {
+          fileDiffInstance.setThemeType(newTheme ? 'dark' : 'light');
         }
-      };
+      }
+    };
 
-      window.addEventListener('theme-changed', handleThemeChange);
-
-      // Also watch for class changes on html element (backup for direct class manipulation)
-      const observer = new MutationObserver(() => {
-        const newTheme = detectCurrentTheme();
-        if (newTheme !== isDarkMode) {
-          isDarkMode = newTheme;
-          if (fileDiffInstance) {
-            fileDiffInstance.setThemeType(newTheme ? 'dark' : 'light');
-          }
-        }
-      });
-
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class'],
-      });
-
-      themeCleanup = () => {
-        window.removeEventListener('theme-changed', handleThemeChange);
-        observer.disconnect();
-      };
-    }
+    themeCleanup = subscribeDiffThemeChange(handleThemeChange);
   });
 
   // Cleanup on destroy

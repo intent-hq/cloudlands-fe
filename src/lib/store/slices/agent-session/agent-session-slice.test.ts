@@ -35,6 +35,7 @@ import {
 import { chatSendStarted } from '../chat-state/chat-state-slice';
 import {
   selectAgentSession,
+  selectAgentSessionsByIds,
   selectAgentMessages,
   selectAgentMessageById,
   selectAgentSessionsByWorkspace,
@@ -414,6 +415,14 @@ describe('agent-session selectors', () => {
     const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
     expect(selectAgentSession.select(state, 'a1')).toEqual(session);
     expect(selectAgentSession.select(state, 'unknown')).toBeUndefined();
+  });
+
+  it('selectAgentSessionsByIds returns only requested sessions', () => {
+    const s1 = makeSession('a1');
+    const s2 = makeSession('a2');
+    const s3 = makeSession('a3');
+    const state = storeWith({ byAgentId: { a1: s1, a2: s2, a3: s3 }, agentIdsByWorkspace: {} });
+    expect(selectAgentSessionsByIds.select(state, ['a2', 'missing', 'a1'])).toEqual([s2, s1]);
   });
 
   it('selectAgentMessages returns messages or empty array', () => {
