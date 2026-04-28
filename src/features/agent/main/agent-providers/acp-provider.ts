@@ -1383,6 +1383,11 @@ export class ACPProvider extends BaseAgentProvider {
   // Used by providers (e.g. Claude Code) that don't support --mcp-config.
   private acpMcpServersForSession: AcpMcpServer[] = [];
   private providerCapabilities: ProviderCapabilities;
+  // Cache of JSON-RPC method names the connected ACP adapter has already
+  // answered with "Method not found". Used to skip redundant attempts (and
+  // the accompanying WARN log spam) for optional/unstable methods such as
+  // `unstable_setSessionModel` on adapters that don't implement them.
+  private unsupportedAcpMethods: Set<string> = new Set();
   // Claude Code adapter sets a default model during session creation.
   // To ensure the user-selected model "sticks", we wait for the adapter's
   // post-newSession model announcement (sessionUpdate) before applying it.
@@ -5502,7 +5507,9 @@ export class ACPProvider extends BaseAgentProvider {
                 modelId: rawModelId,
               });
             } else {
-              logger.warn(
+              const logFn = setModelResult.unsupported ? logger.debug : logger.warn;
+              logFn.call(
+                logger,
                 'Failed to set OpenCode model via ACP; relying on OPENCODE_CONFIG_CONTENT',
                 {
                   sessionId: this.sessionId,
@@ -5615,11 +5622,16 @@ export class ACPProvider extends BaseAgentProvider {
 
     const result = await this.setModel(desired);
     if (!result.success) {
-      logger.warn('Failed to apply deferred Claude Code model; continuing with adapter default', {
-        sessionId: this.sessionId,
-        desiredModelId: desired,
-        error: result.error,
-      });
+      const logFn = result.unsupported ? logger.debug : logger.warn;
+      logFn.call(
+        logger,
+        'Failed to apply deferred Claude Code model; continuing with adapter default',
+        {
+          sessionId: this.sessionId,
+          desiredModelId: desired,
+          error: result.error,
+        },
+      );
     }
   }
 
@@ -5643,7 +5655,8 @@ export class ACPProvider extends BaseAgentProvider {
     if (result.success) {
       this.appliedClaudeCodeModelId = rawModelId;
     } else {
-      logger.warn('Failed to apply Claude Code model via ACP', {
+      const logFn = result.unsupported ? logger.debug : logger.warn;
+      logFn.call(logger, 'Failed to apply Claude Code model via ACP', {
         sessionId: this.sessionId,
         configuredModel: this.config.model,
         rawModelId,
@@ -6021,7 +6034,9 @@ export class ACPProvider extends BaseAgentProvider {
    * Set the session model via ACP session/set_model
    * This changes the model used for subsequent messages in this session
    */
-  async setModel(modelId: string): Promise<{ success: boolean; modelId?: string; error?: string }> {
+  async setModel(
+    modelId: string,
+  ): Promise<{ success: boolean; modelId?: string; error?: string; unsupported?: boolean }> {
     if (!this.sessionId) {
       logger.warn('Cannot set model - no active session');
       return { success: false, error: 'No active session' };
@@ -6034,13 +6049,31 @@ export class ACPProvider extends BaseAgentProvider {
 
     try {
       const caps = this.providerCapabilities;
-      const methodsToTry =
+      const candidateMethods =
         caps.id === 'claude-code'
           ? // Claude Code adapters have used both a custom unstable method and the standard ACP method.
             ['unstable_setSessionModel', 'session/set_model']
           : ['session/set_model'];
 
+      // Skip methods that this adapter has previously rejected with
+      // "Method not found" — avoids the WARN log spam every turn.
+      const methodsToTry = candidateMethods.filter((m) => !this.unsupportedAcpMethods.has(m));
+
+      if (methodsToTry.length === 0) {
+        logger.debug('Skipping set-model request: no supported ACP method for this adapter', {
+          providerId: caps.id,
+          modelId,
+          skipped: candidateMethods,
+        });
+        return {
+          success: false,
+          unsupported: true,
+          error: 'No supported set-model method for this adapter',
+        };
+      }
+
       let lastError: any = null;
+      let allMethodNotFound = true;
       for (const method of methodsToTry) {
         const setModelRequest = {
           jsonrpc: '2.0' as const,
@@ -6092,16 +6125,35 @@ export class ACPProvider extends BaseAgentProvider {
         // file contents). Use summarizeProviderErrorForLog to keep only
         // the safe diagnostic fields (code/message/httpStatus/apiStatus/
         // errorDetails.{code,detail}) while redacting data.details.
-        logger.warn('Failed to set model via ACP', {
-          providerId: caps.id,
-          method,
-          modelId,
-          error: summarizeProviderErrorForLog(response.error),
-          isMethodNotFound,
-        });
-        if (!isMethodNotFound) {
+        if (isMethodNotFound) {
+          // Remember that this adapter doesn't implement the method so future
+          // setModel calls skip it entirely. Demote the log level — this is
+          // an expected condition on adapters without the optional method.
+          this.unsupportedAcpMethods.add(method);
+          logger.debug('ACP adapter does not implement set-model method; caching as unsupported', {
+            providerId: caps.id,
+            method,
+            modelId,
+          });
+        } else {
+          logger.warn('Failed to set model via ACP', {
+            providerId: caps.id,
+            method,
+            modelId,
+            error: summarizeProviderErrorForLog(response.error),
+            isMethodNotFound,
+          });
+          allMethodNotFound = false;
           break;
         }
+      }
+
+      if (allMethodNotFound && methodsToTry.length > 0) {
+        return {
+          success: false,
+          unsupported: true,
+          error: 'No supported set-model method for this adapter',
+        };
       }
 
       return { success: false, error: lastError?.message || 'Failed to set model' };

@@ -7416,7 +7416,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // For Claude Code, fail immediately. For OpenCode, fall through to restart
         // since session/set_model may not be reliably supported across OpenCode versions.
         if (providerId === 'claude-code') {
-          logger.warn('Failed to set Claude Code model via ACP', {
+          const logFn = setResult?.unsupported ? logger.debug : logger.warn;
+          logFn.call(logger, 'Failed to set Claude Code model via ACP', {
             agentId,
             modelId,
             rawModelId,

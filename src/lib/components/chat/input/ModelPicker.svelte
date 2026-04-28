@@ -32,6 +32,7 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     ACP_PROVIDERS,
+    getDefaultProviderId,
     getProviderConfig,
     parseCompoundModelId,
     resolvePreferredModel,
@@ -620,14 +621,27 @@
     })),
   );
 
+  // Normalize a model ID for equivalence comparison: strip the default-provider
+  // prefix so `auggie:sonnet4.6` matches bare `sonnet4.6` (and vice versa) when
+  // `auggie` is the default provider. Non-default-provider prefixes are preserved
+  // so `opencode:foo` still only matches the compound form.
+  function normalizeModelIdForMatch(modelId: string): string {
+    const defaultId = getDefaultProviderId();
+    const prefix = `${defaultId}:`;
+    if (modelId.startsWith(prefix)) {
+      return modelId.slice(prefix.length);
+    }
+    return modelId;
+  }
+
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isLoadingModels) return false;
     if (!isAgentProviderOverride && !allProvidersLoaded) return false;
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
-    const values = new Set(flatModelOptions.map((opt) => opt.value));
-    return !values.has(localModel);
+    const values = new Set(flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value)));
+    return !values.has(normalizeModelIdForMatch(localModel));
   });
 
   // --- Per-agent fallback tracking (persisted to localStorage so it survives page refresh) ---
@@ -797,15 +811,17 @@
           duration: 5000,
         },
       );
+
+      // Switch to the fallback model — only when the model genuinely disappeared.
+      // During a provider switch the model isn't really missing, so skip the silent
+      // switch to avoid clobbering a valid compound/bare model ID round-trip.
+      handleModelSelect(fallbackOption.value);
     } else {
-      logger.info('Skipping fallback warning (provider switch detected)', {
+      logger.debug('Skipping auto-fallback (provider switch detected)', {
         unavailableModel: unavailableModelName,
         unavailableBaseId,
       });
     }
-
-    // Switch to the fallback model
-    handleModelSelect(fallbackOption.value);
   });
 
   let silentRetryAttemptedForProvider: string | null = null;

@@ -35,6 +35,12 @@ const OPENCODE_PATHS = [
 
 let cachedOpencodePath: string | null = null;
 
+// Model list cache — avoids re-shelling to `opencode models` on every call.
+type OpencodeModel = { value: string; label: string; provider?: string };
+let cachedOpencodeModels: OpencodeModel[] | null = null;
+let opencodeModelCacheTimestamp = 0;
+const OPENCODE_MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // Optional hidden provider prefixes (e.g., "bedrock", "meta") to filter noisy entries.
 // Controlled via OPENCODE_HIDDEN_PROVIDERS env var; by default, show everything.
 function getHiddenProviders(): Set<string> {
@@ -46,6 +52,71 @@ function getHiddenProviders(): Set<string> {
       .map((s) => s.trim())
       .filter(Boolean),
   );
+}
+
+/**
+ * Internal: fetch (or return cached) opencode model list.
+ * Returns `null` on hard failure (spawn error, parse error). Successful
+ * empty results (no credentialed providers) cache as `[]`.
+ */
+async function getOpencodeModelsWithCache(): Promise<OpencodeModel[] | null> {
+  const now = Date.now();
+  if (cachedOpencodeModels && now - opencodeModelCacheTimestamp < OPENCODE_MODEL_CACHE_TTL_MS) {
+    logger.debug('Returning cached opencode models', { count: cachedOpencodeModels.length });
+    return cachedOpencodeModels;
+  }
+  try {
+    const opencodePath = await findOpencodePath();
+    logger.info('Getting models from opencode CLI', { opencodePath });
+    const { stdout, stderr } = await executeOpencodeCommand(['models', '--log-level', 'DEBUG'], {
+      timeout: 10000,
+    });
+    if (stderr) {
+      logger.warn('OpenCode stderr output', { stderr });
+    }
+
+    // Debug file write (enabled via OPENCODE_DEBUG_FILE env var)
+    if (process.env.OPENCODE_DEBUG_FILE) {
+      const fs = await import('fs');
+      const debugPath = path.join(os.homedir(), 'opencode-models-debug.txt');
+      fs.writeFileSync(debugPath, JSON.stringify({ stdout, stderr }, null, 2));
+      logger.info(`Debug output written to ${debugPath}`);
+    }
+
+    const hiddenProviders = getHiddenProviders();
+    const models: OpencodeModel[] = [];
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.includes('/')) {
+        const [provider, ...modelParts] = trimmed.split('/');
+        if (hiddenProviders.has(provider)) continue;
+        const modelId = modelParts.join('/');
+        const label = formatModelLabel(provider, modelId);
+        models.push({ value: trimmed, label, provider });
+      }
+    }
+
+    cachedOpencodeModels = models;
+    opencodeModelCacheTimestamp = Date.now();
+    return models;
+  } catch (error) {
+    logger.warn('Could not get models from opencode CLI', { error: (error as Error).message });
+    return null;
+  }
+}
+
+/**
+ * Main-side accessor for the cached OpenCode model list.
+ *
+ * Returns bare model value strings (e.g. `openai/gpt-5.2`,
+ * `anthropic/claude-sonnet-4`) or `null` when the live list is unavailable.
+ * Shares the module-level 5-minute TTL cache with the IPC handler.
+ */
+export async function getCachedOpencodeModels(): Promise<string[] | null> {
+  const models = await getOpencodeModelsWithCache();
+  if (!models) return null;
+  return models.map((m) => m.value);
 }
 
 /**
@@ -182,76 +253,26 @@ export function setupOpencodeIPC() {
     }
   });
 
-  // Get available models from opencode
+  // Get available models from opencode. Caching + parsing live in
+  // getOpencodeModelsWithCache() at module scope so that the main-side
+  // model-override validator can reuse the same cache without re-shelling.
   ipcMain.handle(OPENCODE_CHANNELS.GET_MODELS, async () => {
-    try {
-      const opencodePath = await findOpencodePath();
-      logger.info('Getting models from opencode CLI', { opencodePath });
-      // Try with debug logging to see what opencode is doing
-      const { stdout, stderr } = await executeOpencodeCommand(['models', '--log-level', 'DEBUG'], {
-        timeout: 10000,
-      });
-
-      // Debug: Log raw output to see exactly what opencode returns
-      const lines = stdout.split('\n');
-      logger.info('OpenCode models raw output', {
-        opencodePath,
-        stdoutLength: stdout.length,
-        lineCount: lines.length,
-        allLines: lines,
-        fullOutput: stdout,
-      });
-
-      if (stderr) {
-        logger.warn('OpenCode stderr output', { stderr });
-      }
-
-      // Debug file write (enabled via OPENCODE_DEBUG_FILE env var)
-      if (process.env.OPENCODE_DEBUG_FILE) {
-        const fs = await import('fs');
-        const debugPath = path.join(os.homedir(), 'opencode-models-debug.txt');
-        fs.writeFileSync(debugPath, JSON.stringify({ stdout, stderr }, null, 2));
-        logger.info(`Debug output written to ${debugPath}`);
-      }
-
-      // Parse the output - each line is a model in format "provider/model"
-      const hiddenProviders = getHiddenProviders();
-      const models: Array<{ value: string; label: string; provider?: string }> = [];
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        // Format: provider/model (e.g., "openai/gpt-5.2" or "anthropic/claude-sonnet-4")
-        if (trimmed.includes('/')) {
-          const [provider, ...modelParts] = trimmed.split('/');
-          if (hiddenProviders.has(provider)) {
-            continue; // Skip providers explicitly hidden via env
-          }
-          const modelId = modelParts.join('/');
-          const label = formatModelLabel(provider, modelId);
-          models.push({
-            value: trimmed, // Keep full provider/model format
-            label,
-            provider,
-          });
-        }
-      }
-
-      if (models.length > 0) {
-        logger.info(`Parsed ${models.length} models from opencode`, {
-          hiddenProviders: Array.from(hiddenProviders),
-          modelValues: models.map((m) => m.value),
-        });
-        return { success: true, data: models };
-      }
-
-      logger.warn('OpenCode models command returned no models');
-      return { success: true, data: [], warning: 'No models found' };
-    } catch (error) {
-      logger.warn('Could not get models from opencode CLI', { error: (error as Error).message });
-      return { success: false, error: (error as Error).message, data: [] };
+    const models = await getOpencodeModelsWithCache();
+    if (models === null) {
+      return {
+        success: false,
+        error: 'Failed to query opencode CLI for models',
+        data: [],
+      };
     }
+    if (models.length > 0) {
+      logger.info(`Returning ${models.length} models from opencode`, {
+        modelValues: models.map((m) => m.value),
+      });
+      return { success: true, data: models };
+    }
+    logger.warn('OpenCode models command returned no models');
+    return { success: true, data: [], warning: 'No models found' };
   });
 }
 

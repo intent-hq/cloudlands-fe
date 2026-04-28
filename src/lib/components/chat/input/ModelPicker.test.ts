@@ -113,8 +113,9 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 });
 
 const enabledProviderIds$ = writable(['auggie']);
+const activeProviderId$ = writable('auggie');
 vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
-  selectActiveProviderId: () => readable('auggie'),
+  selectActiveProviderId: () => activeProviderId$,
   selectEnabledProviderIds: () => enabledProviderIds$,
 }));
 
@@ -338,5 +339,84 @@ describe('ModelPicker multi-provider mode', () => {
 
     const button = screen.getByRole('button');
     expect(button.textContent).toContain('GPT 5.4');
+  });
+
+  it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
+    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { toast } = await import('svelte-sonner');
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
+      if (providerId === 'auggie') {
+        return Promise.resolve([
+          { value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'test-agent',
+        onModelChange,
+      },
+    });
+
+    // Wait for provider fetch to settle
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('auggie');
+    });
+    // Give the $effect scheduler a chance to run auto-fallback if it were going to
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.info)).not.toHaveBeenCalled();
+  });
+
+  it('still triggers fallback when a non-default-provider compound model ID is unavailable', async () => {
+    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
+    const { toast } = await import('svelte-sonner');
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
+      if (providerId === 'auggie') {
+        return Promise.resolve([
+          { value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' },
+        ]);
+      }
+      if (providerId === 'opencode') {
+        return Promise.resolve([
+          { value: 'opencode:real-model', label: 'Real Model', description: 'Real' },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    enabledProviderIds$.set(['auggie', 'opencode']);
+    // Active provider must match the selected model's provider so the
+    // auto-fallback doesn't treat this as a provider switch.
+    activeProviderId$.set('opencode');
+
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'opencode:nonexistent-xyz',
+        agentId: 'test-agent',
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('opencode:real-model');
+    });
+    expect(vi.mocked(toast.info)).toHaveBeenCalled();
+
+    // Reset for other tests
+    activeProviderId$.set('auggie');
   });
 });

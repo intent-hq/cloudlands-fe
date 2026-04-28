@@ -297,3 +297,33 @@ export function setupClaudeCodeIPC() {
     }
   });
 }
+
+/**
+ * Main-side accessor for the cached Claude Code model list.
+ *
+ * Returns the bare model IDs (the `value` field of each model entry) as
+ * `string[]`, or `null` if the live list is unavailable (Claude Code CLI not
+ * installed or probe failed). Used by the model-override validator so it can
+ * check overrides against the provider's real model set without going through
+ * the IPC layer.
+ *
+ * Shares the module-level 5-minute TTL cache with the IPC handler.
+ */
+export async function getCachedClaudeCodeModels(): Promise<string[] | null> {
+  try {
+    const resolved = await resolveClaudeCodeCommand();
+    if (!resolved) return null;
+    const models = await listClaudeCodeModelsViaAcp();
+    if (models.length === 0) return null;
+    // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the
+    // live list so validators treat them as valid overrides even when the
+    // ACP probe does not emit them. De-duplicated in case the live list
+    // eventually begins reporting one of the aliases.
+    const liveValues = models.map((m) => m.value);
+    const defaultValues = DEFAULT_MODELS.map((m) => m.value);
+    return Array.from(new Set([...liveValues, ...defaultValues]));
+  } catch (error) {
+    logger.debug('getCachedClaudeCodeModels failed', { error: (error as Error).message });
+    return null;
+  }
+}

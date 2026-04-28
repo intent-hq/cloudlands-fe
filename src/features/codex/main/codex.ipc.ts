@@ -280,3 +280,30 @@ export function setupCodexIPC() {
     }
   });
 }
+
+/**
+ * Main-side accessor for the cached Codex model list.
+ *
+ * Returns the bare model IDs (the `value` field of each model entry, e.g.
+ * `gpt-5.3-codex/high`) as `string[]`, falling back to the static list when
+ * the live ACP probe returns empty. Returns `null` only on hard failure.
+ *
+ * Shares the module-level 5-minute TTL cache with the IPC handler.
+ */
+export async function getCachedCodexModels(): Promise<string[] | null> {
+  try {
+    const resolved = await resolveCodexCommand();
+    if (resolved) {
+      const dynamic = await listCodexModelsViaAcp();
+      if (dynamic.length > 0) {
+        return dynamic.map((m) => m.value);
+      }
+    }
+    const staticModels = getCodexModelList();
+    if (staticModels.length === 0) return null;
+    return staticModels.map((m) => m.value);
+  } catch (error) {
+    logger.debug('getCachedCodexModels failed', { error: (error as Error).message });
+    return null;
+  }
+}

@@ -54,11 +54,16 @@ import {
 } from '$shared/constants/intent-links';
 import {
   parseCompoundModelId,
+  createCompoundModelId,
   getDefaultProviderId,
   getDefaultModelForProvider,
   isModelValidForProvider,
+  normalizeModelOverride,
+  fuzzyMatchModelInPool,
+  getAllProviderIds,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
+import { getCachedModelsForProvider } from '../../../../main/utils/model-pool';
 
 const logger = new Logger('AgentInteractionTools');
 
@@ -216,6 +221,313 @@ If the user asks you to commit, use \`agent_commit_changes\` with \`userRequeste
 };
 
 /**
+ * Structured warning surfaced back to a delegating agent when a model
+ * override is rejected or rewritten. Callers include this in their tool
+ * result so the coordinator can see that its requested model was not used.
+ *
+ * Reason codes:
+ *   - `provider_mismatch`: the requested model belongs to a different
+ *     provider than the target (e.g. `codex:gpt-5` passed to an auggie
+ *     specialist) and no cross-provider fuzzy match could rescue it. Also
+ *     used for bare aliases that don't match any known model.
+ *   - `unknown_model`: the requested model is qualified for the correct
+ *     provider but that provider's live model list does not contain the
+ *     named model (and fuzzy matching against the live list also failed).
+ *     This is the post-Wave-6 improvement — previously such overrides were
+ *     accepted and silently substituted by the provider's CLI.
+ *   - `unknown-provider`: the requested model was qualified with an explicit
+ *     provider prefix (e.g. `coded:gpt-5-codex`) but that prefix is not a
+ *     registered provider. The delegating agent is warned and the child
+ *     falls back to the specialist's default model on the specialist's
+ *     provider — we do NOT silently rewrite the prefix.
+ */
+export type ModelOverrideReason =
+  | 'provider_mismatch'
+  | 'unknown_model'
+  | 'unknown-provider';
+
+export interface ModelOverrideWarning {
+  requested: string;
+  targetProvider: string;
+  reason: ModelOverrideReason;
+  /** The normalized form that was actually used, if normalization succeeded. */
+  usedInstead?: string;
+  /** For `unknown-provider`, the unrecognized prefix extracted from `requested`. */
+  unknownProvider?: string;
+  message: string;
+}
+
+/**
+ * If `candidate` is a qualified compound model ID whose prefix is a
+ * registered provider, return that provider ID. Returns `undefined` for
+ * bare aliases and for compound IDs whose prefix is not registered.
+ *
+ * Used to honor an explicit provider prefix in a delegated `model` argument
+ * over the specialist's configured coding agent / inherited / default
+ * provider.
+ */
+function getExplicitRegisteredProvider(candidate: string | undefined): string | undefined {
+  if (!candidate || !candidate.includes(':')) return undefined;
+  const { providerId } = parseCompoundModelId(candidate);
+  return getAllProviderIds().includes(providerId) ? providerId : undefined;
+}
+
+/**
+ * Pick a provider-appropriate fallback model when validation rejected an
+ * override and no other candidate exists. Providers in `PROVIDER_MODEL_TIERS`
+ * (or the default provider) get their `'fast'` tier model; dynamic-model
+ * providers (for example opencode) get `'default'` so their CLI can pick.
+ */
+function getProviderFallbackModel(
+  targetProvider: string,
+  defaultProviderId: string,
+): string {
+  if (targetProvider !== defaultProviderId && !(targetProvider in PROVIDER_MODEL_TIERS)) {
+    return 'default';
+  }
+  return getDefaultModelForProvider(targetProvider, 'fast');
+}
+
+function formatUnknownProviderMessage(unknownProvider: string): string {
+  return (
+    `Unknown provider: ${unknownProvider}. ` +
+    `Falling back to specialist default model.`
+  );
+}
+
+/** Maximum number of live model names to include in an `unknown_model` warning. */
+const UNKNOWN_MODEL_LIST_PREVIEW = 10;
+
+function formatProviderMismatchMessage(candidate: string, targetProvider: string): string {
+  return (
+    `Requested model "${candidate}" does not belong to the target provider ` +
+    `"${targetProvider}" and could not be normalized. The delegated agent will fall ` +
+    `back through the normal resolution order (specialist config → parent model → ` +
+    `provider default). ` +
+    `Qualify overrides as "<providerId>:<modelId>" (e.g. "${targetProvider}:default") or ` +
+    `use a bare alias known to the provider (e.g. "sonnet" for claude-code).`
+  );
+}
+
+function formatUnknownModelMessage(
+  candidate: string,
+  targetProvider: string,
+  liveModels: readonly string[],
+): string {
+  const preview = liveModels.slice(0, UNKNOWN_MODEL_LIST_PREVIEW);
+  const remaining = liveModels.length - preview.length;
+  const remainder = remaining > 0 ? ` (… and ${remaining} more)` : '';
+  const known = preview.length > 0 ? preview.join(', ') : '(none reported by provider)';
+  return (
+    `Requested model "${candidate}" is not in the current model list for provider ` +
+    `"${targetProvider}". The delegated agent will fall back through the normal ` +
+    `resolution order (specialist config → parent model → provider default). ` +
+    `Known models for "${targetProvider}": ${known}${remainder}.`
+  );
+}
+
+/**
+ * Tier-table validation path, used when no live model list is available
+ * (cold cache, provider CLI not installed, etc.). Mirrors the pre-Wave-6
+ * behavior: a bare alias is fuzzy-normalized via `PROVIDER_MODEL_TIERS`; a
+ * qualified ID whose provider prefix matches the target is accepted without
+ * further checks (the bug we close when a live list IS available).
+ */
+function validateAgainstTierTable(
+  candidate: string,
+  targetProvider: string,
+): { model?: string; warning?: ModelOverrideWarning } {
+  const isBareCandidate = !candidate.includes(':');
+  if (!isBareCandidate && isModelValidForProvider(candidate, targetProvider)) {
+    return { model: candidate };
+  }
+  const normalized = normalizeModelOverride(candidate, targetProvider);
+  if (normalized && isModelValidForProvider(normalized, targetProvider)) {
+    logger.info('Normalized model override via tier table', {
+      requested: candidate,
+      normalized,
+      targetProvider,
+    });
+    return { model: normalized };
+  }
+  logger.warn('Model override cannot be normalized for target provider, discarding', {
+    modelOverride: candidate,
+    targetProvider,
+  });
+  return {
+    warning: {
+      requested: candidate,
+      targetProvider,
+      reason: 'provider_mismatch',
+      message: formatProviderMismatchMessage(candidate, targetProvider),
+    },
+  };
+}
+
+/**
+ * Validate a model override against the target provider's live model list,
+ * falling back to the curated tier table when the live list is unavailable.
+ *
+ * Returns the normalized model to use (on success) or a structured warning
+ * describing why the override was discarded. Called from both the
+ * delegate/create_agent path and the wake_or_create_task_agent path.
+ */
+export async function validateModelOverride(
+  candidate: string | undefined,
+  targetProvider: string,
+): Promise<{ model?: string; warning?: ModelOverrideWarning }> {
+  if (!candidate) return {};
+
+  // If the candidate is qualified with an explicit provider prefix that is
+  // NOT a registered provider, short-circuit with an unknown-provider
+  // warning. We deliberately skip the cross-provider rescue paths so the
+  // delegating agent sees that its prefix was unrecognized rather than
+  // silently landing on the specialist default.
+  if (candidate.includes(':')) {
+    const { providerId: candidateProvider } = parseCompoundModelId(candidate);
+    if (!getAllProviderIds().includes(candidateProvider)) {
+      logger.warn('Model override uses unknown provider prefix, discarding', {
+        candidate,
+        unknownProvider: candidateProvider,
+        targetProvider,
+      });
+      return {
+        warning: {
+          requested: candidate,
+          targetProvider,
+          reason: 'unknown-provider',
+          unknownProvider: candidateProvider,
+          message: formatUnknownProviderMessage(candidateProvider),
+        },
+      };
+    }
+  }
+
+  const liveModels = await getCachedModelsForProvider(targetProvider);
+
+  // Only a genuinely unavailable list (null — cold cache, CLI not installed)
+  // falls through to the tier table. An empty array means the provider
+  // answered successfully with zero usable models, which is authoritative:
+  // every candidate must be rejected with `unknown_model`.
+  if (liveModels === null) {
+    logger.info('Live model list unavailable, falling back to tier-table validation', {
+      candidate,
+      targetProvider,
+      listState: 'unavailable',
+    });
+    return validateAgainstTierTable(candidate, targetProvider);
+  }
+
+  const { providerId: candidateProvider, modelId: bareModel } = parseCompoundModelId(candidate);
+  const isBareCandidate = !candidate.includes(':');
+  const isRightProvider = !isBareCandidate && candidateProvider === targetProvider;
+
+  if (liveModels.length === 0) {
+    logger.warn('Live model list empty, rejecting override as unknown_model', {
+      candidate,
+      targetProvider,
+      listState: 'empty',
+    });
+    return {
+      warning: {
+        requested: candidate,
+        targetProvider,
+        reason: 'unknown_model',
+        message: formatUnknownModelMessage(candidate, targetProvider, liveModels),
+      },
+    };
+  }
+
+  // Bare candidate — fuzzy-match against live list. When the live list is
+  // non-empty it is authoritative, so a miss must NOT fall through to the
+  // tier table; reject with `unknown_model` instead.
+  if (isBareCandidate) {
+    const match = fuzzyMatchModelInPool(bareModel, liveModels);
+    if (match) {
+      const normalized = createCompoundModelId(targetProvider, match);
+      logger.info('Normalized bare model override via live model list', {
+        requested: candidate,
+        normalized,
+        targetProvider,
+      });
+      return { model: normalized };
+    }
+    logger.warn('Bare model override not found in provider live model list, discarding', {
+      candidate,
+      targetProvider,
+      liveModelCount: liveModels.length,
+    });
+    return {
+      warning: {
+        requested: candidate,
+        targetProvider,
+        reason: 'unknown_model',
+        message: formatUnknownModelMessage(candidate, targetProvider, liveModels),
+      },
+    };
+  }
+
+  // Qualified + wrong provider — attempt cross-provider rescue via live list.
+  // When the live list is non-empty it is authoritative, so a miss must NOT
+  // fall through to the tier table; reject with `unknown_model` targeted at
+  // the actual provider we tried to rescue into.
+  if (!isRightProvider) {
+    const match = fuzzyMatchModelInPool(bareModel, liveModels);
+    if (match) {
+      const normalized = createCompoundModelId(targetProvider, match);
+      logger.info('Cross-provider rescue via live model list', {
+        requested: candidate,
+        normalized,
+        targetProvider,
+      });
+      return { model: normalized };
+    }
+    logger.warn('Cross-provider rescue missed provider live model list, discarding', {
+      candidate,
+      targetProvider,
+      liveModelCount: liveModels.length,
+    });
+    return {
+      warning: {
+        requested: candidate,
+        targetProvider,
+        reason: 'unknown_model',
+        message: formatUnknownModelMessage(candidate, targetProvider, liveModels),
+      },
+    };
+  }
+
+  // Qualified + right provider — the path that previously silently accepted
+  // anything. Validate the model part against the live list.
+  if (liveModels.includes(bareModel)) {
+    return { model: candidate };
+  }
+  const match = fuzzyMatchModelInPool(bareModel, liveModels);
+  if (match) {
+    const normalized = createCompoundModelId(targetProvider, match);
+    logger.info('Normalized qualified model override via live model list', {
+      requested: candidate,
+      normalized,
+      targetProvider,
+    });
+    return { model: normalized };
+  }
+  logger.warn('Model override not found in provider live model list, discarding', {
+    candidate,
+    targetProvider,
+    liveModelCount: liveModels.length,
+  });
+  return {
+    warning: {
+      requested: candidate,
+      targetProvider,
+      reason: 'unknown_model',
+      message: formatUnknownModelMessage(candidate, targetProvider, liveModels),
+    },
+  };
+}
+
+/**
  * Helper to resolve specialist configuration
  * Returns model and behaviorPrompt based on specialist ID, with optional overrides
  *
@@ -229,7 +541,7 @@ If the user asks you to commit, use \`agent_commit_changes\` with \`userRequeste
  *
  * @param autoCommitEnabled - If true, appends auto-commit instructions to the behavior prompt
  */
-function resolveSpecialistConfig(
+async function resolveSpecialistConfig(
   specialistId: string | undefined,
   modelOverride: string | undefined,
   behaviorPromptOverride: string | undefined,
@@ -237,7 +549,7 @@ function resolveSpecialistConfig(
   parentProvider: string | undefined,
   defaultToImplementor: boolean = true,
   autoCommitEnabled: boolean = true,
-): {
+): Promise<{
   model: string;
   provider: string;
   behaviorPrompt: string | undefined;
@@ -245,26 +557,28 @@ function resolveSpecialistConfig(
   specialistName: string | undefined;
   roleReminder: string | undefined;
   defaultAgentType: string | undefined;
-} {
+  modelOverrideWarning?: ModelOverrideWarning;
+}> {
   const defaultProviderId = getDefaultProviderId();
   const inheritedProvider =
     parentProvider ?? (parentModel ? parseCompoundModelId(parentModel).providerId : undefined);
 
-  const validateModelOverride = (
+  // An explicit registered provider prefix in `modelOverride` wins over the
+  // specialist's coding agent / inherited / default provider.
+  const explicitOverrideProvider = getExplicitRegisteredProvider(modelOverride);
+
+  // Collected across validation calls so we can surface one warning to the caller.
+  let overrideWarning: ModelOverrideWarning | undefined;
+
+  const runValidate = async (
     candidate: string | undefined,
     targetProvider: string,
-  ): string | undefined => {
-    if (!candidate) {
-      return undefined;
+  ): Promise<string | undefined> => {
+    const result = await validateModelOverride(candidate, targetProvider);
+    if (result.warning && !overrideWarning) {
+      overrideWarning = result.warning;
     }
-    if (!isModelValidForProvider(candidate, targetProvider)) {
-      logger.warn('Model override belongs to a different provider, discarding', {
-        modelOverride: candidate,
-        targetProvider,
-      });
-      return undefined;
-    }
-    return candidate;
+    return result.model;
   };
 
   // Resolve specialist ID - default to 'implementor' if not provided and defaultToImplementor is true
@@ -277,12 +591,17 @@ function resolveSpecialistConfig(
       logger.warn('Unknown specialist ID, falling back to parent model', {
         specialistId: effectiveSpecialistId,
       });
-      const fallbackProvider = inheritedProvider || defaultProviderId;
-      const validatedModelOverride = validateModelOverride(modelOverride, fallbackProvider);
-      // Use provider-aware fallback instead of hardcoded model
-      let fallbackModel = validatedModelOverride || parentModel;
+      const fallbackProvider =
+        explicitOverrideProvider || inheritedProvider || defaultProviderId;
+      const validatedModelOverride = await runValidate(modelOverride, fallbackProvider);
+      // When the caller supplied an explicit provider prefix, honor that
+      // provider for the fallback model too — using `parentModel` here would
+      // spawn a child on the explicit provider but with another provider's
+      // model ID, which the child's CLI cannot resolve.
+      let fallbackModel = validatedModelOverride
+        || (explicitOverrideProvider ? undefined : parentModel);
       if (!fallbackModel) {
-        fallbackModel = getDefaultModelForProvider(fallbackProvider, 'fast');
+        fallbackModel = getProviderFallbackModel(fallbackProvider, defaultProviderId);
       }
       return {
         model: fallbackModel,
@@ -292,11 +611,13 @@ function resolveSpecialistConfig(
         specialistName: undefined,
         roleReminder: undefined,
         defaultAgentType: undefined,
+        modelOverrideWarning: overrideWarning,
       };
     }
 
-    const targetProvider = resolved.codingAgent || inheritedProvider || defaultProviderId;
-    const validatedModelOverride = validateModelOverride(modelOverride, targetProvider);
+    const targetProvider =
+      explicitOverrideProvider || resolved.codingAgent || inheritedProvider || defaultProviderId;
+    const validatedModelOverride = await runValidate(modelOverride, targetProvider);
 
     // MCP-specific: Build the behavior prompt with auto-commit instructions
     // Always inject commit instructions — either auto-commit or no-auto-commit guidance
@@ -310,16 +631,21 @@ function resolveSpecialistConfig(
       }
     }
 
-    let finalModel = validatedModelOverride || resolved.model;
+    // `resolved.model` is bound to a specific provider (its compound prefix
+    // if qualified, otherwise the specialist's codingAgent). When the caller's
+    // explicit provider prefix forces a different `targetProvider`, the
+    // specialist's model ID would land the child on the wrong CLI — drop it
+    // and fall through to a provider-appropriate default instead.
+    const resolvedModelProvider = resolved.model?.includes(':')
+      ? parseCompoundModelId(resolved.model).providerId
+      : resolved.codingAgent || inheritedProvider || defaultProviderId;
+    let finalModel = validatedModelOverride
+      || (resolvedModelProvider === targetProvider ? resolved.model : undefined);
     if (!finalModel) {
       if (resolved.modelTier && targetProvider in PROVIDER_MODEL_TIERS) {
         finalModel = getDefaultModelForProvider(targetProvider, resolved.modelTier);
-      } else if (targetProvider !== defaultProviderId) {
-        // Dynamic-model providers (for example opencode) should choose their own default
-        // model instead of receiving an invalid fallback from the default provider.
-        finalModel = 'default';
       } else {
-        finalModel = getDefaultModelForProvider(targetProvider, 'fast');
+        finalModel = getProviderFallbackModel(targetProvider, defaultProviderId);
       }
     }
 
@@ -344,12 +670,14 @@ function resolveSpecialistConfig(
       specialistName: resolved.specialistName,
       roleReminder: resolved.roleReminder,
       defaultAgentType: resolved.defaultAgentType,
+      modelOverrideWarning: overrideWarning,
     };
   }
 
   // No specialist and not defaulting - use manual model/behaviorPrompt or inherit from parent
-  const fallbackProvider = inheritedProvider || defaultProviderId;
-  const validatedModelOverride = validateModelOverride(modelOverride, fallbackProvider);
+  const fallbackProvider =
+    explicitOverrideProvider || inheritedProvider || defaultProviderId;
+  const validatedModelOverride = await runValidate(modelOverride, fallbackProvider);
   let fallbackModel = validatedModelOverride || parentModel;
   if (!fallbackModel) {
     fallbackModel = getDefaultModelForProvider(fallbackProvider, 'fast');
@@ -366,6 +694,7 @@ function resolveSpecialistConfig(
     specialistName: undefined,
     roleReminder: undefined,
     defaultAgentType: undefined,
+    modelOverrideWarning: overrideWarning,
   };
 }
 
@@ -471,7 +800,7 @@ This allows you to create multiple agents in parallel and be notified as each fi
 
       // Resolve specialist configuration (model and behaviorPrompt)
       // Pass autoCommitEnabled so auto-commit instructions are conditionally injected
-      const config = resolveSpecialistConfig(
+      const config = await resolveSpecialistConfig(
         specialist,
         model,
         behaviorPrompt,
@@ -649,6 +978,9 @@ This allows you to create multiple agents in parallel and be notified as each fi
       }
       successMessage +=
         '\nThe agent is now working independently. End your turn and you will be notified when it completes.';
+      if (config.modelOverrideWarning) {
+        successMessage += `\n\n⚠️ Model override warning: ${config.modelOverrideWarning.message}`;
+      }
 
       return this.success(successMessage, {
         agentId: agent.id,
@@ -657,6 +989,9 @@ This allows you to create multiple agents in parallel and be notified as each fi
         linkedNoteId,
         linkedNoteCreated: createLinkedNote && linkedNoteId !== taskNoteId,
         subscriptionId,
+        ...(config.modelOverrideWarning && {
+          modelOverrideWarning: config.modelOverrideWarning,
+        }),
       });
     } catch (error) {
       logger.error('Error creating agent', error as Error);
@@ -819,7 +1154,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
 
       // Resolve specialist configuration (model and behaviorPrompt)
       // Pass autoCommitEnabled so auto-commit instructions are conditionally injected
-      const config = resolveSpecialistConfig(
+      const config = await resolveSpecialistConfig(
         specialist,
         model,
         behaviorPrompt,
@@ -881,6 +1216,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           config.specialistName,
           config.roleReminder,
           config.defaultAgentType,
+          config.modelOverrideWarning,
         );
       }
 
@@ -1257,18 +1593,23 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           ? 'You will be notified when ALL agents in this delegation group complete.'
           : 'You will be notified when this agent completes or fails.';
 
-      return this.success(
-        `Task "${taskText}" delegated to new agent.\nAgent ID: ${agent.id}\nTask Note ID: ${resolvedTaskNoteId}\n${waitModeMessage}`,
-        {
-          agentId: agent.id,
-          taskNoteId: resolvedTaskNoteId,
-          taskText,
-          originalNoteId: noteId,
-          subscriptionId,
-          waitMode,
-          groupId,
-        },
-      );
+      let successText = `Task "${taskText}" delegated to new agent.\nAgent ID: ${agent.id}\nTask Note ID: ${resolvedTaskNoteId}\n${waitModeMessage}`;
+      if (config.modelOverrideWarning) {
+        successText += `\n\n⚠️ Model override warning: ${config.modelOverrideWarning.message}`;
+      }
+
+      return this.success(successText, {
+        agentId: agent.id,
+        taskNoteId: resolvedTaskNoteId,
+        taskText,
+        originalNoteId: noteId,
+        subscriptionId,
+        waitMode,
+        groupId,
+        ...(config.modelOverrideWarning && {
+          modelOverrideWarning: config.modelOverrideWarning,
+        }),
+      });
     } catch (error) {
       logger.error('Error delegating task', error as Error);
       return this.error(`Failed to delegate task: ${(error as Error).message}`);
@@ -1294,6 +1635,7 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     specialistName?: string,
     roleReminder?: string,
     defaultAgentType?: string,
+    modelOverrideWarning?: ModelOverrideWarning,
   ): Promise<ToolResult> {
     // Create the agent
     const { AgentBackendHandler } =
@@ -1406,17 +1748,20 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         ? 'You will be notified when ALL agents in this delegation group complete.'
         : 'You will be notified when this agent completes or fails.';
 
-    return this.success(
-      `Task "${taskTitle}" delegated to new agent.\nAgent ID: ${agent.id}\nTask Note ID: ${taskNoteId}\n${waitModeMessage}`,
-      {
-        agentId: agent.id,
-        taskNoteId,
-        taskText: taskTitle,
-        subscriptionId,
-        waitMode,
-        groupId,
-      },
-    );
+    let successText = `Task "${taskTitle}" delegated to new agent.\nAgent ID: ${agent.id}\nTask Note ID: ${taskNoteId}\n${waitModeMessage}`;
+    if (modelOverrideWarning) {
+      successText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+    }
+
+    return this.success(successText, {
+      agentId: agent.id,
+      taskNoteId,
+      taskText: taskTitle,
+      subscriptionId,
+      waitMode,
+      groupId,
+      ...(modelOverrideWarning && { modelOverrideWarning }),
+    });
   }
 
   private buildTaskNoteContent(
@@ -2059,19 +2404,11 @@ an agent is working on the task.`,
 
       const { taskNoteId, contextMessage, model: rawModel } = call.arguments;
 
-      // Validate the model argument against the parent's provider.
-      // If the LLM specified a model from a different provider, discard it and
-      // let the child agent inherit the parent's default model instead.
+      // Model validation is deferred until after wakeProvider is computed
+      // below, because the new agent may be created on the previous
+      // specialist's codingAgent provider rather than ctx.provider.
       let model = rawModel;
-      if (model && ctx.provider) {
-        if (!isModelValidForProvider(model, ctx.provider)) {
-          logger.warn('wake_or_create_task_agent: model belongs to different provider, discarding', {
-            model,
-            parentProvider: ctx.provider,
-          });
-          model = undefined;
-        }
-      }
+      let modelOverrideWarning: ModelOverrideWarning | undefined;
 
       // Check workspace auto-commit setting
       const { isAutoCommitEnabled } =
@@ -2222,18 +2559,22 @@ an agent is working on the task.`,
               subscriptionId,
             });
 
-            return this.success(
+            let queuedMessageText =
               `Agent "${agentToWake.id}" is already actively working on task "${note.title || taskNoteId}".\n` +
-                'Context message has been queued and will be delivered when the agent finishes its current response.\n' +
-                'You will be notified when the agent responds.',
-              {
-                action: 'message_queued_to_active_agent',
-                agentId: agentToWake.id,
-                taskNoteId,
-                taskTitle: note.title,
-                subscriptionId,
-              },
-            );
+              'Context message has been queued and will be delivered when the agent finishes its current response.\n' +
+              'You will be notified when the agent responds.';
+            if (modelOverrideWarning) {
+              queuedMessageText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+            }
+
+            return this.success(queuedMessageText, {
+              action: 'message_queued_to_active_agent',
+              agentId: agentToWake.id,
+              taskNoteId,
+              taskTitle: note.title,
+              subscriptionId,
+              ...(modelOverrideWarning && { modelOverrideWarning }),
+            });
           }
 
           logger.warn('Failed to wake agent, falling back to create', {
@@ -2250,18 +2591,22 @@ an agent is working on the task.`,
             agentToWake.id,
           );
 
-          return this.success(
+          let wokeExistingText =
             `Woke existing agent "${agentToWake.id}" for task "${note.title || taskNoteId}".\n` +
-              `Agent status: ${agentToWake.status}\n` +
-              'Context message delivered.\nYou will be notified when the agent responds.',
-            {
-              action: 'woke_existing',
-              agentId: agentToWake.id,
-              taskNoteId,
-              taskTitle: note.title,
-              subscriptionId,
-            },
-          );
+            `Agent status: ${agentToWake.status}\n` +
+            'Context message delivered.\nYou will be notified when the agent responds.';
+          if (modelOverrideWarning) {
+            wokeExistingText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+          }
+
+          return this.success(wokeExistingText, {
+            action: 'woke_existing',
+            agentId: agentToWake.id,
+            taskNoteId,
+            taskTitle: note.title,
+            subscriptionId,
+            ...(modelOverrideWarning && { modelOverrideWarning }),
+          });
         }
       }
 
@@ -2284,8 +2629,44 @@ an agent is working on the task.`,
         ? resolveSpecialistForAgent(previousSpecialist, parentProvider)
         : null;
 
-      const wakeProvider = previousSpecialistConfig?.codingAgent || ctx.provider;
-      const wakeModel = model || previousSpecialistConfig?.model;
+      // An explicit registered provider prefix in the `model` argument wins
+      // over the previous specialist's codingAgent and the parent context's
+      // provider.
+      const explicitWakeProvider = getExplicitRegisteredProvider(model);
+      const wakeProvider =
+        explicitWakeProvider || previousSpecialistConfig?.codingAgent || ctx.provider;
+
+      // Validate the model argument against the actual wake provider (which
+      // may differ from ctx.provider when the previous specialist's
+      // codingAgent overrides it). Runs the same live-list + tier-table
+      // validation used by delegate_task / create_agent so both paths produce
+      // the same structured warning (provider_mismatch / unknown_model).
+      if (model && wakeProvider) {
+        const result = await validateModelOverride(model, wakeProvider);
+        if (result.warning) {
+          modelOverrideWarning = result.warning;
+        }
+        model = result.model;
+      }
+
+      // `previousSpecialistConfig?.model` is bound to that specialist's coding
+      // agent (or its own compound prefix). Use it as the wake-path fallback
+      // only when that provider matches `wakeProvider`; otherwise we'd spawn
+      // the new agent on `wakeProvider` with another provider's model ID.
+      let wakeModel: string | undefined = model;
+      if (!wakeModel) {
+        const defaultProviderId = getDefaultProviderId();
+        const fallbackProvider = wakeProvider || defaultProviderId;
+        const prevModel = previousSpecialistConfig?.model;
+        const previousModelProvider = prevModel?.includes(':')
+          ? parseCompoundModelId(prevModel).providerId
+          : previousSpecialistConfig?.codingAgent;
+        if (prevModel && previousModelProvider === fallbackProvider) {
+          wakeModel = prevModel;
+        } else {
+          wakeModel = getProviderFallbackModel(fallbackProvider, defaultProviderId);
+        }
+      }
 
       const newAgent = await handler.createAgent(this.workspaceId, agentName, {
         workspacePath: this.workspacePath,
@@ -2339,19 +2720,23 @@ an agent is working on the task.`,
         // Don't fail - agent is created and working, assignment is just metadata
       }
 
-      return this.success(
+      let createdNewText =
         `Created new agent "${newAgent.name}" for task "${note.title || taskNoteId}".\n` +
-          `Agent ID: ${newAgent.id}\n` +
-          'Agent is now working on the task with provided context.\nYou will be notified when the agent completes.',
-        {
-          action: 'created_new',
-          agentId: newAgent.id,
-          agentName: newAgent.name,
-          taskNoteId,
-          taskTitle: note.title,
-          subscriptionId,
-        },
-      );
+        `Agent ID: ${newAgent.id}\n` +
+        'Agent is now working on the task with provided context.\nYou will be notified when the agent completes.';
+      if (modelOverrideWarning) {
+        createdNewText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+      }
+
+      return this.success(createdNewText, {
+        action: 'created_new',
+        agentId: newAgent.id,
+        agentName: newAgent.name,
+        taskNoteId,
+        taskTitle: note.title,
+        subscriptionId,
+        ...(modelOverrideWarning && { modelOverrideWarning }),
+      });
     } catch (error: any) {
       logger.error('Error in wake_or_create_task_agent', error);
       return this.error(`Failed to wake or create agent: ${error.message}`);
