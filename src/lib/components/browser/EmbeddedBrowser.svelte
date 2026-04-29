@@ -11,7 +11,9 @@
   import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
+  import { toast } from '$lib/components/ui/toast';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
+  import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     addRecentUrl,
@@ -170,6 +172,7 @@
         openDevTools: () => void;
         closeDevTools: () => void;
         isDevToolsOpened: () => boolean;
+        getURL?: () => string;
         getWebContentsId: () => number;
         getZoomLevel: () => number;
         setZoomLevel: (level: number) => void;
@@ -271,6 +274,12 @@
           e.preventDefault();
           e.stopPropagation();
           console.log('__AUGMENT_GO_FORWARD__');
+        }
+        // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
+        if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('__AUGMENT_COPY_URL__');
         }
         // Cmd+Option+I / Ctrl+Shift+I - open devtools
         if ((e.metaKey && e.altKey && (e.key === 'i' || e.key === 'I')) ||
@@ -375,6 +384,21 @@
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       const isMod = e.metaKey || e.ctrlKey;
+
+      // Cmd+Shift+C / Ctrl+Shift+C - Copy current browser URL when this panel is focused.
+      if (
+        focusRef.current &&
+        !isInInput &&
+        isMod &&
+        e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'c'
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        void copyCurrentUrl();
+        return;
+      }
 
       // Only handle shortcuts when this browser panel is focused
       if (focusRef.current && webviewReady && webviewRef) {
@@ -568,6 +592,9 @@
       } else if (message === '__AUGMENT_GO_FORWARD__') {
         // Cmd+] was pressed - navigate forward in browser history
         goForward();
+      } else if (message === '__AUGMENT_COPY_URL__') {
+        // Cmd+Shift+C / Ctrl+Shift+C was pressed - copy current browser URL
+        void copyCurrentUrl();
       } else if (message === '__AUGMENT_DEVTOOLS__') {
         // Cmd+Option+I / Ctrl+Shift+I was pressed - toggle devtools
         toggleDevTools();
@@ -681,6 +708,27 @@
   function openExternal() {
     if (displayUrl) {
       window.electronAPI?.invoke('shell:openExternal', { url: displayUrl });
+    }
+  }
+
+  async function copyCurrentUrl() {
+    const loadedUrl = webviewRef?.getURL?.();
+    let urlToCopy = '';
+    if (loadedUrl && loadedUrl !== 'about:blank') {
+      urlToCopy = loadedUrl;
+    } else if (currentWebviewUrl !== 'about:blank') {
+      urlToCopy = currentWebviewUrl;
+    }
+    if (!urlToCopy) {
+      toast.error('No URL to copy');
+      return;
+    }
+    try {
+      await writeTextToClipboard(urlToCopy);
+      toast.success('URL copied to clipboard');
+    } catch (error) {
+      logger.error('Failed to copy browser URL', error, { url: urlToCopy });
+      toast.error('Failed to copy URL');
     }
   }
 

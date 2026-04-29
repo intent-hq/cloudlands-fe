@@ -58,6 +58,8 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
+  import { writeTextToClipboard } from '$lib/utils/clipboard';
+  import { createLogger } from '$lib/utils/client-logger';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -67,6 +69,12 @@
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
   const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  const logger = createLogger('PanelTabBar');
+  const copyBrowserUrlShortcutHint = isMac ? '⇧⌘C' : 'Ctrl+Shift+C';
+  const CONTEXT_MENU_MARGIN = 8;
+  const CONTEXT_MENU_OFFSET = 4;
+  const CONTEXT_MENU_FALLBACK_WIDTH = 224;
+  const CONTEXT_MENU_FALLBACK_HEIGHT = 360;
 
   interface Props {
     tabs: PanelTab[];
@@ -143,6 +151,7 @@
 
   // Context menu state
   let contextMenuTab = $state<{ tabId: string; x: number; y: number } | null>(null);
+  let contextMenuElement = $state<HTMLDivElement | null>(null);
 
   // Track whether a tab was already active before a mousedown,
   // so we can distinguish "double-click on already-active tab" (→ expand toggle)
@@ -306,8 +315,36 @@
     contextMenuTab = { tabId, x: e.clientX, y: e.clientY };
   }
 
+  function getContextMenuPosition() {
+    if (!contextMenuTab || typeof window === 'undefined') {
+      return { x: contextMenuTab?.x ?? 0, y: contextMenuTab?.y ?? 0 };
+    }
+
+    const width = contextMenuElement?.offsetWidth || CONTEXT_MENU_FALLBACK_WIDTH;
+    const height = contextMenuElement?.offsetHeight || CONTEXT_MENU_FALLBACK_HEIGHT;
+    const viewportRight = window.innerWidth - CONTEXT_MENU_MARGIN;
+    const viewportBottom = window.innerHeight - CONTEXT_MENU_MARGIN;
+    const maxX = Math.max(CONTEXT_MENU_MARGIN, viewportRight - width);
+    const maxY = Math.max(CONTEXT_MENU_MARGIN, viewportBottom - height);
+    const preferredX = contextMenuTab.x + CONTEXT_MENU_OFFSET;
+    const preferredY = contextMenuTab.y + CONTEXT_MENU_OFFSET;
+
+    const x = preferredX + width > viewportRight
+      ? Math.max(CONTEXT_MENU_MARGIN, contextMenuTab.x - CONTEXT_MENU_OFFSET - width)
+      : preferredX;
+    const y = preferredY + height > viewportBottom
+      ? Math.max(CONTEXT_MENU_MARGIN, contextMenuTab.y - CONTEXT_MENU_OFFSET - height)
+      : preferredY;
+
+    return {
+      x: Math.min(Math.max(CONTEXT_MENU_MARGIN, x), maxX),
+      y: Math.min(Math.max(CONTEXT_MENU_MARGIN, y), maxY),
+    };
+  }
+
   function closeContextMenu() {
     contextMenuTab = null;
+    contextMenuElement = null;
   }
 
   // ============================================================================
@@ -542,9 +579,10 @@
   async function copyBrowserUrl(tab: PanelTab) {
     if (!tab.browserUrl) return;
     try {
-      await navigator.clipboard.writeText(tab.browserUrl);
+      await writeTextToClipboard(tab.browserUrl);
       toast.success('URL copied to clipboard');
-    } catch {
+    } catch (error) {
+      logger.error('Failed to copy browser tab URL', error, { url: tab.browserUrl });
       toast.error('Failed to copy URL');
     }
   }
@@ -1524,8 +1562,7 @@
 <!-- Context Menu -->
 {#if contextMenuTab}
   {@const menuTabId = contextMenuTab.tabId}
-  {@const menuX = contextMenuTab.x}
-  {@const menuY = contextMenuTab.y}
+  {@const menuPosition = getContextMenuPosition()}
   {@const contextTab = tabs.find((t) => t.id === menuTabId)}
   <div
     class="fixed inset-0 z-50"
@@ -1541,8 +1578,9 @@
       onclick={closeContextMenu}
     ></button>
     <div
-      class="absolute bg-popover border border-border shadow min-w-40 z-10"
-      style="left: {menuX}px; top: {menuY}px;"
+      bind:this={contextMenuElement}
+      class="absolute bg-popover border border-border shadow w-56 max-h-[calc(100vh-1rem)] overflow-y-auto z-10"
+      style="left: {menuPosition.x}px; top: {menuPosition.y}px;"
     >
       {#if contextTab && canLocateInSidebar(contextTab)}
         <button
@@ -1602,14 +1640,17 @@
       <!-- Type-specific actions for browser tabs -->
       {#if contextTab && contextTab.type === 'browser' && contextTab.browserUrl}
         <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
+          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between gap-4"
           onclick={() => {
             copyBrowserUrl(contextTab);
             closeContextMenu();
           }}
         >
-          <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy URL
+          <span class="flex items-center gap-2">
+            <Fa icon={faCopy} size="xs" class="text-ghost" />
+            Copy URL
+          </span>
+          <span class="text-subtle text-xs">{copyBrowserUrlShortcutHint}</span>
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"

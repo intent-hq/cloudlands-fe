@@ -1324,6 +1324,10 @@ export const SystemGetInfoSchema = z.object({});
 
 export const SystemGetVersionSchema = z.object({});
 
+export const SystemWriteClipboardSchema = z.object({
+  text: z.string(),
+});
+
 export const SystemOpenExternalSchema = z.object({
   url: z.string().url('Invalid URL'),
 });

@@ -319,6 +319,7 @@ const ALLOWED_CHANNELS = [
   "system:get-resources",
   "system:open-external",
   "system:show-item-in-folder",
+  "system:write-clipboard",
   "system:beep",
   "system:home-directory",
   "system:workspace-root",

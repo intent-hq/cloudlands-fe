@@ -4,7 +4,7 @@
  * Handles app-level and system operations.
  */
 
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
@@ -30,6 +30,7 @@ import {
   ShellInstallCliSchema,
   SystemExecuteCommandSchema,
   SystemExecuteCommandStreamingSchema,
+  SystemWriteClipboardSchema,
   UserMcpAddSchema,
   UserMcpGetWorkspaceDisabledSchema,
   UserMcpCheckAuthSchema,
@@ -985,6 +986,28 @@ export function setupSystemIPC() {
         }
       },
       SHELL_CHANNELS.OPEN_EXTERNAL,
+    ),
+  );
+
+  // Clipboard writes must go through Electron's main-process clipboard API.
+  // navigator.clipboard can fail when focus is inside an Electron webview.
+  ipcMain.handle(
+    SYSTEM_CHANNELS.WRITE_CLIPBOARD,
+    createSafeValidatedHandler(
+      SystemWriteClipboardSchema,
+      async (_event, validated) => {
+        try {
+          clipboard.writeText(validated.text);
+          return { success: true };
+        } catch (error) {
+          logger.error('Failed to write clipboard', { error });
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to write clipboard',
+          };
+        }
+      },
+      SYSTEM_CHANNELS.WRITE_CLIPBOARD,
     ),
   );
 

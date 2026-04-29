@@ -385,6 +385,7 @@ export const IPC_CHANNELS = {
     GET_RESOURCES: 'system:get-resources',
     OPEN_EXTERNAL: 'system:open-external',
     SHOW_ITEM_IN_FOLDER: 'system:show-item-in-folder',
+    WRITE_CLIPBOARD: 'system:write-clipboard',
     BEEP: 'system:beep',
     HOME_DIRECTORY: 'system:home-directory',
     WORKSPACE_ROOT: 'system:workspace-root',

@@ -171,6 +171,7 @@ export const SHORTCUTS = {
   RESIZE_PANEL_RIGHT: { key: 'mod+alt+right', label: 'Grow Panel' },
   SPLIT_PANEL_HORIZONTAL: { key: 'mod+\\', label: 'Split Panel Horizontally' },
   SPLIT_PANEL_VERTICAL: { key: 'mod+shift+\\', label: 'Split Panel Vertically' },
+  COPY_BROWSER_URL: { key: 'mod+shift+c', label: 'Copy Browser URL' },
 
   // ============================================================================
   // Layout Presets
@@ -277,6 +278,7 @@ export const SHORTCUT_CATEGORIES: Record<
       { key: 'mod+shift+pageup', label: 'Previous Panel', contexts: ['global'] },
       { key: 'mod+pagedown', label: 'Next Tab', contexts: ['global'] },
       { key: 'mod+pageup', label: 'Previous Tab', contexts: ['global'] },
+      { key: 'mod+shift+c', label: 'Copy Browser URL', contexts: ['panel'] },
     ],
   },
   leader: {
