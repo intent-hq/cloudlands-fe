@@ -899,7 +899,6 @@ const ALLOWED_CHANNELS = [
 // Dynamic channel patterns that are matched with startsWith()
 const DYNAMIC_CHANNEL_PATTERNS = [
   "agent:stream:",
-  "agent-stream-",
   "auggie:stream:",
   "terminal:output:",
   "terminal:close:",

@@ -75,6 +75,8 @@ describe('Preload IPC Allowlist Parity', () => {
   const templateAllowed = extractArrayEntries(templateContent, 'ALLOWED_CHANNELS');
   const indexEvents = extractArrayEntries(indexContent, 'EVENT_CHANNELS');
   const templateEvents = extractArrayEntries(templateContent, 'EVENT_CHANNELS');
+  const indexDynamic = extractArrayEntries(indexContent, 'DYNAMIC_CHANNEL_PATTERNS');
+  const templateDynamic = extractArrayEntries(templateContent, 'DYNAMIC_CHANNEL_PATTERNS');
 
   describe('Required subscription channels present in ALLOWED_CHANNELS', () => {
     for (const channel of REQUIRED_SUBSCRIPTION_CHANNELS) {
@@ -144,13 +146,16 @@ describe('Preload IPC Allowlist Parity', () => {
     // Simulate the actual isChannelAllowed() logic from the generated preload.
     // This catches the exact bug class: channels present in arrays but not
     // checked by the gate function.
-    const indexDynamic = extractArrayEntries(indexContent, 'DYNAMIC_CHANNEL_PATTERNS');
-
-    function simulateIsChannelAllowed(channel: string): boolean {
+    function simulateIsChannelAllowed(
+      channel: string,
+      allowedChannels = indexAllowed,
+      dynamicPatterns = indexDynamic,
+      eventChannels = indexEvents,
+    ): boolean {
       return (
-        indexAllowed.includes(channel) ||
-        indexDynamic.some((pattern) => channel.startsWith(pattern)) ||
-        indexEvents.includes(channel)
+        allowedChannels.includes(channel) ||
+        dynamicPatterns.some((pattern) => channel.startsWith(pattern)) ||
+        eventChannels.includes(channel)
       );
     }
 
@@ -175,6 +180,43 @@ describe('Preload IPC Allowlist Parity', () => {
         fnMatch![1],
         'isChannelAllowed() must reference EVENT_CHANNELS for defense-in-depth',
       ).toContain('EVENT_CHANNELS');
+    });
+
+    it('preserves current agent stream dynamic channels and blocks legacy hyphen channels', () => {
+      for (const [allowedChannels, dynamicPatterns, eventChannels] of [
+        [indexAllowed, indexDynamic, indexEvents],
+        [templateAllowed, templateDynamic, templateEvents],
+      ] as const) {
+        const isAllowed = (channel: string) =>
+          simulateIsChannelAllowed(channel, allowedChannels, dynamicPatterns, eventChannels);
+
+        expect(isAllowed('agent:stream:123')).toBe(true);
+        expect(isAllowed('agent:stream:ping:123')).toBe(true);
+        expect(isAllowed('agent:stream:pong')).toBe(true);
+        expect(isAllowed('agent:stream-starting')).toBe(true);
+        expect(isAllowed('auggie:stream:123')).toBe(true);
+        expect(isAllowed('agent-stream-123')).toBe(false);
+        expect(isAllowed('agent-stream-complete-123')).toBe(false);
+      }
+    });
+  });
+
+  describe('dynamic channel pattern allowlists', () => {
+    const registryPath = path.resolve(__dirname, '../../src/shared/ipc-registry.ts');
+    const registryContent = fs.readFileSync(registryPath, 'utf-8');
+    const registryDynamic = extractArrayEntries(registryContent, 'DYNAMIC_CHANNEL_PATTERNS');
+
+    it('includes supported stream prefixes in generated preload and source files', () => {
+      for (const dynamicPatterns of [indexDynamic, templateDynamic, registryDynamic]) {
+        expect(dynamicPatterns).toContain('agent:stream:');
+        expect(dynamicPatterns).toContain('auggie:stream:');
+      }
+    });
+
+    it('does not include the legacy agent-stream- prefix in preload allowlists', () => {
+      expect(indexDynamic).not.toContain('agent-stream-');
+      expect(templateDynamic).not.toContain('agent-stream-');
+      expect(registryDynamic).not.toContain('agent-stream-');
     });
   });
 

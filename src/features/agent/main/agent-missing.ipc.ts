@@ -18,12 +18,6 @@ import {
 const logger = new Logger('AgentMissing-IPC');
 const augmentCLI = new AugmentCLI();
 
-// Validation schemas
-const GetAgentSessionSchema = z.object({
-  agentId: z.string(),
-  sessionId: z.string().optional(),
-});
-
 const UniversalAgentEnhancePromptSchema = z.object({
   prompt: z.string(),
   context: z
@@ -47,28 +41,21 @@ const AgentGenerateLayoutSchema = z.object({
   modelId: z.string().optional(),
 });
 
-const UniversalAgentStreamMessageSchema = z.object({
-  agentId: z.string(),
-  message: z.string(),
-  stream: z.boolean().optional().default(true),
-});
-
 // Note: Agent context schemas are defined in agent-context.ipc.ts
 
 /**
  * Register missing agent IPC handlers
  */
 export function registerMissingAgentHandlers(): void {
-  // Remove any existing handlers before registering to prevent duplicates
+  // Remove only the handlers registered by this module before re-registering.
   const handlers = [
-    'get_agent_session',
-    'get_agent_context',
-    'update_agent_context',
-    'get_agent_tools',
     'agent:get-active-streams',
+    'universal-agent:enhancePrompt',
+    'agent:enhance-prompt',
+    'agent:generate-layout',
   ];
 
-  // Remove existing handlers
+  // Ignore channels that have not been registered yet.
   for (const channel of handlers) {
     try {
       ipcMain.removeHandler(channel);
@@ -105,37 +92,6 @@ export function registerMissingAgentHandlers(): void {
       };
     }
   });
-
-  // Get agent session
-  ipcMain.handle(
-    'get_agent_session',
-    createSafeValidatedHandler(
-      GetAgentSessionSchema,
-      async (_event, { agentId, sessionId }) => {
-        try {
-          logger.info('Getting agent session', { agentId, sessionId });
-
-          // Mock response
-          return {
-            success: true,
-            session: {
-              id: sessionId || `session-${Date.now()}`,
-              agentId,
-              created: new Date().toISOString(),
-              messages: [],
-            },
-          };
-        } catch (error) {
-          logger.error('Failed to get agent session', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      'get_agent_session',
-    ),
-  );
 
   // Universal agent enhance prompt
   ipcMain.handle(
@@ -280,33 +236,6 @@ export function registerMissingAgentHandlers(): void {
         }
       },
       'agent:generate-layout',
-    ),
-  );
-
-  // Universal agent stream message
-  ipcMain.handle(
-    'universal-agent:streamMessage',
-    createSafeValidatedHandler(
-      UniversalAgentStreamMessageSchema,
-      async (_event, { agentId, message, stream }) => {
-        try {
-          logger.info('Streaming message', { agentId, messageLength: message.length, stream });
-
-          // Mock streaming response
-          return {
-            success: true,
-            response: `Mock response to: ${message.substring(0, 50)}`,
-            streaming: stream,
-          };
-        } catch (error) {
-          logger.error('Failed to stream message', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      'universal-agent:streamMessage',
     ),
   );
 

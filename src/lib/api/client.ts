@@ -1,6 +1,6 @@
 // Use window.electronAPI for IPC communication in Electron
 import { Logger } from '$shared/logger';
-import type { AgentSession, CommandResponse, DiffChunk, Workspace } from '$shared/types';
+import type { CommandResponse, DiffChunk, Workspace } from '$shared/types';
 
 const logger = new Logger('APIClient');
 
@@ -219,70 +219,6 @@ class ApiClient {
   }
 
   // Agent operations removed - use agentService directly
-
-  async streamAgentMessage(
-    agentId: string,
-    workspaceId: string,
-    message: string,
-    onChunk: (chunk: string) => void,
-  ): Promise<void> {
-    const { listenSync } = await import('$lib/electron-bridge');
-
-    return new Promise(async (resolve, reject) => {
-      // Set up event listener for streaming chunks
-      const unlistenChunk = listenSync<{ chunk: string }>(`agent-stream-${agentId}`, (event) => {
-        onChunk(event.payload.chunk);
-      });
-
-      // Set up event listener for completion
-      const unlistenComplete = listenSync<{
-        success: boolean;
-        error?: string;
-      }>(`agent-stream-complete-${agentId}`, (event) => {
-        // Clean up listeners
-        unlistenChunk();
-        unlistenComplete();
-
-        if (event.payload.success) {
-          resolve();
-        } else {
-          reject(new Error(event.payload.error || 'Streaming failed'));
-        }
-      });
-
-      try {
-        const response = await invoke<CommandResponse<void>>('stream_agent_message', {
-          agentId,
-          workspaceId,
-          message,
-        });
-
-        if (!response.success) {
-          // Clean up listeners on error
-          unlistenChunk();
-          unlistenComplete();
-          reject(new Error(response.error || 'Failed to stream message to agent'));
-        }
-      } catch (error) {
-        // Clean up listeners on error
-        unlistenChunk();
-        unlistenComplete();
-        reject(error);
-      }
-    });
-  }
-
-  async getAgentSession(agentId: string): Promise<AgentSession> {
-    const response = await invoke<AgentSession>('get_agent_session', {
-      agentId,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to get agent session');
-    }
-
-    return response.data!;
-  }
 
   // Diff operations
   async createDiff(workspaceId: string, diff: DiffChunk): Promise<void> {

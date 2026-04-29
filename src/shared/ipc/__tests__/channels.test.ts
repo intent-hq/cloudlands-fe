@@ -66,7 +66,12 @@ describe('IPC Channels', () => {
 
     it('should validate dynamic channels', () => {
       expect(isValidChannel('agent:stream:123')).toBe(true);
+      expect(isValidChannel('agent:stream:ping:123')).toBe(true);
+      expect(isValidChannel('agent:stream:pong')).toBe(true);
+      expect(isValidChannel('agent:stream-starting')).toBe(true);
+      expect(isValidChannel('auggie:stream:123')).toBe(true);
       expect(isValidChannel('terminal:output:456')).toBe(true);
+      expect(isValidChannel('agent-stream-123')).toBe(false);
     });
 
     it('should assert valid channels', () => {
@@ -82,7 +87,11 @@ describe('IPC Channels', () => {
   describe('Dynamic Channels', () => {
     it('should identify dynamic channels', () => {
       expect(isDynamicChannel('agent:stream:123')).toBe(true);
+      expect(isDynamicChannel('agent:stream:ping:123')).toBe(true);
+      expect(isDynamicChannel('agent:stream:pong')).toBe(true);
+      expect(isDynamicChannel('auggie:stream:123')).toBe(true);
       expect(isDynamicChannel('terminal:output:456')).toBe(true);
+      expect(isDynamicChannel('agent-stream-123')).toBe(false);
     });
 
     it('should not identify static channels as dynamic', () => {
@@ -92,7 +101,11 @@ describe('IPC Channels', () => {
 
     it('should get dynamic channel pattern', () => {
       expect(getDynamicChannelPattern('agent:stream:123')).toBe('agent:stream:');
+      expect(getDynamicChannelPattern('agent:stream:ping:123')).toBe('agent:stream:');
+      expect(getDynamicChannelPattern('agent:stream:pong')).toBe('agent:stream:');
+      expect(getDynamicChannelPattern('auggie:stream:123')).toBe('auggie:stream:');
       expect(getDynamicChannelPattern('terminal:output:456')).toBe('terminal:output:');
+      expect(getDynamicChannelPattern('agent-stream-123')).toBeNull();
       expect(getDynamicChannelPattern('agent:create')).toBeNull();
     });
   });

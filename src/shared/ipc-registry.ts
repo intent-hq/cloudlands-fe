@@ -1295,7 +1295,6 @@ export const EVENT_CHANNELS = [
 // Dynamic channel patterns that use runtime IDs
 export const DYNAMIC_CHANNEL_PATTERNS = [
   'agent:stream:',
-  'agent-stream-',
   'auggie:stream:',
   'terminal:output:',
   'terminal:close:',

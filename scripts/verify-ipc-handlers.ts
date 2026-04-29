@@ -52,7 +52,6 @@ const SPECIAL_CHANNELS = {
   'get_workspace_changes': 'src/features/workspace/main/workspace-pr.ipc.ts',
   'generate_pr_content': 'src/features/workspace/main/workspace-pr.ipc.ts',
   'resolve_merge_conflicts': 'src/features/workspace/main/workspace-pr.ipc.ts',
-  'get_agent_session': 'src/features/agent/main/agent-missing.ipc.ts',
   'test_ssh_connection': 'src/features/ssh/main/ssh.ipc.ts',
   'fs:read': 'src/features/file/main/file.ipc.ts',
   'editor:get-selection': 'src/features/system/main/system.ipc.ts',

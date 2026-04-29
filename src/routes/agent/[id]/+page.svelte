@@ -2,18 +2,15 @@
   import { logger } from '$shared/logger';
 
   import { page } from '$app/state';
-  import { tick } from 'svelte';
-  import { invoke, listenSync } from '$lib/electron-bridge';
-  import type { DynamicElectronEventName } from '$shared/ipc-registry';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
   import { agentService } from '$features/agent/agent-ipc-bridge';
-  import { throttle } from '$lib/utils/performance-utils';
+  import { subscribeToAgent } from '$features/agent/browser';
   import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
-  import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import type { AgentSession } from '$shared/types';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -23,25 +20,15 @@
   let newMessage = $state('');
   let loading = $state(false);
   let loadPromise: Promise<void> | null = null;
-  let streamingContent: string = '';
   let isStreaming = $state(false);
-  let throttledUpdateMessage: (((content: string) => void) & { cancel: () => void }) | null = null;
   let scrollContainer: HTMLDivElement | null = $state(null);
   let shouldFollowBottom = $state(true);
   let showScrollToBottom = $state(false);
 
-  // Non-reactive streaming state for performance
-  let streamingMessageElement: HTMLElement | null = null;
-  let streamingMessageIndex: number = -1;
-
-  // Basic markdown renderer for streaming - optimized for performance
-  function renderBasicMarkdown(text: string): string {
-    // Very basic markdown rendering - just handle code blocks and line breaks
-    // Full markdown rendering happens when streaming completes
-    return text
-      .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\n/g, '<br>');
+  function applyAgentSession(session: AgentSession) {
+    agent = session;
+    messages = session.messages || [];
+    isStreaming = !!session.isStreaming;
   }
 
   // Watch for page param changes using $effect
@@ -60,64 +47,80 @@
     }
   });
 
+  $effect(() => {
+    const subscribedAgentId = agentId;
+    if (!subscribedAgentId) return;
+
+    const unsubscribe = subscribeToAgent(
+      subscribedAgentId,
+      (session) => {
+        if (agentId !== subscribedAgentId || !session) return;
+        applyAgentSession(session);
+      },
+      $activeWorkspace?.id,
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  });
+
   // Note: Auto-scroll is handled by the followBottom action on the scroll container
 
   async function loadAgent() {
-    if (!agentId || loading) return;
+    const requestedAgentId = agentId;
+    if (!requestedAgentId || loading) return;
 
-    logger.info('Loading agent:', agentId);
+    logger.info('Loading agent:', requestedAgentId);
     loading = true;
 
     try {
       // First try to get the session from the Redux store (in memory)
       let session: import('$shared/types').AgentSession | null | undefined =
-        selectAgentById.select(getReduxStore().getState(), agentId);
+        selectAgentById.select(getReduxStore().getState(), requestedAgentId);
 
       // If not in memory, try to restore from disk
       if (!session) {
         const workspace = $activeWorkspace;
         if (workspace) {
           logger.info('Session not in memory, restoring from disk', {
-            agentId,
+            agentId: requestedAgentId,
             workspaceId: workspace.id,
           });
-          session = await agentService.restoreSession(agentId, workspace);
+          session = await agentService.restoreSession(requestedAgentId, workspace);
         }
       }
 
+      if (agentId !== requestedAgentId) return;
+
       if (session) {
         logger.info('Loaded session from agent service', {
-          agentId,
+          agentId: requestedAgentId,
           turnNumber: session.currentTurnNumber,
           messageCount: session.messages?.length,
         });
-        agent = session;
-        messages = session.messages || [];
+        applyAgentSession(session);
       } else {
-        // Fallback to IPC for backward compatibility
-        const response: any = await invoke('get_agent_session', { agentId });
-        if (response && response.success && response.data) {
-          agent = response.data;
-          messages = response.data.messages || [];
-        } else {
-          // Create a minimal agent object if not found
-          agent = {
-            id: agentId,
-            name: 'Agent Session',
-            messages: [],
-          };
-          messages = [];
-        }
+        // Create a minimal agent object if not found
+        agent = {
+          id: requestedAgentId,
+          name: 'Agent Session',
+          messages: [],
+        };
+        messages = [];
+        isStreaming = false;
       }
     } catch (err) {
       logger.error('Failed to load agent:', err);
+      if (agentId !== requestedAgentId) return;
       // Create a minimal agent object on error
       agent = {
-        id: agentId,
+        id: requestedAgentId,
         name: 'Agent Session',
         messages: [],
       };
       messages = [];
+      isStreaming = false;
     } finally {
       loading = false;
       loadPromise = null;
@@ -125,138 +128,31 @@
   }
 
   async function sendMessage(messageContent: string) {
-    if (!messageContent.trim()) return;
+    const trimmedMessage = messageContent.trim();
+    if (!trimmedMessage) return;
+    const targetAgentId = agentId;
 
-    const userMessage = {
-      role: 'user',
-      content: messageContent,
-      timestamp: new Date().toISOString(),
-    };
-
-    messages.push(userMessage);
     newMessage = '';
-
-    // Add a streaming message placeholder but DON'T update content during streaming
-    streamingMessageIndex = messages.length; // Cache the index before pushing
-    const streamingMessage = {
-      role: 'assistant',
-      content: '', // Keep empty during streaming - update DOM directly instead
-      timestamp: new Date().toISOString(),
-      isStreaming: true,
-      id: `streaming-${Date.now()}`, // Add ID for keyed each block
-    };
-    messages.push(streamingMessage);
-
-    // Reset streaming content
-    streamingContent = '';
-
-    // Wait for DOM to update and get the streaming message element
-    await tick();
-    // Find the streaming content div directly
-    streamingMessageElement = scrollContainer?.querySelector('.streaming-content') as HTMLElement;
+    isStreaming = true;
 
     try {
-      // Set up stream listeners
-      const streamEventName = `agent-stream-${agentId}` as DynamicElectronEventName;
-      const completeEventName = `agent-stream-complete-${agentId}` as DynamicElectronEventName;
+      const workspace = $activeWorkspace;
+      if (!workspace) throw new Error('No active workspace');
 
-      // Direct DOM update function - bypasses Svelte reactivity for performance
-      let rafId: number | null = null;
-      let updateScheduled = false;
-
-      throttledUpdateMessage = throttle((content: string) => {
-        // Update DOM directly during streaming to avoid reactive overhead
-        if (streamingMessageElement && !updateScheduled) {
-          updateScheduled = true;
-          rafId = requestAnimationFrame(() => {
-            if (streamingMessageElement) {
-              // Direct innerHTML update for streaming content
-              // This is safe because we control the content
-              streamingMessageElement.innerHTML = renderBasicMarkdown(AuggieTextParser.stripDigestTagsForDisplay(content));
-            }
-            updateScheduled = false;
-            rafId = null;
-          });
-        }
-      }, 150); // Increased throttle to 150ms for even better performance
-
-      const unsubscribeStream = listenSync(streamEventName, (event: any) => {
-        const chunk = event.payload.chunk || '';
-        streamingContent += chunk;
-        isStreaming = true;
-
-        // Use cached index directly - no findIndex needed
-        if (throttledUpdateMessage) {
-          throttledUpdateMessage(streamingContent);
-        }
-      });
-
-      const unsubscribeComplete = listenSync(completeEventName, async () => {
-        isStreaming = false;
-
-        // Cancel any pending throttled updates
-        if (throttledUpdateMessage) {
-          throttledUpdateMessage.cancel();
-        }
-
-        // Cancel any pending RAF
-        if (rafId) {
-          cancelAnimationFrame(rafId);
-        }
-
-        // Update the reactive state with the final content
-        // This triggers a single reactive update at the end
-        if (messages[streamingMessageIndex]) {
-          // Create a new message object to ensure reactivity triggers properly
-          messages[streamingMessageIndex] = {
-            ...messages[streamingMessageIndex],
-            content: streamingContent,
-            isStreaming: false,
-          };
-        }
-
-        // Clean up
-        unsubscribeStream();
-        unsubscribeComplete();
-        throttledUpdateMessage = null;
-        streamingMessageElement = null;
-        streamingContent = '';
-        streamingMessageIndex = -1;
-
-        // Reload the agent to get the updated session
-        await loadAgent();
-      });
-
-      // Start streaming
-      const response: any = await invoke('universal-agent:streamMessage', {
-        agentId,
-        message: messageContent,
-      });
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to start streaming');
-      }
+      await agentService.sendMessage(targetAgentId, trimmedMessage, workspace);
     } catch (err) {
       logger.error('Failed to send message:', err);
-
-      // Clean up throttled function if error occurs
-      if (throttledUpdateMessage) {
-        throttledUpdateMessage.cancel();
-        throttledUpdateMessage = null;
-      }
-
-      // Remove the streaming message and add an error message
-      const nonStreamingMessages = messages.filter((m: any) => !m.isStreaming);
-      messages = nonStreamingMessages;
+      if (agentId !== targetAgentId) return;
+      const errorContent = `Error: ${err}`;
       messages.push({
         role: 'assistant',
-        content: `Error: ${err}`,
+        content: errorContent,
+        contentBlocks: [{ type: 'text', text: errorContent }],
         timestamp: new Date().toISOString(),
       });
 
       // Reset streaming state
       isStreaming = false;
-      streamingContent = '';
     }
   }
 
@@ -311,12 +207,15 @@
               {/if}
             </div>
             <div class="leading-relaxed text-foreground message-content-wrapper">
-              {#if message.isStreaming}
-                <!-- Streaming message - content will be updated via DOM manipulation -->
-                <div class="markdown-viewer streaming-content"></div>
-              {:else}
-                <MessageContent content={message.contentBlocks || []} workspaceId={agent?.workspaceId ? String(agent.workspaceId) : ($activeWorkspace?.id ? String($activeWorkspace.id) : undefined)} />
-              {/if}
+              <MessageContent
+                content={message.contentBlocks || []}
+                isStreaming={!!message.isStreaming}
+                workspaceId={agent?.workspaceId
+                  ? String(agent.workspaceId)
+                  : $activeWorkspace?.id
+                    ? String($activeWorkspace.id)
+                    : undefined}
+              />
             </div>
           </div>
         {/each}
@@ -394,27 +293,6 @@
     transform: translateZ(0);
     backface-visibility: hidden;
     isolation: isolate; /* Create new stacking context to prevent layout thrashing */
-  }
-
-  /* Streaming content styles - use :global for dynamically inserted content */
-  .streaming-content {
-    min-height: 1em;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-
-  .streaming-content :global(pre) {
-    background: hsl(var(--muted) / 0.3);
-    padding: 0.5rem;
-    border-radius: 0.25rem;
-    overflow-x: auto;
-  }
-
-  .streaming-content :global(code) {
-    background: hsl(var(--muted) / 0.3);
-    padding: 0.125rem 0.25rem;
-    border-radius: 0.125rem;
-    font-size: 0.875em;
   }
 
   /* Optimize scrolling performance */

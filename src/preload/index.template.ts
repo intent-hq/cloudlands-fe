@@ -608,6 +608,7 @@ const ALLOWED_CHANNELS = [
   'agent:message:content-blocks',
   'agent:prepare-handler',
   'agent:handler-ready',
+  'agent:stream-starting',
   'agent:stream:pong',
   'health:check',
   'deep-link',
@@ -638,7 +639,6 @@ const ALLOWED_CHANNELS = [
 // Dynamic channel patterns that are matched with startsWith()
 const DYNAMIC_CHANNEL_PATTERNS = [
   'agent:stream:',
-  'agent-stream-',
   'auggie:stream:',
   'terminal:output:',
   'terminal:exit:',
@@ -720,6 +720,7 @@ const EVENT_CHANNELS = [
   'agent:message:content-blocks',
   'agent:prepare-handler',
   'agent:handler-ready',
+  'agent:stream-starting',
   'agent:stream:pong',
   'health:check',
   'deep-link',
