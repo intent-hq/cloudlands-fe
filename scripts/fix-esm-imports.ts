@@ -9,15 +9,41 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { glob } from 'glob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const distDir = path.join(__dirname, '../dist');
+const defaultDistDir = path.join(__dirname, '../dist');
 
-async function fixImports() {
+const aliasDirectories: Record<string, string> = {
+  shared: 'shared',
+  lib: 'lib',
+  features: 'features',
+};
+
+function getAliasImportPath(file: string, distDir: string, aliasName: string, importPath: string) {
+  const fileDir = path.dirname(file);
+  const aliasDir = path.join(distDir, aliasDirectories[aliasName]);
+  let relativePath = path.relative(fileDir, aliasDir).split(path.sep).join('/');
+
+  if (!relativePath) {
+    relativePath = '.';
+  } else if (!relativePath.startsWith('.')) {
+    relativePath = `./${relativePath}`;
+  }
+
+  return `${relativePath}/${importPath}`;
+}
+
+export interface FixImportsOptions {
+  distDir?: string;
+}
+
+export async function fixImports(options: FixImportsOptions = {}) {
+  const distDir = options.distDir ?? defaultDistDir;
+
   // Find all .js and .d.ts files in dist
   const files = await glob('**/*.{js,d.ts}', {
     cwd: distDir,
@@ -30,105 +56,21 @@ async function fixImports() {
     let content = fs.readFileSync(file, 'utf-8');
     let modified = false;
 
-    // Fix $shared alias imports to relative paths
-    // The $shared alias points to src/shared, which becomes dist/shared in the build
+    content = content.replace(
+      /from\s+(['"])\$(shared|lib|features)\/([^'"]+)\1/g,
+      (match, quote, aliasName, importPath) => {
+        modified = true;
+        return `from ${quote}${getAliasImportPath(file, distDir, aliasName, importPath)}${quote}`;
+      },
+    );
 
-    // Handle static imports: from '$shared/...'
-    content = content.replace(/from\s+['"]\$shared\/([^'"]+)['"]/g, (match, importPath) => {
-      // Calculate relative path from current file to shared directory
-      const fileDir = path.dirname(file);
-      const sharedDir = path.join(distDir, 'shared');
-      let relativePath = path.relative(fileDir, sharedDir);
-
-      // Ensure we use forward slashes for imports
-      relativePath = relativePath.split(path.sep).join('/');
-
-      // Add ./ if it doesn't start with ..
-      if (!relativePath.startsWith('..')) {
-        relativePath = `./${  relativePath}`;
-      }
-
-      modified = true;
-      return `from '${relativePath}/${importPath}'`;
-    });
-
-    // Handle dynamic imports: import('$shared/...')
-    content = content.replace(/import\(['"]\$shared\/([^'"]+)['"]\)/g, (match, importPath) => {
-      // Calculate relative path from current file to shared directory
-      const fileDir = path.dirname(file);
-      const sharedDir = path.join(distDir, 'shared');
-      let relativePath = path.relative(fileDir, sharedDir);
-
-      // Ensure we use forward slashes for imports
-      relativePath = relativePath.split(path.sep).join('/');
-
-      // Add ./ if it doesn't start with ..
-      if (!relativePath.startsWith('..')) {
-        relativePath = `./${  relativePath}`;
-      }
-
-      modified = true;
-      return `import('${relativePath}/${importPath}')`;
-    });
-
-    // Fix $lib alias imports to relative paths
-
-    // Handle static imports: from '$lib/...'
-    content = content.replace(/from\s+['"]\$lib\/([^'"]+)['"]/g, (match, importPath) => {
-      // Calculate relative path from current file to lib directory
-      const fileDir = path.dirname(file);
-      const libDir = path.join(distDir, 'lib');
-      let relativePath = path.relative(fileDir, libDir);
-
-      // Ensure we use forward slashes for imports
-      relativePath = relativePath.split(path.sep).join('/');
-
-      // Add ./ if it doesn't start with ..
-      if (!relativePath.startsWith('..')) {
-        relativePath = `./${  relativePath}`;
-      }
-
-      modified = true;
-      return `from '${relativePath}/${importPath}'`;
-    });
-
-    // Handle dynamic imports: import('$lib/...')
-    content = content.replace(/import\(['"]\$lib\/([^'"]+)['"]\)/g, (match, importPath) => {
-      // Calculate relative path from current file to lib directory
-      const fileDir = path.dirname(file);
-      const libDir = path.join(distDir, 'lib');
-      let relativePath = path.relative(fileDir, libDir);
-
-      // Ensure we use forward slashes for imports
-      relativePath = relativePath.split(path.sep).join('/');
-
-      // Add ./ if it doesn't start with ..
-      if (!relativePath.startsWith('..')) {
-        relativePath = `./${  relativePath}`;
-      }
-
-      modified = true;
-      return `import('${relativePath}/${importPath}')`;
-    });
-
-    // Fix $features alias imports to relative paths
-    content = content.replace(/from\s+['"]\$features\/([^'"]+)['"]/g, (match, importPath) => {
-      // Calculate relative path from current file to features directory
-      const fileDir = path.dirname(file);
-      const featuresDir = path.join(distDir, 'features');
-      let relativePath = path.relative(fileDir, featuresDir);
-
-      // Ensure we use forward slashes for imports
-      relativePath = relativePath.split(path.sep).join('/');
-
-      // Add ./ if it doesn't start with ..
-      if (!relativePath.startsWith('..')) {
-        relativePath = `./${  relativePath}`;
-      }
-
-      modified = true;
-      return `from '${relativePath}/${importPath}'`;
-    });
+    content = content.replace(
+      /import\(\s*(['"])\$(shared|lib|features)\/([^'"]+)\1\s*\)/g,
+      (match, quote, aliasName, importPath) => {
+        modified = true;
+        return `import(${quote}${getAliasImportPath(file, distDir, aliasName, importPath)}${quote})`;
+      },
+    );
 
     // Only add .js extensions for JavaScript files, not TypeScript declaration files
     const isDeclarationFile = file.endsWith('.d.ts');
@@ -230,7 +172,9 @@ async function fixImports() {
   console.log(`✅ ESM imports fixed in ${fixedCount} files`);
 }
 
-fixImports().catch((error) => {
-  console.error('Error fixing imports:', error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  fixImports().catch((error) => {
+    console.error('Error fixing imports:', error);
+    process.exit(1);
+  });
+}
