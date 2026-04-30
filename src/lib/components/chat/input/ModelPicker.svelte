@@ -3,7 +3,7 @@
   import { fade } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -119,6 +119,8 @@
     silentFallback = false,
   }: Props = $props();
 
+  const agentSession$ = useAgentSession(() => agentId);
+
   // Track pending model update when deferUpdate is true
   let pendingModelUpdate = $state<string | null>(null);
 
@@ -132,7 +134,7 @@
     }
 
     if (agentId && workspaceId) {
-      const session = selectAgentById.select(getReduxStore().getState(), agentId);
+      const session = $agentSession$;
       if (session) {
         const provider = getAgentProvider(session);
         if (provider) return getProviderConfig(provider).id;
@@ -325,7 +327,6 @@
     }
   }
 
-  /** Handle refresh models button click */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleRefreshModels() {
     if (isRefreshing) return;
@@ -342,21 +343,33 @@
     }
   }
 
-  // Special value to represent "use default" (no override)
   const USE_DEFAULT_VALUE = '__use_default__';
 
-  // Local model state - undefined means "use default", otherwise syncs with prop
-  // When selectedModel is undefined, we show "Default model" instead of falling back to store
+  // undefined means "use default" and shows "Default model" instead of falling back to store
   let localModel = $state<string | undefined>(untrack(() => selectedModel));
+  let userChangedModel = $state(false);
+  let propModelAtLocalChange = $state<string | undefined>(undefined);
 
-  // Sync from prop when it changes externally
+  // Keep a local user selection until the parent prop catches up to localModel.
   $effect(() => {
-    if (selectedModel !== localModel) {
-      localModel = selectedModel;
+    if (selectedModel === localModel) {
+      userChangedModel = false;
+      propModelAtLocalChange = undefined;
+      return;
     }
+
+    if (
+      userChangedModel &&
+      (selectedModel === undefined || selectedModel === propModelAtLocalChange)
+    ) {
+      return;
+    }
+
+    localModel = selectedModel;
+    userChangedModel = false;
+    propModelAtLocalChange = undefined;
   });
 
-  // When deferUpdate becomes false (streaming ends), apply any pending model update
   $effect(() => {
     if (!deferUpdate && pendingModelUpdate) {
       const model = pendingModelUpdate;
@@ -366,7 +379,6 @@
     }
   });
 
-  /** Apply the model update to the backend (IPC call) */
   async function applyBackendModelUpdate(model: string) {
     if (agentId && workspaceId) {
       try {
@@ -380,7 +392,6 @@
             model,
             error: errorMsg,
           });
-          // Show error toast so the user knows why the switch was blocked
           if (errorMsg) {
             toast.error(errorMsg, { duration: 6000 });
           }
@@ -400,45 +411,35 @@
       deferUpdate,
       updateGlobalStore,
     });
-    // Update all state synchronously first (before any async operations)
-    // This ensures the UI updates immediately while the parent syncs via onModelChange
+    // Update local state before async work so the UI responds immediately.
+    propModelAtLocalChange = selectedModel;
+    userChangedModel = true;
     localModel = model;
-    selectedModel = model;
 
-    // Only update stores and callbacks if a model is explicitly selected
     if (model !== undefined) {
-      // Always call the onModelChange callback
       onModelChange?.(model);
 
-      // Allow Svelte to flush prop updates (e.g., deferUpdate may have changed in the callback)
       await tick();
 
-      // Only update global store if explicitly opted in
       if (!updateGlobalStore) {
         return;
       }
 
       dispatch(selectModel(model));
 
-      // Also update workspace-specific model if workspaceId is provided
       if (workspaceId) {
         dispatch(setWorkspaceModel({ workspaceId, model }));
         logger.debug('Updated workspace model:', { workspaceId, model });
       }
 
-      // If agentId is provided, update the active agent's model
       if (agentId && workspaceId) {
-        // Always update local session store so model persists when drawer reopens
         getReduxStore().dispatch(updateAgentSessionFields(agentId, { model }));
         logger.debug('Updated local session model:', { agentId, model });
 
-        // If deferUpdate is true (streaming), defer the IPC call until streaming ends
-        // This prevents disrupting the current stream - model will apply to next message
         if (deferUpdate) {
           pendingModelUpdate = model;
           logger.info('Model update deferred until streaming ends:', { model, agentId });
         } else {
-          // Apply immediately if not streaming
           await applyBackendModelUpdate(model);
         }
       }
@@ -503,30 +504,25 @@
     );
   }
 
-  // Get the current model label from local reactive state, with fallback mapping
-  // When no model is explicitly selected, show the default model name if provided
   const currentModelLabel = $derived.by(() => {
-    const label = !hasExplicitModel
-      ? (defaultModelId ? getModelLabel(defaultModelId) : undefined) ||
-        availableModels[0]?.label ||
-        'Default model'
-      : getModelLabel(localModel) || 'Default model';
-    return label;
+    if (hasExplicitModel) {
+      return localModel
+        ? (getModelLabel(localModel) ?? parseCompoundModelId(localModel).modelId)
+        : 'Default model';
+    }
+
+    return defaultModelId ? (getModelLabel(defaultModelId) ?? 'Default model') : 'Default model';
   });
 
-  // Provider ID for the trigger icon — derived from the current model
   const triggerProviderId = $derived.by(() => {
     if (!localModel || !hasExplicitModel) return effectiveProviderId;
     const { providerId: modelProvider } = parseCompoundModelId(localModel);
     return modelProvider;
   });
 
-  // Whether the trigger label has been resolved to a real model name (vs raw ID fallback)
   const isTriggerLabelResolved = $derived.by(() => {
     if (!hasExplicitModel || !localModel) return true; // "Default model" text, no need for skeleton
-    // Once loading has settled, always show the label (even raw ID fallback) rather than shimmer forever
     if (!isLoadingModels && (isAgentProviderOverride || allProvidersLoaded)) return true;
-    // Check if the model exists in any provider's loaded models
     if (!isAgentProviderOverride) {
       for (const models of Object.values(allProviderModels)) {
         if (models.some((m) => m.value === localModel)) return true;
@@ -538,7 +534,6 @@
   const lockedButtonTitle = $derived(lockedTitle?.trim() || `Model locked: ${currentModelLabel}`);
   const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
-  // Determine button size based on props
   const buttonSize = $derived(isCompact ? 'icon' : size);
   const buttonClass = $derived(
     cn(
@@ -551,14 +546,12 @@
     ),
   );
 
-  // "Default model" option shown at top
   const useDefaultOption: DropdownOption = {
     value: USE_DEFAULT_VALUE,
     label: 'Default model',
     description: 'Let the specialist choose the best model',
   };
 
-  // Flat model options - used for non-UI logic (fallback checks, etc.)
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
     ...(isAgentProviderOverride
@@ -566,11 +559,9 @@
       : $enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? [])),
   ]);
 
-  // Grouped model options for dropdown display
   const groupedModelOptions = $derived.by<DropdownGroup[]>(() => {
     const groups: DropdownGroup[] = [];
 
-    // Add "Default model" as its own group at the top
     if (showDefaultOption) {
       groups.push({
         key: 'default',
@@ -580,7 +571,6 @@
     }
 
     if (isAgentProviderOverride) {
-      // Agent locked to specific provider — show only that provider's models
       const providerConfig = getProviderConfig(effectiveProviderId);
       if (availableModels.length > 0) {
         groups.push({
@@ -1032,9 +1022,8 @@
     {groupHeader}
   >
     {#snippet trigger({
-       
       open: _open,
-       
+
       value: _value,
     }: {
       open: boolean;

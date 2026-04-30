@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
@@ -15,8 +15,10 @@ vi.mock('svelte-fa', async () => {
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronDown: { iconName: 'chevron-down' },
+  faChevronRight: { iconName: 'chevron-right' },
   faLock: { iconName: 'lock' },
   faRotateRight: { iconName: 'rotate-right' },
+  faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faTriangleExclamation: { iconName: 'triangle-exclamation' },
 }));
@@ -28,11 +30,6 @@ vi.mock('$lib/icons/faSettings', () => ({
 vi.mock('$lib/components/ui/button/button.svelte', async () => {
   const Button = (await import('../../ui/__tests__/mocks/button.svelte')).default;
   return { default: Button };
-});
-
-vi.mock('$lib/components/ui/dropdown', async () => {
-  const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
-  return { Dropdown: SlotOnly };
 });
 
 vi.mock('$features/agent/agent.client', () => ({
@@ -51,9 +48,12 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAgentById: { select: () => undefined },
-}));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  const selectAgentById = vi.fn(() => readable(undefined));
+  selectAgentById.select = vi.fn(() => undefined);
+  return { selectAgentById };
+});
 
 vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
   updateSession: (agentId: string, fields: Record<string, unknown>) => ({
@@ -227,6 +227,12 @@ describe('ModelPicker locked state', () => {
 describe('ModelPicker multi-provider mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.availableModels = [
+      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
+    ];
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
   });
 
   afterEach(() => {
@@ -341,15 +347,37 @@ describe('ModelPicker multi-provider mode', () => {
     expect(button.textContent).toContain('GPT 5.4');
   });
 
+  it('keeps a just-picked local model through a transient undefined selectedModel prop', async () => {
+    const { rerender } = render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button').textContent).toContain('Default model');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button').textContent).toContain('Model 1');
+    });
+
+    await rerender({ selectedModel: undefined, portal: false });
+
+    expect(screen.getByRole('button').textContent).toContain('Model 1');
+  });
+
   it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
     const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
     const { agentClient } = await import('$features/agent/agent.client');
     const { toast } = await import('svelte-sonner');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
       if (providerId === 'auggie') {
-        return Promise.resolve([
-          { value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' },
-        ]);
+        return Promise.resolve([{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }]);
       }
       return Promise.resolve([]);
     });

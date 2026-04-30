@@ -6,16 +6,13 @@
    */
 
   import { untrack } from 'svelte';
-  import { writable } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import { subscribeToAgent } from '$features/agent/browser';
-  import {
-    selectAgentById,
-    selectInitialAgentId,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
+  import { selectInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
@@ -63,14 +60,8 @@
   );
 
   // Get agent model from session, falling back to $workspace default
-
-  const agentModel = $derived.by(() => {
-    if (tab.agentId) {
-      const session = selectAgentById.select(getReduxStore().getState(), tab.agentId);
-      if (session?.model) return session.model;
-    }
-    return $defaultModel;
-  });
+  const agent$ = useAgentSession(() => tab.agentId);
+  const agentModel = $derived($agent$?.model || $defaultModel);
 
   // Subscribe to agent session updates
   let agentSession = $state<AgentSession | undefined>(undefined);
@@ -99,15 +90,9 @@
     return selectSpecialistName.select(getReduxStore().getState(), specialistId);
   });
 
-  // Get parent agent info. Mirror the parent agent ID into a writable so
-  // selectAgentById re-subscribes when it changes, and the "Delegated by"
-  // label appears reactively once the parent session is loaded into Redux.
+  // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
   const parentAgentId = $derived((agentSession?.metadata?.createdByAgentId as string) || null);
-  const parentAgentIdStore = writable<string>('');
-  $effect(() => {
-    parentAgentIdStore.set(parentAgentId ?? '');
-  });
-  const parentAgent$ = selectAgentById(parentAgentIdStore);
+  const parentAgent$ = useAgentSession(() => parentAgentId);
   const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name || null : null);
 
   // Get task note ID
