@@ -78,9 +78,11 @@ export async function sendBackendMessage(
 
   const eventTypes = [...new Set(events.map((e) => e.type))];
   const eventsData = events.map((event) => ({
+    id: event.id,
     type: event.type,
     data: event.data,
     timestamp: event.timestamp,
+    actor: event.actor,
   }));
 
   return backend.sendBackendInitiatedMessage({

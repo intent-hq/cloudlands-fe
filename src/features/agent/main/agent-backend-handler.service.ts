@@ -6646,6 +6646,105 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     });
   }
 
+  private stringifyEventNotificationKeyPart(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value) ?? String(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private buildEventNotificationKey(messageMetadata?: any): string | undefined {
+    if (messageMetadata?.type !== 'event_notification') return undefined;
+
+    const events = Array.isArray(messageMetadata.events) ? messageMetadata.events : [];
+    if (events.length === 0) return undefined;
+
+    const eventIds = events
+      .map((event: any) => event?.id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+
+    if (eventIds.length === events.length) {
+      return `ids:${[...eventIds].sort().join('|')}`;
+    }
+
+    const signatures = events
+      .map((event: any) => {
+        const data = event?.data ?? {};
+        return JSON.stringify({
+          type: this.stringifyEventNotificationKeyPart(event?.type),
+          timestamp: this.stringifyEventNotificationKeyPart(event?.timestamp),
+          actorId: this.stringifyEventNotificationKeyPart(event?.actor?.id),
+          taskNoteId: this.stringifyEventNotificationKeyPart(data.taskNoteId),
+          agentId: this.stringifyEventNotificationKeyPart(data.agentId),
+        });
+      })
+      .sort();
+
+    return `sig:${signatures.join('|')}`;
+  }
+
+  private attachEventNotificationKey(messageMetadata: any, eventNotificationKey?: string): any {
+    if (!eventNotificationKey || messageMetadata?.type !== 'event_notification') {
+      return messageMetadata;
+    }
+    return {
+      ...messageMetadata,
+      eventNotificationKey,
+    };
+  }
+
+  private findExistingEventNotificationWakeMessage(
+    messages: AgentMessage[] | undefined,
+    eventNotificationKey: string,
+  ): AgentMessage | undefined {
+    return messages?.find((message: any) => {
+      const metadata = message?.metadata;
+      if (message?.role !== 'user' || metadata?.type !== 'event_notification') {
+        return false;
+      }
+      const existingKey =
+        typeof metadata.eventNotificationKey === 'string'
+          ? metadata.eventNotificationKey
+          : this.buildEventNotificationKey(metadata);
+      return existingKey === eventNotificationKey;
+    });
+  }
+
+  private truncateMessagesAfterExistingWakeMessage(
+    messages: AgentMessage[],
+    existingWakeMessage: AgentMessage,
+    context: {
+      agentId: string;
+      eventNotificationKey?: string;
+      path: 'no-provider' | 'existing-provider';
+    },
+  ): { messages: AgentMessage[]; droppedCount: number } {
+    const wakeMessageIndex = messages.findIndex((message) => message.id === existingWakeMessage.id);
+    if (wakeMessageIndex < 0) {
+      return { messages: [...messages], droppedCount: 0 };
+    }
+
+    const droppedMessages = messages.slice(wakeMessageIndex + 1);
+    if (droppedMessages.length > 0) {
+      logger.info('Backend-initiated message: truncated stale messages after reused event notification wake message', {
+        agentId: context.agentId,
+        wakeMessageId: existingWakeMessage.id,
+        eventNotificationKey: context.eventNotificationKey,
+        path: context.path,
+        droppedCount: droppedMessages.length,
+        droppedRoles: droppedMessages.map((message) => message.role),
+      });
+    }
+
+    return {
+      messages: messages.slice(0, wakeMessageIndex + 1),
+      droppedCount: droppedMessages.length,
+    };
+  }
+
   /**
    * Send a message from a backend-initiated context (wake handler, system events, etc.)
    * This handles the frontend handshake to ensure stream handlers are registered
@@ -6662,6 +6761,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     [key: string]: any;
   }): Promise<{ success: boolean; error?: string; errorCode?: string }> {
     const { sessionId, message, workspaceId, messageMetadata, ...otherParams } = params;
+    const eventNotificationKey = this.buildEventNotificationKey(messageMetadata);
+    const wakeMessageMetadata = this.attachEventNotificationKey(
+      messageMetadata,
+      eventNotificationKey,
+    );
 
     // Diagnostic state dump: log all guard-relevant state so we can trace which guard
     // blocks delivery (especially for second wake-up delivery to coordinators).
@@ -6787,6 +6891,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // match the same event simultaneously, causing two concurrent deliverEvents calls.
     // Both pass the streamStartTimes guard (neither has started streaming yet) and both
     // create wake messages, resulting in duplicate wake-up notifications in the UI.
+    // The eventNotificationKey reuse below covers sequential retry-after-failure;
+    // both guards are needed because they protect different duplicate paths.
     if (this.pendingBackendDeliveries.has(sessionId)) {
       logger.info('Backend-initiated message: delivery already in flight, rejecting duplicate', {
         agentId: sessionId,
@@ -6868,19 +6974,33 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         const backend = await this.getBackend();
         const { AgentStatus } = await import('../../../shared/types/agent.types.js');
 
+        const loadedMessages = loadResult.data.messages || [];
+        const existingWakeMessage = eventNotificationKey
+          ? this.findExistingEventNotificationWakeMessage(loadedMessages, eventNotificationKey)
+          : undefined;
+
         // Construct the wake message to include in agent:created
         // This ensures the frontend sessionStore has the message from the beginning
-        const wakeMessageId = `msg_${uuidv4()}`;
-        const wakeMessage = {
-          id: wakeMessageId,
-          role: 'user' as const,
-          contentBlocks: [{ type: 'text' as const, text: message }],
-          timestamp: new Date().toISOString(),
-          ...(messageMetadata && { metadata: messageMetadata }),
-        };
+        const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
+        const wakeMessage =
+          existingWakeMessage ||
+          ({
+            id: wakeMessageId,
+            role: 'user' as const,
+            contentBlocks: [{ type: 'text' as const, text: message }],
+            timestamp: new Date().toISOString(),
+            ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
+          } satisfies AgentMessage);
 
-        // Include the wake message in the messages array
-        const messagesWithWake = [...(loadResult.data.messages || []), wakeMessage];
+        // Include the wake message in the messages array unless this is a retry
+        // for an event notification that was already persisted by a prior attempt.
+        const { messages: messagesWithWake } = existingWakeMessage
+          ? this.truncateMessagesAfterExistingWakeMessage(loadedMessages, existingWakeMessage, {
+              agentId: sessionId,
+              eventNotificationKey,
+              path: 'no-provider',
+            })
+          : { messages: [...loadedMessages, wakeMessage] };
 
         // Resolve model with provider-aware fallback (only for non-default providers)
         // Note: loadResult.data may have config from persistence even though AgentSession type doesn't include it
@@ -6945,30 +7065,38 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             messageCount: messagesWithWake.length,
           });
 
-          // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
-          // page refresh. Without this, the wake message only exists in memory until
-          // onComplete runs, and can be lost if the frontend saves a stale session.
-          agentPersistence.saveAgent(agentSession).then((saveResult) => {
-            if (saveResult.success) {
-              logger.info('Backend-initiated message: persisted wake message to disk (no-provider path)', {
-                agentId: sessionId,
-                wakeMessageId,
-                messageCount: messagesWithWake.length,
-              });
-            } else {
-              logger.warn('Backend-initiated message: failed to persist wake message (no-provider path)', {
-                agentId: sessionId,
-                wakeMessageId,
-                error: saveResult.error,
-              });
-            }
-          }).catch((error) => {
-            logger.error('Backend-initiated message: unhandled error persisting wake message (no-provider path)', {
+          if (existingWakeMessage) {
+            logger.info('Backend-initiated message: reused existing event notification wake message (no-provider path)', {
               agentId: sessionId,
               wakeMessageId,
-              error: error instanceof Error ? error.message : String(error),
+              eventNotificationKey,
             });
-          });
+          } else {
+            // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+            // page refresh. Without this, the wake message only exists in memory until
+            // onComplete runs, and can be lost if the frontend saves a stale session.
+            agentPersistence.saveAgent(agentSession).then((saveResult) => {
+              if (saveResult.success) {
+                logger.info('Backend-initiated message: persisted wake message to disk (no-provider path)', {
+                  agentId: sessionId,
+                  wakeMessageId,
+                  messageCount: messagesWithWake.length,
+                });
+              } else {
+                logger.warn('Backend-initiated message: failed to persist wake message (no-provider path)', {
+                  agentId: sessionId,
+                  wakeMessageId,
+                  error: saveResult.error,
+                });
+              }
+            }).catch((error) => {
+              logger.error('Backend-initiated message: unhandled error persisting wake message (no-provider path)', {
+                agentId: sessionId,
+                wakeMessageId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
         }
 
         backend.emit('agent:created', {
@@ -7115,16 +7243,25 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         agentModel = existingSession.model || agentModel;
       }
 
+      const existingWakeMessage = eventNotificationKey
+        ? this.findExistingEventNotificationWakeMessage(
+            existingSession?.messages,
+            eventNotificationKey,
+          )
+        : undefined;
+
       // Create the wake message with metadata so frontend can display it
       // This is critical for showing the EventWakeupBanner in the chat history
-      const wakeMessageId = `msg_${uuidv4()}`;
-      const wakeMessage = {
-        id: wakeMessageId,
-        role: 'user' as const,
-        contentBlocks: [{ type: 'text' as const, text: message }],
-        timestamp: new Date().toISOString(),
-        ...(messageMetadata && { metadata: messageMetadata }),
-      };
+      const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
+      const wakeMessage =
+        existingWakeMessage ||
+        ({
+          id: wakeMessageId,
+          role: 'user' as const,
+          contentBlocks: [{ type: 'text' as const, text: message }],
+          timestamp: new Date().toISOString(),
+          ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
+        } satisfies AgentMessage);
 
       logger.info('Backend-initiated message: created wake message for existing provider', {
         agentId: sessionId,
@@ -7142,39 +7279,89 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         if (!existingSession.messages) {
           existingSession.messages = [];
         }
-        existingSession.messages.push(wakeMessage);
-        logger.info('Backend-initiated message: added wake message to backend session', {
-          agentId: sessionId,
-          wakeMessageId,
-          messageCount: existingSession.messages.length,
-        });
+        if (existingWakeMessage) {
+          const truncationResult = this.truncateMessagesAfterExistingWakeMessage(
+            existingSession.messages,
+            existingWakeMessage,
+            {
+              agentId: sessionId,
+              eventNotificationKey,
+              path: 'existing-provider',
+            },
+          );
 
-        // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
-        // page refresh and is not overwritten by stale frontend saves.
-        // Without this, the wake message only exists in memory until onComplete runs,
-        // and frontend saves during streaming can overwrite it via the merge logic
-        // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
-        agentPersistence.saveAgent(existingSession).then((saveResult) => {
-          if (saveResult.success) {
-            logger.info('Backend-initiated message: persisted wake message to disk immediately', {
-              agentId: sessionId,
-              wakeMessageId,
-              messageCount: existingSession.messages.length,
-            });
-          } else {
-            logger.warn('Backend-initiated message: failed to persist wake message to disk', {
-              agentId: sessionId,
-              wakeMessageId,
-              error: saveResult.error,
-            });
+          if (truncationResult.droppedCount > 0) {
+            existingSession.messages.splice(
+              0,
+              existingSession.messages.length,
+              ...truncationResult.messages,
+            );
           }
-        }).catch((error) => {
-          logger.error('Backend-initiated message: unhandled error persisting wake message to disk', {
+
+          logger.info('Backend-initiated message: reused existing event notification wake message', {
             agentId: sessionId,
             wakeMessageId,
-            error: error instanceof Error ? error.message : String(error),
+            eventNotificationKey,
           });
-        });
+
+          if (truncationResult.droppedCount > 0) {
+            agentPersistence.saveAgent(existingSession).then((saveResult) => {
+              if (saveResult.success) {
+                logger.info('Backend-initiated message: persisted truncated reused wake message to disk', {
+                  agentId: sessionId,
+                  wakeMessageId,
+                  messageCount: existingSession.messages.length,
+                });
+              } else {
+                logger.warn('Backend-initiated message: failed to persist truncated reused wake message', {
+                  agentId: sessionId,
+                  wakeMessageId,
+                  error: saveResult.error,
+                });
+              }
+            }).catch((error) => {
+              logger.error('Backend-initiated message: unhandled error persisting truncated reused wake message', {
+                agentId: sessionId,
+                wakeMessageId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }
+        } else {
+          existingSession.messages.push(wakeMessage);
+          logger.info('Backend-initiated message: added wake message to backend session', {
+            agentId: sessionId,
+            wakeMessageId,
+            messageCount: existingSession.messages.length,
+          });
+
+          // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+          // page refresh and is not overwritten by stale frontend saves.
+          // Without this, the wake message only exists in memory until onComplete runs,
+          // and frontend saves during streaming can overwrite it via the merge logic
+          // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
+          agentPersistence.saveAgent(existingSession).then((saveResult) => {
+            if (saveResult.success) {
+              logger.info('Backend-initiated message: persisted wake message to disk immediately', {
+                agentId: sessionId,
+                wakeMessageId,
+                messageCount: existingSession.messages.length,
+              });
+            } else {
+              logger.warn('Backend-initiated message: failed to persist wake message to disk', {
+                agentId: sessionId,
+                wakeMessageId,
+                error: saveResult.error,
+              });
+            }
+          }).catch((error) => {
+            logger.error('Backend-initiated message: unhandled error persisting wake message to disk', {
+              agentId: sessionId,
+              wakeMessageId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
       } else {
         logger.warn('Backend-initiated message: no session available to add wake message', {
           agentId: sessionId,
