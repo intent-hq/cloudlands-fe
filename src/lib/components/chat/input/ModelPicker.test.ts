@@ -5,6 +5,7 @@ import { readable, writable } from 'svelte/store';
 const mockModelState = vi.hoisted(() => ({
   selectedModel: 'gpt5.4',
   availableModels: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
+  loadError: null as string | null,
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -77,7 +78,7 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectSelectedModel: () => readable(mockModelState.selectedModel),
   selectAvailableModels: () => readable(mockModelState.availableModels),
   selectIsLoadingModels: () => readable(false),
-  selectLoadError: () => readable(null),
+  selectLoadError: () => readable(mockModelState.loadError),
 }));
 
 vi.mock('$shared/config/provider-config', async (importOriginal) => {
@@ -85,11 +86,46 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 
   return {
     ...actual,
-    getProviderConfig: (providerId?: string) => ({
-      id: providerId ?? 'auggie',
-      displayName: providerId === 'codex' ? 'OpenAI Codex' : 'Augment Auggie',
-      canBeDisabled: providerId !== 'auggie',
-    }),
+    getProviderConfig: (providerId?: string) => {
+      const configs = {
+        auggie: {
+          id: 'auggie',
+          displayName: 'Augment Auggie',
+          command: 'auggie',
+          canBeDisabled: false,
+          loginCommandHint: 'auggie login',
+        },
+        codex: {
+          id: 'codex',
+          displayName: 'OpenAI Codex',
+          command: 'codex-acp',
+          canBeDisabled: true,
+          loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
+        },
+        'claude-code': {
+          id: 'claude-code',
+          displayName: 'Anthropic Claude Code',
+          command: 'claude-agent-acp',
+          canBeDisabled: true,
+          loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
+        },
+        opencode: {
+          id: 'opencode',
+          displayName: 'OpenCode',
+          command: 'opencode',
+          canBeDisabled: true,
+        },
+      };
+      return (
+        configs[(providerId ?? 'auggie') as keyof typeof configs] ?? {
+          id: providerId ?? 'auggie',
+          displayName: providerId ?? 'auggie',
+          command: providerId ?? 'auggie',
+          canBeDisabled: true,
+        }
+      );
+    },
+    isProviderAuthenticationError: () => false,
     parseCompoundModelId: (modelId?: string) => {
       if (!modelId) {
         return { providerId: '', modelId: '' };
@@ -108,6 +144,13 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
     ],
     ACP_PROVIDERS: {
       auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: false },
+      codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
+      'claude-code': {
+        id: 'claude-code',
+        displayName: 'Anthropic Claude Code',
+        canBeDisabled: true,
+      },
+      opencode: { id: 'opencode', displayName: 'OpenCode', canBeDisabled: true },
     },
   };
 });
@@ -135,12 +178,14 @@ vi.mock('svelte-sonner', () => ({
   },
 }));
 
+import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
 import ModelPicker from './ModelPicker.svelte';
 
 describe('ModelPicker locked state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
     mockModelState.availableModels = [
       {
         value: 'gpt5.4',
@@ -228,9 +273,13 @@ describe('ModelPicker multi-provider mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
     mockModelState.availableModels = [
       { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
     ];
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ]);
     enabledProviderIds$.set(['auggie']);
     activeProviderId$.set('auggie');
   });
@@ -241,8 +290,6 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('fetches models for all enabled providers on mount', async () => {
-    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
-
     enabledProviderIds$.set(['auggie', 'claude-code']);
 
     render(ModelPicker, {
@@ -259,7 +306,6 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('retries once per current provider when silent fallback sees unavailable models', async () => {
-    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
     const modelsByProvider = {
       auggie: [] as { value: string; label: string; description: string }[],
       codex: [{ value: 'codex:model-1', label: 'Codex Model 1', description: 'A model' }],
@@ -311,6 +357,63 @@ describe('ModelPicker multi-provider mode', () => {
     expect(
       vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
     ).toHaveLength(1);
+  });
+
+  it('keeps working provider models selectable while showing a failed provider warning', async () => {
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
+      if (providerId === 'codex') {
+        return Promise.reject(new Error('Codex: CLI not found'));
+      }
+
+      return Promise.resolve([
+        { value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' },
+      ]);
+    });
+    enabledProviderIds$.set(['auggie', 'codex']);
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        onModelChange,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('codex');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    expect(screen.getAllByText(/OpenAI Codex: CLI not found/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/developers\.openai\.com\/codex/).length).toBeGreaterThan(0);
+
+    await fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
+
+    expect(onModelChange).toHaveBeenCalledWith('sonnet4.6');
+  });
+
+  it('shows the real provider error when the only enabled provider fails', async () => {
+    vi.mocked(getModelsForProvider).mockRejectedValue(new Error('Auggie: CLI not found'));
+    enabledProviderIds$.set(['auggie']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('auggie');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByText('Augment Auggie: CLI not found')).toBeTruthy();
+    expect(screen.getByText(/npm install -g @augmentcode\/auggie/)).toBeTruthy();
   });
 
   it('renders without error in unlocked mode', () => {
@@ -372,7 +475,6 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
-    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
     const { agentClient } = await import('$features/agent/agent.client');
     const { toast } = await import('svelte-sonner');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
@@ -408,7 +510,6 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('still triggers fallback when a non-default-provider compound model ID is unavailable', async () => {
-    const { getModelsForProvider } = await import('$lib/store/slices/model/model-utils');
     const { toast } = await import('svelte-sonner');
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
       if (providerId === 'auggie') {

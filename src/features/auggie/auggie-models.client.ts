@@ -9,6 +9,16 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('AuggieModelsClient');
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown error';
+}
+
+function toAuggieError(message: string): Error {
+  return new Error(message.startsWith('Auggie:') ? message : `Auggie: ${message}`);
+}
+
 export interface AuggieModelBadge {
   color: string;
   label: string;
@@ -56,19 +66,24 @@ export async function getAuggieModels(): Promise<AuggieModel[]> {
       error?: string;
     }>('auggie:get-models');
 
-    if (!result.success) {
-      logger.error(`Failed to get models from auggie: ${result.error || 'unknown error'}`);
-      return [];
+    if (!result?.success) {
+      const errorMessage = result?.error || result?.warning || 'No response from auggie model service';
+      logger.error(`Failed to get models from auggie: ${errorMessage}`);
+      throw toAuggieError(errorMessage);
     }
 
     if (result.warning) {
       logger.warn(result.warning);
     }
 
-    return result.data || [];
+    if (result.data && result.data.length > 0) {
+      return result.data;
+    }
+
+    throw toAuggieError(result.warning || 'No models returned');
   } catch (error) {
     logger.error('Error getting models from auggie', { error });
-    return [];
+    throw toAuggieError(toErrorMessage(error));
   }
 }
 

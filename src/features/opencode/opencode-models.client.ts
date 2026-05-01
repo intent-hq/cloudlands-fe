@@ -9,6 +9,16 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('OpenCodeModelsClient');
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown error';
+}
+
+function toOpenCodeError(message: string): Error {
+  return new Error(message.startsWith('OpenCode:') ? message : `OpenCode: ${message}`);
+}
+
 export interface OpenCodeModel {
   value: string; // Full model ID in format "provider/model"
   label: string; // Display label
@@ -60,14 +70,18 @@ export async function getOpencodeModels(): Promise<OpenCodeModel[]> {
     logger.debug('Getting models from opencode');
 
     const result = await invoke<GetModelsResponse>('opencode:get-models');
-    if (result?.success && result.data) {
+    if (result?.success && result.data && result.data.length > 0) {
+      if (result.warning) {
+        logger.warn('OpenCode models returned with warning:', { warning: result.warning });
+      }
       logger.info('Got models from opencode', { count: result.data.length });
       return result.data;
     }
+    const errorMessage = result?.error || result?.warning || 'No models returned';
     logger.warn('Failed to get OpenCode models:', { error: result?.error, warning: result?.warning });
-    return [];
+    throw toOpenCodeError(errorMessage);
   } catch (error) {
     logger.warn('Failed to get OpenCode models:', { error });
-    return [];
+    throw toOpenCodeError(toErrorMessage(error));
   }
 }

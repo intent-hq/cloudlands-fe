@@ -154,7 +154,9 @@ vi.mock('$shared/config/provider-config', () => ({
   getProviderConfig: (providerId?: string) => ({
     id: providerId || 'auggie',
     displayName: providerId || 'auggie',
+    command: providerId || 'auggie',
   }),
+  isProviderAuthenticationError: () => false,
   parseCompoundModelId: (modelId?: string) => {
     if (!modelId) return { providerId: 'auggie', modelId: '' };
     const [providerId, ...rest] = modelId.split(':');

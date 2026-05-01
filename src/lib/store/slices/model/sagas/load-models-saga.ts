@@ -5,6 +5,17 @@ import { fetchModelsForProvider } from "../model-utils";
 import { findAvailableModelMatch, normalizeModelForProvider, resolvePreferredModelForProvider, } from "../model-selection-utils";
 import { loadModels, retryLoadModels, setAvailableModels, setLoadingStateForProvider, clearLoadingStateForProvider, setRetryAttempt, selectModel, MAX_AUTO_RETRIES, RETRY_DELAYS_MS, } from "../model-slice";
 import { selectIsLoadingModelsForProvider, selectModelsLoadedForProvider, selectRetryAttempt, selectSelectedModel } from "../model-selectors";
+
+function getModelLoadErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+    if (typeof error === "string" && error) {
+        return error;
+    }
+    return "Failed to load models";
+}
+
 /**
  * Handle loading models for the active provider.
  */
@@ -64,7 +75,7 @@ export function* handleLoadModels() {
         }
     }
     catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Failed to load models";
+        const errorMessage = getModelLoadErrorMessage(error);
         yield* put(setLoadingStateForProvider({
             providerId: activeProviderId,
             status: "error",

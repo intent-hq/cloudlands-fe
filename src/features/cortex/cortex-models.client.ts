@@ -9,6 +9,16 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('CortexModelsClient');
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown error';
+}
+
+function toCortexError(message: string): Error {
+  return new Error(message.startsWith('Cortex:') ? message : `Cortex: ${message}`);
+}
+
 export interface CortexModel {
   value: string;
   label: string;
@@ -60,18 +70,22 @@ export async function getCortexModels(): Promise<CortexModel[]> {
     logger.debug('Getting models from Cortex');
 
     const result = await invoke<GetModelsResponse>('cortex:get-models');
-    if (result?.success && result.data) {
+    if (result?.success && result.data && result.data.length > 0) {
+      if (result.warning) {
+        logger.warn('Cortex models returned with warning:', { warning: result.warning });
+      }
       logger.info('Got models from Cortex', { count: result.data.length });
       return result.data;
     }
+    const errorMessage = result?.error || result?.warning || 'No models returned';
     logger.warn('Failed to get Cortex models:', {
       error: result?.error,
       warning: result?.warning,
     });
-    return [];
+    throw toCortexError(errorMessage);
   } catch (error) {
     logger.warn('Failed to get Cortex models:', { error });
-    return [];
+    throw toCortexError(toErrorMessage(error));
   }
 }
 

@@ -61,8 +61,12 @@ export function shouldShowChatProviderControl({
 export async function resolveUsableProviderIds(providerIds: string[]): Promise<string[]> {
   const usableProviders = await Promise.all(
     providerIds.map(async (providerId) => {
-      const models = await getModelsForProvider(providerId);
-      return models.length > 0 ? providerId : null;
+      try {
+        const models = await getModelsForProvider(providerId);
+        return models.length > 0 ? providerId : null;
+      } catch {
+        return null;
+      }
     }),
   );
 
@@ -123,7 +127,13 @@ export async function resolveCompatibleModelForProvider(
     fallbackModel?: string;
   } = {},
 ): Promise<string | null> {
-  const availableModels = await getModelsForProvider(providerId);
+  let availableModels: Awaited<ReturnType<typeof getModelsForProvider>>;
+  try {
+    availableModels = await getModelsForProvider(providerId);
+  } catch {
+    return null;
+  }
+
   return pickCompatibleModelForProvider({
     providerId,
     availableModelValues: availableModels.map((model) => model.value),

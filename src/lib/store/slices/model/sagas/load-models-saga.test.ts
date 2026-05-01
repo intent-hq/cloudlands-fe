@@ -11,7 +11,7 @@ vi.mock('../model-utils', () => ({
 
 import { createCollection } from '$lib/store/utils/collection-utils';
 import { fetchModelsForProvider } from '../model-utils';
-import { selectModel, setAvailableModels, setLoadingStateForProvider } from '../model-slice';
+import { MAX_AUTO_RETRIES, selectModel, setAvailableModels, setLoadingStateForProvider } from '../model-slice';
 import { handleLoadModels } from './load-models-saga';
 
 describe('loadModelsSaga', () => {
@@ -52,6 +52,40 @@ describe('loadModelsSaga', () => {
         })
       )
       .put(selectModel('codex:gpt5.4'))
+      .silentRun(0);
+  });
+
+  it('records provider-specific errors when fetching models fails', async () => {
+    vi.mocked(fetchModelsForProvider).mockRejectedValue(new Error('Auggie: CLI not found'));
+
+    await expectSaga(handleLoadModels)
+      .withState({
+        model: {
+          availableModels: createCollection('value'),
+          loadingState: {
+            auggie: { status: 'error', retryAttempt: MAX_AUTO_RETRIES },
+          },
+          workspaceModels: {},
+          providerModels: {},
+        },
+        providerSettings: {
+          activeProviderId: 'auggie',
+          enabledProviders: {},
+        },
+      })
+      .put(
+        setLoadingStateForProvider({
+          providerId: 'auggie',
+          status: 'loading',
+        })
+      )
+      .put(
+        setLoadingStateForProvider({
+          providerId: 'auggie',
+          status: 'error',
+          error: 'Auggie: CLI not found',
+        })
+      )
       .silentRun(0);
   });
 });

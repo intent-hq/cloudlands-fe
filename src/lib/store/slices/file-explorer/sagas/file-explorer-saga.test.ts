@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
-import * as matchers from "redux-saga-test-plan/matchers";
 import * as sagaEffects from "redux-saga/effects";
 import type { FileGitStatus, FileNode } from "$shared/types";
 

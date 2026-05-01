@@ -2227,6 +2227,13 @@ export function setupAuggieIPC() {
   ipcMain.handle(AUGGIE_CHANNELS.GET_MODELS, async () => {
     try {
       logger.info('Getting models from auggie CLI');
+      const auggiePath = await findAuggiePathAsync();
+      if (!auggiePath) {
+        return {
+          success: false,
+          error: 'Auggie CLI not found. Please install auggie first.',
+        };
+      }
       const models = await getAuggieModelsWithCache();
       if (models && models.length > 0) {
         logger.info(`Successfully retrieved ${models.length} models from auggie CLI`);

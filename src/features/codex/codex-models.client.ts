@@ -9,6 +9,16 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('CodexModelsClient');
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown error';
+}
+
+function toCodexError(message: string): Error {
+  return new Error(message.startsWith('Codex:') ? message : `Codex: ${message}`);
+}
+
 export interface CodexModel {
   value: string;
   label: string;
@@ -60,17 +70,21 @@ export async function getCodexModels(): Promise<CodexModel[]> {
     logger.debug('Getting models from Codex');
 
     const result = await invoke<GetModelsResponse>('codex:get-models');
-    if (result?.success && result.data) {
+    if (result?.success && result.data && result.data.length > 0) {
+      if (result.warning) {
+        logger.warn('Codex models returned with warning:', { warning: result.warning });
+      }
       logger.info('Got models from Codex', { count: result.data.length });
       return result.data;
     }
+    const errorMessage = result?.error || result?.warning || 'No models returned';
     logger.warn('Failed to get Codex models:', {
       error: result?.error,
       warning: result?.warning,
     });
-    return [];
+    throw toCodexError(errorMessage);
   } catch (error) {
     logger.warn('Failed to get Codex models:', { error });
-    return [];
+    throw toCodexError(toErrorMessage(error));
   }
 }

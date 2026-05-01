@@ -2,6 +2,38 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
 import { getProviderConfig } from '$shared/config/provider-config';
 
+interface ModelPickerOptionInput {
+  value: string;
+  label: string;
+  description?: string;
+  badges?: { color: string; label: string; variant?: string }[];
+  costTier?: number;
+  effortLevels?: string[];
+  isDefault?: boolean;
+}
+
+function formatCostTier(tier: number | undefined): string | undefined {
+  if (tier === 1) return '$';
+  if (tier === 2) return '$$';
+  if (tier === 3) return '$$$';
+  return undefined;
+}
+
+export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOption[] {
+  return models.map((m) => ({
+    value: m.value,
+    label: m.label,
+    description: m.description,
+    data: {
+      badges: m.badges,
+      costTier: m.costTier,
+      costTierLabel: formatCostTier(m.costTier),
+      effortLevels: m.effortLevels,
+      isDefault: m.isDefault,
+    },
+  }));
+}
+
 export interface IsUserProviderSettledParams {
   /** True when the agent's provider differs from the global active provider. */
   isAgentProviderOverride: boolean;

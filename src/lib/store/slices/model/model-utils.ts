@@ -27,32 +27,19 @@ export async function fetchModelsForProvider(providerId: string): Promise<Provid
     const normalizedId = getProviderConfig(providerId).id;
     switch (normalizedId) {
         case "auggie":
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            return getAuggieModels().catch((err) => {
-                return [];
-            });
+            return await getAuggieModels();
         case "claude-code":
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            return getClaudeCodeModels().catch((err) => {
-                return [];
-            });
+            return await getClaudeCodeModels();
         case "codex":
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            return getCodexModels().catch((err) => {
-                return [];
-            });
+            return await getCodexModels();
         case "cortex":
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            return getCortexModels().catch((err) => {
-                return [];
-            });
+            return await getCortexModels();
         case "opencode":
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            return getOpencodeModels().catch((err) => {
-                return [];
-            });
-        default:
+            return await getOpencodeModels();
+        case "mock":
             return [];
+        default:
+            throw new Error(`Unsupported model provider: ${providerId}`);
     }
 }
 /**

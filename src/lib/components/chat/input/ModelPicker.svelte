@@ -1,6 +1,5 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { fade } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
@@ -16,6 +15,9 @@
   } from '$lib/components/ui/dropdown';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import { faSettings } from '$lib/icons/faSettings';
+  import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
+  import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
+  import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
 
   import {
     selectSelectedModel,
@@ -39,7 +41,11 @@
   } from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-  import { isUserProviderSettled } from './model-picker-utils';
+  import {
+    formatProviderLoadError,
+    type ProviderLoadError,
+  } from './model-picker-provider-errors';
+  import { isUserProviderSettled, toDropdownOptions } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
@@ -48,8 +54,6 @@
     faCheck,
     faChevronDown,
     faLock,
-    faArrowsRotate,
-    faExclamationTriangle,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -157,6 +161,7 @@
 
   // --- All-provider models for multi-provider display ---
   let allProviderModels = $state<Record<string, DropdownOption[]>>({});
+  let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
   let fetchGeneration = 0;
   let allProvidersLoaded = $state(false);
   let lastFetchedProviderIds = '';
@@ -172,6 +177,7 @@
     const currentGen = ++fetchGeneration;
 
     if (enabledIds.length === 0) {
+      allProviderErrors = {};
       allProvidersLoaded = true;
       return;
     }
@@ -188,21 +194,29 @@
     if (fetchGeneration !== currentGen) return;
 
     const models: Record<string, DropdownOption[]> = {};
-    for (const result of results) {
+    const errors: Record<string, ProviderLoadError> = {};
+    for (const [index, result] of results.entries()) {
       if (result.status === 'fulfilled') {
         const [pid, options] = result.value;
-        if (options.length > 0) {
-          models[pid] = options;
+        models[pid] = options;
+      } else {
+        const providerId = getProviderConfig(enabledIds[index]).id;
+        const cachedModels = allProviderModels[providerId];
+        if (cachedModels && cachedModels.length > 0) {
+          models[providerId] = cachedModels;
         }
+        errors[providerId] = formatProviderLoadError(providerId, result.reason);
       }
     }
 
     allProviderModels = models;
+    allProviderErrors = errors;
     allProvidersLoaded = true;
   }
 
   $effect(() => {
     const epid = effectiveProviderId;
+    const currentGen = ++fetchGeneration;
     if (epid === $activeProviderId$) {
       // Active provider matches — use global model store, clear local override
       agentProviderModels = null;
@@ -216,11 +230,13 @@
     agentProviderError = null;
     getModelsForProvider(epid)
       .then((models) => {
+        if (fetchGeneration !== currentGen) return;
         agentProviderModels = models;
         agentProviderLoading = false;
       })
       .catch((err) => {
-        agentProviderError = err?.message || 'Failed to load models';
+        if (fetchGeneration !== currentGen) return;
+        agentProviderError = formatProviderLoadError(epid, err).displayText;
         agentProviderLoading = false;
       });
   });
@@ -291,12 +307,18 @@
       if (isAgentProviderOverride && providerId === effectiveProviderId) {
         agentProviderModels = models;
       } else {
+        const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
+        allProviderErrors = remainingErrors;
         allProviderModels = {
           ...allProviderModels,
           [providerId]: toDropdownOptions(models),
         };
       }
     } catch (err) {
+      allProviderErrors = {
+        ...allProviderErrors,
+        [providerId]: formatProviderLoadError(providerId, err),
+      };
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
       const next = new Set(refreshingProviders);
@@ -317,7 +339,7 @@
       try {
         agentProviderModels = await getModelsForProvider(effectiveProviderId);
       } catch (err: unknown) {
-        agentProviderError = err instanceof Error ? err.message : 'Failed to load models';
+        agentProviderError = formatProviderLoadError(effectiveProviderId, err).displayText;
       } finally {
         agentProviderLoading = false;
       }
@@ -334,9 +356,14 @@
     try {
       if (isAgentProviderOverride) {
         agentProviderModels = await getModelsForProvider(effectiveProviderId);
+        agentProviderError = null;
       } else {
         lastFetchedProviderIds = '';
         fetchAllProviderModels($enabledProviderIds$);
+      }
+    } catch (err) {
+      if (isAgentProviderOverride) {
+        agentProviderError = formatProviderLoadError(effectiveProviderId, err).displayText;
       }
     } finally {
       isRefreshing = false;
@@ -455,39 +482,6 @@
       parseCompoundModelId(localModel).modelId !== 'default',
   );
 
-  // Helper: format cost tier as dollar signs
-  function formatCostTier(tier: number | undefined): string | undefined {
-    if (tier === 1) return '$';
-    if (tier === 2) return '$$';
-    if (tier === 3) return '$$$';
-    return undefined;
-  }
-
-  function toDropdownOptions(
-    models: {
-      value: string;
-      label: string;
-      description?: string;
-      badges?: { color: string; label: string; variant?: string }[];
-      costTier?: number;
-      effortLevels?: string[];
-      isDefault?: boolean;
-    }[],
-  ): DropdownOption[] {
-    return models.map((m) => ({
-      value: m.value,
-      label: m.label,
-      description: m.description,
-      data: {
-        badges: m.badges,
-        costTier: m.costTier,
-        costTierLabel: formatCostTier(m.costTier),
-        effortLevels: m.effortLevels,
-        isDefault: m.isDefault,
-      },
-    }));
-  }
-
   // Get the label for a model ID from available models list
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
@@ -559,6 +553,47 @@
       : $enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? [])),
   ]);
 
+  const hasLoadedModelOptions = $derived(
+    flatModelOptions.some((option) => option.value !== USE_DEFAULT_VALUE && !option.disabled),
+  );
+
+  const providerLoadWarnings = $derived.by<ProviderLoadError[]>(() => {
+    if (isAgentProviderOverride && agentProviderError) {
+      return [formatProviderLoadError(effectiveProviderId, agentProviderError)];
+    }
+
+    return $enabledProviderIds$
+      .map((pid) => allProviderErrors[getProviderConfig(pid).id])
+      .filter((error): error is ProviderLoadError => Boolean(error));
+  });
+
+  const nonBlockingProviderWarnings = $derived(
+    hasLoadedModelOptions
+      ? providerLoadWarnings.filter((warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0)
+      : [],
+  );
+
+  const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
+    if (loadError) {
+      return formatProviderLoadError(effectiveProviderId, loadError);
+    }
+
+    if (hasLoadedModelOptions || providerLoadWarnings.length === 0) {
+      return null;
+    }
+
+    if (providerLoadWarnings.length === 1) {
+      return providerLoadWarnings[0];
+    }
+
+    return {
+      providerId: 'multiple',
+      providerName: 'Model providers',
+      message: providerLoadWarnings.map((error) => error.displayText).join('; '),
+      displayText: providerLoadWarnings.map((error) => error.displayText).join('; '),
+    };
+  });
+
   const groupedModelOptions = $derived.by<DropdownGroup[]>(() => {
     const groups: DropdownGroup[] = [];
 
@@ -592,6 +627,22 @@
             key: pid,
             label: providerConfig.displayName,
             options: models,
+          });
+        } else if (hasLoadedModelOptions && allProviderErrors[pid]) {
+          const error = allProviderErrors[pid];
+          groups.push({
+            key: pid,
+            label: error.providerName,
+            options: [
+              {
+                value: `provider-error:${pid}`,
+                label: error.displayText,
+                description: error.hint,
+                disabled: true,
+                class: 'cursor-default disabled:opacity-100',
+                data: { providerLoadError: error },
+              },
+            ],
           });
         }
       }
@@ -942,62 +993,14 @@
   </Button>
 {:else}
   {#snippet groupHeader({ group, groupIndex }: DropdownGroupProps)}
-    {#if group.label}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class={cn(
-          'group/header px-3 text-xs font-medium text-muted-foreground flex items-center gap-2 cursor-pointer select-none',
-          groupIndex > 0 && 'pt-1.5',
-        )}
-        role="button"
-        tabindex="-1"
-        aria-label="{group.label} models"
-        aria-expanded={!collapsedGroups.has(group.key)}
-        onclick={() => toggleGroup(group.key)}
-        onkeydown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggleGroup(group.key);
-          }
-        }}
-      >
-        <span>{group.label}</span>
-        <span class="ml-auto flex items-center gap-0.5">
-          <Button
-            variant="ghost-light"
-            size="xs"
-            class={cn(
-              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100',
-              refreshingProviders.has(group.key) && 'opacity-50! cursor-not-allowed',
-            )}
-            onclick={(e) => {
-              e.stopPropagation();
-              handleRefreshProvider(group.key);
-            }}
-            title="Refresh {group.label} models"
-            aria-label="Refresh {group.label} models"
-            disabled={refreshingProviders.has(group.key)}
-          >
-            <Fa
-              icon={faArrowsRotate}
-              size={10}
-              class={cn(
-                'text-subtle transition-transform duration-500',
-                refreshingProviders.has(group.key) && 'animate-spin',
-              )}
-            />
-          </Button>
-          <Fa
-            icon={faChevronDown}
-            class={cn(
-              'text-subtle transition-transform duration-150',
-              collapsedGroups.has(group.key) && 'rotate-90',
-            )}
-            size={12}
-          />
-        </span>
-      </div>
-    {/if}
+    <ModelPickerGroupHeader
+      {group}
+      {groupIndex}
+      collapsed={collapsedGroups.has(group.key)}
+      refreshing={refreshingProviders.has(group.key)}
+      onToggle={toggleGroup}
+      onRefresh={handleRefreshProvider}
+    />
   {/snippet}
 
   <Dropdown
@@ -1076,40 +1079,50 @@
 
     {#snippet item({ option, selected }: DropdownItemProps)}
       {@const effortLevels = option.data?.effortLevels as string[] | undefined}
+      {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
 
       <div class="flex gap-2 w-full min-w-0">
-        {#if option.value !== USE_DEFAULT_VALUE}
-          <ProviderIcon
-            providerId={parseCompoundModelId(option.value).providerId}
-            class="size-3.5 shrink-0 mt-0.5"
+        {#if providerLoadError}
+          <ModelProviderErrorItem
+            providerId={providerLoadError.providerId}
+            providerLabel={providerLoadError.providerName}
+            error={providerLoadError.message}
+            hint={providerLoadError.hint}
           />
-        {/if}
-        <div class="flex-1 min-w-0">
-          <div class="flex items-baseline justify-between gap-2">
-            <span
-              class={cn(
-                'truncate text-sm font-medium',
-                option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
-                selected && 'font-medium',
-              )}
-            >
-              {option.label}
-            </span>
-            {#if selected}
-              <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
+        {:else}
+          {#if option.value !== USE_DEFAULT_VALUE}
+            <ProviderIcon
+              providerId={parseCompoundModelId(option.value).providerId}
+              class="size-3.5 shrink-0 mt-0.5"
+            />
+          {/if}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-baseline justify-between gap-2">
+              <span
+                class={cn(
+                  'truncate text-sm font-medium',
+                  option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
+                  selected && 'font-medium',
+                )}
+              >
+                {option.label}
+              </span>
+              {#if selected}
+                <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
+              {/if}
+            </div>
+            {#if option.description}
+              <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
+                {option.description}
+              </div>
+            {/if}
+            {#if effortLevels && effortLevels.length > 0}
+              <div class="text-xs text-subtle/60 truncate hidden">
+                Effort: {effortLevels.join(' · ')}
+              </div>
             {/if}
           </div>
-          {#if option.description}
-            <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
-              {option.description}
-            </div>
-          {/if}
-          {#if effortLevels && effortLevels.length > 0}
-            <div class="text-xs text-subtle/60 truncate hidden">
-              Effort: {effortLevels.join(' · ')}
-            </div>
-          {/if}
-        </div>
+        {/if}
       </div>
     {/snippet}
 
@@ -1122,72 +1135,25 @@
           <span>Loading more models…</span>
         </div>
       {/if}
+      {#if nonBlockingProviderWarnings.length > 0}
+        <div class="px-3 py-2 space-y-1.5 text-xs">
+          {#each nonBlockingProviderWarnings as warning (warning.providerId)}
+            <div class="flex items-start gap-2 text-muted-foreground" role="status">
+              <ModelProviderErrorItem
+                providerId={warning.providerId}
+                providerLabel={warning.providerName}
+                error={warning.message}
+                hint={warning.hint}
+                compact={true}
+              />
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/snippet}
 
     {#snippet empty()}
-      <div class="px-1 py-1" transition:fade={{ duration: 150 }}>
-        {#if isLoadingModels}
-          <!-- Grouped skeleton loader mimicking provider groups -->
-          {#each [4, 3] as itemCount, i}
-            <div>
-              <!-- Skeleton group header -->
-              <div class="px-3 pt-3 pb-1 flex items-center gap-2">
-                <div class="size-3.5 rounded bg-muted/60 animate-pulse"></div>
-                <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
-              </div>
-              <!-- Skeleton items -->
-              {#each Array.from(Array(itemCount), (_, i) => i) as j}
-                <div class="px-3 py-2 flex items-center gap-2">
-                  <div class="flex-1 min-w-0">
-                    <div
-                      class="h-3.5 rounded bg-muted/40 animate-pulse"
-                      style="width: {60 + ((j * 17 + i * 23) % 30)}%; animation-delay: {(i *
-                        itemCount +
-                        j) *
-                        75}ms"
-                    ></div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/each}
-        {:else if loadError}
-          <div class="flex flex-col items-center gap-2.5 py-4 px-3">
-            <div class="flex items-center gap-1.5 text-destructive-foreground">
-              <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
-              <span class="text-sm font-medium">Failed to load models</span>
-            </div>
-            <button
-              type="button"
-              class={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
-                'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-              )}
-              onclick={handleRetry}
-            >
-              <Fa icon={faArrowsRotate} class="h-3 w-3" />
-              Retry
-            </button>
-          </div>
-        {:else}
-          <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
-            <span class="text-sm">No models available</span>
-            <button
-              type="button"
-              class={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
-                'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-              )}
-              onclick={handleRetry}
-            >
-              <Fa icon={faArrowsRotate} class="h-3 w-3" />
-              Retry
-            </button>
-          </div>
-        {/if}
-      </div>
+      <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
     {/snippet}
   </Dropdown>
 {/if}
