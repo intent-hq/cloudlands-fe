@@ -357,6 +357,8 @@ export interface UnifiedAgentConfig {
   provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
+  /** Frontend createSession sends the initial prompt after backend creation. */
+  skipInitialPrompt?: boolean;
   contextReferences?: any[];
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   metadata?: Record<string, any>;

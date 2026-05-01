@@ -212,12 +212,15 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
           agentType: data.config.agentType || data.agentType,
           behaviorPrompt: data.config.behaviorPrompt || data.behaviorPrompt, // Extract behaviorPrompt from config or top-level
           systemPrompt: data.config.systemPrompt || data.systemPrompt,
-          initialMessage: data.initialMessage || data.instruction,
+          initialMessage: data.initialMessage || data.instruction || data.config.initialMessage,
+          skipInitialPrompt: true,
           contextReferences: data.contextReferences || data.contextRefs,
+          imageBlocks: data.imageBlocks || data.config.imageBlocks,
           metadata: data.metadata,
           workspaceContext: data.config.workspaceContext || data.workspaceContext, // Open panels + linked references
         };
       } else {
+        normalizedData.skipInitialPrompt = true;
         // No config object - map instruction to initialMessage if present
         if (data.instruction && !data.initialMessage) {
           normalizedData.initialMessage = data.instruction;
@@ -282,6 +285,7 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         workspacePath: validated.workspacePath,
         name: validated.name || generateRandomAgentName(),
         agentId: validated.agentId ? restoreAgentId(validated.agentId as string) : undefined,
+        skipInitialPrompt: true,
       };
       const response = await backend.createAgent(restoredRequest);
       return formatIpcSuccess(response);

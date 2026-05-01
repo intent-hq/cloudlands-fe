@@ -69,6 +69,10 @@ export namespace AgentIpc {
     systemPrompt?: string; // DEPRECATED: Kept for IPC backward compat, but IGNORED by backend
     rules?: string; // DEPRECATED: Kept for IPC backward compat, but IGNORED by backend
     initialMessage?: string;
+    /**
+     * Frontend createSession sends the initial prompt itself; backend-only callers omit this.
+     */
+    skipInitialPrompt?: boolean;
     contextReferences?: any[];
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     metadata?: Record<string, any>;

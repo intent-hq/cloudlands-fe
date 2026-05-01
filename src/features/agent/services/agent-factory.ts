@@ -487,6 +487,7 @@ export class UnifiedAgentFactory {
           normalized.behaviorPrompt,
           normalized.workspaceContext,
           provider,
+          normalized.skipInitialPrompt,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
 
@@ -804,6 +805,7 @@ export class UnifiedAgentFactory {
       }>;
     },
     provider?: string,
+    skipInitialPrompt?: boolean,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Build IPC request using Wave 1 contracts
@@ -817,6 +819,7 @@ export class UnifiedAgentFactory {
         agentType: agent.metadata?.agentType, // Backend builds system prompt from this
         behaviorPrompt, // Custom behavior instructions from specialist
         metadata: agent.metadata,
+        skipInitialPrompt: skipInitialPrompt ?? true,
         workspaceContext, // Open panels + linked references for agent context
       };
 

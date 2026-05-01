@@ -62,6 +62,11 @@ interface CreateAgentRequest {
   specialistName?: string; // Display name of the specialist (e.g., "Coordinator", "Implementor")
   roleReminder?: string; // Critical constraints reminder for the specialist (injected at end of prompt for recency)
   initialMessage?: string;
+  /**
+   * Frontend createSession sends the initial prompt itself after backend creation.
+   * Backend-only callers leave this unset so the backend starts the first prompt.
+   */
+  skipInitialPrompt?: boolean;
   contextReferences?: any[];
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   metadata?: Record<string, any>;
@@ -181,6 +186,12 @@ export class AgentBackendHandler {
    *  that force-clear pendingBackendDeliveries entries after 5 minutes. Prevents permanent
    *  unreachability if handleBackendStreamMessage hangs and the finally block never runs. */
   private pendingBackendDeliveryTimeouts = new Map<string, NodeJS.Timeout>();
+  /** Backend/ACP session IDs with a session/prompt already in flight. */
+  private inFlightSessionPrompts = new Set<string>();
+  /** Agent ID -> in-flight session/prompt key for cleanup on teardown. */
+  private inFlightSessionPromptKeysByAgent = new Map<string, string>();
+  /** Session/prompt key -> streamId currently in flight for duplicate-drop diagnostics. */
+  private inFlightSessionPromptStreamIds = new Map<string, string>();
   /** Safety timeout duration for pendingBackendDeliveries (5 minutes). */
   private static readonly PENDING_DELIVERY_TIMEOUT_MS = 5 * 60 * 1000;
   /** @property {Set<string>} interruptedAgents - Agents that were intentionally interrupted (skip auto queue processing) */
@@ -1245,7 +1256,7 @@ export class AgentBackendHandler {
         });
       }
 
-      // Call onBeforeStart hook BEFORE firing the initial message.
+      // Call onBeforeStart hook after the agent is persisted/emitted.
       // This allows callers to set up subscriptions before the agent starts
       // processing, preventing the race condition where a fast-completing child
       // agent emits agent:idle before the parent's subscription is registered.
@@ -1260,51 +1271,35 @@ export class AgentBackendHandler {
         }
       }
 
-      // Send initial message if provided - ASYNC (fire-and-forget)
-      // We don't await this because LLM processing can take 30+ seconds
-      // The caller (e.g., create_prerequisite MCP tool) just needs to know
-      // the agent was created and started processing, not wait for completion
-      if (request.initialMessage || request.imageBlocks?.length) {
-        logger.debug('[AgentBackendHandler] Starting initial message (async, non-blocking)', {
-          agentId: agent.id,
-          messageLength: request.initialMessage?.length || 0,
-        });
-
-        // Use handleSendMessage directly since we're in the main process
-        // backend.sendMessage() refuses to run in main process
-        // NOTE: Not awaited - this runs in the background
-        // NOTE: handleSendMessage will skip adding the user message since it's already in the session
-        // CRITICAL: Pass the messages array so handleSendMessage doesn't try to load from persistence
-        // (which might not have the message yet since we haven't saved to disk)
-        this.handleSendMessage(null as any, {
+      const hasInitialPrompt = !!request.initialMessage?.trim() || !!request.imageBlocks?.length;
+      if (!request.skipInitialPrompt && hasInitialPrompt) {
+        const messages = agent.messages || [];
+        this.handleSendMessage(_event, {
           agentId: agent.id,
           sessionId: agent.id,
-          streamId: `${agent.id}:${Date.now()}`, // Unique per message turn
-          content: request.initialMessage || '',
+          streamId: `${agent.id}:${Date.now()}`,
+          content: request.initialMessage?.trim() || '',
           workspaceId: request.workspaceId,
           contextReferences: request.contextReferences,
           imageBlocks: request.imageBlocks,
-          skipUserMessage: true, // Signal that user message is already added
-          messages: agent.messages, // Pass the messages array with the user message already included
-        })
-          .then((sendResult) => {
-            if (!sendResult.success) {
-              logger.warn('[AgentBackendHandler] Initial message failed (async)', {
-                agentId: agent.id,
-                error: sendResult.error,
-              });
-            } else {
-              logger.debug('[AgentBackendHandler] Initial message completed (async)', {
-                agentId: agent.id,
-              });
-            }
-          })
-          .catch((error) => {
-            logger.error('[AgentBackendHandler] Initial message threw error (async)', {
-              agentId: agent.id,
-              error: error.message,
-            });
+          model: request.model,
+          agentName: agent.name || request.name || 'Agent',
+          messages,
+          skipUserMessage: messages.length > 0,
+          workspacePath: request.workspacePath,
+          agentType,
+          behaviorPrompt: request.behaviorPrompt,
+          specialist: request.metadata?.specialist,
+          specialistName: effectiveSpecialistName,
+          roleReminder: effectiveRoleReminder,
+          metadata: agent.metadata || request.metadata,
+          provider: agent.provider || request.provider,
+        } as any).catch((error) => {
+          logger.error('[AgentBackendHandler] Failed to send backend initial prompt', {
+            agentId: agent.id,
+            error: error instanceof Error ? error.message : String(error),
           });
+        });
       }
 
       logger.debug('[AgentBackendHandler] Agent created successfully', {
@@ -1381,11 +1376,17 @@ export class AgentBackendHandler {
     validated: any,
   ): Promise<{ success: boolean; error?: string }> {
     const request = validated as SendMessageRequest;
+    let inFlightPromptKey: string | undefined;
     // Track whether onError callback already handled the failure and emitted agent:failed.
     // This prevents double-emit when provider.streamMessage() rejects after onError fires
     // (since ACP provider's onError calls rejectStream, causing the outer catch to also fire).
     let onErrorHandled = false;
     try {
+      inFlightPromptKey = await this.tryBeginSessionPrompt(request);
+      if (!inFlightPromptKey) {
+        return { success: true };
+      }
+
       // Log the full request to debug behaviorPrompt passing
       const extReq = request as any;
       logger.info(
@@ -3763,6 +3764,65 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         success: false,
         error: errorMessage,
       };
+    } finally {
+      if (inFlightPromptKey) {
+        this.finishSessionPrompt(request.agentId, inFlightPromptKey);
+      }
+    }
+  }
+
+  private async resolveSessionPromptKey(request: SendMessageRequest): Promise<string> {
+    try {
+      const backend = await this.getBackend();
+      const backendSession = backend.getSession?.(request.agentId);
+      const backendSessionId =
+        backendSession?.backendSessionId ||
+        backendSession?.acpSessionId ||
+        (request as any).backendSessionId;
+      if (backendSessionId) {
+        return String(backendSessionId);
+      }
+    } catch (error) {
+      logger.warn('agent.session-prompt.key.resolve.failed', {
+        agentId: request.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return String(request.sessionId || request.agentId);
+  }
+
+  private async tryBeginSessionPrompt(request: SendMessageRequest): Promise<string | undefined> {
+    const promptKey = await this.resolveSessionPromptKey(request);
+    this.ensureSessionPromptTracking();
+    if (this.inFlightSessionPrompts.has(promptKey)) {
+      logger.warn('agent.session-prompt.duplicate.dropped', {
+        agentId: request.agentId,
+        backendSessionId: promptKey,
+        inflightStreamId: this.inFlightSessionPromptStreamIds.get(promptKey),
+        droppedStreamId: request.streamId,
+      });
+      return undefined;
+    }
+
+    this.inFlightSessionPrompts.add(promptKey);
+    this.inFlightSessionPromptKeysByAgent.set(request.agentId, promptKey);
+    this.inFlightSessionPromptStreamIds.set(promptKey, request.streamId);
+    return promptKey;
+  }
+
+  private ensureSessionPromptTracking(): void {
+    this.inFlightSessionPrompts ??= new Set<string>();
+    this.inFlightSessionPromptKeysByAgent ??= new Map<string, string>();
+    this.inFlightSessionPromptStreamIds ??= new Map<string, string>();
+  }
+
+  private finishSessionPrompt(agentId: string, promptKey: string): void {
+    this.ensureSessionPromptTracking();
+    this.inFlightSessionPrompts.delete(promptKey);
+    this.inFlightSessionPromptStreamIds.delete(promptKey);
+    if (this.inFlightSessionPromptKeysByAgent.get(agentId) === promptKey) {
+      this.inFlightSessionPromptKeysByAgent.delete(agentId);
     }
   }
 
@@ -5357,6 +5417,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       this.pendingBackendDeliveryTimeouts.delete(agentId);
     }
 
+    this.ensureSessionPromptTracking();
+    const inFlightPromptKey = this.inFlightSessionPromptKeysByAgent.get(agentId);
+    if (inFlightPromptKey) {
+      this.finishSessionPrompt(agentId, inFlightPromptKey);
+    }
+
     // Agent state tracking
     this.activeSessions.delete(agentId);
     this.interruptedAgents.delete(agentId);
@@ -5543,6 +5609,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         roleReminder: config?.roleReminder, // Pass role reminder for specialist
         systemPrompt: config?.systemPrompt,
         initialMessage: config?.initialMessage,
+        skipInitialPrompt: config?.skipInitialPrompt,
         contextReferences: config?.contextReferences,
         imageBlocks: config?.imageBlocks,
         metadata: config?.metadata,
@@ -8992,6 +9059,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Clear auto-continue retry tracking
     this.emptyResponseRetries.clear();
+
+    // Clear in-flight prompt tracking
+    this.ensureSessionPromptTracking();
+    this.inFlightSessionPrompts.clear();
+    this.inFlightSessionPromptKeysByAgent.clear();
+    this.inFlightSessionPromptStreamIds.clear();
 
     // Clear completion and handler tracking
     this.completedStreams.clear();

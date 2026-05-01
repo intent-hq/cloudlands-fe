@@ -55,8 +55,11 @@ class AgentBackendAdapter implements IAgentBackendService {
       behaviorPrompt: request.behaviorPrompt, // Pass custom behavior instructions from specialist
       systemPrompt: request.systemPrompt,
       initialMessage: request.initialMessage,
+      skipInitialPrompt: request.skipInitialPrompt,
       contextReferences: request.contextReferences,
+      imageBlocks: request.imageBlocks,
       metadata: request.metadata,
+      workspaceContext: request.workspaceContext,
     });
 
     if (!result.success || !result.agent) {

@@ -519,20 +519,37 @@ export async function activateInitialAgent(
   createFn: () => Promise<AgentSession | null>,
 ): Promise<AgentSession | null> {
   const key = `${workspace.id}:${agentId}`;
-  const existing = selectAgentById.select(getReduxStore().getState(), agentId);
-  if (existing?.backendSessionId) return existing;
   const pending = initialAgentActivationLocks.get(key);
-  if (pending) return pending;
+  if (pending) {
+    logger.debug('agent.dedup.activate-initial-agent.suppressed', {
+      agentId,
+      workspaceId: workspace.id,
+      key,
+      callerStack: new Error().stack,
+    });
+    return pending;
+  }
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const promise = Promise.race([
-    createFn(),
-    new Promise<null>((resolve) => {
-      timeoutId = setTimeout(() => resolve(null), 60_000);
-    }),
-  ]).finally(() => {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-    initialAgentActivationLocks.delete(key);
-  });
+  const promise = Promise.resolve()
+    .then(async () => {
+      const existing = selectAgentById.select(getReduxStore().getState(), agentId);
+      if (
+        existing &&
+        ((existing.messages?.length ?? 0) > 0 || existing.status !== AgentStatus.Pending)
+      ) {
+        return existing;
+      }
+      return Promise.race([
+        createFn(),
+        new Promise<null>((resolve) => {
+          timeoutId = setTimeout(() => resolve(null), 60_000);
+        }),
+      ]);
+    })
+    .finally(() => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      initialAgentActivationLocks.delete(key);
+    });
   initialAgentActivationLocks.set(key, promise);
   return promise;
 }
@@ -547,6 +564,7 @@ export async function createSession(
     provider?: string;
     agentType?: import('$shared/types/agent.types').AgentTypeId;
     initialMessage?: string;
+    skipInitialPrompt?: boolean;
     contextReferences?: any[];
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     behaviorPrompt?: string;
@@ -582,6 +600,7 @@ async function executeCreateSession(
     provider?: string;
     agentType?: any;
     initialMessage?: string;
+    skipInitialPrompt?: boolean;
     contextReferences?: any[];
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     behaviorPrompt?: string;
@@ -597,6 +616,7 @@ async function executeCreateSession(
     provider: options.provider,
     agentType: options.agentType,
     initialMessage: options.initialMessage,
+    skipInitialPrompt: true,
     contextReferences: options.contextReferences,
     imageBlocks: options.imageBlocks,
     behaviorPrompt: options.behaviorPrompt,

@@ -1118,17 +1118,6 @@
         e.preventDefault();
         collapse();
       }
-
-      // Cmd+Enter (Mac) / Ctrl+Enter (Win/Linux) to submit from anywhere in the form
-      // Guard: only fire when focus is inside the initializer, not in dialogs/popovers
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        const activeEl = document.activeElement;
-        const isInsideForm = activeEl && controlsContainer?.contains(activeEl);
-        if (isInsideForm) {
-          e.preventDefault();
-          handleSubmit();
-        }
-      }
     }
 
     window.addEventListener('keydown', handleGlobalKeydown);
@@ -1305,8 +1294,8 @@
   async function handleSubmit() {
     if (!isValid || isCreating) return;
 
-    error = null;
     isCreating = true;
+    error = null;
 
     try {
       // Validate

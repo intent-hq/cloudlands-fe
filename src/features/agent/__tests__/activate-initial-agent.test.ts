@@ -46,42 +46,49 @@ class ActivateInitialAgentHarness {
   ): Promise<AgentSession | null> {
     const key = `${workspace.id}:${agentId}`;
 
-    // If already activated, return existing session
-    const existing = this.getSessionFn(agentId);
-    if (existing?.backendSessionId) {
-      mockLogger.info('activateInitialAgent: already activated', {
-        agentId,
-        workspaceId: workspace.id,
-      });
-      return existing;
-    }
-
     // If activation in progress, await it
     const pending = this.initialAgentActivationLocks.get(key);
     if (pending) {
-      mockLogger.info('activateInitialAgent: awaiting existing activation', {
+      mockLogger.debug('agent.dedup.activate-initial-agent.suppressed', {
         agentId,
         workspaceId: workspace.id,
+        key,
+        callerStack: new Error().stack,
       });
       return pending;
     }
 
-    // Start activation with timeout guard
+    // Start activation with timeout guard after registering the in-flight promise.
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const promise = Promise.race([
-      createFn(),
-      new Promise<null>((resolve) => {
-        timeoutId = setTimeout(() => {
-          mockLogger.warn('activateInitialAgent: timeout after 60s, releasing lock', { key });
-          resolve(null);
-        }, 60_000);
-      }),
-    ]).finally(() => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      this.initialAgentActivationLocks.delete(key);
-    });
+    const promise = Promise.resolve()
+      .then(async () => {
+        // If already activated, return existing session. Fresh pending sessions without
+        // messages must still run createFn, because backendSessionId is not assigned yet.
+        const existing = this.getSessionFn(agentId);
+        if (existing && (existing.messages.length > 0 || existing.status !== 'pending')) {
+          mockLogger.info('activateInitialAgent: already activated', {
+            agentId,
+            workspaceId: workspace.id,
+          });
+          return existing;
+        }
+
+        return Promise.race([
+          createFn(),
+          new Promise<null>((resolve) => {
+            timeoutId = setTimeout(() => {
+              mockLogger.warn('activateInitialAgent: timeout after 60s, releasing lock', { key });
+              resolve(null);
+            }, 60_000);
+          }),
+        ]);
+      })
+      .finally(() => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+        this.initialAgentActivationLocks.delete(key);
+      });
     this.initialAgentActivationLocks.set(key, promise);
     return promise;
   }
@@ -148,8 +155,16 @@ describe('activateInitialAgent', () => {
 
     const p1 = harness.activateInitialAgent(AGENT_ID, WORKSPACE, createFn);
     const p2 = harness.activateInitialAgent(AGENT_ID, WORKSPACE, createFn);
+    await Promise.resolve();
 
     expect(createFn).toHaveBeenCalledTimes(1);
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'agent.dedup.activate-initial-agent.suppressed',
+      expect.objectContaining({
+        key: `${WORKSPACE.id}:${AGENT_ID}`,
+        callerStack: expect.any(String),
+      }),
+    );
 
     const session = makeSession();
     resolveCreate(session);
@@ -157,6 +172,40 @@ describe('activateInitialAgent', () => {
     const [r1, r2] = await Promise.all([p1, p2]);
     expect(r1).toBe(session);
     expect(r2).toBe(session);
+  });
+
+  it('concurrent callers for the same fresh pending agent create only one session', async () => {
+    const freshPendingSession = makeSession({
+      backendSessionId: null as any,
+      status: 'pending' as any,
+      messages: [],
+    });
+    getSessionMock.mockReturnValue(freshPendingSession);
+    let resolveCreate!: (s: AgentSession | null) => void;
+    const createFn = vi.fn(
+      () => new Promise<AgentSession | null>((r) => (resolveCreate = r)),
+    );
+
+    const p1 = harness.activateInitialAgent(AGENT_ID, WORKSPACE, createFn);
+    const p2 = harness.activateInitialAgent(AGENT_ID, WORKSPACE, createFn);
+    await Promise.resolve();
+
+    expect(createFn).toHaveBeenCalledTimes(1);
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'agent.dedup.activate-initial-agent.suppressed',
+      expect.objectContaining({
+        agentId: AGENT_ID,
+        key: `${WORKSPACE.id}:${AGENT_ID}`,
+        callerStack: expect.any(String),
+      }),
+    );
+
+    const activatedSession = makeSession({ backendSessionId: 'backend-created' as any });
+    resolveCreate(activatedSession);
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBe(activatedSession);
+    expect(r2).toBe(activatedSession);
   });
 
   it('lock is cleaned up after success', async () => {

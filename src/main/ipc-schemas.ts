@@ -461,9 +461,13 @@ export const AgentCreateSchema = z.object({
   specialistName: z.string().optional(), // Display name of the specialist (e.g., "Coordinator")
   roleReminder: z.string().optional(), // Critical constraints reminder for the specialist
   initialMessage: z.string().optional(),
+  skipInitialPrompt: z.boolean().optional(),
   instruction: z.string().optional(), // Used to derive name if not provided
   contextReferences: z.array(z.any()).optional(),
   contextRefs: z.array(z.any()).optional(), // Alias for contextReferences
+  imageBlocks: z
+    .array(z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }))
+    .optional(),
   config: z.record(z.any()).optional(), // Nested config object from frontend
   metadata: z.record(z.any()).optional(),
 });
