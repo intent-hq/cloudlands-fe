@@ -25,6 +25,7 @@ import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { Logger } from '$shared/logger';
 import { memEvents } from '$shared/main/memory-event-logger';
 import { isWorkspaceSlug } from '$shared/services/workspace-slug';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
@@ -106,6 +107,10 @@ interface SendMessageRequest {
   messageMetadata?: Record<string, any>;
   /** Pre-assigned assistant message ID from the renderer so both sides share the same ID */
   assistantMessageId?: string;
+  /** Stable app-owned logical IDs used to merge frontend/backend copies without changing provider IDs */
+  userAppMessageId?: string;
+  assistantAppMessageId?: string;
+  queuedMessageAppMessageId?: string;
 }
 
 /**
@@ -885,6 +890,7 @@ export class AgentBackendHandler {
     agentInfo: { name: string; model?: string },
     timeoutMs: number = 10000,
     wakeMessage?: any,
+    assistantAppMessageId?: string,
   ): Promise<void> {
     // OPTIMIZATION: Skip handshake if no windows exist for this workspace.
     // This eliminates the 30s timeout (10s × 3 retries) for background agents
@@ -943,6 +949,7 @@ export class AgentBackendHandler {
           workspaceId,
           agentInfo,
           wakeMessage,
+          assistantAppMessageId,
         });
 
         // Wait for frontend to signal ready
@@ -2731,6 +2738,7 @@ export class AgentBackendHandler {
         (originalContent || hasAttachments) && !skipUserMessage
           ? {
               id: (request as any).queuedMessageId || `msg_${uuidv4()}`,
+              appMessageId: request.userAppMessageId || (request as any).queuedMessageAppMessageId || createAppMessageId(),
               role: 'user',
               contentBlocks: displayContentBlocks,
               timestamp: new Date().toISOString(),
@@ -2944,6 +2952,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           agentId: request.agentId,
           workspaceId: request.workspaceId,
           sessionId: request.sessionId,
+          assistantAppMessageId: request.assistantAppMessageId,
         },
         workspaceWindowIds.length > 0 ? workspaceWindowIds : undefined,
       );
@@ -3022,6 +3031,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             request.agentId,
             reason,
             request.assistantMessageId,
+            request.assistantAppMessageId,
           );
         } finally {
           persistInProgress = false;
@@ -3404,6 +3414,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             // Prefer the renderer's pre-assigned ID so both sides share the same identity.
             // Fall back to the provider's ID (if available) or a fresh UUID.
             id: request.assistantMessageId || providerMessage?.id || `msg_${uuidv4()}`,
+            appMessageId: request.assistantAppMessageId || providerMessage?.appMessageId || createAppMessageId(),
             role: 'assistant' as const,
             contentBlocks: finalContentBlocks,
             timestamp: new Date().toISOString(),
@@ -3876,8 +3887,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         skipUserMessage: request.skipUserMessage,
         // Pass through queuedMessageId for queued message consistency
         queuedMessageId: request.queuedMessageId,
+        queuedMessageAppMessageId: request.queuedMessageAppMessageId,
         // Pre-assigned assistant message ID from the renderer (Part A of dedup fix)
         assistantMessageId: request.assistantMessageId,
+        userAppMessageId: request.userAppMessageId,
+        assistantAppMessageId: request.assistantAppMessageId,
       };
 
       // Try to send the message first
@@ -3940,10 +3954,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // or ACP workspace agent with no UI window), continue anyway. The agent:stream-starting
         // safety net on the frontend will register handlers when streaming begins.
         try {
-          await this.requestFrontendHandler(request.agentId, request.workspaceId, {
-            name: agentSession.name,
-            model: agentSession.model,
-          });
+          await this.requestFrontendHandler(
+            request.agentId,
+            request.workspaceId,
+            {
+              name: agentSession.name,
+              model: agentSession.model,
+            },
+            10000,
+            undefined,
+            request.assistantAppMessageId,
+          );
         } catch (handshakeError) {
           logger.warn(
             'Backend stream recovery: frontend handshake failed (non-fatal), continuing without UI',
@@ -5042,6 +5063,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         if (finalContentBlocks.length > 0) {
           const partialMessage = {
             id: `msg_timeout_${Date.now()}`,
+            appMessageId: createAppMessageId(),
             role: 'assistant' as const,
             contentBlocks: finalContentBlocks,
             timestamp: new Date().toISOString(),
@@ -5793,6 +5815,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     agentId: string,
     reason: string,
     assistantMessageId?: string,
+    assistantAppMessageId?: string,
   ): Promise<void> {
     // Suppress persistence for agents currently being torn down by a
     // shutdown or unrecoverable-bridge event — prevents late callbacks from
@@ -5846,6 +5869,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             existingStreamingMsgIndex >= 0
               ? backendSession.messages[existingStreamingMsgIndex].id
               : assistantMessageId || `msg_${uuidv4()}`,
+          appMessageId:
+            existingStreamingMsgIndex >= 0
+              ? backendSession.messages[existingStreamingMsgIndex].appMessageId
+              : assistantAppMessageId || createAppMessageId(),
           role: 'assistant' as const,
           contentBlocks: currentContentBlocks,
           timestamp: new Date().toISOString(),
@@ -7012,11 +7039,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // Non-fatal: If the frontend isn't ready (e.g., coordinator's chat panel not visible),
         // continue anyway. The agent:stream-starting safety net on the frontend will register
         // handlers when streaming begins, and agent:created will add the agent to the dock.
+        const assistantAppMessageId = createAppMessageId();
+
         try {
           await this.requestFrontendHandler(sessionId, workspaceId, {
             name: loadResult.data.name,
             model: loadResult.data.model,
-          });
+          }, 10000, undefined, assistantAppMessageId);
           logger.info('Backend-initiated message: frontend handshake completed (no provider path)', {
             agentId: sessionId,
             workspaceId,
@@ -7053,6 +7082,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           existingWakeMessage ||
           ({
             id: wakeMessageId,
+            appMessageId: createAppMessageId(),
             role: 'user' as const,
             contentBlocks: [{ type: 'text' as const, text: message }],
             timestamp: new Date().toISOString(),
@@ -7191,6 +7221,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           workspaceId,
           skipUserMessage: true,
           queuedMessageId: wakeMessageId, // Use same ID for consistency
+          assistantAppMessageId,
           agentName: agentSession.name,
           messages: messagesWithWake, // Pass in-memory messages so handleSendMessage uses them instead of reloading from disk
           ...otherParams,
@@ -7324,6 +7355,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         existingWakeMessage ||
         ({
           id: wakeMessageId,
+          appMessageId: createAppMessageId(),
           role: 'user' as const,
           contentBlocks: [{ type: 'text' as const, text: message }],
           timestamp: new Date().toISOString(),
@@ -7436,6 +7468,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         });
       }
 
+      const assistantAppMessageId = createAppMessageId();
+
       // Request frontend to prepare handler and wait for ready signal
       // This ensures the frontend has stream handlers set up before we start streaming
       // Include the wake message so frontend can add it to the session
@@ -7449,6 +7483,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           },
           10000,
           wakeMessage,
+          assistantAppMessageId,
         );
         logger.info('Backend-initiated message: frontend handler ready (provider existed)', {
           agentId: sessionId,
@@ -7485,6 +7520,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         workspaceId,
         skipUserMessage: true,
         queuedMessageId: wakeMessageId,
+        assistantAppMessageId,
         agentName,
         messages: existingSession?.messages ? [...existingSession.messages] : [], // Pass in-memory messages (includes wake message) so handleSendMessage uses them instead of reloading from disk
         ...otherParams,
@@ -7831,6 +7867,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // the prefix is more consistent with the rest of the codebase
       const queuedMessage: QueuedMessage = {
         id: `msg_${uuidv4()}`,
+        appMessageId: createAppMessageId(),
         content,
         queuedAt: new Date().toISOString(),
         contextItems,
@@ -8094,6 +8131,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         isStale,
       });
 
+      const assistantAppMessageId = createAppMessageId();
+
       // Notify frontend that we're processing a queued message
       // Include the message content so frontend can show the user message immediately
       // CRITICAL: Frontend uses this event to re-register the stream handler
@@ -8108,6 +8147,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         {
           agentId,
           messageId: nextMessage.id,
+          appMessageId: nextMessage.appMessageId,
+          assistantAppMessageId,
           content: nextMessage.content,
           contextItems: nextMessage.contextItems,
           imageBlocks: nextMessage.imageBlocks,
@@ -8195,6 +8236,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         contextReferences: nextMessage.contextItems,
         imageBlocks: nextMessage.imageBlocks,
         queuedMessageId: nextMessage.id,
+        queuedMessageAppMessageId: nextMessage.appMessageId,
+        assistantAppMessageId,
       });
 
       // SUCCESS: Message was already removed from the queue above.

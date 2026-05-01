@@ -20,6 +20,7 @@ import { getItems } from "../../../utils/collection-utils";
 import { AgentStatus } from "$shared/types";
 import { DEFAULT_AGENT_MODEL } from "$shared/constants/agent-services";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
+import { createAppMessageId } from "$shared/utils/app-message-id";
 import {
   upsertAgentSession,
   setAgentStreaming,
@@ -91,7 +92,7 @@ export function* watchStreamDisconnectedSaga() {
 // ============================================================================
 
 export function* watchStreamStartingSaga() {
-  yield* takeEveryFromElectronChannel<{ agentId: string; workspaceId?: string }>(
+  yield* takeEveryFromElectronChannel<{ agentId: string; workspaceId?: string; assistantAppMessageId?: string }>(
     ec("agent:stream-starting"),
     function* (data) {
       yield* call(handleStreamStarting, data);
@@ -99,8 +100,8 @@ export function* watchStreamStartingSaga() {
   );
 }
 
-function* handleStreamStarting(data: { agentId: string; workspaceId?: string }): SagaGenerator<void> {
-  const { agentId, workspaceId } = data;
+function* handleStreamStarting(data: { agentId: string; workspaceId?: string; assistantAppMessageId?: string }): SagaGenerator<void> {
+  const { agentId, workspaceId, assistantAppMessageId } = data;
   logger.info("Backend stream starting notification received", { agentId, workspaceId });
 
   // Skip if sendMessage() is currently setting up the stream handler
@@ -110,7 +111,7 @@ function* handleStreamStarting(data: { agentId: string; workspaceId?: string }):
     return;
   }
 
-  const result = yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId });
+  const result = yield* call([agentService, agentService.ensureStreamHandler], agentId, { workspaceId, assistantAppMessageId });
   if (result.created) {
     logger.info("Stream handler registered for starting stream", { agentId, channel: result.channel });
   }
@@ -159,11 +160,11 @@ function* loadAndCreateSessionFromPersistence(
 export function* watchPrepareHandlerSaga() {
   yield* takeEveryFromElectronChannel<{
     agentId: string; workspaceId?: string;
-    agentInfo?: { name?: string }; wakeMessage?: AgentMessage;
+    agentInfo?: { name?: string }; wakeMessage?: AgentMessage; assistantAppMessageId?: string;
   }>(
     ec("agent:prepare-handler"),
     function* (data) {
-      const { agentId, workspaceId, wakeMessage } = data;
+      const { agentId, workspaceId, wakeMessage, assistantAppMessageId } = data;
       logger.info("Backend requested stream handler preparation", { agentId, workspaceId });
 
       try {
@@ -178,6 +179,7 @@ export function* watchPrepareHandlerSaga() {
         yield* call([agentService, agentService.ensureStreamHandler], agentId, {
           workspaceId,
           forceReregister: !!wakeMessage,
+          assistantAppMessageId,
         });
 
         const prepareWsId = workspaceId || ((yield* select(selectActiveWorkspaceId.select)) as string | undefined);
@@ -426,6 +428,8 @@ const QUEUE_SESSION_RETRY_DELAY_MS = 200;
 /** Exported for testing */
 export type QueueProcessingData = {
   agentId: string; messageId: string; content: string;
+  appMessageId?: string;
+  assistantAppMessageId?: string;
   contextItems?: Array<{ id: string; type: string; label?: string; content?: string; path?: string }>;
 };
 
@@ -468,6 +472,7 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // Add user message to session
   const userMessage: AgentMessage = {
     id: messageId,
+    appMessageId: data.appMessageId ?? createAppMessageId(),
     role: "user",
     contentBlocks: [{ type: "text", text: content }],
     timestamp: new Date().toISOString(),
@@ -492,7 +497,10 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // Re-register stream handler with forceReregister, but always signal backend
   // even if handler registration fails — otherwise the backend waits forever.
   try {
-    yield* call([agentService, agentService.ensureStreamHandler], agentId, { forceReregister: true });
+    yield* call([agentService, agentService.ensureStreamHandler], agentId, {
+      forceReregister: true,
+      assistantAppMessageId: data.assistantAppMessageId,
+    });
   } catch (error) {
     logger.error("Failed to re-register stream handler for queued message", { agentId, messageId, error });
   } finally {

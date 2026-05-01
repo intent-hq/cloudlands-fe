@@ -17,6 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 
 /**
  * Simulate the streaming-placeholder ID assignment from
@@ -49,8 +50,23 @@ function resolveFinalizedMessageId(
   return requestAssistantMessageId || providerMessageId || `msg_${uuidv4()}`;
 }
 
+function resolveStreamingAppMessageId(
+  existingStreamingMsg: { appMessageId?: string } | undefined,
+  requestAssistantAppMessageId: string | undefined,
+): string {
+  return existingStreamingMsg?.appMessageId || requestAssistantAppMessageId || createAppMessageId();
+}
+
+function resolveFinalizedAppMessageId(
+  requestAssistantAppMessageId: string | undefined,
+  providerAppMessageId: string | undefined,
+): string {
+  return requestAssistantAppMessageId || providerAppMessageId || createAppMessageId();
+}
+
 describe('Backend handler ID-threading', () => {
   const RENDERER_MSG_ID = `msg_${uuidv4()}`;
+  const RENDERER_APP_MSG_ID = 'app_msg_renderer_assistant';
 
   describe('when assistantMessageId is provided by the renderer', () => {
     it('uses that ID for the streaming placeholder (new message)', () => {
@@ -104,6 +120,30 @@ describe('Backend handler ID-threading', () => {
       const providerMsgId = `msg_${uuidv4()}`;
       const id = resolveFinalizedMessageId(RENDERER_MSG_ID, providerMsgId);
       expect(id).toBe(RENDERER_MSG_ID);
+    });
+  });
+
+  describe('assistant appMessageId threading', () => {
+    it('uses the request assistant appMessageId for backend streaming placeholders and finalized messages', () => {
+      const streamingAppMessageId = resolveStreamingAppMessageId(undefined, RENDERER_APP_MSG_ID);
+      const finalizedAppMessageId = resolveFinalizedAppMessageId(RENDERER_APP_MSG_ID, undefined);
+
+      expect(streamingAppMessageId).toBe(RENDERER_APP_MSG_ID);
+      expect(finalizedAppMessageId).toBe(RENDERER_APP_MSG_ID);
+    });
+
+    it('preserves an existing streaming appMessageId on subsequent chunks', () => {
+      const appMessageId = resolveStreamingAppMessageId(
+        { appMessageId: RENDERER_APP_MSG_ID },
+        'app_msg_different_request',
+      );
+
+      expect(appMessageId).toBe(RENDERER_APP_MSG_ID);
+    });
+
+    it('falls back to provider or fresh appMessageId when request appMessageId is absent', () => {
+      expect(resolveFinalizedAppMessageId(undefined, 'app_msg_provider_assistant')).toBe('app_msg_provider_assistant');
+      expect(resolveFinalizedAppMessageId(undefined, undefined)).toMatch(/^app_msg_/);
     });
   });
 });

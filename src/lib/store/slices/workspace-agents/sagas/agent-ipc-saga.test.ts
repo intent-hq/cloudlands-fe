@@ -174,6 +174,30 @@ describe("handleQueueProcessing", () => {
     expect(streamingAction?.payload).toEqual(["ws-agent-1", "agent-1", true]);
   });
 
+  it("preserves queued user app ID and passes assistant app ID to stream handler", async () => {
+    const session = makeSession();
+    selectState.results = [session];
+    const data = {
+      ...queueData,
+      appMessageId: "app_msg_user_queue",
+      assistantAppMessageId: "app_msg_assistant_queue",
+    };
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueProcessing,
+      data,
+    ).toPromise();
+
+    const userMessageAction = dispatched.find((a) => a.payload?.[1]?.id === data.messageId);
+    expect(userMessageAction?.payload[1].appMessageId).toBe(data.appMessageId);
+    expect(ensureStreamHandlerMock).toHaveBeenCalledWith("agent-1", {
+      forceReregister: true,
+      assistantAppMessageId: data.assistantAppMessageId,
+    });
+  });
+
   // Regression test for root cause #1: session lookup must retry because the
   // session may still be loading when the queue:processing event arrives.
   it("retries session lookup and succeeds on second attempt", async () => {

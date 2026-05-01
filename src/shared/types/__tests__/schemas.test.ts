@@ -127,6 +127,7 @@ describe('Zod Schemas', () => {
     it('should allow optional fields', () => {
       const message = {
         id: 'msg_123',
+        appMessageId: 'app_msg_123',
         role: 'assistant',
         content: 'Hello',
         timestamp: new Date(),

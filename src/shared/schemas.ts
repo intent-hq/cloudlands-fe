@@ -484,6 +484,7 @@ export const ToolCallSchema = z.object({
 // Agent Message Schema
 export const AgentMessageSchema = z.object({
   id: MessageIdSchema,
+  appMessageId: z.string().optional(),
   role: z.enum(['user', 'assistant', 'system', 'error']),
   contentBlocks: z.array(ContentBlockSchema).optional(),
   timestamp: z.union([z.string(), z.date()]),

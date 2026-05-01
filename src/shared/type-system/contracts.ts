@@ -93,6 +93,7 @@ export type Note = z.infer<typeof NoteSchema>;
  */
 export const MessageSchema = z.object({
   id: z.string() as unknown as z.ZodType<MessageId>,
+  appMessageId: z.string().optional(),
   sessionId: z.string() as unknown as z.ZodType<AgentId>,
   agentId: z.string() as unknown as z.ZodType<AgentId>,
   role: z.enum(['user', 'assistant', 'system', 'tool']),

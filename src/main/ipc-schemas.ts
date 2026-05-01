@@ -543,6 +543,11 @@ export const AgentBackendStreamMessageSchema = z
       .string()
       .regex(/^msg_[0-9a-f-]{36}$/i)
       .optional(),
+    userAppMessageId: z.string().optional(),
+    assistantAppMessageId: z.string().optional(),
+    queuedMessageId: z.string().optional(),
+    queuedMessageAppMessageId: z.string().optional(),
+    skipUserMessage: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const hasContent = data.content && data.content.trim().length > 0;

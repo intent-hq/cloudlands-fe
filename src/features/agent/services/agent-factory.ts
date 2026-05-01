@@ -9,6 +9,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createMessageId, createAgentId } from '$shared/types/branded-ids';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import type { Workspace, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -599,6 +600,7 @@ export class UnifiedAgentFactory {
 
           const userMessage = {
             id: createMessageId(`msg_${uuidv4()}`),
+            appMessageId: createAppMessageId(),
             role: 'user' as const,
             contentBlocks: [
               ...(messageText ? [{ type: 'text' as const, text: messageText }] : []),

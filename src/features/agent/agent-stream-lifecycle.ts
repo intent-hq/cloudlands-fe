@@ -21,6 +21,7 @@ import type {
 } from '$shared/types';
 import { AgentStatus, normalizeContentBlocks } from '$shared/types';
 import { buildOrderedContentBlocks, type StreamOrderedItem } from '$shared/utils/content-block-utils';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import { AgentActivationState } from '$shared/types/agent-session';
 import { performanceOptimizer } from '$features/agent/services/performance-optimizer';
 import {
@@ -224,13 +225,14 @@ interface EnsureStreamHandlerOpts {
   existingMessage?: AgentMessage;
   workspaceId?: string;
   forceReregister?: boolean;
+  assistantAppMessageId?: string;
 }
 
 export function ensureStreamHandler(
   agentId: string,
   opts?: EnsureStreamHandlerOpts,
 ): { created: boolean; channel: string } {
-  const { existingMessage, workspaceId: providedWorkspaceId, forceReregister } = opts || {};
+  const { existingMessage, workspaceId: providedWorkspaceId, forceReregister, assistantAppMessageId } = opts || {};
 
   if (!agentId) {
     logger.warn('Attempted to ensure stream handler with undefined agentId, ignoring');
@@ -251,7 +253,7 @@ export function ensureStreamHandler(
 
   const resolvedWorkspaceId = providedWorkspaceId || getAgentSession(requireWorkspaceId('ensureStreamHandler:resolve'), agentId)?.workspaceId;
 
-  registerStreamHandlerForSession(agentId, existingMessage, resolvedWorkspaceId);
+  registerStreamHandlerForSession(agentId, existingMessage, resolvedWorkspaceId, assistantAppMessageId);
 
   setTimeout(() => {
     dispatchAgentSessionUpdated(agentId);
@@ -288,6 +290,7 @@ export function registerStreamHandlerForSession(
   agentId: string,
   existingMessage?: AgentMessage,
   workspaceId?: string,
+  assistantAppMessageId?: string,
 ): void {
   if (!agentId) {
     logger.warn('Attempted to register stream handler with undefined agentId, ignoring');
@@ -354,6 +357,7 @@ export function registerStreamHandlerForSession(
     existingMessage.id.startsWith('msg_')
       ? existingMessage.id
       : undefined;
+  let streamAppMessageId = existingMessage?.appMessageId ?? assistantAppMessageId ?? createAppMessageId();
 
   let chunkCount = 0;
   let currentStreamId: string | undefined = undefined;
@@ -376,6 +380,7 @@ export function registerStreamHandlerForSession(
         });
         textBuffer = '';
         orderedItems = [];
+        streamAppMessageId = createAppMessageId();
         chunkCount = 1;
 
         const resetSession = resolvedWorkspaceId
@@ -435,6 +440,7 @@ export function registerStreamHandlerForSession(
               // avoid colliding with a finalized or legacy-ID entry in the
               // session.
               id: pickPlaceholderId(reusableExistingMessageId, streamSession.messages),
+              appMessageId: streamAppMessageId,
               role: 'assistant' as const,
               contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
               timestamp: new Date().toISOString(),
@@ -485,6 +491,7 @@ export function registerStreamHandlerForSession(
               // avoid colliding with a finalized or legacy-ID entry in the
               // session.
               id: pickPlaceholderId(reusableExistingMessageId, updatedSession.messages),
+              appMessageId: streamAppMessageId,
               role: 'assistant' as const,
               contentBlocks: [],
               timestamp: new Date().toISOString(),
@@ -554,6 +561,8 @@ export function registerStreamHandlerForSession(
           if (msgIndex >= 0) {
             updatedSession.messages[msgIndex] = { ...updatedSession.messages[msgIndex], isStreaming: false };
             const completeMessageData = data.message || data.data;
+            updatedSession.messages[msgIndex].appMessageId =
+              completeMessageData?.appMessageId ?? updatedSession.messages[msgIndex].appMessageId ?? streamAppMessageId;
             const finalContentBlocks = buildOrderedContentBlocks(orderedItems, '');
             if (finalContentBlocks.length > 0) {
               updatedSession.messages[msgIndex].contentBlocks = finalContentBlocks;
@@ -1072,8 +1081,10 @@ export async function sendMessage(
                 userContentBlocks.push({ type: 'file' as const, data: file.data, mimeType: file.mimeType, fileName: file.fileName });
               }
             }
+            const userAppMessageId = createAppMessageId();
             const userMessage: AgentMessage = {
               id: createMessageId(uuidv4()),
+              appMessageId: userAppMessageId,
               role: 'user',
               contentBlocks: userContentBlocks,
               timestamp: new Date().toISOString(),
@@ -1101,6 +1112,7 @@ export async function sendMessage(
             // so that retries reuse the same ID instead of minting a new one.
             // This keeps the renderer's placeholder message and the backend in sync.
             const assistantMessageId = createMessageId(`msg_${uuidv4()}`);
+            const assistantAppMessageId = createAppMessageId();
 
             // --- Retry boundary: only wraps stream setup + backend send ---
             const result = await errorRecovery.executeWithRecovery(
@@ -1148,6 +1160,7 @@ export async function sendMessage(
                     if (!hasAssistantMessage) {
                       const assistantMessage: AgentMessage = {
                         id: assistantMessageId,
+                        appMessageId: assistantAppMessageId,
                         role: 'assistant',
                         contentBlocks: [{ type: 'text' as const, text: '' }], // Add empty text block
                         timestamp: new Date().toISOString(),
@@ -1315,6 +1328,7 @@ export async function sendMessage(
                               // and backend share the same message identity.
                               const assistantMessage: AgentMessage = {
                                 id: assistantMessageId,
+                                appMessageId: assistantAppMessageId,
                                 role: 'assistant' as const,
                                 contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
                                 timestamp: new Date().toISOString(),
@@ -1403,6 +1417,7 @@ export async function sendMessage(
                               // Reuse the pre-assigned assistantMessageId for consistency.
                               assistantMessage = {
                                 id: assistantMessageId,
+                                appMessageId: assistantAppMessageId,
                                 role: 'assistant' as const,
                                 contentBlocks: [], // Initialize contentBlocks array
                                 timestamp: new Date().toISOString(),
@@ -1591,15 +1606,17 @@ export async function sendMessage(
                               if (msgIndex >= 0) {
                                 const assistantMessage = updatedSession.messages[msgIndex];
 
-                                // Create a new message object with isStreaming set to false
-                                updatedSession.messages[msgIndex] = {
-                                  ...assistantMessage,
-                                  isStreaming: false,
-                                };
-
                                 // If the complete event includes final message data, update it
                                 // The backend sends { type: 'complete', streamId, message: finalMessage }
                                 const completeMessageData = data.message || data.data;
+
+                                // Create a new message object with isStreaming set to false
+                                updatedSession.messages[msgIndex] = {
+                                  ...assistantMessage,
+                                  appMessageId: completeMessageData?.appMessageId ?? assistantMessage.appMessageId ?? assistantAppMessageId,
+                                  isStreaming: false,
+                                };
+
                                 logger.info('Stream complete - checking for final message data', {
                                   agentId,
                                   hasMessage: !!data.message,
@@ -2146,6 +2163,8 @@ export async function sendMessage(
                         specialist: session.metadata?.specialist,
                         // Pre-assigned assistant message ID so backend uses the same ID as the renderer
                         assistantMessageId,
+                        userAppMessageId,
+                        assistantAppMessageId,
                       });
 
                       // Check if the response is in IpcResponse format

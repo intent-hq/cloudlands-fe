@@ -1,3 +1,4 @@
+import { shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
@@ -252,6 +253,58 @@ export function isTimestampClose(
   return Math.abs(ta - tb) <= toleranceMs;
 }
 
+function hasExplicitDifferentTurn(a: AgentMessage, b: AgentMessage): boolean {
+  if (
+    a.turnNumber !== undefined &&
+    b.turnNumber !== undefined &&
+    a.turnNumber !== b.turnNumber
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function getAppMessageId(message: AgentMessage): string | undefined {
+  return typeof message.appMessageId === 'string' && message.appMessageId.length > 0
+    ? message.appMessageId
+    : undefined;
+}
+
+function canUseLegacyContentFallback(a: AgentMessage, b: AgentMessage): boolean {
+  return !getAppMessageId(a) && !getAppMessageId(b);
+}
+
+function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
+  if (hasCanonicalId(existing.id) && !hasCanonicalId(incoming.id)) return existing;
+  return incoming;
+}
+
+function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
+  const preferredIdentityMessage = getPreferredIdentityMessage(existing, incoming);
+  const secondaryMessage = preferredIdentityMessage === existing ? incoming : existing;
+  return {
+    ...secondaryMessage,
+    ...preferredIdentityMessage,
+    id: preferredIdentityMessage.id,
+    appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
+    metadata:
+      existing.metadata || incoming.metadata
+        ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
+        : undefined,
+  };
+}
+
+function isCanonicalAssistantDuplicate(a: AgentMessage, b: AgentMessage): boolean {
+  if (hasExplicitDifferentTurn(a, b)) return false;
+  if (!canUseLegacyContentFallback(a, b)) return false;
+  return (
+    a.role === 'assistant' &&
+    b.role === 'assistant' &&
+    hasCanonicalId(a.id) &&
+    hasCanonicalId(b.id)
+  );
+}
+
 /**
  * Find a local message that matches the incoming message by content hash,
  * role, and timestamp proximity. Returns the index in `messages` or -1.
@@ -259,6 +312,7 @@ export function isTimestampClose(
 function findContentMatch(
   messages: AgentMessage[],
   incoming: AgentMessage,
+  shouldMatch: (existing: AgentMessage, incoming: AgentMessage) => boolean = () => true,
 ): number {
   const incomingHash = computeMessageContentHash(incoming);
   if (incomingHash === null) return -1; // no content blocks, skip
@@ -266,8 +320,10 @@ function findContentMatch(
     const existing = messages[i];
     if (existing.id === incoming.id) continue; // already same ID, skip
     if (existing.role !== incoming.role) continue;
+    if (!canUseLegacyContentFallback(existing, incoming)) continue;
     if (computeMessageContentHash(existing) !== incomingHash) continue;
     if (!isTimestampClose(existing.timestamp, incoming.timestamp)) continue;
+    if (!shouldMatch(existing, incoming)) continue;
     return i;
   }
   return -1;
@@ -279,19 +335,35 @@ function findContentMatch(
 
 function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
   const seen = new Set<string>();
+  const appMessageIdToIndex = new Map<string, number>();
   const result: AgentMessage[] = [];
 
-  // First pass: deduplicate by ID (existing behavior)
+  // First pass: deduplicate by ID (existing behavior), then by stable app-owned
+  // logical message ID when present.
   for (const msg of messages) {
-    if (!seen.has(msg.id)) {
-      seen.add(msg.id);
-      result.push(msg);
+    if (seen.has(msg.id)) continue;
+    seen.add(msg.id);
+
+    const appMessageId = getAppMessageId(msg);
+    if (appMessageId) {
+      const existingIdx = appMessageIdToIndex.get(appMessageId);
+      if (existingIdx !== undefined) {
+        result[existingIdx] = mergeLogicalMessage(result[existingIdx], msg);
+        continue;
+      }
+      appMessageIdToIndex.set(appMessageId, result.length);
     }
+
+    result.push(msg);
   }
 
-  // Second pass: content-hash tiebreaker — when two messages have different IDs
-  // but the same content hash, role, and close timestamps, keep the one with
-  // the canonical `msg_*` prefix.
+  // Second pass: legacy content-hash tiebreaker — when two messages both lack
+  // app-owned identity but have different IDs, the same content hash, role, and
+  // close timestamps, collapse local ↔ canonical pairs by keeping the canonical
+  // `msg_*` prefix. Also collapse canonical assistant ↔ canonical assistant
+  // duplicates from the same logical turn, keeping the first canonical copy
+  // already present in message order. Messages with appMessageId or explicitly
+  // different turnNumbers are never content-collapsed.
   // We track *all* indices per hash so that multiple non-canonical duplicates
   // are all removed when a canonical message arrives (not just the first one).
   const hashMap = new Map<string, number[]>();
@@ -309,18 +381,27 @@ function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
         const prev = result[prevIdx];
         // Only merge if timestamps are close (same logical message)
         if (!isTimestampClose(prev.timestamp, curr.timestamp)) continue;
-        // Only collapse when exactly one copy has a canonical `msg_*` ID
-        // (i.e., one is local-UUID and the other is provider-assigned).
-        // If both are canonical or both are non-canonical, keep both.
+        if (hasExplicitDifferentTurn(prev, curr)) continue;
+        if (!canUseLegacyContentFallback(prev, curr)) continue;
+        // Collapse when exactly one copy has a canonical `msg_*` ID (local ↔
+        // provider-assigned), or when both are canonical assistant messages
+        // representing the same logical turn. If both are non-canonical, keep both.
         const prevCanonical = hasCanonicalId(prev.id);
         if (currCanonical && !prevCanonical) {
+          result[i] = mergeLogicalMessage(prev, curr);
           toRemove.add(prevIdx);
         } else if (prevCanonical && !currCanonical) {
+          result[prevIdx] = mergeLogicalMessage(curr, prev);
           toRemove.add(i);
           currRemoved = true;
           break; // current is dropped, no need to check other priors
+        } else if (isCanonicalAssistantDuplicate(prev, curr)) {
+          result[prevIdx] = mergeLogicalMessage(curr, prev);
+          toRemove.add(i);
+          currRemoved = true;
+          break; // keep the earlier canonical assistant copy
         }
-        // else: both canonical or both non-canonical → keep both
+        // else: both non-canonical, or canonical non-assistant → keep both
       }
       if (!currRemoved) {
         prevIndices.push(i);
@@ -412,34 +493,60 @@ function registerInWorkspaceIndex(
   };
 }
 
+type SessionComparisonSnapshot = Pick<
+  StoredAgentSession,
+  | 'status'
+  | 'name'
+  | 'model'
+  | 'isStreaming'
+  | 'isProcessing'
+  | 'isResponding'
+  | 'digest'
+  | 'backendSessionId'
+  | 'acpSessionId'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'lastActivity'
+  | 'hasUnread'
+  | 'currentTurnNumber'
+  | 'isBackground'
+  | 'activationState'
+> & {
+  messageCount: number;
+  lastMessageId: AgentMessage['id'] | undefined;
+};
+
+function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
+  const ids = session.messages.ids;
+  return {
+    status: session.status,
+    name: session.name,
+    model: session.model,
+    isStreaming: session.isStreaming,
+    isProcessing: session.isProcessing,
+    isResponding: session.isResponding,
+    digest: session.digest,
+    backendSessionId: session.backendSessionId,
+    acpSessionId: session.acpSessionId,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    lastActivity: session.lastActivity,
+    hasUnread: session.hasUnread,
+    currentTurnNumber: session.currentTurnNumber,
+    isBackground: session.isBackground,
+    activationState: session.activationState,
+    messageCount: ids.length,
+    lastMessageId: ids.length === 0 ? undefined : ids[ids.length - 1],
+  };
+}
+
 /**
  * Shallow equivalence check for upsertSession no-op guard.
  * Compares key scalar fields and message count / last message ID
  * to avoid creating new state references when nothing changed.
  */
 function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): boolean {
-  const aIds = a.messages.ids;
-  const bIds = b.messages.ids;
-  return (
-    a.status === b.status &&
-    a.name === b.name &&
-    a.model === b.model &&
-    a.isStreaming === b.isStreaming &&
-    a.isProcessing === b.isProcessing &&
-    a.isResponding === b.isResponding &&
-    a.digest === b.digest &&
-    a.backendSessionId === b.backendSessionId &&
-    a.acpSessionId === b.acpSessionId &&
-    a.createdAt === b.createdAt &&
-    a.updatedAt === b.updatedAt &&
-    a.lastActivity === b.lastActivity &&
-    a.hasUnread === b.hasUnread &&
-    a.currentTurnNumber === b.currentTurnNumber &&
-    a.isBackground === b.isBackground &&
-    a.activationState === b.activationState &&
-    aIds.length === bIds.length &&
-    (aIds.length === 0 || aIds[aIds.length - 1] === bIds[bIds.length - 1])
-  );
+  return shallowEqual(toSessionComparisonSnapshot(a), toSessionComparisonSnapshot(b));
 }
 
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
@@ -508,15 +615,14 @@ export const removeMessage = createAction<[agentId: string, messageId: string]>(
 );
 
 /**
- * Swaps the message at the matched index in place. Does not re-sort or
- * re-dedup — the caller must ensure the new message is semantically close
- * enough to the old one (same logical turn) that re-normalization isn't
- * required. Used by the saga's content-match dedup to preserve canonical-ID
- * without reordering.
+ * Swaps the message at the matched index in place. Does not re-sort — the
+ * caller must ensure the new message is semantically close enough to the old
+ * one (same logical turn). Used by the saga's content-match dedup to preserve
+ * canonical-ID without reordering.
  *
- * If a different message already exists with the same ID as `newMessage`
- * (e.g. the canonical copy was added concurrently), that stale entry is
- * dropped so the list never contains two messages sharing an ID.
+ * If a duplicate message already exists (same ID, or equivalent canonical
+ * assistant content from the same turn), that stale entry is dropped so the
+ * list never contains duplicate logical messages.
  */
 export const replaceMessageById = createAction<[agentId: string, oldId: string, newMessage: AgentMessage]>(
   'agentSessions/replaceMessageById',
@@ -605,20 +711,48 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
-    // Primary guard: exact ID match → skip (O(1) Collection lookup)
-    if (getItem(session.messages, normalizedMsg.id)) return state;
-    // Content-match guard: if the arriving message has a canonical `msg_*` ID
-    // and a local message matches by content, replace the local copy.
-    if (hasCanonicalId(normalizedMsg.id)) {
-      const currentList = getItems(session.messages);
-      const matchIdx = findContentMatch(currentList, normalizedMsg);
-      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+    const currentList = getItems(session.messages);
+    const appMessageId = getAppMessageId(normalizedMsg);
+    if (appMessageId) {
+      const appMatchIdx = currentList.findIndex((m) => getAppMessageId(m) === appMessageId);
+      if (appMatchIdx !== -1) {
         const newList = currentList.slice();
-        newList[matchIdx] = normalizedMsg;
-        return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
+        newList[appMatchIdx] = mergeLogicalMessage(newList[appMatchIdx], normalizedMsg);
+        return setSession(state, agentId, {
+          ...session,
+          messages: buildMessagesCollection(deduplicateMessages(newList)),
+        });
       }
     }
-    const appended = getItems(session.messages);
+    // Primary guard: exact ID match → skip (O(1) Collection lookup)
+    if (getItem(session.messages, normalizedMsg.id)) return state;
+    // Content-match guard: if the arriving message has a canonical `msg_*` ID,
+    // replace a matching local copy or skip a matching canonical assistant copy.
+    if (hasCanonicalId(normalizedMsg.id)) {
+      const matchIdx = findContentMatch(
+        currentList,
+        normalizedMsg,
+        (existing, incoming) =>
+          !hasCanonicalId(existing.id) && !hasExplicitDifferentTurn(existing, incoming),
+      );
+      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+        const newList = currentList.slice();
+        newList[matchIdx] = mergeLogicalMessage(currentList[matchIdx], normalizedMsg);
+        return setSession(state, agentId, {
+          ...session,
+          messages: buildMessagesCollection(deduplicateMessages(newList)),
+        });
+      }
+      const canonicalAssistantMatchIdx = findContentMatch(
+        currentList,
+        normalizedMsg,
+        isCanonicalAssistantDuplicate,
+      );
+      if (canonicalAssistantMatchIdx !== -1) {
+        return state;
+      }
+    }
+    const appended = currentList.slice();
     appended.push(normalizedMsg);
     const pruned = pruneMessages(appended);
     return setSession(state, agentId, { ...session, messages: buildMessagesCollection(pruned) });
@@ -657,7 +791,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       normalized.id === oldId
         ? swapped
         : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
-    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(deduplicateMessages(newList)) });
   })
   .with(updateSession, (state, { payload: [agentId, updates] }) => {
     const session = getSession(state, agentId);
@@ -758,20 +892,48 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const session = getSession(state, agentId);
     if (!session) return state;
     const normalizedMsg = normalizeAgentMessage(message);
-    // Primary guard: exact ID match → skip (O(1) Collection lookup)
-    if (getItem(session.messages, normalizedMsg.id)) return state;
-    // Content-match guard: if the arriving message has a canonical `msg_*` ID
-    // and a local message matches by content, replace the local copy.
-    if (hasCanonicalId(normalizedMsg.id)) {
-      const currentList = getItems(session.messages);
-      const matchIdx = findContentMatch(currentList, normalizedMsg);
-      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+    const currentList = getItems(session.messages);
+    const appMessageId = getAppMessageId(normalizedMsg);
+    if (appMessageId) {
+      const appMatchIdx = currentList.findIndex((m) => getAppMessageId(m) === appMessageId);
+      if (appMatchIdx !== -1) {
         const newList = currentList.slice();
-        newList[matchIdx] = normalizedMsg;
-        return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
+        newList[appMatchIdx] = mergeLogicalMessage(newList[appMatchIdx], normalizedMsg);
+        return setSession(state, agentId, {
+          ...session,
+          messages: buildMessagesCollection(deduplicateMessages(newList)),
+        });
       }
     }
-    const appended = getItems(session.messages);
+    // Primary guard: exact ID match → skip (O(1) Collection lookup)
+    if (getItem(session.messages, normalizedMsg.id)) return state;
+    // Content-match guard: if the arriving message has a canonical `msg_*` ID,
+    // replace a matching local copy or skip a matching canonical assistant copy.
+    if (hasCanonicalId(normalizedMsg.id)) {
+      const matchIdx = findContentMatch(
+        currentList,
+        normalizedMsg,
+        (existing, incoming) =>
+          !hasCanonicalId(existing.id) && !hasExplicitDifferentTurn(existing, incoming),
+      );
+      if (matchIdx !== -1 && !hasCanonicalId(currentList[matchIdx].id)) {
+        const newList = currentList.slice();
+        newList[matchIdx] = mergeLogicalMessage(currentList[matchIdx], normalizedMsg);
+        return setSession(state, agentId, {
+          ...session,
+          messages: buildMessagesCollection(deduplicateMessages(newList)),
+        });
+      }
+      const canonicalAssistantMatchIdx = findContentMatch(
+        currentList,
+        normalizedMsg,
+        isCanonicalAssistantDuplicate,
+      );
+      if (canonicalAssistantMatchIdx !== -1) {
+        return state;
+      }
+    }
+    const appended = currentList.slice();
     appended.push(normalizedMsg);
     const pruned = pruneMessages(appended);
     return setSession(state, agentId, { ...session, messages: buildMessagesCollection(pruned) });
@@ -802,7 +964,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       normalized.id === oldId
         ? swapped
         : swapped.filter((m, i) => i === idx || m.id !== normalized.id);
-    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(newList) });
+    return setSession(state, agentId, { ...session, messages: buildMessagesCollection(deduplicateMessages(newList)) });
   })
   .with(updateAgentMessage, (state, { payload: [, agentId, messageId, updates] }) => {
     const session = getSession(state, agentId);

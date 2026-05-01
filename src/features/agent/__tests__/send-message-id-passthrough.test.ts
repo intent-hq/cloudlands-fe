@@ -147,4 +147,19 @@ describe('Renderer-side assistant message ID generation', () => {
       expect(id1).not.toBe(id2); // always fresh
     });
   });
+
+  describe('complete-event appMessageId adoption', () => {
+    function resolveCompletedAppMessageId(
+      placeholderAppMessageId: string | undefined,
+      backendFinalAppMessageId: string | undefined,
+      fallbackAppMessageId: string,
+    ): string {
+      return backendFinalAppMessageId ?? placeholderAppMessageId ?? fallbackAppMessageId;
+    }
+
+    it('prefers the backend final appMessageId over a locally-generated placeholder appMessageId', () => {
+      expect(resolveCompletedAppMessageId('app_msg_placeholder', 'app_msg_backend_final', 'app_msg_fallback'))
+        .toBe('app_msg_backend_final');
+    });
+  });
 });

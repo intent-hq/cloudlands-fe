@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import type { Readable } from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { logger as rendererLogger, LogCategory } from '$lib/logging/logger.svelte';
@@ -433,6 +434,7 @@ export class ChatService implements IDisposable {
         // to prevent divergence between this instance and Redux state that causes
         // the streaming response to appear in the wrong conversation turn.
         let streamingMessageId: ReturnType<typeof createMessageId> | undefined;
+        let streamingAppMessageId: string | undefined;
         const sessionId = s.session?.id;
         const sessionWorkspaceId = s.session?.workspaceId;
         if (sessionId && sessionWorkspaceId) {
@@ -440,10 +442,12 @@ export class ChatService implements IDisposable {
           const storeLastMsg = storeSession?.messages?.[storeSession.messages.length - 1];
           if (storeLastMsg?.role === 'assistant' && storeLastMsg?.isStreaming) {
             streamingMessageId = createMessageId(storeLastMsg.id);
+            streamingAppMessageId = storeLastMsg.appMessageId;
           }
         }
         const streamingMessage: AgentMessage = {
           id: streamingMessageId ?? createMessageId(`msg_${uuidv4()}`),
+          appMessageId: streamingAppMessageId ?? createAppMessageId(),
           role: 'assistant' as const,
           contentBlocks: [{ type: 'text' as const, text: newStreamingContent }],
           timestamp: new Date().toISOString(),
@@ -2869,6 +2873,7 @@ export class ChatService implements IDisposable {
         // IMPORTANT: Message IDs must start with 'msg_' for Zod validation
         const streamingMessage: AgentMessage = {
           id: createMessageId(`msg_${uuidv4()}`),
+          appMessageId: createAppMessageId(),
           role: 'assistant' as const,
           contentBlocks: initialBlocks,
           timestamp: new Date().toISOString(),
@@ -3201,6 +3206,7 @@ export class ChatService implements IDisposable {
       if (partialContent && partialContent.trim()) {
         const errorMessage: AgentMessage = {
           id: createMessageId(`msg_${uuidv4()}`),
+          appMessageId: createAppMessageId(),
           role: 'assistant',
           contentBlocks: [
             {

@@ -19,6 +19,7 @@ import { Logger } from '../../../shared/logger';
 import type { AgentMessage, ContentBlock, Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 import { createMessageId, WorkspaceId } from '../../../shared/types/branded-ids';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -688,6 +689,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Create assistant message
     const message: AgentMessage & { content?: string } = {
       id: session.config.messageId || createMessageId(uuidv4()),
+      appMessageId: createAppMessageId(),
       role: 'assistant',
       contentBlocks:
         session.contentBlocks.length > 0
@@ -1454,6 +1456,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
               // Create a new assistant message with the content blocks
               store.dispatch(addAgentMessage(wsId, state.config.agentId, {
                 id: createMessageId(`msg_${Date.now()}`),
+                appMessageId: createAppMessageId(),
                 role: 'assistant',
                 contentBlocks: state.contentBlocks,
                 timestamp: new Date().toISOString(),

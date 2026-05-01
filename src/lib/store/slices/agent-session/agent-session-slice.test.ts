@@ -153,6 +153,41 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].name).toBe('Updated');
     });
+
+    it('returns same state reference when upserting an equivalent stored session', () => {
+      const messages = [makeUniqueMessage('m1'), makeUniqueMessage('m2')];
+      const session = makeSession('a1', 'ws-1', { messages });
+      const state = agentSessionReducer(initialState, upsertSession(session));
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [...messages] })),
+      );
+
+      expect(next).toBe(state);
+    });
+
+    it('keeps the no-op guard bounded to message count and last message ID', () => {
+      const messages = [makeUniqueMessage('m1'), makeUniqueMessage('m2')];
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            messages: [
+              { ...messages[0], contentBlocks: [{ type: 'text', text: 'changed' }] },
+              messages[1],
+            ],
+          }),
+        ),
+      );
+
+      expect(next).toBe(state);
+    });
   });
 
   describe('removeSession', () => {
@@ -198,6 +233,26 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, addMessage('a1', makeMessage('m1')));
       state = agentSessionReducer(state, addMessage('a1', makeMessage('m1')));
       expect(getMsgs(state, 'a1')).toHaveLength(1);
+    });
+
+    it('merges messages with the same appMessageId without requiring matching message ids', () => {
+      const appMessageId = 'app_msg_same';
+      const localMsg = { ...makeUniqueMessage('local-id', 'assistant'), appMessageId };
+      const backendMsg = {
+        ...makeUniqueMessage('msg_backend', 'assistant'),
+        appMessageId,
+        metadata: { model: 'test-model' },
+      };
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, addMessage('a1', localMsg));
+      state = agentSessionReducer(state, addMessage('a1', backendMsg));
+
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
+      expect(getMsgs(state, 'a1')[0]).toMatchObject({
+        id: 'msg_backend',
+        appMessageId,
+        metadata: { model: 'test-model' },
+      });
     });
 
     it('is no-op for unknown agentId', () => {
@@ -251,6 +306,55 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, replaceMessages('a1', [msg, msg]));
       expect(getMsgs(state, 'a1')).toHaveLength(1);
       expect(getMsgs(state, 'a1')[0].id).toBe('m1');
+    });
+
+    it('deduplicates replacement snapshots by appMessageId', () => {
+      const appMessageId = 'app_msg_snapshot';
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        replaceMessages('a1', [
+          { ...makeUniqueMessage('local-id', 'assistant'), appMessageId },
+          { ...makeUniqueMessage('msg_backend', 'assistant'), appMessageId },
+        ]),
+      );
+
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
+      expect(getMsgs(state, 'a1')[0]).toMatchObject({ id: 'msg_backend', appMessageId });
+    });
+
+    it('prefers canonical message identity when same-appMessageId snapshot order is reversed', () => {
+      const appMessageId = 'app_msg_reversed';
+      const backendMsg: AgentMessage = {
+        id: 'msg_backend',
+        appMessageId,
+        role: 'assistant',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Final backend content' }],
+        metadata: { source: 'backend' },
+      };
+      const localMsg: AgentMessage = {
+        id: 'local-id',
+        appMessageId,
+        role: 'assistant',
+        timestamp: '2024-01-01T00:00:03.000Z',
+        contentBlocks: [{ type: 'text', text: 'Stale local content' }],
+        metadata: { source: 'local' },
+      };
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        replaceMessages('a1', [backendMsg, localMsg]),
+      );
+
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
+      expect(getMsgs(state, 'a1')[0]).toMatchObject({
+        id: 'msg_backend',
+        appMessageId,
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Final backend content' }],
+        metadata: { source: 'backend' },
+      });
     });
   });
 
@@ -1161,6 +1265,129 @@ describe('addMessage content-match dedup', () => {
     expect(getMsgs(state, 'a1')[0].id).toBe('msg_backend');
   });
 
+  it('replaces local-UUID with incoming msg_* when explicit turnNumber matches', () => {
+    const localMsg = { ...makeContentMessage('local-uuid', 'assistant', 'Hello world'), turnNumber: 2 };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = {
+      ...makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z'),
+      turnNumber: 2,
+    };
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_backend');
+  });
+
+  it('keeps local-UUID and canonical assistant messages when explicit turnNumbers differ', () => {
+    const localMsg = { ...makeContentMessage('local-uuid', 'assistant', 'Hello world'), turnNumber: 1 };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = {
+      ...makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z'),
+      turnNumber: 2,
+    };
+    state = agentSessionReducer(state, addMessage('a1', backendMsg));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_backend']);
+  });
+
+  it('skips incoming canonical assistant duplicate when existing msg_* content matches', () => {
+    const existing: AgentMessage = {
+      id: 'msg_existing',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'tool_use', name: 'read_file', input: { path: 'foo.ts' } }],
+    };
+    const incoming: AgentMessage = {
+      id: 'msg_incoming',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'tool_use', name: 'read_file', input: { path: 'foo.ts' } }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addMessage('a1', incoming));
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_existing');
+  });
+
+  it('keeps repeated canonical assistant messages when appMessageIds differ', () => {
+    const existing: AgentMessage = {
+      id: 'msg_existing',
+      appMessageId: 'app_msg_existing',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const incoming: AgentMessage = {
+      id: 'msg_incoming',
+      appMessageId: 'app_msg_incoming',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addMessage('a1', incoming));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_existing', 'msg_incoming']);
+  });
+
+  it('does not use content fallback when exactly one message has appMessageId', () => {
+    const existing = makeContentMessage('local-uuid', 'assistant', 'Hello world');
+    const incoming = {
+      ...makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z'),
+      appMessageId: 'app_msg_incoming',
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addMessage('a1', incoming));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_backend']);
+  });
+
+  it('keeps close-timestamp canonical assistant messages from different turns', () => {
+    const existing: AgentMessage = {
+      id: 'msg_existing',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      turnNumber: 1,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const incoming: AgentMessage = {
+      id: 'msg_incoming',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addMessage('a1', incoming));
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
+  });
+
+  it('still skips a same-turn canonical duplicate after a different-turn repeat', () => {
+    const turnOne: AgentMessage = {
+      id: 'msg_turn_one',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      turnNumber: 1,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const turnTwo: AgentMessage = {
+      id: 'msg_turn_two',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const turnTwoDuplicate: AgentMessage = {
+      id: 'msg_turn_two_duplicate',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [turnOne, turnTwo] })),
+    );
+    state = agentSessionReducer(state, addMessage('a1', turnTwoDuplicate));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_turn_one', 'msg_turn_two']);
+  });
+
   it('does not replace when content differs', () => {
     const localMsg = makeContentMessage('local-uuid', 'assistant', 'Hello world');
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
@@ -1213,6 +1440,44 @@ describe('addAgentMessage (cross-slice) content-match dedup', () => {
     state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', backendMsg));
     expect(getMsgs(state, 'a1')).toHaveLength(1);
     expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
+  });
+
+  it('keeps local-UUID and canonical assistant messages when explicit turnNumbers differ', () => {
+    const localMsg = { ...makeContentMessage('local-uuid', 'assistant', 'Reply text'), turnNumber: 1 };
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg] })));
+    const backendMsg = {
+      ...makeContentMessage('msg_canonical', 'assistant', 'Reply text', '2024-01-01T00:00:03.000Z'),
+      turnNumber: 2,
+    };
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', backendMsg));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_canonical']);
+  });
+
+  it('skips incoming canonical assistant duplicate when existing msg_* content matches', () => {
+    const existing = makeContentMessage('msg_existing', 'assistant', 'Reply text');
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    const incoming = makeContentMessage('msg_incoming', 'assistant', 'Reply text', '2024-01-01T00:00:03.000Z');
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', incoming));
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_existing');
+  });
+
+  it('keeps different turns but skips the matching same-turn canonical duplicate', () => {
+    const turnOne = { ...makeContentMessage('msg_turn_one', 'assistant', 'Reply text'), turnNumber: 1 };
+    const turnTwo = {
+      ...makeContentMessage('msg_turn_two', 'assistant', 'Reply text', '2024-01-01T00:00:01.000Z'),
+      turnNumber: 2,
+    };
+    const turnTwoDuplicate = {
+      ...makeContentMessage('msg_turn_two_duplicate', 'assistant', 'Reply text', '2024-01-01T00:00:02.000Z'),
+      turnNumber: 2,
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [turnOne, turnTwo] })),
+    );
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', turnTwoDuplicate));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_turn_one', 'msg_turn_two']);
   });
 });
 
@@ -1302,6 +1567,29 @@ describe('replaceMessageById', () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0].id).toBe('msg_canonical');
   });
+
+  it('drops a stale canonical assistant duplicate with a different ID', () => {
+    const local: AgentMessage = {
+      id: 'local-uuid', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Draft reply' }],
+    };
+    const existingCanonical: AgentMessage = {
+      id: 'msg_existing', role: 'assistant', timestamp: '2024-01-01T00:00:11.000Z',
+      contentBlocks: [{ type: 'text', text: 'Final reply' }],
+    };
+    const replacement: AgentMessage = {
+      id: 'msg_replacement', role: 'assistant', timestamp: '2024-01-01T00:00:12.000Z',
+      contentBlocks: [{ type: 'text', text: 'Final reply' }],
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [local, existingCanonical] })),
+    );
+    state = agentSessionReducer(state, replaceMessageById('a1', 'local-uuid', replacement));
+    const msgs = getMsgs(state, 'a1');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe('msg_replacement');
+  });
 });
 
 describe('replaceAgentMessageById', () => {
@@ -1349,6 +1637,32 @@ describe('replaceAgentMessageById', () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0].id).toBe('msg_canonical');
   });
+
+  it('drops a stale canonical assistant duplicate with a different ID', () => {
+    const local: AgentMessage = {
+      id: 'local-uuid', role: 'assistant', timestamp: '2024-01-01T00:00:10.000Z',
+      contentBlocks: [{ type: 'text', text: 'Draft reply' }],
+    };
+    const existingCanonical: AgentMessage = {
+      id: 'msg_existing', role: 'assistant', timestamp: '2024-01-01T00:00:11.000Z',
+      contentBlocks: [{ type: 'text', text: 'Final reply' }],
+    };
+    const replacement: AgentMessage = {
+      id: 'msg_replacement', role: 'assistant', timestamp: '2024-01-01T00:00:12.000Z',
+      contentBlocks: [{ type: 'text', text: 'Final reply' }],
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [local, existingCanonical] })),
+    );
+    state = agentSessionReducer(
+      state,
+      replaceAgentMessageById('ws-1', 'a1', 'local-uuid', replacement),
+    );
+    const msgs = getMsgs(state, 'a1');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe('msg_replacement');
+  });
 });
 
 describe('deduplicateMessages content-hash tiebreaker', () => {
@@ -1370,6 +1684,171 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     const state = agentSessionReducer(initialState, upsertSession(session));
     expect(getMsgs(state, 'a1')).toHaveLength(1);
     expect(getMsgs(state, 'a1')[0].id).toBe('msg_canonical');
+  });
+
+  it('uses legacy content fallback when both appMessageIds are missing', () => {
+    const localMsg: AgentMessage = {
+      id: 'local-uuid',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Legacy duplicate content' }],
+    };
+    const canonicalMsg: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Legacy duplicate content' }],
+    };
+    const state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] })),
+    );
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_canonical']);
+  });
+
+  it('does not use legacy content fallback when exactly one message has appMessageId on upsert', () => {
+    const localMsg: AgentMessage = {
+      id: 'local-uuid',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const canonicalMsg: AgentMessage = {
+      id: 'msg_canonical',
+      appMessageId: 'app_msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_canonical']);
+  });
+
+  it('does not use legacy content fallback when appMessageIds differ on upsert', () => {
+    const firstCanonical: AgentMessage = {
+      id: 'msg_first',
+      appMessageId: 'app_msg_first',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const secondCanonical: AgentMessage = {
+      id: 'msg_second',
+      appMessageId: 'app_msg_second',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [firstCanonical, secondCanonical] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_first', 'msg_second']);
+  });
+
+  it('keeps local-UUID and canonical messages on upsert when explicit turnNumbers differ', () => {
+    const localMsg: AgentMessage = {
+      id: 'local-uuid',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      turnNumber: 1,
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const canonicalMsg: AgentMessage = {
+      id: 'msg_canonical',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Duplicate content' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_canonical']);
+  });
+
+  it('collapses duplicate canonical assistant messages with equivalent tool-use blocks on upsert', () => {
+    const firstCanonical: AgentMessage = {
+      id: 'msg_first',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'tool_use', name: 'search', input: { query: 'hi', limit: 10 } }],
+    };
+    const duplicateCanonical: AgentMessage = {
+      id: 'msg_duplicate',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      contentBlocks: [{ type: 'tool_use', name: 'search', input: { limit: 10, query: 'hi' } }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [firstCanonical, duplicateCanonical] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0].id).toBe('msg_first');
+  });
+
+  it('keeps repeated canonical assistant messages when timestamps are far apart', () => {
+    const firstCanonical: AgentMessage = {
+      id: 'msg_first',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const laterCanonical: AgentMessage = {
+      id: 'msg_later',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:01:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [firstCanonical, laterCanonical] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
+  });
+
+  it('keeps close-timestamp repeated canonical assistant messages from different turns', () => {
+    const firstCanonical: AgentMessage = {
+      id: 'msg_first',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      turnNumber: 1,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const laterCanonical: AgentMessage = {
+      id: 'msg_later',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const session = makeSession('a1', 'ws-1', { messages: [firstCanonical, laterCanonical] });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1')).toHaveLength(2);
+  });
+
+  it('collapses same-turn canonical duplicates while preserving a different-turn repeat', () => {
+    const turnOne: AgentMessage = {
+      id: 'msg_turn_one',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      turnNumber: 1,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const turnTwo: AgentMessage = {
+      id: 'msg_turn_two',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const turnTwoDuplicate: AgentMessage = {
+      id: 'msg_turn_two_duplicate',
+      role: 'assistant',
+      timestamp: '2024-01-01T00:00:02.000Z',
+      turnNumber: 2,
+      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+    };
+    const session = makeSession('a1', 'ws-1', {
+      messages: [turnOne, turnTwo, turnTwoDuplicate],
+    });
+    const state = agentSessionReducer(initialState, upsertSession(session));
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_turn_one', 'msg_turn_two']);
   });
 
   it('keeps both messages when content differs', () => {

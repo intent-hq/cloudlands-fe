@@ -132,6 +132,7 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import { createMessageId } from '$shared/types/branded-ids';
+  import { createAppMessageId } from '$shared/utils/app-message-id';
   import { v4 as uuidv4 } from 'uuid';
   import type { QueuedMessage } from '$shared/types';
   import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
@@ -2639,6 +2640,7 @@
           // Create a placeholder assistant message with interrupted flag so the UI shows "Stopped".
           const stoppedMessage: AgentMessage = {
             id: createMessageId(`msg_${uuidv4()}`),
+            appMessageId: createAppMessageId(),
             role: 'assistant',
             contentBlocks: [],
             timestamp: new Date().toISOString(),

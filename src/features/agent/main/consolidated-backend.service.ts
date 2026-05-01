@@ -22,6 +22,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from '$shared/utils/event-emitter';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { Logger } from '$shared/logger';
 import type { Workspace, AgentSession } from '$shared/types';
@@ -649,6 +650,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       if (config.initialMessage || config.imageBlocks?.length) {
         const userMessage = {
           id: `msg_${agentId}_${Date.now()}`,
+          appMessageId: createAppMessageId(),
           role: 'user' as const,
           contentBlocks: [
             ...(config.initialMessage?.trim()

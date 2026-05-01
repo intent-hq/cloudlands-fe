@@ -37,6 +37,8 @@ export interface QueuedMessageContextItem {
 export interface QueuedMessage {
   /** Unique identifier for this queued message */
   id: string;
+  /** Stable app-owned logical ID for the user message created from this queue entry */
+  appMessageId?: string;
   /** The message content */
   content: string;
   /** When the message was queued */

@@ -76,6 +76,7 @@ export function normalizeAgentMessage(msg: any): AgentMessage {
     timestamp: msg.timestamp || new Date(),
   };
 
+  if (msg.appMessageId) normalized.appMessageId = msg.appMessageId;
   if (msg.agentId) normalized.agentId = msg.agentId;
   // Handle legacy content field by converting to contentBlocks
   if (msg.content && !msg.contentBlocks) {
@@ -111,6 +112,7 @@ export function mergeMessages(messages: AgentMessage[]): AgentMessage {
   const first = messages[0];
   const merged: AgentMessage = {
     id: first.id,
+    appMessageId: first.appMessageId,
     agentId: first.agentId,
     role: first.role,
     timestamp: first.timestamp,

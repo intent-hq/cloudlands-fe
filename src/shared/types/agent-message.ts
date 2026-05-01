@@ -106,6 +106,7 @@ export interface MessageMetadata {
 export interface AgentMessage {
   // Identifiers
   id: string;
+  appMessageId?: string;
   agentId?: AgentId;
 
   // Core content
