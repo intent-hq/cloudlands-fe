@@ -6,7 +6,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { detectBinaryContent } from '../binary-file-extensions';
+import { detectBinaryContent, isBinaryExtension } from '../binary-file-extensions';
+
+describe('isBinaryExtension', () => {
+  it('should not treat .app file paths as binary by extension', () => {
+    expect(isBinaryExtension('foo.app')).toBe(false);
+  });
+});
 
 describe('detectBinaryContent', () => {
   it('should return true for buffer with null bytes', () => {

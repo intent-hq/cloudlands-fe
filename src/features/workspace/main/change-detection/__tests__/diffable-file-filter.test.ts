@@ -68,6 +68,23 @@ describe('isFileDiffable - content-based binary detection', () => {
     expect(result.isDiffable).toBe(true);
   });
 
+  it('should NOT flag plain text file with .app extension as binary', async () => {
+    const content = 'This is a plain text file with an app extension.\n';
+    const relPath = await writeTestFile('test.app', content);
+
+    const result = await isFileDiffable(tmpDir, relPath);
+    expect(result.isDiffable).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('should flag .app files with binary content as binary content', async () => {
+    const relPath = await writeTestFile('binary.app', Buffer.from([0x48, 0x00, 0x57]));
+
+    const result = await isFileDiffable(tmpDir, relPath);
+    expect(result.isDiffable).toBe(false);
+    expect(result.reason).toBe('binary-content');
+  });
+
   it('should NOT flag .json file with unusual UTF-8 content as binary', async () => {
     const content = JSON.stringify({ greeting: 'こんにちは', emoji: '🎉', accent: 'café' });
     const relPath = await writeTestFile('i18n.json', content);

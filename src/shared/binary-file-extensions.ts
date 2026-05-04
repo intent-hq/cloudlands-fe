@@ -91,7 +91,6 @@ export const BINARY_FILE_EXTENSIONS = new Set([
   '.a',
   '.o',
   '.obj',
-  '.app',
 
   // Fonts
   '.ttf',
