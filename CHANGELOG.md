@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.9
+
+- Model picker now surfaces the actual provider error (e.g. invalid key, network failure) instead of a generic "Failed to load models" message.
+- Fixes: duplicate assistant messages appearing in chat, double initial agent stream when opening a workspace.
+
+## 0.3.8
+
+- Diff viewer performance improvements.
+- Copy the current browser panel URL with a keyboard shortcut.
+- Model picker no longer shows stale or cached values from previous sessions, and unknown model names now fuzzy-match to the closest available model instead of being silently dropped.
+- Fixes: ACP tool-call updates not matching correct agents, agent wake notifications occasionally creating duplicate messages, deleted workspaces reappearing when multiple were removed in quick succession.
+
+## 0.3.7
+
+- Changes panel loads noticeably faster on workspaces with many agents, and the file explorer no longer re-renders the entire tree every time a file is saved.
+- Agent state is preserved correctly when switching between workspaces instead of momentarily showing the wrong agent.
+- Fixes: duplicate message flashes during streaming, Emacs-style Ctrl key shortcuts in the editor firing on Windows/Linux where they shouldn't.
+
 ## 0.3.6
 
 - Model picker no longer swaps your selected model when a provider is slow to load — auto-fallback now waits for the user's provider to actually settle instead of reacting to transient empty results.
