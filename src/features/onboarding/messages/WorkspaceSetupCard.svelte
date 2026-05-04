@@ -63,6 +63,8 @@
     repoStatus?: StepStatus;
     branchStatus?: StepStatus;
     agentStatus?: StepStatus;
+    /** If true, the workspace works directly on the branch without an isolated worktree copy */
+    skipWorktree?: boolean;
   }
 
   let {
@@ -81,7 +83,11 @@
     repoStatus = 'pending',
     branchStatus = 'pending',
     agentStatus = 'pending',
+    skipWorktree = false,
   }: Props = $props();
+
+  /** For skipWorktree mode, strip the remote prefix (e.g. "origin/main" → "main") */
+  const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
 
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
   /** Use the specialist's canonical name when available, fall back to the passed-in prop */
@@ -211,31 +217,57 @@
       {/if}
     {/snippet}
     {#snippet repoActive()}
-      Creating an isolated copy of {@render repoNameCopyable()}
+      {#if skipWorktree}
+        Opening {@render repoNameCopyable()}…
+      {:else}
+        Creating an isolated copy of {@render repoNameCopyable()}
+      {/if}
     {/snippet}
     {#snippet repoDone()}
-      We created an isolated copy of {@render repoNameCopyable()}
-      {#if worktreePath}{' '}at
-        <OpenComboButton
-          filePath={worktreePath}
-          isDirectory={true}
-          variant="sidebar"
-          compact
-          class="inline"
-        >
-          <span
-            class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
-            >{shortenPath(worktreePath)}</span
+      {#if skipWorktree}
+        Working directly on <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code> {#if worktreePath}{' '}at
+          <OpenComboButton
+            filePath={worktreePath}
+            isDirectory={true}
+            variant="sidebar"
+            compact
+            class="inline"
           >
-        </OpenComboButton>{/if}.
+            <span
+              class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
+              >{shortenPath(worktreePath)}</span
+            >
+          </OpenComboButton>{/if}.
+      {:else}
+        We created an isolated copy of {@render repoNameCopyable()}
+        {#if worktreePath}{' '}at
+          <OpenComboButton
+            filePath={worktreePath}
+            isDirectory={true}
+            variant="sidebar"
+            compact
+            class="inline"
+          >
+            <span
+              class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
+              >{shortenPath(worktreePath)}</span
+            >
+          </OpenComboButton>{/if}.
+      {/if}
     {/snippet}
 
     <!-- Step 2: Branch -->
-    {#if branchStatus !== 'pending'}
+    {#if branchStatus !== 'pending' && !skipWorktree}
       {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone)}
     {/if}
     {#snippet branchActive()}
-      {#if branch}
+      {#if skipWorktree}
+        {#if branch}
+          Working directly on branch <span class="">{branch}</span>…
+        {:else}
+          Working directly on branch…
+        {/if}
+      {:else if branch}
         Creating a new branch <span class="">{branch}</span> off
         <button
           class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
@@ -257,7 +289,13 @@
       </button>
     {/snippet}
     {#snippet branchDone()}
-      {#if branch}
+      {#if skipWorktree}
+        {#if branch}
+          Working directly on branch {@render copyableRef(branch, 'branch name')}.
+        {:else}
+          Working directly on branch.
+        {/if}
+      {:else if branch}
         Working in a new branch
         {@render copyableRef(branch, 'branch name')}, off
         {@render copyableRef(baseRef, 'base ref')}.

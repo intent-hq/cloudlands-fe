@@ -359,6 +359,7 @@
     specialistName?: string;
     specialistId?: string;
     setupScript?: string;
+    skipWorktree?: boolean;
   } | null>(null);
 
   function handleFocusSetupTerminal() {
@@ -1708,6 +1709,7 @@
           specialistName: session?.name,
           specialistId: (session?.metadata as any)?.specialist,
           setupScript: workspace.setupScript,
+          skipWorktree: workspace.skipWorktree,
         };
       }
     }
@@ -3130,6 +3132,7 @@
             onFocusSetupTerminal={onboardingContext.setupScript
               ? handleFocusSetupTerminal
               : undefined}
+            skipWorktree={onboardingContext.skipWorktree}
           />
         </div>
       {:else if !chatState?.session && chatState.messages.length === 0 && !chatState.isStreaming && !pendingInitialPrompt}
@@ -3155,6 +3158,7 @@
               onFocusSetupTerminal={onboardingContext.setupScript
                 ? handleFocusSetupTerminal
                 : undefined}
+              skipWorktree={onboardingContext.skipWorktree}
             />
           </div>
         {/if}
@@ -3227,6 +3231,7 @@
                     onFocusSetupTerminal={onboardingContext.setupScript
                       ? handleFocusSetupTerminal
                       : undefined}
+                    skipWorktree={onboardingContext.skipWorktree}
                   />
                 </div>
               {/if}
@@ -3334,6 +3339,7 @@
                     onFocusSetupTerminal={onboardingContext.setupScript
                       ? handleFocusSetupTerminal
                       : undefined}
+                    skipWorktree={onboardingContext.skipWorktree}
                   />
                 </div>
               {/if}
@@ -3471,6 +3477,7 @@
                   onFocusSetupTerminal={onboardingContext.setupScript
                     ? handleFocusSetupTerminal
                     : undefined}
+                  skipWorktree={onboardingContext.skipWorktree}
                 />
               </div>
             {/if}

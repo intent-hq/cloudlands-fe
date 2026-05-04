@@ -891,6 +891,7 @@
               repoStatus={setupRepoStatus}
               branchStatus={setupBranchStatus}
               agentStatus={setupAgentStatus}
+              skipWorktree={onboardingSkipWorktree}
             />
           </div>
         </div>
