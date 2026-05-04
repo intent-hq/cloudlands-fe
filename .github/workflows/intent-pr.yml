@@ -111,6 +111,32 @@ jobs:
       - name: Type check (preload)
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
 
+  lint:
+    name: ESLint
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: ESLint
+        run: pnpm run lint
+
   test:
     name: Unit Tests
     runs-on: macos-14
@@ -186,13 +212,14 @@ jobs:
     name: Type Check & Test
     runs-on: macos-14
     if: always()
-    needs: [typecheck-renderer, typecheck-main, typecheck-preload, test, accessibility, dispatch-gate]
+    needs: [typecheck-renderer, typecheck-main, typecheck-preload, lint, test, accessibility, dispatch-gate]
     steps:
       - name: Check results
         run: |
           if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
              [ "${{ needs.typecheck-main.result }}" != "success" ] || \
              [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.accessibility.result }}" != "success" ] || \
              [ "${{ needs.dispatch-gate.result }}" != "success" ]; then

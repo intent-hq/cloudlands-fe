@@ -12,6 +12,7 @@ import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import { injectMcpAuth } from './mcp-auth-providers';
 import { RESERVED_MCP_SERVER_NAMES } from '../../../shared/config/mcp-constants';
+import { WorkspaceConfig } from '$shared/main/config';
 
 const logger = new Logger('UserMcpSettings');
 
@@ -369,8 +370,6 @@ export function validateMcpServerConfig(config: unknown): { valid: boolean; erro
  * Get the path to the disabled MCP servers file for a workspace
  */
 async function getWorkspaceDisabledMcpServersPath(workspaceId: string): Promise<string> {
-  // Dynamic import to avoid circular dependency issues
-  const { WorkspaceConfig } = await import('../../../shared/main/config');
   return path.join(WorkspaceConfig.paths.metadata(workspaceId), DISABLED_MCP_SERVERS_FILE);
 }
 

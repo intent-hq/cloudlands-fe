@@ -8,7 +8,12 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { execAsync, execFileAsync, type GitEnvPolicy } from '../../../shared/git/git-env';
+import {
+  detectKeychainAccessRisk,
+  execAsync,
+  execFileAsync,
+  type GitEnvPolicy,
+} from '../../../shared/git/git-env';
 import {
   getGitAuthErrorMessage,
   isGitAuthError,
@@ -28,6 +33,7 @@ import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitAuthRequired, gitCommitCreated, githubAuthRequired, gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
 import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { githubService } from '../../git-tracking/main/github.service';
+import { keychainIPCBridge } from '../../git/main/keychain.ipc';
 import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { gitService } from '../../git/main/git.service';
 import { backgroundGitOpsService } from '../../git/main/background-git-ops.service';
@@ -173,10 +179,6 @@ export class AcceptChangesService {
           error: 'Keychain access was cancelled. Unlock your keychain and retry.',
         };
       }
-
-      // Import dynamically to avoid circular dependency issues during initialization
-      const { detectKeychainAccessRisk } = await import('../../../shared/git/git-env');
-      const { keychainIPCBridge } = await import('../../git/main/keychain.ipc');
 
       const risk = await detectKeychainAccessRisk(worktreePath, operation);
       const willTriggerKeychain = risk.willTriggerKeychain;

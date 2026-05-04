@@ -10,6 +10,9 @@ import {
 } from '../../../workspace/main/workspace.repository';
 import { getAttributionEngine } from '$features/workspace/main/provenance/attribution-engine';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
+import { createWorkspaceEvent } from '$features/events/types';
+import { mainDispatch } from '../../../../store/main/redux-store-bridge';
+import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import { Logger } from '$shared/logger';
 import type { Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -345,9 +348,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, path);
 
       try {
-        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
-        const { createWorkspaceEvent } = await import('../../../events/types');
-        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const patch = Diff.createPatch(path, oldContent, content, '', '', { context: 3 });
         let additions = 0;
         let deletions = 0;
@@ -396,9 +396,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, path);
 
       try {
-        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
-        const { createWorkspaceEvent } = await import('../../../events/types');
-        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const agentInfo = getAgentInfo(call);
         const patch = Diff.createPatch(path, oldContent, '', '', '', { context: 3 });
         const deletions = patch.split('\n').filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
@@ -454,9 +451,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       emitAgentFileChange(workspaceId, newPath);
 
       try {
-        const { emitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
-        const { createWorkspaceEvent } = await import('../../../events/types');
-        const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
         const agentInfo = getAgentInfo(call);
         mainDispatch(emitWorkspaceEvent(createWorkspaceEvent(
           'file:changed', workspaceId,

@@ -2,6 +2,7 @@ import type { ProtocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { Logger } from '$shared/logger';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
+import { renameAgentOnDisk } from '$features/agent/main/agent-rename';
 import type { WorkspaceId } from '$shared/types';
 
 import { createWorkspaceEvent } from '../../../events/types';
@@ -135,7 +136,6 @@ export function buildWorkspaceApi({
         throw new Error('Could not determine agent ID from request context');
       }
 
-      const { renameAgentOnDisk } = await import('$features/agent/main/agent-rename');
       return renameAgentOnDisk({
         workspaceId,
         agentId,

@@ -4,6 +4,11 @@ import { Logger } from '../../../../shared/logger';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';
 import type { ToolCall } from './protocol';
 import { backgroundGitOpsService } from '../../../git/main/background-git-ops.service';
+import { gitService } from '$features/git/main/git.service';
+import { getWorkspaceGitInfo } from '$features/git/main/git-router';
+import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
+import { commitAgentChanges } from '$features/agent/main/agent-commit.service';
+import { execFileAsync } from '$shared/git/git-env';
 
 type ExecFileFn = (
   file: string,
@@ -44,7 +49,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
   return {
     async status() {
       logger.info('ws.git.status()', { workspaceId });
-      const { gitService } = await import('../../../git/main/git.service');
       const result = await gitService.getStatus(WorkspaceId(workspaceId));
 
       if (!result.ok) {
@@ -56,8 +60,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
 
     async stage(paths) {
       logger.info('ws.git.stage()', { workspaceId, paths });
-      const { gitService } = await import('../../../git/main/git.service');
-
       if (paths === '.' || paths === '*' || (typeof paths === 'string' && paths.includes('--all'))) {
         logger.warn('Agent attempted to stage all files, which is not allowed', {
           workspaceId,
@@ -91,9 +93,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
     async commit(message) {
       logger.info('ws.git.commit()', { workspaceId, hasAgentId: !!call.context?.agentId });
 
-      const { assertAgentCommitAllowed } = await import(
-        '../../../workspace/main/workspace-settings.service'
-      );
       const commitCheck = assertAgentCommitAllowed(workspaceId);
       if (!commitCheck.allowed) {
         logger.info('ws.git.commit() rejected: auto-commit disabled for workspace', {
@@ -103,7 +102,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         throw new Error(commitCheck.reason);
       }
 
-      const { gitService } = await import('../../../git/main/git.service');
       let fullMessage = message;
 
       if (call.context?.agentId) {
@@ -132,9 +130,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         throw new Error('No agent context available. This tool must be called by an agent.');
       }
 
-      const { assertAgentCommitAllowed } = await import(
-        '../../../workspace/main/workspace-settings.service'
-      );
       const commitCheck = assertAgentCommitAllowed(workspaceId, {
         userRequested: opts.userRequested ?? false,
       });
@@ -154,7 +149,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
           message,
         });
 
-        const { commitAgentChanges } = await import('../../../agent/main/agent-commit.service');
         const result = await commitAgentChanges({
           workspaceId,
           agentId,
@@ -190,10 +184,6 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         workspaceId,
         targetBranch: requestedTargetBranch,
       });
-
-      const { gitService } = await import('../../../git/main/git.service');
-      const { getWorkspaceGitInfo } = await import('../../../git/main/git-router');
-      const { execFileAsync } = await import('../../../../shared/git/git-env');
 
       const gitInfo = await getWorkspaceGitInfo(workspaceId);
       if (!gitInfo) {

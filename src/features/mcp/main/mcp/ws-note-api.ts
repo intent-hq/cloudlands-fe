@@ -6,6 +6,8 @@ import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { hasTaskBlocks } from '../../../notes/utils/task-block-parser';
 import { notesService } from '../../../notes/main/notes.service';
+import { assetsService } from '$features/notes/main/assets.service';
+import { trackMain } from '$lib/services/analytics/main';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';
 import { noteLink, noteUrl } from '../../../../shared/constants/intent-links';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
@@ -221,7 +223,6 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           continue;
         }
 
-        const { assetsService } = await import('../../../notes/main/assets.service');
         const dataUrl = await assetsService.readAssetAsDataUrl(workspaceId, assetId);
         const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (dataMatch) {
@@ -492,7 +493,6 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           if (!note) throw new Error('Failed to create note: no note returned from workspace manager');
 
           try {
-            const { trackMain } = await import('$lib/services/analytics/main');
             trackMain('Created Note', { note_type: note.metadata?.task ? 'task' : 'regular' });
           } catch {
             // Ignore analytics failures.
@@ -567,7 +567,6 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           : asset;
         if (!assetId) throw new Error(`Invalid workspace-asset URL format: ${asset}`);
 
-        const { assetsService } = await import('../../../notes/main/assets.service');
         const dataUrl = await assetsService.readAssetAsDataUrl(workspaceId, assetId);
         const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (!dataMatch) throw new Error('Failed to parse asset data');

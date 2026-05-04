@@ -22,6 +22,8 @@ import { AgentStatus } from '$shared/types/agent.types';
 import { workspaceService } from '../workspace/main/workspace.service';
 import { IPCRateLimiter } from '../ipc/ipc-validation';
 import { createSafeValidatedHandler } from '../../main/ipc-validation-middleware';
+import { getMainState } from '../../store/main/redux-store-bridge';
+import { selectAllSubscriptions } from '../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import {
   McpTransitionWorkspaceSchema,
   McpCallToolSchema,
@@ -394,7 +396,7 @@ export async function stopInactiveWorkspaceServers(activeWorkspaceId: string): P
     candidates: otherIds,
   });
 
-  // Lazy-import to avoid circular deps (this file is loaded early)
+  // Keep dynamic: this file is loaded early and this dependency has historically been lazy to avoid startup cycles.
   const { ConsolidatedBackendService } = await import(
     '../../features/agent/main/consolidated-backend.service'
   );
@@ -435,10 +437,6 @@ export async function stopInactiveWorkspaceServers(activeWorkspaceId: string): P
 
         // Check if any agents have active subscriptions (e.g., coordinator waiting for sub-agents)
         try {
-          const { getMainState } = await import('../../store/main/redux-store-bridge');
-          const { selectAllSubscriptions } = await import(
-            '../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors'
-          );
           const state = getMainState();
           const subscriptions = selectAllSubscriptions.select(state, workspaceId);
           if (subscriptions.length > 0) {

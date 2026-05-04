@@ -4,7 +4,40 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
+import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import selectorLifecycleRule from './eslint-rules/selector-lifecycle.js';
+
+const intentPlugin = {
+  rules: {
+    'no-production-dynamic-import': noProductionDynamicImportRule,
+    'selector-lifecycle': selectorLifecycleRule,
+  },
+};
+
+// Staged rollout: enforce the dynamic-import ban only on files that have already
+// been cleaned up. Existing repo-wide violations are intentionally baselined by
+// omission until each file is migrated and added here.
+const dynamicImportEnforcedFiles = [
+  'src/features/accept-changes/main/accept-changes.service.ts',
+  'src/features/agent/agent-ipc-bridge.ts',
+  'src/features/agent/main/agent-backend-handler.service.ts',
+  'src/features/mcp/main/mcp/ws-git-api.ts',
+  'src/features/mcp/main/mcp/ws-misc-api.ts',
+  'src/features/mcp/main/mcp/ws-note-api.ts',
+  'src/features/mcp/main/mcp/ws-workspace-api.ts',
+  'src/features/mcp/main/user-mcp-settings.ts',
+  'src/main/http-mcp-bridge.ts',
+];
+
+const productionModuleIgnores = [
+  '**/__tests__/**',
+  '**/tests/**',
+  '**/*.test.{js,jsx,ts,tsx,svelte}',
+  '**/*.spec.{js,jsx,ts,tsx,svelte}',
+  '**/*.generated.{js,jsx,ts,tsx,svelte}',
+  '**/generated/**',
+  'src/preload/generated-channels.ts',
+];
 
 export default [
   {
@@ -168,6 +201,16 @@ export default [
       'prefer-arrow-callback': 'off',
     },
   },
+  {
+    files: dynamicImportEnforcedFiles,
+    ignores: productionModuleIgnores,
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-production-dynamic-import': 'error',
+    },
+  },
   // Ban synchronous child_process calls in Electron main process code.
   // execSync/spawnSync block the main thread and can freeze the entire UI
   // if the spawned process hangs (see: hang report 2026-02-28).
@@ -203,11 +246,7 @@ export default [
       svelte,
       '@typescript-eslint': typescript,
       'unused-imports': unusedImports,
-      intent: {
-        rules: {
-          'selector-lifecycle': selectorLifecycleRule,
-        },
-      },
+      intent: intentPlugin,
     },
     rules: {
       ...svelte.configs.recommended.rules,

@@ -12,6 +12,10 @@ import {
   WakeOrCreateTaskAgentTool,
   ReportToParentTool,
 } from './agent-interaction-tools';
+import { agentPersistence } from '$features/agent/main/agent-persistence';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { getMainState } from '../../../../store/main/redux-store-bridge';
+import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 
 const logger = new Logger('WsAgentApi');
 
@@ -212,10 +216,6 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       logger.info('ws.agent.list', { workspaceId, includeCompleted });
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const { selectAgentStatus } =
-        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
-      const { getMainState } = await import('../../../../store/main/redux-store-bridge');
-
       const handler = AgentBackendHandler.getInstance();
       const agents = await handler.listAllAgents(workspaceId);
 
@@ -236,10 +236,6 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       logger.info('ws.agent.status', { workspaceId, agentId });
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const { selectAgentStatus } =
-        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
-      const { getMainState } = await import('../../../../store/main/redux-store-bridge');
-
       const handler = AgentBackendHandler.getInstance();
       const agent = await handler.getAgent(agentId);
 
@@ -274,9 +270,6 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async readConversation(agentId: string, opts: ReadConversationOptions = {}) {
       logger.info('ws.agent.readConversation', { workspaceId, agentId, ...opts });
 
-      const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-      const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
-
       const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
       if (!loadResult.success || !loadResult.data) {
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
@@ -310,9 +303,6 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
 
     async summary(agentId: string) {
       logger.info('ws.agent.summary', { workspaceId, agentId });
-
-      const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-      const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
 
       const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
       if (!loadResult.success || !loadResult.data) {

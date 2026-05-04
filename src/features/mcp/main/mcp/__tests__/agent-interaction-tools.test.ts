@@ -16,16 +16,17 @@ const mockBackendHandler = {
   getAgentResumability: vi.fn(),
 };
 
-const mockNotesService = {
+const mockNotesService = vi.hoisted(() => ({
   getNote: vi.fn(),
   assignAgentToTask: vi.fn(),
-};
+}));
 
 const mockIsAutoCommitEnabled = vi.fn();
 
-const mockAgentPersistence = {
+const mockAgentPersistence = vi.hoisted(() => ({
   loadAgent: vi.fn(),
-};
+  saveAgent: vi.fn(),
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockEventBus = {

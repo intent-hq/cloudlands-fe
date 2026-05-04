@@ -47,6 +47,7 @@ import { workspaceMetrics } from '$lib/store/slices/workspace/utils/workspace-me
 import { agentFileTracker } from './agent-file-tracker';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { EventEmitter } from '$lib/utils/browser-event-emitter';
+import { toast } from 'svelte-sonner';
 import {
   registerDomHandler as _registerDomHandler,
   unregisterDomHandler as _unregisterDomHandler,
@@ -358,7 +359,6 @@ export async function deleteSessionWithUndo(opts: {
   }
   const effectiveWsId = opts.workspaceId || saved.workspaceId;
   let undoClicked = false;
-  const { toast } = await import('svelte-sonner');
   const displayName = opts.agentName || saved.name || '';
   const toastId = toast.warning(displayName ? `Deleted "${displayName}"` : 'Agent deleted', {
     duration: 15000,
@@ -475,8 +475,7 @@ async function doActivateAgent(
           );
         return null;
       }
-      const { agentIpcProxy: proxy } = await import('./browser/index');
-      const activatedSession = (await proxy.activateAgent(
+      const activatedSession = (await agentIpcProxy.activateAgent(
         agentId,
         workspace,
       )) as AgentSession | null;

@@ -42,7 +42,12 @@ import {
 } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import { Logger } from '$shared/logger';
-import type { AgentEventFilter } from '$features/events/main/agent-subscription-ops';
+import {
+  agentSubscribe,
+  agentSubscribeToGroup,
+  agentUnsubscribe,
+  type AgentEventFilter,
+} from '$features/events/main/agent-subscription-ops';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { resolveSpecialistForAgent } from '$features/agent/main/specialists.service';
 import {
@@ -64,6 +69,21 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { getCachedModelsForProvider } from '../../../../main/utils/model-pool';
+import { agentPersistence } from '$features/agent/main/agent-persistence';
+import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
+import { notesService } from '$features/notes/main/notes.service';
+import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings.service';
+import { createWorkspaceEvent } from '$features/events/types';
+import { getMainState, mainDispatch } from '../../../../store/main/redux-store-bridge';
+import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
+import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import {
+  AgentId,
+  NoteId,
+  WorkspaceId,
+  createAgentId,
+  createWorkspaceId,
+} from '$shared/types/branded-ids';
 
 const logger = new Logger('AgentInteractionTools');
 
@@ -79,8 +99,6 @@ const MAX_DELEGATION_DEPTH = 2;
  */
 async function getDelegationDepth(workspaceId: string, agentId: string): Promise<number> {
   try {
-    const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-    const { createAgentId, createWorkspaceId } = await import('$shared/types/branded-ids');
     const loadResult = await agentPersistence.loadAgent(
       createAgentId(agentId),
       createWorkspaceId(workspaceId),
@@ -154,9 +172,6 @@ async function subscribeCallerToAgentCompletion(
   callerName: string,
   targetAgentId: string,
 ): Promise<string> {
-  const { agentSubscribe } =
-    await import('../../../events/main/agent-subscription-ops');
-
   const filter: AgentEventFilter = {
     eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
     actorIds: [targetAgentId],
@@ -794,8 +809,6 @@ This allows you to create multiple agents in parallel and be notified as each fi
       const createLinkedNote = call.arguments.createLinkedNote ?? false;
 
       // Check workspace auto-commit setting for behavior prompt injection
-      const { isAutoCommitEnabled } =
-        await import('../../../workspace/main/workspace-settings.service');
       const autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
 
       // Resolve specialist configuration (model and behaviorPrompt)
@@ -823,7 +836,6 @@ This allows you to create multiple agents in parallel and be notified as each fi
         hasBehaviorPrompt: !!config.behaviorPrompt,
       });
 
-      // Import the backend handler dynamically - use relative paths for runtime compatibility
       const { AgentBackendHandler } =
         await import('../../../agent/main/agent-backend-handler.service');
       const handler = AgentBackendHandler.getInstance();
@@ -837,8 +849,6 @@ This allows you to create multiple agents in parallel and be notified as each fi
       // which handles this atomically)
       let needsTaskAssignment = false;
       if (createLinkedNote && !taskNoteId) {
-        const { protocolAdapter } = await import('../../../protocol/main/protocol-adapter');
-
         const noteTitle = name; // Use agent name as note title
         const noteResult = await protocolAdapter.createNote({
           workspaceId: this.workspaceId,
@@ -916,8 +926,6 @@ This allows you to create multiple agents in parallel and be notified as each fi
       // Assign the agent to the task note
       // This handles both newly created notes and existing task notes (via taskNoteId)
       if (linkedNoteId) {
-        const { protocolAdapter } = await import('../../../protocol/main/protocol-adapter');
-
         if (needsTaskAssignment) {
           // Step 1: Mark the newly created note as a task
           const markResult = await protocolAdapter.markAsTask({
@@ -1143,8 +1151,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       let skipAutoCommit = explicitSkipAutoCommit;
       let autoCommitEnabled = true;
       if (skipAutoCommit === undefined) {
-        const { isAutoCommitEnabled } =
-          await import('../../../workspace/main/workspace-settings.service');
         autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
         // If auto-commit is disabled in workspace settings, skip auto-commit
         skipAutoCommit = !autoCommitEnabled;
@@ -1171,8 +1177,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
             'Use taskNoteId when you have a linked task like [Task](intent://local/task/{id}).',
         );
       }
-
-      const { protocolAdapter } = await import('../../../protocol/main/protocol-adapter');
 
       // APPROACH 1: Direct task note ID - skip text matching entirely
       if (taskNoteId) {
@@ -1495,9 +1499,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
           onBeforeStart: async (agentId: string) => {
             if (waitMode === 'after_all') {
               // Use group subscription - only wake when ALL agents in the group complete
-              const { agentSubscribeToGroup } =
-                await import('../../../events/main/agent-subscription-ops');
-
               groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
               subscriptionId = agentSubscribeToGroup(
                 this.workspaceId,
@@ -1677,9 +1678,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       },
       onBeforeStart: async (agentId: string) => {
         if (waitMode === 'after_all') {
-          const { agentSubscribeToGroup } =
-            await import('../../../events/main/agent-subscription-ops');
-
           groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
           subscriptionId = agentSubscribeToGroup(
             this.workspaceId,
@@ -1836,10 +1834,6 @@ Use this for coordination, sharing information, or requesting help from other ag
       });
 
       // Emit via Redux (which handles persistence and broadcast via sagas)
-      const { createWorkspaceEvent } = await import('../../../events/types');
-      const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
-      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
-
       const event = createWorkspaceEvent(
         'agent:message:sent',
         this.workspaceId,
@@ -1925,7 +1919,6 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
       });
 
       // Get the task note to find assigned agent
-      const { protocolAdapter } = await import('../../../protocol/main/protocol-adapter');
       const noteResult = await protocolAdapter.getNote({
         workspaceId: this.workspaceId,
         noteId: taskNoteId,
@@ -1961,10 +1954,6 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
       });
 
       // Emit via Redux (which handles persistence and broadcast via sagas)
-      const { createWorkspaceEvent } = await import('../../../events/types');
-      const { mainDispatch } = await import('../../../../store/main/redux-store-bridge');
-      const { emitWorkspaceEvent: reduxEmitWorkspaceEvent } = await import('../../../../store/main/slices/workspace-events/workspace-events-slice');
-
       const event = createWorkspaceEvent(
         'agent:message:sent',
         this.workspaceId,
@@ -2097,9 +2086,6 @@ You must specify at least one category. Use category wildcards like "agent:*" or
         }
       }
 
-      const { agentSubscribe } =
-        await import('../../../events/main/agent-subscription-ops');
-
       const filter: AgentEventFilter = {
         eventTypes: resolvedTypes,
         excludeActorIds: excludeSelf !== false ? [ctx.agentId] : undefined,
@@ -2150,9 +2136,6 @@ export class UnsubscribeFromEventsTool extends BaseMCPTool {
     try {
       const { subscriptionId } = call.arguments;
 
-      const { agentUnsubscribe } =
-        await import('../../../events/main/agent-subscription-ops');
-
       const success = agentUnsubscribe(this.workspaceId, subscriptionId);
 
       if (!success) {
@@ -2200,10 +2183,6 @@ export class ListAgentsTool extends BaseMCPTool {
 
       const { AgentBackendHandler } =
         await import('../../../agent/main/agent-backend-handler.service');
-      const { selectAgentStatus } =
-        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
-      const { getMainState } =
-        await import('../../../../store/main/redux-store-bridge');
       const handler = AgentBackendHandler.getInstance();
 
       // Get all agents for the workspace (in-memory + disk-persisted)
@@ -2292,10 +2271,6 @@ export class GetAgentStatusTool extends BaseMCPTool {
 
       const { AgentBackendHandler } =
         await import('../../../agent/main/agent-backend-handler.service');
-      const { selectAgentStatus } =
-        await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
-      const { getMainState } =
-        await import('../../../../store/main/redux-store-bridge');
       const handler = AgentBackendHandler.getInstance();
 
       const agent = await handler.getAgent(agentId);
@@ -2411,8 +2386,6 @@ an agent is working on the task.`,
       let modelOverrideWarning: ModelOverrideWarning | undefined;
 
       // Check workspace auto-commit setting
-      const { isAutoCommitEnabled } =
-        await import('../../../workspace/main/workspace-settings.service');
       const autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
 
       logger.info('Wake or create task agent', {
@@ -2423,9 +2396,6 @@ an agent is working on the task.`,
       });
 
       // Get the task note to find assigned agents
-      const { notesService } = await import('../../../notes/main/notes.service');
-      const { NoteId, WorkspaceId } = await import('$shared/types/branded-ids');
-
       const noteResult = await notesService.getNote(
         WorkspaceId(this.workspaceId),
         NoteId(taskNoteId),
@@ -2529,9 +2499,6 @@ an agent is working on the task.`,
             // For queued messages, DON'T use oneShot since agent:idle will fire
             // for the current turn before our queued message is processed.
             // The subscription needs to survive the current turn's completion.
-            const { agentSubscribe, agentUnsubscribe } =
-              await import('../../../events/main/agent-subscription-ops');
-
             const subscriptionId = agentSubscribe(this.workspaceId, ctx.agentId, ctx.agentName, {
               eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
               actorIds: [agentToWake.id],
@@ -2704,7 +2671,6 @@ an agent is working on the task.`,
       }
 
       // Assign the new agent to the task
-      const { AgentId } = await import('$shared/types/branded-ids');
       const assignResult = await notesService.assignAgentToTask(
         WorkspaceId(this.workspaceId),
         NoteId(taskNoteId),
@@ -2799,9 +2765,6 @@ This is useful when:
       });
 
       // Load the agent's conversation from persistence
-      const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-      const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
-
       const loadResult = await agentPersistence.loadAgent(
         AgentId(agentId),
         WorkspaceId(this.workspaceId),
@@ -2932,9 +2895,6 @@ Use this for a quick overview before deciding whether to read the full conversat
       });
 
       // Load the agent from persistence
-      const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-      const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
-
       const loadResult = await agentPersistence.loadAgent(
         AgentId(agentId),
         WorkspaceId(this.workspaceId),
@@ -3093,9 +3053,6 @@ If you were created directly by a user, this tool will return an error.`,
       });
 
       // Load the agent from persistence to check if it's a delegated agent
-      const { agentPersistence } = await import('../../../agent/main/agent-persistence');
-      const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
-
       const loadResult = await agentPersistence.loadAgent(
         AgentId(ctx.agentId),
         WorkspaceId(this.workspaceId),
@@ -3146,7 +3103,7 @@ If you were created directly by a user, this tool will return an error.`,
       try {
         inMemorySyncAttempted = true;
         const { ConsolidatedBackendService } = await import(
-          '$features/agent/main/consolidated-backend.service'
+          '../../../agent/main/consolidated-backend.service'
         );
         const backend = ConsolidatedBackendService.getInstance();
         const session = backend.getSession(ctx.agentId);

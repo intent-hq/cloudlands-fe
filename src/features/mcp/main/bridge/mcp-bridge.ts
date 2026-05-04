@@ -20,6 +20,7 @@ import { emitAgentFileChange } from '../mcp/workspace-tools';
 import { remoteRPCManager } from '../../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../../shared/main/remote-rpc-client';
 import { execAsync } from '../../../../shared/git/git-env';
+import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
 
 const logger = new Logger('McpBridge');
 
@@ -432,7 +433,7 @@ export class McpBridge extends EventEmitter {
           continue;
         }
 
-        // Import assetsService dynamically to avoid circular deps
+        // Keep dynamic: this path historically avoided MCP bridge ↔ notes service circular startup deps.
         const { assetsService } = await import('../../../notes/main/assets.service');
 
         // Get the asset as a data URL
@@ -968,9 +969,6 @@ export class McpBridge extends EventEmitter {
 
   private async handleGitCommit(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
     // Check auto-commit setting using centralized guard
-    const { assertAgentCommitAllowed } = await import(
-      '../../../workspace/main/workspace-settings.service'
-    );
     const workspaceId = params.workspaceId || context.workspaceId;
     if (workspaceId) {
       const commitCheck = assertAgentCommitAllowed(workspaceId);

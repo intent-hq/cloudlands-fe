@@ -1,4 +1,6 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import { createWorkspaceId } from '$shared/types';
+import { agentCircuitBreaker } from '$shared/services/agent-circuit-breaker';
 /**
  * ACP Agent Provider
  *
@@ -1259,8 +1261,8 @@ export function createUserFriendlyErrorMessage(
   ) {
     // Record in circuit breaker to prevent runaway token burn
     if (workspaceId) {
-      import('$shared/services/agent-circuit-breaker')
-        .then(({ agentCircuitBreaker }) => {
+      void Promise.resolve()
+        .then(() => {
           agentCircuitBreaker.recordRateLimitError(workspaceId);
         })
         .catch(() => {
@@ -1975,7 +1977,6 @@ export class ACPProvider extends BaseAgentProvider {
     if (this.config.workspaceId) {
       try {
         const { workspaceService } = await import('../../../workspace/main/workspace.service');
-        const { createWorkspaceId } = await import('$shared/types');
         const workspaceResult = await workspaceService.getWorkspace(
           createWorkspaceId(this.config.workspaceId),
         );
@@ -9557,8 +9558,8 @@ export class ACPProvider extends BaseAgentProvider {
     // Record successful operation in circuit breaker — resets failure counts
     // and allows circuit to close after half-open state
     if (this.config.workspaceId) {
-      import('$shared/services/agent-circuit-breaker')
-        .then(({ agentCircuitBreaker }) => {
+      void Promise.resolve()
+        .then(() => {
           agentCircuitBreaker.recordSuccess(this.config.workspaceId!);
         })
         .catch(() => {
@@ -10382,8 +10383,8 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Record failure in circuit breaker to prevent further spawn attempts
       if (this.config.workspaceId) {
-        import('$shared/services/agent-circuit-breaker')
-          .then(({ agentCircuitBreaker }) => {
+        void Promise.resolve()
+          .then(() => {
             agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_limit_exceeded');
           })
           .catch(() => {});
@@ -10414,7 +10415,6 @@ export class ACPProvider extends BaseAgentProvider {
     if (this.config.workspaceId) {
       try {
         const { workspaceService } = await import('../../../workspace/main/workspace.service');
-        const { createWorkspaceId } = await import('$shared/types');
         const workspaceResult = await workspaceService.getWorkspace(
           createWorkspaceId(this.config.workspaceId),
         );
@@ -10492,8 +10492,8 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Record failure in circuit breaker
       if (this.config.workspaceId) {
-        import('$shared/services/agent-circuit-breaker')
-          .then(({ agentCircuitBreaker }) => {
+        void Promise.resolve()
+          .then(() => {
             agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_failed');
           })
           .catch(() => {});

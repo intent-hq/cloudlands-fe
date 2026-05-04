@@ -25,6 +25,10 @@ import { gitService } from '../../git/main/git.service';
 import { shouldSkipFileForAI } from '../../../shared/binary-file-extensions';
 import COMMIT_MESSAGE_INSTRUCTION from '../instructions/background/commit-message';
 import type { DiffChunk, WorkspaceId } from '../../../shared/types';
+import {
+  AgentId as createAgentId,
+  WorkspaceId as createWorkspaceId,
+} from '$shared/types/branded-ids';
 import { LineType } from '../../../shared/types';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitAutoCommitStarted, gitAutoCommitSucceeded, gitAutoCommitHookFailure } from '../../../store/main/slices/git-events/git-events-slice';
@@ -513,11 +517,10 @@ export async function handleAgentIdleAutoCommit(event: AgentIdleEvent): Promise<
   let currentAgentName = agentName;
   try {
     const { agentPersistence } = await import('./agent-persistence');
-    const { AgentId, WorkspaceId } = await import('$shared/types/branded-ids');
 
     const loadResult = await agentPersistence.loadAgent(
-      AgentId(agentId),
-      WorkspaceId(workspaceId),
+      createAgentId(agentId),
+      createWorkspaceId(workspaceId),
     );
 
     if (loadResult.success && loadResult.data) {
@@ -555,7 +558,6 @@ export async function handleAgentIdleAutoCommit(event: AgentIdleEvent): Promise<
   let workspacePath: string | undefined;
   try {
     const { workspaceService } = await import('../../workspace/main/workspace.service');
-    const { createWorkspaceId } = await import('$shared/types/branded-ids');
     const wsResult = await workspaceService.getWorkspace(createWorkspaceId(workspaceId));
     if (wsResult.ok) {
       workspacePath = wsResult.data.worktreePath || wsResult.data.repositoryPath || wsResult.data.path;

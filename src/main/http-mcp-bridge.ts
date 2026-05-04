@@ -37,12 +37,15 @@ import { createRequire } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 import express, { Request, Response } from 'express';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createServer } from 'http';
 
 import { Logger } from '../shared/logger';
+import type { EnvironmentConfig } from '$shared/types';
 import { createWorkspaceMCPServer } from '../features/mcp/main/mcp/index';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
+import { getAgentContextRegistry } from '$features/agent/agent-context-registry';
+import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { findAvailablePort } from '../utils/port-utils';
 import ElectronStore from 'electron-store';
 import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
@@ -50,11 +53,11 @@ import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
 const require = createRequire(import.meta.url);
 
 // Import types for ws (ESM named import fails inside Electron's asar archive at runtime)
-import type { WebSocketServer as WebSocketServerType } from 'ws';
+import type { WebSocket as WebSocketType, WebSocketServer as WebSocketServerType } from 'ws';
 // Use require() for the runtime value to avoid ESM/CJS resolution issues inside asar
 const { WebSocketServer, WebSocket } = require('ws') as {
   WebSocketServer: typeof WebSocketServerType;
-  WebSocket: typeof import('ws').WebSocket;
+  WebSocket: typeof WebSocketType;
 };
 
 // Cross-platform dummy workspace path (Windows doesn't have /tmp/)
@@ -235,7 +238,7 @@ export class HttpMcpBridge {
   private async getMcpServer(
     workspaceId: string,
     workspacePath: string,
-    environmentConfig?: import('../shared/types').EnvironmentConfig,
+    environmentConfig?: EnvironmentConfig,
   ): Promise<any> {
     // Include environment type in key to ensure separate servers for local vs remote
     const envType = environmentConfig?.type || 'local';
@@ -336,7 +339,7 @@ export class HttpMcpBridge {
   private async executeWithRetry(
     workspaceId: string,
     workspacePath: string,
-    environmentConfig: import('../shared/types').EnvironmentConfig | undefined,
+    environmentConfig: EnvironmentConfig | undefined,
     jsonRpcRequest: any,
     context: {
       workspaceId: string;
@@ -534,7 +537,6 @@ export class HttpMcpBridge {
         // This avoids the concurrency bug where per-request patching/unpatching
         // causes concurrent requests to stomp each other's patches.
         if (!fromWebContentsPatched) {
-          const { BrowserWindow } = await import('electron');
           const orig = BrowserWindow.fromWebContents;
           BrowserWindow.fromWebContents = (wc: any) => {
             if (syntheticSenders.has(wc)) return null as any;
@@ -575,7 +577,7 @@ export class HttpMcpBridge {
         const workspacePath = (req.headers['x-workspace-path'] as string) || DUMMY_WORKSPACE_PATH;
 
         // Look up workspace to get environment config for remote workspace support
-        let environmentConfig: import('../shared/types').EnvironmentConfig | undefined;
+        let environmentConfig: EnvironmentConfig | undefined;
         try {
           const workspace = await protocolAdapter.getWorkspace(workspaceId);
           if (workspace?.environmentConfig) {
@@ -598,8 +600,7 @@ export class HttpMcpBridge {
         let agentContextRegistry: any = null;
 
         try {
-          const module = await import('../features/agent/agent-context-registry');
-          agentContextRegistry = module.getAgentContextRegistry();
+          agentContextRegistry = getAgentContextRegistry();
 
           // Get session ID from headers (passed by MCP stdio server)
           const sessionIdFromHeader = req.headers['x-session-id'] as string;
@@ -661,10 +662,7 @@ export class HttpMcpBridge {
         let contextId: string | undefined;
         if (jsonRpcRequest.method === 'tools/call') {
           try {
-            const module = await import(
-              '../features/workspace/main/provenance/provenance-context-manager'
-            );
-            const provenanceManager = module.getProvenanceContextManager();
+            const provenanceManager = getProvenanceContextManager();
 
             // Create agent context for this tool execution
             contextId = provenanceManager.createAgentContext({
@@ -717,9 +715,6 @@ export class HttpMcpBridge {
           // Pop provenance context if we created one
           if (contextId) {
             try {
-              const { getProvenanceContextManager } = await import(
-                '../features/workspace/main/provenance/provenance-context-manager'
-              );
               const provenanceManager = getProvenanceContextManager();
               provenanceManager.popContext();
               this.logger.debug('Popped provenance context', { contextId });
