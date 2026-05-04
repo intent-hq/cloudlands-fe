@@ -20,7 +20,16 @@ import { RemoteFileSystemService } from '../../remote-fs/main/remote-file-system
 import type { RemoteFileSystemConfig } from '../../remote-fs/main/remote-file-system.service';
 import { createHash, randomUUID } from 'crypto';
 import * as path from 'path';
-import type { DiffChunk, FileChange, FileChangeAction } from '../../../lib/store/slices/workspace/utils/change-detector.types';
+import type {
+  DiffChunk,
+  FileChange,
+  FileChangeAction,
+} from '../../../lib/store/slices/workspace/utils/change-detector.types';
+import {
+  partitionDefaultFileTrackingExcludes,
+  shouldExcludeFromDefaultFileTracking,
+  summarizeDefaultFileTrackingExcludes,
+} from '../../file-tracking/utils/tracking-excludes';
 
 const logger = new Logger('RemoteChangeDetector');
 
@@ -66,7 +75,11 @@ export class RemoteChangeDetector extends EventEmitter {
   private rpcCloseHandler: (() => void) | null = null;
 
   // --- SSH stream-based watcher state (legacy, kept for fallback) ---
-  private watcherProcess: { write: (data: string) => void; kill: () => void; isAlive: () => boolean } | null = null;
+  private watcherProcess: {
+    write: (data: string) => void;
+    kill: () => void;
+    isAlive: () => boolean;
+  } | null = null;
   private stdoutBuffer: string = '';
   private reconnectAttempts: number = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -124,10 +137,13 @@ export class RemoteChangeDetector extends EventEmitter {
       await this.startWatcherStream();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.warn('[RemoteChangeDetector] Failed to start watcher stream, falling back to polling', {
-        error: err.message,
-        workspaceId: this.config.workspaceId,
-      });
+      logger.warn(
+        '[RemoteChangeDetector] Failed to start watcher stream, falling back to polling',
+        {
+          error: err.message,
+          workspaceId: this.config.workspaceId,
+        },
+      );
       await this.startPollingFallback();
     }
 
@@ -203,7 +219,7 @@ export class RemoteChangeDetector extends EventEmitter {
   /**
    * Trigger an immediate check (compatibility with ChangeDetectorManagerImpl).
    */
-   
+
   async triggerImmediateCheck(_reason?: string): Promise<void> {
     await this.forceCheck();
   }
@@ -355,6 +371,7 @@ export class RemoteChangeDetector extends EventEmitter {
 
     // Parse git status --porcelain output into FileChange[]
     const files: FileChange[] = [];
+    const skippedDefaultExcludedUntracked: string[] = [];
 
     for (const line of statusOutput.split('\n')) {
       if (!line || line.length < 4) continue;
@@ -379,12 +396,24 @@ export class RemoteChangeDetector extends EventEmitter {
         filePath = filePath.split(' -> ')[1];
       }
 
+      if (shouldExcludeFromDefaultFileTracking({ path: filePath, statusCode })) {
+        skippedDefaultExcludedUntracked.push(filePath);
+        continue;
+      }
+
       files.push({
         path: filePath,
         action,
         additions: 0,
         deletions: 0,
         timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (skippedDefaultExcludedUntracked.length > 0) {
+      logger.debug('[RemoteChangeDetector] Skipped default-excluded untracked RPC status files', {
+        workspaceId: this.config.workspaceId,
+        ...summarizeDefaultFileTrackingExcludes(skippedDefaultExcludedUntracked),
       });
     }
 
@@ -416,7 +445,9 @@ export class RemoteChangeDetector extends EventEmitter {
       }
     } catch {
       // Non-fatal: we still have file statuses without line counts
-      logger.debug('[RemoteChangeDetector] Failed to get diff numstat, continuing without line counts');
+      logger.debug(
+        '[RemoteChangeDetector] Failed to get diff numstat, continuing without line counts',
+      );
     }
 
     return {
@@ -449,7 +480,9 @@ export class RemoteChangeDetector extends EventEmitter {
     } catch (error) {
       // RPC exec returns non-zero exit codes as JSON-RPC errors (code -32000)
       if (error instanceof RemoteRPCError && error.code === -32000) {
-        const data = error.data as { stdout?: string; stderr?: string; exitCode?: number } | undefined;
+        const data = error.data as
+          | { stdout?: string; stderr?: string; exitCode?: number }
+          | undefined;
         return {
           stdout: data?.stdout ?? '',
           stderr: data?.stderr ?? (error as Error).message,
@@ -663,7 +696,7 @@ export class RemoteChangeDetector extends EventEmitter {
    * Converts it to a DiffChunk and emits it.
    */
   private handleWatcherChanges(parsed: any): void {
-    const files: FileChange[] = (parsed.files || []).map((f: any) => ({
+    const mappedFiles: FileChange[] = (parsed.files || []).map((f: any) => ({
       path: f.path,
       action: (f.action || 'Modify') as FileChangeAction,
       additions: f.additions || 0,
@@ -671,6 +704,21 @@ export class RemoteChangeDetector extends EventEmitter {
       stage: f.stage,
       timestamp: new Date().toISOString(),
     }));
+    const { kept: files, skipped: skippedDefaultExcluded } = partitionDefaultFileTrackingExcludes(
+      mappedFiles,
+      (file) => ({
+        path: file.path,
+        action: file.action,
+        stage: file.stage,
+      }),
+    );
+
+    if (skippedDefaultExcluded.length > 0) {
+      logger.debug('[RemoteChangeDetector] Skipped default-excluded untracked watcher files', {
+        workspaceId: this.config.workspaceId,
+        ...summarizeDefaultFileTrackingExcludes(skippedDefaultExcluded.map((file) => file.path)),
+      });
+    }
 
     if (files.length === 0) return;
 
@@ -683,7 +731,7 @@ export class RemoteChangeDetector extends EventEmitter {
         agentId: this.activeAgent?.id,
       },
       files,
-      summary: parsed.summary || {
+      summary: {
         filesChanged: files.length,
         additions: files.reduce((sum: number, f: FileChange) => sum + f.additions, 0),
         deletions: files.reduce((sum: number, f: FileChange) => sum + f.deletions, 0),
@@ -724,9 +772,12 @@ export class RemoteChangeDetector extends EventEmitter {
 
     if (filesToEmit.length === 0) return;
 
-     
     const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
-      sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
+      sendToWorkspaceWindows: (
+        workspaceId: string | undefined,
+        channel: string,
+        data: unknown,
+      ) => void;
     };
 
     for (const file of filesToEmit) {
@@ -734,13 +785,17 @@ export class RemoteChangeDetector extends EventEmitter {
         const absolutePath = path.posix.join(this.config.basePath, file.path);
         const result = await this.rpcClient!.readFile({ path: absolutePath });
 
-        sendToWorkspaceWindows(this.config.workspaceId, `file:content-changed:${this.config.workspaceId}`, {
-          path: absolutePath,
-          relativePath: file.path,
-          content: result.content,
-          source: 'external',
-          workspaceId: this.config.workspaceId,
-        });
+        sendToWorkspaceWindows(
+          this.config.workspaceId,
+          `file:content-changed:${this.config.workspaceId}`,
+          {
+            path: absolutePath,
+            relativePath: file.path,
+            content: result.content,
+            source: 'external',
+            workspaceId: this.config.workspaceId,
+          },
+        );
 
         logger.debug('[RemoteChangeDetector] Emitted file:content-changed', {
           path: file.path,
@@ -952,9 +1007,23 @@ export class RemoteChangeDetector extends EventEmitter {
    * Directories to skip during file scanning.
    */
   private static readonly SKIP_DIRS = [
-    '.git', 'node_modules', '.next', 'dist', 'build', '.cache', 'coverage',
-    'bazel-out', 'bazel-bin', 'bazel-testlogs', '.worktrees', '__pycache__',
-    '.bazel', '.tox', '.venv', 'venv', '.mypy_cache',
+    '.git',
+    'node_modules',
+    '.next',
+    'dist',
+    'build',
+    '.cache',
+    'coverage',
+    'bazel-out',
+    'bazel-bin',
+    'bazel-testlogs',
+    '.worktrees',
+    '__pycache__',
+    '.bazel',
+    '.tox',
+    '.venv',
+    'venv',
+    '.mypy_cache',
   ];
 
   private shouldMonitorFile(filePath: string): boolean {
@@ -1056,10 +1125,21 @@ export class RemoteChangeDetector extends EventEmitter {
       const cachedHash = this.fileHashes.get(filePath);
 
       if (!cachedHash) {
-        changes.push({ path: filePath, type: 'added', newHash: currentHash, timestamp: Date.now() });
+        changes.push({
+          path: filePath,
+          type: 'added',
+          newHash: currentHash,
+          timestamp: Date.now(),
+        });
         this.fileHashes.set(filePath, currentHash);
       } else if (cachedHash !== currentHash) {
-        changes.push({ path: filePath, type: 'modified', oldHash: cachedHash, newHash: currentHash, timestamp: Date.now() });
+        changes.push({
+          path: filePath,
+          type: 'modified',
+          oldHash: cachedHash,
+          newHash: currentHash,
+          timestamp: Date.now(),
+        });
         this.fileHashes.set(filePath, currentHash);
       }
     }
@@ -1078,9 +1158,26 @@ export class RemoteChangeDetector extends EventEmitter {
    * Handle polling-detected changes: debounce and emit as DiffChunk.
    */
   private handlePollingChanges(changes: RemoteFileChange[]): void {
-    for (const change of changes) {
+    const { kept: changesToTrack, skipped: skippedDefaultExcluded } =
+      partitionDefaultFileTrackingExcludes(changes, (change) => ({
+        path: change.path,
+        action: this.mapPollingChangeAction(change.type),
+      }));
+
+    if (skippedDefaultExcluded.length > 0) {
+      logger.debug('[RemoteChangeDetector] Skipped default-excluded untracked polling files', {
+        workspaceId: this.config.workspaceId,
+        ...summarizeDefaultFileTrackingExcludes(
+          skippedDefaultExcluded.map((change) => change.path),
+        ),
+      });
+    }
+
+    for (const change of changesToTrack) {
       this.pendingChanges.set(change.path, change);
     }
+
+    if (this.pendingChanges.size === 0) return;
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -1107,18 +1204,9 @@ export class RemoteChangeDetector extends EventEmitter {
    * Convert polling-based RemoteFileChange[] into a proper DiffChunk.
    */
   private buildDiffChunkFromPollingChanges(changes: RemoteFileChange[]): DiffChunk {
-    const mapAction = (type: RemoteFileChange['type']): FileChangeAction => {
-      switch (type) {
-        case 'added': return 'Create';
-        case 'modified': return 'Modify';
-        case 'deleted': return 'Delete';
-        default: return 'Modify';
-      }
-    };
-
     const files: FileChange[] = changes.map((c) => ({
       path: c.path,
-      action: mapAction(c.type),
+      action: this.mapPollingChangeAction(c.type),
       additions: 0,
       deletions: 0,
       timestamp: new Date().toISOString(),
@@ -1140,6 +1228,19 @@ export class RemoteChangeDetector extends EventEmitter {
       },
       timestamp: new Date().toISOString(),
     };
+  }
+
+  private mapPollingChangeAction(type: RemoteFileChange['type']): FileChangeAction {
+    switch (type) {
+      case 'added':
+        return 'Create';
+      case 'modified':
+        return 'Modify';
+      case 'deleted':
+        return 'Delete';
+      default:
+        return 'Modify';
+    }
   }
 
   // ─── Utilities ─────────────────────────────────────────────────

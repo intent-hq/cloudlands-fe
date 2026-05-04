@@ -17,6 +17,10 @@ import {
 } from './safe-git-operations';
 import type { GitStatus, GitDiffResult } from './git-types';
 import { filterDiffableFiles } from './diffable-file-filter';
+import {
+  shouldExcludeFromDefaultFileTracking,
+  summarizeDefaultFileTrackingExcludes,
+} from '../../../file-tracking/utils/tracking-excludes';
 
 const logger = new Logger('GitOperationsSafe');
 
@@ -86,6 +90,7 @@ export class GitOperationsSafe {
       };
 
       const lines = result.stdout.split('\n').filter((line: string) => line.trim());
+      const skippedDefaultExcludedUntracked: string[] = [];
 
       for (const line of lines) {
         if (!line || line.length < 3) continue;
@@ -140,8 +145,19 @@ export class GitOperationsSafe {
 
         // Untracked files
         if (x === '?' && y === '?') {
+          if (shouldExcludeFromDefaultFileTracking({ path: filePath, statusCode: '??' })) {
+            skippedDefaultExcludedUntracked.push(filePath);
+            continue;
+          }
           status.untracked.push(filePath);
         }
+      }
+
+      if (skippedDefaultExcludedUntracked.length > 0) {
+        logger.debug('Skipped default-excluded untracked files from git status', {
+          ...summarizeDefaultFileTrackingExcludes(skippedDefaultExcludedUntracked),
+          workspacePath: this.workspacePath,
+        });
       }
 
       // Cache the result
@@ -201,7 +217,10 @@ export class GitOperationsSafe {
           path: filePath,
           additions: 0,
           deletions: 0,
-          diff: skip.reason === 'binary' || skip.reason === 'binary-content' ? 'Binary file (not shown)' : 'File too large to diff',
+          diff:
+            skip.reason === 'binary' || skip.reason === 'binary-content'
+              ? 'Binary file (not shown)'
+              : 'File too large to diff',
           isBinary: skip.reason === 'binary' || skip.reason === 'binary-content',
           isTooLarge: skip.reason === 'too-large',
         };
@@ -263,7 +282,10 @@ export class GitOperationsSafe {
           path: filePath,
           additions: 0,
           deletions: 0,
-          diff: reason === 'binary' || reason === 'binary-content' ? 'Binary file (not shown)' : 'File too large to diff',
+          diff:
+            reason === 'binary' || reason === 'binary-content'
+              ? 'Binary file (not shown)'
+              : 'File too large to diff',
           isBinary: reason === 'binary' || reason === 'binary-content',
           isTooLarge: reason === 'too-large',
         } as GitDiffResult);
@@ -431,7 +453,10 @@ export class GitOperationsSafe {
           path: filePath,
           additions: 0,
           deletions: 0,
-          diff: reason === 'binary' || reason === 'binary-content' ? 'Binary file (not shown)' : 'File too large to diff',
+          diff:
+            reason === 'binary' || reason === 'binary-content'
+              ? 'Binary file (not shown)'
+              : 'File too large to diff',
           isBinary: reason === 'binary' || reason === 'binary-content',
           isTooLarge: reason === 'too-large',
         } as GitDiffResult);

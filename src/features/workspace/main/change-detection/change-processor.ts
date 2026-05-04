@@ -24,6 +24,11 @@ import type { FileChange } from '../../../../lib/store/slices/workspace/utils/ch
 export type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
 import { isGitRepository, storeBlob } from '../../../../shared/git/git-blob-storage';
 import { isBinaryExtension } from '../../../../shared/binary-file-extensions';
+import {
+  partitionDefaultFileTrackingExcludes,
+  shouldExcludeFromDefaultFileTracking,
+  summarizeDefaultFileTrackingExcludes,
+} from '../../../file-tracking/utils/tracking-excludes';
 
 /**
  * Maximum file size (in bytes) for reading content into memory for tracking.
@@ -113,6 +118,10 @@ export class ChangeProcessor extends EventEmitter {
         return null;
       }
 
+      if (shouldExcludeFromDefaultFileTracking({ path: filePath, action, stage })) {
+        return null;
+      }
+
       // Create change key and hash for tracking
       const changeKey = `${filePath}:${action}:${stage || 'unstaged'}`;
       const changeHash = `${action}:${diff?.additions || 0}:${diff?.deletions || 0}`;
@@ -177,7 +186,9 @@ export class ChangeProcessor extends EventEmitter {
               }
             }
           } else {
-            logger.debug(`Skipping content read for large file (${fileStats.size} bytes): ${filePath}`);
+            logger.debug(
+              `Skipping content read for large file (${fileStats.size} bytes): ${filePath}`,
+            );
           }
         } catch (error) {
           logger.debug(`Could not read file content for ${filePath}:`, error);
@@ -287,14 +298,36 @@ export class ChangeProcessor extends EventEmitter {
     }>,
   ): Promise<ProcessedChange[]> {
     const processed: ProcessedChange[] = [];
+    const { kept: changesToProcess, skipped: skippedDefaultExcluded } =
+      partitionDefaultFileTrackingExcludes(changes, (change) => ({
+        path: change.path,
+        action: change.action,
+        stage: change.stage,
+      }));
+
+    if (skippedDefaultExcluded.length > 0) {
+      logger.debug('Skipped default-excluded untracked file changes before processing', {
+        workspaceId: this.workspaceId,
+        ...summarizeDefaultFileTrackingExcludes(
+          skippedDefaultExcluded.map((change) => change.path),
+        ),
+      });
+    }
+
     const batchSize = this.config.maxParallelFileProcessing;
 
     // Process in batches
-    for (let i = 0; i < changes.length; i += batchSize) {
-      const batch = changes.slice(i, i + batchSize);
+    for (let i = 0; i < changesToProcess.length; i += batchSize) {
+      const batch = changesToProcess.slice(i, i + batchSize);
       const results = await Promise.all(
         batch.map((change) =>
-          this.processFileChange(change.path, change.action, change.diff, change.stage, change.oldPath),
+          this.processFileChange(
+            change.path,
+            change.action,
+            change.diff,
+            change.stage,
+            change.oldPath,
+          ),
         ),
       );
 

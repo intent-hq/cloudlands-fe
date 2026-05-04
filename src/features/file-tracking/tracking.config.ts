@@ -71,6 +71,22 @@ export const TRACKING_CONFIG = {
     // Performance
     maxTrackedFiles: 1000,
     maxHistoryPerFile: 100,
+
+    // App-level tracking suppression for untracked generated/dependency paths.
+    // Matching is exact by path segment; this does not mutate gitignore or hide tracked changes.
+    defaultExcludedPathSegments: [
+      'venv',
+      '.venv',
+      'virtualenv',
+      'node_modules',
+      '__pycache__',
+      '.pytest_cache',
+      '.mypy_cache',
+      '.ruff_cache',
+      '.tox',
+      '.nox',
+    ],
+    defaultExcludeSampleLimit: 5,
   },
 
   // Git Integration Settings
@@ -148,7 +164,14 @@ export const TRACKING_CONFIG = {
     // - metadata.filePath: which file was affected (for file events)
     // - data.filterDescription: for agent subscription events (changes when agents are added to delegation group)
     // - data.agentId: for agent events (e.g., agent:created, agent:idle) - ensures events about the same agent are deduplicated
-    deduplicationFields: ['id', 'type', 'actor.id', 'metadata.filePath', 'data.filterDescription', 'data.agentId'],
+    deduplicationFields: [
+      'id',
+      'type',
+      'actor.id',
+      'metadata.filePath',
+      'data.filterDescription',
+      'data.agentId',
+    ],
     maxDeduplicationCacheSize: 1000, // Maximum number of events to track for deduplication
   },
 

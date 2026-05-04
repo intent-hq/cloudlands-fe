@@ -137,6 +137,43 @@ describe('ChangeProcessor', () => {
       mockShouldIgnore.mockReturnValue(false);
     });
 
+    it('should ignore default-excluded untracked generated dependency files', async () => {
+      const result = await processor.processFileChange(
+        'venv/lib/python3.11/site-packages/pkg.py',
+        'Create',
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it('should not ignore source paths with excluded-segment substrings', async () => {
+      const paths = [
+        'src/venv_utils.ts',
+        'tests/fixtures/venv-example.txt',
+        'environment/config.py',
+      ];
+
+      for (const path of paths) {
+        const result = await processor.processFileChange(path, 'Create');
+
+        expect(result).toBeDefined();
+        expect(result?.change.path).toBe(path);
+      }
+    });
+
+    it('should preserve staged and deleted files under default-excluded segments', async () => {
+      const stagedCreate = await processor.processFileChange(
+        'node_modules/local-package/index.ts',
+        'Create',
+        undefined,
+        'staged',
+      );
+      const deleted = await processor.processFileChange('venv/tracked.py', 'Delete');
+
+      expect(stagedCreate).toBeDefined();
+      expect(deleted).toBeDefined();
+    });
+
     it('should deduplicate identical changes', async () => {
       const diff = {
         additions: 5,
@@ -224,6 +261,30 @@ describe('ChangeProcessor', () => {
 
       // Reset for other tests
       mockShouldIgnore.mockReturnValue(false);
+    });
+
+    it('should filter virtualenv-heavy batches before per-file processing', async () => {
+      const ignoredChanges = Array.from({ length: 1200 }, (_, index) => ({
+        path: `${index % 2 === 0 ? 'venv' : '.venv'}/lib/python3.11/site-packages/pkg_${index}.py`,
+        action: 'Create' as const,
+      }));
+      const processFileChangeSpy = vi.spyOn(processor, 'processFileChange');
+
+      const results = await processor.processBatch([
+        ...ignoredChanges,
+        { path: 'environment/config.py', action: 'Create' as const },
+      ]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].change.path).toBe('environment/config.py');
+      expect(processFileChangeSpy).toHaveBeenCalledTimes(1);
+      expect(processFileChangeSpy).toHaveBeenCalledWith(
+        'environment/config.py',
+        'Create',
+        undefined,
+        undefined,
+        undefined,
+      );
     });
   });
 

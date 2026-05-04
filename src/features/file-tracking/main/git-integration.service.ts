@@ -14,6 +14,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { getAttributionEngine } from '../../workspace/main/provenance/attribution-engine';
 import { storeBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
+import {
+  partitionDefaultFileTrackingExcludes,
+  summarizeDefaultFileTrackingExcludes,
+} from '../utils/tracking-excludes';
 
 const logger = new Logger({ category: 'GitIntegrationService' });
 
@@ -465,7 +469,7 @@ export class GitIntegrationService extends EventEmitter {
     const dedupKey = `${pseudoEvent.type}-${changeSignature}`;
     const now = Date.now();
     const lastSeen = this.recentChangeKeys.get(dedupKey);
-    if (lastSeen && (now - lastSeen) < GitIntegrationService.DEDUP_WINDOW_MS) {
+    if (lastSeen && now - lastSeen < GitIntegrationService.DEDUP_WINDOW_MS) {
       logger.debug('Skipping duplicate change', {
         changeId: changes.id,
         workspaceId: this.workspaceId,
@@ -534,11 +538,29 @@ export class GitIntegrationService extends EventEmitter {
       const attributionEngine = getAttributionEngine();
       await attributionEngine.loadAgentWrites(this.workspaceId);
 
+      const { kept: filesToProcess, skipped: skippedDefaultExcludedFiles } =
+        partitionDefaultFileTrackingExcludes(changes.files, (fileChange: any) => ({
+          path: fileChange.path,
+          action: fileChange.action,
+          stage: fileChange.stage,
+        }));
+
+      if (skippedDefaultExcludedFiles.length > 0) {
+        logger.debug('Skipped default-excluded untracked files before tracking', {
+          workspaceId: this.workspaceId,
+          changeId: changes.id,
+          ...summarizeDefaultFileTrackingExcludes(
+            skippedDefaultExcludedFiles.map((fileChange: any) => fileChange.path),
+          ),
+        });
+      }
+
       // Only log if there are actual changes
       if (changes.files.length > 0) {
         logger.debug('Processing git changes', {
           workspaceId: this.workspaceId,
           fileCount: changes.files.length,
+          filteredFileCount: filesToProcess.length,
           source: changes.provenance?.source || 'unknown',
           changeId: changes.id,
           isFullSync,
@@ -559,7 +581,7 @@ export class GitIntegrationService extends EventEmitter {
       // Also keep a map by file only for fallback lookups when stage is unknown
       const existingByFileOnly = new Map(existingChanges.map((c) => [c.file, c]));
 
-      for (const fileChange of changes.files) {
+      for (const fileChange of filesToProcess) {
         // Create TrackedChange with proper content
         // Get line change statistics first
         const additions = fileChange.additions || 0;
@@ -939,9 +961,12 @@ export class GitIntegrationService extends EventEmitter {
     const loadStart = Date.now();
     if (!this.gitService) {
       if (this.isRemote) {
-        logger.debug('Skipping loadCommittedChanges for remote workspace — local gitService cannot reach remote repo; committed changes arrive via watcher events', {
-          workspaceId: this.workspaceId,
-        });
+        logger.debug(
+          'Skipping loadCommittedChanges for remote workspace — local gitService cannot reach remote repo; committed changes arrive via watcher events',
+          {
+            workspaceId: this.workspaceId,
+          },
+        );
       }
       return;
     }
