@@ -119,7 +119,7 @@
     if (!$note) return;
     try {
       await navigator.clipboard.writeText($note.content || '');
-      noteCopyFeedback = 'Copied!';
+      noteCopyFeedback = 'Copied full note';
       if (noteCopyTimeoutId) clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = setTimeout(() => {
         noteCopyFeedback = null;
@@ -209,8 +209,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={handleCopyNote}
-    tooltip={noteCopyFeedback || 'Copy note content'}
+    tooltip={noteCopyFeedback || 'Copy full note'}
     tooltipSide="bottom"
+    aria-label="Copy full note"
   >
     {#if noteCopyFeedback}
       <Fa icon={faCheck} size="xs" class="text-green-500" />

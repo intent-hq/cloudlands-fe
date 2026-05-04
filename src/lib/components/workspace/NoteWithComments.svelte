@@ -1012,6 +1012,7 @@
         }
       },
       useMarkdown: true,
+      copySelectionAsMarkdown: true,
       enableComments: showComments,
       enableMentions: true, // Enable mentions in notes
       enableNotePrimitives: true, // Enable note primitives for ws-block support

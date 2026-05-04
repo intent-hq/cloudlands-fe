@@ -52,6 +52,7 @@ import { detectFilePathFromClick } from './file-path-detector';
 import { handleLink } from '$features/navigation/link-handler';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
+import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
 const lowlight = safeLowlight;
 
 // Extend Mention to parse our span[data-mention] chips back into nodes
@@ -211,6 +212,7 @@ interface EditorConfigOptions {
   workspace?: any; // Workspace for mention system
   enableMentions?: boolean; // Enable mention support
   enableNotePrimitives?: boolean; // Enable note primitives (reference, cli, agent, patch blocks)
+  copySelectionAsMarkdown?: boolean; // Copy selected note-editor content as markdown
 }
 
 /**
@@ -232,6 +234,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     workspace,
     enableMentions = true, // Enable by default if workspace is provided
     enableNotePrimitives = false, // Disabled by default
+    copySelectionAsMarkdown = false,
   } = options;
 
   logger.info('[EditorConfig] Creating config with:', {
@@ -1029,6 +1032,12 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         class:
           'tiptap-editor h-full !outline-none focus:!outline-none border-none prose prose-sm dark:prose-invert max-w-none',
       },
+      handleDOMEvents: copySelectionAsMarkdown
+        ? {
+            copy: (view: any, event: Event) =>
+              handleNoteEditorCopyAsMarkdown(view, event as ClipboardEvent),
+          }
+        : undefined,
       handleClick: (_view: any, _pos: any, event: any) => {
         const target = event.target as HTMLElement;
 
