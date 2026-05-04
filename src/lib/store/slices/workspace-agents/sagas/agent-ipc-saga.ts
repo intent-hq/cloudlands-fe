@@ -14,9 +14,6 @@ import { END, eventChannel } from "redux-saga";
 import { call, delay, fork, put, select, take, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import type { ElectronEventName } from "$shared/ipc-registry";
 import type { AgentMessage, AgentSession } from "$shared/types";
-import type { StoreState } from "$lib/store/types";
-import type { WorkspaceAgentState } from "../workspace-agents-slice";
-import { getItems } from "../../../utils/collection-utils";
 import { AgentStatus } from "$shared/types";
 import { DEFAULT_AGENT_MODEL } from "$shared/constants/agent-services";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
@@ -47,6 +44,7 @@ import {
   hasCanonicalId,
   isTimestampClose,
 } from "../../agent-session/agent-session-slice";
+import { selectAllAgentSessions } from "../../agent-session/agent-session-selectors";
 import { dispatchAgentSessionUpdated } from "$lib/utils/window-events";
 
 const logger = createLogger("AgentIpcSaga");
@@ -600,24 +598,12 @@ export function* watchBeforeUnloadSaga() {
 function* handleBeforeUnload(): SagaGenerator<void> {
   logger.info("Page unloading — saving all streaming sessions to disk");
 
-  const state: StoreState = yield* select((s: StoreState) => s);
   const streamingSessionIds = new Set<string>();
 
-  // Collect all sessions across ALL workspaces from agent-session slice.
-  // Messages are stored as a Collection; materialize to AgentMessage[] here so
-  // the persistence layer and downstream code keep receiving array-shaped sessions.
-  const allSessions: AgentSession[] = [];
-  const agentSessionsByAgent = state.agentSessions?.byAgentId || {};
-  for (const wsState of Object.values(state.workspaceAgents?.byWorkspaceId || {})) {
-    const ws = wsState as WorkspaceAgentState;
-    const agentIds: string[] = ws?.agentIds || [];
-    for (const agentId of agentIds) {
-      const stored = agentSessionsByAgent[agentId];
-      if (stored) {
-        const session = { ...stored, messages: getItems(stored.messages) } as AgentSession;
-        if (session.isStreaming) streamingSessionIds.add(session.id as string);
-        allSessions.push(session);
-      }
+  const allSessions: AgentSession[] = yield* selectAllAgentSessions.effect();
+  for (const session of allSessions) {
+    if (session.isStreaming) {
+      streamingSessionIds.add(session.id as string);
     }
   }
 
@@ -628,7 +614,10 @@ function* handleBeforeUnload(): SagaGenerator<void> {
     const hasStreamingMsg = session.messages?.some((m: AgentMessage) => m.role === "assistant" && m.isStreaming);
     if (!((hasStreamingMsg && isStreaming) || isStreaming)) continue;
 
-    const diskCount = selectDiskMessageCount.select(state, session.workspaceId as string, session.id as string);
+    const diskCount = yield* selectDiskMessageCount.effect(
+      session.workspaceId as string,
+      session.id as string,
+    );
     const msgCount = session.messages?.length ?? 0;
     if (diskCount > 0 && msgCount < diskCount) continue;
 

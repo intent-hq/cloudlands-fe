@@ -16,7 +16,20 @@
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { replaceWorkspaceList } from '$lib/store/slices/workspace/workspace-slice';
+  import {
+    setWorkspaceInitializerDefaultParentPath,
+    setWorkspaceInitializerLastSelectedRepo,
+    setWorkspaceInitializerRecentRepos,
+    setWorkspaceInitializerRemoteSetups,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerRemoteSetups,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
     faFolder,
@@ -31,6 +44,10 @@
   import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
 
   const logger = createLogger('RepoSelector');
+  const dispatch = getDispatch();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
+  const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
+  const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
 
   /** Join parent path + folder name using the platform's native separator */
   function joinNativePath(parent: string, name: string): string {
@@ -41,27 +58,7 @@
     return `${cleanParent}${sep}${name}`;
   }
 
-  // Constants for localStorage keys
-  const LAST_SELECTED_REPO_KEY = 'workspace-initializer-last-repo';
-  const RECENT_REPOS_KEY = 'workspace-initializer-recent-repos';
-  const DEFAULT_PARENT_PATH_KEY = 'workspace-initializer-default-parent';
-
-  interface RemoteSetup {
-    id: string;
-    name: string;
-    host: string;
-    port: number;
-    username: string;
-    password?: string;
-    keyPath?: string;
-    useAgent?: boolean;
-    workspacePath: string;
-    lastUsedRepo?: string;
-    lastUsed?: string;
-    transport?: 'ssh' | 'websocket';
-    wsUrl?: string;
-    branch?: string;
-  }
+  type RemoteSetup = WorkspaceInitializerRemoteSetup;
 
   export interface RepoChangeDetail {
     path: string;
@@ -144,7 +141,13 @@
       name: string;
       owner?: string;
     }>
-  >([]);
+  >($workspaceInitializerRecentRepos$);
+
+  $effect(() => {
+    if (isLoading) {
+      recentRepos = $workspaceInitializerRecentRepos$;
+    }
+  });
 
   // Track if the current input is a recognized GitHub URL
   let detectedGitHub = $state<{ owner: string; repo: string; url: string } | null>(null);
@@ -166,26 +169,15 @@
   // ═══════════════════════════════════════════════════════════════════════════
   const remoteWorkspacesEnabled$ = selectIsFeatureEnabled('remote-workspaces');
   let enableRemoteWorkspaces = $derived($remoteWorkspacesEnabled$);
-  let remoteSetups = $state<RemoteSetup[]>([]);
+  let remoteSetups = $state<RemoteSetup[]>($workspaceInitializerRemoteSetups$);
   let showAddRemoteModal = $state(false);
 
-  function loadRemoteSetups() {
-    try {
-      const stored = localStorage.getItem('remote-setups');
-      if (stored) {
-        remoteSetups = JSON.parse(stored);
-      }
-    } catch (err) {
-      logger.error('Failed to load remote setups', err);
-    }
-  }
+  $effect(() => {
+    remoteSetups = $workspaceInitializerRemoteSetups$;
+  });
 
-  function saveRemoteSetups() {
-    try {
-      localStorage.setItem('remote-setups', JSON.stringify(remoteSetups));
-    } catch (err) {
-      logger.error('Failed to save remote setups', err);
-    }
+  function saveRemoteSetups(setups = remoteSetups) {
+    dispatch(setWorkspaceInitializerRemoteSetups(setups));
   }
 
   function handleSelectRemoteSetup(setup: RemoteSetup) {
@@ -207,8 +199,9 @@
   }
 
   function handleRemoveRemoteSetup(id: string) {
-    remoteSetups = remoteSetups.filter((s) => s.id !== id);
-    saveRemoteSetups();
+    const nextSetups = remoteSetups.filter((s) => s.id !== id);
+    remoteSetups = nextSetups;
+    saveRemoteSetups(nextSetups);
   }
 
   function handleAddRemoteSetup() {
@@ -216,8 +209,9 @@
   }
 
   function handleSaveRemoteSetup(setup: RemoteSetup) {
-    remoteSetups = [...remoteSetups, setup];
-    saveRemoteSetups();
+    const nextSetups = [...remoteSetups, setup];
+    remoteSetups = nextSetups;
+    saveRemoteSetups(nextSetups);
     showAddRemoteModal = false;
   }
 
@@ -240,16 +234,19 @@
   // This is separate from inputValue which changes as user types
   let confirmedGithubUrl = $state('');
 
-  // Load default parent path from localStorage or use sensible default
+  // Load default parent path from Redux; persistence is handled by the saga.
   function getDefaultParentPath(): string {
-    try {
-      const saved = localStorage.getItem(DEFAULT_PARENT_PATH_KEY);
-      if (saved) return saved;
-    } catch {
-      // Ignore localStorage errors
+    return $defaultParentPath$ || '~/Developer';
+  }
+
+  function saveLastSelectedRepo(detail: RepoChangeDetail) {
+    if (debugConfig.get('enableFormPersistence')) {
+      dispatch(setWorkspaceInitializerLastSelectedRepo(detail));
     }
-    // Default to ~/Developer or ~/repos
-    return '~/Developer';
+  }
+
+  function saveDefaultParentPath(path: string) {
+    dispatch(setWorkspaceInitializerDefaultParentPath(path));
   }
 
   // Validate a project/folder name: reject path separators, traversal, null bytes, unsafe chars
@@ -468,9 +465,6 @@
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
   onMount(async () => {
-    if (enableRemoteWorkspaces) {
-      loadRemoteSetups();
-    }
     performanceMonitor.start('loadRecentRepos');
 
     try {
@@ -498,6 +492,10 @@
         string,
         { path: string; type: 'local' | 'github'; name: string; owner?: string }
       >();
+
+      for (const repo of $workspaceInitializerRecentRepos$) {
+        repoMap.set(repo.path, repo);
+      }
 
       // Add persistent registry repos
       if (registryResult?.success && Array.isArray(registryResult.data)) {
@@ -536,9 +534,9 @@
 
       recentRepos = Array.from(repoMap.values()).slice(0, 9);
 
-      // Save recent repos to localStorage if persistence is enabled
+      // Save recent repos through Redux if persistence is enabled.
       if (debugConfig.get('enableFormPersistence')) {
-        localStorage.setItem(RECENT_REPOS_KEY, JSON.stringify(recentRepos));
+        dispatch(setWorkspaceInitializerRecentRepos(recentRepos));
       }
     } catch (err) {
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
@@ -827,10 +825,7 @@
     };
     onchangeWithTracking(detail);
 
-    // Save to localStorage if persistence is enabled
-    if (debugConfig.get('enableFormPersistence')) {
-      localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-    }
+    saveLastSelectedRepo(detail);
 
     // Close the dropdown
     isOpen = false;
@@ -865,10 +860,7 @@
 
     onchangeWithTracking(detail);
 
-    // Save to localStorage if persistence is enabled
-    if (debugConfig.get('enableFormPersistence')) {
-      localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-    }
+    saveLastSelectedRepo(detail);
 
     // Close the dropdown
     isOpen = false;
@@ -927,10 +919,7 @@
           };
           onchangeWithTracking(detail);
 
-          // Save to localStorage if persistence is enabled
-          if (debugConfig.get('enableFormPersistence')) {
-            localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-          }
+          saveLastSelectedRepo(detail);
           // Close the dropdown
           isOpen = false;
         }
@@ -966,10 +955,7 @@
             };
             onchangeWithTracking(detail);
 
-            // Save to localStorage if persistence is enabled
-            if (debugConfig.get('enableFormPersistence')) {
-              localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-            }
+            saveLastSelectedRepo(detail);
             // Close the dropdown
             isOpen = false;
           }
@@ -1005,12 +991,7 @@
           result.data.filePaths?.length > 0
         ) {
           newRepoParentPath = result.data.filePaths[0];
-          // Save as default for next time
-          try {
-            localStorage.setItem(DEFAULT_PARENT_PATH_KEY, newRepoParentPath);
-          } catch {
-            // Ignore localStorage errors
-          }
+          saveDefaultParentPath(newRepoParentPath);
         }
       }
     } catch (err) {
@@ -1048,15 +1029,8 @@
     };
     onchangeWithTracking(detail);
 
-    // Save parent path as default for next time
-    try {
-      localStorage.setItem(DEFAULT_PARENT_PATH_KEY, newRepoParentPath);
-      if (debugConfig.get('enableFormPersistence')) {
-        localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
+    saveDefaultParentPath(newRepoParentPath);
+    saveLastSelectedRepo(detail);
 
     // Reset and close
     showCreateNewMode = false;
@@ -1085,12 +1059,7 @@
           result.data.filePaths?.length > 0
         ) {
           githubCloneParentPath = result.data.filePaths[0];
-          // Save as default for next time
-          try {
-            localStorage.setItem(DEFAULT_PARENT_PATH_KEY, githubCloneParentPath);
-          } catch {
-            // Ignore localStorage errors
-          }
+          saveDefaultParentPath(githubCloneParentPath);
         }
       }
     } catch (err) {
@@ -1126,15 +1095,8 @@
 
     onchangeWithTracking(detail);
 
-    // Save to localStorage if persistence is enabled
-    try {
-      localStorage.setItem(DEFAULT_PARENT_PATH_KEY, githubCloneParentPath);
-      if (debugConfig.get('enableFormPersistence')) {
-        localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
+    saveDefaultParentPath(githubCloneParentPath);
+    saveLastSelectedRepo(detail);
 
     // Close the dropdown
     isOpen = false;
@@ -1164,9 +1126,7 @@
     };
     onchangeWithTracking(detail);
 
-    if (debugConfig.get('enableFormPersistence')) {
-      localStorage.setItem(LAST_SELECTED_REPO_KEY, JSON.stringify(detail));
-    }
+    saveLastSelectedRepo(detail);
 
     showNonGitFolderPrompt = false;
     nonGitFolderPath = '';

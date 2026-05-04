@@ -22,6 +22,9 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { selectThemePreference } from '$lib/store/slices/theme/theme-selectors';
+  import { requestThemePreferenceChange } from '$lib/store/slices/theme/theme-slice';
+  import type { ThemePreference } from '$lib/store/slices/theme/theme-types';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   const workspaces = selectWorkspaceItems();
 
@@ -45,8 +48,6 @@
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import type { Theme } from '$lib/utils/theme';
-  import { themeManager } from '$lib/utils/theme';
   import { track } from '$lib/services/analytics';
   import { flashCopied } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
   import {
@@ -67,6 +68,7 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
+  const themePreference = selectThemePreference();
 
   // Tab types
   type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
@@ -163,7 +165,6 @@
   });
 
   // Interface & System state
-  let theme = $state<Theme>('system');
   let sentryTestStatus = $state('');
 
   // Component refs for reset functionality
@@ -214,9 +215,6 @@
   };
 
   onMount(async () => {
-    // Load theme from ThemeManager
-    theme = themeManager.getTheme();
-
     // Get app version from Electron
     if (window.electronAPI) {
       try {
@@ -270,9 +268,9 @@
   }
 
   function handleThemeChange(newTheme: string | boolean) {
-    const previousTheme = theme;
-    theme = newTheme as Theme;
-    themeManager.setTheme(theme);
+    const theme = newTheme as ThemePreference;
+    const previousTheme = $themePreference;
+    settingsDispatch(requestThemePreferenceChange(theme));
     track('Changed Theme', {
       theme: theme,
       previous_theme: previousTheme,
@@ -298,8 +296,7 @@
 
   function handleResetInterfaceSystem() {
     // Reset theme
-    theme = 'system';
-    themeManager.setTheme('system');
+    settingsDispatch(requestThemePreferenceChange('system'));
     // Clear custom color theme
     colorThemeSettingsRef?.clearTheme();
     // Reset font styles
@@ -469,7 +466,7 @@
                 <Toggle
                   variant="group"
                   options={themeOptions}
-                  value={theme}
+                  value={$themePreference}
                   onChange={handleThemeChange}
                   size="sm"
                 />

@@ -14,7 +14,7 @@ import { selectActiveTerminalIdForWorkspace } from "../terminals-selectors";
  */
 export function* watchCloseActiveTerminal() {
   yield* takeEvery(
-    closeActiveTerminalRequested.type,
+    closeActiveTerminalRequested,
     function* ({ payload }: ReturnType<typeof closeActiveTerminalRequested>) {
       const [wsId] = payload;
       if (!wsId) return;

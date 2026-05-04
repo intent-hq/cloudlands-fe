@@ -16,6 +16,7 @@ import type { SetupScript, SetupScriptsState } from "./setup-scripts-types";
 // ============================================================================
 
 const MAX_SCRIPTS = 50;
+export const SETUP_SCRIPT_BANNER_DISMISSED_KEY = "setup-script-banner-dismissed";
 
 // ============================================================================
 // Initial State
@@ -24,7 +25,13 @@ const MAX_SCRIPTS = 50;
 export const initialState: SetupScriptsState = {
   scripts: createCollection<SetupScript, "id">("id"),
   pendingDeletions: {},
+  isBannerDismissedGlobally: false,
+  bannerDismissedByWorkspaceId: {},
 };
+
+function normalizeWorkspaceIds(workspaceIds: string[]): string[] {
+  return [...new Set(workspaceIds.filter((workspaceId) => workspaceId.length > 0))];
+}
 
 // ============================================================================
 // Actions
@@ -68,6 +75,19 @@ export const restoreScriptToUI = createAction<[scriptId: string]>(
 /** Permanently delete a script */
 export const deleteScript = createAction<[scriptId: string]>(
   "setupScripts/deleteScript"
+);
+
+export const hydrateSetupScriptBannerDismissals = createAction<[
+  isDismissedGlobally: boolean,
+  workspaceIds: string[],
+]>("setupScripts/hydrateSetupScriptBannerDismissals");
+
+export const dismissSetupScriptBannerGlobally = createAction(
+  "setupScripts/dismissSetupScriptBannerGlobally"
+);
+
+export const dismissSetupScriptBannerForWorkspace = createAction<[workspaceId: string]>(
+  "setupScripts/dismissSetupScriptBannerForWorkspace"
 );
 
 // ============================================================================
@@ -142,17 +162,42 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
   })
   .with(restoreScriptToUI, (state, { payload: [scriptId] }) => {
     if (!state.pendingDeletions[scriptId]) return state;
-     
+
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return { ...state, pendingDeletions: rest };
   })
   .with(deleteScript, (state, { payload: [scriptId] }) => {
-     
+
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return {
       ...state,
       scripts: collectionRemoveItem(state.scripts, scriptId),
       pendingDeletions: rest,
+    };
+  })
+  .with(hydrateSetupScriptBannerDismissals, (state, { payload: [isDismissedGlobally, workspaceIds] }) => ({
+    ...state,
+    isBannerDismissedGlobally: isDismissedGlobally,
+    bannerDismissedByWorkspaceId: normalizeWorkspaceIds(workspaceIds).reduce<Record<string, true>>(
+      (acc, workspaceId) => {
+        acc[workspaceId] = true;
+        return acc;
+      },
+      {}
+    ),
+  }))
+  .with(dismissSetupScriptBannerGlobally, (state) => ({
+    ...state,
+    isBannerDismissedGlobally: true,
+  }))
+  .with(dismissSetupScriptBannerForWorkspace, (state, { payload: [workspaceId] }) => {
+    if (!workspaceId) return state;
+    return {
+      ...state,
+      bannerDismissedByWorkspaceId: {
+        ...state.bannerDismissedByWorkspaceId,
+        [workspaceId]: true,
+      },
     };
   });
 

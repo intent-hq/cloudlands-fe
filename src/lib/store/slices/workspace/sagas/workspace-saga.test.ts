@@ -554,7 +554,7 @@ describe("workspace recency sagas", () => {
 
     expect(effect.type).toBe("FORK");
     expect(effect.payload.args).toEqual([
-      [recordWorkspaceView.type, cleanupRecency.type],
+      [recordWorkspaceView, cleanupRecency],
       persistWorkspaceRecency,
     ]);
     expect(iterator.next().done).toBe(true);

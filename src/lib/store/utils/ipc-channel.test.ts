@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { END } from "redux-saga";
-import * as sagaEffects from "redux-saga/effects";
+import { END, runSaga } from "redux-saga";
 import {
   createElectronChannel,
   createListenSyncChannel,
@@ -16,6 +15,7 @@ vi.mock("$lib/electron-bridge", async () => await import("$lib/store/utils/test-
 import { listenSync } from "$lib/electron-bridge";
 
 const mockedListenSync = vi.mocked(listenSync);
+const flushSaga = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("createListenSyncChannel", () => {
   let capturedHandler: ((payload: { payload: any }) => void) | null = null;
@@ -260,6 +260,23 @@ describe("createElectronChannel", () => {
     expect(emitted).toEqual([{ message: "Upgrade required" }]);
   });
 
+  it("should buffer bursty event data until the saga takes it", () => {
+    const channel = createElectronChannel<{ message: string }>("agent:plan-required");
+    const emitted: Array<{ message: string }> = [];
+
+    capturedHandler?.({ message: "first" });
+    capturedHandler?.({ message: "second" });
+
+    channel.take((value) => {
+      emitted.push(value);
+    });
+    channel.take((value) => {
+      emitted.push(value);
+    });
+
+    expect(emitted).toEqual([{ message: "first" }, { message: "second" }]);
+  });
+
   it("should remove the listener by id when the channel closes", () => {
     const channel = createElectronChannel("auto-update:up-to-date");
 
@@ -286,12 +303,19 @@ describe("createElectronChannel", () => {
 
 describe("takeEvery helper effects", () => {
   let originalElectronApi: typeof window.electronAPI | undefined;
+  let capturedElectronHandler: ((payload: any) => void) | null = null;
+  let mockOffById: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     originalElectronApi = window.electronAPI;
+    capturedElectronHandler = null;
+    mockOffById = vi.fn();
     (window as any).electronAPI = {
-      on: vi.fn(() => "listener-1"),
-      offById: vi.fn(),
+      on: vi.fn((_event: string, handler: (payload: any) => void) => {
+        capturedElectronHandler = handler;
+        return "listener-1";
+      }),
+      offById: mockOffById,
     };
     mockedListenSync.mockImplementation(() => vi.fn());
   });
@@ -305,67 +329,206 @@ describe("takeEvery helper effects", () => {
     delete (window as any).electronAPI;
   });
 
-  it("takeEveryFromWindowEvent takes from its channel, calls the handler, and closes on exit", () => {
+  it("takeEveryFromWindowEvent forks its listener loop and returns", () => {
     const handler = function* (data: { id: string }) {
       return data;
     };
     const iterator = takeEveryFromWindowEvent("window:test", handler);
 
     const first = iterator.next().value as any;
-    const channel = first.payload.channel;
-    vi.spyOn(channel, "close");
-
-    expect(first).toEqual(sagaEffects.take(channel));
-    expect(iterator.next({ id: "abc" })).toEqual({
-      value: sagaEffects.call(handler, { id: "abc" }),
-      done: false,
-    });
-
-    iterator.return(undefined);
-
-    expect(channel.close).toHaveBeenCalledOnce();
+    expect(first.type).toBe("FORK");
+    expect(first.payload.args).toEqual(["window:test", handler, {}]);
+    expect(iterator.next({} as any).done).toBe(true);
   });
 
-  it("takeEveryFromListenSync takes from its channel, calls the handler, and closes on exit", () => {
+  it("takeEveryFromListenSync forks its listener loop and returns", () => {
     const handler = function* (data: { id: string }) {
       return data;
     };
     const iterator = takeEveryFromListenSync("terminal:disposed", handler);
 
     const first = iterator.next().value as any;
-    const channel = first.payload.channel;
-    vi.spyOn(channel, "close");
-
-    expect(first).toEqual(sagaEffects.take(channel));
-    expect(iterator.next({ id: "term-1" })).toEqual({
-      value: sagaEffects.call(handler, { id: "term-1" }),
-      done: false,
-    });
-
-    iterator.return(undefined);
-
-    expect(channel.close).toHaveBeenCalledOnce();
+    expect(first.type).toBe("FORK");
+    expect(first.payload.args).toEqual(["terminal:disposed", handler]);
+    expect(iterator.next({} as any).done).toBe(true);
   });
 
-  it("takeEveryFromElectronChannel takes from its channel, calls the handler, and closes on exit", () => {
+  it("takeEveryFromElectronChannel forks its listener loop and returns", () => {
     const handler = function* (data: { message: string }) {
       return data;
     };
     const iterator = takeEveryFromElectronChannel("agent:plan-required", handler);
 
     const first = iterator.next().value as any;
-    const channel = first.payload.channel;
-    vi.spyOn(channel, "close");
+    expect(first.type).toBe("FORK");
+    expect(first.payload.args).toEqual(["agent:plan-required", handler]);
+    expect(iterator.next({} as any).done).toBe(true);
+  });
 
-    expect(first).toEqual(sagaEffects.take(channel));
-    expect(iterator.next({ message: "Upgrade required" })).toEqual({
-      value: sagaEffects.call(handler, { message: "Upgrade required" }),
-      done: false,
+  it("takeEveryFromListenSync handles events and cleans up when its owning saga is cancelled", async () => {
+    let capturedListenSyncHandler: ((payload: { payload: { id: string } }) => void) | null = null;
+    const cleanup = vi.fn();
+    const calls: string[] = [];
+
+    mockedListenSync.mockImplementation((_event: string, handler: any) => {
+      capturedListenSyncHandler = handler;
+      return cleanup;
     });
 
-    iterator.return(undefined);
+    function* handler(data: { id: string }) {
+      calls.push(data.id);
+    }
 
-    expect(channel.close).toHaveBeenCalledOnce();
+    function* rootSaga() {
+      yield* takeEveryFromListenSync<{ id: string }>("terminal:disposed", handler);
+    }
+
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, rootSaga);
+
+    await flushSaga();
+    expect(mockedListenSync).toHaveBeenCalledWith("terminal:disposed", expect.any(Function));
+
+    capturedListenSyncHandler!({ payload: { id: "term-1" } });
+    await flushSaga();
+    expect(calls).toEqual(["term-1"]);
+
+    task.cancel();
+    await task.toPromise();
+
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("takeEveryFromListenSync starts later handlers while an earlier handler is delayed", async () => {
+    let capturedListenSyncHandler: ((payload: { payload: { id: string } }) => void) | null = null;
+    let releaseFirstHandler: (() => void) | undefined;
+    const firstHandlerDelay = new Promise<void>((resolve) => {
+      releaseFirstHandler = resolve;
+    });
+    const cleanup = vi.fn();
+    const starts: string[] = [];
+    const finishes: string[] = [];
+
+    mockedListenSync.mockImplementation((_event: string, handler: any) => {
+      capturedListenSyncHandler = handler;
+      return cleanup;
+    });
+
+    function* handler(data: { id: string }) {
+      starts.push(data.id);
+      if (data.id === "first") {
+        yield firstHandlerDelay;
+      }
+      finishes.push(data.id);
+    }
+
+    function* rootSaga() {
+      yield* takeEveryFromListenSync<{ id: string }>("terminal:disposed", handler);
+    }
+
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, rootSaga);
+
+    await flushSaga();
+    capturedListenSyncHandler!({ payload: { id: "first" } });
+    await flushSaga();
+    capturedListenSyncHandler!({ payload: { id: "second" } });
+    await flushSaga();
+
+    expect(starts).toEqual(["first", "second"]);
+    expect(finishes).toEqual(["second"]);
+
+    releaseFirstHandler?.();
+    task.cancel();
+    await task.toPromise();
+
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("takeEveryFromWindowEvent handles events and removes its listener when cancelled", async () => {
+    const calls: string[] = [];
+    const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
+
+    function* handler(data: { id: string }) {
+      calls.push(data.id);
+    }
+
+    function* rootSaga() {
+      yield* takeEveryFromWindowEvent<{ id: string }>("window:test", handler);
+    }
+
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, rootSaga);
+
+    await flushSaga();
+    window.dispatchEvent(new CustomEvent("window:test", { detail: { id: "event-1" } }));
+    await flushSaga();
+    expect(calls).toEqual(["event-1"]);
+
+    task.cancel();
+    await task.toPromise();
+
+    expect(removeEventListenerSpy).toHaveBeenCalledWith("window:test", expect.any(Function));
+    removeEventListenerSpy.mockRestore();
+  });
+
+  it("takeEveryFromElectronChannel handles events and removes its listener when cancelled", async () => {
+    const calls: string[] = [];
+
+    function* handler(data: { message: string }) {
+      calls.push(data.message);
+    }
+
+    function* rootSaga() {
+      yield* takeEveryFromElectronChannel<{ message: string }>("agent:plan-required", handler);
+    }
+
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, rootSaga);
+
+    await flushSaga();
+    capturedElectronHandler!({ message: "Upgrade required" });
+    await flushSaga();
+    expect(calls).toEqual(["Upgrade required"]);
+
+    task.cancel();
+    await task.toPromise();
+
+    expect(mockOffById).toHaveBeenCalledWith("agent:plan-required", "listener-1");
+  });
+
+  it("takeEveryFromElectronChannel starts later handlers while an earlier handler is delayed", async () => {
+    let releaseFirstHandler: (() => void) | undefined;
+    const firstHandlerDelay = new Promise<void>((resolve) => {
+      releaseFirstHandler = resolve;
+    });
+    const starts: string[] = [];
+    const finishes: string[] = [];
+
+    function* handler(data: { message: string }) {
+      starts.push(data.message);
+      if (data.message === "first") {
+        yield firstHandlerDelay;
+      }
+      finishes.push(data.message);
+    }
+
+    function* rootSaga() {
+      yield* takeEveryFromElectronChannel<{ message: string }>("agent:plan-required", handler);
+    }
+
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, rootSaga);
+
+    await flushSaga();
+    capturedElectronHandler!({ message: "first" });
+    await flushSaga();
+    capturedElectronHandler!({ message: "second" });
+    await flushSaga();
+
+    expect(starts).toEqual(["first", "second"]);
+    expect(finishes).toEqual(["second"]);
+
+    releaseFirstHandler?.();
+    task.cancel();
+    await task.toPromise();
+
+    expect(mockOffById).toHaveBeenCalledWith("agent:plan-required", "listener-1");
   });
 });
 

@@ -90,11 +90,8 @@
   import { selectChatDraft } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
 
-  import {
-    getTasksForAgent,
-    type TaskAgentAssociation,
-    TASK_ASSOCIATION_CHANGED_EVENT,
-  } from '$lib/utils/task-agent-associations';
+  import { selectTasksForAgent } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
+  import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -271,8 +268,12 @@
 
   // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
   const workspaceIdStore = writable(workspace?.id ?? '');
+  const agentIdStore = writable(agentId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
+  });
+  $effect(() => {
+    agentIdStore.set(agentId ?? '');
   });
 
   // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
@@ -282,6 +283,7 @@
   const _chatAgentState$ = selectChatStateOrDefault(agentId ?? '');
   const _agentSession$ = selectAgentSession(agentId ?? '');
   const _agentMessages$ = selectAgentMessages(agentId ?? '');
+  const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
 
   // Effective chat state - composes ChatAgentState + session/messages from agent-session slice
   let chatState = $derived.by((): ChatState => {
@@ -1569,16 +1571,8 @@
     };
   });
 
-  // Trigger for refreshing task associations (incremented when localStorage changes)
-  let taskRefreshTrigger = $state(0);
-
-  // Get tasks assigned to this agent (reactive, updates when workspace, agent, or trigger changes)
-  const agentTasks = $derived.by(() => {
-    // Include taskRefreshTrigger to make this reactive to localStorage changes
-    void taskRefreshTrigger;
-    if (!workspace?.id || !agentId) return [];
-    return getTasksForAgent(workspace.id, agentId);
-  });
+  // Get tasks assigned to this agent (reactive via Redux task-agent association state)
+  const agentTasks = $derived($agentTasks$);
 
   // Get the current specialist ID from the session metadata
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1586,21 +1580,6 @@
     const session = chatState.session;
     if (!session) return null;
     return session.metadata?.specialist || session.agentMetadata?.specialist || null;
-  });
-
-  // Listen for task association changes via custom event
-  $effect(() => {
-    if (!browser) return;
-
-    const handleTaskAssociationChange = () => {
-      taskRefreshTrigger++;
-    };
-
-    window.addEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChange);
-
-    return () => {
-      window.removeEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChange);
-    };
   });
 
   // Track last fetched agent to prevent duplicate queue fetches

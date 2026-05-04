@@ -21,7 +21,6 @@ import {
   join,
   put,
   race,
-  select,
   take,
   takeEvery,
   type SagaGenerator,
@@ -78,17 +77,13 @@ const logger = createLogger('InitializeChatSaga');
  */
 function* lookupSession(wsId: string, agentId: string): SagaGenerator<AgentSession | null> {
   // 1. Redux state
-  const session: AgentSession | undefined | null = yield* select((state) =>
-    selectAgentById.select(state, agentId),
-  );
+  const session: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
   if (session) return session;
 
   // 2. Redux state (re-read) — historically a fallback to agentService in-memory,
   // which itself just delegates to selectAgentById. Kept as a tick-separated
   // re-read so downstream retries behave the same.
-  const tempSession: AgentSession | undefined | null = yield* select((state) =>
-    selectAgentById.select(state, agentId),
-  );
+  const tempSession: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
   if (tempSession) return tempSession;
 
   // 3. Disk restore
@@ -120,14 +115,10 @@ function* retryLookup(wsId: string, agentId: string): SagaGenerator<AgentSession
   for (const ms of retryDelays) {
     yield* delay(ms);
     // Check Redux
-    const session: AgentSession | undefined | null = yield* select((state) =>
-      selectAgentById.select(state, agentId),
-    );
+    const session: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
     if (session) return session;
     // Re-read Redux (historical fallback to agentService, which itself just reads Redux)
-    const temp: AgentSession | undefined | null = yield* select((state) =>
-      selectAgentById.select(state, agentId),
-    );
+    const temp: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
     if (temp) return temp;
   }
   return null;
@@ -375,11 +366,9 @@ function* handleInitializeChat(
 
     // Step 4: Load messages — resolve from multiple sources
     // Read messages from agent-session slice (canonical source)
-    const agentSessionMessages: AgentMessage[] = yield* select((state) =>
-      selectAgentMessages.select(state, agentId),
-    );
+    const agentSessionMessages: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
     // Read isStreaming from agent-session (single source of truth)
-    const sessionForStreamCheck = yield* select((state) => selectAgentById.select(state, agentId));
+    const sessionForStreamCheck = yield* selectAgentById.effect(agentId);
     const hasActiveStream =
       (sessionForStreamCheck?.isStreaming ?? false) && agentSessionMessages.length > 0;
 
@@ -387,9 +376,7 @@ function* handleInitializeChat(
     if (hasActiveStream) {
       messages = agentSessionMessages;
     } else {
-      const reduxSession: AgentSession | undefined = yield* select((state) =>
-        selectAgentById.select(state, agentId),
-      );
+      const reduxSession: AgentSession | undefined = yield* selectAgentById.effect(agentId);
       const reduxMessages =
         reduxSession?.messages && Array.isArray(reduxSession.messages) ? reduxSession.messages : [];
 
@@ -415,9 +402,7 @@ function* handleInitializeChat(
       } else if (session.messages && Array.isArray(session.messages)) {
         messages = session.messages;
       } else {
-        const agent: AgentSession | undefined = yield* select((state) =>
-          selectAgentById.select(state, agentId),
-        );
+        const agent: AgentSession | undefined = yield* selectAgentById.effect(agentId);
         if (agent?.messages) {
           messages = agent.messages;
         }
@@ -475,9 +460,7 @@ function* handleInitializeChat(
 
     // Step 5: Determine streaming state
     let isCurrentlyStreaming = session?.isStreaming || false;
-    const agentFromStore: AgentSession | undefined = yield* select((state) =>
-      selectAgentById.select(state, agentId),
-    );
+    const agentFromStore: AgentSession | undefined = yield* selectAgentById.effect(agentId);
     if (agentFromStore?.isStreaming) {
       isCurrentlyStreaming = true;
     }
@@ -488,9 +471,7 @@ function* handleInitializeChat(
     // agent IS streaming even if bulkUpsertSessions clobbered the flag with
     // stale disk data before we could read it.
     if (!isCurrentlyStreaming) {
-      const specWriteInProgress: boolean = yield* select((state) =>
-        selectIsInitialSpecWriteInProgress.select(state, wsId),
-      );
+      const specWriteInProgress: boolean = yield* selectIsInitialSpecWriteInProgress.effect(wsId);
       if (specWriteInProgress) {
         isCurrentlyStreaming = true;
       }
@@ -498,9 +479,7 @@ function* handleInitializeChat(
 
     // Step 6: Compute existing streaming content
     let existingStreamingContent = '';
-    const freshChatState = yield* select((state) =>
-      selectChatStateOrDefault.select(state, agentId),
-    );
+    const freshChatState = yield* selectChatStateOrDefault.effect(agentId);
 
     // Check if Redux chat state already has streaming content (HMR case)
     const chatServiceInstance = yield* call(getChatService, agentId);

@@ -19,12 +19,20 @@ import {
   getLocalStorageJSON,
   removeLocalStorageItem,
 } from "../../../utils/safe-local-storage-saga";
+import {
+  takeEveryFromSelector,
+  type SelectorChannelPayload,
+} from "../../../utils/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
+import { removeFileContentEntry } from "../../files/files-slice";
 import {
   panelLayoutHistoryClient,
   type PanelLayoutHistoryData,
 } from "$features/layout/panel-layout-history.client";
-import { selectPanelLayoutWorkspace } from "../panel-layout-selectors";
+import {
+  selectFileContentPrunePayload,
+  selectPanelLayoutWorkspace,
+} from "../panel-layout-selectors";
 import {
   initializeLayout,
   loadLayoutHistory,
@@ -331,7 +339,7 @@ function* watchHistoryPersistence() {
 }
 
 function* watchClearLayout() {
-  yield* takeEvery(clearPanelLayout.type, handleClearLayout);
+  yield* takeEvery(clearPanelLayout, handleClearLayout);
 }
 
 /** Clean up PanelLayoutAdapter Map entry when a workspace is unmounted */
@@ -347,6 +355,29 @@ function* watchWorkspaceUnmounted() {
 
 function* watchWorkspaceMounted() {
   yield* takeEvery(workspaceMounted, handleWorkspaceMountedRestore);
+}
+
+/** @internal Exported for testing only. */
+export function* cleanupClosedFileContentEntries({
+  payload,
+}: SelectorChannelPayload<string[]>): SagaGenerator<void> {
+  if (payload.length === 0) {
+    return;
+  }
+
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (!activeWsId || !isValidMountedWorkspaceId(activeWsId)) {
+    return;
+  }
+
+  for (const path of payload) {
+    yield* put(removeFileContentEntry(activeWsId, path));
+  }
+}
+
+/** @internal Exported for testing only. */
+export function* watchOpenFileTabContentCleanup(): SagaGenerator<void> {
+  yield* takeEveryFromSelector(selectFileContentPrunePayload, cleanupClosedFileContentEntries);
 }
 
 /** @internal Exported for testing only. */
@@ -366,7 +397,7 @@ export function* retroactivePanelLayoutMountCheckSaga(): SagaGenerator<void> {
 
 /** Load history from disk when a layout is initialized */
 function* watchInitializeLayout() {
-  yield* takeEvery(initializeLayout.type, function* (action: ReturnType<typeof initializeLayout>) {
+  yield* takeEvery(initializeLayout, function* (action: ReturnType<typeof initializeLayout>) {
     const wsId = action.payload.wsId;
     try {
       const data: PanelLayoutHistoryData | null = yield* call(
@@ -393,6 +424,7 @@ export function* panelLayoutSaga() {
   yield* fork(watchInitializeLayout);
   yield* fork(watchWorkspaceUnmounted);
   yield* fork(watchWorkspaceMounted);
+  yield* fork(watchOpenFileTabContentCleanup);
   yield* fork(retroactivePanelLayoutMountCheckSaga);
 }
 

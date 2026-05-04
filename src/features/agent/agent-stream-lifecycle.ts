@@ -829,13 +829,35 @@ export async function reconnectToBackendStreams(): Promise<string[]> {
         session = allSess.find(s => s.id === agentId);
       }
 
-      let existingMessage: AgentMessage | undefined;
-      if (session?.messages) {
-        existingMessage = session.messages.find((m) => m.role === 'assistant' && m.isStreaming === true);
-        if (!existingMessage) {
-          const assistantMessages = session.messages.filter((m) => m.role === 'assistant');
-          if (assistantMessages.length > 0) existingMessage = assistantMessages[assistantMessages.length - 1];
-        }
+      let existingMessage: AgentMessage | undefined = session?.messages?.find(
+        (m) => m.role === 'assistant' && m.isStreaming === true,
+      );
+
+      if (accumulatedContent && !existingMessage && session) {
+        const wsIdForRestore = streamWorkspaceId || session.workspaceId;
+        if (!wsIdForRestore) throw new Error(`Cannot restore active stream without workspaceId: ${agentId}`);
+
+        const restoredContentBlocks: ContentBlock[] = accumulatedContent.contentBlocks?.length
+          ? normalizeContentBlocks(accumulatedContent.contentBlocks)
+          : accumulatedContent.content
+            ? [{ type: 'text' as const, text: accumulatedContent.content }]
+            : [];
+
+        const restoredStreamingMessage: AgentMessage = {
+          id: createMessageId(`msg_${uuidv4()}`),
+          role: 'assistant' as const,
+          contentBlocks: restoredContentBlocks,
+          timestamp: new Date().toISOString(),
+          isStreaming: true,
+        };
+
+        session = {
+          ...session,
+          messages: [...(session.messages || []), restoredStreamingMessage],
+          isStreaming: true,
+        };
+        existingMessage = restoredStreamingMessage;
+        getReduxStore().dispatch(upsertAgentSession(wsIdForRestore, session));
       }
 
       if (accumulatedContent && existingMessage) {
@@ -861,12 +883,6 @@ export async function reconnectToBackendStreams(): Promise<string[]> {
       }
 
       if (!handlerAlreadyExists) {
-        if (existingMessage && !existingMessage.isStreaming && session) {
-          const wsIdForMark = streamWorkspaceId || session?.workspaceId;
-          if (!wsIdForMark) throw new Error(`Cannot mark message as streaming without workspaceId: ${agentId}`);
-          getReduxStore().dispatch(updateAgentMessage(wsIdForMark, agentId, existingMessage.id, { isStreaming: true }));
-        }
-
         const ensureResult = ensureStreamHandler(agentId, {
           existingMessage,
           workspaceId: streamWorkspaceId || (session?.workspaceId ? String(session.workspaceId) : undefined),

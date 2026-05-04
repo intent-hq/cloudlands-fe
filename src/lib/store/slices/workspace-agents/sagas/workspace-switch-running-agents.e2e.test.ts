@@ -113,9 +113,11 @@ const selectAllWorkspaceAgentsMock = vi.fn();
 vi.mock("../workspace-agents-selectors", () => ({
   selectAgentById: {
     select: (state: any, agentId: string) => selectAgentByIdMock(state, agentId),
+    effect: function* (agentId: string) { return yield sagaEffects.select(selectAgentByIdMock, agentId); },
   },
   selectAllWorkspaceAgents: {
     select: (state: any, wsId: string) => selectAllWorkspaceAgentsMock(state, wsId),
+    effect: function* (wsId: string) { return yield sagaEffects.select(selectAllWorkspaceAgentsMock, wsId); },
   },
 }));
 

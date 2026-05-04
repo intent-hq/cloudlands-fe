@@ -134,6 +134,54 @@ describe('UnifiedPersistence', () => {
       expect(loadResult.data?.messages[1].id).toBe('msg_asst_new');
     });
 
+    it('preserves newest disk user message when stale backend save includes older users plus assistant', async () => {
+      const agent: AgentSession = {
+        id: 'agent-preserve-newest-user' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-05-04T10:00:00.000Z' },
+          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: '2026-05-04T10:01:00.000Z' },
+          { id: 'msg_user_2', role: 'user', contentBlocks: [{ type: 'text', text: 'Newest question' }], timestamp: '2026-05-04T10:02:00.000Z' },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      await persistence.saveAgent(agent, testDir);
+
+      const staleBackendSave: AgentSession = {
+        ...agent,
+        messages: [
+          agent.messages[0],
+          agent.messages[1],
+          { id: 'msg_asst_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'New answer' }], timestamp: '2026-05-04T10:03:00.000Z' },
+        ] as any[],
+      };
+
+      await persistence.saveAgent(staleBackendSave, testDir);
+
+      persistence.invalidateAllLoadCaches();
+      const loadResult = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(loadResult.success).toBe(true);
+      const loadedMessages = loadResult.data?.messages ?? [];
+      expect(loadedMessages.map((message) => message.id)).toEqual([
+        'msg_user_1',
+        'msg_asst_1',
+        'msg_user_2',
+        'msg_asst_2',
+      ]);
+      expect(loadedMessages.filter((message) => message.id === 'msg_user_2')).toHaveLength(1);
+      expect(loadedMessages.filter((message) => message.id === 'msg_asst_2')).toHaveLength(1);
+    });
+
     it('should NOT prepend when incoming save has user messages', async () => {
       // Normal save: backend has both user and assistant messages — no preservation needed
       const agent: AgentSession = {

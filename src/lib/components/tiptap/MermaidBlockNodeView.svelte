@@ -3,11 +3,11 @@
   import type { NodeViewProps } from '@tiptap/core';
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
-  import { themeManager } from '$lib/utils/theme';
   import Fa from 'svelte-fa';
   import { faPencil, faExpand, faTimes } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { tick, onMount } from 'svelte';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   // Dynamically import MermaidRenderer to reduce bundle size
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
@@ -15,16 +15,7 @@
   // TipTap NodeViewProps
   let { node, selected, updateAttributes }: NodeViewProps = $props();
 
-  // Theme state
-  let isDarkMode = $state(themeManager.isDark());
-
-  $effect(() => {
-    const handleThemeChange = (event: CustomEvent) => {
-      isDarkMode = event.detail.isDark;
-    };
-    window.addEventListener('theme-changed', handleThemeChange as EventListener);
-    return () => window.removeEventListener('theme-changed', handleThemeChange as EventListener);
-  });
+  const isDarkTheme = selectIsDarkTheme();
 
   // Extract mermaid code from node attributes
   let savedCode = $derived<string>(node?.attrs?.code || '');
@@ -212,7 +203,7 @@
 </script>
 
 <NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle>
-  <div class="mermaid-block" class:selected class:dark-mode={isDarkMode}>
+  <div class="mermaid-block" class:selected class:dark-mode={$isDarkTheme}>
     <!-- Diagram -->
     <div bind:this={diagramContainerEl}>
       {#await MermaidRenderer}

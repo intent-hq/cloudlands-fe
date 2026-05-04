@@ -3,6 +3,7 @@ import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-s
 import { selectPanelVisibilityFlag } from "./ui-layout-selectors";
 import {
   DEFAULT_DOCK_HEIGHT,
+  DEFAULT_EXPANDED_WIDTH,
   DEFAULT_WIDTH,
   MAX_DOCK_HEIGHT,
   MAX_WIDTH,
@@ -11,13 +12,19 @@ import {
   collapseBottomDock,
   defaultBottomDockState,
   defaultPanelVisibility,
+  defaultWorkspaceSidebarPanelLayout,
   expandBottomDock,
+  hydrateCollapsiblePanelCollapsed,
+  hydrateResizablePanelGroupLayout,
+  hydrateResizablePanelSize,
   loadBottomDockState,
   loadEditorSettings,
   loadSidebarState,
+  loadWorkspaceSidebarPanelLayout,
   selectBottomDockTerminal,
   setBottomDockHeight,
   setBottomDockViewMode,
+  setCollapsiblePanelCollapsed,
   setPanelVisibility,
   setPanelVisibilityBulk,
   setCollapsed,
@@ -25,7 +32,11 @@ import {
   setDiffSideBySide,
   setFoldUnchanged,
   setLineWrapping,
+  setResizablePanelGroupLayout,
+  setResizablePanelSize,
+  setSidebarExpandedWidth,
   setWidth,
+  setWorkspaceSidebarPanelLayout,
   showBottomDockAgents,
   toggleBottomDock,
   toggleDiffIndicators,
@@ -53,6 +64,7 @@ describe("uiLayoutReducer", () => {
     diffSideBySide: true,
     diffIndicators: true,
     sidebarWidth: DEFAULT_WIDTH,
+    sidebarExpandedWidth: DEFAULT_EXPANDED_WIDTH,
     sidebarWidthBeforeCollapse: DEFAULT_WIDTH,
     sidebarCollapsed: false,
     panelVisibility: {
@@ -63,6 +75,10 @@ describe("uiLayoutReducer", () => {
     tabbedSidebarPinned: true,
     sidebarSide: 'left',
     bottomDock: { ...defaultBottomDockState },
+    resizablePanelSizes: {},
+    resizablePanelGroupLayouts: {},
+    collapsiblePanelCollapsed: {},
+    workspaceSidebarPanelLayout: { ...defaultWorkspaceSidebarPanelLayout },
   };
 
   it("should return initial state", () => {
@@ -198,6 +214,63 @@ describe("uiLayoutReducer", () => {
       expect(state.sidebarWidth).toBe(500);
       expect(state.sidebarWidthBeforeCollapse).toBe(500);
       expect(state.sidebarCollapsed).toBe(true);
+    });
+
+    it("should set expanded sidebar width clamped to min/max", () => {
+      expect(uiLayoutReducer(initialState, setSidebarExpandedWidth(500)).sidebarExpandedWidth).toBe(500);
+      expect(uiLayoutReducer(initialState, setSidebarExpandedWidth(50)).sidebarExpandedWidth).toBe(MIN_WIDTH);
+      expect(uiLayoutReducer(initialState, setSidebarExpandedWidth(1200)).sidebarExpandedWidth).toBe(MAX_WIDTH);
+    });
+
+    it("should load expanded sidebar width with sidebar state", () => {
+      const state = uiLayoutReducer(initialState, loadSidebarState(420, false, 640));
+      expect(state.sidebarWidth).toBe(420);
+      expect(state.sidebarExpandedWidth).toBe(640);
+      expect(state.sidebarCollapsed).toBe(false);
+    });
+  });
+
+  describe("panel persistence state", () => {
+    it("hydrates and sets resizable panel sizes by storage key", () => {
+      const hydrated = uiLayoutReducer(initialState, hydrateResizablePanelSize("panel-width", 42));
+      expect(hydrated.resizablePanelSizes["panel-width"]).toBe(42);
+
+      const updated = uiLayoutReducer(hydrated, setResizablePanelSize("panel-width", 50));
+      expect(updated.resizablePanelSizes["panel-width"]).toBe(50);
+    });
+
+    it("hydrates and sets resizable panel group layouts by storage key", () => {
+      const layout = { sizes: [25, 75], collapsed: ["left"] };
+      const hydrated = uiLayoutReducer(initialState, hydrateResizablePanelGroupLayout("group", layout));
+      expect(hydrated.resizablePanelGroupLayouts.group).toEqual(layout);
+
+      const updatedLayout = { sizes: [50, 50], collapsed: [] };
+      const updated = uiLayoutReducer(hydrated, setResizablePanelGroupLayout("group", updatedLayout));
+      expect(updated.resizablePanelGroupLayouts.group).toEqual(updatedLayout);
+    });
+
+    it("hydrates and sets collapsible panel collapsed state by storage key", () => {
+      const hydrated = uiLayoutReducer(initialState, hydrateCollapsiblePanelCollapsed("activity", true));
+      expect(hydrated.collapsiblePanelCollapsed.activity).toBe(true);
+
+      const updated = uiLayoutReducer(hydrated, setCollapsiblePanelCollapsed("activity", false));
+      expect(updated.collapsiblePanelCollapsed.activity).toBe(false);
+    });
+
+    it("loads and sets workspace sidebar panel layout", () => {
+      const layout = {
+        collapsed: { ...defaultWorkspaceSidebarPanelLayout.collapsed, activity: false },
+        heights: { notes: 120, explorer: 240 },
+      };
+      const loaded = uiLayoutReducer(initialState, loadWorkspaceSidebarPanelLayout(layout));
+      expect(loaded.workspaceSidebarPanelLayout).toEqual(layout);
+
+      const updatedLayout = {
+        collapsed: { ...layout.collapsed, notes: true },
+        heights: { ...layout.heights, notes: 80 },
+      };
+      const updated = uiLayoutReducer(loaded, setWorkspaceSidebarPanelLayout(updatedLayout));
+      expect(updated.workspaceSidebarPanelLayout).toEqual(updatedLayout);
     });
   });
 

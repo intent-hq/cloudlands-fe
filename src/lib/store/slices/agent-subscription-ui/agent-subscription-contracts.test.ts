@@ -8,7 +8,7 @@
  * renderer-side listenSync handlers, exercising the real extractEventData
  * logic and both reducers.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   agentSubscriptionUIReducer,
   initialState as rendererInitialState,
@@ -27,8 +27,17 @@ import {
   type AgentSubscriptionRecord,
 } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
 import type { AgentSubscriptionsState } from '../../../../store/main/slices/agent-subscriptions/types';
-import { createWorkspaceEvent, type WorkspaceEvent } from '$features/events/types';
-import { extractEventData } from '$lib/store/utils/test-helpers/electron-bridge-mock';
+import {
+  createWorkspaceEvent,
+  type AgentSubscriptionsChangedEvent,
+  type WorkspaceEvent,
+} from '$features/events/types';
+
+// Contract coverage must exercise the production helper, not the global
+// electron-bridge test mock used by most renderer tests.
+const { extractEventData } = await vi.importActual<typeof import('$lib/electron-bridge')>(
+  '$lib/electron-bridge',
+);
 
 const WS = 'ws-contract-test';
 const OTHER_WS = 'ws-other';
@@ -36,15 +45,19 @@ const AGENT = 'agent-contract-1';
 const AGENT_NAME = 'Contract Agent';
 
 /** Renderer's expected IPC event names (from agent-subscription-ui-saga.ts) */
-const RENDERER_SUBSCRIPTION_IPC_EVENTS = [
+const RENDERER_SUBSCRIPTION_EVENT_NAMES = [
   'agent:subscribed', 'agent:unsubscribed', 'agent:subscriptions-changed',
   'agent:idle', 'agent:stopped', 'agent:status-changed', 'agent:created',
   'agent:woken-by-subscription', 'agent:event-delivery-failed',
   'agent:event-delivery-timeout', 'agent:subscriptions-restored',
 ] as const;
 
-/** Events the main IPC bridge saga emits (ipc-bridge-saga.ts) */
-const MAIN_EMITTED_EVENTS = ['agent:subscriptions-changed', 'agent:subscribed'] as const;
+/** Subscription events emitted by main-process sagas */
+const MAIN_EMITTED_EVENTS = [
+  'agent:subscriptions-changed', 'agent:subscribed', 'agent:woken-by-subscription',
+  'agent:event-delivery-failed', 'agent:event-delivery-timeout',
+  'agent:subscriptions-restored',
+] as const;
 
 /** Events emitted directly by agent-subscription-ops.ts */
 const OPS_EMITTED_EVENTS = ['agent:unsubscribed', 'agent:status-changed'] as const;
@@ -117,8 +130,24 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
     const data = extractEventData({ payload: event });
     expect(data.subscriptionVersion).toBe(1);
     expect(data.reason).toBe('subscriptions-updated');
+    expect(data.agentId).toBeUndefined();
     const eventWsId = extractEventData({ payload: event }, 'workspaceId') ?? data?.workspaceId;
     expect(eventWsId).toBe(WS);
+  });
+
+  it('types subscriptions-changed as workspace-scoped when no agent target exists', () => {
+    const event: AgentSubscriptionsChangedEvent = {
+      id: 'evt-subscriptions-changed',
+      workspaceId: WS,
+      timestamp: new Date().toISOString(),
+      type: 'agent:subscriptions-changed',
+      actor: { type: 'system', id: 'subscription-service', name: 'Subscription Service' },
+      data: { subscriptionVersion: 2, reason: 'subscriptions-updated' },
+      metadata: {},
+    };
+
+    expect(event.data.agentId).toBeUndefined();
+    expect(event.workspaceId).toBe(WS);
   });
 
   // 3. late delivery-confirmed doesn't duplicate wake state
@@ -159,7 +188,7 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
 
   // 5. event names match between main and renderer
   it('all main-emitted event names are in the renderer subscription list', () => {
-    const rendererSet = new Set<string>(RENDERER_SUBSCRIPTION_IPC_EVENTS);
+    const rendererSet = new Set<string>(RENDERER_SUBSCRIPTION_EVENT_NAMES);
     for (const eventName of MAIN_EMITTED_EVENTS) {
       expect(rendererSet.has(eventName)).toBe(true);
     }
@@ -170,10 +199,15 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
 
   // 6. payload shapes match extractEventData expectations
   it('extractEventData correctly unwraps WorkspaceEvent payloads', () => {
+    expect(vi.isMockFunction(extractEventData)).toBe(false);
+
     const testCases = [
       { type: 'agent:subscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', eventTypes: ['file:changed'], filterDescription: 'types: file:changed' } },
       { type: 'agent:subscriptions-changed', data: { subscriptionVersion: 5, reason: 'subscriptions-updated' } },
       { type: 'agent:woken-by-subscription', data: { agentId: AGENT, eventCount: 2, eventTypes: ['file:changed'] } },
+      { type: 'agent:event-delivery-failed', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], error: 'boom' } },
+      { type: 'agent:event-delivery-timeout', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], timeoutMs: 30000 } },
+      { type: 'agent:subscriptions-restored', data: { count: 1, agentIds: [AGENT] } },
       { type: 'agent:status-changed', data: { agentId: AGENT, previousStatus: 'idle', status: 'responding' } },
       { type: 'agent:unsubscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', reason: 'manual-unsubscribe' } },
     ];
@@ -187,6 +221,11 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
       if ('agentId' in data) {
         const agentId = extractEventData({ payload: event }, 'agentId');
         expect(agentId).toBe(AGENT);
+      }
+
+      if ('targetAgentId' in data) {
+        const targetAgentId = extractEventData({ payload: event }, 'targetAgentId');
+        expect(targetAgentId).toBe(AGENT);
       }
 
       const wsId = extractEventData({ payload: event }, 'workspaceId') ?? extracted?.workspaceId;

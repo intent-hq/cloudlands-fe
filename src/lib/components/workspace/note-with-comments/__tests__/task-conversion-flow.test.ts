@@ -325,6 +325,8 @@ vi.mock('../task-menu-popover-discovery', () => ({
 }));
 
 vi.mock('../task-item-utils', () => ({
+  getTaskAssociationKeysInEditor: vi.fn(() => []),
+  getTaskTextsInEditor: vi.fn(() => []),
   removeAgentFromTasks: vi.fn(),
   restoreTaskAgentAssociations: vi.fn(),
 }));

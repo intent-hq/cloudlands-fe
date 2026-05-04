@@ -50,7 +50,7 @@ export function* syncSaga(initTask: Task) {
   );
 
   yield* takeEvery(
-    syncWorkspaceSettings.type,
+    syncWorkspaceSettings,
     function* (action: ReturnType<typeof syncWorkspaceSettings>) {
       const [workspaceId] = action.payload;
       if (syncedWorkspaces.has(workspaceId)) return;
@@ -64,7 +64,7 @@ export function* syncSaga(initTask: Task) {
   );
 
   yield* takeEvery(
-    refreshAutoCommitSettings.type,
+    refreshAutoCommitSettings,
     function* () {
       const previouslySynced = [...syncedWorkspaces];
       // Clear synced workspaces so all workspaces re-sync on next access

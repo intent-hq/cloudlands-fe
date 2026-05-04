@@ -1,5 +1,5 @@
 import { createSelector } from "../../utils/create-selector";
-import type { CommandPaletteAction, PendingSidebarLocate } from "./app-layout-slice";
+import type { CommandPaletteAction, PendingSidebarLocate } from "./app-layout-types";
 
 export const selectPendingCommandPaletteAction = createSelector<[], CommandPaletteAction | null>(
   (state) => state.appLayout.pendingCommandPaletteAction,

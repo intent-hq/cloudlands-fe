@@ -867,7 +867,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
         return;
       }
 
-      sendToWorkspaceWindows(this.workspaceId, `file:content-changed:${this.workspaceId}`, {
+      sendToWorkspaceWindows(this.workspaceId, 'file:content-changed', {
         path: absolutePath,
         relativePath,
         content,

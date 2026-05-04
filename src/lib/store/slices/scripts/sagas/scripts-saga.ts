@@ -26,7 +26,7 @@ import {
   updateRuntimeState,
   appendScriptOutput,
 } from "../scripts-slice";
-import { selectScriptsInitialized } from "../scripts-selectors";
+import { selectScriptsInitialized, selectWorkspaceScriptsInitialized } from "../scripts-selectors";
 
 // ============================================================================
 // IPC Listener Sagas
@@ -122,9 +122,7 @@ function* handleInitializeScripts(action: ReturnType<typeof initializeScripts>):
   const wsId = action.payload[0];
 
   // Check if already initialized for this workspace
-  const alreadyInit = yield* select(
-    (state: any) => state.scripts.byWorkspaceId[wsId]?.initialized ?? false,
-  );
+  const alreadyInit = yield* selectWorkspaceScriptsInitialized.effect(wsId);
   if (alreadyInit) return;
 
   yield* put(setScriptsLoading(wsId, true));

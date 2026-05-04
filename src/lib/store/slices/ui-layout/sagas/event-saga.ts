@@ -10,7 +10,7 @@ function dispatchSidebarEvent(collapsed: boolean, restoreWidth: number): void {
 }
 
 export function* eventSaga() {
-  yield* takeEvery([toggleSidebar.type, setCollapsed.type], function* () {
+  yield* takeEvery([toggleSidebar, setCollapsed], function* () {
     const isCollapsed = yield* selectIsCollapsed.effect();
     const restoreWidth = yield* selectWidthBeforeCollapse.effect();
     yield* call(dispatchSidebarEvent, isCollapsed, restoreWidth);

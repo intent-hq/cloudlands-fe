@@ -6,6 +6,13 @@
 import { TerminalAdapter } from './TerminalAdapter';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { Logger } from '../../shared/logger';
+import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  removeTerminal,
+  saveTerminalMetadata as saveTerminalMetadataAction,
+  type TerminalMetadata,
+} from '$lib/store/slices/terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '$lib/store/slices/terminals/terminals-selectors';
 
 const logger = new Logger('TerminalManager');
 
@@ -17,58 +24,15 @@ interface ManagedTerminal {
   container: HTMLElement | null;
 }
 
-export interface TerminalMetadata {
-  terminalId: string;
-  workspaceId: string;
-  createdAt: string;
-  title?: string;
-}
-
-// Module-level cache for loadTerminalMetadata to prevent redundant loads
-// This is outside the class so it's shared even if the class is re-instantiated
-// Key: workspaceId, Value: { data, timestamp }
-const metadataCache = new Map<string, { data: TerminalMetadata[]; timestamp: number }>();
-const CACHE_TTL_MS = 100; // Cache for 100ms to dedupe rapid calls
-
 class RendererTerminalManager {
   private terminals = new Map<string, ManagedTerminal>();
-  private readonly STORAGE_PREFIX = 'terminal-metadata-';
 
   /**
-   * Save terminal metadata to localStorage
+   * Save terminal metadata through Redux. Persistence is saga-owned.
    */
   saveTerminalMetadata(terminalId: string, workspaceId: string, title?: string): void {
     try {
-      const key = `${this.STORAGE_PREFIX}${workspaceId}`;
-      const existingData = localStorage.getItem(key);
-      let metadata: TerminalMetadata[] = existingData ? JSON.parse(existingData) : [];
-
-      // Check if terminal already exists in metadata
-      const existingIndex = metadata.findIndex((m) => m.terminalId === terminalId);
-
-      const terminalMeta: TerminalMetadata = {
-        terminalId,
-        workspaceId,
-        createdAt: new Date().toISOString(),
-        title: title || 'Terminal',
-      };
-
-      if (existingIndex >= 0) {
-        // Update existing
-        metadata[existingIndex] = terminalMeta;
-      } else {
-        // Add new
-        metadata.push(terminalMeta);
-      }
-
-      // Limit to last 10 terminals per workspace
-      if (metadata.length > 10) {
-        metadata = metadata.slice(-10);
-      }
-
-      localStorage.setItem(key, JSON.stringify(metadata));
-      // Invalidate cache so next load gets fresh data
-      this.invalidateMetadataCache(workspaceId);
+      dispatch(saveTerminalMetadataAction(workspaceId, terminalId, title || 'Terminal', new Date().toISOString()));
       logger.debug(`[RendererTerminalManager] Saved terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to save terminal metadata:', error);
@@ -76,85 +40,29 @@ class RendererTerminalManager {
   }
 
   /**
-   * Load terminal metadata from localStorage
-   * Uses a short-lived cache to prevent redundant loads during rapid component updates
+   * Load terminal metadata from Redux. Persistence hydration is saga-owned.
    */
   loadTerminalMetadata(workspaceId: string): TerminalMetadata[] {
-    // Check module-level cache first to prevent redundant loads
-    const cached = metadataCache.get(workspaceId);
-    const now = Date.now();
-    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
-      // Return cached data - silently (no log to reduce noise)
-      return cached.data;
-    }
-
     try {
-      const key = `${this.STORAGE_PREFIX}${workspaceId}`;
-      const data = localStorage.getItem(key);
-      if (data) {
-        const metadata = JSON.parse(data) as TerminalMetadata[];
-
-        // Filter out any terminals that have a mismatched workspaceId
-        // This can happen if data gets corrupted or migrated incorrectly
-        const validMetadata = metadata.filter((m) => {
-          if (m.workspaceId !== workspaceId) {
-            logger.warn(
-              `[RendererTerminalManager] Filtering out terminal ${m.terminalId} with mismatched workspaceId (has: ${m.workspaceId}, expected: ${workspaceId})`,
-            );
-            return false;
-          }
-          return true;
-        });
-
-        // If we filtered out any entries, update localStorage
-        if (validMetadata.length !== metadata.length) {
-          localStorage.setItem(key, JSON.stringify(validMetadata));
-          logger.info(
-            `[RendererTerminalManager] Cleaned up ${metadata.length - validMetadata.length} terminals with mismatched workspaceIds`,
-          );
-        }
-
-        logger.info(
-          `[RendererTerminalManager] Loaded ${validMetadata.length} terminal metadata entries for workspace ${workspaceId}`,
-        );
-
-        // Cache the result
-        metadataCache.set(workspaceId, { data: validMetadata, timestamp: now });
-        return validMetadata;
-      }
+      return selectTerminalsForWorkspace.select(getReduxStore().getState(), workspaceId).map((terminal) => ({
+        terminalId: terminal.id,
+        workspaceId: terminal.workspaceId ?? workspaceId,
+        createdAt: terminal.createdAt ?? '',
+        title: terminal.customName || terminal.name,
+      }));
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to load terminal metadata:', error);
     }
-
-    // Cache empty result too
-    const emptyResult: TerminalMetadata[] = [];
-    metadataCache.set(workspaceId, { data: emptyResult, timestamp: now });
-    return emptyResult;
+    return [];
   }
 
   /**
-   * Invalidate the metadata cache for a workspace
-   * Call this after saving or removing terminal metadata
-   */
-  private invalidateMetadataCache(workspaceId: string): void {
-    metadataCache.delete(workspaceId);
-  }
-
-  /**
-   * Remove terminal metadata from localStorage
+   * Remove terminal metadata through Redux. Persistence is saga-owned.
    */
   removeTerminalMetadata(terminalId: string, workspaceId: string): void {
     try {
-      const key = `${this.STORAGE_PREFIX}${workspaceId}`;
-      const existingData = localStorage.getItem(key);
-      if (existingData) {
-        let metadata: TerminalMetadata[] = JSON.parse(existingData);
-        metadata = metadata.filter((m) => m.terminalId !== terminalId);
-        localStorage.setItem(key, JSON.stringify(metadata));
-        // Invalidate cache so next load gets fresh data
-        this.invalidateMetadataCache(workspaceId);
-        logger.debug(`[RendererTerminalManager] Removed terminal metadata for ${terminalId}`);
-      }
+      dispatch(removeTerminal(workspaceId, terminalId));
+      logger.debug(`[RendererTerminalManager] Removed terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to remove terminal metadata:', error);
     }

@@ -18,20 +18,6 @@ vi.mock("typed-redux-saga", () => {
   return { call, put, select, takeEvery };
 });
 
-const { loadTerminalMetadataMock, saveTerminalMetadataMock, removeTerminalMetadataMock } = vi.hoisted(() => ({
-  loadTerminalMetadataMock: vi.fn(() => []),
-  saveTerminalMetadataMock: vi.fn(),
-  removeTerminalMetadataMock: vi.fn(),
-}));
-
-vi.mock("$features/terminal/terminal-manager.svelte", () => ({
-  terminalManager: {
-    loadTerminalMetadata: loadTerminalMetadataMock,
-    saveTerminalMetadata: saveTerminalMetadataMock,
-    removeTerminalMetadata: removeTerminalMetadataMock,
-  },
-}));
-
 vi.mock("$lib/electron-bridge", () => ({
   invoke: vi.fn(),
 }));
@@ -47,6 +33,7 @@ import { loadTerminalsSaga } from "./workspace-init-saga";
 describe("loadTerminalsSaga — stale ID reconciliation", () => {
   const WS = "ws-test-1";
   const storage = new Map<string, string>();
+  const metadataKey = (wsId: string) => `terminal-metadata-${wsId}`;
 
   beforeEach(() => {
     storage.clear();
@@ -62,6 +49,14 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     (window as any).electronAPI = (window as any).electronAPI ?? { on: vi.fn(), off: vi.fn() };
   });
 
+  function writeStoredTerminals(terminals: unknown[]): void {
+    storage.set(metadataKey(WS), JSON.stringify(terminals));
+  }
+
+  function readStoredTerminals(): unknown[] {
+    return JSON.parse(storage.get(metadataKey(WS)) ?? "[]");
+  }
+
   it("prunes stale localStorage terminals absent from backend", async () => {
     // Setup: localStorage has 3 terminals
     const storedTerminals = [
@@ -69,7 +64,7 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
       { terminalId: "term-2", workspaceId: WS, createdAt: "2026-01-02T00:00:00Z", title: "Terminal 2" },
       { terminalId: "term-3", workspaceId: WS, createdAt: "2026-01-03T00:00:00Z", title: "Terminal 3" },
     ];
-    loadTerminalMetadataMock.mockReturnValue(storedTerminals);
+    writeStoredTerminals(storedTerminals);
 
     // Backend only knows about term-1
     vi.mocked(invoke).mockResolvedValue({
@@ -99,10 +94,8 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0].id).toBe("term-1");
 
-    // Verify removeTerminalMetadata was called for stale entries
-    expect(removeTerminalMetadataMock).toHaveBeenCalledWith("term-2", WS);
-    expect(removeTerminalMetadataMock).toHaveBeenCalledWith("term-3", WS);
-    expect(removeTerminalMetadataMock).toHaveBeenCalledTimes(2);
+    // Verify stale metadata was pruned by saga-owned storage persistence
+    expect(readStoredTerminals()).toEqual([storedTerminals[0]]);
   });
 
   it("adds backend-only terminals and prunes stale localStorage ones", async () => {
@@ -110,7 +103,7 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     const storedTerminals = [
       { terminalId: "term-stale", workspaceId: WS, createdAt: "2026-01-01T00:00:00Z", title: "Stale" },
     ];
-    loadTerminalMetadataMock.mockReturnValue(storedTerminals);
+    writeStoredTerminals(storedTerminals);
 
     // Backend has term-new (not in localStorage)
     vi.mocked(invoke).mockResolvedValue({
@@ -137,15 +130,13 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     expect(terminals).toHaveLength(1);
     expect(terminals[0].id).toBe("term-new");
 
-    // Backend-only terminal was saved to localStorage
-    expect(saveTerminalMetadataMock).toHaveBeenCalledWith("term-new", WS, "Setup");
-
-    // Stale terminal was removed from localStorage
-    expect(removeTerminalMetadataMock).toHaveBeenCalledWith("term-stale", WS);
+    // Backend-only terminal was saved and stale terminal was removed in saga-owned storage
+    expect(readStoredTerminals()).toEqual([
+      expect.objectContaining({ terminalId: "term-new", workspaceId: WS, title: "Setup" }),
+    ]);
   });
 
   it("dispatches loading lifecycle actions in correct order", async () => {
-    loadTerminalMetadataMock.mockReturnValue([]);
     vi.mocked(invoke).mockResolvedValue({ success: true, terminals: [] });
 
     const dispatched: any[] = [];
@@ -172,7 +163,7 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
       { terminalId: "term-1", workspaceId: WS, createdAt: "2026-01-01T00:00:00Z", title: "Terminal 1" },
       { terminalId: "term-2", workspaceId: WS, createdAt: "2026-01-02T00:00:00Z", title: "Terminal 2" },
     ];
-    loadTerminalMetadataMock.mockReturnValue(storedTerminals);
+    writeStoredTerminals(storedTerminals);
 
     // Backend returns failure
     vi.mocked(invoke).mockResolvedValue({ success: false });
@@ -197,14 +188,14 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     // All localStorage terminals should be preserved — no pruning
     expect(terminals).toHaveLength(2);
     expect(terminals.map((t: any) => t.id)).toEqual(["term-1", "term-2"]);
-    expect(removeTerminalMetadataMock).not.toHaveBeenCalled();
+    expect(readStoredTerminals()).toEqual(storedTerminals);
   });
 
   it("does not prune localStorage terminals when backend call throws", async () => {
     const storedTerminals = [
       { terminalId: "term-1", workspaceId: WS, createdAt: "2026-01-01T00:00:00Z", title: "Terminal 1" },
     ];
-    loadTerminalMetadataMock.mockReturnValue(storedTerminals);
+    writeStoredTerminals(storedTerminals);
 
     // Backend throws an error
     vi.mocked(invoke).mockRejectedValue(new Error("IPC connection lost"));
@@ -229,7 +220,7 @@ describe("loadTerminalsSaga — stale ID reconciliation", () => {
     // localStorage terminal should be preserved — no pruning on IPC failure
     expect(terminals).toHaveLength(1);
     expect(terminals[0].id).toBe("term-1");
-    expect(removeTerminalMetadataMock).not.toHaveBeenCalled();
+    expect(readStoredTerminals()).toEqual(storedTerminals);
   });
 });
 

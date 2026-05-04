@@ -1,5 +1,3 @@
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
@@ -12,12 +10,14 @@ export async function runTaskBreakdownTaskMenuAction({
   workspace,
   noteId,
   taskData,
+  model,
   dispatch,
   logger,
 }: {
   workspace: Workspace;
   noteId: string | null | undefined;
   taskData: any;
+  model: string;
   dispatch: (type: 'agentLaunched', detail: any) => void;
   logger: LoggerLike;
 }): Promise<void> {
@@ -72,7 +72,7 @@ export async function runTaskBreakdownTaskMenuAction({
       workspaceId: WorkspaceId(workspace.id),
       initialMessage: userMessage, // User message (sent as initial message)
       agentType: createAgentTypeId('task-breakdown'),
-      model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
+      model,
       contextReferences: context,
       source: 'task-menu',
       metadata: {

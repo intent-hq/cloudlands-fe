@@ -28,11 +28,10 @@ import {
 import {
   selectAllWorkspaceAgents,
 } from "../workspace-agents-selectors";
+import { selectAllAgentSessions } from "../../agent-session/agent-session-selectors";
 import {
   upsertSession as upsertAgentSessionAction,
 } from "../../agent-session/agent-session-slice";
-import { getItems, type Collection } from "../../../utils/collection-utils";
-import type { AgentMessage } from "$shared/types";
 import {
   getStreamHandlerKeys,
   cleanupStreamHandler,
@@ -65,23 +64,7 @@ export function* handleStreamingSafetyCheck(
       result?.success && result?.data ? result.data.map((s: any) => s.agentId) : [],
     );
 
-    // Check all sessions across workspaces for stale streaming state.
-    // Messages are stored as a Collection in the agent-session slice; materialize
-    // to AgentMessage[] here so downstream action payloads remain array-shaped.
-    const state: any = yield* select((s: any) => s);
-    const allSessions: AgentSession[] = [];
-    const agentSessionsByAgent: Record<string, any> = state.agentSessions?.byAgentId || {};
-    for (const wsState of Object.values(state.workspaceAgents?.byWorkspaceId || {})) {
-      const ws = wsState as any;
-      const agentIds: string[] = ws?.agentIds || [];
-      for (const agentId of agentIds) {
-        const stored = agentSessionsByAgent[agentId];
-        if (stored) {
-          const msgs = getItems(stored.messages as Collection<AgentMessage, 'id'>);
-          allSessions.push({ ...stored, messages: msgs } as AgentSession);
-        }
-      }
-    }
+    const allSessions: AgentSession[] = yield* selectAllAgentSessions.effect();
 
     let clearedCount = 0;
     for (const session of allSessions) {

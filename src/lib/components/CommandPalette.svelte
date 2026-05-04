@@ -54,9 +54,16 @@
     formatRelativeTime,
     parseQueryFilter,
     buildNoteBreadcrumbs,
-    recordMRUItem,
     buildRecentItems,
   } from '$lib/store/slices/command-palette/command-palette-utils';
+  import {
+    recordPaletteFileMru,
+    recordPaletteMruItem,
+  } from '$lib/store/slices/palette/palette-slice';
+  import {
+    selectPaletteFileMru,
+    selectPaletteMruEntries,
+  } from '$lib/store/slices/palette/palette-selectors';
   import { computeResults } from '$lib/store/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
@@ -87,7 +94,7 @@
     onSelectFile,
   }: Props = $props();
 
-  const workspaceIdStore = writable(workspaceId ?? '');
+  const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
@@ -100,6 +107,8 @@
   const browserRecentUrls$ = selectBrowserRecentUrls(workspaceIdStore);
   let selectedIndex = $state(0);
   let searchResults: any[] = $state([]);
+  const paletteMruEntries$ = selectPaletteMruEntries();
+  const paletteFileMru$ = selectPaletteFileMru();
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let isLoadingFiles = $state(false);
   let activeFilter: WorkspaceObjectType | 'workspace' | null = $state(null); // Filter by type
@@ -212,7 +221,9 @@
     }),
   );
   let recentItems: WorkspaceObject[] = $derived(
-    workspaceId ? buildRecentItems([...agents, ...notes, ...changes, ...terminals, ...browserUrls]) : [],
+    workspaceId
+      ? buildRecentItems([...agents, ...notes, ...changes, ...terminals, ...browserUrls], $paletteMruEntries$)
+      : [],
   );
 
   // Commands available in command mode
@@ -506,37 +517,11 @@
 
   // MRU utilities for files
   function getMRUMap(): Map<string, number> {
-    try {
-      const raw = localStorage.getItem('palette-mru-files');
-      if (!raw) return new Map();
-      const obj = JSON.parse(raw) as Record<string, number>;
-      return new Map(Object.entries(obj));
-    } catch {
-      return new Map();
-    }
-  }
-
-  function saveMRUMap(map: Map<string, number>) {
-    const obj: Record<string, number> = {};
-    for (const [k, v] of map.entries()) obj[k] = v;
-    try {
-      localStorage.setItem('palette-mru-files', JSON.stringify(obj));
-    } catch {}
+    return new Map(Object.entries($paletteFileMru$));
   }
 
   function recordMRUFile(path: string) {
-    const map = getMRUMap();
-    map.set(path, Date.now());
-    // Keep only latest 200 entries
-    if (map.size > 200) {
-      const sorted = Array.from(map.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 200);
-      const trimmed = new Map(sorted);
-      saveMRUMap(trimmed);
-    } else {
-      saveMRUMap(map);
-    }
+    reduxDispatch(recordPaletteFileMru(path, Date.now()));
   }
 
   function rankByMRU<T extends { path?: string }>(items: T[]): T[] {
@@ -662,7 +647,7 @@
 
     // Handle workspace objects
     if (item.type) {
-      recordMRUItem(item.type, item.id);
+      reduxDispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
 
       switch (item.type) {
         case 'agent':

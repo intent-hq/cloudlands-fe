@@ -4,19 +4,24 @@ import { createCollection } from "../../utils/collection-utils";
 import { getDefaultProviderId } from "$shared/config/provider-config";
 import {
   clearAllWorkspaceModels,
+  clearModelFallbackInfo,
   clearLoadingStateForProvider,
   clearWorkspaceModel,
+  hydrateModelFallbackInfo,
+  hydrateModelPickerCollapsedGroups,
   initialState,
   loadProviderModelsFromStorage,
   loadWorkspaceModelsFromStorage,
   modelReducer,
+  setModelFallbackInfo,
+  setModelPickerGroupCollapsed,
   setAvailableModels,
   setLoadingStateForProvider,
   setRetryAttempt,
   setSelectedModel,
   setWorkspaceModel,
-  type ModelState,
 } from "./model-slice";
+import type { ModelState } from "./model-types";
 
 const defaultProviderId = getDefaultProviderId();
 
@@ -145,6 +150,38 @@ describe("modelReducer", () => {
     const clearedAll = modelReducer(clearedOne, clearAllWorkspaceModels());
 
     expect(clearedAll.workspaceModels).toEqual({});
+  });
+
+  it("hydrates and toggles model picker collapsed groups", () => {
+    const hydrated = modelReducer(
+      initialState,
+      hydrateModelPickerCollapsedGroups(["auggie", "codex", "auggie"])
+    );
+    const expanded = modelReducer(hydrated, setModelPickerGroupCollapsed("auggie", false));
+    const collapsed = modelReducer(expanded, setModelPickerGroupCollapsed("openai", true));
+
+    expect(hydrated.modelPickerCollapsedGroups).toEqual(["auggie", "codex"]);
+    expect(expanded.modelPickerCollapsedGroups).toEqual(["codex"]);
+    expect(collapsed.modelPickerCollapsedGroups).toEqual(["codex", "openai"]);
+  });
+
+  it("hydrates, sets, and clears model fallback info by agent", () => {
+    const info = { fromModel: "old-model", toModel: "new-model" };
+    const hydrated = modelReducer(initialState, hydrateModelFallbackInfo("agent-1", info));
+    const set = modelReducer(
+      hydrated,
+      setModelFallbackInfo("agent-2", { fromModel: "missing", toModel: "fallback" })
+    );
+    const cleared = modelReducer(set, clearModelFallbackInfo("agent-1"));
+
+    expect(hydrated.fallbackInfoByAgentId).toEqual({ "agent-1": info });
+    expect(set.fallbackInfoByAgentId["agent-2"]).toEqual({
+      fromModel: "missing",
+      toModel: "fallback",
+    });
+    expect(cleared.fallbackInfoByAgentId).toEqual({
+      "agent-2": { fromModel: "missing", toModel: "fallback" },
+    });
   });
 
 });

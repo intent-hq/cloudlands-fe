@@ -37,6 +37,13 @@ export interface TerminalTab {
   isExecuting?: boolean;
 }
 
+export interface TerminalMetadata {
+  terminalId: string;
+  workspaceId: string;
+  createdAt: string;
+  title?: string;
+}
+
 /** @deprecated Use TerminalTab instead — kept for backward compatibility during migration. */
 export type WorkspaceTerminal = TerminalTab;
 
@@ -122,6 +129,13 @@ export const setTerminalOverlayHeight = createAction<[height: number]>(
 export const renameTerminal = createAction<[wsId: string, termId: string, newName: string]>(
   "terminals/renameTerminal"
 );
+
+export const saveTerminalMetadata = createAction<[
+  wsId: string,
+  termId: string,
+  title: string | undefined,
+  createdAt: string,
+]>("terminals/saveTerminalMetadata");
 
 /** Load workspace terminals data (dispatched by sagas after loading from storage) */
 export const loadWorkspaceTerminals = createAction<[
@@ -286,6 +300,25 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       ...ws,
       terminals: updateItem(ws.terminals, { id: termId, customName: trimmedName }),
     });
+  })
+  .with(saveTerminalMetadata, (state, { payload: [wsId, termId, title, createdAt] }) => {
+    const ws = getWs(state, wsId);
+    const existing = getItem(ws.terminals, termId);
+    const name = title || getTerminalName(termId);
+    const terminal: TerminalTab = {
+      ...(existing ?? { id: termId }),
+      id: termId,
+      name,
+      type: existing?.type ?? "terminal",
+      workspaceId: wsId,
+      createdAt: existing?.createdAt ?? createdAt,
+    };
+
+    const terminals = existing
+      ? updateItem(ws.terminals, terminal)
+      : addItem(ws.terminals, terminal);
+
+    return setWs(state, wsId, { ...ws, terminals });
   })
   .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState] }) => {
     const collection = createCollection<TerminalTab, "id">("id", terminals);

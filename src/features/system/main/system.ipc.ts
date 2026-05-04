@@ -86,6 +86,56 @@ const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
 
+const CONTENT_BEARING_WORKSPACE_CHANNELS = new Set([
+  'file:content-changed',
+  'note:created',
+  'note:updated',
+  'note:content-changed',
+  'spec:updated',
+  'goal:updated',
+  'task:status-changed',
+  'task:ready-tasks-changed',
+  'comment:added',
+  'comment:updated',
+  'comment:updated-batch',
+]);
+const CONTENT_BEARING_WORKSPACE_CHANNEL_PREFIXES = ['note:content-changed:'];
+
+function isContentBearingWorkspaceChannel(channel: string, data?: unknown): boolean {
+  if (
+    CONTENT_BEARING_WORKSPACE_CHANNELS.has(channel) ||
+    CONTENT_BEARING_WORKSPACE_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix))
+  ) {
+    return true;
+  }
+
+  if (channel === 'events:new' && data && typeof data === 'object') {
+    const event = (data as { event?: unknown }).event;
+    if (event && typeof event === 'object') {
+      const eventType = (event as { type?: unknown }).type;
+      return typeof eventType === 'string' && isContentBearingWorkspaceChannel(eventType);
+    }
+  }
+
+  return false;
+}
+
+function getPayloadWorkspaceId(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const workspaceId = (data as { workspaceId?: unknown }).workspaceId;
+  if (typeof workspaceId === 'string' && workspaceId.length > 0) return workspaceId;
+
+  const event = (data as { event?: unknown }).event;
+  if (event && typeof event === 'object') {
+    const eventWorkspaceId = (event as { workspaceId?: unknown }).workspaceId;
+    if (typeof eventWorkspaceId === 'string' && eventWorkspaceId.length > 0) {
+      return eventWorkspaceId;
+    }
+  }
+
+  return undefined;
+}
+
 function parseJsonFromCliOutput(output: string): unknown {
   const trimmedOutput = output.trim();
   if (!trimmedOutput) {
@@ -214,6 +264,8 @@ export function getWindowIdsForWorkspace(workspaceId: string): number[] {
  * Send an IPC message to all windows viewing a specific workspace.
  * Falls back to broadcasting to ALL windows if no windows are found for the workspace,
  * or if workspaceId is not provided.
+ * Content-bearing workspace events are an exception: they are dropped when no
+ * matching workspace target exists so workspace content never reaches unrelated clients.
  *
  * This is the preferred way to send workspace-scoped IPC messages from the main process.
  * Use this instead of manually calling BrowserWindow.getAllWindows() + webContents.send().
@@ -224,17 +276,26 @@ export function sendToWorkspaceWindows(
   data: unknown,
 ): void {
   let targetWindows: BrowserWindow[];
+  const isContentBearing = isContentBearingWorkspaceChannel(channel, data);
+  const effectiveWorkspaceId =
+    workspaceId ?? (isContentBearing ? getPayloadWorkspaceId(data) : undefined);
 
-  if (workspaceId) {
-    const windowIds = getWindowIdsForWorkspace(workspaceId);
+  if (effectiveWorkspaceId) {
+    const windowIds = getWindowIdsForWorkspace(effectiveWorkspaceId);
     if (windowIds.length > 0) {
       targetWindows = windowIds
         .map((id) => BrowserWindow.fromId(id))
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed());
+    } else if (isContentBearing) {
+      // Content-bearing workspace events must never fall back to unrelated windows.
+      targetWindows = [];
     } else {
       // No windows found for workspace — fall back to all windows
       targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
     }
+  } else if (isContentBearing) {
+    // Without a workspace context there is no safe target for workspace content.
+    targetWindows = [];
   } else {
     // No workspace context — broadcast to all windows
     targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
@@ -250,7 +311,7 @@ export function sendToWorkspaceWindows(
   try {
     const broadcast = (global as any).__browserIpcBroadcast;
     if (typeof broadcast === 'function') {
-      broadcast(channel, data);
+      broadcast(channel, data, isContentBearing ? effectiveWorkspaceId : undefined);
     }
   } catch {
     // Ignore — WebSocket bridge may not be initialized yet

@@ -1,37 +1,56 @@
 <script lang="ts">
   import Button from '$lib/components/ui/button/button.svelte';
-  import { themeManager } from '$lib/utils/theme';
   import { stripJSONC } from '$lib/utils/vscode-theme-parser';
   import { themePresets } from '$lib/utils/theme-presets';
   import { track } from '$lib/services/analytics';
   import Fa from 'svelte-fa';
   import { faUpload } from '@fortawesome/free-solid-svg-icons';
+  import {
+    selectActiveThemePresetId,
+    selectCustomThemeName,
+    selectHasCustomTheme,
+    selectIsDarkTheme,
+    selectThemeError,
+  } from '$lib/store/slices/theme/theme-selectors';
+  import {
+    clearThemeCustomization,
+    importCustomTheme,
+    selectThemePreset,
+    setThemeError,
+  } from '$lib/store/slices/theme/theme-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
+  const dispatch = getDispatch();
+  const isDarkTheme = selectIsDarkTheme();
+  const activePresetId = selectActiveThemePresetId();
+  const hasCustomTheme = selectHasCustomTheme();
+  const customThemeName = selectCustomThemeName();
+  const themeError = selectThemeError();
   let fileInput: HTMLInputElement | undefined = $state();
   let errorMessage = $state('');
-  let activePresetId = $state(themeManager.getActivePresetId());
-  let hasCustom = $state(themeManager.hasCustomTheme());
-  let customThemeName = $state(themeManager.getCustomThemeName());
 
   /** True when a user-imported file is active (not a preset) */
-  let isUserImported = $derived(hasCustom && !activePresetId);
+  let isUserImported = $derived($hasCustomTheme && !$activePresetId);
+  let displayErrorMessage = $derived(errorMessage || $themeError);
 
   const defaultPreviewColors = {
     dark: ['#1b1b22', '#f7f7f7', '#009960', '#009960'] as const,
     light: ['#ffffff', '#171717', '#009960', '#009960'] as const,
   };
 
-  function selectPreset(presetId: string) {
+  function clearThemeErrorMessage() {
     errorMessage = '';
+    dispatch(setThemeError(null));
+  }
+
+  function selectPreset(presetId: string) {
+    clearThemeErrorMessage();
     const preset = themePresets.find((p) => p.id === presetId);
     if (!preset) return;
 
-    const previousPreset = activePresetId ? themePresets.find((p) => p.id === activePresetId) : null;
-    const previousTheme = previousPreset?.label ?? (hasCustom ? customThemeName : 'Default');
-    themeManager.setPresetTheme(presetId, preset.dark, preset.light);
-    activePresetId = presetId;
-    hasCustom = true;
-    customThemeName = preset.label;
+    const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
+    const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
+    dispatch(selectThemePreset(presetId));
     track('Changed Theme', {
       theme: preset.label,
       previous_theme: previousTheme ?? undefined,
@@ -40,13 +59,10 @@
   }
 
   function selectDefault() {
-    errorMessage = '';
-    const previousPreset = activePresetId ? themePresets.find((p) => p.id === activePresetId) : null;
-    const previousTheme = previousPreset?.label ?? (hasCustom ? customThemeName : 'Default');
-    themeManager.clearCustomTheme();
-    activePresetId = null;
-    hasCustom = false;
-    customThemeName = null;
+    clearThemeErrorMessage();
+    const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
+    const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
+    dispatch(clearThemeCustomization());
     track('Changed Theme', {
       theme: 'Default',
       previous_theme: previousTheme ?? undefined,
@@ -55,7 +71,7 @@
   }
 
   function handleImportClick() {
-    errorMessage = '';
+    clearThemeErrorMessage();
     fileInput?.click();
   }
 
@@ -67,10 +83,8 @@
     try {
       const text = await file.text();
       const json = JSON.parse(stripJSONC(text));
-      themeManager.setCustomTheme(json);
-      customThemeName = themeManager.getCustomThemeName();
-      activePresetId = null;
-      hasCustom = true;
+      dispatch(setThemeError(null));
+      dispatch(importCustomTheme(json));
       errorMessage = '';
     } catch (err) {
       if (err instanceof SyntaxError) {
@@ -105,24 +119,24 @@
     <!-- Default (built-in) -->
     <button
       class="group relative flex flex-col items-start gap-1.5 p-2 text-left cursor-pointer
-        {!hasCustom
+        {!$hasCustomTheme
         ? 'bg-sidebar'
         : ''}"
       onclick={selectDefault}
     >
       <!-- Swatch row -->
       <div class="flex w-full">
-        {#each themeManager.isDark() ? defaultPreviewColors.dark : defaultPreviewColors.light as color, i (i)}
+        {#each $isDarkTheme ? defaultPreviewColors.dark : defaultPreviewColors.light as color, i (i)}
           <div class="h-4 flex-1" style="background-color: {color}"></div>
         {/each}
       </div>
-      <span class="text-ui leading-tight text-foreground truncate w-full {!hasCustom ? 'font-semibold' : ''}">Default</span>
+      <span class="text-ui leading-tight text-foreground truncate w-full {!$hasCustomTheme ? 'font-semibold' : ''}">Default</span>
     </button>
 
     <!-- Presets -->
     {#each themePresets as preset (preset.id)}
-      {@const isActive = activePresetId === preset.id}
-      {@const colors = themeManager.isDark() ? preset.previewColors.dark : preset.previewColors.light}
+      {@const isActive = $activePresetId === preset.id}
+      {@const colors = $isDarkTheme ? preset.previewColors.dark : preset.previewColors.light}
       <button
         class="group relative flex flex-col items-start gap-1.5 p-2 text-left cursor-pointer
           {isActive
@@ -147,7 +161,7 @@
   {#if isUserImported}
     <div class="flex items-center justify-between">
       <p class="text-xs text-subtle">
-        Imported: <span class="text-foreground font-medium">{customThemeName}</span>
+        Imported: <span class="text-foreground font-medium">{$customThemeName}</span>
       </p>
       <button
         class="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
@@ -158,8 +172,8 @@
     </div>
   {/if}
 
-  {#if errorMessage}
-    <p class="text-xs text-destructive-foreground">{errorMessage}</p>
+  {#if displayErrorMessage}
+    <p class="text-xs text-destructive-foreground">{displayErrorMessage}</p>
   {/if}
 </div>
 

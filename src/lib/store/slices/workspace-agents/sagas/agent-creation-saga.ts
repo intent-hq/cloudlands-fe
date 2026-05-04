@@ -576,42 +576,42 @@ export function* handleCreateTerminalRequestedSaga(wsId: string) {
 
 export function* watchAgentCreationSaga() {
   yield* takeEvery(
-    createAgentRequested.type,
+    createAgentRequested,
     function* ({ payload }: ReturnType<typeof createAgentRequested>) {
       const [wsId, agentType] = payload;
       yield* handleCreateAgentRequestedSaga(wsId, agentType);
     },
   );
   yield* takeEvery(
-    createAgentWithSpecialistRequested.type,
+    createAgentWithSpecialistRequested,
     function* ({ payload }: ReturnType<typeof createAgentWithSpecialistRequested>) {
       const [wsId, specialistId] = payload;
       yield* handleCreateAgentWithSpecialistRequestedSaga(wsId, specialistId);
     },
   );
   yield* takeEvery(
-    delegateTaskRequested.type,
+    delegateTaskRequested,
     function* ({ payload }: ReturnType<typeof delegateTaskRequested>) {
       const [wsId, taskText, openAgent] = payload;
       yield* handleDelegateTaskRequestedSaga(wsId, taskText, openAgent);
     },
   );
   yield* takeEvery(
-    delegateExistingTaskRequested.type,
+    delegateExistingTaskRequested,
     function* ({ payload }: ReturnType<typeof delegateExistingTaskRequested>) {
       const [wsId, noteId, taskText, openAgent] = payload;
       yield* handleDelegateExistingTaskRequestedSaga(wsId, noteId, taskText, openAgent);
     },
   );
   yield* takeEvery(
-    runAgentForNoteRequested.type,
+    runAgentForNoteRequested,
     function* ({ payload }: ReturnType<typeof runAgentForNoteRequested>) {
       const [wsId, noteId, noteTitle] = payload;
       yield* handleRunAgentForNoteRequestedSaga(wsId, noteId, noteTitle);
     },
   );
   yield* takeEvery(
-    createTerminalRequested.type,
+    createTerminalRequested,
     function* ({ payload }: ReturnType<typeof createTerminalRequested>) {
       const [wsId] = payload;
       yield* handleCreateTerminalRequestedSaga(wsId);

@@ -1216,7 +1216,7 @@ export class McpBridge extends EventEmitter {
       this.emit('event', event);
 
       // Emit real-time content change event for UI streaming
-      safeBroadcastToWindows(`file:content-changed:${context.workspaceId}`, {
+      safeBroadcastToWindows('file:content-changed', {
         path: params.path,
         content: params.content,
         source: context.actor?.type || 'agent',
@@ -1308,7 +1308,7 @@ export class McpBridge extends EventEmitter {
       this.emit('event', event);
 
       // Emit real-time content change event for UI streaming
-      safeBroadcastToWindows(`file:content-changed:${context.workspaceId}`, {
+      safeBroadcastToWindows('file:content-changed', {
         path: params.path,
         content: newContent,
         source: context.actor?.type || 'agent',
@@ -1505,7 +1505,7 @@ export class McpBridge extends EventEmitter {
           source: context.actor?.type || 'agent',
           workspaceId: context.workspaceId,
         }, context.workspaceId);
-        safeBroadcastToWindows(`file:content-changed:${context.workspaceId}`, {
+        safeBroadcastToWindows('file:content-changed', {
           path: params.newPath,
           content,
           source: context.actor?.type || 'agent',

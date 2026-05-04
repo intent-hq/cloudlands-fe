@@ -5,6 +5,7 @@ import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 
 export const DEFAULT_WIDTH = 350;
+export const DEFAULT_EXPANDED_WIDTH = 600;
 export const MIN_WIDTH = 180;
 export const MAX_WIDTH = 800;
 
@@ -52,6 +53,26 @@ export interface BottomDockState {
   height: number;
 }
 
+export interface ResizablePanelGroupLayoutState {
+  sizes: number[];
+  collapsed: string[];
+}
+
+export interface WorkspaceSidebarPanelLayoutState {
+  collapsed: Record<string, boolean>;
+  heights: Record<string, number>;
+}
+
+export const defaultWorkspaceSidebarPanelLayout: WorkspaceSidebarPanelLayoutState = {
+  collapsed: {
+    notes: false,
+    "source-control": false,
+    explorer: false,
+    activity: true,
+  },
+  heights: {},
+};
+
 export const defaultBottomDockState: BottomDockState = {
   isExpanded: false,
   viewMode: 'agents',
@@ -65,6 +86,7 @@ export type UiLayoutState = {
   diffSideBySide: boolean;
   diffIndicators: boolean;
   sidebarWidth: number;
+  sidebarExpandedWidth: number;
   sidebarWidthBeforeCollapse: number;
   sidebarCollapsed: boolean;
   panelVisibility: {
@@ -76,6 +98,10 @@ export type UiLayoutState = {
   tabbedSidebarPinned: boolean;
   sidebarSide: SidebarSide;
   bottomDock: BottomDockState;
+  resizablePanelSizes: Record<string, number>;
+  resizablePanelGroupLayouts: Record<string, ResizablePanelGroupLayoutState>;
+  collapsiblePanelCollapsed: Record<string, boolean>;
+  workspaceSidebarPanelLayout: WorkspaceSidebarPanelLayoutState;
 };
 
 type EditorSettingsFields = Pick<
@@ -91,6 +117,7 @@ export const initialState: UiLayoutState = {
   diffSideBySide: true,
   diffIndicators: true,
   sidebarWidth: DEFAULT_WIDTH,
+  sidebarExpandedWidth: DEFAULT_EXPANDED_WIDTH,
   sidebarWidthBeforeCollapse: DEFAULT_WIDTH,
   sidebarCollapsed: false,
   panelVisibility: {
@@ -101,6 +128,10 @@ export const initialState: UiLayoutState = {
   tabbedSidebarPinned: true,
   sidebarSide: 'left',
   bottomDock: { ...defaultBottomDockState },
+  resizablePanelSizes: {},
+  resizablePanelGroupLayouts: {},
+  collapsiblePanelCollapsed: {},
+  workspaceSidebarPanelLayout: { ...defaultWorkspaceSidebarPanelLayout },
 };
 
 const {
@@ -194,6 +225,7 @@ export const loadEditorSettings = createAction<[settings: EditorSettingsFields]>
 );
 
 export const setWidth = createAction<[pixels: number]>("uiLayout/setWidth");
+export const setSidebarExpandedWidth = createAction<[pixels: number]>("uiLayout/setSidebarExpandedWidth");
 export const toggleSidebar = createAction("uiLayout/toggleSidebar");
 export const setCollapsed = createAction<[collapsed: boolean]>("uiLayout/setCollapsed");
 export const setPanelVisibility = createAction<
@@ -202,8 +234,33 @@ export const setPanelVisibility = createAction<
 export const setPanelVisibilityBulk = createAction<
   [wsId: string, updates: Partial<PanelVisibilityState>]
 >("uiLayout/setPanelVisibilityBulk");
-export const loadSidebarState = createAction<[width: number, collapsed: boolean]>(
+export const loadSidebarState = createAction<[width: number, collapsed: boolean, expandedWidth?: number]>(
   "uiLayout/loadSidebarState"
+);
+export const requestResizablePanelSize = createAction<[key: string]>("uiLayout/requestResizablePanelSize");
+export const hydrateResizablePanelSize = createAction<[key: string, value: number]>("uiLayout/hydrateResizablePanelSize");
+export const setResizablePanelSize = createAction<[key: string, value: number]>("uiLayout/setResizablePanelSize");
+export const requestResizablePanelGroupLayout = createAction<[key: string]>("uiLayout/requestResizablePanelGroupLayout");
+export const hydrateResizablePanelGroupLayout = createAction<[
+  key: string,
+  layout: ResizablePanelGroupLayoutState,
+]>("uiLayout/hydrateResizablePanelGroupLayout");
+export const setResizablePanelGroupLayout = createAction<[
+  key: string,
+  layout: ResizablePanelGroupLayoutState,
+]>("uiLayout/setResizablePanelGroupLayout");
+export const requestCollapsiblePanelCollapsed = createAction<[key: string]>("uiLayout/requestCollapsiblePanelCollapsed");
+export const hydrateCollapsiblePanelCollapsed = createAction<[key: string, collapsed: boolean]>(
+  "uiLayout/hydrateCollapsiblePanelCollapsed"
+);
+export const setCollapsiblePanelCollapsed = createAction<[key: string, collapsed: boolean]>(
+  "uiLayout/setCollapsiblePanelCollapsed"
+);
+export const loadWorkspaceSidebarPanelLayout = createAction<[layout: WorkspaceSidebarPanelLayoutState]>(
+  "uiLayout/loadWorkspaceSidebarPanelLayout"
+);
+export const setWorkspaceSidebarPanelLayout = createAction<[layout: WorkspaceSidebarPanelLayoutState]>(
+  "uiLayout/setWorkspaceSidebarPanelLayout"
 );
 
 export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
@@ -230,6 +287,11 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
         ? state.sidebarWidthBeforeCollapse
         : newWidth,
     };
+  })
+  .with(setSidebarExpandedWidth, (state, { payload: [pixels] }) => {
+    const newWidth = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, pixels)));
+    if (newWidth === state.sidebarExpandedWidth) return state;
+    return { ...state, sidebarExpandedWidth: newWidth };
   })
   .with(toggleSidebar, (state) => {
     if (state.sidebarCollapsed) {
@@ -294,11 +356,44 @@ export const uiLayoutReducer = tabbedSidebarPinnedPreference.register(
     if (next === state.panelVisibility) return state;
     return { ...state, panelVisibility: next };
   })
-  .with(loadSidebarState, (state, { payload: [width, collapsed] }) => ({
+  .with(loadSidebarState, (state, { payload: [width, collapsed, expandedWidth] }) => ({
     ...state,
     sidebarWidth: width,
+    sidebarExpandedWidth: expandedWidth ?? state.sidebarExpandedWidth,
     sidebarWidthBeforeCollapse: width,
     sidebarCollapsed: collapsed,
+  }))
+  .with(hydrateResizablePanelSize, (state, { payload: [key, value] }) => ({
+    ...state,
+    resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
+  }))
+  .with(setResizablePanelSize, (state, { payload: [key, value] }) => ({
+    ...state,
+    resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
+  }))
+  .with(hydrateResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
+    ...state,
+    resizablePanelGroupLayouts: { ...state.resizablePanelGroupLayouts, [key]: layout },
+  }))
+  .with(setResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
+    ...state,
+    resizablePanelGroupLayouts: { ...state.resizablePanelGroupLayouts, [key]: layout },
+  }))
+  .with(hydrateCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
+    ...state,
+    collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
+  }))
+  .with(setCollapsiblePanelCollapsed, (state, { payload: [key, collapsed] }) => ({
+    ...state,
+    collapsiblePanelCollapsed: { ...state.collapsiblePanelCollapsed, [key]: collapsed },
+  }))
+  .with(loadWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
+    ...state,
+    workspaceSidebarPanelLayout: layout,
+  }))
+  .with(setWorkspaceSidebarPanelLayout, (state, { payload: [layout] }) => ({
+    ...state,
+    workspaceSidebarPanelLayout: layout,
   }))
   .with(setSpacesSidebarWidth, (state, { payload: [pixels] }) => {
     if (pixels === state.spacesSidebarWidth) return state;

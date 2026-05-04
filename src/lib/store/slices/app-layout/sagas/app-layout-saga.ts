@@ -64,7 +64,7 @@ function* handleRequestPanelFocus(wsId: string, panelId: string) {
     }
 }
 export function* watchRequestPanelFocusSaga() {
-    yield* takeEvery(requestPanelFocus.type, function* ({ payload }: ReturnType<typeof requestPanelFocus>) {
+    yield* takeEvery(requestPanelFocus, function* ({ payload }: ReturnType<typeof requestPanelFocus>) {
         const [wsId, panelId] = payload;
         if (!wsId || !panelId) {
             return;
@@ -73,7 +73,7 @@ export function* watchRequestPanelFocusSaga() {
     });
 }
 export function* watchFocusBrowserTabSaga() {
-    yield* takeEvery(focusBrowserTabRequested.type, function* ({ payload }: ReturnType<typeof focusBrowserTabRequested>) {
+    yield* takeEvery(focusBrowserTabRequested, function* ({ payload }: ReturnType<typeof focusBrowserTabRequested>) {
         const [wsId, tabId] = payload;
         if (!wsId || !tabId) {
             return;
@@ -119,7 +119,7 @@ function showAgentInLayout(workspaceId: string, agentId: string) {
     }));
 }
 export function* watchShowAgentSaga() {
-    yield* takeEvery(showAgentRequested.type, function* ({ payload }: ReturnType<typeof showAgentRequested>) {
+    yield* takeEvery(showAgentRequested, function* ({ payload }: ReturnType<typeof showAgentRequested>) {
         const [wsId, detail] = payload;
         if (!wsId || !detail?.agentId) {
             return;
@@ -128,7 +128,7 @@ export function* watchShowAgentSaga() {
     });
 }
 export function* watchOpenFileSaga() {
-    yield* takeEvery(openWorkspaceFile.type, function* ({ payload }: ReturnType<typeof openWorkspaceFile>) {
+    yield* takeEvery(openWorkspaceFile, function* ({ payload }: ReturnType<typeof openWorkspaceFile>) {
         const [wsId, filePath, options] = payload;
         if (!wsId || !filePath) {
             return;
@@ -147,7 +147,7 @@ export function* watchOpenFileSaga() {
     });
 }
 export function* watchOpenDiffSaga() {
-    yield* takeEvery(openWorkspaceDiff.type, function* ({ payload }: ReturnType<typeof openWorkspaceDiff>) {
+    yield* takeEvery(openWorkspaceDiff, function* ({ payload }: ReturnType<typeof openWorkspaceDiff>) {
         const [wsId, change, options] = payload;
         const filePath = options?.filePath || change?.file || change?.relativePath;
         if (!wsId || !filePath) {
@@ -167,7 +167,7 @@ export function* watchOpenDiffSaga() {
     });
 }
 export function* watchOpenCommitChangesetSaga() {
-    yield* takeEvery(openWorkspaceCommitChangeset.type, function* ({ payload }: ReturnType<typeof openWorkspaceCommitChangeset>) {
+    yield* takeEvery(openWorkspaceCommitChangeset, function* ({ payload }: ReturnType<typeof openWorkspaceCommitChangeset>) {
         const [wsId, commitHash, commitMessage, options] = payload;
         if (!wsId || !commitHash) {
             return;
@@ -188,7 +188,7 @@ export function* watchOpenCommitChangesetSaga() {
     });
 }
 export function* watchOpenChatChangesSaga() {
-    yield* takeEvery(openWorkspaceChatChanges.type, function* ({ payload }: ReturnType<typeof openWorkspaceChatChanges>) {
+    yield* takeEvery(openWorkspaceChatChanges, function* ({ payload }: ReturnType<typeof openWorkspaceChatChanges>) {
         const [wsId, changes, title, options] = payload;
         if (!wsId || !changes) {
             return;
@@ -209,7 +209,7 @@ export function* watchOpenChatChangesSaga() {
     });
 }
 export function* watchOpenLocalChangesSaga() {
-    yield* takeEvery(openWorkspaceLocalChanges.type, function* ({ payload }: ReturnType<typeof openWorkspaceLocalChanges>) {
+    yield* takeEvery(openWorkspaceLocalChanges, function* ({ payload }: ReturnType<typeof openWorkspaceLocalChanges>) {
         const [wsId] = payload;
         if (!wsId) {
             return;
@@ -222,7 +222,7 @@ export function* watchOpenLocalChangesSaga() {
     });
 }
 export function* watchOpenNoteSaga() {
-    yield* takeEvery(openWorkspaceNote.type, function* ({ payload }: ReturnType<typeof openWorkspaceNote>) {
+    yield* takeEvery(openWorkspaceNote, function* ({ payload }: ReturnType<typeof openWorkspaceNote>) {
         const [wsId, noteId, options] = payload;
         if (!wsId || !noteId) {
             return;
@@ -245,7 +245,7 @@ export function* watchOpenNoteSaga() {
     });
 }
 export function* watchOpenAgentSaga() {
-    yield* takeEvery(openAgentTabRequested.type, function* ({ payload }: ReturnType<typeof openAgentTabRequested>) {
+    yield* takeEvery(openAgentTabRequested, function* ({ payload }: ReturnType<typeof openAgentTabRequested>) {
         const [wsId, detail] = payload;
         if (!wsId || !detail?.agentId) {
             return;
@@ -260,7 +260,7 @@ export function* watchOpenAgentSaga() {
     });
 }
 export function* watchOpenTerminalSaga() {
-    yield* takeEvery(openTerminalTabRequested.type, function* ({ payload }: ReturnType<typeof openTerminalTabRequested>) {
+    yield* takeEvery(openTerminalTabRequested, function* ({ payload }: ReturnType<typeof openTerminalTabRequested>) {
         const [wsId, detail] = payload;
         if (!wsId || !detail?.terminalId) {
             return;
@@ -484,7 +484,7 @@ export function* watchMenuResetZoomSaga() {
     });
 }
 export function* watchWorkspaceCreateForRepoSaga() {
-    yield* takeEvery(createWorkspaceForRepoRequested.type, function* ({ payload }: ReturnType<typeof createWorkspaceForRepoRequested>) {
+    yield* takeEvery(createWorkspaceForRepoRequested, function* ({ payload }: ReturnType<typeof createWorkspaceForRepoRequested>) {
         const [data] = payload;
         const currentWorkspace = yield* selectActiveWorkspace.effect();
         if (data.repositoryPath) {
@@ -500,7 +500,7 @@ export function* watchWorkspaceCreateForRepoSaga() {
     });
 }
 export function* watchOpenNewSpaceOnboardingSaga() {
-    yield* takeEvery(openNewSpaceModalRequested.type, function* ({ payload }: ReturnType<typeof openNewSpaceModalRequested>) {
+    yield* takeEvery(openNewSpaceModalRequested, function* ({ payload }: ReturnType<typeof openNewSpaceModalRequested>) {
         const [data] = payload;
         if (data.initialRepo?.repoPath) {
             sessionStorage.setItem("workspace-prefill", JSON.stringify({ repoPath: data.initialRepo.repoPath }));
@@ -538,7 +538,7 @@ function* handleCreateNoteRequestedSaga(wsId: string) {
     }
 }
 function* watchCreateNoteRequestedSaga() {
-    yield takeEvery(createNoteRequested.type, function* ({ payload }: ReturnType<typeof createNoteRequested>) {
+    yield takeEvery(createNoteRequested, function* ({ payload }: ReturnType<typeof createNoteRequested>) {
         const [wsId] = payload;
         yield* handleCreateNoteRequestedSaga(wsId);
     });
@@ -595,7 +595,7 @@ function* handleCreateFileRequestedSaga(wsId: string, folderPath: string, fileNa
     }
 }
 function* watchCreateFileRequestedSaga() {
-    yield takeEvery(createFileRequested.type, function* ({ payload }: ReturnType<typeof createFileRequested>) {
+    yield takeEvery(createFileRequested, function* ({ payload }: ReturnType<typeof createFileRequested>) {
         const [wsId, folderPath, fileName] = payload;
         yield* handleCreateFileRequestedSaga(wsId, folderPath, fileName);
     });

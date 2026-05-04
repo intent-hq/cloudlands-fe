@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   cycleFontStyle,
   cycleNoteFontStyle,
+  deleteActivityLogPreset,
+  dismissPromoBanner,
+  hydrateActivityLogPresets,
+  hydratePromoBannerInteractions,
   initialState,
   loadBetaUpdatesSettings,
+  recordPromoBannerInteraction,
   resetNotificationSettings,
+  saveActivityLogPreset,
   setAgentFontStyle,
   setCodeFontFamily,
   setGroupByRepo,
@@ -31,6 +37,7 @@ import {
 import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
+  selectActivityLogPresets,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
   selectCodeFontFamilyLabel,
@@ -43,6 +50,8 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
+  selectPromoBannerInteractionRecord,
+  selectPromoBannerInteractions,
   selectShowArchived,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
@@ -280,6 +289,61 @@ describe("userPreferencesReducer", () => {
     });
   });
 
+  describe("small renderer preference persistence actions", () => {
+    const preset = {
+      name: "Errors",
+      filters: {
+        showFileChanges: false,
+        showAgentActivity: true,
+        showSystemEvents: false,
+        showErrors: true,
+        searchQuery: "error",
+        dateRange: "today",
+        actorFilter: "agent",
+      },
+    };
+
+    it("hydrates, saves, and deletes activity log presets", () => {
+      const hydrated = userPreferencesReducer(initialState, hydrateActivityLogPresets([preset]));
+      const saved = userPreferencesReducer(hydrated, saveActivityLogPreset({ ...preset, name: "All" }));
+      const deleted = userPreferencesReducer(saved, deleteActivityLogPreset(0));
+
+      expect(hydrated.activityLogPresets).toEqual([preset]);
+      expect(saved.activityLogPresets.map((item) => item.name)).toEqual(["Errors", "All"]);
+      expect(deleted.activityLogPresets.map((item) => item.name)).toEqual(["All"]);
+    });
+
+    it("hydrates, records, and dismisses promotional banner interactions", () => {
+      const hydrated = userPreferencesReducer(
+        initialState,
+        hydratePromoBannerInteractions({ bannerA: { dismissed: false, interactions: [] } })
+      );
+      const recorded = userPreferencesReducer(
+        hydrated,
+        recordPromoBannerInteraction("bannerA", {
+          type: "button_click",
+          buttonText: "Install",
+          actionType: "setDefaultAgent",
+          result: "success",
+          timestamp: "2026-04-29T00:00:00.000Z",
+        })
+      );
+      const dismissed = userPreferencesReducer(
+        recorded,
+        dismissPromoBanner("bannerA", "2026-04-29T00:01:00.000Z", true)
+      );
+
+      expect(recorded.promoBannerInteractions.bannerA.interactions).toHaveLength(1);
+      expect(dismissed.promoBannerInteractions.bannerA).toMatchObject({
+        dismissed: true,
+        dismissedAt: "2026-04-29T00:01:00.000Z",
+        completedAllSteps: true,
+      });
+      const interactions = dismissed.promoBannerInteractions.bannerA.interactions;
+      expect(interactions[interactions.length - 1]?.type).toBe("dismiss");
+    });
+  });
+
   describe("selectors", () => {
     const state = {
       userPreferences: {
@@ -334,6 +398,27 @@ describe("userPreferencesReducer", () => {
       expect(selectSoundEnabled.select(state)).toBe(false);
       expect(selectSoundOnlyWhenUnfocused.select(state)).toBe(false);
       expect(selectNotificationVolume.select(state)).toBe(0.25);
+    });
+
+    it("selects migrated small renderer preferences", () => {
+      const preferenceState = {
+        userPreferences: {
+          ...initialState,
+          activityLogPresets: [{ name: "Errors", filters: {} }],
+          promoBannerInteractions: { bannerA: { dismissed: true, interactions: [] } },
+        },
+      } as any;
+
+      expect(selectActivityLogPresets.select(preferenceState)).toEqual([
+        { name: "Errors", filters: {} },
+      ]);
+      expect(selectPromoBannerInteractions.select(preferenceState)).toEqual({
+        bannerA: { dismissed: true, interactions: [] },
+      });
+      expect(selectPromoBannerInteractionRecord.select(preferenceState, "bannerA")).toEqual({
+        dismissed: true,
+        interactions: [],
+      });
     });
 
   });

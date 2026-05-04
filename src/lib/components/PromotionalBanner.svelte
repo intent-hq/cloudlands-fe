@@ -6,6 +6,12 @@
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import {
+    dismissPromoBanner,
+    recordPromoBannerInteraction,
+    type PromoBannerInteraction,
+  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import { selectPromoBannerInteractions } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import type {
     PromotionalBanner as PromotionalBannerData,
@@ -19,24 +25,11 @@
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
 
-  interface BannerInteractionRecord {
-    dismissed: boolean;
-    dismissedAt?: string;
-    completedAllSteps?: boolean;
-    interactions: Array<{
-      type: 'button_click' | 'dismiss';
-      buttonText?: string;
-      actionType?: string;
-      result: 'success' | 'error' | 'navigated_to_settings';
-      timestamp: string;
-    }>;
-  }
-
   const dispatch = getDispatch();
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
+  const promoBannerInteractions$ = selectPromoBannerInteractions();
 
-  const PROMO_BANNER_STORAGE_KEY = 'promoBannerInteractions';
   const ACTION_SUCCESS_DURATION_MS = 2_000;
   const AUTO_DISMISS_DELAY_MS = 3_000;
 
@@ -113,6 +106,13 @@
     if (banners.length > 0 && !flowStarted && !allStepsComplete) {
       computeApplicableButtons();
     }
+  });
+
+  $effect(() => {
+    const interactions = $promoBannerInteractions$;
+    dismissedBannerIds = banners
+      .filter((banner) => interactions[banner.id]?.dismissed === true)
+      .map((banner) => banner.id);
   });
 
   async function loadBanners() {
@@ -229,51 +229,16 @@
     applicableButtons = [...completedButtons, ...remainingOriginalButtons];
   }
 
-  function loadBannerInteractions(): Record<string, BannerInteractionRecord> {
-    try {
-      const raw = localStorage.getItem(PROMO_BANNER_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  function saveBannerInteractions(data: Record<string, BannerInteractionRecord>) {
-    try {
-      localStorage.setItem(PROMO_BANNER_STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // Ignore storage errors (quota exceeded, unavailable, etc.)
-    }
-  }
-
   function isBannerDismissed(id: string): boolean {
-    const data = loadBannerInteractions();
-    return data[id]?.dismissed === true;
+    return $promoBannerInteractions$[id]?.dismissed === true;
   }
 
-  function recordInteraction(bannerId: string, interaction: BannerInteractionRecord['interactions'][number]) {
-    const data = loadBannerInteractions();
-    if (!data[bannerId]) {
-      data[bannerId] = { dismissed: false, interactions: [] };
-    }
-    data[bannerId].interactions.push(interaction);
-    saveBannerInteractions(data);
+  function recordInteraction(bannerId: string, interaction: PromoBannerInteraction) {
+    dispatch(recordPromoBannerInteraction(bannerId, interaction));
   }
 
   function dismissBanner(id: string, completedAllSteps = false) {
-    const data = loadBannerInteractions();
-    if (!data[id]) {
-      data[id] = { dismissed: false, interactions: [] };
-    }
-    data[id].dismissed = true;
-    data[id].dismissedAt = new Date().toISOString();
-    data[id].completedAllSteps = completedAllSteps;
-    data[id].interactions.push({
-      type: 'dismiss',
-      result: 'success',
-      timestamp: new Date().toISOString(),
-    });
-    saveBannerInteractions(data);
+    dispatch(dismissPromoBanner(id, new Date().toISOString(), completedAllSteps));
     dismissedBannerIds = [...new Set([...dismissedBannerIds, id])];
   }
 

@@ -2,7 +2,7 @@
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import { themeManager } from '$lib/utils/theme';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type Props = {
@@ -40,20 +40,7 @@
   } = $props();
 
   let highlighted = $state('');
-  let isDarkMode = $state(themeManager.isDark());
-
-  // Listen for theme changes
-  $effect(() => {
-    const handleThemeChange = (event: CustomEvent) => {
-      isDarkMode = event.detail.isDark;
-    };
-
-    window.addEventListener('theme-changed', handleThemeChange as EventListener);
-
-    return () => {
-      window.removeEventListener('theme-changed', handleThemeChange as EventListener);
-    };
-  });
+  const isDarkTheme = selectIsDarkTheme();
 
   $effect(() => {
     // Highlight code when it changes
@@ -88,18 +75,18 @@
   class="code-block-container group rounded-md overflow-hidden relative {className}"
   class:mt-3={!noMargin}
   class:mb-5={!noMargin}
-  class:dark-theme={isDarkMode}
-  class:light-theme={!isDarkMode}
+  class:dark-theme={$isDarkTheme}
+  class:light-theme={!$isDarkTheme}
   class:no-border={noBorder}
   style={maxHeight ? `max-height: ${maxHeight}px; overflow-y: auto;` : ''}
-  data-theme={isDarkMode ? 'dark' : 'light'}
+  data-theme={$isDarkTheme ? 'dark' : 'light'}
 >
   <!-- Floating copy button (appears on hover) -->
   <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
     <CopyButton
       text={code}
       size="xs"
-      class={isDarkMode
+      class={$isDarkTheme
         ? 'bg-[#2d2d3a]/80 hover:bg-[#3d3d4a] text-gray-400 hover:text-gray-200 backdrop-blur-sm'
         : 'bg-white/80 hover:bg-gray-100 text-gray-500 hover:text-gray-700 backdrop-blur-sm'}
     />

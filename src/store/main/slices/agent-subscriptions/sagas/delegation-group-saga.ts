@@ -31,7 +31,6 @@ import {
   requestDeliverQueuedEvents,
 } from "./saga-actions";
 import { handleDeliverEvents } from "./delivery-saga";
-import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -140,11 +139,7 @@ export function* handleDelegationGroupDelivery(
   const parentAgentId = tracker.parentAgentId;
 
   // Check parent agent status
-  const parentStatus: string = yield* select(
-    selectAgentStatus.select,
-    wsId,
-    parentAgentId,
-  );
+  const parentStatus: string = yield* selectAgentStatus.effect(wsId, parentAgentId);
 
   if (parentStatus === "idle") {
     // Deliver immediately with bounded retry
@@ -192,24 +187,6 @@ function* deliverWithRetry(
     logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=deliver error=${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // Emit agent:woken-by-subscription for delegation group deliveries.
-  // This is intentionally outside the delivery try/catch so that a failure
-  // to emit the wake event does not trigger re-enqueue of already-delivered events.
-  try {
-    const eventTypes = [...new Set(events.map((e) => e.type))];
-    yield* call(dispatchWorkspaceEvent, "agent:woken-by-subscription", wsId, {
-      type: "agent",
-      id: agentId,
-    }, {
-      agentId,
-      groupId,
-      eventCount: events.length,
-      eventTypes,
-    });
-  } catch (err) {
-    logger.error(`[subscriptions] deliver subscriptionId=${subscriptionId} agentId=${agentId} workspaceId=${wsId} groupId=${groupId} step=wake-event error=${err instanceof Error ? err.message : String(err)}`);
-  }
-
   // SAFETY NET: Re-enqueue events to the parent agent's queue so they survive
   // cleanup. If handleDeliverEvents succeeded, the delivery dedup cache
   // (filterAlreadyDelivered) will skip these on the next attempt. If it failed
@@ -255,11 +232,7 @@ function* pollAndDeliver(
   for (let attempt = 0; attempt < MAX_BUSY_POLL_ATTEMPTS; attempt++) {
     yield* delay(BUSY_POLL_INTERVAL_MS);
 
-    const status: string = yield* select(
-      selectAgentStatus.select,
-      wsId,
-      agentId,
-    );
+    const status: string = yield* selectAgentStatus.effect(wsId, agentId);
     if (status === "idle") {
       yield* call(
         deliverWithRetry,

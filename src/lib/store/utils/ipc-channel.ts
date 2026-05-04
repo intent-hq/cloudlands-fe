@@ -1,9 +1,15 @@
-import { END, eventChannel, buffers, type EventChannel } from "redux-saga";
+import {
+  END,
+  eventChannel,
+  buffers,
+  type EventChannel,
+  type Task,
+} from "redux-saga";
 import type { NotUndefined } from "@redux-saga/types";
 import { listenSync } from "$lib/electron-bridge";
 import type { WindowEventName } from "$lib/utils/window-events";
 import type { ElectronEventName } from "$shared/ipc-registry";
-import { call, take } from "typed-redux-saga";
+import { cancel, fork, take } from "typed-redux-saga";
 
 type WindowEventChannelOptions = {
   capture?: boolean;
@@ -47,21 +53,61 @@ export function createWindowEventChannel<T extends object>(
   });
 }
 
-export function* takeEveryFromWindowEvent<T extends object>(
+function* takeEveryFromWindowEventLoop<T extends object>(
   eventName: WindowEventName,
   handler: (data: T) => Generator,
   options: WindowEventChannelOptions = {},
-): Generator {
+): Generator<any, void, any> {
   const channel = createWindowEventChannel<T>(eventName, options);
 
   try {
     while (true) {
       const data: T = yield* take(channel);
-      yield* call(handler, data);
+      if (data === (END as unknown as T)) break;
+      yield* fork(handler, data);
     }
   } finally {
     channel.close();
   }
+}
+
+function* takeLatestFromWindowEventLoop<T extends object>(
+  eventName: WindowEventName,
+  handler: (data: T) => Generator,
+  options: WindowEventChannelOptions = {},
+): Generator<any, void, any> {
+  const channel = createWindowEventChannel<T>(eventName, options);
+  let task = null as Task | null;
+
+  try {
+    while (true) {
+      const data: T = yield* take(channel);
+      if (data === (END as unknown as T)) break;
+      if (task) {
+        yield* cancel(task);
+      }
+      task = yield* fork(handler, data);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+
+export function* takeEveryFromWindowEvent<T extends object>(
+  eventName: WindowEventName,
+  handler: (data: T) => Generator,
+  options: WindowEventChannelOptions = {},
+): Generator<any, Task, any> {
+  return yield* fork(takeEveryFromWindowEventLoop<T>, eventName, handler, options);
+}
+
+export function* takeLatestFromWindowEvent<T extends object>(
+  eventName: WindowEventName,
+  handler: (data: T) => Generator,
+  options: WindowEventChannelOptions = {},
+): Generator<any, Task, any> {
+  return yield* fork(takeLatestFromWindowEventLoop<T>, eventName, handler, options);
 }
 
 /**
@@ -104,23 +150,33 @@ export function createListenSyncChannel<T extends NotUndefined>(eventName: Elect
   }, buffers.expanding<T>());
 }
 
-export function* takeEveryFromListenSync<T extends NotUndefined>(
+function* takeEveryFromListenSyncLoop<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
-): Generator {
+): Generator<any, void, any> {
   const channel = createListenSyncChannel<T>(eventName);
 
   try {
     while (true) {
       const data: T = yield* take(channel);
-      yield* call(handler, data);
+      if (data === (END as unknown as T)) break;
+      yield* fork(handler, data);
     }
   } finally {
     channel.close();
   }
 }
 
+export function* takeEveryFromListenSync<T extends NotUndefined>(
+  eventName: ElectronEventName,
+  handler: (data: T) => Generator,
+): Generator<any, Task, any> {
+  return yield* fork(takeEveryFromListenSyncLoop<T>, eventName, handler);
+}
+
 export function createElectronChannel<T extends NotUndefined>(eventName: ElectronEventName): EventChannel<T> {
+  // Use an expanding buffer so Electron events emitted before the saga has
+  // registered the next take are queued instead of silently dropped.
   return eventChannel<T>((emitter) => {
     if (typeof window === "undefined" || !window.electronAPI) {
       emitter(END as any);
@@ -136,22 +192,30 @@ export function createElectronChannel<T extends NotUndefined>(eventName: Electro
         window.electronAPI.offById(eventName, listenerId);
       }
     };
-  });
+  }, buffers.expanding<T>());
 }
 
-export function* takeEveryFromElectronChannel<T extends NotUndefined>(
+function* takeEveryFromElectronChannelLoop<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
-): Generator {
+): Generator<any, void, any> {
   const channel = createElectronChannel<T>(eventName);
 
   try {
     while (true) {
       const data: T = yield* take(channel);
-      yield* call(handler, data);
+      if (data === (END as unknown as T)) break;
+      yield* fork(handler, data);
     }
   } finally {
     channel.close();
   }
+}
+
+export function* takeEveryFromElectronChannel<T extends NotUndefined>(
+  eventName: ElectronEventName,
+  handler: (data: T) => Generator,
+): Generator<any, Task, any> {
+  return yield* fork(takeEveryFromElectronChannelLoop<T>, eventName, handler);
 }
 

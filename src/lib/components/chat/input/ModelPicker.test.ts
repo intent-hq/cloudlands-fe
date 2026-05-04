@@ -77,6 +77,8 @@ vi.mock('$lib/store/slices/model/model-utils', () => ({
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectSelectedModel: () => readable(mockModelState.selectedModel),
   selectAvailableModels: () => readable(mockModelState.availableModels),
+  selectModelFallbackInfo: () => readable(null),
+  selectModelPickerCollapsedGroups: () => readable([]),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(mockModelState.loadError),
 }));

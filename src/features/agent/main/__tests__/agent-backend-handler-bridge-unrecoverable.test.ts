@@ -103,6 +103,32 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     mockPersistence.saveAgent.mockResolvedValue({ success: true });
   });
 
+  it('passes stream workspace id to browser IPC broadcasts', () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    handler.streamWorkspaceIds = new Map([['agent-1', 'ws-1']]);
+    const previousBroadcast = (global as any).__browserIpcBroadcast;
+    const broadcast = vi.fn();
+    (global as any).__browserIpcBroadcast = broadcast;
+
+    try {
+      const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
+        handler,
+        'agent-1',
+        'agent:stream:agent-1',
+        { type: 'chunk', data: 'secret' },
+      );
+
+      expect(sent).toBe(true);
+      expect(broadcast).toHaveBeenCalledWith(
+        'agent:stream:agent-1',
+        { type: 'chunk', data: 'secret' },
+        'ws-1',
+      );
+    } finally {
+      (global as any).__browserIpcBroadcast = previousBroadcast;
+    }
+  });
+
   it('subscribes via onHttpBridgeUnrecoverable and the registered handler fires side effects on emit', async () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
     handler.streamStartTimes = new Map();

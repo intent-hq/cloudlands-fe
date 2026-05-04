@@ -16,6 +16,7 @@
   import { browser } from '$app/environment';
   import { colors } from '$lib/components/ui/auggie-avatar/avatar-constants';
   import { stringToSeededRandom } from '$lib/utils/hash';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   interface Props {
     agentId?: string;
@@ -28,10 +29,10 @@
   let animationFrame = $state<number>(0);
   let program = $state<WebGLProgram | null>(null);
   let startTime = $state<number>(0);
-  let isDarkMode = $state<boolean>(false);
   let isPageVisible = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
   let lastFrameTime = $state<number>(0);
+  const isDarkTheme = selectIsDarkTheme();
 
   // Target 30fps instead of 60fps to reduce GPU usage
   const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
@@ -55,23 +56,6 @@
 
   // Cached device pixel ratio (updated on resize, not every frame)
   let cachedDpr = 1;
-
-  // Dark mode observer cleanup
-  let darkModeObserver: MutationObserver | null = null;
-  let darkModeMediaQuery: MediaQueryList | null = null;
-  // Must store a stable reference so removeEventListener can find the same function
-  const darkModeMediaHandler = () => updateDarkMode();
-
-  // Detect dark mode (called once and on changes, NOT every frame)
-  function updateDarkMode() {
-    if (browser) {
-      isDarkMode =
-        document.documentElement.classList.contains('dark') ||
-        window.matchMedia('(prefers-color-scheme: dark)').matches;
-      // Invalidate cached colors when dark mode changes
-      cachedColorKey = '';
-    }
-  }
 
   // Hue shift a color by degrees (same logic as avatar-constants.ts)
   function hueShiftColor(hexColor: string, hueShift: number): string {
@@ -488,13 +472,13 @@
     gl.uniform1f(uniformLocations.seed, seed);
 
     // Use cached RGB colors (recomputed only when agentId or dark mode changes)
-    const colorKey = `${agentId}-${isDarkMode}`;
+    const colorKey = `${agentId}-${$isDarkTheme}`;
     if (cachedColorKey !== colorKey) {
       const [c1, c2, c3] = auroraColors;
       cachedRgbColors = {
-        rgb1: hexToRgb(c1, isDarkMode),
-        rgb2: hexToRgb(c2, isDarkMode),
-        rgb3: hexToRgb(c3, isDarkMode),
+        rgb1: hexToRgb(c1, $isDarkTheme),
+        rgb2: hexToRgb(c2, $isDarkTheme),
+        rgb3: hexToRgb(c3, $isDarkTheme),
       };
       cachedColorKey = colorKey;
     }
@@ -523,15 +507,6 @@
     cachedRgbColors = null;
     cachedColorKey = '';
 
-    // Clean up dark mode observers
-    if (darkModeObserver) {
-      darkModeObserver.disconnect();
-      darkModeObserver = null;
-    }
-    if (darkModeMediaQuery) {
-      darkModeMediaQuery.removeEventListener('change', darkModeMediaHandler);
-      darkModeMediaQuery = null;
-    }
   }
 
   // Handle page visibility changes
@@ -568,20 +543,6 @@
     isPageVisible = !document.hidden;
     prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Initial dark mode check
-    updateDarkMode();
-
-    // Observe dark mode changes via MutationObserver instead of polling every frame
-    darkModeObserver = new MutationObserver(() => updateDarkMode());
-    darkModeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    // Also listen for system color scheme changes
-    darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    darkModeMediaQuery.addEventListener('change', darkModeMediaHandler);
-
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -598,7 +559,6 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       motionQuery.removeEventListener('change', handleMotionPreference);
       dprCleanup?.();
-      // darkModeMediaQuery cleanup is handled in cleanup() which is called from onDestroy
     };
   });
 

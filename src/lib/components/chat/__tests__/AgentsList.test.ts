@@ -10,6 +10,18 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToAgent: vi.fn(),
 }));
 
+vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
+  selectIsDarkTheme: Object.assign(
+    () => ({
+      subscribe: (run: (value: boolean) => void) => {
+        run(false);
+        return () => {};
+      },
+    }),
+    { select: () => false },
+  ),
+}));
+
 describe('AgentsList', () => {
   const mockAgents: AgentSession[] = [
     {

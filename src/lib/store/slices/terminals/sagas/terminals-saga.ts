@@ -5,6 +5,7 @@ import {
   watchHeightChanges,
   watchRenameTerminal,
   watchRemoveTerminalCustomName,
+  watchTerminalMetadataPersistence,
   watchWorkspaceState,
 } from "./persistence-saga";
 import { watchTerminalCreated, watchTerminalDisposed } from "./ipc-saga";
@@ -45,6 +46,7 @@ export function* terminalsSaga() {
   yield* fork(watchHeightChanges);
   yield* fork(watchRenameTerminal);
   yield* fork(watchRemoveTerminalCustomName);
+  yield* fork(watchTerminalMetadataPersistence);
   yield* fork(watchWorkspaceState);
 
   // Fork IPC listener for terminal:disposed events (uses saga channel)

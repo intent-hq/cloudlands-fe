@@ -33,6 +33,14 @@ export type SidebarNavState = {
   allSpacesViewMode: AllSpacesViewMode;
   /** Pinned workspace IDs (persisted to localStorage) */
   pinnedWorkspaceIds: string[];
+  /** Global workspace sidebar tab order (persisted) */
+  multiSelectTabOrder: string[];
+  /** Selected workspace sidebar tabs by workspace ID (persisted) */
+  multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
+  /** Custom note ordering by workspace ID (persisted) */
+  noteOrderByWorkspaceId: Record<string, string[]>;
+  /** Collapsed note IDs by workspace ID (persisted) */
+  collapsedNoteIdsByWorkspaceId: Record<string, string[]>;
   /** Counter for open context menus (prevents hover card auto-close) */
   contextMenuOpenCount: number;
   /** Deferred leave type when context menu prevented auto-close */

@@ -2,7 +2,7 @@
   import { stringToHash, SeededRandom } from '$lib/utils/hash';
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
-  import { onMount } from 'svelte';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   interface Props {
     seed?: string;
@@ -26,26 +26,7 @@
 
   // Get specialist icon and glow color
   let specialistIconSvg = $derived(getSpecialistIcon(specialist));
-
-  // Detect dark mode
-  let isDarkMode = $state(false);
-
-  onMount(() => {
-    const checkDarkMode = () => {
-      isDarkMode = document.documentElement.classList.contains('dark');
-    };
-
-    checkDarkMode();
-
-    // Watch for theme changes
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  });
+  const isDarkTheme = selectIsDarkTheme();
 
   // Ensure seeds are always strings to prevent flickering from undefined -> string transitions
   // Use seed as fallback if colorSeed or faceSeed are not provided
@@ -65,7 +46,7 @@
   let [selectedColor, selectedColor2] = $derived.by(() => {
     const colorSeedStr =
       typeof stableColorSeed === 'string' ? stableColorSeed : String(stableColorSeed);
-    return getRandomColorsWithSeed(colorSeedStr, isDarkMode);
+    return getRandomColorsWithSeed(colorSeedStr, $isDarkTheme);
   });
 
   // Generate deterministic unique ID to avoid conflicts and flickering

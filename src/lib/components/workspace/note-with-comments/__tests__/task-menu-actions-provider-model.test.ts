@@ -54,11 +54,6 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
 }));
 
-vi.mock('$lib/utils/task-agent-associations', () => ({
-  addTaskAgentAssociation: vi.fn(),
-  removeTaskAgentAssociation: vi.fn(),
-}));
-
 vi.mock('$shared/services/unified-id.service', () => ({
   unifiedIdService: {
     generateAgentId: vi.fn(() => 'agent-optimistic'),
@@ -72,6 +67,49 @@ vi.mock('$shared/utils-client', () => ({
 
 import { runAssignAgentTaskMenuAction } from '../task-menu-assign-agent-action';
 import { runTaskBreakdownTaskMenuAction } from '../task-menu-task-breakdown-action';
+import { createTaskAgentAssociationKeyForAgent } from '../task-item-utils';
+
+function createEditorWithDuplicateTasks() {
+  const nodes = [
+    { pos: 1, node: { type: { name: 'taskItem' }, textContent: 'Ship feature', attrs: {} } },
+    { pos: 5, node: { type: { name: 'taskItem' }, textContent: 'Ship feature', attrs: {} } },
+  ];
+  const state = {
+    doc: {
+      descendants(callback: (node: any, pos: number) => boolean | void) {
+        for (const { node, pos } of nodes) {
+          if (callback(node, pos) === false) break;
+        }
+      },
+      nodeAt(pos: number) {
+        return nodes.find((entry) => entry.pos === pos)?.node ?? null;
+      },
+    },
+  };
+  return {
+    state,
+    commands: { setTaskAgentId: vi.fn() },
+    chain() {
+      const commands: Array<(context: any) => boolean> = [];
+      return {
+        command(fn: (context: any) => boolean) {
+          commands.push(fn);
+          return this;
+        },
+        run() {
+          const tr = {
+            setMeta: vi.fn(),
+            setNodeMarkup(pos: number, _type: unknown, attrs: Record<string, unknown>) {
+              const match = nodes.find((entry) => entry.pos === pos);
+              if (match) match.node.attrs = attrs;
+            },
+          };
+          return commands.every((command) => command({ tr, state }));
+        },
+      };
+    },
+  } as any;
+}
 
 describe('task menu actions provider model', () => {
   const legacyState = {
@@ -106,20 +144,23 @@ describe('task menu actions provider model', () => {
     });
   });
 
-  it('uses the workspace default selector when assigning an agent to a task', async () => {
+  it('uses the provided workspace default model when assigning an agent to a task', async () => {
     const dispatch = vi.fn();
+    const storeDispatch = vi.fn();
 
     await runAssignAgentTaskMenuAction({
       editor: null,
       workspace,
       noteId: 'note-1',
       taskData: { text: 'Ship feature', position: '1' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
       debounceUpdate: vi.fn(),
+      storeDispatch,
       dispatch,
       logger,
     });
 
-    expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');
     expect(notesIpcMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -141,18 +182,46 @@ describe('task menu actions provider model', () => {
     });
   });
 
-  it('uses the workspace default selector when launching task breakdown agents', async () => {
+  it('persists menu-assigned duplicate tasks with a stable agent key', async () => {
+    notesIpcMock.mockResolvedValueOnce({ ok: false, error: 'backend unavailable' });
+    const storeDispatch = vi.fn();
+
+    await runAssignAgentTaskMenuAction({
+      editor: createEditorWithDuplicateTasks(),
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '5' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      dispatch: vi.fn(),
+      logger,
+    });
+
+    const addAssociationAction = storeDispatch.mock.calls.find(
+      ([action]) => action.type === 'taskAgentAssociations/addTaskAgentAssociation',
+    )?.[0];
+
+    expect(addAssociationAction.payload[2]).toMatchObject({
+      taskText: 'Ship feature',
+      taskKey: createTaskAgentAssociationKeyForAgent('agent-optimistic'),
+      agentId: 'agent-optimistic',
+    });
+  });
+
+  it('uses the provided workspace default model when launching task breakdown agents', async () => {
     const dispatch = vi.fn();
 
     await runTaskBreakdownTaskMenuAction({
       workspace,
       noteId: 'note-1',
       taskData: { text: 'Ship feature', position: '2', checked: false },
+      model: 'selector-workspace-model',
       dispatch,
       logger,
     });
 
-    expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');
     expect(createAgentMock).toHaveBeenCalledWith(
       workspace,
       expect.objectContaining({ model: 'selector-workspace-model' }),

@@ -1,5 +1,5 @@
 import { isElectron } from "$lib/electron-bridge";
-import { takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
+import { takeLatestFromWindowEvent } from "$lib/store/utils/ipc-channel";
 import { call, put, delay } from "typed-redux-saga";
 import { setZoomFactor } from "../user-preferences-slice";
 import { fetchZoomFactor } from "./init-saga";
@@ -7,7 +7,7 @@ import { fetchZoomFactor } from "./init-saga";
 export function* resizeZoomSaga() {
   if (!isElectron()) return;
 
-  yield* takeEveryFromWindowEvent("resize", function* () {
+  yield* takeLatestFromWindowEvent("resize", function* () {
       yield* delay(100);
       const factor: number = yield* call(fetchZoomFactor);
       yield* put(setZoomFactor(factor));

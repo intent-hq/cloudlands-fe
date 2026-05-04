@@ -23,6 +23,8 @@
     type TaskMenuPopoverData,
   } from './note-with-comments/task-menu-popover-discovery';
   import {
+    getTaskAssociationKeysInEditor,
+    getTaskTextsInEditor,
     removeAgentFromTasks,
     restoreTaskAgentAssociations,
   } from './note-with-comments/task-item-utils';
@@ -80,7 +82,13 @@
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
-  import { AGENT_ASSOCIATIONS_REMOVED_EVENT } from '$lib/utils/task-agent-associations';
+  import {
+    AGENT_ASSOCIATIONS_REMOVED_EVENT,
+    pruneTaskAgentAssociationsForNote,
+    TASK_ASSOCIATION_CHANGED_EVENT,
+  } from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
+  import { selectAssociationsForNote } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
+  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 
   import { invoke } from '$lib/electron-bridge';
   import { selectNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-selectors';
@@ -754,19 +762,55 @@
     }
   }
 
+  function syncTaskAgentAssociations() {
+    if (!editor || editor.isDestroyed || !workspace?.id || !noteId) return;
+
+    const associations = selectAssociationsForNote.select(
+      getReduxStore().getState(),
+      workspace.id,
+      noteId,
+    );
+    const currentTaskKeys = getTaskAssociationKeysInEditor(editor);
+    const currentTaskTextCounts = getTaskTextsInEditor(editor).reduce<Record<string, number>>((counts, taskText) => {
+      counts[taskText] = (counts[taskText] ?? 0) + 1;
+      return counts;
+    }, {});
+    const associationTextCounts = associations.reduce<Record<string, number>>((counts, association) => {
+      counts[association.taskText] = (counts[association.taskText] ?? 0) + 1;
+      return counts;
+    }, {});
+    const hasAmbiguousDuplicateAssociations = Object.entries(associationTextCounts).some(
+      ([taskText, count]) => count > (currentTaskTextCounts[taskText] ?? 0),
+    );
+    if (hasAmbiguousDuplicateAssociations || associations.some((association) => association.taskKey
+      ? !currentTaskKeys.includes(association.taskKey)
+      : !currentTaskKeys.includes(association.taskText))) {
+      reduxDispatch(pruneTaskAgentAssociationsForNote(workspace.id, noteId, currentTaskKeys));
+      return;
+    }
+
+    restoreTaskAgentAssociations(editor, associations, logger);
+  }
+
   async function handleTaskMenuAction(
     action: string,
     taskData: any,
     options?: { skipSave?: boolean },
   ) {
     if (action === 'assign-agent') {
+      const state = getReduxStore().getState();
+      const parentNote = noteId ? selectNoteById.select(state, workspace.id, noteId) : null;
+      const model = selectWorkspaceDefaultModel.select(state, workspace.id);
       return runAssignAgentTaskMenuAction({
         editor,
         workspace,
         noteId,
         taskData,
         options,
+        parentNoteTitle: parentNote?.title || 'parent note',
+        model,
         debounceUpdate,
+        storeDispatch: reduxDispatch,
         dispatch: (type, detail) => {
           if (type === 'agentLaunched') {
             onagentlaunched?.(detail);
@@ -779,6 +823,7 @@
         workspace,
         noteId,
         taskData,
+        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
         dispatch: (type, detail) => {
           if (type === 'agentLaunched') {
             onagentlaunched?.(detail);
@@ -971,6 +1016,7 @@
         debounceUpdate();
         // Discover and create TaskMenu popovers for any new task items
         setupTaskMenuPopovers();
+        syncTaskAgentAssociations();
       },
       onSelectionUpdate: (selectedText) => {
         // Get the note title from store if available, otherwise use noteId
@@ -1106,12 +1152,12 @@
       }),
     });
 
-    // Restore task-agent associations from localStorage
+    // Restore task-agent associations from persisted Redux state
     if (workspace?.id && noteId) {
       // Small delay to ensure editor is fully ready
       setTimeout(() => {
         if (editor && !editor.isDestroyed) {
-          restoreTaskAgentAssociations(editor, workspace.id, noteId, logger);
+          syncTaskAgentAssociations();
         }
       }, 100);
     }
@@ -1333,9 +1379,7 @@
           }
 
           // Restore task-agent associations after note switch
-          if (workspace?.id && noteId) {
-            restoreTaskAgentAssociations(editor, workspace.id, noteId, logger);
-          }
+          syncTaskAgentAssociations();
 
           // After content is set, initialize comment manager for the new note
           commentManager = await maybeCreateCommentManagerV2({
@@ -1382,6 +1426,10 @@
       },
       getWorkspaceId: () => workspace?.id,
       getNoteId: () => noteId,
+      getTaskAgentAssociations: () => {
+        if (!workspace?.id || !noteId) return [];
+        return selectAssociationsForNote.select(getReduxStore().getState(), workspace.id, noteId);
+      },
       getCommentManager: () => commentManager,
       processMarkdownToHTML,
       processHTMLToMarkdown,
@@ -1519,6 +1567,11 @@
       }
     };
     window.addEventListener(AGENT_ASSOCIATIONS_REMOVED_EVENT, handleAgentRemoved as EventListener);
+
+    const handleTaskAssociationChanged = () => {
+      syncTaskAgentAssociations();
+    };
+    window.addEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChanged);
 
     // Listen for scroll position save requests (before navigation)
     const handleSaveScrollPosition = (
@@ -1725,6 +1778,7 @@
         AGENT_ASSOCIATIONS_REMOVED_EVENT,
         handleAgentRemoved as EventListener,
       );
+      window.removeEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChanged);
       window.removeEventListener(
         'note:save-scroll-position',
         handleSaveScrollPosition as EventListener,

@@ -274,6 +274,19 @@ function canUseLegacyContentFallback(a: AgentMessage, b: AgentMessage): boolean 
   return !getAppMessageId(a) && !getAppMessageId(b);
 }
 
+function isStreamingFinalizationDuplicate(a: AgentMessage, b: AgentMessage): boolean {
+  if (hasExplicitDifferentTurn(a, b)) return false;
+  if (a.role !== 'assistant' || b.role !== 'assistant') return false;
+  return (a.isStreaming === true && b.isStreaming !== true) || (b.isStreaming === true && a.isStreaming !== true);
+}
+
+function isAssistantContentDuplicate(a: AgentMessage, b: AgentMessage): boolean {
+  if (hasExplicitDifferentTurn(a, b)) return false;
+  if (a.role !== 'assistant' || b.role !== 'assistant') return false;
+  if (isStreamingFinalizationDuplicate(a, b)) return true;
+  return Boolean(getAppMessageId(a) && getAppMessageId(b));
+}
+
 function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
   if (hasCanonicalId(existing.id) && !hasCanonicalId(incoming.id)) return existing;
   return incoming;
@@ -292,6 +305,29 @@ function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): Ag
         ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
         : undefined,
   };
+}
+
+function mergeStreamingFinalizationDuplicate(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
+  const finalizedMessage = existing.isStreaming === true ? incoming : existing;
+  const streamingMessage = finalizedMessage === existing ? incoming : existing;
+  return {
+    ...streamingMessage,
+    ...finalizedMessage,
+    id: finalizedMessage.id,
+    appMessageId: getAppMessageId(finalizedMessage) ?? getAppMessageId(streamingMessage),
+    isStreaming: false,
+    metadata:
+      existing.metadata || incoming.metadata
+        ? { ...streamingMessage.metadata, ...finalizedMessage.metadata }
+        : undefined,
+  };
+}
+
+function mergeAssistantContentDuplicate(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
+  if (isStreamingFinalizationDuplicate(existing, incoming)) {
+    return mergeStreamingFinalizationDuplicate(existing, incoming);
+  }
+  return mergeLogicalMessage(existing, incoming);
 }
 
 function isCanonicalAssistantDuplicate(a: AgentMessage, b: AgentMessage): boolean {
@@ -329,6 +365,20 @@ function findContentMatch(
   return -1;
 }
 
+function findAssistantContentDuplicateMatch(messages: AgentMessage[], incoming: AgentMessage): number {
+  const incomingHash = computeMessageContentHash(incoming);
+  if (incomingHash === null) return -1;
+  for (let i = 0; i < messages.length; i++) {
+    const existing = messages[i];
+    if (existing.id === incoming.id) continue;
+    if (!isAssistantContentDuplicate(existing, incoming)) continue;
+    if (computeMessageContentHash(existing) !== incomingHash) continue;
+    if (!isTimestampClose(existing.timestamp, incoming.timestamp)) continue;
+    return i;
+  }
+  return -1;
+}
+
 // ============================================================================
 // Dedup / Prune helpers
 // ============================================================================
@@ -357,13 +407,20 @@ function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
     result.push(msg);
   }
 
-  // Second pass: legacy content-hash tiebreaker — when two messages both lack
-  // app-owned identity but have different IDs, the same content hash, role, and
-  // close timestamps, collapse local ↔ canonical pairs by keeping the canonical
+  // Second pass: content-hash tiebreakers. Assistant replies produced by ACP can
+  // be retained twice in Redux when accumulated content is finalized through a
+  // new message ID/appMessageId instead of replacing the in-progress copy. When
+  // assistant content matches, timestamps are close, and turns do not explicitly
+  // differ, collapse app-owned duplicates as one logical reply. Streaming ↔ final
+  // pairs always keep the finalized identity; final ↔ final pairs keep the later
+  // ingested identity so provider completion metadata wins.
+  // Legacy fallback still only applies when both messages lack app-owned IDs:
+  // for different IDs with the same content hash, role, and close timestamps,
+  // collapse local ↔ canonical pairs by keeping the canonical
   // `msg_*` prefix. Also collapse canonical assistant ↔ canonical assistant
   // duplicates from the same logical turn, keeping the first canonical copy
-  // already present in message order. Messages with appMessageId or explicitly
-  // different turnNumbers are never content-collapsed.
+  // already present in message order. Messages with exactly one appMessageId or
+  // explicitly different turnNumbers are not content-collapsed.
   // We track *all* indices per hash so that multiple non-canonical duplicates
   // are all removed when a canonical message arrives (not just the first one).
   const hashMap = new Map<string, number[]>();
@@ -382,6 +439,19 @@ function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
         // Only merge if timestamps are close (same logical message)
         if (!isTimestampClose(prev.timestamp, curr.timestamp)) continue;
         if (hasExplicitDifferentTurn(prev, curr)) continue;
+        if (isAssistantContentDuplicate(prev, curr)) {
+          const merged = mergeAssistantContentDuplicate(prev, curr);
+          if (merged.id === curr.id) {
+            result[i] = merged;
+            toRemove.add(prevIdx);
+            continue;
+          } else {
+            result[prevIdx] = merged;
+            toRemove.add(i);
+            currRemoved = true;
+            break;
+          }
+        }
         if (!canUseLegacyContentFallback(prev, curr)) continue;
         // Collapse when exactly one copy has a canonical `msg_*` ID (local ↔
         // provider-assigned), or when both are canonical assistant messages
@@ -726,6 +796,18 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }
     // Primary guard: exact ID match → skip (O(1) Collection lookup)
     if (getItem(session.messages, normalizedMsg.id)) return state;
+    const assistantDuplicateMatchIdx = findAssistantContentDuplicateMatch(currentList, normalizedMsg);
+    if (assistantDuplicateMatchIdx !== -1) {
+      const newList = currentList.slice();
+      newList[assistantDuplicateMatchIdx] = mergeAssistantContentDuplicate(
+        currentList[assistantDuplicateMatchIdx],
+        normalizedMsg,
+      );
+      return setSession(state, agentId, {
+        ...session,
+        messages: buildMessagesCollection(deduplicateMessages(newList)),
+      });
+    }
     // Content-match guard: if the arriving message has a canonical `msg_*` ID,
     // replace a matching local copy or skip a matching canonical assistant copy.
     if (hasCanonicalId(normalizedMsg.id)) {
@@ -907,6 +989,18 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }
     // Primary guard: exact ID match → skip (O(1) Collection lookup)
     if (getItem(session.messages, normalizedMsg.id)) return state;
+    const assistantDuplicateMatchIdx = findAssistantContentDuplicateMatch(currentList, normalizedMsg);
+    if (assistantDuplicateMatchIdx !== -1) {
+      const newList = currentList.slice();
+      newList[assistantDuplicateMatchIdx] = mergeAssistantContentDuplicate(
+        currentList[assistantDuplicateMatchIdx],
+        normalizedMsg,
+      );
+      return setSession(state, agentId, {
+        ...session,
+        messages: buildMessagesCollection(deduplicateMessages(newList)),
+      });
+    }
     // Content-match guard: if the arriving message has a canonical `msg_*` ID,
     // replace a matching local copy or skip a matching canonical assistant copy.
     if (hasCanonicalId(normalizedMsg.id)) {

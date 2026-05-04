@@ -224,6 +224,7 @@ describe("handleDeliverEvents", () => {
         call(effect, next) {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage) return { success: false, error: "fail" };
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
           // Resolve delay() immediately to avoid test timeout
           if (isDelayEffect(effect)) return undefined;
           return next();
@@ -235,6 +236,15 @@ describe("handleDeliverEvents", () => {
         },
       })
       .put.actionType(recordDeliveryFailure.type)
+      .call(dispatchWorkspaceEvent, "agent:event-delivery-failed", WS, {
+        type: "agent",
+        id: AGENT,
+      }, {
+        targetAgentId: AGENT,
+        eventCount: 1,
+        eventTypes: ["file:changed"],
+        error: "fail",
+      })
       .run({ timeout: 5000 });
   });
 
@@ -252,6 +262,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage)
             return new Promise(() => {}); // never resolves
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
@@ -263,6 +274,15 @@ describe("handleDeliverEvents", () => {
       })
       .put.actionType(enqueueEvent.type)
       .put.actionType(recordDeliveryTimeout.type)
+      .call(dispatchWorkspaceEvent, "agent:event-delivery-timeout", WS, {
+        type: "agent",
+        id: AGENT,
+      }, {
+        targetAgentId: AGENT,
+        eventCount: 1,
+        eventTypes: ["file:changed"],
+        timeoutMs: 30000,
+      })
       .not.put.actionType(recordDeliveryFailure.type)
       .not.put.actionType(recordDeliverySuccess.type)
       .run({ timeout: 5000 });
@@ -283,6 +303,7 @@ describe("handleDeliverEvents", () => {
         call(effect, next) {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage) return deferred.promise;
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
@@ -328,6 +349,7 @@ describe("handleDeliverEvents", () => {
         call(effect, next) {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage) return deferred.promise;
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
@@ -568,10 +590,11 @@ describe("handleDelegationGroupDelivery", () => {
     delivered: false,
   };
 
-  it("delivers events when group is complete and parent idle", () => {
+  it("delivers events when group is complete and parent idle", async () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
+    const dispatchCalls: unknown[][] = [];
 
-    return expectSaga(handleDelegationGroupDelivery, action)
+    await expectSaga(handleDelegationGroupDelivery, action)
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
@@ -584,7 +607,10 @@ describe("handleDelegationGroupDelivery", () => {
         call(effect, next) {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage) return { success: true };
-          if (effect.fn === dispatchWorkspaceEvent) return undefined;
+          if (effect.fn === dispatchWorkspaceEvent) {
+            dispatchCalls.push(effect.args);
+            return undefined;
+          }
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
@@ -597,10 +623,13 @@ describe("handleDelegationGroupDelivery", () => {
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
       .run();
+
+    expect(dispatchCalls.filter(([type]) => type === "agent:woken-by-subscription")).toHaveLength(1);
   });
 
-  it("re-enqueues events when delivery fails so they are not lost", () => {
+  it("re-enqueues events when delivery fails so they are not lost", async () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
+    const dispatchCalls: unknown[][] = [];
 
     // Use a tracker with identifiable events so we can verify re-enqueue
     const trackerWithEvents = {
@@ -611,7 +640,7 @@ describe("handleDelegationGroupDelivery", () => {
       ],
     };
 
-    return expectSaga(handleDelegationGroupDelivery, action)
+    await expectSaga(handleDelegationGroupDelivery, action)
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
@@ -624,6 +653,10 @@ describe("handleDelegationGroupDelivery", () => {
         call(effect, next) {
           if (effect.fn === formatNotification) return "Event notification";
           if (effect.fn === sendBackendMessage) return { success: false, error: "fail" };
+          if (effect.fn === dispatchWorkspaceEvent) {
+            dispatchCalls.push(effect.args);
+            return undefined;
+          }
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
@@ -639,6 +672,52 @@ describe("handleDelegationGroupDelivery", () => {
       .put(removeDelegationGroup(WS, "group-1"))
       .put(removeSubscription(WS, "sub-1"))
       .run({ timeout: 10000 });
+
+    expect(dispatchCalls.filter(([type]) => type === "agent:woken-by-subscription")).toHaveLength(0);
+  });
+
+  it("does not emit a wake event when delegation delivery times out", async () => {
+    const action = requestDelegationGroupDelivery(WS, "group-1");
+    const dispatchCalls: unknown[][] = [];
+    const trackerWithEvents = {
+      ...tracker,
+      events: [
+        { id: "evt-1", type: "agent:completed", data: {}, timestamp: new Date().toISOString(), workspaceId: WS } as unknown as Record<string, unknown>,
+      ],
+    };
+
+    await expectSaga(handleDelegationGroupDelivery, action)
+      .withState({ agentSubscriptions: { byWorkspaceId: {} } })
+      .provide({
+        select(effect, next) {
+          if (effect.selector === selectDelegationGroupRaw) return trackerWithEvents;
+          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectAgentStatus.select) return "idle";
+          if (effect.selector === selectIsAgentDeleted.select) return false;
+          return next();
+        },
+        call(effect, next) {
+          if (effect.fn === formatNotification) return "Event notification";
+          if (effect.fn === sendBackendMessage) return { success: true };
+          if (effect.fn === dispatchWorkspaceEvent) {
+            dispatchCalls.push(effect.args);
+            return undefined;
+          }
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+        race() {
+          return { result: undefined, timeout: true };
+        },
+      })
+      .put(markDelegationDelivered(WS, "group-1"))
+      .call.fn(handleDeliverEvents)
+      .put.actionType(recordDeliveryTimeout.type)
+      .put(removeDelegationGroup(WS, "group-1"))
+      .put(removeSubscription(WS, "sub-1"))
+      .run({ timeout: 10000 });
+
+    expect(dispatchCalls.filter(([type]) => type === "agent:woken-by-subscription")).toHaveLength(0);
   });
 
   it("skips already-delivered groups", () => {
@@ -982,9 +1061,18 @@ describe("handleValidateSubscriptions", () => {
         [matchers.select(selectWorkspaceSubscriptionState.select, WS), ws],
         // Verify the call receives both agentId AND wsId
         [matchers.call(isAgentSessionActive, "agent-1", WS), true],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
       ])
       // Agent is active so no removals should happen
       .not.put.actionType(removeAllSubscriptions.type)
+      .call(dispatchWorkspaceEvent, "agent:subscriptions-restored", WS, {
+        type: "system",
+        id: "subscription-service",
+        name: "Subscription Service",
+      }, {
+        count: 1,
+        agentIds: ["agent-1"],
+      })
       .run();
   });
 });
@@ -1107,7 +1195,10 @@ describe("handleMatchEvent", () => {
     "agent:subscribed",
     "agent:unsubscribed",
     "agent:subscriptions-changed",
-  ])("skips %s events (remaining internal events not tested above)", (eventType) => {
+    "agent:event-delivery-timeout",
+    "agent:event-delivery-failed",
+    "agent:subscriptions-restored",
+  ])("skips %s events for broad agent:* subscriptions", (eventType) => {
     const event = makeEvent("e1", eventType);
     (event as any).workspaceId = WS;
     const sub = makeSub({

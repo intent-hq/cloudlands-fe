@@ -353,6 +353,14 @@ export function setupFileIPC() {
             // Emit file change event for immediate UI update
             if (validated.workspaceId) {
               try {
+                sendToWorkspaceWindows(validated.workspaceId, 'file:content-changed', {
+                  workspaceId: validated.workspaceId,
+                  path: validated.path,
+                  relativePath: validated.path,
+                  content: validated.content,
+                  source: 'user',
+                });
+
                 sendToWorkspaceWindows(
                   validated.workspaceId,
                   IPC_CHANNELS.FILE_TRACKING.AGENT_FILE_CHANGED,
@@ -443,6 +451,14 @@ export function setupFileIPC() {
             // Emit file change event for immediate UI update if workspaceId provided
             if (validated.workspaceId) {
               try {
+                sendToWorkspaceWindows(validated.workspaceId, 'file:content-changed', {
+                  workspaceId: validated.workspaceId,
+                  path: validated.path,
+                  relativePath: validated.path,
+                  content: validated.content,
+                  source: 'user',
+                });
+
                 sendToWorkspaceWindows(
                   validated.workspaceId,
                   IPC_CHANNELS.FILE_TRACKING.AGENT_FILE_CHANGED,
@@ -1236,111 +1252,5 @@ export function setupFileIPC() {
       },
       FILE_CHANNELS.GET_DIRECTORY_STATUS,
     ),
-  );
-
-  // File watch implementation for real-time external change detection
-  setupFileWatchIPC();
-}
-
-// Store active file watchers keyed by workspaceId:filePath
-const activeFileWatchers = new Map<string, { watcher: any; cleanup: () => void }>();
-
-/**
- * Set up IPC handlers for file watching
- * This enables the renderer to watch specific files for external changes
- */
-function setupFileWatchIPC() {
-  // Start watching a file
-  ipcMain.handle(
-    IPC_CHANNELS.FILE.WATCH,
-    async (_, data: { workspaceId: string; filePath: string }) => {
-      try {
-        const { workspaceId, filePath } = data;
-        const watchKey = `${workspaceId}:${filePath}`;
-
-        // Don't create duplicate watchers
-        if (activeFileWatchers.has(watchKey)) {
-          logger.debug('File watcher already active', { watchKey });
-          return { success: true, data: { alreadyWatching: true } };
-        }
-
-        // Dynamically import chokidar to avoid startup cost
-        const { watch } = await import('chokidar');
-
-        const watcher = watch(filePath, {
-          persistent: true,
-          ignoreInitial: true,
-          usePolling: process.platform === 'linux',
-          ...(process.platform === 'linux' ? { interval: 500 } : {}),
-          awaitWriteFinish: {
-            stabilityThreshold: 200,
-            pollInterval: 100,
-          },
-        });
-
-        watcher.on('change', async (changedPath: string) => {
-          logger.debug('File changed externally', { filePath: changedPath, workspaceId });
-
-          try {
-            // Read the updated content
-            const content = await fs.readFile(changedPath, 'utf-8');
-
-            // Emit to windows viewing this workspace
-            sendToWorkspaceWindows(workspaceId, `file:content-changed:${workspaceId}`, {
-              path: filePath,
-              relativePath: path.basename(filePath),
-              content,
-              source: 'external',
-              workspaceId,
-            });
-          } catch (readError) {
-            logger.warn('Could not read changed file', {
-              filePath: changedPath,
-              error: (readError as Error).message,
-            });
-          }
-        });
-
-        watcher.on('error', (error: unknown) => {
-          logger.error('File watcher error', { filePath, error: (error as Error).message });
-        });
-
-        const cleanup = () => {
-          watcher.close();
-          activeFileWatchers.delete(watchKey);
-        };
-
-        activeFileWatchers.set(watchKey, { watcher, cleanup });
-        logger.info('Started watching file', { filePath, workspaceId });
-
-        return { success: true, data: { watching: true } };
-      } catch (error) {
-        logger.error('Failed to start file watcher', error as Error);
-        return { success: false, error: (error as Error).message };
-      }
-    },
-  );
-
-  // Stop watching a file
-  ipcMain.handle(
-    IPC_CHANNELS.FILE.UNWATCH,
-    async (_, data: { workspaceId: string; filePath: string }) => {
-      try {
-        const { workspaceId, filePath } = data;
-        const watchKey = `${workspaceId}:${filePath}`;
-
-        const entry = activeFileWatchers.get(watchKey);
-        if (entry) {
-          entry.cleanup();
-          logger.info('Stopped watching file', { filePath, workspaceId });
-          return { success: true, data: { unwatched: true } };
-        }
-
-        return { success: true, data: { wasNotWatching: true } };
-      } catch (error) {
-        logger.error('Failed to stop file watcher', error as Error);
-        return { success: false, error: (error as Error).message };
-      }
-    },
   );
 }

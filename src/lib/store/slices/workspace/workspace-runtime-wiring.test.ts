@@ -23,7 +23,7 @@ describe('workspace recency runtime wiring', () => {
   it('persists recency through the workspace saga on record and cleanup actions', () => {
     expect(WORKSPACE_SAGA_SOURCE).toContain('yield* call(setLocalStorageJSON, WORKSPACE_RECENCY_STORAGE_KEY, recency);');
     expect(WORKSPACE_SAGA_SOURCE).toContain(
-      'yield* takeEvery([recordWorkspaceView.type, cleanupRecency.type], persistWorkspaceRecency);',
+      'yield* takeEvery([recordWorkspaceView, cleanupRecency], persistWorkspaceRecency);',
     );
   });
 

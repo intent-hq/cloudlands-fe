@@ -127,6 +127,8 @@ vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectSelectedModel: () => selectedModel$,
   selectAvailableModels: () => availableModels$,
+  selectModelFallbackInfo: () => writable(null),
+  selectModelPickerCollapsedGroups: () => writable([]),
   selectIsLoadingModels: () => isLoadingModels$,
   selectLoadError: () => writable(null),
 }));

@@ -17,6 +17,36 @@ export interface FontOption {
   fontFamily: string;
 }
 
+export interface ActivityLogFiltersPreference {
+  showFileChanges: boolean;
+  showAgentActivity: boolean;
+  showSystemEvents: boolean;
+  showErrors: boolean;
+  searchQuery: string;
+  dateRange: string;
+  actorFilter: string;
+}
+
+export interface ActivityLogPresetPreference {
+  name: string;
+  filters: ActivityLogFiltersPreference;
+}
+
+export interface PromoBannerInteraction {
+  type: "button_click" | "dismiss";
+  buttonText?: string;
+  actionType?: string;
+  result: "success" | "error" | "navigated_to_settings";
+  timestamp: string;
+}
+
+export interface PromoBannerInteractionRecord {
+  dismissed: boolean;
+  dismissedAt?: string;
+  completedAllSteps?: boolean;
+  interactions: PromoBannerInteraction[];
+}
+
 export type UserPreferencesState = {
   betaUpdatesEnabled: boolean;
   spellcheckEnabled: boolean;
@@ -32,6 +62,8 @@ export type UserPreferencesState = {
   soundEnabled: boolean;
   soundOnlyWhenUnfocused: boolean;
   volume: number;
+  activityLogPresets: ActivityLogPresetPreference[];
+  promoBannerInteractions: Record<string, PromoBannerInteractionRecord>;
 };
 
 export type FontSettingsState = Pick<
@@ -67,6 +99,8 @@ export const initialState: UserPreferencesState = {
   hasCompletedProviderSetup: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
+  activityLogPresets: [],
+  promoBannerInteractions: {},
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -136,6 +170,33 @@ export const setVolume = createAction<[value: number]>(
 export const resetNotificationSettings = createAction(
   "notificationSettings/resetNotificationSettings"
 );
+
+export const hydrateActivityLogPresets = createAction<[presets: ActivityLogPresetPreference[]]>(
+  "userPreferences/hydrateActivityLogPresets"
+);
+
+export const saveActivityLogPreset = createAction<[preset: ActivityLogPresetPreference]>(
+  "userPreferences/saveActivityLogPreset"
+);
+
+export const deleteActivityLogPreset = createAction<[index: number]>(
+  "userPreferences/deleteActivityLogPreset"
+);
+
+export const hydratePromoBannerInteractions = createAction<[
+  interactions: Record<string, PromoBannerInteractionRecord>,
+]>("userPreferences/hydratePromoBannerInteractions");
+
+export const recordPromoBannerInteraction = createAction<[
+  bannerId: string,
+  interaction: PromoBannerInteraction,
+]>("userPreferences/recordPromoBannerInteraction");
+
+export const dismissPromoBanner = createAction<[
+  bannerId: string,
+  dismissedAt: string,
+  completedAllSteps: boolean,
+]>("userPreferences/dismissPromoBanner");
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: "userPreferences",
@@ -231,4 +292,49 @@ export const userPreferencesReducer = hasCompletedProviderSetupPreference.regist
 	.with(resetNotificationSettings, (state) => ({
 	  ...state,
 	  ...notificationSettingsInitialState,
-	}));
+		}))
+  .with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
+    ...state,
+    activityLogPresets: presets,
+  }))
+  .with(saveActivityLogPreset, (state, { payload: [preset] }) => ({
+    ...state,
+    activityLogPresets: [...state.activityLogPresets, preset],
+  }))
+  .with(deleteActivityLogPreset, (state, { payload: [index] }) => ({
+    ...state,
+    activityLogPresets: state.activityLogPresets.filter((_, i) => i !== index),
+  }))
+  .with(hydratePromoBannerInteractions, (state, { payload: [interactions] }) => ({
+    ...state,
+    promoBannerInteractions: interactions,
+  }))
+  .with(recordPromoBannerInteraction, (state, { payload: [bannerId, interaction] }) => {
+    const record = state.promoBannerInteractions[bannerId] ?? { dismissed: false, interactions: [] };
+    return {
+      ...state,
+      promoBannerInteractions: {
+        ...state.promoBannerInteractions,
+        [bannerId]: { ...record, interactions: [...record.interactions, interaction] },
+      },
+    };
+  })
+  .with(dismissPromoBanner, (state, { payload: [bannerId, dismissedAt, completedAllSteps] }) => {
+    const record = state.promoBannerInteractions[bannerId] ?? { dismissed: false, interactions: [] };
+    return {
+      ...state,
+      promoBannerInteractions: {
+        ...state.promoBannerInteractions,
+        [bannerId]: {
+          ...record,
+          dismissed: true,
+          dismissedAt,
+          completedAllSteps,
+          interactions: [
+            ...record.interactions,
+            { type: "dismiss", result: "success", timestamp: dismissedAt },
+          ],
+        },
+      },
+    };
+  });

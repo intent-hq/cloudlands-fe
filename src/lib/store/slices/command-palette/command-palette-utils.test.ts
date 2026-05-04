@@ -2,16 +2,13 @@
  * @vitest-environment jsdom
  */
 
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   fuzzyScore,
   formatRelativeTime,
   parseQueryFilter,
   buildNoteBreadcrumbs,
   buildRecentItems,
-  getMRUEntries,
-  saveMRUEntries,
-  recordMRUItem,
   type WorkspaceObject,
 } from "./command-palette-utils";
 import type { Note } from "$shared/types";
@@ -46,7 +43,6 @@ describe("fuzzyScore", () => {
     expect(boundaryScore).toBeGreaterThan(midScore);
   });
 });
-
 // ── parseQueryFilter ───────────────────────────────────────────────────────
 
 describe("parseQueryFilter", () => {
@@ -114,67 +110,39 @@ describe("buildNoteBreadcrumbs", () => {
   });
 });
 
-// ── MRU helpers ────────────────────────────────────────────────────────────
-
-describe("MRU helpers", () => {
-  let store: Record<string, string>;
-
-  beforeEach(() => {
-    store = {};
-    // Override the vi.fn() mocks from test-setup with working implementations
-    vi.spyOn(localStorage, "getItem").mockImplementation((key: string) => store[key] ?? null);
-    vi.spyOn(localStorage, "setItem").mockImplementation((key: string, value: string) => { store[key] = value; });
-    vi.spyOn(localStorage, "removeItem").mockImplementation((key: string) => { delete store[key]; });
-    vi.spyOn(localStorage, "clear").mockImplementation(() => { store = {}; });
-  });
-
-  it("getMRUEntries returns empty array when no data", () => {
-    expect(getMRUEntries()).toEqual([]);
-  });
-
-  it("saveMRUEntries + getMRUEntries round-trips", () => {
-    const entries = [{ type: "agent" as const, id: "a1", timestamp: 100 }];
-    saveMRUEntries(entries);
-    expect(getMRUEntries()).toEqual(entries);
-  });
-
-  it("recordMRUItem adds to front and deduplicates", () => {
-    recordMRUItem("agent", "a1");
-    recordMRUItem("note", "n1");
-    recordMRUItem("agent", "a1"); // duplicate
-    const entries = getMRUEntries();
-    expect(entries[0].id).toBe("a1");
-    expect(entries[1].id).toBe("n1");
-    expect(entries.length).toBe(2);
-  });
-});
-
 // ── buildRecentItems ───────────────────────────────────────────────────────
 
 describe("buildRecentItems", () => {
-  let store: Record<string, string>;
-
-  beforeEach(() => {
-    store = {};
-    vi.spyOn(localStorage, "getItem").mockImplementation((key: string) => store[key] ?? null);
-    vi.spyOn(localStorage, "setItem").mockImplementation((key: string, value: string) => { store[key] = value; });
-  });
-
   it("returns empty when no MRU data", () => {
     const objects: WorkspaceObject[] = [
       { id: "a1", type: "agent", label: "Agent 1", icon: null },
     ];
-    expect(buildRecentItems(objects)).toEqual([]);
+    expect(buildRecentItems(objects, [])).toEqual([]);
   });
 
   it("matches MRU entries to workspace objects", () => {
-    saveMRUEntries([{ type: "agent", id: "a1", timestamp: 100 }]);
     const objects: WorkspaceObject[] = [
       { id: "a1", type: "agent", label: "Agent 1", icon: null },
     ];
-    const recent = buildRecentItems(objects);
+    const recent = buildRecentItems(objects, [{ type: "agent", id: "a1", timestamp: 100 }]);
     expect(recent).toHaveLength(1);
     expect(recent[0].id).toBe("a1");
+  });
+
+  it("skips stale MRU entries before capping recent items", () => {
+    const objects: WorkspaceObject[] = [
+      { id: "a1", type: "agent", label: "Agent 1", icon: null },
+      { id: "a2", type: "agent", label: "Agent 2", icon: null },
+      { id: "a3", type: "agent", label: "Agent 3", icon: null },
+    ];
+    const recent = buildRecentItems(objects, [
+      { type: "agent", id: "missing", timestamp: 400 },
+      { type: "agent", id: "a1", timestamp: 300 },
+      { type: "agent", id: "a2", timestamp: 200 },
+      { type: "agent", id: "a3", timestamp: 100 },
+    ]);
+
+    expect(recent.map((item) => item.id)).toEqual(["a1", "a2", "a3"]);
   });
 });
 

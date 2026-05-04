@@ -40,55 +40,6 @@
     return h;
   }
 
-  /**
-   * Shared theme-change subscription for all DiffViewer instances.
-   *
-   * Previously every DiffViewer's onMount attached its own `theme-changed`
-   * window listener AND a MutationObserver on `<html>`. Opening a 40-file
-   * commit meant ~40 observers all watching the same element for the same
-   * class change. This singleton installs exactly one listener + one
-   * observer and fans out to the set of active subscribers.
-   */
-  type ThemeSubscriber = () => void;
-  const themeSubscribers = new Set<ThemeSubscriber>();
-  let themeWindowListener: (() => void) | undefined;
-  let themeMutationObserver: MutationObserver | undefined;
-
-  function notifyThemeSubscribers() {
-    for (const cb of themeSubscribers) cb();
-  }
-
-  function installSharedThemeListeners() {
-    if (typeof window === 'undefined') return;
-    if (themeWindowListener || themeMutationObserver) return;
-
-    themeWindowListener = () => notifyThemeSubscribers();
-    window.addEventListener('theme-changed', themeWindowListener);
-
-    themeMutationObserver = new MutationObserver(() => notifyThemeSubscribers());
-    themeMutationObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-  }
-
-  function teardownSharedThemeListeners() {
-    if (themeWindowListener && typeof window !== 'undefined') {
-      window.removeEventListener('theme-changed', themeWindowListener);
-    }
-    themeWindowListener = undefined;
-    themeMutationObserver?.disconnect();
-    themeMutationObserver = undefined;
-  }
-
-  function subscribeDiffThemeChange(cb: ThemeSubscriber): () => void {
-    themeSubscribers.add(cb);
-    if (themeSubscribers.size === 1) installSharedThemeListeners();
-    return () => {
-      themeSubscribers.delete(cb);
-      if (themeSubscribers.size === 0) teardownSharedThemeListeners();
-    };
-  }
 </script>
 
 <script lang="ts">
@@ -125,8 +76,8 @@
   import type { PureDiffProps } from './types.js';
   import DiffHeader from './DiffHeader.svelte';
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
-  import { themeManager } from '$lib/utils/theme';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
   import Fa from 'svelte-fa';
   import {
     faSearch,
@@ -241,6 +192,7 @@
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const isDarkTheme = selectIsDarkTheme();
 
   // Performance: Check if content is too large to render
   const contentTooLarge = $derived.by(() => {
@@ -265,17 +217,10 @@
     return totalLines > maxHighlightLines;
   });
 
-  // Detect current theme using ThemeManager for consistency with the app
-  function detectCurrentTheme(): boolean {
-    if (typeof window === 'undefined') return true;
-    return themeManager.isDark();
-  }
-
   // State
   let containerRef: HTMLDivElement | undefined = $state();
   let fileDiffInstance: FileDiff | undefined = $state();
   let collapsed = $state(false);
-  let isDarkMode = $state(detectCurrentTheme());
 
   // Search state
   let searchOpen = $state(false);
@@ -420,8 +365,8 @@
         dark: 'github-dark',
         light: 'github-light',
       },
-      // Use the app's theme setting instead of OS preference
-      themeType: (isDarkMode ? 'dark' : 'light') as ThemeTypes,
+      // Use the Redux-backed app theme setting instead of OS preference
+      themeType: ($isDarkTheme ? 'dark' : 'light') as ThemeTypes,
       unsafeCSS: getUnsafeCSS(unsafeCSS),
     };
   }
@@ -726,7 +671,7 @@
       enableLineSelection,
       enableHoverUtility,
       shouldDisableHighlighting,
-      isDarkMode,
+      $isDarkTheme,
       unsafeCSS ?? '',
     ].join('|');
   }
@@ -774,31 +719,16 @@
     }
   });
 
-  // Theme change listener cleanup function
-  let themeCleanup: (() => void) | undefined;
-
-  // Subscribe to the shared theme-change singleton (Wave 5d).
-  // The singleton owns the single window listener + MutationObserver and
-  // fans out to all mounted DiffViewer instances.
-  onMount(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleThemeChange = () => {
-      const newTheme = detectCurrentTheme();
-      if (newTheme !== isDarkMode) {
-        isDarkMode = newTheme;
-        if (fileDiffInstance) {
-          fileDiffInstance.setThemeType(newTheme ? 'dark' : 'light');
-        }
-      }
-    };
-
-    themeCleanup = subscribeDiffThemeChange(handleThemeChange);
+  // Keep FileDiff in sync with the Redux-backed app theme.
+  $effect(() => {
+    const dark = $isDarkTheme;
+    if (fileDiffInstance) {
+      fileDiffInstance.setThemeType(dark ? 'dark' : 'light');
+    }
   });
 
   // Cleanup on destroy
   onDestroy(() => {
-    themeCleanup?.();
     fileDiffInstance?.cleanUp();
   });
 </script>

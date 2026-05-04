@@ -105,7 +105,7 @@ describe("tabState sagas", () => {
     const firstEffect = iterator.next().value as any;
     expect(firstEffect.type).toBe("FORK");
     expect(firstEffect.payload.args).toEqual([
-      [saveScrollPosition.type, removeScrollPosition.type, clearForWorkspace.type],
+      [saveScrollPosition, removeScrollPosition, clearForWorkspace],
       persistScrollPositionsState,
     ]);
 
@@ -113,19 +113,19 @@ describe("tabState sagas", () => {
     expect(secondEffect.type).toBe("FORK");
     expect(secondEffect.payload.args).toEqual([
       [
-        openWorkspaceTab.type,
-        closeWorkspaceTab.type,
-        clearCurrentWorkspaceTab.type,
-        cleanupInvalidWorkspaceTabs.type,
-        toggleWorkspaceTabPin.type,
-        markWorkspaceTabUnsaved.type,
-        reorderWorkspaceTabs.type,
-        markWorkspaceTabOptimistic.type,
-        unmarkWorkspaceTabOptimistic.type,
-        handleOptimisticWorkspaceTabTransition.type,
-        switchToNextWorkspaceTab.type,
-        switchToPreviousWorkspaceTab.type,
-        switchToWorkspaceTabByIndex.type,
+        openWorkspaceTab,
+        closeWorkspaceTab,
+        clearCurrentWorkspaceTab,
+        cleanupInvalidWorkspaceTabs,
+        toggleWorkspaceTabPin,
+        markWorkspaceTabUnsaved,
+        reorderWorkspaceTabs,
+        markWorkspaceTabOptimistic,
+        unmarkWorkspaceTabOptimistic,
+        handleOptimisticWorkspaceTabTransition,
+        switchToNextWorkspaceTab,
+        switchToPreviousWorkspaceTab,
+        switchToWorkspaceTabByIndex,
       ],
       persistWorkspaceTabsState,
     ]);

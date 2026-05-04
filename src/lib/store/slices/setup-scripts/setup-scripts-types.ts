@@ -20,5 +20,7 @@ export type SetupScript = {
 export type SetupScriptsState = {
   scripts: Collection<SetupScript, "id">;
   pendingDeletions: Record<string, true>;
+  isBannerDismissedGlobally: boolean;
+  bannerDismissedByWorkspaceId: Record<string, true>;
 };
 

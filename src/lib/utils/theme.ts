@@ -1,8 +1,12 @@
 import { parseVSCodeTheme, type ParsedVSCodeTheme } from './vscode-theme-parser';
 import { applyCustomMonacoTheme, revertMonacoTheme } from './monaco-theme';
 import { dispatchWindowEvent } from './window-events';
+import { safeLocalStorage } from './safe-storage';
 
 export type Theme = 'light' | 'dark' | 'system';
+export type SetThemeOptions = {
+  persist?: boolean;
+};
 
 const CUSTOM_THEME_STORAGE_KEY = 'custom-vscode-theme';
 const PRESET_ID_STORAGE_KEY = 'theme-preset-id';
@@ -46,39 +50,39 @@ export class ThemeManager {
   }
 
   private loadTheme() {
-    const stored = localStorage.getItem('theme') as Theme;
+    const stored = safeLocalStorage.getItem('theme') as Theme | null;
     if (stored) {
       this.currentTheme = stored;
     }
 
     // Restore persisted preset ID
-    this.activePresetId = localStorage.getItem(PRESET_ID_STORAGE_KEY);
+    this.activePresetId = safeLocalStorage.getItem(PRESET_ID_STORAGE_KEY);
 
     // Restore persisted preset set (dark + light variants)
-    const presetSetJSON = localStorage.getItem(PRESET_SET_STORAGE_KEY);
+    const presetSetJSON = safeLocalStorage.getItem(PRESET_SET_STORAGE_KEY);
     if (presetSetJSON) {
       try {
         const { dark, light } = JSON.parse(presetSetJSON);
         this.presetDarkTheme = parseVSCodeTheme(dark);
         this.presetLightTheme = parseVSCodeTheme(light);
       } catch {
-        localStorage.removeItem(PRESET_SET_STORAGE_KEY);
+        safeLocalStorage.removeItem(PRESET_SET_STORAGE_KEY);
         this.activePresetId = null;
-        localStorage.removeItem(PRESET_ID_STORAGE_KEY);
+        safeLocalStorage.removeItem(PRESET_ID_STORAGE_KEY);
       }
     }
 
     // Restore persisted user-imported custom theme (non-preset)
     if (!this.presetDarkTheme) {
-      const customJSON = localStorage.getItem(CUSTOM_THEME_STORAGE_KEY);
+      const customJSON = safeLocalStorage.getItem(CUSTOM_THEME_STORAGE_KEY);
       if (customJSON) {
         try {
           const parsed = JSON.parse(customJSON);
           this.customTheme = parseVSCodeTheme(parsed);
         } catch {
-          localStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
+          safeLocalStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
           this.activePresetId = null;
-          localStorage.removeItem(PRESET_ID_STORAGE_KEY);
+          safeLocalStorage.removeItem(PRESET_ID_STORAGE_KEY);
         }
       }
     }
@@ -97,10 +101,13 @@ export class ThemeManager {
     }
   }
 
-  setTheme(theme: Theme) {
+  setTheme(theme: Theme, options: SetThemeOptions = {}) {
     if (!isBrowser) return;
+    const { persist = true } = options;
     this.currentTheme = theme;
-    localStorage.setItem('theme', theme);
+    if (persist) {
+      safeLocalStorage.setItem('theme', theme);
+    }
     this.applyTheme();
   }
 
@@ -123,11 +130,11 @@ export class ThemeManager {
     this.activePresetId = null;
     this.presetDarkTheme = null;
     this.presetLightTheme = null;
-    localStorage.removeItem(PRESET_ID_STORAGE_KEY);
-    localStorage.removeItem(PRESET_SET_STORAGE_KEY);
+    safeLocalStorage.removeItem(PRESET_ID_STORAGE_KEY);
+    safeLocalStorage.removeItem(PRESET_SET_STORAGE_KEY);
 
     // Persist the raw JSON
-    localStorage.setItem(CUSTOM_THEME_STORAGE_KEY, JSON.stringify(json));
+    safeLocalStorage.setJSON(CUSTOM_THEME_STORAGE_KEY, json);
 
     this.applyTheme();
   }
@@ -145,10 +152,10 @@ export class ThemeManager {
 
     // Clear single custom theme
     this.customTheme = null;
-    localStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
+    safeLocalStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
 
-    localStorage.setItem(PRESET_ID_STORAGE_KEY, presetId);
-    localStorage.setItem(PRESET_SET_STORAGE_KEY, JSON.stringify({ dark: darkJSON, light: lightJSON }));
+    safeLocalStorage.setItem(PRESET_ID_STORAGE_KEY, presetId);
+    safeLocalStorage.setJSON(PRESET_SET_STORAGE_KEY, { dark: darkJSON, light: lightJSON });
 
     this.applyTheme();
   }
@@ -163,9 +170,9 @@ export class ThemeManager {
     this.presetDarkTheme = null;
     this.presetLightTheme = null;
     this.activePresetId = null;
-    localStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
-    localStorage.removeItem(PRESET_ID_STORAGE_KEY);
-    localStorage.removeItem(PRESET_SET_STORAGE_KEY);
+    safeLocalStorage.removeItem(CUSTOM_THEME_STORAGE_KEY);
+    safeLocalStorage.removeItem(PRESET_ID_STORAGE_KEY);
+    safeLocalStorage.removeItem(PRESET_SET_STORAGE_KEY);
 
     // Remove CSS variable overrides that were set by the custom theme
     this.removeCSSVariableOverrides();
@@ -272,6 +279,7 @@ export class ThemeManager {
       theme: this.currentTheme,
       isDark,
       customThemeName: activeTheme?.name ?? null,
+      activePresetId: this.activePresetId,
       terminalColors: activeTheme?.terminalColors ?? null,
     });
   }
@@ -322,5 +330,19 @@ export class ThemeManager {
   }
 }
 
-// Export singleton instance
-export const themeManager = ThemeManager.getInstance();
+// Lazy compatibility facade. Importing this module should not construct the singleton;
+// the Redux theme saga is the app-level owner that initializes ThemeManager at startup.
+export const themeManager = {
+  setTheme: (...args: Parameters<ThemeManager['setTheme']>) => ThemeManager.getInstance().setTheme(...args),
+  getTheme: () => ThemeManager.getInstance().getTheme(),
+  setCustomTheme: (...args: Parameters<ThemeManager['setCustomTheme']>) =>
+    ThemeManager.getInstance().setCustomTheme(...args),
+  setPresetTheme: (...args: Parameters<ThemeManager['setPresetTheme']>) =>
+    ThemeManager.getInstance().setPresetTheme(...args),
+  clearCustomTheme: () => ThemeManager.getInstance().clearCustomTheme(),
+  hasCustomTheme: () => ThemeManager.getInstance().hasCustomTheme(),
+  getCustomThemeName: () => ThemeManager.getInstance().getCustomThemeName(),
+  getActivePresetId: () => ThemeManager.getInstance().getActivePresetId(),
+  toggleTheme: () => ThemeManager.getInstance().toggleTheme(),
+  isDark: () => ThemeManager.getInstance().isDark(),
+};

@@ -9,34 +9,43 @@
  * - Periodic sync of agent stats with main process (safety net)
  */
 
-import { all, call, put, takeLatest, delay, fork, take, cancel, cancelled, type SagaGenerator } from "typed-redux-saga";
-import type { Task } from "redux-saga";
-import { invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
-import { Logger } from "$lib/utils/logger";
-import { TRACKING_CONFIG } from "$features/file-tracking/tracking.config";
+import {
+  all,
+  call,
+  put,
+  takeLatest,
+  delay,
+  fork,
+  cancel,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import type { Task } from 'redux-saga';
+import { invokeWithTimeout, IpcTimeoutError } from '$lib/electron-bridge';
+import { Logger } from '$lib/utils/logger';
+import { TRACKING_CONFIG } from '$features/file-tracking/tracking.config';
+import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
 import {
   initWorkspace,
   setLoading,
   setError,
   setHasLoadedInitialData,
   updateAgentStatsBatch,
-} from "../changes-slice";
-import type { LineChangeStats } from "../changes-types";
-import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
-import { selectAllWorkspaceAgents } from "../../workspace-agents/workspace-agents-selectors";
-import { createElectronChannel } from "$lib/store/utils/ipc-channel";
-import { setGitStatus } from "../../git/git-slice";
+} from '../changes-slice';
+import type { LineChangeStats } from '../changes-types';
+import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
+import { setGitStatus } from '../../git/git-slice';
 import {
   doSyncWithGit,
   doLoadWorkspaceData,
   resetTrackingState,
   fileTrackingOperationsSaga,
-} from "./changes-operations-saga";
-import { lineChangesClient } from "$features/line-changes/line-changes.client";
-import { createLogger } from "$lib/utils/client-logger";
+} from './changes-operations-saga';
+import { lineChangesClient } from '$features/line-changes/line-changes.client';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = new Logger({ category: "ChangesSaga" });
-const agentStatsLogger = createLogger("ChangesSaga:AgentStats");
+const logger = new Logger({ category: 'ChangesSaga' });
+const agentStatsLogger = createLogger('ChangesSaga:AgentStats');
 
 const IPC_INIT_TIMEOUT_MS = 10000;
 const config = TRACKING_CONFIG.fileTracking;
@@ -53,47 +62,38 @@ type FileTrackingEvent = {
   filePath?: string;
 };
 
-function* watchChangesUpdated(wsId: string): SagaGenerator<void> {
-  const channel = createElectronChannel<FileTrackingEvent>("file-tracking:changes-updated");
-  try {
-    while (true) {
-      const data = yield* take(channel);
-      if (data.workspaceId !== wsId) continue;
+function* watchChangesUpdated(wsId: string) {
+  yield* takeEveryFromElectronChannel<FileTrackingEvent>(
+    'file-tracking:changes-updated',
+    function* (data) {
+      if (data.workspaceId !== wsId) return;
       yield* delay(config.updateDebounce);
       yield* call(doLoadWorkspaceData, wsId);
-    }
-  } finally {
-    if (yield* cancelled()) channel.close();
-  }
+    },
+  );
 }
 
-function* watchAgentFileChanged(wsId: string): SagaGenerator<void> {
-  const channel = createElectronChannel<FileTrackingEvent>("file-tracking:agent-file-changed");
-  try {
-    while (true) {
-      const data = yield* take(channel);
-      if (data.workspaceId !== wsId) continue;
+function* watchAgentFileChanged(wsId: string) {
+  yield* takeEveryFromElectronChannel<FileTrackingEvent>(
+    'file-tracking:agent-file-changed',
+    function* (data) {
+      if (data.workspaceId !== wsId) return;
       yield* delay(50);
       yield* call(doSyncWithGit, wsId, true);
       yield* call(doLoadWorkspaceData, wsId);
-    }
-  } finally {
-    if (yield* cancelled()) channel.close();
-  }
+    },
+  );
 }
 
-function* watchWorkspaceChanges(wsId: string): SagaGenerator<void> {
-  const channel = createElectronChannel<{ workspaceId?: string }>("workspace-changes");
-  try {
-    while (true) {
-      const data = yield* take(channel);
-      if (data.workspaceId !== wsId) continue;
+function* watchWorkspaceChanges(wsId: string) {
+  yield* takeEveryFromElectronChannel<{ workspaceId?: string }>(
+    'workspace-changes',
+    function* (data) {
+      if (data.workspaceId !== wsId) return;
       yield* delay(config.updateDebounce);
       yield* call(doLoadWorkspaceData, wsId);
-    }
-  } finally {
-    if (yield* cancelled()) channel.close();
-  }
+    },
+  );
 }
 
 function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
@@ -110,7 +110,7 @@ function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
 // ---------------------------------------------------------------------------
 
 function* fetchAgentStatsWorker(
-  agentId: string
+  agentId: string,
 ): SagaGenerator<{ id: string; stats: LineChangeStats } | null> {
   try {
     const stats = yield* call([lineChangesClient, lineChangesClient.getAgentStats], agentId as any);
@@ -130,9 +130,7 @@ export function* syncAgentStatsFromMain() {
     const agents = yield* selectAllWorkspaceAgents.effect(wsId);
     if (agents.length === 0) return;
 
-    const results = yield* all(
-      agents.map((agent) => call(fetchAgentStatsWorker, agent.id))
-    );
+    const results = yield* all(agents.map((agent) => call(fetchAgentStatsWorker, agent.id)));
 
     const batch: Record<string, LineChangeStats> = {};
     for (const result of results) {
@@ -145,7 +143,7 @@ export function* syncAgentStatsFromMain() {
       yield* put(updateAgentStatsBatch(batch));
     }
   } catch (error) {
-    agentStatsLogger.error("Failed to sync agent stats from main process:", error as Error);
+    agentStatsLogger.error('Failed to sync agent stats from main process:', error as Error);
   }
 }
 
@@ -166,7 +164,7 @@ function* periodicAgentStatsSyncSaga() {
 
 function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGenerator<void> {
   const wsId = action.payload[0];
-  logger.info("[ChangesSaga] initWorkspace", { wsId });
+  logger.info('[ChangesSaga] initWorkspace', { wsId });
 
   yield* put(setLoading(wsId, true));
   yield* put(setError(wsId, null));
@@ -179,18 +177,18 @@ function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGen
     try {
       const result = (yield* call(
         invokeWithTimeout,
-        "file-tracking:init",
+        'file-tracking:init',
         { workspaceId: wsId },
-        IPC_INIT_TIMEOUT_MS
+        IPC_INIT_TIMEOUT_MS,
       )) as { success?: boolean; error?: string } | null;
       if (result && !result.success) {
-        logger.warn("File tracking backend init failed", { wsId, error: result.error });
+        logger.warn('File tracking backend init failed', { wsId, error: result.error });
       }
     } catch (error) {
       if (error instanceof IpcTimeoutError) {
-        logger.warn("File tracking init timed out, continuing...", { wsId });
+        logger.warn('File tracking init timed out, continuing...', { wsId });
       } else {
-        logger.error("Failed to init file tracking backend", error as Error, { wsId });
+        logger.error('Failed to init file tracking backend', error as Error, { wsId });
       }
     }
 
@@ -209,12 +207,12 @@ function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGen
     yield* put(setHasLoadedInitialData(wsId, true));
     yield* put(setLoading(wsId, false));
   } catch (error) {
-    logger.error("[ChangesSaga] Unexpected init error", error as Error, { wsId });
+    logger.error('[ChangesSaga] Unexpected init error', error as Error, { wsId });
     const currentWsId = yield* selectActiveWorkspaceId.effect();
     if (currentWsId === wsId) {
       yield* put(setHasLoadedInitialData(wsId, true));
       yield* put(setLoading(wsId, false));
-      yield* put(setError(wsId, error instanceof Error ? error.message : "Failed to initialize"));
+      yield* put(setError(wsId, error instanceof Error ? error.message : 'Failed to initialize'));
     }
   }
 }
@@ -255,4 +253,3 @@ export function* changesSaga(): SagaGenerator<void> {
     })) as unknown as Task;
   });
 }
-

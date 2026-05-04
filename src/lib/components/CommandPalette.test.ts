@@ -14,6 +14,8 @@ const {
   reduxDispatchMock,
   browserRecentUrls,
   createSelectorReadable,
+  paletteMruEntries,
+  paletteFileMru,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -36,6 +38,8 @@ const {
     reduxDispatchMock: vi.fn(),
     browserRecentUrls: { value: [] as any[] },
     createSelectorReadable,
+    paletteMruEntries: { value: [] as any[] },
+    paletteFileMru: { value: {} as Record<string, number> },
   };
 });
 
@@ -55,6 +59,20 @@ vi.mock('$lib/store/slices/browser/browser-slice', () => ({
     type: 'browser/initBrowserWorkspace',
     payload: args,
   })),
+}));
+vi.mock('$lib/store/slices/palette/palette-selectors', () => ({
+  selectPaletteMruEntries: () => ({
+    subscribe: (fn: (value: any[]) => void) => {
+      fn(paletteMruEntries.value);
+      return () => {};
+    },
+  }),
+  selectPaletteFileMru: () => ({
+    subscribe: (fn: (value: Record<string, number>) => void) => {
+      fn(paletteFileMru.value);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
@@ -197,7 +215,8 @@ describe('CommandPalette new actions', () => {
     workspaceItemsState.value = [];
     browserRecentUrls.value = [];
     sessionSessions.value = [];
-    localStorage.clear();
+    paletteMruEntries.value = [];
+    paletteFileMru.value = {};
   });
 
   it('dispatches Redux actions for agent, terminal, note, and file from keyboard', async () => {
@@ -244,7 +263,8 @@ describe('CommandPalette duplicate-key regression', () => {
     workspaceItemsState.value = [];
     browserRecentUrls.value = [];
     sessionSessions.value = [];
-    localStorage.clear();
+    paletteMruEntries.value = [];
+    paletteFileMru.value = {};
   });
 
   it('renders without throwing when the same item appears in Recent and its source group', async () => {
@@ -261,11 +281,8 @@ describe('CommandPalette duplicate-key regression', () => {
       },
     ];
 
-    // Seed MRU so the same agent also appears in the Recent group
-    localStorage.setItem(
-      'palette-mru-all',
-      JSON.stringify([{ type: 'agent', id: agentId, timestamp: Date.now() }]),
-    );
+    // Seed Redux-backed MRU so the same agent also appears in the Recent group
+    paletteMruEntries.value = [{ type: 'agent', id: agentId, timestamp: Date.now() }];
 
     const onClose = vi.fn();
 

@@ -1,7 +1,12 @@
 <script lang="ts">
-  import { logger } from '$lib/utils/client-logger';
-
   import { onMount, onDestroy } from 'svelte';
+  import {
+    requestResizablePanelGroupLayout,
+    setResizablePanelGroupLayout,
+    type ResizablePanelGroupLayoutState,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectResizablePanelGroupLayout } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Panel {
     id: string;
@@ -26,27 +31,24 @@
     children?: any;
   } = $props();
 
-  // Helper function to get initial panel sizes from localStorage
+  const dispatch = getDispatch();
+  const persistedLayout = selectResizablePanelGroupLayout(storageKey ?? '');
+
+  function isPersistedLayoutCompatible(): boolean {
+    return !!$persistedLayout?.sizes && $persistedLayout.sizes.length === panels.length;
+  }
+
+  // Helper function to get initial panel sizes from Redux-owned persisted state.
   function getInitialPanelSizes(): { sizes: number[]; collapsed: Set<string> } {
     if (!panels || panels.length === 0) {
       return { sizes: [], collapsed: new Set() };
     }
 
-    if (typeof window !== 'undefined' && storageKey) {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        try {
-          const { sizes, collapsed } = JSON.parse(saved);
-          if (sizes && sizes.length === panels.length) {
-            return {
-              sizes,
-              collapsed: new Set(collapsed || []),
-            };
-          }
-        } catch (e) {
-          logger.error('Failed to load panel sizes:', e);
-        }
-      }
+    if (storageKey && isPersistedLayoutCompatible()) {
+      return {
+        sizes: $persistedLayout?.sizes ?? [],
+        collapsed: new Set($persistedLayout?.collapsed ?? []),
+      };
     }
 
     // Default: equal distribution among non-collapsed panels
@@ -105,18 +107,24 @@
     collapsedPanels = newValues.collapsed;
   }
 
-  // Save panel sizes to localStorage
   function savePanelSizes() {
     if (storageKey) {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          sizes: panelSizes,
-          collapsed: Array.from(collapsedPanels),
-        }),
-      );
+      dispatch(setResizablePanelGroupLayout(storageKey, {
+        sizes: [...panelSizes],
+        collapsed: Array.from(collapsedPanels),
+      }));
     }
   }
+
+  let appliedPersistedLayout = $state<ResizablePanelGroupLayoutState | undefined>(undefined);
+
+  $effect(() => {
+    const layout = $persistedLayout;
+    if (!storageKey || !layout || !isPersistedLayoutCompatible() || layout === appliedPersistedLayout) return;
+    panelSizes = normalizeSizes(layout.sizes);
+    collapsedPanels = new Set(layout.collapsed);
+    appliedPersistedLayout = layout;
+  });
 
   // Redistribute space when panels collapse/expand while maintaining ratios
 
@@ -345,6 +353,9 @@
 
   // Initialize on mount
   onMount(() => {
+    if (storageKey) {
+      dispatch(requestResizablePanelGroupLayout(storageKey));
+    }
     initializePanelSizes();
     // Set up resize observer
     resizeObserver = new ResizeObserver(handleContainerResize);

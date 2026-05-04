@@ -3,7 +3,11 @@ import { call, delay, fork, takeEvery, takeLatest, type SagaGenerator } from "ty
 import {
   cycleFontStyle,
   cycleNoteFontStyle,
+  deleteActivityLogPreset,
+  dismissPromoBanner,
+  recordPromoBannerInteraction,
   resetNotificationSettings,
+  saveActivityLogPreset,
   setAgentFontStyle,
   setGroupByRepo,
   setHasCompletedProviderSetup,
@@ -26,6 +30,7 @@ import {
 } from "../user-preferences-slice";
 import {
   selectAgentFontStyle,
+  selectActivityLogPresets,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectHasCompletedProviderSetup,
@@ -37,6 +42,7 @@ import {
   selectSpellcheckEnabled,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
+  selectPromoBannerInteractions,
 } from "../user-preferences-selectors";
 import { applyChannel } from "./apply-channel";
 
@@ -49,6 +55,8 @@ const AGENT_STORAGE_KEY = "agent-font-settings";
 const NOTE_STORAGE_KEY = "note-font-settings";
 const CODE_STORAGE_KEY = "code-font-settings";
 const NOTIFICATION_STORAGE_KEY = "notificationSettings";
+export const ACTIVITY_LOG_PRESETS_STORAGE_KEY = "activityLogPresets";
+export const PROMO_BANNER_STORAGE_KEY = "promoBannerInteractions";
 
 async function persistBetaUpdatesToIPC(enabled: boolean): Promise<void> {
   try {
@@ -79,6 +87,16 @@ function* persistCodeFontFamily(fontFamily: string): SagaGenerator<void> {
   yield* call(setLocalStorageJSON, CODE_STORAGE_KEY, { fontFamily });
 }
 
+export function* persistActivityLogPresets(): SagaGenerator<void> {
+  const presets = yield* selectActivityLogPresets.effect();
+  yield* call(setLocalStorageJSON, ACTIVITY_LOG_PRESETS_STORAGE_KEY, presets);
+}
+
+export function* persistPromoBannerInteractions(): SagaGenerator<void> {
+  const interactions = yield* selectPromoBannerInteractions.effect();
+  yield* call(setLocalStorageJSON, PROMO_BANNER_STORAGE_KEY, interactions);
+}
+
 async function persistNotificationSettingsToIPC(
   settings: NotificationSettingsState
 ): Promise<void> {
@@ -96,7 +114,7 @@ async function persistNotificationSettingsToIPC(
 
 function* watchBetaUpdatesPersistence() {
   yield* takeLatest(
-    [setBetaUpdatesEnabled.type, toggleBetaUpdates.type],
+    [setBetaUpdatesEnabled, toggleBetaUpdates],
     function* () {
       const enabled = yield* selectBetaUpdatesEnabled.effect();
       yield* call(persistBetaUpdatesToIPC, enabled);
@@ -107,7 +125,7 @@ function* watchBetaUpdatesPersistence() {
 
 function* watchSpellcheckPersistence() {
   yield* takeEvery(
-    [setSpellcheckEnabled.type, toggleSpellcheck.type],
+    [setSpellcheckEnabled, toggleSpellcheck],
     function* () {
       const enabled = yield* selectSpellcheckEnabled.effect();
       yield* call(persistSpellcheckSettings, enabled);
@@ -116,14 +134,14 @@ function* watchSpellcheckPersistence() {
 }
 
 function* watchShowArchivedPersistence() {
-  yield* takeEvery([setShowArchived.type, toggleShowArchived.type], function* () {
+  yield* takeEvery([setShowArchived, toggleShowArchived], function* () {
     const showArchived = yield* selectShowArchived.effect();
     yield* call(persistBooleanPreference, SHOW_ARCHIVED_STORAGE_KEY, showArchived);
   });
 }
 
 function* watchGroupByRepoPersistence() {
-  yield* takeEvery([setGroupByRepo.type, toggleGroupByRepo.type], function* () {
+  yield* takeEvery([setGroupByRepo, toggleGroupByRepo], function* () {
     const groupByRepo = yield* selectGroupByRepo.effect();
     yield* call(persistBooleanPreference, GROUP_BY_REPO_STORAGE_KEY, groupByRepo);
   });
@@ -131,7 +149,7 @@ function* watchGroupByRepoPersistence() {
 
 function* watchHasCompletedProviderSetupPersistence() {
   yield* takeEvery(
-    [setHasCompletedProviderSetup.type, toggleHasCompletedProviderSetup.type],
+    [setHasCompletedProviderSetup, toggleHasCompletedProviderSetup],
     function* () {
       const hasCompletedProviderSetup = yield* selectHasCompletedProviderSetup.effect();
       yield* call(
@@ -144,21 +162,21 @@ function* watchHasCompletedProviderSetupPersistence() {
 }
 
 function* watchAgentFontStylePersistence() {
-  yield* takeEvery([setAgentFontStyle.type, cycleFontStyle.type], function* () {
+  yield* takeEvery([setAgentFontStyle, cycleFontStyle], function* () {
     const fontStyle = yield* selectAgentFontStyle.effect();
     yield* call(persistFontStyle, AGENT_STORAGE_KEY, fontStyle);
   });
 }
 
 function* watchNoteFontStylePersistence() {
-  yield* takeEvery([setNoteFontStyle.type, cycleNoteFontStyle.type], function* () {
+  yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], function* () {
     const fontStyle = yield* selectNoteFontStyle.effect();
     yield* call(persistFontStyle, NOTE_STORAGE_KEY, fontStyle);
   });
 }
 
 function* watchCodeFontFamilyPersistence() {
-  yield* takeEvery(setCodeFontFamily.type, function* () {
+  yield* takeEvery(setCodeFontFamily, function* () {
     const fontFamily = yield* selectCodeFontFamily.effect();
     yield* call(persistCodeFontFamily, fontFamily);
   });
@@ -167,11 +185,11 @@ function* watchCodeFontFamilyPersistence() {
 function* watchNotificationSettingsPersistence() {
   yield* takeLatest(
     [
-      setNotificationEnabled.type,
-      setSoundEnabled.type,
-      setSoundOnlyWhenUnfocused.type,
-      setVolume.type,
-      resetNotificationSettings.type,
+      setNotificationEnabled,
+      setSoundEnabled,
+      setSoundOnlyWhenUnfocused,
+      setVolume,
+      resetNotificationSettings,
     ],
     function* () {
       yield* delay(100);
@@ -189,6 +207,17 @@ function* watchNotificationSettingsPersistence() {
   );
 }
 
+function* watchActivityLogPresetPersistence() {
+  yield* takeEvery([saveActivityLogPreset, deleteActivityLogPreset], persistActivityLogPresets);
+}
+
+function* watchPromoBannerPersistence() {
+  yield* takeEvery(
+    [recordPromoBannerInteraction, dismissPromoBanner],
+    persistPromoBannerInteractions
+  );
+}
+
 export function* persistenceUserPreferencesSaga() {
   yield* fork(watchBetaUpdatesPersistence);
   yield* fork(watchSpellcheckPersistence);
@@ -199,4 +228,6 @@ export function* persistenceUserPreferencesSaga() {
   yield* fork(watchNoteFontStylePersistence);
   yield* fork(watchCodeFontFamilyPersistence);
   yield* fork(watchNotificationSettingsPersistence);
+  yield* fork(watchActivityLogPresetPersistence);
+  yield* fork(watchPromoBannerPersistence);
 }

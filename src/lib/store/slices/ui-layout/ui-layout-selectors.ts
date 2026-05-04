@@ -1,5 +1,11 @@
 import { createSelector } from "../../utils/create-selector";
-import { defaultPanelVisibility, type PanelVisibilityState, type DockViewMode } from "./ui-layout-slice";
+import {
+  defaultPanelVisibility,
+  type PanelVisibilityState,
+  type DockViewMode,
+  type ResizablePanelGroupLayoutState,
+  type WorkspaceSidebarPanelLayoutState,
+} from "./ui-layout-slice";
 
 export const selectLineWrapping = createSelector((state) => {
   return state.uiLayout.lineWrapping;
@@ -19,6 +25,10 @@ export const selectDiffIndicators = createSelector((state) => {
 
 export const selectSidebarWidth = createSelector((state) => {
   return state.uiLayout.sidebarWidth;
+});
+
+export const selectSidebarExpandedWidth = createSelector((state) => {
+  return state.uiLayout.sidebarExpandedWidth;
 });
 
 export const selectIsCollapsed = createSelector((state) => {
@@ -73,4 +83,22 @@ export const selectBottomDockActiveTerminalId = createSelector<[], string | null
 
 export const selectBottomDockHeight = createSelector((state) => {
   return state.uiLayout.bottomDock.height;
+});
+
+export const selectResizablePanelSize = createSelector<[key: string], number | undefined>((state, key) => {
+  return state.uiLayout.resizablePanelSizes[key];
+});
+
+export const selectResizablePanelGroupLayout = createSelector<[
+  key: string,
+], ResizablePanelGroupLayoutState | undefined>((state, key) => {
+  return state.uiLayout.resizablePanelGroupLayouts[key];
+});
+
+export const selectCollapsiblePanelCollapsed = createSelector<[key: string], boolean | undefined>((state, key) => {
+  return state.uiLayout.collapsiblePanelCollapsed[key];
+});
+
+export const selectWorkspaceSidebarPanelLayout = createSelector<[], WorkspaceSidebarPanelLayoutState>((state) => {
+  return state.uiLayout.workspaceSidebarPanelLayout;
 });

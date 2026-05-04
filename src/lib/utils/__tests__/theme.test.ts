@@ -85,6 +85,8 @@ describe('ThemeManager custom theme support', () => {
     // Reset localStorage mock returns
     const ls = getLocalStorageMock();
     ls.getItem.mockReturnValue(null);
+    ls.setItem.mockImplementation(() => undefined);
+    ls.removeItem.mockImplementation(() => undefined);
 
     manager = getManager();
     dispatchSpy = vi.spyOn(window, 'dispatchEvent');
@@ -285,6 +287,31 @@ describe('ThemeManager custom theme support', () => {
     expect(restored.hasCustomTheme()).toBe(false);
     // Should have cleaned up the corrupt entry
     expect(ls.removeItem).toHaveBeenCalledWith('custom-vscode-theme');
+  });
+
+  it('handles localStorage read failures during init', () => {
+    const ls = getLocalStorageMock();
+    ls.getItem.mockImplementation(() => {
+      throw new Error('localStorage unavailable');
+    });
+
+    expect(() => getManager()).not.toThrow();
+    expect(getManager().hasCustomTheme()).toBe(false);
+  });
+
+  it('handles localStorage write and remove failures when updating themes', () => {
+    const ls = getLocalStorageMock();
+    ls.setItem.mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    ls.removeItem.mockImplementation(() => {
+      throw new Error('localStorage unavailable');
+    });
+
+    expect(() => manager.setCustomTheme(CATPPUCCIN_DARK)).not.toThrow();
+    expect(manager.hasCustomTheme()).toBe(true);
+    expect(() => manager.clearCustomTheme()).not.toThrow();
+    expect(manager.hasCustomTheme()).toBe(false);
   });
 
   // ── Replacing one custom theme with another ─────────────────────────────

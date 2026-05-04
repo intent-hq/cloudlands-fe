@@ -8,7 +8,7 @@
  * saga-local closure variables, NOT in Redux state.
  */
 
-import { call, put, select, takeEvery, delay, fork, type SagaGenerator } from "typed-redux-saga";
+import { call, put, takeEvery, delay, fork, type SagaGenerator } from "typed-redux-saga";
 import { invoke, invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
 import { Logger } from "$lib/utils/logger";
 import {
@@ -37,6 +37,9 @@ import {
 } from "../changes-slice";
 import {
   selectFileTrackingChanges,
+  selectFileTrackingTransitions,
+  selectFileTrackingCommits,
+  selectFileTrackingBoundarySha,
   selectCurrentWorkspaceId,
 } from "../changes-selectors";
 import { ChangeStage } from "$features/file-tracking/types";
@@ -227,9 +230,9 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
 
     const hasChanges = hasChangesDifference(existingChanges, filteredChanges);
-    const wsState = yield* select((s: any) => s.changes.byWorkspaceId[wsId]);
-    const existingTrans = wsState?.transitions || [];
-    const existingCommits = wsState?.commits || [];
+    const existingTrans = yield* selectFileTrackingTransitions.effect(wsId);
+    const existingCommits = yield* selectFileTrackingCommits.effect(wsId);
+    const existingBoundarySha = yield* selectFileTrackingBoundarySha.effect(wsId);
     const hasTransitionChanges = hasTransitionsDifference(existingTrans, newTransitions);
     const hasCommitChanges = hasCommitsDifference(existingCommits, newCommits);
 
@@ -241,7 +244,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
     if (hasCommitChanges) {
       yield* put(setCommitsData(wsId, newCommits, newBoundarySha));
-    } else if (wsState?.boundarySha !== newBoundarySha) {
+    } else if (existingBoundarySha !== newBoundarySha) {
       yield* put(setCommitsData(wsId, existingCommits, newBoundarySha));
     }
   } catch (error) {

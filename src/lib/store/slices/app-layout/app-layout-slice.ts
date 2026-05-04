@@ -1,26 +1,14 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
-
-export type CommandPaletteAction = { type: "create-file"; workspaceId: string };
-
-export type SidebarLocateTarget = {
-  sidebarTabId: string;
-  type: string;
-  noteId?: string;
-  filePath?: string;
-  agentId?: string;
-  terminalId?: string;
-};
-
-export type PendingSidebarLocate = {
-  workspaceId: string;
-  target: SidebarLocateTarget;
-};
-
-export type AppLayoutState = {
-  pendingCommandPaletteAction: CommandPaletteAction | null;
-  pendingLocateInSidebar: PendingSidebarLocate | null;
-};
+import type {
+  AppLayoutState,
+  CreateWorkspaceForRepoDetail,
+  OpenAgentTabDetail,
+  OpenNewSpaceModalDetail,
+  OpenTerminalTabDetail,
+  ShowAgentDetail,
+  SidebarLocateTarget,
+} from "./app-layout-types";
 
 export const initialState: AppLayoutState = {
   pendingCommandPaletteAction: null,
@@ -30,30 +18,6 @@ export const initialState: AppLayoutState = {
 export const createFileRequested = createAction<
   [wsId: string, folderPath: string, fileName: string]
 >("appLayout/createFileRequested");
-
-export type ShowAgentDetail = {
-  agentId: string;
-};
-
-export type OpenAgentTabDetail = {
-  agentId: string;
-  openInAdjacentPanel?: boolean;
-  sourcePanelId?: string;
-};
-
-export type OpenTerminalTabDetail = {
-  terminalId: string;
-};
-
-export type CreateWorkspaceForRepoDetail = {
-  repositoryPath: string;
-  workspaceId?: string;
-  workspaceTitle?: string;
-};
-
-export type OpenNewSpaceModalDetail = {
-  initialRepo?: { repoPath?: string };
-};
 
 export const showAgentRequested = createAction<[wsId: string, detail: ShowAgentDetail]>(
   "appLayout/showAgentRequested"

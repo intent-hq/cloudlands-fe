@@ -1,4 +1,5 @@
 import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
+import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
 
 import { reapplyCommentAnchorsAfterExternalUpdate } from './comment-manager-utils';
 import { applyExternalUpdateHtmlToEditorPreservingCursor } from './external-update-editor';
@@ -110,6 +111,7 @@ export function runExternalContentUpdateEffect({
   setIsUpdatingFromExternal,
   getWorkspaceId,
   getNoteId,
+  getTaskAgentAssociations,
   getCommentManager,
   processMarkdownToHTML,
   processHTMLToMarkdown,
@@ -131,6 +133,7 @@ export function runExternalContentUpdateEffect({
   setIsUpdatingFromExternal: (value: boolean) => void;
   getWorkspaceId: () => string | undefined;
   getNoteId: () => string | null | undefined;
+  getTaskAgentAssociations?: () => TaskAgentAssociation[];
   getCommentManager: () => CommentManagerV2 | null | undefined;
   processMarkdownToHTML: ProcessMarkdownToHTMLLike;
   processHTMLToMarkdown: ProcessHTMLToMarkdownLike;
@@ -322,7 +325,7 @@ export function runExternalContentUpdateEffect({
                   updateVersion,
                 },
               );
-              restoreTaskAgentAssociations(editor as any, workspaceId, noteId, logger);
+              restoreTaskAgentAssociations(editor as any, getTaskAgentAssociations?.() ?? [], logger);
             }
 
             await reapplyCommentAnchorsAfterExternalUpdate({

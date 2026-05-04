@@ -59,6 +59,11 @@ describe('IPC Channels', () => {
       expect(isValidChannel('file:read')).toBe(true);
     });
 
+    it('should reject removed legacy file watcher channels', () => {
+      expect(isValidChannel('file:watch')).toBe(false);
+      expect(isValidChannel('file:unwatch')).toBe(false);
+    });
+
     it('should reject invalid channels', () => {
       expect(isValidChannel('invalid:channel')).toBe(false);
       expect(isValidChannel('agent:invalid')).toBe(false);

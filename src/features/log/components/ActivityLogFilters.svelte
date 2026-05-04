@@ -7,9 +7,13 @@
 
 <script lang="ts">
   import { slide } from 'svelte/transition';
-  import { Logger } from '$shared/logger';
-
-  const logger = new Logger('ActivityLogFilters');
+  import {
+    deleteActivityLogPreset,
+    saveActivityLogPreset,
+    type ActivityLogPresetPreference,
+  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import { selectActivityLogPresets } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Filters {
     showFileChanges: boolean;
@@ -37,8 +41,9 @@
     onfilter?: (filters: Filters) => void;
   } = $props();
 
+  const dispatch = getDispatch();
+  const activityLogPresets$ = selectActivityLogPresets();
   let showAdvanced = $state(false);
-  let savedPresets = $state<Array<{ name: string; filters: Filters }>>([]);
 
   // Event type mappings
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -96,34 +101,20 @@
   function savePreset() {
     const name = prompt('Enter preset name:');
     if (name) {
-      savedPresets = [...savedPresets, { name, filters: { ...filters } }];
-      localStorage.setItem('activityLogPresets', JSON.stringify(savedPresets));
+      dispatch(saveActivityLogPreset({ name, filters: { ...filters } }));
     }
   }
 
   // Load preset
-  function loadPreset(preset: (typeof savedPresets)[0]) {
+  function loadPreset(preset: ActivityLogPresetPreference) {
     filters = { ...preset.filters };
     applyFilters();
   }
 
   // Delete preset
   function deletePreset(index: number) {
-    savedPresets = savedPresets.filter((_, i) => i !== index);
-    localStorage.setItem('activityLogPresets', JSON.stringify(savedPresets));
+    dispatch(deleteActivityLogPreset(index));
   }
-
-  // Load saved presets on mount
-  $effect(() => {
-    const saved = localStorage.getItem('activityLogPresets');
-    if (saved) {
-      try {
-        savedPresets = JSON.parse(saved);
-      } catch (e) {
-        logger.error('Failed to load saved presets:', e);
-      }
-    }
-  });
 
   // Auto-apply filters on change
   $effect(() => {
@@ -223,9 +214,9 @@
           </button>
         </div>
 
-        {#if savedPresets.length > 0}
+        {#if $activityLogPresets$.length > 0}
           <div class="flex flex-col gap-1">
-            {#each savedPresets as preset, i (`preset-${i}-${preset.name}`)}
+            {#each $activityLogPresets$ as preset, i (`preset-${i}-${preset.name}`)}
               <div class="flex justify-between items-center">
                 <button
                   class="flex-1 text-left px-2 py-1 bg-transparent border border-transparent rounded cursor-pointer text-sm hover:bg-background hover:border-border"

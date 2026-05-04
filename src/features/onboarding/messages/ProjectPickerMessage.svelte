@@ -3,7 +3,7 @@
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
    * Tabbed picker: Local repo | GitHub repo | New project.
-   * Pre-fills from localStorage. On valid selection:
+   * Pre-fills from Redux persistence. On valid selection:
    *   - emits project config
    *   - triggers sidebar slide-in
    *   - reveals Message 3
@@ -15,30 +15,31 @@
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
+  import {
+    selectWorkspaceInitializerBranchByRepo,
+    selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerLastSelectedRepo,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRepoSelection } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
 
   const logger = createLogger('ProjectPickerMessage');
 
-  // localStorage keys (shared with RepoSelector/BranchSelector)
-  const LAST_SELECTED_REPO_KEY = 'workspace-initializer-last-repo';
-  const BRANCH_BY_REPO_KEY = 'workspace-initializer-branch-by-repo';
-  const DEFAULT_PARENT_KEY = 'workspace-initializer-default-parent';
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
+  const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
+  const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
+  const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /**
    * Resolve the default on-disk location for both the "New project" parent
    * folder and the "GitHub repo" clone destination. Prefers a previously
-   * saved value from localStorage, falling back to `~/Developer`. Keeping
+   * saved value from Redux hydrated persistence, falling back to `~/Developer`. Keeping
    * this in one place means both tabs always agree on a sensible default
    * and the user doesn't have to pick a folder twice.
    */
   function getDefaultLocation(): string {
-    try {
-      const saved = localStorage.getItem(DEFAULT_PARENT_KEY);
-      if (saved) return saved;
-    } catch {
-      // Ignore
-    }
-    return '~/Developer';
+    return $defaultParentPath$ || '~/Developer';
   }
 
   type TabId = 'local' | 'github' | 'new';
@@ -174,7 +175,24 @@
     }
   });
 
-  // Pre-fill from sessionStorage (modal/deep-link/repo quick-actions), then localStorage.
+  function applyPersistedRepoSelection(data: WorkspaceInitializerRepoSelection | null) {
+    if (!data) return;
+    if (data.type === 'local' && data.path) {
+      localRepoPath = data.path;
+      localScope = data.scope;
+      activeTab = 'local';
+      localBranch = $branchByRepo$[data.path] || localBranch;
+    } else if (data.type === 'github' && data.githubUrl) {
+      githubUrl = data.githubUrl;
+      clonePath = data.clonePath || '';
+      activeTab = 'github';
+    }
+  }
+
+  let didApplyPrefill = false;
+  let didApplyPersistedRepo = $state(false);
+
+  // Pre-fill from sessionStorage (modal/deep-link/repo quick-actions), then Redux persistence.
   try {
     const prefill = sessionStorage.getItem(WORKSPACE_PREFILL_KEY);
     if (prefill) {
@@ -194,31 +212,18 @@
         activeTab = 'new';
       }
       sessionStorage.removeItem(WORKSPACE_PREFILL_KEY);
-    }
-    const savedRepo = !prefill ? localStorage.getItem(LAST_SELECTED_REPO_KEY) : null;
-    if (savedRepo) {
-      const data = JSON.parse(savedRepo);
-      if (data.type === 'local' && data.path) {
-        localRepoPath = data.path;
-        localScope = data.scope;
-        activeTab = 'local';
-        // Try to get saved branch
-        const branchByRepo = localStorage.getItem(BRANCH_BY_REPO_KEY);
-        if (branchByRepo) {
-          const branchMap = JSON.parse(branchByRepo);
-          if (branchMap[data.path]) {
-            localBranch = branchMap[data.path];
-          }
-        }
-      } else if (data.type === 'github' && data.githubUrl) {
-        githubUrl = data.githubUrl;
-        clonePath = data.clonePath || '';
-        activeTab = 'github';
-      }
+      didApplyPrefill = true;
     }
   } catch (e) {
     logger.error('Failed to restore saved repo', e);
   }
+
+  $effect(() => {
+    if (!$workspaceInitializerHydrated$ || didApplyPrefill || didApplyPersistedRepo) return;
+    applyPersistedRepoSelection($lastSelectedRepo$);
+    didApplyPersistedRepo = true;
+    notifyParent();
+  });
 
   // Build the current selection from component state — called directly from event handlers
   // to avoid $effect → callback → state change → $effect infinite loops.
@@ -279,7 +284,7 @@
     onProjectChange?.(buildSelection());
   }
 
-  // Notify parent once on mount with pre-filled localStorage values (if any)
+  // Notify parent once on mount with pre-filled persisted values (if any)
   onMount(() => {
     notifyParent();
   });

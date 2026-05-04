@@ -1,14 +1,11 @@
 import type { Editor } from '@tiptap/core';
 
 import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
-import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { addOptimisticNote, removeOptimisticNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
 import {
   addTaskAgentAssociation,
   removeTaskAgentAssociation,
-} from '$lib/utils/task-agent-associations';
+} from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
 import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import type { Workspace, Note, AgentSession } from '$shared/types';
@@ -18,11 +15,23 @@ import { stripMarkdownFormatting } from '$shared/utils-client';
 import { taskNoteUrl } from '$shared/constants/intent-links';
 
 import type { LoggerLike } from './logger.types';
-import { getTaskIndexInDocument, restoreTaskAgentAssociations } from './task-item-utils';
+import {
+  createTaskAgentAssociationKey,
+  createTaskAgentAssociationKeyForAgent,
+  getTaskAssociationKeyAtPosition,
+  getTaskIndexInDocument,
+  restoreTaskAgentAssociations,
+} from './task-item-utils';
 
 export type AssignAgentTaskMenuActionOptions = {
   skipSave?: boolean;
 };
+
+type AssignAgentStoreAction =
+  | ReturnType<typeof addOptimisticNote>
+  | ReturnType<typeof removeOptimisticNote>
+  | ReturnType<typeof addTaskAgentAssociation>
+  | ReturnType<typeof removeTaskAgentAssociation>;
 
 export async function runAssignAgentTaskMenuAction({
   editor,
@@ -30,7 +39,10 @@ export async function runAssignAgentTaskMenuAction({
   noteId,
   taskData,
   options,
+  parentNoteTitle,
+  model,
   debounceUpdate,
+  storeDispatch,
   dispatch,
   logger,
 }: {
@@ -39,12 +51,16 @@ export async function runAssignAgentTaskMenuAction({
   noteId: string | null | undefined;
   taskData: any;
   options?: AssignAgentTaskMenuActionOptions;
+  parentNoteTitle: string;
+  model: string;
   debounceUpdate: () => void;
+  storeDispatch: (action: AssignAgentStoreAction) => void;
   dispatch: (type: 'agentLaunched', detail: any) => void;
   logger: LoggerLike;
 }): Promise<void> {
   const taskText = taskData.text || 'Unknown task';
   const taskPosition = parseInt(taskData.position) || 0;
+  const occurrenceTaskKey = getTaskAssociationKeyAtPosition(editor, taskPosition, taskText);
 
   // Graduation flow: Create Task Note + Agent, then convert checklist item to linked task
   //
@@ -61,6 +77,7 @@ export async function runAssignAgentTaskMenuAction({
   // Step 1: Generate IDs immediately for optimistic UI
   const optimisticAgentId = unifiedIdService.generateAgentId();
   const optimisticNoteId = unifiedIdService.generateNoteId();
+  const taskKey = createTaskAgentAssociationKeyForAgent(optimisticAgentId);
 
   // Step 2: Set delegatedAgentId on task item immediately (shows "Spinning up...")
   // Use external-update meta to prevent triggering onUpdate/debounceUpdate for better perf
@@ -90,20 +107,25 @@ export async function runAssignAgentTaskMenuAction({
         agentId: optimisticAgentId,
       });
 
-      // Step 2b: Persist the task-agent association to localStorage immediately
+      // Step 2b: Persist the task-agent association immediately
       // This ensures the association survives external content updates that may
       // replace the editor content before the backend operation completes
-      addTaskAgentAssociation(workspace.id, noteId, taskText, optimisticAgentId);
+      storeDispatch(addTaskAgentAssociation(workspace.id, noteId, {
+        taskText,
+        taskKey,
+        agentId: optimisticAgentId,
+        noteId,
+        createdAt: Date.now(),
+      }));
       logger.debug('Persisted task-agent association for optimistic update', {
         taskText,
+        taskKey,
         agentId: optimisticAgentId,
       });
     }
   }
 
   // Step 3: Get parent note info and build content
-  const parentNote = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
-  const parentNoteTitle = parentNote?.title || 'parent note';
   const taskNoteContent = buildTaskNoteContent(taskText, noteId, parentNoteTitle);
 
   // Step 4: Add optimistic note to store immediately (shows in sidebar)
@@ -125,7 +147,7 @@ export async function runAssignAgentTaskMenuAction({
     is_pinned: false,
     is_archived: false,
   };
-  reduxDispatch(addOptimisticNote(workspace.id, optimisticNote as any));
+  storeDispatch(addOptimisticNote(workspace.id, optimisticNote as any));
 
   logger.info('Added optimistic Task Note', {
     noteId: optimisticNoteId,
@@ -163,7 +185,7 @@ export async function runAssignAgentTaskMenuAction({
           peerOrder,
           agentConfig: {
             instruction: taskText,
-            model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
+            model,
             autoStart: true,
             agentId: optimisticAgentId, // Use pre-generated ID
           },
@@ -176,15 +198,15 @@ export async function runAssignAgentTaskMenuAction({
       if (editor) {
         editor.commands.setTaskAgentId(taskPosition, null);
       }
-      reduxDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
+      storeDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
       throw new Error(result.error || 'Failed to create Task Note');
     }
 
     const { note: taskNote, agent: agentData } = result.data;
 
     // Replace optimistic note with real note from server
-    reduxDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
-    reduxDispatch(addOptimisticNote(workspace.id, taskNote)); // Add the real note
+    storeDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
+    storeDispatch(addOptimisticNote(workspace.id, taskNote)); // Add the real note
 
     logger.info('Task Note created successfully', {
       taskNoteId: taskNote.id,
@@ -212,20 +234,35 @@ export async function runAssignAgentTaskMenuAction({
         return foundPos >= 0 ? { pos: foundPos, node: foundNode } : null;
       };
 
-      // Helper to find task by text (fallback)
-      const findTaskByText = (): { pos: number; node: any } | null => {
+      // Helper to find task by occurrence key, with legacy text fallback
+      const findTaskByKeyOrText = (): { pos: number; node: any } | null => {
         let foundPos = -1;
         let foundNode: any = null;
+        let textMatchCount = 0;
+        let textMatch: { pos: number; node: any } | null = null;
+        const occurrencesByText = new Map<string, number>();
         editor.state.doc.descendants((node, pos) => {
           if (foundPos >= 0) return false;
-          if (node.type.name === 'taskItem' && node.textContent.trim() === taskText) {
+          if (node.type.name !== 'taskItem') return true;
+          const currentTaskText = node.textContent.trim();
+          if (!currentTaskText) return true;
+
+          const occurrenceIndex = occurrencesByText.get(currentTaskText) ?? 0;
+          occurrencesByText.set(currentTaskText, occurrenceIndex + 1);
+          const currentTaskKey = createTaskAgentAssociationKey(currentTaskText, occurrenceIndex);
+          if (currentTaskKey === occurrenceTaskKey) {
             foundPos = pos;
             foundNode = node;
             return false;
           }
+          if (currentTaskText === taskText) {
+            textMatchCount++;
+            textMatch = { pos, node };
+          }
           return true;
         });
-        return foundPos >= 0 ? { pos: foundPos, node: foundNode } : null;
+        if (foundPos >= 0) return { pos: foundPos, node: foundNode };
+        return textMatchCount === 1 ? textMatch : null;
       };
 
       // Step 1: Try to find by agentId
@@ -236,23 +273,32 @@ export async function runAssignAgentTaskMenuAction({
         logger.debug('[convertToLinkedTask] Task not found by agentId, restoring associations', {
           agentId: optimisticAgentId,
         });
-        restoreTaskAgentAssociations(editor, workspace.id, noteId, logger);
+        restoreTaskAgentAssociations(editor, [{
+          taskText,
+          taskKey,
+          agentId: optimisticAgentId,
+          noteId,
+          createdAt: Date.now(),
+        }], logger);
         taskMatch = findTaskByAgentId();
       }
 
-      // Step 3: If still not found, try by text as last resort
+      // Step 3: If still not found, try by occurrence key/text as last resort
       if (!taskMatch) {
-        logger.debug('[convertToLinkedTask] Task still not found by agentId, trying by text', {
+        logger.debug('[convertToLinkedTask] Task still not found by agentId, trying by task key/text', {
           agentId: optimisticAgentId,
+          taskKey,
+          occurrenceTaskKey,
           taskText,
         });
-        taskMatch = findTaskByText();
+        taskMatch = findTaskByKeyOrText();
       }
 
       if (!taskMatch) {
         logger.warn('[convertToLinkedTask] Task item not found by agentId or text', {
           agentId: optimisticAgentId,
           noteId: taskNote.id,
+            taskKey,
           taskText,
         });
       } else {
@@ -312,7 +358,7 @@ export async function runAssignAgentTaskMenuAction({
 
           // Clean up the task-agent association since the task is now a linked task
           // (no longer a task item that needs the delegatedAgentId attribute)
-          removeTaskAgentAssociation(workspace.id, noteId, taskText);
+          storeDispatch(removeTaskAgentAssociation(workspace.id, noteId, taskKey));
 
           // Trigger a debounced save since the conversion used external-update meta
           // This ensures the linked task is persisted to disk
@@ -353,6 +399,6 @@ export async function runAssignAgentTaskMenuAction({
         })
         .run();
     }
-    removeTaskAgentAssociation(workspace.id, noteId, taskText);
+    storeDispatch(removeTaskAgentAssociation(workspace.id, noteId, taskKey));
   }
 }

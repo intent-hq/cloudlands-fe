@@ -22,12 +22,14 @@ import { modelSaga } from "./slices/model/sagas/model-saga";
 import { specialistsSaga } from "./slices/specialists/sagas/specialists-saga";
 import { systemStatusSaga } from "./slices/system-status/sagas/system-status-saga";
 import { uiLayoutSaga } from "./slices/ui-layout/sagas/ui-layout-saga";
+import { themeSaga } from "./slices/theme/sagas/theme-saga";
 import { uiSaga } from "./slices/ui-notifications/sagas/ui-notifications-saga";
 import { workspaceOperationsSaga } from "./slices/workspace-operations/sagas/workspace-operations-saga";
 import { workspaceSaga } from "./slices/workspace/sagas/workspace-saga";
 import { workspaceAgentsSaga } from "./slices/workspace-agents/sagas/workspace-agents-saga";
 import { workspaceNotesSaga } from "./slices/workspace-notes/sagas/workspace-notes-saga";
 import { workspaceEventsSaga as workspaceEventsRendererSaga } from "./slices/workspace-events/sagas/workspace-events-saga";
+import { paletteSaga } from "./slices/palette/sagas/palette-saga";
 import { authSaga } from "./slices/auth/sagas/auth-saga";
 import { autoUpdateSaga } from "./slices/auto-update/sagas/auto-update-saga";
 import { appLayoutSaga } from "./slices/app-layout/sagas/app-layout-saga";
@@ -50,6 +52,8 @@ import { setupScriptsSaga } from "./slices/setup-scripts/sagas/setup-scripts-sag
 import { mcpServersSaga } from "./slices/mcp-servers/sagas/mcp-servers-saga";
 import { mcpSettingsSaga } from "./slices/mcp-settings/sagas/mcp-settings-saga";
 import { commentsSaga } from "./slices/comments/sagas/comments-saga";
+import { workspaceInitializerSaga } from "./slices/workspace-initializer/sagas/workspace-initializer-saga";
+import { taskAgentAssociationsSaga } from "./slices/task-agent-associations/sagas/task-agent-associations-saga";
 
 import { sidebarNavSaga } from "./slices/sidebar-nav/sagas/sidebar-nav-saga";
 import { scriptsSaga } from "./slices/scripts/sagas/scripts-saga";
@@ -63,9 +67,11 @@ import { streamingConfigSaga } from "./slices/streaming-config/sagas/streaming-c
 import { unreadTrackingSaga } from "./slices/unread-tracking/sagas/unread-tracking-saga";
 import { prStatusSaga } from "./slices/pr-status/sagas/pr-status-saga";
 import { backgroundAgentExecutorSaga } from "./slices/background-agent-executor/sagas/background-agent-executor-saga";
+import { chatChangesSaga } from "./slices/chat-changes/sagas/chat-changes-saga";
 import { chatStateSaga } from "./slices/chat-state/sagas/chat-state-saga";
 import { chatStreamSaga } from "./slices/chat-state/sagas/chat-stream-saga";
 import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-saga";
+import { filesSaga } from "./slices/files/sagas/files-saga";
 import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
 import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
@@ -82,6 +88,7 @@ export const sagas = {
   backgroundAgentSettingsSaga,
   externalEditorsSaga,
   uiLayoutSaga,
+  themeSaga,
   tabStateSaga,
   terminalsSaga,
   noteReadTrackingSaga,
@@ -102,6 +109,7 @@ export const sagas = {
   changesSaga,
   notesSaga: workspaceNotesSaga,
   workspaceEventsSaga: workspaceEventsRendererSaga,
+  paletteSaga,
   agentsSaga: workspaceAgentsSaga,
   contextSaga,
   browserSaga,
@@ -126,6 +134,8 @@ export const sagas = {
   setupScriptsSaga,
   mcpSettingsSaga,
   commentsSaga,
+  taskAgentAssociationsSaga,
+  workspaceInitializerSaga,
 
   sidebarNavSaga,
   scriptsSaga,
@@ -137,9 +147,11 @@ export const sagas = {
   unreadTrackingSaga,
   prStatusSaga,
   bgExecutorSaga: backgroundAgentExecutorSaga,
+  chatChangesSaga,
   chatStateSaga,
   chatStreamSaga,
   fileExplorerSaga,
+  filesSaga,
   agentIpcSaga,
   agentStreamSaga,
   agentSubscriptionUISaga,

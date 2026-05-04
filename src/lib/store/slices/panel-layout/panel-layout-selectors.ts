@@ -17,6 +17,12 @@ import type {
   FocusHistoryEntry,
 } from "./panel-layout-types";
 
+const emptyFileContentPrunePaths: string[] = [];
+
+function isValidActiveWorkspaceId(wsId: string | null | undefined): wsId is string {
+  return !!wsId && wsId !== "new" && !wsId.startsWith("optimistic-") && wsId !== "undefined";
+}
+
 // ============================================================================
 // Workspace State
 // ============================================================================
@@ -139,6 +145,43 @@ export const selectIsFileOpen = createSelector<[wsId: string, filePath: string],
     );
   },
 );
+
+/** Select active-workspace file-content paths no longer represented by any open file tab. */
+export const selectFileContentPrunePayload = createSelector((state): string[] => {
+  const activeWsId = state.workspace.activeWorkspaceId;
+  if (!isValidActiveWorkspaceId(activeWsId)) {
+    return emptyFileContentPrunePaths;
+  }
+
+  const ws = state.panelLayout.byWorkspaceId[activeWsId];
+  const filesWorkspace = state.files.byWorkspaceId[activeWsId];
+  if (!ws || !filesWorkspace) {
+    return emptyFileContentPrunePaths;
+  }
+
+  const openPaths = new Set<string>();
+  for (const panel of Object.values(ws.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === "file" && typeof tab.filePath === "string" && tab.filePath.length > 0) {
+        openPaths.add(tab.filePath);
+      }
+    }
+  }
+
+  const stalePaths: string[] = [];
+  for (const path of filesWorkspace.files.ids) {
+    if (!openPaths.has(path)) {
+      stalePaths.push(path);
+    }
+  }
+
+  if (stalePaths.length === 0) {
+    return emptyFileContentPrunePaths;
+  }
+
+  stalePaths.sort((left, right) => left.localeCompare(right));
+  return stalePaths;
+});
 
 /** Get all panel IDs */
 export const selectPanelIds = createSelector<[wsId: string], string[]>(

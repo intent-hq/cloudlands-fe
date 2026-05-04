@@ -15,11 +15,34 @@ import { messageAccumulatorReducer } from '../../../../../store/main/slices/mess
 
 let testStore: Store;
 
+const fileEditMocks = vi.hoisted(() => ({
+  readFile: vi.fn(),
+  sendToWorkspaceWindows: vi.fn(),
+  recordAgentWrite: vi.fn(),
+}));
+
 vi.mock('../../../../../store/main/redux-store-bridge', () => ({
   mainDispatch: (action: any) => testStore?.dispatch(action),
   getMainState: () => testStore?.getState(),
   getMainStore: () => testStore,
   initMainStoreBridge: vi.fn(),
+}));
+
+vi.mock('fs/promises', () => ({
+  default: {
+    readFile: fileEditMocks.readFile,
+  },
+  readFile: fileEditMocks.readFile,
+}));
+
+vi.mock('../../../../system/main/system.ipc', () => ({
+  sendToWorkspaceWindows: fileEditMocks.sendToWorkspaceWindows,
+}));
+
+vi.mock('../../../../workspace/main/provenance/attribution-engine', () => ({
+  getAttributionEngine: () => ({
+    recordAgentWrite: fileEditMocks.recordAgentWrite,
+  }),
 }));
 
 import { ACPProviderStreaming, testStreamManager } from '../acp-provider-streaming';
@@ -30,6 +53,7 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
   let streaming: ACPProviderStreaming;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     testStore = createStore(combineReducers({ messageAccumulator: messageAccumulatorReducer }));
     streaming = new ACPProviderStreaming(agentId);
   });
@@ -203,6 +227,59 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'wrong' } },
       });
       expect(onChunk).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('file content changed emitter contract', () => {
+    it('emits static file:content-changed payload when a file edit tool completes', async () => {
+      const sessionId = 'ses_file_content_emit';
+      const workspaceId = 'ws-1';
+      const workspacePath = '/repo';
+      const relativePath = 'src/app.ts';
+      const fullPath = '/repo/src/app.ts';
+
+      fileEditMocks.readFile
+        .mockResolvedValueOnce('old content')
+        .mockResolvedValueOnce('new content');
+
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId, workspacePath });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_save_file',
+          title: 'Save src/app.ts',
+          name: 'save-file',
+          kind: 'edit',
+          rawInput: { path: relativePath, file_content: 'new content' },
+        } as any,
+      });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_save_file',
+          status: 'completed',
+          rawOutput: { output: 'ok' },
+        } as any,
+      });
+
+      expect(fileEditMocks.readFile).toHaveBeenNthCalledWith(1, fullPath, 'utf-8');
+      expect(fileEditMocks.readFile).toHaveBeenNthCalledWith(2, fullPath, 'utf-8');
+      expect(fileEditMocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+        workspaceId,
+        'file:content-changed',
+        {
+          workspaceId,
+          path: fullPath,
+          relativePath,
+          content: 'new content',
+          source: 'agent',
+        },
+      );
     });
   });
 

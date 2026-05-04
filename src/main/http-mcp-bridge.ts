@@ -38,7 +38,7 @@ import * as os from 'os';
 import * as path from 'path';
 import express, { Request, Response } from 'express';
 import { app, BrowserWindow } from 'electron';
-import { createServer } from 'http';
+import { createServer, type IncomingMessage } from 'http';
 
 import { Logger } from '../shared/logger';
 import type { EnvironmentConfig } from '$shared/types';
@@ -64,6 +64,74 @@ const { WebSocketServer, WebSocket } = require('ws') as {
 const DUMMY_WORKSPACE_PATH = process.platform === 'win32'
   ? path.join(os.tmpdir(), 'dummy-workspace')
   : '/tmp/dummy-workspace';
+
+const CONTENT_BEARING_BROWSER_CHANNELS = new Set([
+  'file:content-changed',
+  'note:created',
+  'note:updated',
+  'note:content-changed',
+  'spec:updated',
+  'goal:updated',
+  'task:status-changed',
+  'task:ready-tasks-changed',
+  'comment:added',
+  'comment:updated',
+  'comment:updated-batch',
+]);
+const CONTENT_BEARING_BROWSER_CHANNEL_PREFIXES = ['note:content-changed:'];
+
+function isContentBearingBrowserChannel(channel: string, data?: unknown): boolean {
+  if (
+    CONTENT_BEARING_BROWSER_CHANNELS.has(channel) ||
+    CONTENT_BEARING_BROWSER_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix))
+  ) {
+    return true;
+  }
+
+  if (channel === 'events:new' && data && typeof data === 'object') {
+    const event = (data as { event?: unknown }).event;
+    if (event && typeof event === 'object') {
+      const eventType = (event as { type?: unknown }).type;
+      return typeof eventType === 'string' && isContentBearingBrowserChannel(eventType);
+    }
+  }
+
+  return false;
+}
+
+function getWorkspaceIdFromPayload(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const workspaceId = (data as { workspaceId?: unknown }).workspaceId;
+  if (typeof workspaceId === 'string' && workspaceId.length > 0) return workspaceId;
+
+  const event = (data as { event?: unknown }).event;
+  if (event && typeof event === 'object') {
+    const eventWorkspaceId = (event as { workspaceId?: unknown }).workspaceId;
+    if (typeof eventWorkspaceId === 'string' && eventWorkspaceId.length > 0) {
+      return eventWorkspaceId;
+    }
+  }
+
+  return undefined;
+}
+
+function getWorkspaceIdFromWsRequest(request?: IncomingMessage): string | undefined {
+  const headerWorkspaceId = request?.headers?.['x-workspace-id'];
+  if (typeof headerWorkspaceId === 'string' && headerWorkspaceId.length > 0) {
+    return headerWorkspaceId;
+  }
+  if (Array.isArray(headerWorkspaceId)) {
+    return headerWorkspaceId.find((value) => value.length > 0);
+  }
+
+  if (!request?.url) return undefined;
+  try {
+    const url = new URL(request.url, 'http://localhost');
+    return url.searchParams.get('workspaceId') || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // WeakSet to track synthetic senders created by the /ipc bridge.
 // Used by the one-time BrowserWindow.fromWebContents patch so concurrent
@@ -175,6 +243,7 @@ export class HttpMcpBridge {
   private port: number;
   private cleanupIntervalId: NodeJS.Timeout | null = null;
   private readonly mcpServerTtlMs: number = DEFAULT_MCP_SERVER_TTL_MS;
+  private readonly browserClientWorkspaceIds = new WeakMap<object, string>();
   // In-flight restart promise — concurrent callers share it (DoD #2).
   private restartPromise: Promise<void> | null = null;
   // In-flight health probe promise — concurrent callers share it so a burst
@@ -215,7 +284,7 @@ export class HttpMcpBridge {
       this.app.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Content-Type');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, x-workspace-id');
         if (req.method === 'OPTIONS') {
           return res.sendStatus(200);
         }
@@ -500,6 +569,10 @@ export class HttpMcpBridge {
       }
 
       try {
+        const requestWorkspaceId =
+          getWorkspaceIdFromWsRequest(req) ??
+          getWorkspaceIdFromPayload(data) ??
+          getWorkspaceIdFromPayload(req.body);
         // Create a synthetic IpcMainInvokeEvent-like object.
         // Handlers that call event.sender.send() (for streaming) will have
         // those messages routed through the WebSocket to browser clients.
@@ -513,8 +586,8 @@ export class HttpMcpBridge {
           __isBrowserBridge: true,
           // Route streaming sends through WebSocket
           send: (ch: string, ...args: any[]) => {
-            if (typeof broadcast === 'function') {
-              broadcast(ch, args.length === 1 ? args[0] : args);
+            if (typeof broadcast === 'function' && requestWorkspaceId) {
+              broadcast(ch, args.length === 1 ? args[0] : args, requestWorkspaceId);
             }
           },
           // Stubs for properties that some handlers may access
@@ -970,9 +1043,16 @@ export class HttpMcpBridge {
     return new Promise((resolve) => {
       const server = createServer(this.app);
       const wss = new WebSocketServer({ server, path: '/ipc-events' });
-      wss.on('connection', (ws: InstanceType<typeof WebSocket>) => {
+      wss.on('connection', (ws: InstanceType<typeof WebSocket>, request?: IncomingMessage) => {
+        const workspaceId = getWorkspaceIdFromWsRequest(request);
+        if (workspaceId) {
+          this.browserClientWorkspaceIds.set(ws, workspaceId);
+        }
         this.logger.info('Browser IPC WebSocket client connected');
-        ws.on('close', () => this.logger.debug('Browser IPC WebSocket client disconnected'));
+        ws.on('close', () => {
+          this.browserClientWorkspaceIds.delete(ws);
+          this.logger.debug('Browser IPC WebSocket client disconnected');
+        });
         // Per-client error listener: in Node's EventEmitter semantics, an
         // 'error' emitted by a WebSocket with no listener throws as an
         // uncaught 'error' event. The WSS-level error listener does not
@@ -1192,10 +1272,25 @@ export class HttpMcpBridge {
 
     // Expose a global broadcast function so any code that does webContents.send
     // can also push events to browser-mode clients.
-    (global as any).__browserIpcBroadcast = (channel: string, data: any) => {
+    (global as any).__browserIpcBroadcast = (
+      channel: string,
+      data: any,
+      workspaceId?: string,
+    ) => {
       if (!this.wss) return;
+      const isContentBearing = isContentBearingBrowserChannel(channel, data);
+      const effectiveWorkspaceId =
+        workspaceId ?? (isContentBearing ? getWorkspaceIdFromPayload(data) : undefined);
+      if (isContentBearing && !effectiveWorkspaceId) return;
+
       const message = JSON.stringify({ channel, data });
       for (const client of this.wss.clients) {
+        if (
+          effectiveWorkspaceId &&
+          this.browserClientWorkspaceIds.get(client) !== effectiveWorkspaceId
+        ) {
+          continue;
+        }
         if (client.readyState === WebSocket.OPEN) {
           client.send(message);
         }

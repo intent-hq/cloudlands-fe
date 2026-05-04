@@ -152,6 +152,9 @@ vi.mock('$lib/components/chat/streaming-status-utils', () => ({
 import { agentService } from '$features/agent/agent-ipc-bridge';
 import { memoryManager } from '../memory-manager';
 import { streamStarted } from '$lib/store/slices/chat-state/chat-state-slice';
+import {
+  replaceMessages as replaceAgentSessionMessages,
+} from '$lib/store/slices/agent-session/agent-session-slice';
 import { replaceAgentMessages } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -344,6 +347,45 @@ describe('ChatService Race Condition Regressions', () => {
         expect(call[1].length).toBeGreaterThanOrEqual(liveMessages.length);
       }
     }
+  });
+
+  it('session-updated same-length stale snapshot does not replace the live user message', () => {
+    // Bug: A stale disk snapshot can have the same message count as live state while
+    // still missing the just-sent user message. Count-only guards let it overwrite
+    // the live streaming turn.
+    const liveMessages = [
+      makeMessage('1', 'user', 'Hello'),
+      makeMessage('2', 'assistant', 'Earlier response'),
+      makeMessage('3', 'user', 'Follow-up prompt'),
+    ];
+    const staleSameLengthMessages = [
+      liveMessages[0],
+      liveMessages[1],
+      makeMessage('stale', 'assistant', 'Older stale tail'),
+    ];
+
+    setupDefaultState({ isStreaming: true, messages: liveMessages });
+    mockSelectAgentMessages.mockReturnValue(liveMessages);
+
+    service.setupStreamingForSession(AGENT_ID, SESSION_ID);
+
+    const registerCalls = (memoryManager.registerListener as Mock).mock.calls;
+    const sessionUpdatedCall = registerCalls.find(
+      (c: any[]) => typeof c[1] === 'string' && c[1].includes('session-updated'),
+    );
+    expect(sessionUpdatedCall).toBeDefined();
+
+    vi.mocked(replaceAgentSessionMessages).mockClear();
+    const staleSession = makeSession({
+      isStreaming: false,
+      messages: staleSameLengthMessages,
+    });
+    mockSelectAgentById.mockReturnValue(staleSession);
+
+    const handler = sessionUpdatedCall![2];
+    handler();
+
+    expect(replaceAgentSessionMessages).not.toHaveBeenCalled();
   });
 
   // ─── Test 3: Queued message after stopChat re-registers handlers ──────────

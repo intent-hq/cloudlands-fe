@@ -194,8 +194,8 @@ function getElectronHandler(eventName: string) {
   return call![1] as (data: any) => Generator;
 }
 
-function getTakeEveryHandler(actionType: string) {
-  const call = takeEveryActionMock.mock.calls.find(([pattern]) => pattern === actionType);
+function getTakeEveryHandler(actionCreator: { type: string }) {
+  const call = takeEveryActionMock.mock.calls.find(([pattern]) => pattern === actionCreator);
   expect(call).toBeDefined();
   return call![1] as (action: { payload: unknown }) => Generator;
 }
@@ -378,11 +378,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchShowAgentSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      showAgentRequested.type,
+      showAgentRequested,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(showAgentRequested.type);
+    const handler = getTakeEveryHandler(showAgentRequested);
     expect(
       handler({ payload: ["ws-current", { agentId: "agent-1" }] }).next(),
     ).toEqual({ value: undefined, done: true });
@@ -416,11 +416,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchOpenFileSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      openWorkspaceFile.type,
+      openWorkspaceFile,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(openWorkspaceFile.type);
+    const handler = getTakeEveryHandler(openWorkspaceFile);
     const handlerIterator = handler({
       payload: [
         "ws-current",
@@ -492,11 +492,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchOpenNoteSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      openWorkspaceNote.type,
+      openWorkspaceNote,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(openWorkspaceNote.type);
+    const handler = getTakeEveryHandler(openWorkspaceNote);
     const handlerIterator = handler({
       payload: [
         "ws-current",
@@ -545,11 +545,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchOpenChatChangesSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      openWorkspaceChatChanges.type,
+      openWorkspaceChatChanges,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(openWorkspaceChatChanges.type);
+    const handler = getTakeEveryHandler(openWorkspaceChatChanges);
     expect(
       handler({
         payload: [
@@ -587,11 +587,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchOpenLocalChangesSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      openWorkspaceLocalChanges.type,
+      openWorkspaceLocalChanges,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(openWorkspaceLocalChanges.type);
+    const handler = getTakeEveryHandler(openWorkspaceLocalChanges);
     expect(handler({ payload: ["ws-current"] }).next()).toEqual({ value: undefined, done: true });
 
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -781,11 +781,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchWorkspaceCreateForRepoSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      createWorkspaceForRepoRequested.type,
+      createWorkspaceForRepoRequested,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(createWorkspaceForRepoRequested.type);
+    const handler = getTakeEveryHandler(createWorkspaceForRepoRequested);
     const handlerIterator = handler({
       payload: [
         {
@@ -816,11 +816,11 @@ describe("appLayoutSaga", () => {
     const iterator = watchOpenNewSpaceOnboardingSaga();
     iterator.next();
     expect(takeEveryActionMock).toHaveBeenCalledWith(
-      openNewSpaceModalRequested.type,
+      openNewSpaceModalRequested,
       expect.any(Function),
     );
 
-    const handler = getTakeEveryHandler(openNewSpaceModalRequested.type);
+    const handler = getTakeEveryHandler(openNewSpaceModalRequested);
     expect(
       handler({
         payload: [

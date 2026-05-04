@@ -26,6 +26,17 @@ export interface InitialRepoFormState {
   pendingPreviousWorkspace?: { id: string; title: string } | null;
 }
 
+export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore';
+
+export interface LastSelectedRepoHydrationInput {
+  isHydrated: boolean;
+  alreadyHandled: boolean;
+  hasPrefillData: boolean;
+  isFormPersistenceEnabled: boolean;
+  currentRepoPath?: string;
+  hasLastSelectedRepo: boolean;
+}
+
 /**
  * Generate a stable deduplication key from an InitialRepoInfo.
  * Concatenates non-empty fields with ':' so the same repo always produces the same key.
@@ -72,4 +83,18 @@ export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFor
   }
 
   return state;
+}
+
+export function getLastSelectedRepoHydrationAction({
+  isHydrated,
+  alreadyHandled,
+  hasPrefillData,
+  isFormPersistenceEnabled,
+  currentRepoPath,
+  hasLastSelectedRepo,
+}: LastSelectedRepoHydrationInput): LastSelectedRepoHydrationAction {
+  if (!isHydrated || alreadyHandled || hasPrefillData) return 'wait';
+  if (!isFormPersistenceEnabled || currentRepoPath) return 'skip';
+  if (!hasLastSelectedRepo) return 'wait';
+  return 'restore';
 }

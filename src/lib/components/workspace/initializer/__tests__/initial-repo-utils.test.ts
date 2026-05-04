@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  getLastSelectedRepoHydrationAction,
   getInitialRepoKey,
   mapInitialRepoToFormState,
   type InitialRepoInfo,
@@ -123,5 +124,34 @@ describe('mapInitialRepoToFormState', () => {
     expect(state.isValidPath).toBeUndefined();
     expect(state.isNewRepo).toBeUndefined();
     expect(state.githubUrl).toBeUndefined();
+  });
+});
+
+describe('getLastSelectedRepoHydrationAction', () => {
+  const readyInput = {
+    isHydrated: true,
+    alreadyHandled: false,
+    hasPrefillData: false,
+    isFormPersistenceEnabled: true,
+    currentRepoPath: '',
+    hasLastSelectedRepo: true,
+  };
+
+  it('waits for both Redux hydration and lastSelectedRepo readiness', () => {
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, isHydrated: false })).toBe('wait');
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false })).toBe('wait');
+  });
+
+  it('restores only when hydration is ready and no repo has been selected', () => {
+    expect(getLastSelectedRepoHydrationAction(readyInput)).toBe('restore');
+  });
+
+  it('skips replay when persistence is disabled or current form state already has a repo', () => {
+    expect(
+      getLastSelectedRepoHydrationAction({ ...readyInput, isFormPersistenceEnabled: false }),
+    ).toBe('skip');
+    expect(
+      getLastSelectedRepoHydrationAction({ ...readyInput, currentRepoPath: '/typed' }),
+    ).toBe('skip');
   });
 });

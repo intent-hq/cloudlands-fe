@@ -1,11 +1,10 @@
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
-import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import { invoke } from "$lib/electron-bridge";
 import { openTerminalOverlay, loadWorkspaceTerminals, getTerminalName, setTerminalsLoaded, setIsLoadingTerminals, type TerminalTab, type PersistedWorkspaceState, WORKSPACE_STATE_STORAGE_KEY, } from "../terminals-slice";
 import { setActiveWorkspaceId } from "../../workspace/workspace-slice";
 import { selectWorkspaceTerminalState } from "../terminals-selectors";
-import { getStoredCustomName } from "./persistence-saga";
+import { getStoredCustomName, loadTerminalMetadataFromStorage, removeTerminalMetadataFromStorage, saveTerminalMetadataToStorage } from "./persistence-saga";
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -15,7 +14,7 @@ function* loadWorkspaceState(wsId: string): SagaGenerator<PersistedWorkspaceStat
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function* loadTerminalMetadataForWorkspace(wsId: string): SagaGenerator<TerminalTab[]> {
-    const storedTerminals = terminalManager.loadTerminalMetadata(wsId);
+    const storedTerminals = yield* call(loadTerminalMetadataFromStorage, wsId);
     if (storedTerminals.length === 0)
         return [];
     const terminals: TerminalTab[] = [];
@@ -47,7 +46,7 @@ export function* loadTerminalsSaga(wsId: string) {
     yield* put(setIsLoadingTerminals(wsId, true));
     try {
         // Load terminal metadata from localStorage
-        const storedTerminals = terminalManager.loadTerminalMetadata(wsId);
+        const storedTerminals = yield* call(loadTerminalMetadataFromStorage, wsId);
         // Query backend for active terminals
         let backendTerminals: BackendTerminal[] = [];
         let backendCallSucceeded = false;
@@ -89,7 +88,7 @@ export function* loadTerminalsSaga(wsId: string) {
                     isExecuting: false,
                 });
                 // Save to localStorage for future loads
-                terminalManager.saveTerminalMetadata(backendTerminal.id, backendTerminal.workspaceId, "Setup");
+                yield* call(saveTerminalMetadataToStorage, backendTerminal.id, backendTerminal.workspaceId, "Setup", new Date().toISOString());
             }
         }
         // Prune stale localStorage entries not present in the backend.
@@ -100,7 +99,7 @@ export function* loadTerminalsSaga(wsId: string) {
             for (const meta of storedTerminals) {
                 if (!backendIds.has(meta.terminalId)) {
                     terminalMap.delete(meta.terminalId);
-                    terminalManager.removeTerminalMetadata(meta.terminalId, wsId);
+                    yield* call(removeTerminalMetadataFromStorage, meta.terminalId, wsId);
                 }
             }
         }
@@ -129,7 +128,7 @@ export function* loadTerminalsSaga(wsId: string) {
  * just changes activeWorkspaceId.
  */
 export function* watchSetWorkspace() {
-    yield* takeEvery(setActiveWorkspaceId.type, function* (action: ReturnType<typeof setActiveWorkspaceId>) {
+    yield* takeEvery(setActiveWorkspaceId, function* (action: ReturnType<typeof setActiveWorkspaceId>) {
         const [wsId] = action.payload;
         if (typeof window === 'undefined')
             return;
@@ -145,7 +144,7 @@ export function* watchSetWorkspace() {
  * The reducer handles the pure state part; this saga loads from storage.
  */
 export function* watchOpenWithWorkspace() {
-    yield* takeEvery(openTerminalOverlay.type, function* (action: ReturnType<typeof openTerminalOverlay>) {
+    yield* takeEvery(openTerminalOverlay, function* (action: ReturnType<typeof openTerminalOverlay>) {
         const [wsId] = action.payload;
         if (!wsId || typeof window === 'undefined')
             return;

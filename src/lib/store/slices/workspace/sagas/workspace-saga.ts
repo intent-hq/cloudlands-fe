@@ -64,7 +64,7 @@ export function* persistWorkspaceRecency() {
 }
 
 export function* watchWorkspaceRecencyPersistenceSaga() {
-  yield* takeEvery([recordWorkspaceView.type, cleanupRecency.type], persistWorkspaceRecency);
+  yield* takeEvery([recordWorkspaceView, cleanupRecency], persistWorkspaceRecency);
 }
 
 export function* performLoadWorkspaces(retryCount = 0): SagaGenerator<void> {

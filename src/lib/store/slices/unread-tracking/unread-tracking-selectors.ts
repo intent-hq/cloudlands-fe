@@ -19,6 +19,11 @@ export const selectUnreadAgentIds = createSelector(
   (state) => state.unreadTracking.unreadAgentIds
 );
 
+/** Mapping from agent ID to workspace ID. */
+export const selectAgentWorkspaceMap = createSelector(
+  (state) => state.unreadTracking.agentWorkspaceMap
+);
+
 /** Unread agent IDs for a specific workspace. */
 export const selectUnreadAgentIdsForWorkspace = createSelector(
   (state, workspaceId: string) => {

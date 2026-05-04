@@ -123,3 +123,15 @@ export const selectSoundOnlyWhenUnfocused = createSelector((state) => {
 export const selectNotificationVolume = createSelector((state) => {
   return state.userPreferences.volume;
 });
+
+export const selectActivityLogPresets = createSelector((state) => {
+  return state.userPreferences.activityLogPresets;
+});
+
+export const selectPromoBannerInteractions = createSelector((state) => {
+  return state.userPreferences.promoBannerInteractions;
+});
+
+export const selectPromoBannerInteractionRecord = createSelector((state, bannerId: string) => {
+  return state.userPreferences.promoBannerInteractions[bannerId] ?? null;
+});

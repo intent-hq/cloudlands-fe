@@ -95,6 +95,7 @@ const mockSelectWorkspaceAgentReadySession = vi.fn();
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
   selectAgentById: {
     select: (...args: any[]) => mockSelectAgentById(...args),
+    effect: function* (...args: any[]) { return mockSelectAgentById(...args); },
   },
   selectWorkspaceAgentReadySession: {
     select: (...args: any[]) => mockSelectWorkspaceAgentReadySession(...args),
@@ -102,6 +103,7 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
   },
   selectIsInitialSpecWriteInProgress: {
     select: () => false,
+    effect: function* () { return false; },
   },
 }));
 
@@ -110,6 +112,7 @@ const mockSelectAgentSession = vi.fn();
 vi.mock("../../agent-session/agent-session-selectors", () => ({
   selectAgentMessages: {
     select: (...args: any[]) => mockSelectAgentMessages(...args),
+    effect: function* (...args: any[]) { return mockSelectAgentMessages(...args); },
   },
   selectAgentSession: {
     select: (...args: any[]) => mockSelectAgentSession(...args),
@@ -134,6 +137,7 @@ const mockSelectChatState = vi.fn();
 vi.mock("../chat-state-selectors", () => ({
   selectChatStateOrDefault: {
     select: (...args: any[]) => mockSelectChatState(...args),
+    effect: function* (...args: any[]) { return mockSelectChatState(...args); },
   },
 }));
 
@@ -271,12 +275,12 @@ describe("initialize-chat-saga: disk message merge regression", () => {
           context: {
             readableStoreState: {
               subscribe: (run: (state: any) => void) => {
-                run({});
+                run({ storeUtility: { updatesLocked: false } });
                 return () => {};
               },
             },
           },
-          getState: () => ({}),
+          getState: () => ({ storeUtility: { updatesLocked: false } }),
         },
         initializeChatSaga as any,
       );

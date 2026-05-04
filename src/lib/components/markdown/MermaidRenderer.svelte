@@ -4,6 +4,7 @@
   import { faExpand, faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import mermaid from 'mermaid';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   const logger = createLogger('MermaidRenderer');
 
@@ -21,6 +22,7 @@
   let isFullscreen = $state(false);
   let fullscreenSvg = $state('');
   let fullscreenDialogElement: HTMLDivElement | undefined = $state();
+  const isDarkTheme = selectIsDarkTheme();
 
   // Decode base64 encoded mermaid code
   function decodeBase64(str: string): string {
@@ -49,9 +51,7 @@
       .replace(/&#x2F;/g, '/');
   }
 
-  function initMermaid() {
-    const isDark = document.documentElement.classList.contains('dark');
-
+  function initMermaid(isDark: boolean) {
     mermaid.initialize({
       startOnLoad: false,
       theme: 'base',
@@ -132,7 +132,7 @@
     });
   }
 
-  async function renderDiagram(rawCode: string) {
+  async function renderDiagram(rawCode: string, isDark: boolean) {
     // First decode base64, then decode any HTML entities (for legacy support)
     const base64Decoded = decodeBase64(rawCode);
     const decodedCode = decodeHtmlEntities(base64Decoded);
@@ -144,7 +144,7 @@
     }
 
     try {
-      initMermaid();
+      initMermaid(isDark);
 
       const id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -184,23 +184,6 @@
 
   onMount(() => {
     mounted = true;
-    if (code) {
-      renderDiagram(code);
-    }
-
-    // Re-render on theme change
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.attributeName === 'class' && code) {
-          renderDiagram(code);
-        }
-      }
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
 
     // Add keyboard listener for Escape key
     const handleKeyboardEvent = (e: KeyboardEvent) => {
@@ -212,7 +195,6 @@
     document.addEventListener('keydown', handleKeyboardEvent);
 
     return () => {
-      observer.disconnect();
       document.removeEventListener('keydown', handleKeyboardEvent);
     };
   });
@@ -231,7 +213,7 @@
   // Re-render when code changes (after mount)
   $effect(() => {
     if (mounted && code) {
-      renderDiagram(code);
+      renderDiagram(code, $isDarkTheme);
     }
   });
 </script>

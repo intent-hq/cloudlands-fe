@@ -10,7 +10,7 @@
  *  - Workspace removal (`clearWorkspace`) — lifecycle, not a subscription change.
  */
 
-import { call, cancel, delay, fork, select, take } from "typed-redux-saga";
+import { call, cancel, delay, fork, take } from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import { deepEqual, shallowEqual } from "fast-equals";
 
@@ -68,10 +68,7 @@ export function* workspaceSignatureWorker(wsId: string) {
     // taker yet). Emit the initial signature explicitly so workers forked by
     // the lifecycle watcher produce one event for the workspace that just
     // appeared, matching the semantics of subsequent changes.
-    const initial: SubscriptionsSignature | null = yield* select(
-      selectSubscriptionsSignature.select,
-      wsId,
-    );
+    const initial: SubscriptionsSignature | null = yield* selectSubscriptionsSignature.effect(wsId);
     if (initial !== null) {
       yield* emitSubscriptionsChanged(wsId);
     }
@@ -85,10 +82,7 @@ export function* workspaceSignatureWorker(wsId: string) {
       // the channel, because the zero-buffer event channel used by
       // `createChannelFromSelector` does not support `flush`.
       yield* delay(0);
-      const latest: SubscriptionsSignature | null = yield* select(
-        selectSubscriptionsSignature.select,
-        wsId,
-      );
+      const latest: SubscriptionsSignature | null = yield* selectSubscriptionsSignature.effect(wsId);
       if (latest === null) continue;
       yield* emitSubscriptionsChanged(wsId);
     }
@@ -113,7 +107,7 @@ export function* subscriptionsChangedEmitterSaga() {
     // no taker yet). Explicitly fork workers for any workspace ids already
     // present in the slice before entering the subsequent-changes loop so the
     // saga does not miss workspaces that existed when it started.
-    const initialIds = yield* select(selectAllWorkspaceIds.select);
+    const initialIds = yield* selectAllWorkspaceIds.effect();
     for (const wsId of initialIds) {
       const task = yield* fork(workspaceSignatureWorker, wsId);
       workers.set(wsId, task);

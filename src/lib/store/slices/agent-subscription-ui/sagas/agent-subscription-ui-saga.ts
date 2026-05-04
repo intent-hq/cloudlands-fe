@@ -1,24 +1,15 @@
 /**
  * Agent Subscription UI Saga
  *
- * Manages IPC event listeners for agent event subscriptions,
+ * Manages long-lived IPC event listeners for agent event subscriptions,
  * dispatches snapshot updates to the slice, handles woken-up
  * auto-dismiss, and stop/cancel cleanup.
- *
- * Lifecycle: forked per-workspace on workspaceMounted,
- * cancelled on workspaceUnmounted.
  */
 
-import type { Task } from 'redux-saga';
-import { eventChannel, type EventChannel, END } from 'redux-saga';
-import { cancel, call, delay, fork, put, select, take, takeEvery } from 'typed-redux-saga';
-import { listenSync, extractEventData, invoke } from '$lib/electron-bridge';
-import type { ElectronEventName } from '$shared/ipc-registry';
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { call, delay, fork, put, takeEvery } from 'typed-redux-saga';
+import { extractEventData, invoke } from '$lib/electron-bridge';
+import { takeEveryFromListenSync } from '$lib/store/utils/ipc-channel';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   setSubscriptionSnapshot,
   setWokenUp,
@@ -36,77 +27,30 @@ import type {
 } from '../agent-subscription-ui-types';
 
 // ---------------------------------------------------------------------------
-// IPC event names this saga listens to
-// ---------------------------------------------------------------------------
-
-const SUBSCRIPTION_IPC_EVENTS: ElectronEventName[] = [
-  'agent:subscribed',
-  'agent:unsubscribed',
-  'agent:subscriptions-changed',
-  'agent:idle',
-  'agent:stopped',
-  'agent:status-changed',
-  'agent:created',
-  'agent:woken-by-subscription',
-  'agent:event-delivery-failed',
-  'agent:event-delivery-timeout',
-  'agent:subscriptions-restored',
-];
-
-// ---------------------------------------------------------------------------
 // Types for IPC event payloads
 // ---------------------------------------------------------------------------
 
-type SubscriptionIpcEvent = {
-  eventName: ElectronEventName;
+type SubscriptionWorkspacePayload = {
   workspaceId?: string;
-  agentId?: string;
-  data: any;
 };
 
-// ---------------------------------------------------------------------------
-// Event channel: bridges all subscription IPC events into a single channel
-// ---------------------------------------------------------------------------
+type AgentIdPayload = SubscriptionWorkspacePayload & {
+  agentId?: string;
+};
 
-function createSubscriptionChannel(wsId: string): EventChannel<SubscriptionIpcEvent> {
-  return eventChannel<SubscriptionIpcEvent>((emitter) => {
-    if (typeof window === 'undefined' || !window.electronAPI) {
-      emitter(END as any);
-      return () => {};
-    }
+type TargetAgentIdPayload = SubscriptionWorkspacePayload & {
+  targetAgentId?: string;
+};
 
-    const cleanups: Array<() => void> = [];
+type SubscriptionsRestoredPayload = SubscriptionWorkspacePayload & {
+  agentIds?: string[];
+};
 
-    for (const eventName of SUBSCRIPTION_IPC_EVENTS) {
-      const cleanup = listenSync(eventName, (event: any) => {
-        const eventData = extractEventData(event);
-        const eventWsId = extractEventData<string>(event, 'workspaceId') ?? eventData?.workspaceId;
+type WokenBySubscriptionPayload = AgentIdPayload & Pick<WokenUpInfo, 'eventCount' | 'eventTypes'>;
 
-        // Only process events that explicitly match this workspace
-        if (!eventWsId || eventWsId !== wsId) return;
-
-        const agentId = extractEventData<string>(event, 'agentId')
-          ?? eventData?.agentId
-          ?? extractEventData<string>(event, 'targetAgentId')
-          ?? eventData?.targetAgentId;
-
-        emitter({
-          eventName,
-          workspaceId: eventWsId,
-          agentId,
-          data: eventData,
-        });
-      });
-      cleanups.push(cleanup);
-    }
-
-    return () => {
-      for (const cleanup of cleanups) {
-        cleanup();
-      }
-    };
-  });
-}
+type WorkspaceMountedAction = {
+  payload: [wsId: string];
+};
 
 // ---------------------------------------------------------------------------
 // fetchAndDispatchSnapshot — fetches subscription state from main process
@@ -115,7 +59,7 @@ function createSubscriptionChannel(wsId: string): EventChannel<SubscriptionIpcEv
 export function* fetchAndDispatchSnapshot(wsId: string, agentId: string): Generator<any, void, any> {
   try {
     // Read the previous waiting state before fetching new data
-    const previousWaitingState = yield* select(selectWaitingState.select, wsId, agentId);
+    const previousWaitingState = yield* selectWaitingState.effect(wsId, agentId);
 
     const result: any = yield* call(invoke, 'events:get-agent-subscriptions', {
       workspaceId: wsId,
@@ -222,23 +166,83 @@ export function _getCompletionGeneration(key: string): number {
 const COMPLETED_DISPLAY_DURATION = 3000;
 
 // ---------------------------------------------------------------------------
-// Per-workspace event handler
+// Event payload helpers
 // ---------------------------------------------------------------------------
 
-export function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEvent) {
-  const { eventName, agentId, data } = event;
+function extractSubscriptionPayload<T extends SubscriptionWorkspacePayload>(event: unknown): T {
+  return (extractEventData<T>(event) ?? {}) as T;
+}
+
+function extractEventWorkspaceId(event: unknown, data: SubscriptionWorkspacePayload): string | undefined {
+  return extractEventData<string>(event, 'workspaceId') ?? data.workspaceId;
+}
+
+function extractEventAgentId(event: unknown, data: AgentIdPayload): string | undefined {
+  return extractEventData<string>(event, 'agentId') ?? data.agentId;
+}
+
+function extractEventTargetAgentId(event: unknown, data: TargetAgentIdPayload): string | undefined {
+  return extractEventData<string>(event, 'targetAgentId') ?? data.targetAgentId;
+}
+
+export function* refreshAgentFromAgentIdEvent(event: unknown) {
+  const data = extractSubscriptionPayload<AgentIdPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+  const agentId = extractEventAgentId(event, data);
+
+  if (!wsId || !agentId) return;
+
+  yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+}
+
+export function* refreshAgentFromTargetAgentIdEvent(event: unknown) {
+  const data = extractSubscriptionPayload<TargetAgentIdPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+  const agentId = extractEventTargetAgentId(event, data);
+
+  if (!wsId || !agentId) return;
+
+  yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+}
+
+export function* handleAgentSubscriptionsChangedEvent(event: AgentIdPayload) {
+  const data = extractSubscriptionPayload<AgentIdPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+
+  if (!wsId) return;
+
+  const agentId = extractEventAgentId(event, data);
+  if (agentId) {
+    yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+    return;
+  }
 
   // System-level subscription changes have no agentId.
   // Refresh all tracked agents so the UI picks up removals.
-  if (!agentId) {
-    if (eventName === 'agent:subscriptions-changed') {
-      const trackedIds: string[] = yield* select(selectTrackedAgentIds.select, wsId);
-      for (const id of trackedIds) {
-        yield* call(fetchAndDispatchSnapshot, wsId, id);
-      }
-    }
-    return;
+  const trackedIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
+  for (const id of trackedIds) {
+    yield* call(fetchAndDispatchSnapshot, wsId, id);
   }
+}
+
+export function* handleAgentSubscriptionsRestoredEvent(event: SubscriptionsRestoredPayload) {
+  const data = extractSubscriptionPayload<SubscriptionsRestoredPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+
+  if (!wsId || !Array.isArray(data.agentIds)) return;
+
+  for (const agentId of data.agentIds) {
+    if (typeof agentId !== 'string' || agentId.length === 0) continue;
+    yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+  }
+}
+
+export function* handleAgentWokenBySubscriptionEvent(event: WokenBySubscriptionPayload) {
+  const data = extractSubscriptionPayload<WokenBySubscriptionPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+  const agentId = extractEventAgentId(event, data);
+
+  if (!wsId || !agentId) return;
 
   // Always fetch fresh snapshot on any relevant event
   yield* call(fetchAndDispatchSnapshot, wsId, agentId);
@@ -249,75 +253,57 @@ export function* handleSubscriptionEvent(wsId: string, event: SubscriptionIpcEve
   // FIX: Use a per-agent generation counter so that when a second wakeup
   // arrives before the first 5s dismiss fires, the stale fork detects
   // the generation mismatch and skips the clearWokenUp dispatch.
-  if (eventName === 'agent:woken-by-subscription') {
-    const info: WokenUpInfo = {
-      eventCount: data?.eventCount ?? 0,
-      eventTypes: data?.eventTypes ?? [],
-      timestamp: Date.now(),
-    };
-    const key = `${wsId}:${agentId}`;
-    const gen = (wakeupGeneration.get(key) ?? 0) + 1;
-    wakeupGeneration.set(key, gen);
-    yield* fork(function* () {
-      yield* put(setWokenUp(wsId, agentId, info));
-      yield* delay(5000);
-      // Only clear if no newer wakeup arrived during the delay
-      if (wakeupGeneration.get(key) === gen) {
-        yield* put(clearWokenUp(wsId, agentId));
-      }
-    });
-  }
-
-  // Special handling for agent:stopped — unsubscribe and reset
-  if (eventName === 'agent:stopped') {
-    try {
-      yield* call(invoke, 'events:unsubscribe-agent', {
-        workspaceId: wsId,
-        agentId,
-      });
-    } catch {
-      // Ignore unsubscribe errors
+  const info: WokenUpInfo = {
+    eventCount: data.eventCount ?? 0,
+    eventTypes: data.eventTypes ?? [],
+    timestamp: Date.now(),
+  };
+  const key = `${wsId}:${agentId}`;
+  const gen = (wakeupGeneration.get(key) ?? 0) + 1;
+  wakeupGeneration.set(key, gen);
+  yield* fork(function* () {
+    yield* put(setWokenUp(wsId, agentId, info));
+    yield* delay(5000);
+    // Only clear if no newer wakeup arrived during the delay
+    if (wakeupGeneration.get(key) === gen) {
+      yield* put(clearWokenUp(wsId, agentId));
     }
-    yield* put(resetSubscriptionUI(wsId, agentId));
-  }
+  });
 }
 
-// ---------------------------------------------------------------------------
-// Per-workspace watcher: consumes events from the channel
-// ---------------------------------------------------------------------------
+export function* handleAgentStoppedEvent(event: AgentIdPayload) {
+  const data = extractSubscriptionPayload<AgentIdPayload>(event);
+  const wsId = extractEventWorkspaceId(event, data);
+  const agentId = extractEventAgentId(event, data);
 
-export function* watchSubscriptionsForWorkspace(wsId: string) {
-  const channel = createSubscriptionChannel(wsId);
+  if (!wsId || !agentId) return;
 
+  // Always fetch fresh snapshot on any relevant event
+  yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+
+  // Special handling for agent:stopped — unsubscribe and reset
   try {
-    while (true) {
-      const event: SubscriptionIpcEvent = yield* take(channel);
-      yield* call(handleSubscriptionEvent, wsId, event);
-    }
-  } finally {
-    channel.close();
+    yield* call(invoke, 'events:unsubscribe-agent', {
+      workspaceId: wsId,
+      agentId,
+    });
+  } catch {
+    // Ignore unsubscribe errors
   }
+  yield* put(resetSubscriptionUI(wsId, agentId));
 }
 
 // ---------------------------------------------------------------------------
 // Per-workspace lifecycle
 // ---------------------------------------------------------------------------
 
-const workspaceTasks = new Map<string, Task>();
-
-export function* handleWorkspaceMounted(action: ReturnType<typeof workspaceMounted>) {
-  const [wsId] = action.payload;
-  const task = yield* fork(watchSubscriptionsForWorkspace, wsId);
-  workspaceTasks.set(wsId, task);
+export function* handleWorkspaceMounted(_action: WorkspaceMountedAction) {
+  // Subscription IPC listeners are long-lived root watchers. Workspace mounts do
+  // not create listener tasks.
 }
 
 export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>) {
   const [wsId] = action.payload;
-  const task = workspaceTasks.get(wsId);
-  if (task) {
-    yield* cancel(task);
-    workspaceTasks.delete(wsId);
-  }
 
   // Prune generation entries for the unmounted workspace to prevent
   // the Maps from growing unbounded across workspace mount/unmount cycles.
@@ -340,18 +326,9 @@ export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnm
 
 /** @internal Exported for testing only. */
 export function* retroactiveMountCheckSaga() {
-  const activeWsId = yield* select(selectActiveWorkspaceId.select);
-
-  if (!activeWsId) return;
-  if (activeWsId === 'new' || activeWsId.startsWith('optimistic-') || activeWsId === 'undefined') {
-    return;
-  }
-
-  // If the normal takeEvery already processed the mount, a task will exist.
-  if (workspaceTasks.has(activeWsId)) return;
-
-  // The workspace was mounted before the saga started — replay.
-  yield* fork(handleWorkspaceMounted, workspaceMounted(activeWsId));
+  // No-op retained for tests/import compatibility. Subscription IPC listeners
+  // are registered by the root saga and do not need retroactive workspace mount
+  // replay.
 }
 
 // ---------------------------------------------------------------------------
@@ -364,10 +341,33 @@ function* handleRequestSubscriptionFetch(action: ReturnType<typeof requestSubscr
 }
 
 export function* agentSubscriptionUISaga() {
-  yield* takeEvery(workspaceMounted, handleWorkspaceMounted);
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:subscribed', refreshAgentFromAgentIdEvent);
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:unsubscribed', refreshAgentFromAgentIdEvent);
+  yield* takeEveryFromListenSync<AgentIdPayload>(
+    'agent:subscriptions-changed',
+    handleAgentSubscriptionsChangedEvent,
+  );
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:idle', refreshAgentFromAgentIdEvent);
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:stopped', handleAgentStoppedEvent);
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:status-changed', refreshAgentFromAgentIdEvent);
+  yield* takeEveryFromListenSync<AgentIdPayload>('agent:created', refreshAgentFromAgentIdEvent);
+  yield* takeEveryFromListenSync<WokenBySubscriptionPayload>(
+    'agent:woken-by-subscription',
+    handleAgentWokenBySubscriptionEvent,
+  );
+  yield* takeEveryFromListenSync<TargetAgentIdPayload>(
+    'agent:event-delivery-failed',
+    refreshAgentFromTargetAgentIdEvent,
+  );
+  yield* takeEveryFromListenSync<TargetAgentIdPayload>(
+    'agent:event-delivery-timeout',
+    refreshAgentFromTargetAgentIdEvent,
+  );
+  yield* takeEveryFromListenSync<SubscriptionsRestoredPayload>(
+    'agent:subscriptions-restored',
+    handleAgentSubscriptionsRestoredEvent,
+  );
+
   yield* takeEvery(workspaceUnmounted, handleWorkspaceUnmounted);
   yield* takeEvery(requestSubscriptionFetch, handleRequestSubscriptionFetch);
-
-  // Check if a workspace is already active (missed the mount action)
-  yield* fork(retroactiveMountCheckSaga);
 }

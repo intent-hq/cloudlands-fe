@@ -240,6 +240,9 @@ const INTERNAL_OBSERVABILITY_EVENTS = new Set([
   "agent:unsubscribed",
   "agent:subscriptions-changed",
   "agent:delivery-confirmed",
+  "agent:event-delivery-timeout",
+  "agent:event-delivery-failed",
+  "agent:subscriptions-restored",
 ]);
 
 /** Agent lifecycle event types that warrant WARN-level diagnostic logging. */
@@ -286,11 +289,7 @@ export function* handleMatchEvent(
 
   for (const sub of subscriptions) {
     // Skip subscriptions belonging to deleted agents
-    const isDeleted: boolean = yield* select(
-      selectIsAgentDeleted.select,
-      wsId,
-      sub.agentId,
-    );
+    const isDeleted: boolean = yield* selectIsAgentDeleted.effect(wsId, sub.agentId);
     if (isDeleted) {
       if (isAgentLifecycle) {
         logger.warn(`[subscriptions] skip-deleted subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
@@ -321,11 +320,7 @@ export function* handleMatchEvent(
       // both proceed to deliver the same oneShot event.
       processingOneShots.add(sub.id);
       claimedOneShotIds.add(sub.id);
-      const isFired: boolean = yield* select(
-        selectIsOneShotFired.select,
-        wsId,
-        sub.id,
-      );
+      const isFired: boolean = yield* selectIsOneShotFired.effect(wsId, sub.id);
       if (isFired) {
         if (isAgentLifecycle) {
           logger.warn(`[subscriptions] skip-oneshot-fired subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
@@ -417,11 +412,7 @@ export function* handleMatchEvent(
 
     // If the agent is already idle, trigger delivery — respecting
     // batchWindow / batchMaxEvents when configured.
-    const agentStatus: string = yield* select(
-      selectAgentStatus.select,
-      wsId,
-      sub.agentId,
-    );
+    const agentStatus: string = yield* selectAgentStatus.effect(wsId, sub.agentId);
 
     if (agentStatus === "idle") {
       const hasBatchSettings = filter.batchWindow != null || filter.batchMaxEvents != null;
@@ -432,11 +423,7 @@ export function* handleMatchEvent(
         // Check batchMaxEvents: if the queue has reached the threshold,
         // deliver immediately (cancel any pending timer).
         if (filter.batchMaxEvents != null) {
-          const queueLength: number = yield* select(
-            selectAgentQueueLength.select,
-            wsId,
-            sub.agentId,
-          );
+          const queueLength: number = yield* selectAgentQueueLength.effect(wsId, sub.agentId);
           if (queueLength >= filter.batchMaxEvents) {
             const existingTimer = activeBatchTimers.get(batchKey);
             if (existingTimer) {
@@ -562,7 +549,7 @@ export function* handleNewSubscriptionCatchUp(
   // selectAgentStatus defaults to "idle" for unknown agents, which would
   // falsely trigger catch-up for newly-created agents that haven't reported
   // status yet.  By reading the map directly we skip agents with no entry.
-  const wsState = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+  const wsState = yield* selectWorkspaceSubscriptionState.effect(wsId);
 
   for (const actorId of filter.actorIds) {
     // Check if the agent was deleted — deletedAgents is tracked separately
@@ -598,7 +585,7 @@ export function* handleNewSubscriptionCatchUp(
       const groupId = filter.delegationGroup.groupId;
 
       // Verify the group exists before appending
-      const group = yield* select(selectDelegationGroup.select, wsId, groupId);
+      const group = yield* selectDelegationGroup.effect(wsId, groupId);
       if (!group) continue;
 
       yield* put(appendDelegationGroupEvent(wsId, groupId, catchUpEvent));

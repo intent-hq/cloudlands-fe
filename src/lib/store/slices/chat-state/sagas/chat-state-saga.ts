@@ -12,7 +12,7 @@
  */
 
 import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { selectAgentMessages, selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { initializeChatSaga } from './initialize-chat-saga';
 import { watchSendMessage } from './send-message-saga';
@@ -45,6 +45,7 @@ import {
   selectChatIsProcessing,
   selectChatAgentState,
   selectChatLastChunkReceivedAt,
+  selectChatStatusEvents,
 } from '../chat-state-selectors';
 import { selectAgentById, selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
 import { removeAgent, removeWorkspaceAgentState } from '../../workspace-agents/workspace-agents-slice';
@@ -67,21 +68,15 @@ function* stallDetectionLoop(agentId: string): SagaGenerator<void> {
   while (true) {
     yield* delay(10_000);
 
-    const agentState = yield* select(
-      (state) => selectChatAgentState.select(state, agentId),
-    );
+    const agentState = yield* selectChatAgentState.effect(agentId);
 
     // Only check if we're actively streaming (from agent-session, single source of truth)
-    const sessionForStall = yield* select(
-      (state) => selectAgentSession.select(state, agentId),
-    );
+    const sessionForStall = yield* selectAgentSession.effect(agentId);
     if (!sessionForStall?.isStreaming) return;
 
     // Don't flag as stalled while an MCP tool is actively executing.
     // If the last content block is a tool_use, the tool hasn't returned yet.
-    const agentMessages = yield* select(
-      (state) => selectAgentMessages.select(state, agentId),
-    );
+    const agentMessages = yield* selectAgentMessages.effect(agentId);
     const lastMsg = agentMessages[agentMessages.length - 1];
     if (lastMsg?.role === 'assistant' && lastMsg?.contentBlocks?.length) {
       const lastBlock = lastMsg.contentBlocks[lastMsg.contentBlocks.length - 1];
@@ -148,22 +143,16 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
   while (true) {
     yield* delay(STATE_RECONCILIATION_INTERVAL_MS);
 
-    const agentState = yield* select(
-      (state) => selectChatAgentState.select(state, agentId),
-    );
+    const agentState = yield* selectChatAgentState.effect(agentId);
 
     // If no longer processing (from agent-session), terminate — a new chatSendStarted will fork a fresh loop
-    const sessionForReconcile = yield* select(
-      (state) => selectAgentSession.select(state, agentId),
-    );
+    const sessionForReconcile = yield* selectAgentSession.effect(agentId);
     if (!sessionForReconcile?.isProcessing) {
       return;
     }
 
     // Get current session dynamically from agent-session slice
-    const currentSession = yield* select(
-      (state) => selectAgentSession.select(state, agentId),
-    );
+    const currentSession = yield* selectAgentSession.effect(agentId);
     const currentSessionId = currentSession?.id;
     if (!currentSessionId) {
       failureCount = 0;
@@ -178,7 +167,7 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
         && (Date.now() - agentState.lastChunkTime) < STUCK_PROCESSING_TIMEOUT_MS;
       const reconcileWorkspaceId = agentState.trackedWorkspaceId ?? currentSession?.workspaceId;
       const sessionData: any = reconcileWorkspaceId
-        ? yield* select((state) => selectAgentById.select(state, agentId))
+        ? yield* selectAgentById.effect(agentId)
         : undefined;
       const sessionSaysStreaming = sessionData?.isStreaming ?? false;
 
@@ -211,9 +200,7 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
     }
 
     // Re-check isProcessing since state may have changed during IPC call
-    const stateAfterCheck = yield* select(
-      (state) => selectChatIsProcessing.select(state, agentId),
-    );
+    const stateAfterCheck = yield* selectChatIsProcessing.effect(agentId);
     if (!stateAfterCheck) {
       failureCount = 0;
       continue;
@@ -233,9 +220,7 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
     } else {
       // If chunks were received recently (< 30s), the stream is alive
       // even if getActiveStreams doesn't list it (transient IPC timing).
-      const lastChunkReceivedAt: number = yield* select(
-        (state) => selectChatLastChunkReceivedAt.select(state, agentId),
-      );
+      const lastChunkReceivedAt: number = yield* selectChatLastChunkReceivedAt.effect(agentId);
       const timeSinceLastChunk = lastChunkReceivedAt ? Date.now() - lastChunkReceivedAt : Infinity;
       if (timeSinceLastChunk < 30_000) {
         logger.debug('[ChatStateSaga] Skipping failure count - chunks received recently', {
@@ -279,9 +264,7 @@ function makeStorageKey(agentId: string): string {
 
 function* persistStatusEvents(agentId: string): SagaGenerator<void> {
   // Read current status events from state (flat: byAgentId)
-  const statusEvents: StatusEvent[] = yield* select(
-    (state) => state.chatState?.byAgentId[agentId]?.statusEvents ?? [],
-  );
+  const statusEvents: StatusEvent[] = yield* selectChatStatusEvents.effect(agentId);
   yield* call(setLocalStorageJSON, makeStorageKey(agentId), statusEvents);
 }
 
@@ -384,9 +367,7 @@ function* watchAgentRemoved(): SagaGenerator<void> {
 function* watchWorkspaceUnmountedForCleanup(): SagaGenerator<void> {
   yield* takeEvery(workspaceUnmounted, function* (action) {
     const [wsId] = action.payload;
-    const agents = yield* select(
-      (state) => selectAllWorkspaceAgents.select(state, wsId),
-    );
+    const agents = yield* selectAllWorkspaceAgents.effect(wsId);
     for (const agent of agents) {
       const existing = activeSendTasks.get(agent.id);
       if (!existing) continue;
@@ -430,9 +411,7 @@ function* watchWorkspaceAgentStateRemoved(): SagaGenerator<void> {
   yield* takeEvery(removeWorkspaceAgentState, function* (action) {
     const [wsId] = action.payload;
     for (const [agentId, tasks] of Array.from(activeSendTasks.entries())) {
-      const session = yield* select(
-        (state) => selectAgentById.select(state, agentId),
-      );
+      const session = yield* selectAgentById.effect(agentId);
       if (!session || String(session.workspaceId) === String(wsId)) {
         yield* call(cancelAndForgetTasks, agentId, tasks);
       }

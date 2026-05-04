@@ -6,8 +6,8 @@ import {
   initialState,
   locateItemInSidebarConsumed,
   locateItemInSidebarRequested,
-  type SidebarLocateTarget,
 } from "./app-layout-slice";
+import type { SidebarLocateTarget } from "./app-layout-types";
 
 describe("appLayoutReducer", () => {
   it("returns the initial state", () => {

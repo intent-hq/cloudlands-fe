@@ -10,7 +10,7 @@
  *    (streaming or task not in terminal status)
  */
 
-import { fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { Logger } from '$lib/utils/logger';
 import {
   selectStagedWorkingChanges,
@@ -20,8 +20,8 @@ import { setChangesData, setChanges } from '../../changes/changes-slice';
 import {
   setAutoCommitEnabled,
   loadAutoCommitSettings,
-  emptyWorkspaceSettings,
 } from '../../workspace-settings/workspace-settings-slice';
+import { selectAutoCommitEnabled } from '../../workspace-settings/workspace-settings-selectors';
 import { applyTaskStatusChanged } from '../../workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import { recomputeAgentLocks, setAgentLockState } from '../agent-lock-slice';
@@ -31,22 +31,19 @@ import type { TrackedChange } from '../../changes/changes-types';
 const agentLockLogger = new Logger({ category: 'AgentLockSaga' });
 
 // ============================================================================
-// Agent activity check — accesses non-Redux sources as side effects
+// Agent activity check — accesses Redux state through selector effects
 // ============================================================================
 
 /**
  * Check if an agent is actively working (streaming or task not complete).
  * Uses Redux state exclusively (appropriate for sagas).
  */
-function isAgentActivelyWorking(
+function* isAgentActivelyWorking(
   agentId: string,
-  wsId: string,
-  state: any,
-  noteState: (wsId: string, noteId: string) => any,
-): boolean {
+): SagaGenerator<boolean> {
   try {
     // Check streaming state from Redux
-    const session = selectAgentById.select(state, agentId);
+    const session = yield* selectAgentById.effect(agentId);
     if (!session) return false;
 
     if (session.isStreaming) {
@@ -58,7 +55,7 @@ function isAgentActivelyWorking(
     if (taskNoteId) {
       const sessionWsId = session.workspaceId;
       if (sessionWsId) {
-        const taskNote = noteState(sessionWsId, taskNoteId);
+        const taskNote = yield* selectNoteById.effect(sessionWsId, taskNoteId);
         const taskStatus = taskNote?.metadata?.task?.status;
         if (taskStatus && taskStatus !== 'complete' && taskStatus !== 'cancelled') {
           return true;
@@ -84,10 +81,7 @@ function* handleRecomputeAgentLocks(
   if (!workspaceId) return;
 
   // Check autoCommitEnabled from workspace settings
-  const state: any = yield* select((state) => state);
-  const wsSettings = state.workspaceSettings.byWorkspaceId[workspaceId];
-  const autoCommitEnabled =
-    wsSettings?.autoCommitEnabled ?? emptyWorkspaceSettings.autoCommitEnabled;
+  const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
 
   // If auto-commit is disabled, clear locks
   if (!autoCommitEnabled) {
@@ -96,8 +90,8 @@ function* handleRecomputeAgentLocks(
   }
 
   // Get working changes from file-tracking
-  const unstaged = selectUnstagedWorkingChanges.select(state, workspaceId);
-  const staged = selectStagedWorkingChanges.select(state, workspaceId);
+  const unstaged = yield* selectUnstagedWorkingChanges.effect(workspaceId);
+  const staged = yield* selectStagedWorkingChanges.effect(workspaceId);
 
   // Collect unique agent IDs from both unstaged and staged changes
   const agentIds = new Set<string>();
@@ -110,13 +104,10 @@ function* handleRecomputeAgentLocks(
     if (agentId) agentIds.add(agentId);
   }
 
-  // Check each agent — uses non-Redux sources via side effect helpers
+  // Check each agent through selector effects
   const lockedAgentIds: Record<string, true> = {};
-  const noteStateLookup = (wsId: string, noteId: string) =>
-    selectNoteById.select(state, wsId, noteId);
-
   for (const agentId of agentIds) {
-    if (isAgentActivelyWorking(agentId, workspaceId, state, noteStateLookup)) {
+    if (yield* isAgentActivelyWorking(agentId)) {
       lockedAgentIds[agentId] = true;
     }
   }

@@ -9,7 +9,12 @@
    * - Real-time updates when file content changes
    */
   import { onMount, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { invoke } from '$lib/electron-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { selectOriginalFileContent } from '$lib/store/slices/files/files-selectors';
+  import { loadFileContentRequested } from '$lib/store/slices/files/files-slice';
+  import type { FileReadResponse } from '$lib/store/slices/files/files-types';
   import {
     selectActiveWorkspace,
     selectActiveWorkspaceId,
@@ -19,7 +24,6 @@
   import DiffViewer from './DiffViewer.svelte';
   import type { HunkData, ExpansionDirections } from '@pierre/diffs';
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
-  import { subscribeFileContentChange } from './file-content-watcher';
   import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
   import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
@@ -142,8 +146,15 @@
 
   // Prevent multiple simultaneous staging operations
   let isProcessingLineAction = $state(false);
+  const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
   const activeWorkspaceId = selectActiveWorkspaceId();
+  const filePathStore = writable<string | null | undefined>(undefined);
+  const effectiveWorkspaceIdStore = writable<string>('');
+  const workingTreeFileContentStore = selectOriginalFileContent(
+    effectiveWorkspaceIdStore,
+    filePathStore,
+  );
 
   // Get workspace info
   const workspace = $derived($activeWorkspace);
@@ -152,6 +163,60 @@
   // File info
   const fileName = $derived(change?.relativePath || change?.file || 'file');
   const language = $derived(getLanguageFromFileName(fileName));
+  let lastObservedWorkingTreeContent = $state<string | null>(null);
+  let lastObservedWorkingTreeKey = $state('');
+
+  function resolveRelativeFilePath(rawFilePath: string): string {
+    if (!rawFilePath.startsWith('/') || !workspacePath) return rawFilePath;
+
+    const normalizedWorkspacePath = workspacePath.endsWith('/')
+      ? workspacePath.slice(0, -1)
+      : workspacePath;
+    if (rawFilePath.startsWith(normalizedWorkspacePath + '/')) {
+      return rawFilePath.slice(normalizedWorkspacePath.length + 1);
+    }
+    if (rawFilePath.startsWith(normalizedWorkspacePath)) {
+      const relativePath = rawFilePath.slice(normalizedWorkspacePath.length);
+      return relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+    }
+    return rawFilePath;
+  }
+
+  function getAbsoluteFilePath(relativePath: string): string | null {
+    if (!relativePath) return null;
+    if (relativePath.startsWith('/')) return relativePath;
+    if (!workspacePath) return null;
+    return `${workspacePath}/${relativePath}`;
+  }
+
+  async function loadWorkingTreeFileContent(wsId: string, filePath: string): Promise<string> {
+    const absolutePath = getAbsoluteFilePath(filePath);
+    if (!absolutePath) return '';
+
+    try {
+      const response = await invoke<FileReadResponse>('file:read', {
+        workspaceId: wsId,
+        path: absolutePath,
+      });
+      if (response.success === false) {
+        logger.warn('[loadWorkingTreeFileContent] Failed to read disk content', {
+          instanceId,
+          filePath,
+          error: response.error,
+        });
+        return '';
+      }
+      const data = response.data;
+      return typeof data === 'string' ? data : data?.content ?? '';
+    } catch (err) {
+      logger.warn('[loadWorkingTreeFileContent] Failed to read disk content', {
+        instanceId,
+        filePath,
+        error: err instanceof Error ? err.message : err,
+      });
+      return '';
+    }
+  }
 
   // Hash the unpadded content so the @pierre/diffs worker AST cache hits on
   // re-mount. Padding bytes change with lineOffset; folding them into the
@@ -250,17 +315,7 @@
 
       // Convert absolute path to relative
       // Handle both with and without trailing slash on workspacePath
-      if (filePath.startsWith('/') && workspacePath) {
-        const normalizedWorkspacePath = workspacePath.endsWith('/')
-          ? workspacePath.slice(0, -1)
-          : workspacePath;
-        if (filePath.startsWith(normalizedWorkspacePath + '/')) {
-          filePath = filePath.slice(normalizedWorkspacePath.length + 1);
-        } else if (filePath.startsWith(normalizedWorkspacePath)) {
-          filePath = filePath.slice(normalizedWorkspacePath.length);
-          if (filePath.startsWith('/')) filePath = filePath.slice(1);
-        }
-      }
+      filePath = resolveRelativeFilePath(filePath);
 
       // Store the resolved path for patch generation
       resolvedFilePath = filePath;
@@ -401,18 +456,8 @@
               const indexResult = await dedupedShowFile(wsIdForDiff, ':0', filePath);
               if (indexResult?.success) newContent = indexResult.data || '';
             } else {
-              const fileResult = (await invoke('file:read', {
-                workspaceId: wsIdForDiff,
-                path: `${workspacePath}/${filePath}`,
-              })) as { success: boolean; data?: { content: string } | string } | string;
-              if (typeof fileResult === 'string') {
-                newContent = fileResult;
-              } else if (fileResult?.success && fileResult?.data) {
-                newContent =
-                  typeof fileResult.data === 'string'
-                    ? fileResult.data
-                    : fileResult.data.content;
-              }
+              const wsId = workspaceId || workspace?.id;
+              newContent = wsId ? await loadWorkingTreeFileContent(wsId, filePath) : '';
             }
             return true;
           }
@@ -933,28 +978,41 @@
       commitHash: change?.commitHash,
     });
     loadDiffContent();
+  });
 
-    // Subscribe to file changes via the shared module-scoped watcher.
-    // The watcher keeps a single IPC listener per workspace and fans out
-    // (debounced) callbacks to each mounted diff — previously each
-    // TrackedChangeDiffViewer registered its own listenSync + debounce timer.
-    const filePath = change?.relativePath || change?.file;
-    const wsId = workspaceId || $activeWorkspaceId;
-    let unsubscribe: (() => void) | undefined;
+  $effect(() => {
+    const wsId = workspaceId || $activeWorkspaceId || '';
+    const filePath = resolveRelativeFilePath(change?.relativePath || change?.file || '');
+    const absolutePath = getAbsoluteFilePath(filePath);
+    const fileKey = `${wsId}:${filePath}`;
 
-    if (wsId && filePath) {
-      unsubscribe = subscribeFileContentChange(wsId, filePath, () => {
-        logger.debug('[file:content-changed] File changed, reloading', {
-          instanceId,
-          filePath,
-        });
-        loadDiffContent();
-      });
+    effectiveWorkspaceIdStore.set(wsId);
+    filePathStore.set(filePath);
+
+    if (fileKey !== lastObservedWorkingTreeKey) {
+      lastObservedWorkingTreeKey = fileKey;
+      lastObservedWorkingTreeContent = null;
     }
 
-    return () => {
-      unsubscribe?.();
-    };
+    if (wsId && filePath && absolutePath && change?.stage !== 'committed' && !useProvidedContent) {
+      dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+    }
+  });
+
+  $effect(() => {
+    if (useProvidedContent) return;
+    const content = $workingTreeFileContentStore;
+    if (content === null || content === lastObservedWorkingTreeContent) return;
+
+    const previousContent = untrack(() => lastObservedWorkingTreeContent);
+    lastObservedWorkingTreeContent = content;
+    if (previousContent === null) return;
+
+    logger.debug('[files slice] File content changed, reloading diff', {
+      instanceId,
+      filePath: change?.relativePath || change?.file,
+    });
+    loadDiffContent();
   });
 
   // Watch for refreshKey changes

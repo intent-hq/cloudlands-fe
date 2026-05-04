@@ -577,13 +577,14 @@ export interface AgentSubscriptionsRestoredEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted whenever an agent's subscription registry changes.
+ * Emitted whenever a workspace's subscription registry changes.
  * Used as a hint for renderers to refetch a snapshot.
+ * May be workspace-scoped when no single agent target changed.
  */
 export interface AgentSubscriptionsChangedEvent extends WorkspaceEventBase {
   type: 'agent:subscriptions-changed';
   data: {
-    agentId: string;
+    agentId?: string;
     subscriptionVersion: number;
     reason?: string;
   };
@@ -1063,6 +1064,7 @@ export interface AgentCreatedPayload {
 export interface AgentSubscribedPayload {
   agentId: string;
   agentName?: string;
+  workspaceId?: string;
   subscriptionId: string;
   eventTypes?: string[];
   filterDescription?: string;
@@ -1074,6 +1076,7 @@ export interface AgentSubscribedPayload {
 export interface AgentUnsubscribedPayload {
   agentId: string;
   agentName?: string;
+  workspaceId?: string;
   subscriptionId: string;
   /** Reason for unsubscription */
   reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
@@ -1115,8 +1118,60 @@ export interface AgentStatusChangedPayload {
 export interface AgentWokenBySubscriptionPayload {
   agentId: string;
   agentName?: string;
+  workspaceId?: string;
   eventCount: number;
   eventTypes: string[];
+}
+
+/**
+ * IPC payload for agent:delivery-confirmed events
+ */
+export interface AgentDeliveryConfirmedPayload {
+  subscriberAgentId: string;
+  workspaceId?: string;
+  deliveredEventIds: string[];
+  subscriptionId?: string;
+}
+
+/**
+ * IPC payload for agent:event-delivery-failed events
+ */
+export interface AgentEventDeliveryFailedPayload {
+  targetAgentId: string;
+  workspaceId?: string;
+  eventCount: number;
+  eventTypes: string[];
+  error: string;
+}
+
+/**
+ * IPC payload for agent:event-delivery-timeout events
+ */
+export interface AgentEventDeliveryTimeoutPayload {
+  targetAgentId: string;
+  workspaceId?: string;
+  eventCount: number;
+  eventTypes: string[];
+  timeoutMs: number;
+}
+
+/**
+ * IPC payload for agent:subscriptions-restored events
+ */
+export interface AgentSubscriptionsRestoredPayload {
+  workspaceId?: string;
+  count?: number;
+  agentIds: string[];
+}
+
+/**
+ * IPC payload for agent:subscriptions-changed events
+ */
+export interface AgentSubscriptionsChangedPayload {
+  agentId?: string;
+  workspaceId?: string;
+  subscriptionVersion: number;
+  reason?: string;
 }
 
 /**
@@ -1206,7 +1261,12 @@ export type AgentEventPayload =
   | AgentUnsubscribedPayload
   | AgentIdlePayload
   | AgentStatusChangedPayload
-  | AgentWokenBySubscriptionPayload;
+  | AgentWokenBySubscriptionPayload
+  | AgentDeliveryConfirmedPayload
+  | AgentEventDeliveryFailedPayload
+  | AgentEventDeliveryTimeoutPayload
+  | AgentSubscriptionsRestoredPayload
+  | AgentSubscriptionsChangedPayload;
 
 /**
  * Union type representing all possible IPC event payloads for note events.

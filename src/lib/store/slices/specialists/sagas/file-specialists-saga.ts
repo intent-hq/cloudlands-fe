@@ -1,5 +1,4 @@
-import { call, delay, fork, put, select, takeEvery } from "typed-redux-saga";
-import { getItems } from "$lib/store/utils/collection-utils";
+import { call, delay, fork, put, takeEvery } from "typed-redux-saga";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { workspaceMounted } from "$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice";
@@ -13,40 +12,22 @@ import {
     setFileSpecialists,
     setFileSpecialistsLoaded,
     type FileSpecialist,
-    type SpecialistsState,
 } from "../specialists-slice";
 
 import type { Workspace } from "$shared/types";
+import { selectFileSpecialists } from "../specialists-selectors";
 
 function workspaceToPath(workspace: Workspace | undefined): string | undefined {
     return workspace?.worktreePath ?? workspace?.repositoryPath ?? workspace?.path;
 }
 
-function getActiveWorkspacePath(state: any): string | undefined {
-    const workspace = selectActiveWorkspace.select(state);
-    return workspaceToPath(workspace);
-}
-
-/**
- * Resolve workspace path, preferring a specific workspace ID when available.
- * This avoids a race where workspaceMounted fires before setActiveWorkspaceId
- * has been processed (the latter runs in a Svelte $effect).
- */
-function getWorkspacePathForId(state: any, wsId?: string): string | undefined {
-    if (wsId) {
-        const ws = selectWorkspaceById.select(state, wsId);
-        if (ws) return workspaceToPath(ws);
-    }
-    // Fallback to active workspace (for calls without a specific wsId)
-    return getActiveWorkspacePath(state);
-}
-
 function* reloadFileSpecialists(wsId?: string) {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const workspacePath: string | undefined = yield* select(
-                (state: any) => getWorkspacePathForId(state, wsId),
-            );
+            const workspace = wsId
+                ? yield* selectWorkspaceById.effect(wsId)
+                : yield* selectActiveWorkspace.effect();
+            const workspacePath = workspaceToPath(workspace);
             const result: any = yield* call(
                 [window.electronAPI, window.electronAPI.invoke],
                 SPECIALISTS_CHANNELS.LIST_FILES,
@@ -55,8 +36,8 @@ function* reloadFileSpecialists(wsId?: string) {
             if (result?.success && result.data) {
                 const { specialists, errors } = result.data;
                 // Get current state to preserve existing codingAgent values
-                const state: SpecialistsState = yield* select((s: any) => s.specialists);
-                const previousFileSpecialistsById = new Map(getItems(state.fileSpecialists).map((fs) => [fs.id, fs]));
+                const previousFileSpecialists = yield* selectFileSpecialists.effect();
+                const previousFileSpecialistsById = new Map(previousFileSpecialists.map((fs) => [fs.id, fs]));
                 const fileSpecs: FileSpecialist[] = specialists.map((s: any) => {
                     const previous = previousFileSpecialistsById.get(s.id);
                     // Preserve existing codingAgent if frontmatter doesn't provide one (including empty strings)
@@ -153,7 +134,7 @@ function* watchSpecialistFilesChanged() {
     yield* takeEveryFromElectronChannel<Record<string, never>>(
         "specialists:files-changed",
         function* () {
-            const activeWorkspace: Workspace | undefined = yield* select(selectActiveWorkspace.select);
+            const activeWorkspace: Workspace | undefined = yield* selectActiveWorkspace.effect();
             const wsId = activeWorkspace?.id;
             yield* call(reloadFileSpecialists, wsId);
         },
@@ -167,8 +148,9 @@ type FileChangedDetail = {
 };
 
 /**
- * Watch for file:changed browser events emitted by workspace-content-file-manager.
- * When specialist files (.augment/specialists/*.md) are saved, reload the specialist list.
+ * Watch for file:changed browser events emitted by the files slice (and
+ * legacy emitters in MonacoDiffViewer.svelte). When specialist files
+ * (.augment/specialists/*.md) are saved, reload the specialist list.
  */
 function* watchFileChangesForSpecialists() {
     yield* takeEveryFromWindowEvent<FileChangedDetail>(

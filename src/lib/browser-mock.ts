@@ -277,11 +277,15 @@ function probeBridgeUrl(): Promise<string | null> {
 async function bridgeInvoke(channel: string, data?: any): Promise<any> {
   const url = resolvedBridgeUrl ?? (await probeBridgeUrl());
   if (!url) return undefined;
+  const workspaceId = getCurrentWorkspaceId();
 
   try {
     const res = await fetch(`${url}/ipc`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(workspaceId ? { 'x-workspace-id': workspaceId } : {}),
+      },
       body: JSON.stringify({ channel, data }),
     });
     if (!res.ok) return undefined;
@@ -289,6 +293,12 @@ async function bridgeInvoke(channel: string, data?: any): Promise<any> {
   } catch {
     return undefined;
   }
+}
+
+function getCurrentWorkspaceId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const match = window.location.pathname.match(/^\/workspace\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +318,11 @@ function connectEventWebSocket(): void {
   probeBridgeUrl().then((bridgeUrl) => {
     if (!bridgeUrl) return;
 
-    const url = bridgeUrl.replace(/^http/, 'ws') + '/ipc-events';
+    const workspaceId = getCurrentWorkspaceId();
+    const eventPath = workspaceId
+      ? `/ipc-events?workspaceId=${encodeURIComponent(workspaceId)}`
+      : '/ipc-events';
+    const url = bridgeUrl.replace(/^http/, 'ws') + eventPath;
     try {
       ws = new WebSocket(url);
       ws.onmessage = (event) => {

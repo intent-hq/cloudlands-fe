@@ -78,6 +78,8 @@ import {
   debouncedFileTrackingSync,
   refreshFileExplorer,
 } from "../file-explorer-slice";
+import { emptyWorkspaceState as emptyChangesWorkspaceState } from "../../changes/changes-slice";
+import { initialState as gitInitialState } from "../../git/git-slice";
 
 const WS_ID = "ws-1";
 
@@ -85,6 +87,9 @@ const MODIFIED: FileGitStatus = { status: " M", additions: 1, deletions: 0 };
 
 function stateWith(gitStatus: Record<string, FileGitStatus>, workspacePath = "/a/repo") {
   return {
+    workspace: { activeWorkspaceId: WS_ID },
+    changes: { byWorkspaceId: { [WS_ID]: emptyChangesWorkspaceState } },
+    git: gitInitialState,
     fileExplorer: {
       byWorkspaceId: {
         [WS_ID]: {
@@ -267,6 +272,18 @@ describe("Wave 1 IPC + window watcher handlers", () => {
     await expectSaga(handleFileChangedWindowEvent, {
       workspaceId: activeWs,
       type: "add",
+      files: [filePath],
+    })
+      .withState(stateWithActiveWs(activeWs))
+      .put(refreshDirectoryRequested(activeWs, filePath))
+      .silentRun(500);
+  });
+
+  it("handleFileChangedWindowEvent 'create' with files[] uses the first entry", async () => {
+    const filePath = "/a/repo/src/restored.ts";
+    await expectSaga(handleFileChangedWindowEvent, {
+      workspaceId: activeWs,
+      type: "create",
       files: [filePath],
     })
       .withState(stateWithActiveWs(activeWs))

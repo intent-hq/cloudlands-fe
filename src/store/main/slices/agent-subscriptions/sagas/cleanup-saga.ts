@@ -5,7 +5,7 @@
  * `validateRestoredSubscriptions()` from AgentEventSubscriptionService.
  */
 
-import { call, put, select, takeEvery, delay } from "typed-redux-saga";
+import { call, put, takeEvery, delay } from "typed-redux-saga";
 import {
   markAgentDeleted,
   evictDeletedAgent,
@@ -19,6 +19,7 @@ import {
   requestEvictStaleAgents,
   requestValidateSubscriptions,
 } from "./saga-actions";
+import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,10 +37,7 @@ export function* handleEvictStaleAgents(
 ) {
   const [wsId] = action.payload;
 
-  const ws = yield* select(
-    selectWorkspaceSubscriptionState.select,
-    wsId,
-  );
+  const ws = yield* selectWorkspaceSubscriptionState.effect(wsId);
   const deletedAgents = ws.deletedAgents;
 
   const now = Date.now();
@@ -82,13 +80,12 @@ export function* handleValidateSubscriptions(
 ) {
   const [wsId] = action.payload;
 
-  const ws = yield* select(
-    selectWorkspaceSubscriptionState.select,
-    wsId,
-  );
+  const ws = yield* selectWorkspaceSubscriptionState.effect(wsId);
 
   const subscriptions = Object.values(ws.subscriptions);
   const agentIds = [...new Set(subscriptions.map((s) => s.agentId))];
+  const activeAgentIds: string[] = [];
+  let restoredCount = 0;
 
   for (const agentId of agentIds) {
     const isActive: boolean = yield* call(isAgentSessionActive, agentId, wsId);
@@ -96,7 +93,22 @@ export function* handleValidateSubscriptions(
       yield* put(removeAllSubscriptions(wsId, agentId));
       yield* put(clearAgentQueue(wsId, agentId));
       yield* put(markAgentDeleted(wsId, agentId, Date.now()));
+      continue;
     }
+
+    activeAgentIds.push(agentId);
+    restoredCount += subscriptions.filter((s) => s.agentId === agentId).length;
+  }
+
+  if (restoredCount > 0) {
+    yield* call(dispatchWorkspaceEvent, "agent:subscriptions-restored", wsId, {
+      type: "system",
+      id: "subscription-service",
+      name: "Subscription Service",
+    }, {
+      count: restoredCount,
+      agentIds: activeAgentIds,
+    });
   }
 }
 

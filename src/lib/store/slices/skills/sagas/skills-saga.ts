@@ -1,4 +1,4 @@
-import { call, put, select, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import { call, put, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import {
   loadSkillsRequested,
@@ -8,7 +8,6 @@ import {
 } from "../skills-slice";
 import { selectSkillsWorkspaceState } from "../skills-selectors";
 import type { SkillInfo } from "../skills-types";
-import type { StoreState } from "../../../types";
 
 /**
  * Tracks the last workspace ID for which skills were successfully loaded.
@@ -34,9 +33,7 @@ function* handleLoadSkills(
 
   // Deduplication guard: skip if skills are already loaded for this workspace
   if (workspaceId === lastLoadedWorkspaceId) {
-    const wsState = yield* select((state: StoreState) =>
-      selectSkillsWorkspaceState.select(state, workspaceId),
-    );
+    const wsState = yield* selectSkillsWorkspaceState.effect(workspaceId);
     if (!wsState.loading && wsState.error === null && wsState.skills.length > 0) {
       return;
     }

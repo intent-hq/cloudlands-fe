@@ -566,7 +566,7 @@ export function setupWorkspaceIPC(): void {
             const { updateProjectWatcher } = await import(
               '../../specialists/main/specialist-file-watcher'
             );
-            await updateProjectWatcher(undefined);
+            await updateProjectWatcher(undefined, id);
             logger.info('[WorkspaceIPC] Stopped project specialist file watcher', { workspaceId: id });
           } catch (error) {
             logger.warn('[WorkspaceIPC] Failed to stop project specialist file watcher', error as Error, {
@@ -864,8 +864,8 @@ export function setupWorkspaceIPC(): void {
 
                   // ── Bridge: MetadataSyncService → UI domain events ──────────────
                   // Translates sync:file-changed events (from remote → local cache writes)
-                  // into IPC events that the renderer's notes.store / workspace-content-event-handlers
-                  // already listen for.
+                  // into IPC events that the renderer's files slice and saga listeners already
+                  // listen for.
                   //
                   // SAFETY: This bridge only READS from local cache and SENDS to renderer.
                   // It never writes back to the filesystem, so there is no risk of infinite loops.
@@ -1228,7 +1228,7 @@ export function setupWorkspaceIPC(): void {
                     const { updateProjectWatcher } = await import(
                       '../../specialists/main/specialist-file-watcher'
                     );
-                    await updateProjectWatcher(specialistWorktreePath);
+                    await updateProjectWatcher(specialistWorktreePath, id);
                     logger.info('[WorkspaceIPC] Started project specialist file watcher', {
                       workspaceId: id,
                     });

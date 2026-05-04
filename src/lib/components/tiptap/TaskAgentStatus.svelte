@@ -105,7 +105,7 @@ const logger = createLogger('TaskAgentStatus');
           logger.debug('[TaskAgentStatus] Agent not found on disk', { agentId });
           loadFailed = true;
           failedAgentDiskCache.set(agentId, Date.now());
-          // NOTE: We deliberately do NOT call removeAssociationsForAgent here
+          // NOTE: We deliberately do NOT dispatch task-agent association cleanup here
           // Associations should only be cleaned up when an agent is explicitly deleted
           // (handled by the agent deletion flow, not the loading flow)
         }

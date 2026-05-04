@@ -3,7 +3,6 @@
   import { writable } from 'svelte/store';
   import { monaco, initializeMonaco, ensureMonacoInitialized } from '$lib/utils/monaco-workers';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
-  import { themeManager } from '$lib/utils/theme';
   import { createLogger } from '$lib/utils/client-logger';
   import AgentTypingAnimation from './AgentTypingAnimation.svelte';
   import { type LineChange, createLineChangeDecorations } from '$lib/utils/line-change-decorations';
@@ -18,6 +17,7 @@
   } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   const logger = createLogger('CodeEditor');
@@ -71,6 +71,7 @@
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const isDarkTheme = selectIsDarkTheme();
   const activeWorkspace = selectActiveWorkspace();
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
@@ -164,17 +165,7 @@
   // Track decoration IDs for line changes
   let lineChangeDecorationIds: string[] = [];
 
-  // Theme change listener cleanup function - set on mount
-  let themeCleanup: (() => void) | undefined;
-
-  // Detect current theme using ThemeManager for consistency
-  function detectCurrentTheme(): boolean {
-    if (typeof window === 'undefined') return false;
-    // Use ThemeManager's isDark() method as source of truth
-    return themeManager.isDark();
-  }
-
-  let isDarkMode = detectCurrentTheme();
+  let scrollCleanup: (() => void) | undefined;
 
   // Ensure we always pass a string to Monaco APIs. If upstream code accidentally
   // provides a non-string value (e.g. an object), Monaco's internal
@@ -257,8 +248,7 @@
           defineMonacoThemes();
 
           const languageId = getLanguageId(language);
-          isDarkMode = detectCurrentTheme();
-          const selectedTheme = getActiveMonacoThemeName(isDarkMode);
+          const selectedTheme = getActiveMonacoThemeName($isDarkTheme);
 
           // Final check before creating editor
           if (!container || !container.parentNode || !document.body.contains(container)) {
@@ -484,6 +474,14 @@
     }
   });
 
+  // Keep Monaco in sync with the Redux-backed app theme.
+  $effect(() => {
+    const dark = $isDarkTheme;
+    if (editor) {
+      monaco.editor.setTheme(getActiveMonacoThemeName(dark));
+    }
+  });
+
   function getLanguageId(lang: string): string {
     const langMap: Record<string, string> = {
       js: 'javascript',
@@ -567,9 +565,7 @@
 
       const languageId = getLanguageId(language);
 
-      // Re-detect theme right before creating editor (async operations above may have allowed theme to change)
-      isDarkMode = detectCurrentTheme();
-      const selectedTheme = getActiveMonacoThemeName(isDarkMode);
+      const selectedTheme = getActiveMonacoThemeName($isDarkTheme);
 
       // Final check before creating editor
       if (!container || !container.parentNode || !document.body.contains(container)) {
@@ -646,14 +642,11 @@
         // Ensure Monaco is loaded even for fallback
         await ensureMonacoInitialized();
 
-        // Re-detect theme for fallback editor
-        isDarkMode = detectCurrentTheme();
-
         const fallbackValue = toEditorContent(value);
         editor = monaco.editor.create(container, {
           value: fallbackValue,
           language: getLanguageId(language),
-          theme: isDarkMode ? 'vs-dark' : 'vs',
+          theme: getActiveMonacoThemeName($isDarkTheme),
           readOnly: readOnly,
           lineNumbers: lineNumbers ? 'on' : 'off',
           minimap: { enabled: false },
@@ -703,53 +696,6 @@
       }
     }
 
-    // Set up theme change listeners
-    if (typeof window !== 'undefined') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-      const handleChange = () => {
-        const newTheme = detectCurrentTheme();
-        isDarkMode = newTheme;
-        // Update Monaco theme when theme changes
-        if (editor) {
-          monaco.editor.setTheme(getActiveMonacoThemeName(newTheme));
-        }
-      };
-
-      // Listen to system preference changes
-      mediaQuery.addEventListener('change', handleChange);
-
-      // Listen to ThemeManager's theme-changed event (primary source of truth)
-      const handleThemeChanged = (event: Event) => {
-        const customEvent = event as CustomEvent<{ theme: string; isDark: boolean }>;
-        isDarkMode = customEvent.detail.isDark;
-        if (editor) {
-          monaco.editor.setTheme(getActiveMonacoThemeName(customEvent.detail.isDark));
-        }
-      };
-      window.addEventListener('theme-changed', handleThemeChanged);
-
-      // Also watch for class changes on html element as fallback
-      const observer = new MutationObserver(() => {
-        const newTheme = detectCurrentTheme();
-        isDarkMode = newTheme;
-        if (editor) {
-          monaco.editor.setTheme(getActiveMonacoThemeName(newTheme));
-        }
-      });
-
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class'],
-      });
-
-      themeCleanup = () => {
-        mediaQuery.removeEventListener('change', handleChange);
-        window.removeEventListener('theme-changed', handleThemeChanged);
-        observer.disconnect();
-      };
-    }
-
     // Set up scroll position save/restore event listeners
     const handleSaveScrollPosition = (
       event: CustomEvent<{ callback: (scrollTop: number) => void }>,
@@ -786,8 +732,7 @@
       handleRestoreScrollPosition as EventListener,
     );
 
-    // Store cleanup functions
-    const scrollCleanup = () => {
+    scrollCleanup = () => {
       window.removeEventListener(
         'file:save-scroll-position',
         handleSaveScrollPosition as EventListener,
@@ -796,13 +741,6 @@
         'file:restore-scroll-position',
         handleRestoreScrollPosition as EventListener,
       );
-    };
-
-    // Extend themeCleanup to also clean up scroll listeners
-    const originalThemeCleanup = themeCleanup;
-    themeCleanup = () => {
-      originalThemeCleanup?.();
-      scrollCleanup();
     };
   });
 
@@ -823,8 +761,7 @@
   }
 
   onDestroy(() => {
-    // Clean up theme listeners (which now also includes scroll listeners)
-    themeCleanup?.();
+    scrollCleanup?.();
 
     if (editor) {
       // Wrap entire disposal in try-catch to handle any Monaco internal errors

@@ -1,8 +1,15 @@
 <script lang="ts">
   import { faChevronLeft } from '@fortawesome/free-solid-svg-icons';
+  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
+  import {
+    requestCollapsiblePanelCollapsed,
+    setCollapsiblePanelCollapsed,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   import { slide } from 'svelte/transition';
 
@@ -48,22 +55,29 @@
     children,
   }: Props = $props();
 
-  // Use external collapsed state if provided, otherwise manage internally
-  // Note: We intentionally capture storageKey and defaultCollapsed at initialization
-  // svelte-ignore state_referenced_locally
-  let internalCollapsed = $state(
-    storageKey && typeof window !== 'undefined'
-      ? localStorage.getItem(storageKey) === 'true'
-      : defaultCollapsed,
-  );
+  const dispatch = getDispatch();
+  const persistedCollapsed = selectCollapsiblePanelCollapsed(storageKey ?? '');
+
+  let internalCollapsed = $state($persistedCollapsed ?? defaultCollapsed);
+  let appliedPersistedCollapsed = $state<boolean | undefined>($persistedCollapsed);
 
   // Determine which collapsed state to use
   let collapsed = $derived(externalCollapsed !== undefined ? externalCollapsed : internalCollapsed);
 
-  // Save collapsed state to localStorage when it changes (only if managing internally)
   $effect(() => {
-    if (externalCollapsed === undefined && storageKey && typeof window !== 'undefined') {
-      localStorage.setItem(storageKey, String(internalCollapsed));
+    if (
+      externalCollapsed === undefined &&
+      $persistedCollapsed !== undefined &&
+      $persistedCollapsed !== appliedPersistedCollapsed
+    ) {
+      internalCollapsed = $persistedCollapsed;
+      appliedPersistedCollapsed = $persistedCollapsed;
+    }
+  });
+
+  onMount(() => {
+    if (storageKey && externalCollapsed === undefined) {
+      dispatch(requestCollapsiblePanelCollapsed(storageKey));
     }
   });
   // Note: contentId is intentionally stable across the component's lifecycle
@@ -80,6 +94,9 @@
       } else {
         // Manage internally
         internalCollapsed = !internalCollapsed;
+        if (storageKey) {
+          dispatch(setCollapsiblePanelCollapsed(storageKey, internalCollapsed));
+        }
       }
     }
   }

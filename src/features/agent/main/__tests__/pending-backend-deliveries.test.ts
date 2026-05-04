@@ -116,4 +116,38 @@ describe('pendingBackendDeliveries safety timeout', () => {
 
     vi.useRealTimers();
   });
+
+  it('cleanup clears pending backend delivery and pending stop timers', () => {
+    vi.useFakeTimers();
+    const handler = createHandler();
+    const deliveryAgentId = 'test-agent-delivery';
+    const stopAgentId = 'test-agent-stop';
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+    handler.cleanupAllListeners = vi.fn();
+    handler.httpBridgeUnrecoverableDisposer = null;
+    handler.pendingStopAgents = new Set();
+    handler.pendingStopAgentTimeouts = new Map();
+    handler.unifiedBackend = null;
+    handler.providerCleanupInterval = null;
+
+    const deliveryTimeout = setTimeout(() => {}, 999999);
+    const stopTimeout = setTimeout(() => {}, 999999);
+    handler.pendingBackendDeliveries.add(deliveryAgentId);
+    handler.pendingBackendDeliveryTimeouts.set(deliveryAgentId, deliveryTimeout);
+    handler.pendingStopAgents.add(stopAgentId);
+    handler.pendingStopAgentTimeouts.set(stopAgentId, stopTimeout);
+
+    handler.cleanup();
+
+    expect(handler.pendingBackendDeliveries.size).toBe(0);
+    expect(handler.pendingBackendDeliveryTimeouts.size).toBe(0);
+    expect(handler.pendingStopAgents.size).toBe(0);
+    expect(handler.pendingStopAgentTimeouts.size).toBe(0);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(deliveryTimeout);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(stopTimeout);
+
+    clearTimeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
 });

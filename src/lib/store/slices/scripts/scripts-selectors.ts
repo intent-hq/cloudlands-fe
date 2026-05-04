@@ -72,6 +72,10 @@ export const selectScriptsLoading = createSelector((state) => {
 });
 
 /** Scripts data for a specific workspace (parameterized). */
+export const selectWorkspaceScriptsInitialized = createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).initialized,
+);
+
 export const selectWorkspaceScriptEntries = createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
 
   import { agentClient } from '$features/agent/agent.client';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
@@ -22,10 +23,20 @@
   import {
     selectSelectedModel,
     selectAvailableModels,
+    selectModelFallbackInfo,
+    selectModelPickerCollapsedGroups,
     selectIsLoadingModels,
     selectLoadError,
   } from '$lib/store/slices/model/model-selectors';
-  import { selectModel, setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+  import {
+    clearModelFallbackInfo,
+    requestHydrateModelFallbackInfo,
+    selectModel,
+    setModelFallbackInfo,
+    setModelPickerGroupCollapsed,
+    setWorkspaceModel,
+  } from '$lib/store/slices/model/model-slice';
+  import type { ModelFallbackInfo } from '$lib/store/slices/model/model-types';
   import {
     selectActiveProviderId,
     selectEnabledProviderIds,
@@ -48,7 +59,6 @@
   import { isUserProviderSettled, toDropdownOptions } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
-  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { toast } from 'svelte-sonner';
   import {
     faCheck,
@@ -65,6 +75,7 @@
   const enabledProviderIds$ = selectEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
+  const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
 
@@ -266,32 +277,11 @@
 
   // Provider display name for footer — reflects the effective provider, not the global one
 
-  // Track which provider groups are collapsed in the dropdown (persisted globally)
-  const COLLAPSED_GROUPS_KEY = 'model-picker-collapsed-groups';
-
-  function loadCollapsedGroups(): Set<string> {
-    try {
-      const stored = localStorage.getItem(COLLAPSED_GROUPS_KEY);
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  }
-
-  let collapsedGroups = $state<Set<string>>(loadCollapsedGroups());
+  // Track which provider groups are collapsed in the dropdown (persisted through Redux sagas)
+  const collapsedGroups = $derived(new Set($collapsedGroupKeys$));
 
   function toggleGroup(key: string) {
-    collapsedGroups = new Set(collapsedGroups);
-    if (collapsedGroups.has(key)) {
-      collapsedGroups.delete(key);
-    } else {
-      collapsedGroups.add(key);
-    }
-    try {
-      localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...collapsedGroups]));
-    } catch {
-      // ignore storage errors
-    }
+    dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
   }
 
   // Refreshing state for per-provider refresh buttons in group headers
@@ -685,45 +675,29 @@
     return !values.has(normalizeModelIdForMatch(localModel));
   });
 
-  // --- Per-agent fallback tracking (persisted to localStorage so it survives page refresh) ---
+  // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
   // Keyed by agentId so warnings don't leak across agents/workspaces.
-  const FALLBACK_KEY_PREFIX = 'workspaces-model-fallback:';
-
-  type FallbackInfo = { fromModel: string; toModel: string };
+  const agentIdStore = writable('');
+  const fallbackInfo$ = selectModelFallbackInfo(agentIdStore);
 
   // Load persisted fallback info for this agent
-  let fallbackInfo = $state<FallbackInfo | null>(null);
   $effect(() => {
+    agentIdStore.set(agentId ?? '');
     if (!agentId) {
-      fallbackInfo = null;
       return;
     }
-
-    try {
-      const stored = safeLocalStorage.getItem(FALLBACK_KEY_PREFIX + agentId);
-      if (stored) {
-        fallbackInfo = JSON.parse(stored);
-        logger.debug('Loaded fallback info from localStorage:', { agentId, fallback: stored });
-      } else {
-        fallbackInfo = null;
-      }
-    } catch {
-      fallbackInfo = null;
-      safeLocalStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
-    }
+    dispatch(requestHydrateModelFallbackInfo(agentId));
   });
 
-  function setFallbackInfo(info: FallbackInfo) {
-    fallbackInfo = info;
+  function setFallbackInfo(info: ModelFallbackInfo) {
     if (agentId) {
-      safeLocalStorage.setJSON(FALLBACK_KEY_PREFIX + agentId, info);
+      dispatch(setModelFallbackInfo(agentId, info));
     }
   }
 
   function clearFallbackInfo() {
-    fallbackInfo = null;
     if (agentId) {
-      safeLocalStorage.removeItem(FALLBACK_KEY_PREFIX + agentId);
+      dispatch(clearModelFallbackInfo(agentId));
     }
   }
 
@@ -731,7 +705,7 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && (isSelectedModelUnavailable || fallbackInfo !== null),
+    !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // Warning message to display
@@ -742,6 +716,7 @@
         description: 'Pick another model to continue.',
       };
     }
+    const fallbackInfo = $fallbackInfo$;
     if (fallbackInfo) {
       return {
         title: `${fallbackInfo.fromModel} is no longer available`,
@@ -839,7 +814,7 @@
       });
 
     if (!isProviderSwitch) {
-      // Store fallback info per-agent (persisted to localStorage for page refresh)
+      // Store fallback info per-agent (persisted through Redux sagas for page refresh)
       setFallbackInfo({
         fromModel: unavailableModelName,
         toModel: fallbackModelName,

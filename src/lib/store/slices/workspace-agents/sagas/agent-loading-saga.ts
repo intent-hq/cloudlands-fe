@@ -17,7 +17,7 @@ import { AgentId } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
 import type { StoredAgent } from '$lib/utils/agent-loader';
 import type { PanelLayoutRestoreStatus } from '$lib/store/slices/panel-layout/panel-layout-types';
-import { call, delay, put, select } from 'typed-redux-saga';
+import { call, delay, put } from 'typed-redux-saga';
 import { lockReactiveSelectors } from '../../store-utility/sagas/lock-reactive-selectors';
 import {
   markAgentRecentlyCreated,
@@ -93,20 +93,9 @@ function* getAllTabsForWorkspace(wsId: string) {
 export function* waitForPanelLayoutRestore(wsId: string) {
   const maxAttempts = PANEL_LAYOUT_RESTORE_TIMEOUT_MS / PANEL_LAYOUT_RESTORE_POLL_MS;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const {
-      hasTabs,
-      restoreStatus,
-    }: {
-      hasTabs: boolean;
-      restoreStatus: PanelLayoutRestoreStatus;
-    } = yield* select((state: any) => {
-      const panels = selectPanels.select(state, wsId);
-      const allTabs = Object.values(panels).flatMap((panel) => panel.tabs);
-      return {
-        hasTabs: allTabs.length > 0,
-        restoreStatus: selectRestoreStatus.select(state, wsId),
-      };
-    });
+    const panels = yield* selectPanels.effect(wsId);
+    const hasTabs = Object.values(panels).flatMap((panel) => panel.tabs).length > 0;
+    const restoreStatus: PanelLayoutRestoreStatus = yield* selectRestoreStatus.effect(wsId);
     if (hasTabs || (restoreStatus !== 'idle' && restoreStatus !== 'pending')) {
       return;
     }
@@ -237,9 +226,7 @@ export function* restoreInitialAgent(
   const initialAgentOnDisk = diskAgents.find((a) => a.id === AgentId(initialAgentId));
   if (initialAgentOnDisk) {
     // Use workspace-scoped Redux selector for race-safe lookup
-    const existingSession: AgentSession | undefined = yield* select((s: any) =>
-      selectAgentById.select(s, initialAgentId),
-    );
+    const existingSession: AgentSession | undefined = yield* selectAgentById.effect(initialAgentId);
     const isAlreadyActive = existingSession && !(existingSession as any).isPending;
     if (!isAlreadyActive && !existingSession) {
       // Check if this is a pending agent from workspace creation that needs
@@ -256,15 +243,13 @@ export function* restoreInitialAgent(
           !(initialAgentOnDisk as any).backendSessionId);
       try {
         // Get full workspace from Redux (not a stub) so createSession has valid paths
-        const workspace = yield* select((s: any) => selectWorkspaceById.select(s, wsId));
+        const workspace = yield* selectWorkspaceById.effect(wsId);
         const workspaceObj = workspace ?? ({ id: wsId } as any);
         let restored: AgentSession | null;
         if (isPendingWithMessage) {
           // Use createSession to create a proper backend session and send
           // the initial message — same pattern as the onboarding flow.
-          const reduxConfig: InitialAgentConfig | null = yield* select((s: any) =>
-            selectInitialAgentConfig.select(s, wsId),
-          );
+          const reduxConfig: InitialAgentConfig | null = yield* selectInitialAgentConfig.effect(wsId);
           const agentConfigData = sessionStorage.getItem(`workspace:${wsId}:agent-config`);
           const config =
             reduxConfig?.config ?? (agentConfigData ? JSON.parse(agentConfigData) : diskMeta);
@@ -311,14 +296,12 @@ export function* restoreInitialAgent(
       yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
     }
   } else {
-    const reduxConfig: InitialAgentConfig | null = yield* select((s: any) =>
-      selectInitialAgentConfig.select(s, wsId),
-    );
+    const reduxConfig: InitialAgentConfig | null = yield* selectInitialAgentConfig.effect(wsId);
     const agentConfigData = sessionStorage.getItem(`workspace:${wsId}:agent-config`);
     const config = reduxConfig?.config ?? (agentConfigData ? JSON.parse(agentConfigData) : {});
     try {
       // Get full workspace from Redux (not a stub) so createSession has valid paths
-      const workspace2 = yield* select((s: any) => selectWorkspaceById.select(s, wsId));
+      const workspace2 = yield* selectWorkspaceById.effect(wsId);
       const workspaceObj2 = workspace2 ?? ({ id: wsId } as any);
       const newSession: AgentSession | null = yield* call(
         [agentService, agentService.activateInitialAgent],

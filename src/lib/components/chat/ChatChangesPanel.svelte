@@ -208,7 +208,6 @@
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectCurrentCommits } from '$lib/store/slices/changes/changes-selectors';
-  import { listenSync } from '$lib/electron-bridge';
   import {
     batchedGitBranchBaseDiff,
     batchedGitDiff,
@@ -232,6 +231,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   const lineWrapping = selectLineWrapping();
   const activeWorkspace = selectActiveWorkspace();
   const activeWorkspaceId = selectActiveWorkspaceId();
+  const agentFileRefreshes = selectAgentFileRefreshes(activeWorkspaceId);
 
   // Re-export types from types.ts for backward compatibility
   export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
@@ -239,6 +239,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAgentFileRefreshes } from '$lib/store/slices/chat-changes/chat-changes-selectors';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -422,76 +423,38 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     }
   });
 
-  // This ensures the diff updates when a file is edited externally (e.g., in another panel)
-  // We handle this at the ChatChangesPanel level because diff viewer instances may be
-  // destroyed/recreated during re-renders, losing their individual debounce timers.
+  // Reacts to the chat-changes saga's debounced agent-file-change refreshes.
+  // The saga owns the IPC listener and per-(workspace, path) debounce; this
+  // effect just translates per-path version increments into refreshFileDiff calls.
   $effect(() => {
-    // Only listen when we have staging controls enabled (local changes view)
-    // For agent changes, the content comes from tool calls, not git
     if (!showStagingControls) return;
 
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
 
-    // Debounce timer per file path
-    const fileDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    if (lastSeenRefreshWorkspaceId !== wsId) {
+      lastSeenVersionByPath.clear();
+      lastSeenRefreshWorkspaceId = wsId;
+    }
 
-    // Handler for agent file changes (emitted when file:write is called)
-    const handleAgentFileChange = (data: {
-      workspaceId?: string;
-      filePath?: string;
-      path?: string;
-    }) => {
-      if (data.workspaceId !== wsId) return;
-      const changedPath = data.filePath || data.path;
-      if (!changedPath) return;
+    for (const entry of $agentFileRefreshes) {
+      const lastSeen = lastSeenVersionByPath.get(entry.path) ?? 0;
+      if (entry.version <= lastSeen) continue;
+      lastSeenVersionByPath.set(entry.path, entry.version);
 
-      // Check if this file is in our changes list and get the matching change
       const matchingChange = untrack(() =>
-        enrichedChanges.find((c) => filePathsMatch(changedPath, c.filePath)),
+        enrichedChanges.find((c) => filePathsMatch(entry.path, c.filePath)),
       );
-      if (!matchingChange) return;
+      if (!matchingChange) continue;
 
       logger.debug('ChatChangesPanel: Agent file change detected', {
-        changedPath,
+        changedPath: entry.path,
         matchingFilePath: matchingChange.filePath,
       });
 
-      // IMMEDIATELY mark this file as recently refreshed to prevent the main effect
-      // from overwriting our data when the parent updates the changes prop
       recentlyRefreshedFiles.set(matchingChange.filePath, Date.now());
-
-      // Clear any existing debounce for this file
-      const existingTimer = fileDebounceTimers.get(changedPath);
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-      }
-
-      // Schedule a refresh for this file with debounce
-      const timer = setTimeout(() => {
-        fileDebounceTimers.delete(changedPath);
-        logger.info('ChatChangesPanel: Refreshing diff for changed file', { changedPath });
-        // Refresh the cooldown timestamp again
-        recentlyRefreshedFiles.set(matchingChange.filePath, Date.now());
-        void refreshFileDiff(matchingChange.filePath);
-      }, 300);
-      fileDebounceTimers.set(changedPath, timer);
-    };
-
-    // Subscribe to agent file changes
-    const cleanup = listenSync('file-tracking:agent-file-changed', ({ payload }) => {
-      handleAgentFileChange(payload as { workspaceId?: string; filePath?: string; path?: string });
-    });
-
-    // Cleanup on effect disposal
-    return () => {
-      cleanup?.();
-      // Clear all pending timers
-      for (const timer of fileDebounceTimers.values()) {
-        clearTimeout(timer);
-      }
-      fileDebounceTimers.clear();
-    };
+      void refreshFileDiff(matchingChange.filePath);
+    }
   });
 
   // Only show loading state on initial load or during enrichment, not during refreshes
@@ -579,6 +542,8 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   // This prevents the flicker when staging/unstaging hunks causes the parent to refresh
   let recentlyRefreshedFiles = new Map<string, number>();
   const REFRESH_COOLDOWN_MS = 2000; // Don't re-fetch files refreshed within this window
+  let lastSeenVersionByPath = new Map<string, number>();
+  let lastSeenRefreshWorkspaceId: string | null = null;
 
   // Track the last processed changes to avoid re-fetching when changes haven't actually changed
   // This prevents refreshes when the agent is running but hasn't made code changes

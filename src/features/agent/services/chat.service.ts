@@ -2384,18 +2384,24 @@ export class ChatService implements IDisposable {
         // restoreSessionWithoutBackend), neither the non-streaming guard below NOR the streaming
         // guard further down applies. This gap allows stale data to overwrite user messages.
         //
-        // We detect this by checking: if we're currently streaming AND message count would
-        // decrease AND the current state's last message is a user message (indicating a
-        // just-sent message), reject the update. This only applies during streaming transitions
-        // since the non-streaming case is already covered by the guard at line ~2686.
+        // We detect this by checking: if we're currently streaming AND the incoming snapshot
+        // would remove or replace the current state's last user message (indicating a just-sent
+        // message), reject the update. This catches both shorter stale snapshots and same-length
+        // stale snapshots whose last message is from an older turn. This only applies during
+        // streaming transitions since the non-streaming case is already covered below.
         // This is safe because:
         // - Edit/regenerate goes through resetHistory, not sessionUpdatedHandler
         // - Backend message consolidation (legitimate count reduction) always ends with an
         //   assistant message, not a user message
         // - Stale restore data from disk will be missing the user's recently-sent message
-        if (currentState.isStreaming && currentState.messages.length > 0 && session.messages.length < currentState.messages.length) {
+        if (currentState.isStreaming && currentState.messages.length > 0) {
           const lastMessage = currentState.messages[currentState.messages.length - 1];
-          if (lastMessage?.role === 'user') {
+          const sessionLastMessage = session.messages[session.messages.length - 1];
+          const wouldDropLastUserMessage =
+            session.messages.length < currentState.messages.length ||
+            (session.messages.length === currentState.messages.length &&
+              sessionLastMessage?.id !== lastMessage?.id);
+          if (lastMessage?.role === 'user' && wouldDropLastUserMessage) {
             logger.info(
               '[ChatService] sessionUpdatedHandler: skipping - would drop user message',
               {
@@ -2404,6 +2410,7 @@ export class ChatService implements IDisposable {
                 sessionMessageCount: session.messages.length,
                 lastMessageRole: lastMessage.role,
                 lastMessageId: lastMessage.id,
+                sessionLastMessageId: sessionLastMessage?.id,
                 currentIsStreaming: currentState.isStreaming,
                 newIsStreaming,
               },

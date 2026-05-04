@@ -1,7 +1,14 @@
 <script lang="ts">
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
+  import {
+    requestCollapsiblePanelCollapsed,
+    setCollapsiblePanelCollapsed,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {
     title: string;
@@ -31,22 +38,30 @@
     children,
   }: Props = $props();
 
-  // Initialize collapsed state from localStorage or default
-  let collapsed = $state(
-    storageKey && typeof window !== 'undefined'
-      ? localStorage.getItem(storageKey) === 'true'
-      : defaultCollapsed,
-  );
+  const dispatch = getDispatch();
+  const persistedCollapsed = selectCollapsiblePanelCollapsed(storageKey ?? '');
 
-  // Save collapsed state to localStorage when it changes
+  let collapsed = $state($persistedCollapsed ?? defaultCollapsed);
+  let appliedPersistedCollapsed = $state<boolean | undefined>($persistedCollapsed);
+
   $effect(() => {
-    if (storageKey && typeof window !== 'undefined') {
-      localStorage.setItem(storageKey, String(collapsed));
+    if ($persistedCollapsed !== undefined && $persistedCollapsed !== appliedPersistedCollapsed) {
+      collapsed = $persistedCollapsed;
+      appliedPersistedCollapsed = $persistedCollapsed;
+    }
+  });
+
+  onMount(() => {
+    if (storageKey) {
+      dispatch(requestCollapsiblePanelCollapsed(storageKey));
     }
   });
 
   function toggleCollapsed() {
     collapsed = !collapsed;
+    if (storageKey) {
+      dispatch(setCollapsiblePanelCollapsed(storageKey, collapsed));
+    }
   }
 
   let hovering = $state(false);

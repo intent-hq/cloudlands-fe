@@ -5,7 +5,11 @@
  */
 import type { FSWatcher } from 'chokidar';
 import { Logger } from '../../../shared/logger';
-import { getSpecialistsDirectory, getProjectSpecialistsDirectory, ensureSpecialistsDirectory } from './specialist-file-loader';
+import {
+  getSpecialistsDirectory,
+  getProjectSpecialistsDirectory,
+  ensureSpecialistsDirectory,
+} from './specialist-file-loader';
 import { promises as fs } from 'fs';
 import { refreshSpecialistsFromFiles } from '../../agent/main/specialists.service';
 
@@ -16,23 +20,57 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 500;
 
 // Track active watchers for cleanup
-const activeWatchers: FSWatcher[] = [];
-let currentWorkspacePath: string | undefined;
+let userWatcher: FSWatcher | null = null;
+const projectWatchers = new Map<string, { watcher: FSWatcher; workspacePath: string }>();
+
+let pendingUserRefresh = false;
+const pendingProjectRefreshes = new Set<string>();
 
 // Callback to notify renderer
 let onFilesChanged: (() => void) | null = null;
 
-function handleChange(filePath: string, event: string) {
+type WatchScope = { type: 'user' } | { type: 'project'; workspacePath: string };
+
+function getProjectWatcherKey(workspacePath: string, workspaceId?: string): string {
+  return workspaceId ?? workspacePath;
+}
+
+async function flushPendingRefreshes(): Promise<void> {
+  const shouldRefreshUserCaches = pendingUserRefresh;
+  const projectWorkspacePaths = shouldRefreshUserCaches
+    ? [...new Set([...projectWatchers.values()].map((entry) => entry.workspacePath))]
+    : [...pendingProjectRefreshes];
+
+  pendingUserRefresh = false;
+  pendingProjectRefreshes.clear();
+
+  if (shouldRefreshUserCaches) {
+    await refreshSpecialistsFromFiles();
+  }
+
+  await Promise.all(
+    projectWorkspacePaths.map((workspacePath) => refreshSpecialistsFromFiles(workspacePath)),
+  );
+  onFilesChanged?.();
+}
+
+function handleChange(filePath: string, event: string, scope: WatchScope) {
   // Only care about .md files
   if (!filePath.endsWith('.md')) return;
 
   logger.info(`Specialist file ${event}: ${filePath}`);
 
+  if (scope.type === 'user') {
+    pendingUserRefresh = true;
+  } else {
+    pendingProjectRefreshes.add(scope.workspacePath);
+  }
+
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(async () => {
     try {
-      await refreshSpecialistsFromFiles(currentWorkspacePath);
-      onFilesChanged?.();
+      debounceTimer = null;
+      await flushPendingRefreshes();
       logger.info('Specialist cache refreshed after file change');
     } catch (error) {
       logger.error('Failed to refresh specialists after file change', error as Error);
@@ -40,7 +78,7 @@ function handleChange(filePath: string, event: string) {
   }, DEBOUNCE_MS);
 }
 
-async function createWatcher(dir: string): Promise<FSWatcher> {
+async function createWatcher(dir: string, scope: WatchScope): Promise<FSWatcher> {
   const { watch } = await import('chokidar');
 
   const watcher = watch(dir, {
@@ -49,9 +87,9 @@ async function createWatcher(dir: string): Promise<FSWatcher> {
     awaitWriteFinish: { stabilityThreshold: 300 },
   });
 
-  watcher.on('add', (p) => handleChange(p, 'added'));
-  watcher.on('change', (p) => handleChange(p, 'changed'));
-  watcher.on('unlink', (p) => handleChange(p, 'removed'));
+  watcher.on('add', (p) => handleChange(p, 'added', scope));
+  watcher.on('change', (p) => handleChange(p, 'changed', scope));
+  watcher.on('unlink', (p) => handleChange(p, 'removed', scope));
   watcher.on('error', (error) => {
     logger.error('Specialist file watcher error', error);
   });
@@ -67,28 +105,22 @@ export async function startSpecialistFileWatcher(
   workspacePath: string | undefined,
   notifyRenderer: () => void,
 ): Promise<void> {
-  // Clean up any existing watchers
-  await stopSpecialistFileWatcher();
-
-  currentWorkspacePath = workspacePath;
   onFilesChanged = notifyRenderer;
+
+  if (userWatcher) {
+    await userWatcher.close();
+    userWatcher = null;
+  }
 
   // Ensure user specialists directory exists before watching
   await ensureSpecialistsDirectory();
   const userDir = getSpecialistsDirectory();
   logger.info(`Watching user specialists directory: ${userDir}`);
-  activeWatchers.push(await createWatcher(userDir));
+  userWatcher = await createWatcher(userDir, { type: 'user' });
 
   // Watch project specialists directory if workspace path is available
   if (workspacePath) {
-    const projectDir = getProjectSpecialistsDirectory(workspacePath);
-    try {
-      await fs.mkdir(projectDir, { recursive: true });
-    } catch (e) {
-      logger.warn('Could not create project specialists directory', e as Error);
-    }
-    logger.info(`Watching project specialists directory: ${projectDir}`);
-    activeWatchers.push(await createWatcher(projectDir));
+    await updateProjectWatcher(workspacePath);
   }
 }
 
@@ -97,13 +129,28 @@ export async function startSpecialistFileWatcher(
  */
 export async function updateProjectWatcher(
   workspacePath: string | undefined,
+  workspaceId?: string,
 ): Promise<void> {
-  currentWorkspacePath = workspacePath;
+  if (!workspacePath && !workspaceId) {
+    for (const { watcher } of projectWatchers.values()) {
+      await watcher.close();
+    }
+    projectWatchers.clear();
+    pendingProjectRefreshes.clear();
+    return;
+  }
 
-  // Remove project watcher (index 1, if exists) and re-add
-  if (activeWatchers.length > 1) {
-    await activeWatchers[1].close();
-    activeWatchers.splice(1, 1);
+  const watcherKey = workspacePath ? getProjectWatcherKey(workspacePath, workspaceId) : workspaceId;
+
+  if (!watcherKey) {
+    return;
+  }
+
+  const existing = projectWatchers.get(watcherKey);
+  if (existing) {
+    await existing.watcher.close();
+    projectWatchers.delete(watcherKey);
+    pendingProjectRefreshes.delete(existing.workspacePath);
   }
 
   if (workspacePath) {
@@ -114,7 +161,10 @@ export async function updateProjectWatcher(
       logger.warn('Could not create project specialists directory', e as Error);
     }
     logger.info(`Watching project specialists directory: ${projectDir}`);
-    activeWatchers.push(await createWatcher(projectDir));
+    projectWatchers.set(watcherKey, {
+      watcher: await createWatcher(projectDir, { type: 'project', workspacePath }),
+      workspacePath,
+    });
   }
 }
 
@@ -122,12 +172,17 @@ export async function updateProjectWatcher(
  * Stop all specialist file watchers.
  */
 export async function stopSpecialistFileWatcher(): Promise<void> {
-  for (const watcher of activeWatchers) {
+  if (userWatcher) {
+    await userWatcher.close();
+    userWatcher = null;
+  }
+  for (const { watcher } of projectWatchers.values()) {
     await watcher.close();
   }
-  activeWatchers.length = 0;
+  projectWatchers.clear();
   onFilesChanged = null;
-  currentWorkspacePath = undefined;
+  pendingUserRefresh = false;
+  pendingProjectRefreshes.clear();
   if (debounceTimer) {
     clearTimeout(debounceTimer);
     debounceTimer = null;

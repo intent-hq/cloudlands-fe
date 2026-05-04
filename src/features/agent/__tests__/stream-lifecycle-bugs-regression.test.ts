@@ -240,3 +240,36 @@ describe('Reconnect placeholder ID reuse is guarded (PR 485 follow-up)', () => {
     expect(shouldReuseId({})).toBe(false);
   });
 });
+
+describe('Reconnect avoids retargeting finalized assistant messages', () => {
+  const reconnectIdx = source.indexOf('export async function reconnectToBackendStreams');
+  const sendMessageIdx = source.indexOf('export async function sendMessage', reconnectIdx);
+  const reconnectBody = source.slice(reconnectIdx, sendMessageIdx);
+
+  it('selects only actively streaming assistant messages for reconnect reuse', () => {
+    expect(reconnectIdx).toBeGreaterThan(-1);
+    expect(reconnectBody).toContain("m.role === 'assistant' && m.isStreaming === true");
+    expect(reconnectBody).not.toContain('assistantMessages[assistantMessages.length - 1]');
+    expect(reconnectBody).not.toMatch(/existingMessage && !existingMessage\.isStreaming/);
+  });
+
+  it('restores backend accumulated content into a fresh streaming placeholder', () => {
+    expect(reconnectBody).toContain('restoredStreamingMessage');
+    expect(reconnectBody).toContain('createMessageId(`msg_${uuidv4()}`)');
+    expect(reconnectBody).toContain('messages: [...(session.messages || []), restoredStreamingMessage]');
+    expect(reconnectBody).toContain('existingMessage = restoredStreamingMessage');
+  });
+
+  function reconnectCandidate(messages: Array<{ role: string; isStreaming?: boolean }>) {
+    return messages.find((m) => m.role === 'assistant' && m.isStreaming === true);
+  }
+
+  it('reconnect does not mark finalized assistant messages as streaming targets', () => {
+    const messages = [
+      { role: 'user' },
+      { role: 'assistant', isStreaming: false },
+    ];
+
+    expect(reconnectCandidate(messages)).toBeUndefined();
+  });
+});

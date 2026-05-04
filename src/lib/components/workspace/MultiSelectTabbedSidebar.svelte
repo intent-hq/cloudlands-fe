@@ -71,6 +71,14 @@
     openWorkspaceDiff,
     openWorkspaceLocalChanges,
   } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    setMultiSelectSidebarSelectedTabs,
+    setMultiSelectSidebarTabOrder,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    selectMultiSelectSidebarSelectedTabIds,
+    selectMultiSelectSidebarTabOrder,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
     workspaceId: string;
@@ -185,50 +193,22 @@
 
   type TabId = (typeof TAB_DEFINITIONS)[number]['id'];
 
-  // Multi-select tab state
-  function getStorageKey(wsId: string): string {
-    return `multiselect-sidebar-${wsId}`;
+  const defaultTabOrder = TAB_DEFINITIONS.map((t) => t.id as TabId);
+
+  function isValidTabId(value: string): value is TabId {
+    return TAB_DEFINITIONS.some((tab) => tab.id === value);
   }
 
-  function getOrderStorageKey(): string {
-    return 'multiselect-sidebar-tab-order';
-  }
-
-  function loadSelectedTabs(wsId: string): Set<TabId> {
-    if (typeof window === 'undefined') return new Set(['overview']);
-    try {
-      const stored = localStorage.getItem(getStorageKey(wsId));
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return new Set(parsed as TabId[]);
-      }
-    } catch {
-      // Ignore parsing errors
+  function normalizeTabOrder(order: string[]): TabId[] {
+    if (order.length === defaultTabOrder.length && defaultTabOrder.every((id) => order.includes(id))) {
+      return order.filter(isValidTabId);
     }
-    return new Set(['overview']);
+    return defaultTabOrder;
   }
 
-  function loadTabOrder(): TabId[] {
-    if (typeof window === 'undefined') return TAB_DEFINITIONS.map((t) => t.id);
-    try {
-      const stored = localStorage.getItem(getOrderStorageKey());
-      if (stored) {
-        const parsed = JSON.parse(stored) as TabId[];
-        // Validate that all tabs are present
-        const allTabIds = TAB_DEFINITIONS.map((t) => t.id);
-        if (parsed.length === allTabIds.length && allTabIds.every((id) => parsed.includes(id))) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignore parsing errors
-    }
-    return TAB_DEFINITIONS.map((t) => t.id);
-  }
-
-  function saveTabOrder(order: TabId[]) {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(getOrderStorageKey(), JSON.stringify(order));
+  function normalizeSelectedTabs(tabIds: string[]): Set<TabId> {
+    const normalized = tabIds.filter(isValidTabId);
+    return new Set(normalized.length > 0 ? normalized : ['overview']);
   }
 
   // Redux selectors called at init time with a Readable store arg —
@@ -238,17 +218,14 @@
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const foregroundWorkspaceAgents = selectForegroundWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
-  let selectedTabs = $state<Set<TabId>>(new Set(['overview']));
-  let tabOrder = $state<TabId[]>(TAB_DEFINITIONS.map((t) => t.id));
+  const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
+  const persistedTabOrder = selectMultiSelectSidebarTabOrder();
+  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  const tabOrder = $derived(normalizeTabOrder($persistedTabOrder));
   let previousWorkspaceId = $state<string | null>(null);
   // Drag state for tab reordering
   let draggedTabId = $state<TabId | null>(null);
   let dropIndicator = $state<{ tabId: TabId; position: 'before' | 'after' } | null>(null);
-
-  // Load tab order on mount
-  onMount(() => {
-    tabOrder = loadTabOrder();
-  });
 
   // Get ordered tab definitions based on current order
   const orderedTabDefinitions = $derived(
@@ -331,8 +308,7 @@
       const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
       newOrder.splice(insertIndex, 0, draggedTabId);
 
-      tabOrder = newOrder;
-      saveTabOrder(newOrder);
+      dispatch(setMultiSelectSidebarTabOrder(newOrder));
     }
 
     draggedTabId = null;
@@ -348,7 +324,6 @@
   $effect(() => {
     const currentWorkspaceId = workspaceId;
     if (!currentWorkspaceId) {
-      selectedTabs = new Set(['overview']);
       previousWorkspaceId = null;
       // Reset fly/slide state to prevent overlapping panels
       flyDirection = 0;
@@ -357,34 +332,33 @@
     }
     if (currentWorkspaceId !== previousWorkspaceId) {
       previousWorkspaceId = currentWorkspaceId;
-      selectedTabs = loadSelectedTabs(currentWorkspaceId);
       // Reset fly/slide state to prevent overlapping panels after workspace switch
       flyDirection = 0;
       useSlideTransition = false;
     }
   });
 
-  function saveSelectedTabs() {
-    if (typeof window === 'undefined') return;
-    const currentWorkspaceId = workspaceId;
-    if (!currentWorkspaceId) return;
-    localStorage.setItem(getStorageKey(currentWorkspaceId), JSON.stringify([...selectedTabs]));
+  function persistSelectedTabs(nextSelectedTabs: Set<TabId>) {
+    if (!workspaceId) return;
+    dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [...nextSelectedTabs]));
   }
 
   function handleTabClick(tabId: TabId, event: MouseEvent) {
     const wasMultiPanel = selectedTabs.size > 1;
     const wasSingleTab = selectedTabs.size === 1;
     const previousTabId = wasSingleTab ? [...selectedTabs][0] : null;
+    let nextSelectedTabs: Set<TabId>;
 
     if (event.shiftKey) {
+      nextSelectedTabs = new Set(selectedTabs);
       // Shift+click: toggle this tab in/out of selection
-      if (selectedTabs.has(tabId)) {
+      if (nextSelectedTabs.has(tabId)) {
         // Don't allow deselecting the last tab
-        if (selectedTabs.size > 1) {
-          selectedTabs.delete(tabId);
+        if (nextSelectedTabs.size > 1) {
+          nextSelectedTabs.delete(tabId);
         }
       } else {
-        selectedTabs.add(tabId);
+        nextSelectedTabs.add(tabId);
       }
       // No fly animation for multi-select operations
       flyDirection = 0;
@@ -398,16 +372,14 @@
       } else {
         flyDirection = 0;
       }
-      selectedTabs = new Set([tabId]);
+      nextSelectedTabs = new Set([tabId]);
     }
 
     // Determine if this is a multi-panel transition
     // Use slide if EITHER before or after has multiple panels
-    const isMultiPanel = selectedTabs.size > 1;
+    const isMultiPanel = nextSelectedTabs.size > 1;
     useSlideTransition = wasMultiPanel || isMultiPanel;
-
-    selectedTabs = new Set(selectedTabs); // Trigger reactivity
-    saveSelectedTabs();
+    persistSelectedTabs(nextSelectedTabs);
   }
 
   function isTabSelected(tabId: TabId): boolean {
@@ -427,8 +399,7 @@
       flyDirection = 0;
     }
     useSlideTransition = selectedTabs.size > 1;
-    selectedTabs = new Set([id]);
-    saveSelectedTabs();
+    persistSelectedTabs(new Set([id]));
   }
 
   // Workspace phase derivation for Overview tab
@@ -733,8 +704,7 @@
     // Switch to the appropriate sidebar tab
     const targetTab = mapSidebarTabId(sidebarTabId);
     if (targetTab) {
-      selectedTabs = new Set([targetTab]);
-      saveSelectedTabs();
+      persistSelectedTabs(new Set([targetTab]));
     }
 
     // Scroll to the item after a short delay to allow tab switch to render

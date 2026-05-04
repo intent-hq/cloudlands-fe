@@ -54,6 +54,23 @@ export const selectPinnedWorkspaceIds = createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );
 
+export const selectMultiSelectSidebarTabOrder = createSelector(
+  (state): string[] => state.sidebarNav.multiSelectTabOrder,
+);
+
+export const selectMultiSelectSidebarSelectedTabIds = createSelector(
+  (state, workspaceId: string): string[] =>
+    state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ["overview"],
+);
+
+export const selectWorkspaceNoteOrder = createSelector(
+  (state, workspaceId: string): string[] => state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],
+);
+
+export const selectWorkspaceCollapsedNoteIds = createSelector(
+  (state, workspaceId: string): string[] => state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
+);
+
 // ── Derived selectors ──
 
 /** The active visible card (either hovered or expanded) */

@@ -42,6 +42,7 @@ import { setupScriptsReducer } from "./slices/setup-scripts/setup-scripts-slice"
 import { mcpServersReducer } from "./slices/mcp-servers/mcp-servers-slice";
 import { mcpSettingsReducer } from "./slices/mcp-settings/mcp-settings-slice";
 import { commentsReducer } from "./slices/comments/comments-slice";
+import { taskAgentAssociationsReducer } from "./slices/task-agent-associations/task-agent-associations-slice";
 
 import { autoUpdateReducer } from "./slices/auto-update/auto-update-slice";
 import { sidebarNavReducer } from "./slices/sidebar-nav/sidebar-nav-slice";
@@ -57,12 +58,16 @@ import { unreadTrackingReducer } from "./slices/unread-tracking/unread-tracking-
 import { prStatusReducer } from "./slices/pr-status/pr-status-slice";
 import { backgroundAgentExecutorReducer } from "./slices/background-agent-executor/background-agent-executor-slice";
 import { chatStateReducer } from "./slices/chat-state/chat-state-slice";
+import { chatChangesReducer } from "./slices/chat-changes/chat-changes-slice";
 import { fileExplorerReducer } from "./slices/file-explorer/file-explorer-slice";
+import { filesReducer } from "./slices/files/files-slice";
 import { agentSessionReducer } from "./slices/agent-session/agent-session-slice";
 import { agentSubscriptionUIReducer } from "./slices/agent-subscription-ui/agent-subscription-ui-slice";
 import { onboardingReducer } from "./slices/onboarding/onboarding-slice";
 import { agentAvailabilityReducer } from "./slices/agent-availability/agent-availability-slice";
 import { appLayoutReducer } from "./slices/app-layout/app-layout-slice";
+import { workspaceInitializerReducer } from "./slices/workspace-initializer/workspace-initializer-slice";
+import { themeReducer } from "./slices/theme/theme-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -109,6 +114,7 @@ export const reducers = {
   mcpServers: mcpServersReducer,
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
+  taskAgentAssociations: taskAgentAssociationsReducer,
 
   autoUpdate: autoUpdateReducer,
   sidebarNav: sidebarNavReducer,
@@ -124,11 +130,15 @@ export const reducers = {
   prStatus: prStatusReducer,
   bgExecutor: backgroundAgentExecutorReducer,
   chatState: chatStateReducer,
+  chatChanges: chatChangesReducer,
   fileExplorer: fileExplorerReducer,
+  files: filesReducer,
   agentSessions: agentSessionReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
+  workspaceInitializer: workspaceInitializerReducer,
   agentAvailability: agentAvailabilityReducer,
   appLayout: appLayoutReducer,
+  theme: themeReducer,
 } as const;
 

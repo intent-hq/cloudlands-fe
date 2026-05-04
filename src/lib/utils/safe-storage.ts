@@ -60,6 +60,19 @@ export const safeLocalStorage = {
     }
   },
 
+  keysWithPrefix(prefix: string): string[] {
+    if (!canUseLocalStorage()) {
+      return [];
+    }
+
+    try {
+      return Object.keys(window.localStorage).filter((key) => key.startsWith(prefix));
+    } catch (error) {
+      logger.warn('Failed to enumerate localStorage keys', { prefix, error });
+      return [];
+    }
+  },
+
   getJSON<T>(key: string): T | undefined {
     const value = safeLocalStorage.getItem(key);
 

@@ -2,8 +2,18 @@
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { setWidth as setSidebarWidth } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { selectIsCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    requestResizablePanelSize,
+    setResizablePanelSize,
+    setSidebarExpandedWidth,
+    setWidth as setSidebarWidth,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+    selectIsCollapsed,
+    selectResizablePanelSize,
+    selectSidebarExpandedWidth,
+    selectSidebarWidth,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 
   let {
@@ -44,7 +54,7 @@
     // Legacy prop - maps to percentageWeight: true = 1, false = 0
     usePercentage = undefined,
 
-    // Start collapsed (width = 0) without persisting to localStorage
+    // Start collapsed (width = 0) without persisting through layout state.
     initiallyCollapsed = false,
 
     children,
@@ -92,6 +102,14 @@
 
   const dispatch = getDispatch();
   const sidebarIsCollapsed = selectIsCollapsed();
+  const sidebarWidth = selectSidebarWidth();
+  const sidebarExpandedWidth = selectSidebarExpandedWidth();
+  const storedPanelSize = selectResizablePanelSize(storageKey ?? '');
+  const storedExpandedPanelSize = selectResizablePanelSize(expandedStorageKey ?? '');
+  const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
+  const isWorkspaceExpandedPanel = expandedStorageKey === 'workspace-left-panel-expanded-width';
+  let appliedStoredPanelSize = $state<number | undefined>(undefined);
+  let appliedStoredExpandedPanelSize = $state<number | undefined>(undefined);
 
   // Compute effective weight (legacy usePercentage prop takes precedence if defined)
   const effectiveWeight = $derived(
@@ -122,84 +140,67 @@
     return (percent / 100) * total;
   }
 
+  function storedValueToPixels(value: number, isWidth: boolean): number | null {
+    const weight = getInitialWeight();
+    const pixels = weight > 0 ? percentToPixels(value, isWidth) : value;
+    const min = isWidth ? minWidth : minHeight;
+    const max = isWidth ? maxWidth : maxHeight;
+    return pixels >= min && pixels <= max ? pixels : null;
+  }
+
+  function getStoredPanelSize(isWidth: boolean): number | null {
+    if (isWidth && isWorkspaceLeftPanel) return $sidebarWidth;
+    const value = $storedPanelSize;
+    return value === undefined ? null : storedValueToPixels(value, isWidth);
+  }
+
+  function getStoredExpandedPanelSize(): number | null {
+    if (isWorkspaceExpandedPanel) return $sidebarExpandedWidth;
+    const value = $storedExpandedPanelSize;
+    return value === undefined ? null : storedValueToPixels(value, true);
+  }
+
+  function getValueToPersist(pixels: number, isWidth: boolean): number {
+    return effectiveWeight > 0 ? pixelsToPercent(pixels, isWidth) : pixels;
+  }
+
+  function persistPanelSize(key: string | null, pixels: number, isWidth: boolean) {
+    if (!key) return;
+
+    if (key === 'workspace-left-panel-width') {
+      dispatch(setSidebarWidth(pixels));
+    } else if (key === 'workspace-left-panel-expanded-width') {
+      dispatch(setSidebarExpandedWidth(pixels));
+    } else {
+      dispatch(setResizablePanelSize(key, getValueToPersist(pixels, isWidth)));
+    }
+  }
+
   // Compute initial weight for use in initialization (before $derived is available)
   function getInitialWeight(): number {
     if (usePercentage !== undefined) return usePercentage ? 1 : 0;
     return Math.max(0, Math.min(1, percentageWeight));
   }
 
-  // Helper function to get initial width from localStorage
+  // Helper function to get initial width from Redux-owned persisted state.
   // When percentage weight > 0, stored value is a percentage
   function getInitialWidth(): number {
-    const weight = getInitialWeight();
-    if (typeof window !== 'undefined' && storageKey) {
-      const savedValue = localStorage.getItem(storageKey);
-      if (savedValue) {
-        const value = parseFloat(savedValue);
-        if (!isNaN(value)) {
-          if (weight > 0) {
-            // Stored as percentage, convert to pixels
-            const pixels = percentToPixels(value, true);
-            if (pixels >= minWidth && pixels <= maxWidth) {
-              return pixels;
-            }
-          } else {
-            // Stored as pixels
-            if (value >= minWidth && value <= maxWidth) {
-              return value;
-            }
-          }
-        }
-      }
-    }
+    const savedWidth = getStoredPanelSize(true);
+    if (savedWidth !== null) return savedWidth;
     return defaultWidth;
   }
 
-  // Helper function to get initial expanded width from localStorage
+  // Helper function to get initial expanded width from Redux-owned persisted state.
   function getInitialExpandedWidth(): number {
-    const weight = getInitialWeight();
-    if (typeof window !== 'undefined' && expandedStorageKey) {
-      const savedValue = localStorage.getItem(expandedStorageKey);
-      if (savedValue) {
-        const value = parseFloat(savedValue);
-        if (!isNaN(value)) {
-          if (weight > 0) {
-            const pixels = percentToPixels(value, true);
-            if (pixels >= minWidth && pixels <= maxWidth) {
-              return pixels;
-            }
-          } else {
-            if (value >= minWidth && value <= maxWidth) {
-              return value;
-            }
-          }
-        }
-      }
-    }
+    const savedWidth = getStoredExpandedPanelSize();
+    if (savedWidth !== null) return savedWidth;
     return defaultExpandedWidth;
   }
 
-  // Helper function to get initial height from localStorage
+  // Helper function to get initial height from Redux-owned persisted state.
   function getInitialHeight(): number {
-    const weight = getInitialWeight();
-    if (typeof window !== 'undefined' && storageKey) {
-      const savedValue = localStorage.getItem(storageKey);
-      if (savedValue) {
-        const value = parseFloat(savedValue);
-        if (!isNaN(value)) {
-          if (weight > 0) {
-            const pixels = percentToPixels(value, false);
-            if (pixels >= minHeight && pixels <= maxHeight) {
-              return pixels;
-            }
-          } else {
-            if (value >= minHeight && value <= maxHeight) {
-              return value;
-            }
-          }
-        }
-      }
-    }
+    const savedHeight = getStoredPanelSize(false);
+    if (savedHeight !== null) return savedHeight;
     return defaultHeight;
   }
 
@@ -289,8 +290,57 @@
   // svelte-ignore state_referenced_locally
   let widthBeforeToggle = $state(defaultWidth);
 
+  $effect(() => {
+    if (initiallyCollapsed || isExpanded || orientation !== 'horizontal') return;
+
+    const storedValue = isWorkspaceLeftPanel ? $sidebarWidth : $storedPanelSize;
+    if (storedValue === undefined || storedValue === appliedStoredPanelSize) return;
+
+    const pixels = isWorkspaceLeftPanel ? storedValue : storedValueToPixels(storedValue, true);
+    if (pixels !== null) {
+      panelWidth = pixels;
+      widthPercent = pixelsToPercent(panelWidth, true);
+      appliedStoredPanelSize = storedValue;
+    }
+  });
+
+  $effect(() => {
+    if (orientation !== 'horizontal') return;
+
+    const storedValue = isWorkspaceExpandedPanel ? $sidebarExpandedWidth : $storedExpandedPanelSize;
+    if (storedValue === undefined || storedValue === appliedStoredExpandedPanelSize) return;
+
+    const pixels = isWorkspaceExpandedPanel ? storedValue : storedValueToPixels(storedValue, true);
+    if (pixels !== null) {
+      expandedWidth = pixels;
+      expandedWidthPercent = pixelsToPercent(expandedWidth, true);
+      appliedStoredExpandedPanelSize = storedValue;
+    }
+  });
+
+  $effect(() => {
+    if (orientation !== 'vertical') return;
+
+    const storedValue = $storedPanelSize;
+    if (storedValue === undefined || storedValue === appliedStoredPanelSize) return;
+
+    const pixels = storedValueToPixels(storedValue, false);
+    if (pixels !== null) {
+      panelHeight = pixels;
+      heightPercent = pixelsToPercent(panelHeight, false);
+      appliedStoredPanelSize = storedValue;
+    }
+  });
+
   // Check for collapse threshold on mount and set up resize listener
   onMount(() => {
+    if (storageKey && !isWorkspaceLeftPanel) {
+      dispatch(requestResizablePanelSize(storageKey));
+    }
+    if (expandedStorageKey && !isWorkspaceExpandedPanel) {
+      dispatch(requestResizablePanelSize(expandedStorageKey));
+    }
+
     if (orientation === 'horizontal' && collapseThreshold && panelWidth < collapseThreshold) {
       isCollapsed = true;
       panelWidth = minWidth;
@@ -307,7 +357,6 @@
     }
 
     // Listen for sidebar toggle event (only for workspace left panel)
-    const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
     if (isWorkspaceLeftPanel) {
       // Initialize from store's collapsed state
       const initialCollapsed = $sidebarIsCollapsed;
@@ -385,33 +434,17 @@
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 
-    // Save dimensions to localStorage
-    // When using percentage weight, save as percentage for proper restoration
-    const saveAsPercent = effectiveWeight > 0;
+    // Persist dimensions through Redux-owned layout persistence.
     if (orientation === 'horizontal') {
       if (isExpanded && expandedStorageKey) {
-        const valueToSave = saveAsPercent
-          ? pixelsToPercent(expandedWidth, true).toString()
-          : expandedWidth.toString();
-        localStorage.setItem(expandedStorageKey, valueToSave);
+        persistPanelSize(expandedStorageKey, expandedWidth, true);
       } else if (!isExpanded && storageKey) {
-        const valueToSave = saveAsPercent
-          ? pixelsToPercent(panelWidth, true).toString()
-          : panelWidth.toString();
-        localStorage.setItem(storageKey, valueToSave);
-
-        // Update sidebar width store for left sidebar
-        if (storageKey === 'workspace-left-panel-width') {
-          dispatch(setSidebarWidth(panelWidth));
-        }
+        persistPanelSize(storageKey, panelWidth, true);
       }
     } else {
       // Vertical orientation
       if (storageKey) {
-        const valueToSave = saveAsPercent
-          ? pixelsToPercent(panelHeight, false).toString()
-          : panelHeight.toString();
-        localStorage.setItem(storageKey, valueToSave);
+        persistPanelSize(storageKey, panelHeight, false);
       }
     }
 
@@ -439,17 +472,13 @@
   }
 
   function handleDoubleClick() {
-    const saveAsPercent = effectiveWeight > 0;
     if (orientation === 'horizontal') {
       if (isExpanded) {
         expandedWidth = defaultExpandedWidth;
         // Always update percentage for tracking
         expandedWidthPercent = pixelsToPercent(defaultExpandedWidth, true);
         if (expandedStorageKey) {
-          const valueToSave = saveAsPercent
-            ? pixelsToPercent(expandedWidth, true).toString()
-            : expandedWidth.toString();
-          localStorage.setItem(expandedStorageKey, valueToSave);
+          persistPanelSize(expandedStorageKey, expandedWidth, true);
         }
       } else {
         panelWidth = defaultWidth;
@@ -457,10 +486,7 @@
         // Always update percentage for tracking
         widthPercent = pixelsToPercent(defaultWidth, true);
         if (storageKey) {
-          const valueToSave = saveAsPercent
-            ? pixelsToPercent(panelWidth, true).toString()
-            : panelWidth.toString();
-          localStorage.setItem(storageKey, valueToSave);
+          persistPanelSize(storageKey, panelWidth, true);
         }
       }
     } else {
@@ -469,10 +495,7 @@
       // Always update percentage for tracking
       heightPercent = pixelsToPercent(defaultHeight, false);
       if (storageKey) {
-        const valueToSave = saveAsPercent
-          ? pixelsToPercent(panelHeight, false).toString()
-          : panelHeight.toString();
-        localStorage.setItem(storageKey, valueToSave);
+        persistPanelSize(storageKey, panelHeight, false);
       }
     }
   }

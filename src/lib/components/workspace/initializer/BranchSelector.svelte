@@ -9,6 +9,9 @@
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
   import { performanceMonitor } from '$lib/utils/performance';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { setWorkspaceInitializerBranchForRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerBranchByRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
     faCheck,
@@ -24,9 +27,8 @@
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('BranchSelector');
-
-  // Constants for localStorage keys
-  const BRANCH_BY_REPO_KEY = 'workspace-initializer-branch-by-repo';
+  const dispatch = getDispatch();
+  const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /** Status of the branch relative to its upstream */
   export interface BranchStatus {
@@ -232,7 +234,7 @@
   });
 
   /**
-   * Get the saved branch for a specific repo from localStorage.
+   * Get the saved branch for a specific repo from Redux hydrated persistence.
    * This ensures we use the correct saved branch for the current repo,
    * not a stale value from a previous repo.
    */
@@ -240,16 +242,13 @@
     if (!debugConfig.get('enableFormPersistence')) {
       return '';
     }
-    try {
-      const branchByRepoStr = localStorage.getItem(BRANCH_BY_REPO_KEY);
-      if (branchByRepoStr) {
-        const branchMap = JSON.parse(branchByRepoStr);
-        return branchMap[targetRepoPath] || '';
-      }
-    } catch (e) {
-      logger.error('Failed to get saved branch for repo', e);
+    return $branchByRepo$[targetRepoPath] || '';
+  }
+
+  function saveBranchForRepo(targetRepoPath: string, branch: string) {
+    if (debugConfig.get('enableFormPersistence') && targetRepoPath) {
+      dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
     }
-    return '';
   }
 
   // Update internal state when value prop changes
@@ -320,22 +319,8 @@
     // Only refetch if something meaningful changed
     if (needsRefetch) {
       if (currentRepoPath) {
-        // Try to load saved branch for this repo if persistence is enabled
-        let savedBranch = '';
-        if (debugConfig.get('enableFormPersistence')) {
-          // First try repo-specific branch
-          const branchByRepo = localStorage.getItem(BRANCH_BY_REPO_KEY);
-          if (branchByRepo) {
-            try {
-              const branchMap = JSON.parse(branchByRepo);
-              if (branchMap[currentRepoPath]) {
-                savedBranch = branchMap[currentRepoPath];
-              }
-            } catch (e) {
-              logger.error('Failed to parse branch by repo', e);
-            }
-          }
-        }
+        // Try to load saved branch for this repo if persistence is enabled.
+        const savedBranch = getSavedBranchForRepo(currentRepoPath);
 
         // Clear previous selection when repo changes
         logger.debug('Repo changed - resetting branch', {
@@ -391,7 +376,7 @@
           // Value prop is the source of truth - don't override it
           setInternalBranch(value);
         } else {
-          // Look up saved branch for THIS repo from localStorage (not from stale selectedBranch)
+          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
           const savedBranchForRepo = getSavedBranchForRepo(repoPath);
           if (
             savedBranchForRepo &&
@@ -658,7 +643,7 @@
           // Value prop is the source of truth - don't override it
           setInternalBranch(value);
         } else {
-          // Look up saved branch for THIS repo from localStorage (not from stale selectedBranch)
+          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
           const savedBranchForRepo = getSavedBranchForRepo(repoPath);
           if (
             savedBranchForRepo &&
@@ -940,6 +925,9 @@
       logger.error('Error in onchange callback', e);
     }
 
+    // Persist auto-selected/default branches the same way explicit selections are persisted.
+    saveBranchForRepo(repoPath, branchName);
+
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branchName);
   }
@@ -971,20 +959,8 @@
       }
     }
 
-    // Save to localStorage if persistence is enabled (per-repo branch only)
-    if (debugConfig.get('enableFormPersistence') && repoPath) {
-      const branchByRepoStr = localStorage.getItem(BRANCH_BY_REPO_KEY);
-      let branchByRepo: Record<string, string> = {};
-      if (branchByRepoStr) {
-        try {
-          branchByRepo = JSON.parse(branchByRepoStr);
-        } catch (e) {
-          logger.error('Failed to parse branch by repo', e);
-        }
-      }
-      branchByRepo[repoPath] = branch;
-      localStorage.setItem(BRANCH_BY_REPO_KEY, JSON.stringify(branchByRepo));
-    }
+    // Save via Redux if persistence is enabled (per-repo branch only).
+    saveBranchForRepo(repoPath, branch);
 
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branch);

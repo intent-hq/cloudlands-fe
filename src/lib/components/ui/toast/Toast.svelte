@@ -1,31 +1,12 @@
 <script lang="ts">
   import { Toaster as Sonner } from 'svelte-sonner';
-  import { onMount } from 'svelte';
+  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
-  let theme: 'light' | 'dark' | 'system' = 'system';
-
-  onMount(() => {
-    // Check for dark mode
-    const checkTheme = () => {
-      const isDark = document.documentElement.classList.contains('dark');
-      theme = isDark ? 'dark' : 'light';
-    };
-
-    checkTheme();
-
-    // Watch for theme changes
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  });
+  const isDarkTheme = selectIsDarkTheme();
 </script>
 
 <Sonner
-  {theme}
+  theme={$isDarkTheme ? 'dark' : 'light'}
   class="toaster group"
   toastOptions={{
     classes: {

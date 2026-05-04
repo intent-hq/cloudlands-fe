@@ -1,33 +1,12 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
-import {
-  createCollection,
-  type Collection,
-} from "../../utils/collection-utils";
+import { createCollection } from "../../utils/collection-utils";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import {
   normalizeModelForProvider,
   normalizeProviderModels,
 } from "./model-selection-utils";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export type ModelLoadingStatus = "success" | "loading" | "error";
-
-export type ModelLoadingState = {
-  status: ModelLoadingStatus;
-  retryAttempt: number;
-  error?: string;
-};
-
-export type ModelState = {
-  availableModels: Collection<AuggieModel, "value">;
-  loadingState: Record<string, ModelLoadingState>;
-  workspaceModels: Record<string, string>;
-  providerModels: Record<string, string>;
-};
+import type { ModelFallbackInfo, ModelLoadingState, ModelLoadingStatus, ModelState } from "./model-types";
 
 // ============================================================================
 // Constants
@@ -70,6 +49,8 @@ export const initialState: ModelState = {
   loadingState: {},
   workspaceModels: {},
   providerModels: {},
+  modelPickerCollapsedGroups: [],
+  fallbackInfoByAgentId: {},
 };
 
 // ============================================================================
@@ -126,6 +107,32 @@ export const loadWorkspaceModelsFromStorage = createAction<
 export const loadProviderModelsFromStorage = createAction<
   [models: Record<string, string>]
 >("model/loadProviderModelsFromStorage");
+
+export const hydrateModelPickerCollapsedGroups = createAction<[groupKeys: string[]]>(
+  "model/hydrateModelPickerCollapsedGroups"
+);
+
+export const setModelPickerGroupCollapsed = createAction<[
+  groupKey: string,
+  collapsed: boolean,
+]>("model/setModelPickerGroupCollapsed");
+
+export const requestHydrateModelFallbackInfo = createAction<[agentId: string]>(
+  "model/requestHydrateModelFallbackInfo"
+);
+
+export const hydrateModelFallbackInfo = createAction<[
+  agentId: string,
+  info: ModelFallbackInfo | null,
+]>("model/hydrateModelFallbackInfo");
+
+export const setModelFallbackInfo = createAction<[agentId: string, info: ModelFallbackInfo]>(
+  "model/setModelFallbackInfo"
+);
+
+export const clearModelFallbackInfo = createAction<[agentId: string]>(
+  "model/clearModelFallbackInfo"
+);
 
 // ============================================================================
 // Saga Trigger Actions (dispatched by consumers, handled by sagas)
@@ -218,4 +225,35 @@ export const modelReducer = createReducer<ModelState>(initialState)
       ...state,
       providerModels: normalizeProviderModels(models),
     })
-  );
+  )
+  .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
+    ...state,
+    modelPickerCollapsedGroups: [...new Set(groupKeys)],
+  }))
+  .with(setModelPickerGroupCollapsed, (state, { payload: [groupKey, collapsed] }) => {
+    const groups = new Set(state.modelPickerCollapsedGroups);
+    if (collapsed) {
+      groups.add(groupKey);
+    } else {
+      groups.delete(groupKey);
+    }
+    return { ...state, modelPickerCollapsedGroups: [...groups] };
+  })
+  .with(hydrateModelFallbackInfo, (state, { payload: [agentId, info] }) => {
+    const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
+    if (info) {
+      fallbackInfoByAgentId[agentId] = info;
+    } else {
+      delete fallbackInfoByAgentId[agentId];
+    }
+    return { ...state, fallbackInfoByAgentId };
+  })
+  .with(setModelFallbackInfo, (state, { payload: [agentId, info] }) => ({
+    ...state,
+    fallbackInfoByAgentId: { ...state.fallbackInfoByAgentId, [agentId]: info },
+  }))
+  .with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
+    const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
+    delete fallbackInfoByAgentId[agentId];
+    return { ...state, fallbackInfoByAgentId };
+  });

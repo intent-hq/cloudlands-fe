@@ -1032,6 +1032,7 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
           if (effect.fn === sendBackendMessage) {
             return { success: false, error: "No active window for workspace" };
           }
+          if (effect.fn === dispatchWorkspaceEvent) return undefined;
           if (isDelayEffect(effect)) return undefined;
           return next();
         },

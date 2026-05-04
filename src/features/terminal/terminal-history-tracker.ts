@@ -10,13 +10,13 @@ import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 
 const logger = createLogger('TerminalHistoryTracker');
 
-interface TerminalCommand {
+export interface TerminalCommand {
   command: string;
   timestamp: number;
   output?: string;
 }
 
-interface TerminalHistory {
+export interface TerminalHistory {
   terminalId: string;
   workspaceId: string;
   commands: TerminalCommand[];
@@ -145,6 +145,10 @@ class TerminalHistoryTracker {
    */
   getHistory(terminalId: string): TerminalHistory | undefined {
     return this.histories.get(terminalId);
+  }
+
+  getHistoriesForWorkspace(workspaceId: string): TerminalHistory[] {
+    return Array.from(this.histories.values()).filter((history) => history.workspaceId === workspaceId);
   }
 
   /**

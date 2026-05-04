@@ -53,7 +53,7 @@ export function getNoteTitle(note: Note): string {
  * Note: Legacy dependency-based parent mapping has been removed.
  * All notes now use parentId directly for hierarchy.
  */
- 
+
 function buildParentMap(_notes: Note[]): Map<string, string> {
   // Return empty map - parentId is now the only source of truth for hierarchy
   return new Map<string, string>();
@@ -367,32 +367,4 @@ export function getActivityIcon(event: WorkspaceEvent) {
   };
 
   return iconMap[type] || faFile;
-}
-
-// ============================================================================
-// Local storage utilities
-// ============================================================================
-
-/**
- * Load custom note order from localStorage
- */
-export function loadNoteOrder(workspaceId: string): string[] {
-  if (typeof localStorage === 'undefined') return [];
-
-  const storedOrder = localStorage.getItem(`workspace-note-order-${workspaceId}`);
-  if (!storedOrder) return [];
-
-  try {
-    return JSON.parse(storedOrder);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Save custom note order to localStorage
- */
-export function saveNoteOrder(workspaceId: string, order: string[]): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(`workspace-note-order-${workspaceId}`, JSON.stringify(order));
 }

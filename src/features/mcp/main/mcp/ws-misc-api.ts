@@ -339,7 +339,7 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
       );
 
       trackFileOperation(workspaceId, path, 'write');
-      sendToWorkspaceWindows(workspaceId, `file:content-changed:${workspaceId}`, {
+      sendToWorkspaceWindows(workspaceId, 'file:content-changed', {
         path,
         content,
         source: 'agent',
@@ -446,7 +446,7 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
         safeBroadcastToWindows(`directory:created:${workspaceId}`, { path: newPath, source: 'agent', workspaceId }, workspaceId);
       } else {
         safeBroadcastToWindows(`file:deleted:${workspaceId}`, { path: oldPath, source: 'agent', workspaceId }, workspaceId);
-        safeBroadcastToWindows(`file:content-changed:${workspaceId}`, { path: newPath, content, source: 'agent', workspaceId }, workspaceId);
+        safeBroadcastToWindows('file:content-changed', { path: newPath, content, source: 'agent', workspaceId }, workspaceId);
       }
       emitAgentFileChange(workspaceId, newPath);
 

@@ -2,6 +2,7 @@ import type {
   AgentDeletedPayload,
   AgentRenamedPayload,
   AgentRestoredPayload,
+  WorkspaceEvent,
 } from "$features/events/types";
 import type { AgentSession } from "$shared/types";
 import { agentService } from "$features/agent/agent-ipc-bridge";
@@ -10,7 +11,6 @@ import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
-import type { StoreState } from "$lib/store/types";
 import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
 import { shallowEqual } from "fast-equals";
 import { buffers, eventChannel, type EventChannel, type Task } from "redux-saga";
@@ -60,6 +60,7 @@ import { heartbeatSaga } from "./heartbeat-saga";
 
 
 type MaybeWrappedPayload<T> = T | { payload: T };
+type AgentDeletedEventPayload = MaybeWrappedPayload<AgentDeletedPayload | WorkspaceEvent>;
 
 const workspaceAgentTasks = new Map<string, Task[]>();
 
@@ -69,6 +70,22 @@ function unwrapPayload<T>(event: MaybeWrappedPayload<T>): T {
   }
 
   return event;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeAgentDeletedPayload(
+  event: AgentDeletedEventPayload,
+): Partial<AgentDeletedPayload> {
+  const data = unwrapPayload(event) as unknown;
+
+  if (isRecord(data) && isRecord(data.data) && typeof data.workspaceId === "string") {
+    return { ...data.data, workspaceId: data.workspaceId };
+  }
+
+  return isRecord(data) ? data : {};
 }
 
 function isOptimisticWorkspaceId(wsId: string): boolean {
@@ -109,10 +126,10 @@ export function* watchFileTrackingLifecycleSaga(wsId: string) {
 }
 
 export function* watchAgentDeletedSaga() {
-  yield* takeEveryFromElectronChannel<MaybeWrappedPayload<AgentDeletedPayload>>(
+  yield* takeEveryFromElectronChannel<AgentDeletedEventPayload>(
     "agent:deleted",
     function* (event) {
-      const data = unwrapPayload(event);
+      const data = normalizeAgentDeletedPayload(event);
 
       if (typeof data.agentId !== "string" || typeof data.workspaceId !== "string") {
         return;
@@ -310,11 +327,10 @@ function* watchDrawerGuardSaga(wsId: string) {
 
 /** @internal Exported for testing only. */
 export function* recoverLateInitialAgentHydrationSaga(wsId: string) {
-  const initialState: StoreState = yield* select((state: StoreState) => state);
-  const initialAgentConfig = selectInitialAgentConfig.select(initialState, wsId);
-  const initialAgentId = selectInitialAgentId.select(initialState, wsId);
-  const wasLoadingAgents = selectIsLoadingAgents.select(initialState, wsId);
-  const wasAgentsLoaded = selectAgentsLoaded.select(initialState, wsId);
+  const initialAgentConfig = yield* selectInitialAgentConfig.effect(wsId);
+  const initialAgentId = yield* selectInitialAgentId.effect(wsId);
+  const wasLoadingAgents = yield* selectIsLoadingAgents.effect(wsId);
+  const wasAgentsLoaded = yield* selectAgentsLoaded.effect(wsId);
 
   if (!initialAgentId && initialAgentConfig?.agentId) {
     yield* put(setInitialAgentId(wsId, initialAgentConfig.agentId));
@@ -336,12 +352,13 @@ export function* recoverLateInitialAgentHydrationSaga(wsId: string) {
     }
   }
 
-  const settledState: StoreState = wasLoadingAgents
-    ? yield* select((state: StoreState) => state)
-    : initialState;
-  const settledInitialAgentId = selectInitialAgentId.select(settledState, wsId);
-  const settledAgentsLoaded = selectAgentsLoaded.select(settledState, wsId);
-  const settledAgents = selectAllWorkspaceAgents.select(settledState, wsId);
+  const settledInitialAgentId = wasLoadingAgents
+    ? yield* selectInitialAgentId.effect(wsId)
+    : initialAgentId;
+  const settledAgentsLoaded = wasLoadingAgents
+    ? yield* selectAgentsLoaded.effect(wsId)
+    : wasAgentsLoaded;
+  const settledAgents = yield* selectAllWorkspaceAgents.effect(wsId);
 
   if (!settledInitialAgentId || !settledAgentsLoaded || settledAgents.length > 0) {
     return;
@@ -446,8 +463,7 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
 function* watchSpecWriteTrackingSaga() {
   yield* takeEvery(setAgentStreaming, function* (action: ReturnType<typeof setAgentStreaming>) {
     const [wsId, agentId, isStreaming] = action.payload;
-    const state: StoreState = yield* select((s: StoreState) => s);
-    const agent = selectAgentById.select(state, agentId);
+    const agent = yield* selectAgentById.effect(agentId);
     if (!agent) return;
 
     const isInitialAgent = agent.metadata?.isInitialAgent === true;

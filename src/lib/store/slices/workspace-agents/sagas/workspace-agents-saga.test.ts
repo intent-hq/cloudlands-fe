@@ -302,6 +302,30 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
+  it("removes an agent when agent:deleted is received as a full workspace event envelope", () => {
+    const iterator = watchAgentDeletedSaga();
+
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    const handler = getElectronHandler("agent:deleted")({
+      id: "event-1",
+      type: "agent:deleted",
+      workspaceId: "ws-1",
+      timestamp: "2026-04-30T00:00:00.000Z",
+      actor: { type: "system", id: "system", name: "System" },
+      data: { agentId: "agent-1", agentName: "Deleted Agent" },
+    });
+
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(removeAgentSession("agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(removeAgent("ws-1", "agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({ value: undefined, done: true });
+  });
+
   it("re-adds an agent when agent:restored is received with a cached session", () => {
     const iterator = watchAgentRestoredSaga();
 
@@ -554,28 +578,14 @@ describe("restoreInitialAgent — workspace-scoped session access", () => {
 describe("late initial-agent hydration recovery", () => {
   it("re-runs agent loading when initialAgentId arrives after an empty loaded snapshot", () => {
     const gen = recoverLateInitialAgentHydrationSaga("ws-late");
-    const initialState = {
-      workspaceAgents: {
-        byWorkspaceId: {
-          "ws-late": {
-            agentIds: [],
-            agentsLoaded: true,
-            isLoadingAgents: false,
-            initialAgentId: "agent-late-1",
-            initialAgentConfigProcessed: false,
-            recentlyCreatedAgents: [],
-            isWaitingForFirstMessage: {},
-            initialAgentConfig: null,
-          },
-        },
-      },
-      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
-    };
 
-    const selectState = gen.next().value as any;
-    expect(selectState.type).toBe("SELECT");
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect((gen.next(null).value as any).type).toBe("SELECT");
+    expect((gen.next("agent-late-1").value as any).type).toBe("SELECT");
+    expect((gen.next(false).value as any).type).toBe("SELECT");
+    expect((gen.next(true).value as any).type).toBe("SELECT");
 
-    expect(gen.next(initialState)).toEqual({
+    expect(gen.next([])).toEqual({
       value: sagaEffects.put(setAgentsLoaded("ws-late", false)),
       done: false,
     });
@@ -590,38 +600,12 @@ describe("late initial-agent hydration recovery", () => {
 
   it("waits for an in-flight load to finish before retrying recovery", () => {
     const gen = recoverLateInitialAgentHydrationSaga("ws-racing");
-    const loadingState = {
-      workspaceAgents: {
-        byWorkspaceId: {
-          "ws-racing": {
-            agentIds: [],
-            agentsLoaded: false,
-            isLoadingAgents: true,
-            initialAgentId: "agent-race-1",
-            initialAgentConfigProcessed: false,
-            recentlyCreatedAgents: [],
-            isWaitingForFirstMessage: {},
-            initialAgentConfig: null,
-          },
-        },
-      },
-      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
-    };
-    const settledState = {
-      workspaceAgents: {
-        byWorkspaceId: {
-          "ws-racing": {
-            ...loadingState.workspaceAgents.byWorkspaceId["ws-racing"],
-            agentsLoaded: true,
-            isLoadingAgents: false,
-          },
-        },
-      },
-      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
-    };
 
     expect((gen.next().value as any).type).toBe("SELECT");
-    expect((gen.next(loadingState).value as any).type).toBe("SELECT");
+    expect((gen.next(null).value as any).type).toBe("SELECT");
+    expect((gen.next("agent-race-1").value as any).type).toBe("SELECT");
+    expect((gen.next(true).value as any).type).toBe("SELECT");
+    expect((gen.next(false).value as any).type).toBe("SELECT");
 
     expect(gen.next(true)).toEqual({
       value: sagaEffects.take(setIsLoadingAgents.type),
@@ -636,8 +620,10 @@ describe("late initial-agent hydration recovery", () => {
     });
 
     expect((gen.next(setIsLoadingAgents("ws-racing", false)).value as any).type).toBe("SELECT");
+    expect((gen.next("agent-race-1").value as any).type).toBe("SELECT");
+    expect((gen.next(true).value as any).type).toBe("SELECT");
 
-    expect(gen.next(settledState)).toEqual({
+    expect(gen.next([])).toEqual({
       value: sagaEffects.put(setAgentsLoaded("ws-racing", false)),
       done: false,
     });
@@ -673,7 +659,10 @@ describe("late initial-agent hydration recovery", () => {
     };
 
     expect((gen.next().value as any).type).toBe("SELECT");
-    expect(gen.next(initialState)).toEqual({
+    expect((gen.next(initialState.workspaceAgents.byWorkspaceId["ws-config-late"].initialAgentConfig).value as any).type).toBe("SELECT");
+    expect((gen.next(null).value as any).type).toBe("SELECT");
+    expect((gen.next(false).value as any).type).toBe("SELECT");
+    expect(gen.next(true)).toEqual({
       value: sagaEffects.put(setInitialAgentId("ws-config-late", "agent-from-config")),
       done: false,
     });
@@ -861,14 +850,16 @@ describe("agent-loading layout guards", () => {
     const gen = waitForPanelLayoutRestore("ws-layout");
 
     expect((gen.next().value as any).type).toBe("SELECT");
-    expect(gen.next({ hasTabs: false, restoreStatus: "restored" })).toEqual({ value: undefined, done: true });
+    expect((gen.next({}).value as any).type).toBe("SELECT");
+    expect(gen.next("restored")).toEqual({ value: undefined, done: true });
   });
 
   it("polls while restore status is idle", () => {
     const gen = waitForPanelLayoutRestore("ws-layout");
 
     expect((gen.next().value as any).type).toBe("SELECT");
-    expect(gen.next({ hasTabs: false, restoreStatus: "idle" })).toEqual({
+    expect((gen.next({}).value as any).type).toBe("SELECT");
+    expect(gen.next("idle")).toEqual({
       value: sagaEffects.delay(100),
       done: false,
     });

@@ -120,6 +120,7 @@ export function setupEventsIPC(): void {
               }
               for (const id of toRemove) {
                 rendererSubscriptions.delete(id);
+                windowCloseListeners.delete(id);
               }
               if (toRemove.length > 0) {
                 logger.info('Cleaned up renderer subscriptions on window close', {

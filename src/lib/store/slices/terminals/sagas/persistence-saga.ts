@@ -14,11 +14,14 @@ import {
   removeTerminal,
   setTerminalOverlayHeight,
   renameTerminal,
+  saveTerminalMetadata,
   loadWorkspaceTerminals,
   hydrateHeight,
   STORAGE_KEY,
   CUSTOM_NAMES_STORAGE_KEY,
   WORKSPACE_STATE_STORAGE_KEY,
+  getTerminalName,
+  type TerminalMetadata,
   type PersistedWorkspaceState,
 } from "../terminals-slice";
 import {
@@ -27,6 +30,8 @@ import {
 } from "../terminals-selectors";
 
 const LEGACY_CUSTOM_NAMES_BUCKET = "__legacy__";
+export const TERMINAL_METADATA_STORAGE_PREFIX = "terminal-metadata-";
+const MAX_TERMINAL_METADATA_ENTRIES = 10;
 
 type WorkspaceCustomNames = Record<string, string>;
 type StoredCustomNames = Record<string, WorkspaceCustomNames>;
@@ -49,6 +54,21 @@ function pruneEmptyCustomNameBuckets(all: StoredCustomNames): StoredCustomNames 
   return Object.fromEntries(
     Object.entries(all).filter(([, names]) => Object.keys(names).length > 0)
   );
+}
+
+function isTerminalMetadata(value: unknown, wsId: string): value is TerminalMetadata {
+  const metadata = value as TerminalMetadata;
+  return !!metadata
+    && typeof metadata === "object"
+    && typeof metadata.terminalId === "string"
+    && typeof metadata.workspaceId === "string"
+    && metadata.workspaceId === wsId
+    && typeof metadata.createdAt === "string"
+    && (metadata.title === undefined || typeof metadata.title === "string");
+}
+
+function getTerminalMetadataStorageKey(wsId: string): string {
+  return `${TERMINAL_METADATA_STORAGE_PREFIX}${wsId}`;
 }
 
 // ============================================================================
@@ -128,6 +148,56 @@ export function* getStoredCustomName(
   return customNames[termId];
 }
 
+export function* loadTerminalMetadataFromStorage(wsId: string): SagaGenerator<TerminalMetadata[]> {
+  const key = getTerminalMetadataStorageKey(wsId);
+  const stored = yield* call(getLocalStorageJSON<unknown>, key);
+  if (!Array.isArray(stored)) return [];
+
+  const metadata = stored.filter((entry) => isTerminalMetadata(entry, wsId));
+  if (metadata.length !== stored.length) {
+    yield* call(setLocalStorageJSON, key, metadata);
+  }
+  return metadata;
+}
+
+export function* saveTerminalMetadataToStorage(
+  terminalId: string,
+  workspaceId: string,
+  title?: string,
+  createdAt?: string
+): SagaGenerator<void> {
+  const existing = yield* call(loadTerminalMetadataFromStorage, workspaceId);
+  const index = existing.findIndex((metadata) => metadata.terminalId === terminalId);
+  const current = index >= 0 ? existing[index] : undefined;
+  const next: TerminalMetadata = {
+    terminalId,
+    workspaceId,
+    createdAt: current?.createdAt ?? createdAt ?? "",
+    title: title || getTerminalName(terminalId),
+  };
+  const metadata = index >= 0
+    ? existing.map((entry, entryIndex) => (entryIndex === index ? next : entry))
+    : [...existing, next];
+
+  yield* call(
+    setLocalStorageJSON,
+    getTerminalMetadataStorageKey(workspaceId),
+    metadata.slice(-MAX_TERMINAL_METADATA_ENTRIES)
+  );
+}
+
+export function* removeTerminalMetadataFromStorage(
+  terminalId: string,
+  workspaceId: string
+): SagaGenerator<void> {
+  const existing = yield* call(loadTerminalMetadataFromStorage, workspaceId);
+  yield* call(
+    setLocalStorageJSON,
+    getTerminalMetadataStorageKey(workspaceId),
+    existing.filter((metadata) => metadata.terminalId !== terminalId)
+  );
+}
+
 function* saveWorkspaceState(
   wsId: string,
   state: PersistedWorkspaceState
@@ -156,7 +226,7 @@ export function* initPersistenceSaga() {
 
 /** Persist height on change */
 export function* watchHeightChanges() {
-  yield* takeEvery(setTerminalOverlayHeight.type, function* () {
+  yield* takeEvery(setTerminalOverlayHeight, function* () {
     const height = yield* selectTerminalOverlayHeight.effect();
     yield* call(saveHeight, height);
   });
@@ -164,7 +234,7 @@ export function* watchHeightChanges() {
 
 /** Persist custom names on rename */
 export function* watchRenameTerminal() {
-  yield* takeEvery(renameTerminal.type, function* (action: ReturnType<typeof renameTerminal>) {
+  yield* takeEvery(renameTerminal, function* (action: ReturnType<typeof renameTerminal>) {
     const [wsId, termId, newName] = action.payload;
     const trimmedName = newName.trim() || undefined;
     yield* call(saveCustomName, wsId, termId, trimmedName);
@@ -173,9 +243,21 @@ export function* watchRenameTerminal() {
 
 /** Remove custom name on terminal removal */
 export function* watchRemoveTerminalCustomName() {
-  yield* takeEvery(removeTerminal.type, function* (action: ReturnType<typeof removeTerminal>) {
+  yield* takeEvery(removeTerminal, function* (action: ReturnType<typeof removeTerminal>) {
     const [wsId, termId] = action.payload;
     yield* call(removeCustomName, wsId, termId);
+  });
+}
+
+export function* watchTerminalMetadataPersistence() {
+  yield* takeEvery(saveTerminalMetadata, function* (action: ReturnType<typeof saveTerminalMetadata>) {
+    const [wsId, termId, title, createdAt] = action.payload;
+    yield* call(saveTerminalMetadataToStorage, termId, wsId, title, createdAt);
+  });
+
+  yield* takeEvery(removeTerminal, function* (action: ReturnType<typeof removeTerminal>) {
+    const [wsId, termId] = action.payload;
+    yield* call(removeTerminalMetadataFromStorage, termId, wsId);
   });
 }
 

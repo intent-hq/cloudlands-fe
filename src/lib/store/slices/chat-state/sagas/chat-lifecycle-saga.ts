@@ -10,11 +10,11 @@
  * These are global (not per-agent) because DOM events apply to the whole tab.
  */
 
-import { fork, take, select, type SagaGenerator } from 'typed-redux-saga';
+import { fork, take, type SagaGenerator } from 'typed-redux-saga';
 import { eventChannel, type EventChannel, END } from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
 import { getChatService } from '$features/agent/services/chat.service';
-import type { AgentSessionState } from '../../agent-session/agent-session-types';
+import { selectAllAgentSessions } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('ChatLifecycleSaga');
 
@@ -79,12 +79,10 @@ function* watchVisibilityChange(): SagaGenerator<void> {
     while (true) {
       const visibility: 'visible' | 'hidden' = yield* take(channel);
       if (visibility === 'visible') {
-        const agentSessions: AgentSessionState | undefined = yield* select(
-          (state: any) => state.agentSessions,
-        );
-        if (agentSessions?.byAgentId) {
-          for (const [agentId, session] of Object.entries(agentSessions.byAgentId)) {
-            if ((session as any)?.isProcessing) {
+        const agentSessions = yield* selectAllAgentSessions.effect();
+        for (const session of agentSessions) {
+          if (session.isProcessing) {
+            const agentId = session.id;
               try {
                 const chatService = getChatService(agentId);
                 chatService.flushPendingStreamingContent(agentId);
@@ -94,7 +92,6 @@ function* watchVisibilityChange(): SagaGenerator<void> {
                   error: e,
                 });
               }
-            }
           }
         }
       }

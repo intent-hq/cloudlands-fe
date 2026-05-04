@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { logger } from '$lib/utils/client-logger';
-
   import { onMount } from 'svelte';
   import NotesPanel from '../notes/NotesPanel.svelte';
   import CodeChangesPanel from '../file-tracking/CodeChangesPanel.svelte';
@@ -9,10 +7,18 @@
   import ActivityLog from '$features/log/ActivityLog.svelte';
   import ErrorBoundary from '../ErrorBoundary.svelte';
   import { fly } from 'svelte/transition';
-  import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    selectPanelVisibilityFlag,
+    selectWorkspaceSidebarPanelLayout,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    setWorkspaceSidebarPanelLayout,
+    type WorkspaceSidebarPanelLayoutState,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {
     workspaceId: string;
@@ -53,6 +59,9 @@
     { id: 'activity', title: 'Activity', minHeight: 80, defaultHeight: 200 },
   ];
 
+  const dispatch = getDispatch();
+  const workspaceSidebarPanelLayout = selectWorkspaceSidebarPanelLayout();
+
   // Track collapsed states and custom heights
   let collapsedStates = $state<Record<string, boolean>>({});
   let panelHeights = $state<Record<string, number>>({});
@@ -68,10 +77,7 @@
 
   const workspace = $derived(selectWorkspaceById(workspaceId));
 
-  // Storage key for persistence
-  const STORAGE_KEY = 'vscode-resizable-panels';
-
-  // Load saved states
+  // Load persisted states from Redux and initialize DOM measurements.
   onMount(() => {
     loadSavedState();
     initializePanelHeights();
@@ -107,6 +113,7 @@
         if (collapsedStates[panelId]) {
           collapsedStates[panelId] = false;
           recalculatePanelHeights();
+          persistPanelLayout();
         }
         // Focus the first focusable element in the panel
         setTimeout(() => {
@@ -134,19 +141,7 @@
   // Wrapper functions to handle type mismatches
 
 
-  function loadSavedState() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        collapsedStates = data.collapsed || {};
-        panelHeights = data.heights || {};
-      } catch (e) {
-        logger.error('Failed to load panel states:', e);
-      }
-    }
-
-    // Initialize missing states
+  function ensureMissingPanelStates() {
     panels.forEach((panel) => {
       if (!(panel.id in collapsedStates)) {
         // Don't collapse any panels by default - let them all be visible initially
@@ -154,6 +149,12 @@
         collapsedStates[panel.id] = collapsedByDefault.includes(panel.id);
       }
     });
+  }
+
+  function loadSavedState() {
+    collapsedStates = { ...$workspaceSidebarPanelLayout.collapsed };
+    panelHeights = { ...$workspaceSidebarPanelLayout.heights };
+    ensureMissingPanelStates();
   }
 
   function initializePanelHeights() {
@@ -174,16 +175,24 @@
     }
   }
 
-  // Save states when they change
+  let appliedPersistedPanelLayout = $state<WorkspaceSidebarPanelLayoutState | undefined>(undefined);
+
   $effect(() => {
-    if (typeof window !== 'undefined') {
-      const data = {
-        collapsed: collapsedStates,
-        heights: panelHeights,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    }
+    if ($workspaceSidebarPanelLayout === appliedPersistedPanelLayout) return;
+    collapsedStates = { ...$workspaceSidebarPanelLayout.collapsed };
+    panelHeights = { ...$workspaceSidebarPanelLayout.heights };
+    ensureMissingPanelStates();
+    appliedPersistedPanelLayout = $workspaceSidebarPanelLayout;
   });
+
+  function persistPanelLayout() {
+    dispatch(
+      setWorkspaceSidebarPanelLayout({
+        collapsed: { ...collapsedStates },
+        heights: { ...panelHeights },
+      }),
+    );
+  }
 
   function updateContainerHeight() {
     if (containerRef) {
@@ -194,6 +203,7 @@
   function togglePanel(panelId: string) {
     collapsedStates[panelId] = !collapsedStates[panelId];
     recalculatePanelHeights();
+    persistPanelLayout();
   }
 
   function getShownPanels() {
@@ -300,6 +310,7 @@
       document.body.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      persistPanelLayout();
     }
   }
 
@@ -323,6 +334,7 @@
       const visible = getVisiblePanels();
       const equal = visible.length > 0 ? Math.floor(containerHeight / visible.length) : 0;
       visible.forEach((p) => (panelHeights[p.id] = Math.max(p.minHeight ?? 0, equal)));
+      persistPanelLayout();
     }
   }
   function adjustDivider(panelId: string, deltaPx: number) {
@@ -338,6 +350,7 @@
     const newNext = Math.max(getPanelMinHeight(next.id), (panelHeights[next.id] || 0) - deltaPx);
     panelHeights[current.id] = newCurrent;
     panelHeights[next.id] = newNext;
+    persistPanelLayout();
   }
 
   // Calculate actual panel heights for rendering

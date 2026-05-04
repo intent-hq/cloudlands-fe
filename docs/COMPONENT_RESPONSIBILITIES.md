@@ -139,7 +139,6 @@ Both `getDispatch()` and selector readable calls (`selectFoo()`) use Svelte's `g
 | --- | --- | --- |
 | GitService | src/features/git/main/git.service.ts | High-level workspace git operations with caching and serialized writes. |
 | GitStateManager | src/features/git-tracking/main/git-state-manager.ts | Full git state tracking for branches, commits, remotes, and PR metadata. |
-| WorkspaceContentFileManager | src/features/workspace/workspace-content-file-manager.ts | Renderer-side file loading and saving for the workspace content panel. |
 | LineChangesStore (main) | src/features/line-changes/line-changes.store.ts | Main-process cache for workspace and agent line-change statistics. |
 | LineChangesStore (renderer) | src/features/line-changes/line-changes.store.svelte.ts | Transitional renderer-side reactive mirror of line-change stats. |
 | LineChangesService | src/features/line-changes/line-changes.service.ts | Diff-based additions/deletions calculation and stat refresh. |

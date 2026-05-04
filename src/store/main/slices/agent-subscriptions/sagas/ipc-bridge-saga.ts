@@ -10,7 +10,7 @@
  * persistence and broadcast to renderer windows via sagas.
  */
 
-import { call, select, takeEvery } from "typed-redux-saga";
+import { call, takeEvery } from "typed-redux-saga";
 import {
   addSubscription,
   subscribeToDelegationGroup,
@@ -89,7 +89,7 @@ export function* handleSubscribeToDelegationGroup(
   action: ReturnType<typeof subscribeToDelegationGroup>,
 ) {
   const [wsId, seed] = action.payload;
-  const ws = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+  const ws = yield* selectWorkspaceSubscriptionState.effect(wsId);
   const created = ws.subscriptions[seed.id];
   if (!created) return;
 

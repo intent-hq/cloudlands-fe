@@ -58,6 +58,31 @@ function makeUniqueMessage(id: string, role: 'user' | 'assistant' = 'user', time
   return { id, role, timestamp, contentBlocks: [{ type: 'text' as const, text: `content-${id}` }] };
 }
 
+function makeAcpAccumulatedAssistantMessage(
+  id: string,
+  appMessageId: string,
+  timestamp = '2024-01-01T00:00:02.000Z',
+  metadata: Record<string, unknown> = {},
+): AgentMessage {
+  return {
+    id,
+    appMessageId,
+    role: 'assistant',
+    timestamp,
+    contentBlocks: [
+      { type: 'text' as const, text: 'I will inspect the file.' },
+      { type: 'tool_use' as const, id: 'toolu_1', name: 'read_file', input: { path: 'src/foo.ts' } },
+      { type: 'tool_result' as const, tool_use_id: 'toolu_1', output: { content: 'file contents' } },
+    ],
+    metadata: {
+      originalSessionId: 'agent-c1e02497-d633-466f-8426-eb53cb0b957e',
+      accumulatorSessionId: 'agent-c1e02497-d633-466f-8426-eb53cb0b957e',
+      auggieSessionId: '1b5b4d76-43a7-4092-a73e-d4bb96bb2d7e',
+      ...metadata,
+    },
+  };
+}
+
 function makeSession(
   id: string,
   wsId: string = 'ws-1',
@@ -1307,7 +1332,7 @@ describe('addMessage content-match dedup', () => {
     expect(getMsgs(state, 'a1')[0].id).toBe('msg_existing');
   });
 
-  it('keeps repeated canonical assistant messages when appMessageIds differ', () => {
+  it('collapses same-turn assistant duplicates when appMessageIds differ', () => {
     const existing: AgentMessage = {
       id: 'msg_existing',
       appMessageId: 'app_msg_existing',
@@ -1324,7 +1349,69 @@ describe('addMessage content-match dedup', () => {
     };
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
     state = agentSessionReducer(state, addMessage('a1', incoming));
-    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_existing', 'msg_incoming']);
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0]).toMatchObject({
+      id: 'msg_incoming',
+      appMessageId: 'app_msg_incoming',
+    });
+  });
+
+  it('collapses ACP accumulated assistant duplicates with distinct ids and appMessageIds', () => {
+    const existing = makeAcpAccumulatedAssistantMessage(
+      'msg_existing_acp',
+      'app_msg_existing_acp',
+      '2024-01-01T00:00:00.000Z',
+      { source: 'streaming-snapshot' },
+    );
+    const finalMessage = makeAcpAccumulatedAssistantMessage(
+      'msg_final_acp',
+      'app_msg_final_acp',
+      '2024-01-01T00:00:02.000Z',
+      { stopReason: 'end_turn', model: 'gpt-test' },
+    );
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addMessage('a1', finalMessage));
+
+    const messages = getMsgs(state, 'a1');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'msg_final_acp',
+      appMessageId: 'app_msg_final_acp',
+      metadata: {
+        originalSessionId: 'agent-c1e02497-d633-466f-8426-eb53cb0b957e',
+        accumulatorSessionId: 'agent-c1e02497-d633-466f-8426-eb53cb0b957e',
+        auggieSessionId: '1b5b4d76-43a7-4092-a73e-d4bb96bb2d7e',
+        stopReason: 'end_turn',
+        model: 'gpt-test',
+      },
+    });
+  });
+
+  it('replaces stale streaming placeholder with finalized assistant message when appMessageIds differ', () => {
+    const placeholder = {
+      ...makeContentMessage('msg_streaming', 'assistant', 'Repeated answer'),
+      appMessageId: 'app_msg_streaming',
+      isStreaming: true,
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [placeholder], isStreaming: true })),
+    );
+
+    const finalMessage = {
+      ...makeContentMessage('msg_final', 'assistant', 'Repeated answer', '2024-01-01T00:00:02.000Z'),
+      appMessageId: 'app_msg_final',
+      isStreaming: false,
+    };
+    state = agentSessionReducer(state, addMessage('a1', finalMessage));
+
+    const messages = getMsgs(state, 'a1');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'msg_final',
+      appMessageId: 'app_msg_final',
+      isStreaming: false,
+    });
   });
 
   it('does not use content fallback when exactly one message has appMessageId', () => {
@@ -1460,6 +1547,58 @@ describe('addAgentMessage (cross-slice) content-match dedup', () => {
     state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', incoming));
     expect(getMsgs(state, 'a1')).toHaveLength(1);
     expect(getMsgs(state, 'a1')[0].id).toBe('msg_existing');
+  });
+
+  it('replaces stale streaming placeholder with finalized assistant message when appMessageIds differ', () => {
+    const placeholder = {
+      ...makeContentMessage('msg_streaming', 'assistant', 'Reply text'),
+      appMessageId: 'app_msg_streaming',
+      isStreaming: true,
+    };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [placeholder], isStreaming: true })),
+    );
+
+    const finalMessage = {
+      ...makeContentMessage('msg_final', 'assistant', 'Reply text', '2024-01-01T00:00:03.000Z'),
+      appMessageId: 'app_msg_final',
+      isStreaming: false,
+    };
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', finalMessage));
+
+    const messages = getMsgs(state, 'a1');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'msg_final',
+      appMessageId: 'app_msg_final',
+      isStreaming: false,
+    });
+  });
+
+  it('collapses ACP accumulated assistant duplicates through addAgentMessage', () => {
+    const existing = makeAcpAccumulatedAssistantMessage(
+      'msg_existing_acp_agent',
+      'app_msg_existing_acp_agent',
+      '2024-01-01T00:00:00.000Z',
+      { source: 'renderer-snapshot' },
+    );
+    const finalMessage = makeAcpAccumulatedAssistantMessage(
+      'msg_final_acp_agent',
+      'app_msg_final_acp_agent',
+      '2024-01-01T00:00:03.000Z',
+      { stopReason: 'end_turn' },
+    );
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })));
+    state = agentSessionReducer(state, addAgentMessage('ws-1', 'a1', finalMessage));
+
+    const messages = getMsgs(state, 'a1');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'msg_final_acp_agent',
+      appMessageId: 'app_msg_final_acp_agent',
+      metadata: expect.objectContaining({ stopReason: 'end_turn' }),
+    });
   });
 
   it('keeps different turns but skips the matching same-turn canonical duplicate', () => {
@@ -1725,24 +1864,58 @@ describe('deduplicateMessages content-hash tiebreaker', () => {
     expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_canonical']);
   });
 
-  it('does not use legacy content fallback when appMessageIds differ on upsert', () => {
-    const firstCanonical: AgentMessage = {
-      id: 'msg_first',
-      appMessageId: 'app_msg_first',
+  it('collapses stale streaming placeholder with finalized message on upsert even when appMessageIds differ', () => {
+    const placeholder: AgentMessage = {
+      id: 'msg_streaming',
+      appMessageId: 'app_msg_streaming',
       role: 'assistant',
       timestamp: '2024-01-01T00:00:00.000Z',
-      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+      isStreaming: true,
+      contentBlocks: [{ type: 'text', text: 'Finalized content' }],
     };
-    const secondCanonical: AgentMessage = {
-      id: 'msg_second',
-      appMessageId: 'app_msg_second',
+    const finalMessage: AgentMessage = {
+      id: 'msg_final',
+      appMessageId: 'app_msg_final',
       role: 'assistant',
       timestamp: '2024-01-01T00:00:02.000Z',
-      contentBlocks: [{ type: 'text', text: 'Repeated answer' }],
+      isStreaming: false,
+      contentBlocks: [{ type: 'text', text: 'Finalized content' }],
     };
+    const state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [placeholder, finalMessage] })),
+    );
+
+    const messages = getMsgs(state, 'a1');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'msg_final',
+      appMessageId: 'app_msg_final',
+      isStreaming: false,
+    });
+  });
+
+  it('collapses ACP accumulated assistant duplicates with distinct ids and appMessageIds on upsert', () => {
+    const firstCanonical = makeAcpAccumulatedAssistantMessage(
+      'msg_first_acp',
+      'app_msg_first_acp',
+      '2024-01-01T00:00:00.000Z',
+      { source: 'streaming-snapshot' },
+    );
+    const secondCanonical = makeAcpAccumulatedAssistantMessage(
+      'msg_second_acp',
+      'app_msg_second_acp',
+      '2024-01-01T00:00:02.000Z',
+      { stopReason: 'end_turn' },
+    );
     const session = makeSession('a1', 'ws-1', { messages: [firstCanonical, secondCanonical] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_first', 'msg_second']);
+    expect(getMsgs(state, 'a1')).toHaveLength(1);
+    expect(getMsgs(state, 'a1')[0]).toMatchObject({
+      id: 'msg_second_acp',
+      appMessageId: 'app_msg_second_acp',
+      metadata: expect.objectContaining({ stopReason: 'end_turn' }),
+    });
   });
 
   it('keeps local-UUID and canonical messages on upsert when explicit turnNumbers differ', () => {

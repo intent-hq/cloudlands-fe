@@ -44,7 +44,7 @@ async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean
  */
 export function* persistenceSaga() {
   yield* takeEvery(
-    setAutoCommitEnabled.type,
+    setAutoCommitEnabled,
     function* (action: ReturnType<typeof setAutoCommitEnabled>) {
       const [workspaceId] = action.payload;
       const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);

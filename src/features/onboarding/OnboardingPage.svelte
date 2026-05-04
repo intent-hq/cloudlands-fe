@@ -8,7 +8,7 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
@@ -66,6 +66,12 @@
   import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
   import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { setHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import {
+    cancelWorkspaceInitializerOnboardingFormStateDebounce,
+    debounceWorkspaceInitializerOnboardingFormState,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerHydrated } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import { hydrateWorkspaceNavigation } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
@@ -79,8 +85,6 @@
   } from '$features/onboarding/utils/detect-pr-branch';
   const logger = createLogger('onboarding-page');
 
-  // localStorage key for persisting onboarding form state across page reloads
-  const ONBOARDING_FORM_STATE_KEY = 'onboarding-form-state';
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
 
   // ============================================================================
@@ -109,6 +113,7 @@
 
   const onboardingStep$ = selectOnboardingStep();
   const onboardingState$ = selectOnboardingState();
+  const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -228,41 +233,17 @@
         sessionStorage.removeItem('onboarding-prompt');
       }
     }, 300);
+
+    return () => {
+      if (onboardingPromptSaveTimer) {
+        clearTimeout(onboardingPromptSaveTimer);
+        onboardingPromptSaveTimer = null;
+      }
+    };
   });
 
-  // Save onboarding form state to localStorage whenever it changes (debounced)
-  let onboardingFormSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  $effect(() => {
-    const selection = projectSelection;
-    const skipWt = onboardingSkipWorktree;
-    const step = $onboardingStep$;
-
-    if (!isOnboarding) return;
-
-    if (selection || skipWt || step !== 'welcome') {
-      if (onboardingFormSaveTimer) clearTimeout(onboardingFormSaveTimer);
-      onboardingFormSaveTimer = setTimeout(() => {
-        const formState = {
-          projectSelection: selection
-            ? {
-                type: selection.type,
-                repoPath: selection.repoPath,
-                branch: selection.branch,
-                scope: selection.scope,
-                githubUrl: selection.githubUrl,
-                clonePath: selection.clonePath,
-                projectName: selection.projectName,
-                isValid: selection.isValid,
-              }
-            : null,
-          skipWorktree: skipWt,
-          step,
-        };
-        localStorage.setItem(ONBOARDING_FORM_STATE_KEY, JSON.stringify(formState));
-      }, 300);
-    }
-  });
-
+  // Save onboarding form state through Redux whenever it changes. Debouncing and
+  // reset/unmount cancellation are owned by the workspace-initializer saga.
   let visibleSuggestions = $state(getRandomSuggestions(3));
   let focusedSuggestionIndex = $state(-1);
 
@@ -317,32 +298,29 @@
     const scriptName = setupScriptName;
     const customScript = isCustomSetupScript;
 
-    if (!isOnboarding || !(selection || skipWt || script || step !== 'welcome')) return;
-    if (onboardingFormSaveTimer) clearTimeout(onboardingFormSaveTimer);
-    onboardingFormSaveTimer = setTimeout(() => {
-      localStorage.setItem(
-        ONBOARDING_FORM_STATE_KEY,
-        JSON.stringify({
-          projectSelection: selection
-            ? {
-                type: selection.type,
-                repoPath: selection.repoPath,
-                branch: selection.branch,
-                scope: selection.scope,
-                githubUrl: selection.githubUrl,
-                clonePath: selection.clonePath,
-                projectName: selection.projectName,
-                isValid: selection.isValid,
-              }
-            : null,
-          skipWorktree: skipWt,
-          setupScript: script,
-          setupScriptName: scriptName,
-          isCustomSetupScript: customScript,
-          step,
-        }),
-      );
-    }, 300);
+    if (!isOnboarding || !$workspaceInitializerHydrated$) return;
+    if (!(selection || skipWt || script || step !== 'welcome')) return;
+    dispatch(
+      debounceWorkspaceInitializerOnboardingFormState({
+        projectSelection: selection
+          ? {
+              type: selection.type,
+              repoPath: selection.repoPath,
+              branch: selection.branch,
+              scope: selection.scope,
+              githubUrl: selection.githubUrl,
+              clonePath: selection.clonePath,
+              projectName: selection.projectName,
+              isValid: selection.isValid,
+            }
+          : null,
+        skipWorktree: skipWt,
+        setupScript: script,
+        setupScriptName: scriptName,
+        isCustomSetupScript: customScript,
+        step,
+      }),
+    );
   });
 
   let hasConnectedProvider = $state(false);
@@ -359,6 +337,12 @@
   let selectedPRNumber = $state<number | null>(null);
   let lastFetchedPRIdentifier: string | null = null;
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onDestroy(() => {
+    dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
+    if (onboardingPromptSaveTimer) clearTimeout(onboardingPromptSaveTimer);
+    if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
+  });
 
   // ============================================================================
   // Onboarding Derived State
@@ -378,16 +362,14 @@
   const ONBOARDING_TOTAL_STEPS = 3;
 
   // ============================================================================
-  // Mount: Restore persisted state
+  // Mount: Reset onboarding state
   // ============================================================================
 
   onMount(() => {
-    // Always start onboarding from step 1 — reset Redux state and clear
-    // any persisted form state so returning users don't land on a stale step.
+    // Always start onboarding from step 1. Related persisted initializer state
+    // and session handoffs are cleared by the workspace-initializer saga.
     if (isOnboarding) {
       dispatch(resetOnboarding());
-      localStorage.removeItem(ONBOARDING_FORM_STATE_KEY);
-      sessionStorage.removeItem('onboarding-prompt');
     }
   });
 
@@ -825,17 +807,14 @@
       );
       sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, String(agentId));
 
-      localStorage.setItem(
-        `workspace:state:${workspace.id}`,
-        JSON.stringify({
-          version: 2,
-          workspace: { id: workspace.id, status: 'loading' },
-          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
-          drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
-          navigation: { history: [], currentIndex: -1 },
-          ui: { hasInitialized: false, lastUpdated: Date.now() },
-        }),
-      );
+      dispatch(hydrateWorkspaceNavigation(workspace.id, {
+        version: 2,
+        workspace: { id: workspace.id, status: 'loading' },
+        mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+        drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
+        navigation: { history: [], currentIndex: -1 },
+        ui: { hasInitialized: false },
+      }));
 
       setupRepoStatus = 'done';
       setupBranchStatus = 'done';
@@ -856,8 +835,9 @@
       await new Promise((r) => setTimeout(r, 300));
       setupAgentStatus = 'done';
 
-      sessionStorage.removeItem('onboarding-prompt');
-      localStorage.removeItem(ONBOARDING_FORM_STATE_KEY);
+      // Use the onboarding reset action as the cleanup signal; initializer
+      // persistence/session cleanup is handled by the workspace-initializer saga.
+      dispatch(resetOnboarding());
 
       // Mark provider setup as complete so the home page won't redirect back here
       dispatch(setHasCompletedProviderSetup(true));

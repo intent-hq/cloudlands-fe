@@ -12,7 +12,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
 import {
   parseSpecialistFile,
   writeSpecialistFile,
@@ -28,6 +28,15 @@ import { generateUniqueSpecialistId, sanitizeSpecialistId } from '../../../../sh
 
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,
+}));
+
+const { mockWatchers, mockRefreshSpecialistsFromFiles } = vi.hoisted(() => ({
+  mockWatchers: [] as Array<{
+    dir: string;
+    handlers: Record<string, (filePath: string) => void>;
+    close: ReturnType<typeof vi.fn>;
+  }>,
+  mockRefreshSpecialistsFromFiles: vi.fn(async () => undefined),
 }));
 
 const TEST_HOME = '/tmp/augment-specialist-file-loader-test';
@@ -57,6 +66,27 @@ vi.mock('electron-store', () => ({
   },
 }));
 
+vi.mock('chokidar', () => ({
+  watch: vi.fn((dir: string) => {
+    const handlers: Record<string, (filePath: string) => void> = {};
+    const close = vi.fn(async () => undefined);
+    const watcher = {
+      close,
+      on: vi.fn((event: string, handler: (filePath: string) => void) => {
+        handlers[event] = handler;
+        return watcher;
+      }),
+    };
+
+    mockWatchers.push({ dir, handlers, close });
+    return watcher;
+  }),
+}));
+
+vi.mock('../../../agent/main/specialists.service', () => ({
+  refreshSpecialistsFromFiles: mockRefreshSpecialistsFromFiles,
+}));
+
 beforeAll(async () => {
   originalHome = process.env.HOME;
   process.env.HOME = TEST_HOME;
@@ -65,6 +95,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   Object.keys(mockSettingsData).forEach((key) => delete mockSettingsData[key]);
+  mockWatchers.length = 0;
+  mockRefreshSpecialistsFromFiles.mockClear();
   await fs.rm(TEST_HOME, { recursive: true, force: true });
 });
 
@@ -647,6 +679,73 @@ Bundled prompt`,
       } finally {
         await fs.rm(bundledPath, { force: true });
       }
+    });
+  });
+
+  describe('Specialist file watcher lifecycle', () => {
+    afterEach(async () => {
+      const { stopSpecialistFileWatcher } = await import('../specialist-file-watcher');
+      await stopSpecialistFileWatcher();
+      vi.useRealTimers();
+    });
+
+    it('refreshes default and all active workspace caches for user specialist changes', async () => {
+      vi.useFakeTimers();
+      const { startSpecialistFileWatcher, updateProjectWatcher } =
+        await import('../specialist-file-watcher');
+      const notifyRenderer = vi.fn();
+      const workspaceA = path.join(TEST_HOME, 'repo-a');
+      const workspaceB = path.join(TEST_HOME, 'repo-b');
+
+      await startSpecialistFileWatcher(undefined, notifyRenderer);
+      await updateProjectWatcher(workspaceA, 'workspace-a');
+      await updateProjectWatcher(workspaceB, 'workspace-b');
+
+      const userWatcher = mockWatchers.find((watcher) => watcher.dir === getSpecialistsDirectory());
+      expect(userWatcher).toBeDefined();
+
+      userWatcher!.handlers.change(path.join(getSpecialistsDirectory(), 'shared.md'));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(mockRefreshSpecialistsFromFiles).toHaveBeenCalledTimes(3);
+      expect(mockRefreshSpecialistsFromFiles.mock.calls).toEqual([[], [workspaceA], [workspaceB]]);
+      expect(notifyRenderer).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops only the closed workspace project watcher', async () => {
+      vi.useFakeTimers();
+      const { startSpecialistFileWatcher, updateProjectWatcher } =
+        await import('../specialist-file-watcher');
+      const notifyRenderer = vi.fn();
+      const workspaceA = path.join(TEST_HOME, 'repo-a');
+      const workspaceB = path.join(TEST_HOME, 'repo-b');
+
+      await startSpecialistFileWatcher(undefined, notifyRenderer);
+      await updateProjectWatcher(workspaceA, 'workspace-a');
+      await updateProjectWatcher(workspaceB, 'workspace-b');
+
+      const projectWatcherA = mockWatchers.find(
+        (watcher) => watcher.dir === getProjectSpecialistsDirectory(workspaceA),
+      );
+      const projectWatcherB = mockWatchers.find(
+        (watcher) => watcher.dir === getProjectSpecialistsDirectory(workspaceB),
+      );
+      expect(projectWatcherA).toBeDefined();
+      expect(projectWatcherB).toBeDefined();
+
+      await updateProjectWatcher(undefined, 'workspace-a');
+
+      expect(projectWatcherA!.close).toHaveBeenCalledTimes(1);
+      expect(projectWatcherB!.close).not.toHaveBeenCalled();
+
+      projectWatcherB!.handlers.change(
+        path.join(getProjectSpecialistsDirectory(workspaceB), 'repo-only.md'),
+      );
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(mockRefreshSpecialistsFromFiles).toHaveBeenCalledWith(workspaceB);
+      expect(mockRefreshSpecialistsFromFiles).not.toHaveBeenCalledWith(workspaceA);
+      expect(notifyRenderer).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -13,7 +13,7 @@ function* persistAction(action: string): SagaGenerator<void> {
  * Watches for open action changes and persists to localStorage.
  */
 export function* persistenceSaga() {
-  yield* takeEvery([setOpenAction.type], function* () {
+  yield* takeEvery([setOpenAction], function* () {
     const action = yield* selectOpenAction.effect();
     yield* call(persistAction, action);
   });

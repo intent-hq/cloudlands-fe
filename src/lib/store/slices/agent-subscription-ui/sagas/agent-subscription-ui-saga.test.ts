@@ -36,8 +36,11 @@ vi.mock('typed-redux-saga', () => ({
   },
 }));
 
-const { selectActiveWorkspaceIdMock, invokeMock, selectTrackedAgentIdsMock, selectWaitingStateMock } = vi.hoisted(() => ({
-  selectActiveWorkspaceIdMock: vi.fn(() => null),
+const {
+  invokeMock,
+  selectTrackedAgentIdsMock,
+  selectWaitingStateMock,
+} = vi.hoisted(() => ({
   invokeMock: vi.fn(),
   selectTrackedAgentIdsMock: vi.fn(() => []),
   selectWaitingStateMock: vi.fn(() => 'idle'),
@@ -48,18 +51,18 @@ vi.mock('$lib/electron-bridge', async () => ({
   invoke: invokeMock,
 }));
 
-vi.mock('../../workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: {
-    select: (...args: any[]) => selectActiveWorkspaceIdMock(...args),
-  },
-}));
-
 vi.mock('../agent-subscription-ui-selectors', () => ({
   selectTrackedAgentIds: {
     select: (...args: any[]) => selectTrackedAgentIdsMock(...args),
+    effect: function* (...args: any[]) {
+      return yield sagaEffects.select(selectTrackedAgentIdsMock, ...args);
+    },
   },
   selectWaitingState: {
     select: (...args: any[]) => selectWaitingStateMock(...args),
+    effect: function* (...args: any[]) {
+      return yield sagaEffects.select(selectWaitingStateMock, ...args);
+    },
   },
 }));
 
@@ -76,23 +79,27 @@ vi.mock('../../workspace-lifecycle/workspace-lifecycle-slice', () => ({
 
 import {
   agentSubscriptionUISaga,
-  handleWorkspaceMounted,
   handleWorkspaceUnmounted,
   retroactiveMountCheckSaga,
   fetchAndDispatchSnapshot,
-  handleSubscriptionEvent,
+  refreshAgentFromAgentIdEvent,
+  refreshAgentFromTargetAgentIdEvent,
+  handleAgentSubscriptionsChangedEvent,
+  handleAgentSubscriptionsRestoredEvent,
+  handleAgentWokenBySubscriptionEvent,
+  handleAgentStoppedEvent,
   _getWakeupGeneration,
   _getCompletionGeneration,
 } from './agent-subscription-ui-saga';
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeEveryFromListenSync } from '$lib/store/utils/ipc-channel';
+import type { ElectronEventName } from '$shared/ipc-registry';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   setSubscriptionSnapshot,
   setWokenUp,
   clearWokenUp,
   resetSubscriptionUI,
+  requestSubscriptionFetch,
 } from '../agent-subscription-ui-slice';
 
 const WS = 'ws-test';
@@ -104,62 +111,47 @@ describe('agent-subscription-ui-saga', () => {
   });
 
   describe('agentSubscriptionUISaga (root)', () => {
-    it('registers workspace lifecycle watchers, requestSubscriptionFetch, and forks retroactive check', () => {
+    it('directly registers long-lived IPC listeners and action watchers', () => {
       const iterator = agentSubscriptionUISaga();
+      const expectedRegistrations: Array<[
+        ElectronEventName,
+        (...args: any[]) => Generator<any, void, any>,
+      ]> = [
+        ['agent:subscribed', refreshAgentFromAgentIdEvent],
+        ['agent:unsubscribed', refreshAgentFromAgentIdEvent],
+        ['agent:subscriptions-changed', handleAgentSubscriptionsChangedEvent],
+        ['agent:idle', refreshAgentFromAgentIdEvent],
+        ['agent:stopped', handleAgentStoppedEvent],
+        ['agent:status-changed', refreshAgentFromAgentIdEvent],
+        ['agent:created', refreshAgentFromAgentIdEvent],
+        ['agent:woken-by-subscription', handleAgentWokenBySubscriptionEvent],
+        ['agent:event-delivery-failed', refreshAgentFromTargetAgentIdEvent],
+        ['agent:event-delivery-timeout', refreshAgentFromTargetAgentIdEvent],
+        ['agent:subscriptions-restored', handleAgentSubscriptionsRestoredEvent],
+      ];
 
-      // takeEvery workspaceMounted
-      const step1 = iterator.next();
-      expect(step1.done).toBe(false);
-      expect(step1.value).toEqual(
-        sagaEffects.takeEvery(workspaceMounted, handleWorkspaceMounted),
-      );
+      for (const [eventName, handler] of expectedRegistrations) {
+        const effect = iterator.next().value as any;
+        expect(effect.type).toBe('FORK');
+        expect(effect.payload.fn).not.toBe(takeEveryFromListenSync);
+        expect(effect.payload.args).toEqual([eventName, handler]);
+      }
 
-      // takeEvery workspaceUnmounted
-      const step2 = iterator.next();
-      expect(step2.done).toBe(false);
-      expect(step2.value).toEqual(
+      expect(iterator.next().value).toEqual(
         sagaEffects.takeEvery(workspaceUnmounted, handleWorkspaceUnmounted),
       );
+      expect(iterator.next().value).toEqual(
+        sagaEffects.takeEvery(requestSubscriptionFetch, expect.any(Function)),
+      );
 
-      // takeEvery requestSubscriptionFetch
-      const step3 = iterator.next();
-      expect(step3.done).toBe(false);
-      expect((step3.value as any)?.type).toBe('FORK');
-
-      // fork retroactive mount check
-      const step4 = iterator.next();
-      expect(step4.done).toBe(false);
-      expect((step4.value as any)?.type).toBe('FORK');
+      expect(iterator.next().done).toBe(true);
     });
   });
 
   describe('retroactiveMountCheckSaga', () => {
-    it('returns early when no active workspace', () => {
-      selectActiveWorkspaceIdMock.mockReturnValue(null);
+    it('is a no-op because IPC listeners are no longer workspace-mounted', () => {
       const iterator = retroactiveMountCheckSaga();
-      iterator.next(); // select
-      const result = iterator.next(null);
-      expect(result.done).toBe(true);
-    });
-
-    it('returns early for optimistic workspace IDs', () => {
-      selectActiveWorkspaceIdMock.mockReturnValue('optimistic-abc');
-      const iterator = retroactiveMountCheckSaga();
-      iterator.next(); // select
-      const result = iterator.next('optimistic-abc');
-      expect(result.done).toBe(true);
-    });
-
-    it('forks mount handler when workspace is active but not yet tracked', () => {
-      selectActiveWorkspaceIdMock.mockReturnValue('ws-already-mounted');
-      const iterator = retroactiveMountCheckSaga();
-      iterator.next(); // select
-      const forkEffect = iterator.next('ws-already-mounted');
-      expect(forkEffect.done).toBe(false);
-      expect((forkEffect.value as any)?.type).toBe('FORK');
-      expect((forkEffect.value as any)?.payload?.args?.[0]).toEqual(
-        workspaceMounted('ws-already-mounted'),
-      );
+      expect(iterator.next().done).toBe(true);
     });
   });
 
@@ -352,16 +344,14 @@ describe('agent-subscription-ui-saga', () => {
     });
   });
 
-  describe('handleSubscriptionEvent', () => {
+  describe('event-specific handlers', () => {
     it('refreshes all tracked agents on subscriptions-changed without agentId', () => {
       const trackedAgents = ['agent-1', 'agent-2'];
       selectTrackedAgentIdsMock.mockReturnValue(trackedAgents);
 
-      const iterator = handleSubscriptionEvent(WS, {
-        eventName: 'agent:subscriptions-changed',
+      const iterator = handleAgentSubscriptionsChangedEvent({
         workspaceId: WS,
         agentId: undefined,
-        data: {},
       });
 
       // select trackedAgentIds
@@ -384,12 +374,10 @@ describe('agent-subscription-ui-saga', () => {
       expect(done.done).toBe(true);
     });
 
-    it('returns early for non-subscriptions-changed events without agentId', () => {
-      const iterator = handleSubscriptionEvent(WS, {
-        eventName: 'agent:idle',
+    it('returns early for agent-scoped events without agentId', () => {
+      const iterator = refreshAgentFromAgentIdEvent({
         workspaceId: WS,
         agentId: undefined,
-        data: {},
       });
 
       // Should return immediately without any effects
@@ -400,11 +388,9 @@ describe('agent-subscription-ui-saga', () => {
     it('fetches snapshot for specific agent when agentId is present', () => {
       invokeMock.mockResolvedValue({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
 
-      const iterator = handleSubscriptionEvent(WS, {
-        eventName: 'agent:subscribed',
+      const iterator = refreshAgentFromAgentIdEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: {},
       });
 
       // Should call fetchAndDispatchSnapshot with the specific agentId
@@ -413,14 +399,79 @@ describe('agent-subscription-ui-saga', () => {
       expect((callEffect.value as any)?.payload?.args).toEqual([WS, AGENT]);
     });
 
+    it('ignores agent-scoped events that are missing workspaceId', () => {
+      const iterator = refreshAgentFromAgentIdEvent({
+        agentId: AGENT,
+      });
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it('uses targetAgentId for delivery failure events', () => {
+      const iterator = refreshAgentFromTargetAgentIdEvent({
+        workspaceId: WS,
+        targetAgentId: AGENT,
+      });
+
+      const callEffect = iterator.next();
+      expect(callEffect.done).toBe(false);
+      expect((callEffect.value as any)?.payload?.args).toEqual([WS, AGENT]);
+    });
+
+    it('ignores target-agent events that are missing targetAgentId', () => {
+      const iterator = refreshAgentFromTargetAgentIdEvent({
+        workspaceId: WS,
+        targetAgentId: undefined,
+      });
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it('refreshes restored subscription agentIds', () => {
+      const iterator = handleAgentSubscriptionsRestoredEvent({
+        workspaceId: WS,
+        agentIds: ['agent-1', '', 'agent-2'],
+      });
+
+      const callEffect1 = iterator.next();
+      expect(callEffect1.done).toBe(false);
+      expect((callEffect1.value as any)?.payload?.args).toEqual([WS, 'agent-1']);
+
+      const callEffect2 = iterator.next();
+      expect(callEffect2.done).toBe(false);
+      expect((callEffect2.value as any)?.payload?.args).toEqual([WS, 'agent-2']);
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it('stopped events use payload workspaceId and agentId for unsubscribe/reset', () => {
+      const iterator = handleAgentStoppedEvent({
+        workspaceId: WS,
+        agentId: AGENT,
+      });
+
+      const fetchEffect = iterator.next();
+      expect(fetchEffect.done).toBe(false);
+      expect((fetchEffect.value as any)?.payload?.args).toEqual([WS, AGENT]);
+
+      const unsubscribeEffect = iterator.next();
+      expect(unsubscribeEffect.done).toBe(false);
+      expect((unsubscribeEffect.value as any)?.payload?.args).toEqual([
+        'events:unsubscribe-agent',
+        { workspaceId: WS, agentId: AGENT },
+      ]);
+
+      const resetEffect = iterator.next();
+      expect(resetEffect.done).toBe(false);
+      expect((resetEffect.value as any)?.payload?.action).toEqual(resetSubscriptionUI(WS, AGENT));
+    });
+
     it('handles empty tracked agents list gracefully', () => {
       selectTrackedAgentIdsMock.mockReturnValue([]);
 
-      const iterator = handleSubscriptionEvent(WS, {
-        eventName: 'agent:subscriptions-changed',
+      const iterator = handleAgentSubscriptionsChangedEvent({
         workspaceId: WS,
         agentId: undefined,
-        data: {},
       });
 
       // select trackedAgentIds
@@ -438,11 +489,11 @@ describe('agent-subscription-ui-saga', () => {
       invokeMock.mockResolvedValue({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
 
       // --- First wakeup ---
-      const it1 = handleSubscriptionEvent(WS, {
-        eventName: 'agent:woken-by-subscription',
+      const it1 = handleAgentWokenBySubscriptionEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: { eventCount: 1, eventTypes: ['file:*'] },
+        eventCount: 1,
+        eventTypes: ['file:*'],
       });
 
       // call(fetchAndDispatchSnapshot, WS, AGENT)
@@ -459,11 +510,11 @@ describe('agent-subscription-ui-saga', () => {
       expect(gen1).toBeGreaterThan(0);
 
       // --- Second wakeup (arrives before the 5s dismiss) ---
-      const it2 = handleSubscriptionEvent(WS, {
-        eventName: 'agent:woken-by-subscription',
+      const it2 = handleAgentWokenBySubscriptionEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: { eventCount: 2, eventTypes: ['agent:*'] },
+        eventCount: 2,
+        eventTypes: ['agent:*'],
       });
 
       it2.next(); // call fetchAndDispatchSnapshot
@@ -512,11 +563,11 @@ describe('agent-subscription-ui-saga', () => {
       const key = `${WS}:${AGENT}`;
 
       // --- Wakeup 1 ---
-      const it1 = handleSubscriptionEvent(WS, {
-        eventName: 'agent:woken-by-subscription',
+      const it1 = handleAgentWokenBySubscriptionEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: { eventCount: 1, eventTypes: ['file:*'] },
+        eventCount: 1,
+        eventTypes: ['file:*'],
       });
       it1.next(); // call fetchAndDispatchSnapshot
       const fork1 = it1.next();
@@ -524,11 +575,11 @@ describe('agent-subscription-ui-saga', () => {
       expect(gen1).toBeGreaterThan(0);
 
       // --- Wakeup 2 ---
-      const it2 = handleSubscriptionEvent(WS, {
-        eventName: 'agent:woken-by-subscription',
+      const it2 = handleAgentWokenBySubscriptionEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: { eventCount: 2, eventTypes: ['agent:*'] },
+        eventCount: 2,
+        eventTypes: ['agent:*'],
       });
       it2.next();
       const fork2 = it2.next();
@@ -536,11 +587,11 @@ describe('agent-subscription-ui-saga', () => {
       expect(gen2).toBe(gen1 + 1);
 
       // --- Wakeup 3 ---
-      const it3 = handleSubscriptionEvent(WS, {
-        eventName: 'agent:woken-by-subscription',
+      const it3 = handleAgentWokenBySubscriptionEvent({
         workspaceId: WS,
         agentId: AGENT,
-        data: { eventCount: 3, eventTypes: ['task:*'] },
+        eventCount: 3,
+        eventTypes: ['task:*'],
       });
       it3.next();
       const fork3 = it3.next();

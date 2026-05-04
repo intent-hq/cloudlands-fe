@@ -1140,7 +1140,7 @@ export class ACPProviderStreaming {
         try {
           sendToWorkspaceWindows(
             pendingEdit.workspaceId,
-            `file:content-changed:${pendingEdit.workspaceId}`,
+            'file:content-changed',
             {
               path: fullPath,
               relativePath: pendingEdit.filePath,

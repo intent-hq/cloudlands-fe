@@ -28,31 +28,19 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { v4 as uuidv4 } from 'uuid';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  import {
+    dismissSetupScriptBannerGlobally,
+    saveScript,
+  } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  import { selectIsSetupScriptBannerDismissed } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { terminalManager } from '$features/terminal/terminal-manager.svelte';
+  import { selectWorkspaceHasSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('SetupScriptBanner');
   const dispatch = getDispatch();
-
-  const DISMISSED_STORAGE_KEY = 'setup-script-banner-dismissed';
-
-  /** Check localStorage to see if the banner was permanently dismissed (globally or per-workspace) */
-  function isWorkspaceDismissed(wsId: string): boolean {
-    try {
-      const dismissed = localStorage.getItem(DISMISSED_STORAGE_KEY);
-      if (dismissed) {
-        const parsed = JSON.parse(dismissed) as Record<string, boolean>;
-        return parsed._global === true || parsed[wsId] === true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
-  }
 
   // Store reference for Svelte 5 auto-subscription via $historyUpdateCounter
   const historyUpdateCounter = terminalHistoryTracker.updateCounter;
@@ -67,9 +55,11 @@
     workspaceIdStore.set(workspaceId);
   });
   const workspaceById = selectWorkspaceById(workspaceIdStore);
+  const isDismissedStore = selectIsSetupScriptBannerDismissed(workspaceIdStore);
+  const hasSetupTerminalStore = selectWorkspaceHasSetupTerminal(workspaceIdStore);
 
   // State
-  let isOpen = $state(!isWorkspaceDismissed(workspaceId)); // persists across remounts if dismissed
+  let isOpen = $state(true); // persisted dismissal is owned by setup-scripts Redux state
   let isExpanded = $state(false);
   let scriptContent = $state('');
   let scriptName = $state('Workspace setup');
@@ -113,27 +103,9 @@
 
   // Check if this workspace was started with a setup script
   // When a setup script runs during creation, it creates a terminal titled "Setup"
-  const wasStartedWithSetupScript = $derived.by(() => {
-    const metadata = terminalManager.loadTerminalMetadata(workspaceId);
-    return metadata.some((t) => t.title === 'Setup');
-  });
+  const wasStartedWithSetupScript = $derived($hasSetupTerminalStore);
 
-  // Track dismissal reactively (re-read when workspaceId changes)
-  let dismissedVersion = $state(0);
-  const isDismissed = $derived.by(() => {
-    // Touch dismissedVersion for reactivity when we dismiss
-    void dismissedVersion;
-    try {
-      const dismissed = localStorage.getItem(DISMISSED_STORAGE_KEY);
-      if (dismissed) {
-        const parsed = JSON.parse(dismissed) as Record<string, boolean>;
-        return parsed._global === true || parsed[workspaceId] === true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
-  });
+  const isDismissed = $derived($isDismissedStore);
 
   // Should show the banner?
   const shouldShow = $derived(isOpen && !isDismissed && !wasStartedWithSetupScript);
@@ -146,25 +118,15 @@
     const commands: Array<{ command: string; timestamp: number }> = [];
     const seen = new Set<string>();
 
-    // Collect commands from all terminal histories
-    // We iterate over known terminal IDs from the workspace
-    const allKeys = Object.keys(localStorage).filter(
-      (k) => k.startsWith('terminal-history-') && k.includes(workspaceId),
-    );
-
-    for (const key of allKeys) {
-      try {
-        const data = JSON.parse(localStorage.getItem(key) || '{}');
-        if (data.commands && Array.isArray(data.commands)) {
-          for (const cmd of data.commands) {
-            if (cmd.command && !seen.has(cmd.command)) {
-              seen.add(cmd.command);
-              commands.push({ command: cmd.command, timestamp: cmd.timestamp || 0 });
-            }
+    // Collect commands from all terminal histories already loaded by the tracker.
+    for (const history of terminalHistoryTracker.getHistoriesForWorkspace(workspaceId)) {
+      if (history.commands && Array.isArray(history.commands)) {
+        for (const cmd of history.commands) {
+          if (cmd.command && !seen.has(cmd.command)) {
+            seen.add(cmd.command);
+            commands.push({ command: cmd.command, timestamp: cmd.timestamp || 0 });
           }
         }
-      } catch {
-        // ignore parse errors
       }
     }
 
@@ -192,15 +154,7 @@
   }
 
   function dismiss() {
-    try {
-      const dismissed = JSON.parse(localStorage.getItem(DISMISSED_STORAGE_KEY) || '{}');
-      dismissed._global = true;
-      localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(dismissed));
-    } catch {
-      // ignore
-    }
-    // Trigger reactivity for isDismissed derived value
-    dismissedVersion++;
+    dispatch(dismissSetupScriptBannerGlobally());
     isExpanded = false;
     isOpen = false;
   }

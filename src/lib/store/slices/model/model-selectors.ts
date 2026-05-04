@@ -11,7 +11,7 @@ import {
   parseCompoundModelId,
 } from "$shared/config/provider-config";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
-import type { ModelLoadingState } from "./model-slice";
+import type { ModelLoadingState } from "./model-types";
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
@@ -176,4 +176,18 @@ export const selectGroupedModels = createSelector(
     ];
   }
 );
+
+export const selectModelPickerCollapsedGroups = createSelector((state): string[] => {
+  return state.model.modelPickerCollapsedGroups;
+});
+
+export const selectIsModelPickerGroupCollapsed = createSelector(
+  (state, groupKey: string): boolean => {
+    return state.model.modelPickerCollapsedGroups.includes(groupKey);
+  }
+);
+
+export const selectModelFallbackInfo = createSelector((state, agentId: string) => {
+  return state.model.fallbackInfoByAgentId[agentId] ?? null;
+});
 

@@ -8,7 +8,7 @@
  * - Agent file edits loading
  * - Tree expansion / collapse
  */
-import { call, delay, fork, put, select, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import { call, delay, fork, put, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
 import type { FileNode, FileGitStatus } from "$shared/types";
 import { GitFileStatus } from "$shared/types";
 import { WorkspaceId as WorkspaceIdFn, isValidWorkspaceId } from "$shared/types/branded-ids";
@@ -103,7 +103,7 @@ function clearWsCache(wsId: string) {
 // ---------------------------------------------------------------------------
 
 function* getWsState(wsId: string): SagaGenerator<FileExplorerWorkspaceState> {
-  return yield* select((state: any) => selectFileExplorerState.select(state, wsId));
+  return yield* selectFileExplorerState.effect(wsId);
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
 
   try {
     if (isValidWorkspaceId(wsId)) {
-      const activeWsId = yield* select((state: any) => selectActiveWorkspaceId.select(state));
+      const activeWsId = yield* selectActiveWorkspaceId.effect();
       if (activeWsId !== wsId) {
         logger.debug("[Git Status] Store on different workspace, skipping");
         return;
@@ -264,8 +264,8 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
       }
 
       const newGitStatus: Record<string, FileGitStatus> = {};
-      const unstagedChanges = yield* select((state: any) => selectFtCurrentUnstagedChanges.select(state));
-      const stagedChanges = yield* select((state: any) => selectFtCurrentStagedChanges.select(state));
+      const unstagedChanges = yield* selectFtCurrentUnstagedChanges.effect();
+      const stagedChanges = yield* selectFtCurrentStagedChanges.effect();
       const allChanges = [...unstagedChanges, ...stagedChanges];
 
       for (const change of allChanges) {
@@ -274,7 +274,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
         newGitStatus[change.file] = { status: statusCode, additions: stats.additions, deletions: stats.deletions };
       }
 
-      const currentGitStatus = yield* select((state: any) => selectGitStatus.select(state, wsId));
+      const currentGitStatus = yield* selectGitStatus.effect(wsId);
       if (currentGitStatus?.files) {
         const filesToDiff = currentGitStatus.files
           .filter((f: any) => f.path && !newGitStatus[f.path])
@@ -329,7 +329,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
       }
 
       const effectiveWsId = wsId || extractWorkspaceId(ws.workspacePath);
-      const fileChanges = yield* select((state: any) => selectWorkspaceFileChanges.select(state, effectiveWsId));
+      const fileChanges = yield* selectWorkspaceFileChanges.effect(effectiveWsId);
       if (fileChanges?.length > 0) {
         for (const change of fileChanges) {
           const existing = newGitStatus[change.path];
@@ -943,13 +943,13 @@ export function* fileExplorerSaga(): SagaGenerator<void> {
   yield* fork(watchFileChangedWindowEvent);
   yield* fork(watchFileChangedIPC);
   yield* fork(debounceSaga, debouncedFileTrackingSync, 300);
-  yield* takeLatest(initializeFileExplorer.type, initializeFileExplorerSaga);
-  yield* takeEvery(toggleDirectoryRequested.type, handleToggleDirectory);
-  yield* takeLatest(expandToPathRequested.type, handleExpandToPath);
-  yield* takeLatest(expandAllRequested.type, handleExpandAll);
-  yield* takeLatest(refreshFileExplorer.type, handleRefresh);
-  yield* takeEvery(refreshDirectoryRequested.type, handleRefreshDirectory);
-  yield* takeLatest(refreshGitStatusRequested.type, handleRefreshGitStatus);
-  yield* takeLatest(syncGitStatusFromStoresRequested.type, handleSyncGitStatusFromStores);
-  yield* takeLatest(setWorkspacePathRequested.type, handleSetWorkspacePath);
+  yield* takeLatest(initializeFileExplorer, initializeFileExplorerSaga);
+  yield* takeEvery(toggleDirectoryRequested, handleToggleDirectory);
+  yield* takeLatest(expandToPathRequested, handleExpandToPath);
+  yield* takeLatest(expandAllRequested, handleExpandAll);
+  yield* takeLatest(refreshFileExplorer, handleRefresh);
+  yield* takeEvery(refreshDirectoryRequested, handleRefreshDirectory);
+  yield* takeLatest(refreshGitStatusRequested, handleRefreshGitStatus);
+  yield* takeLatest(syncGitStatusFromStoresRequested, handleSyncGitStatusFromStores);
+  yield* takeLatest(setWorkspacePathRequested, handleSetWorkspacePath);
 }

@@ -40,6 +40,7 @@
     selectGithubRepoSearchLoading,
     selectGithubRepoSearchResults,
   } from '$lib/store/slices/github-repo-search/github-repo-search-selectors';
+  import { selectWorkspaceInitializerDefaultParentPath } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faArrowUpRightFromSquare, faFolder, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -69,6 +70,7 @@
   const searchResults$ = selectGithubRepoSearchResults();
   const searchLoading$ = selectGithubRepoSearchLoading();
   const searchLastQuery$ = selectGithubRepoSearchLastQuery();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
 
   let githubInput = $state(githubUrl.replace(/^https?:\/\/github\.com\//, ''));
 
@@ -166,9 +168,8 @@
     }
   }
 
-  /** Default base directory for cloned repos — user can override via
-   *  localStorage so the preference persists across sessions. */
-  const DEFAULT_CLONE_BASE = localStorage.getItem('workspace-initializer-default-parent') || '~/Developer';
+  /** Default base directory for cloned repos, hydrated through Redux persistence. */
+  const defaultCloneBase = $derived($defaultParentPath$ || '~/Developer');
 
   function handleInputChange(value: string) {
     // Strip full URL prefix if user pastes a full URL
@@ -185,7 +186,7 @@
       if (parts.length >= 2 && parts[0] && parts[1]) {
         const repoName = parts[1].split(/[?#]/)[0]; // strip query/hash
         if (repoName) {
-          onClonePathChange(DEFAULT_CLONE_BASE);
+          onClonePathChange(defaultCloneBase);
         }
       }
     } else {
@@ -255,7 +256,7 @@
   function handleSelectRepo(repo: GithubRepoItem) {
     const path = `${repo.owner}/${repo.name}`;
     onGithubUrlChange(`https://github.com/${path}`);
-    onClonePathChange(DEFAULT_CLONE_BASE);
+    onClonePathChange(defaultCloneBase);
   }
 
   /** User-initiated refresh. The saga also auto-reloads when auth state

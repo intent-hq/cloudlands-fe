@@ -9,6 +9,7 @@ import {
   removeTerminal,
   setTerminalOverlayHeight,
   renameTerminal,
+  saveTerminalMetadata,
   loadWorkspaceTerminals,
   hydrateHeight,
   setTerminalsLoaded,
@@ -257,6 +258,53 @@ describe("terminalsReducer", () => {
       };
       const state = terminalsReducer(stateWith, renameTerminal(WS, "t1", "  "));
       expect(getItem(getWs(state).terminals, "t1")?.customName).toBeUndefined();
+    });
+  });
+
+  describe("saveTerminalMetadata", () => {
+    it("should add metadata-backed terminal if missing", () => {
+      const state = terminalsReducer(
+        initialState,
+        saveTerminalMetadata(WS, "term-1", "Setup", "2026-04-29T00:00:00.000Z")
+      );
+
+      expect(getItem(getWs(state).terminals, "term-1")).toEqual({
+        id: "term-1",
+        name: "Setup",
+        type: "terminal",
+        workspaceId: WS,
+        createdAt: "2026-04-29T00:00:00.000Z",
+      });
+    });
+
+    it("should update existing terminal metadata while preserving custom name", () => {
+      const stateWith: TerminalOverlayState = {
+        ...initialState,
+        workspaces: {
+          [WS]: {
+            isOpen: false,
+            activeTerminalId: null,
+            terminals: col([{ id: "term-1", name: "Terminal", customName: "Mine", createdAt: "old" }]),
+            terminalsLoaded: false,
+            isLoadingTerminals: false,
+            recentlyCreatedTerminals: [],
+          },
+        },
+      };
+
+      const state = terminalsReducer(
+        stateWith,
+        saveTerminalMetadata(WS, "term-1", "Setup", "2026-04-29T00:00:00.000Z")
+      );
+
+      expect(getItem(getWs(state).terminals, "term-1")).toEqual({
+        id: "term-1",
+        name: "Setup",
+        customName: "Mine",
+        type: "terminal",
+        workspaceId: WS,
+        createdAt: "old",
+      });
     });
   });
 

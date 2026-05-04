@@ -5429,7 +5429,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Send to ALL windows viewing this workspace
       const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
       if (targetWindowIds.length > 0) {
-        return this.sendToRenderer(channel, data, targetWindowIds);
+        return this.sendToRenderer(channel, data, targetWindowIds, workspaceId);
       }
       // No windows found for workspace - fall back to broadcast
       logger.warn('sendStreamToRenderer: no windows found for workspace, broadcasting', {
@@ -5444,7 +5444,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         channel,
       });
     }
-    return this.sendToRenderer(channel, data);
+    return this.sendToRenderer(channel, data, undefined, workspaceId);
   }
 
   /**
@@ -5472,7 +5472,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    *                          Can be a single number or an array for multi-window workspace targeting.
    * @returns true if at least one window received the message
    */
-  private sendToRenderer(channel: string, data: any, targetWindowIds?: number | number[]): boolean {
+  private sendToRenderer(
+    channel: string,
+    data: any,
+    targetWindowIds?: number | number[],
+    browserWorkspaceId?: string,
+  ): boolean {
     const windows = BrowserWindow.getAllWindows();
 
     // Normalize target IDs to a Set for O(1) lookup
@@ -5537,7 +5542,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // This allows the browser (non-Electron) renderer to receive streaming events
     const broadcast = (global as any).__browserIpcBroadcast;
     if (typeof broadcast === 'function') {
-      broadcast(channel, data);
+      broadcast(channel, data, browserWorkspaceId);
       sentToAtLeastOne = true;
     }
 
@@ -8975,6 +8980,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       clearTimeout(timeout);
     }
     this.interruptedAgentTimeouts.clear();
+
+    // Clear backend delivery safety timeouts and tracking
+    for (const timeout of this.pendingBackendDeliveryTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.pendingBackendDeliveryTimeouts.clear();
+    this.pendingBackendDeliveries.clear();
+
+    // Clear pending stop safety timeouts and tracking
+    for (const timeout of this.pendingStopAgentTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.pendingStopAgentTimeouts.clear();
+    this.pendingStopAgents.clear();
 
     // Clear stream tracking maps
     this.streamStartTimes.clear();

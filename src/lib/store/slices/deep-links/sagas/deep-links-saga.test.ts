@@ -50,13 +50,6 @@ import {
   watchLocationSaga,
 } from "./deep-links-saga";
 
-function createMockChannel() {
-  return {
-    take: vi.fn(),
-    close: vi.fn(),
-  } as any;
-}
-
 describe("deepLinksSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,11 +159,18 @@ describe("deepLinksSaga", () => {
       .silentRun(0);
   });
 
-  it("takes renderer deep-link create events from the window channel", () => {
-    const channel = createMockChannel();
-    eventChannelMock.mockReturnValue(channel);
-
+  it("forks the renderer deep-link create window listener without blocking", () => {
     const iterator = watchDeepLinkCreateSaga();
-    expect(iterator.next()).toEqual({ value: sagaEffects.take(channel), done: false });
+    const result = iterator.next();
+
+    expect(result.done).toBe(false);
+    expect(result.value).toMatchObject({
+      "@@redux-saga/IO": true,
+      type: "FORK",
+      payload: {
+        args: ["app:deep-link-create", expect.any(Function), {}],
+      },
+    });
+    expect((result.value as any).payload.fn.name).toBe("takeEveryFromWindowEventLoop");
   });
 });

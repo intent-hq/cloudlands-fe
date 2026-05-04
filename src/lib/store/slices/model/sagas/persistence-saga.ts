@@ -1,10 +1,26 @@
-import { call, put, takeLatest } from "typed-redux-saga";
+import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 import { getLocalStorageItem, getLocalStorageJSON, removeLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
-import { selectProviderModels, selectWorkspaceModels, } from "../model-selectors";
+import { selectModelPickerCollapsedGroups, selectProviderModels, selectWorkspaceModels, } from "../model-selectors";
 import { normalizeModelForProvider, normalizeProviderModels, } from "../model-selection-utils";
-import { loadModels, reloadModelsForProvider, setSelectedModel, clearAllWorkspaceModels, clearLoadingStateForProvider, setWorkspaceModel, setAvailableModels, clearWorkspaceModel, loadWorkspaceModelsFromStorage, loadProviderModelsFromStorage, GLOBAL_MODEL_KEY, WORKSPACE_MODELS_KEY, PROVIDER_MODELS_KEY, } from "../model-slice";
+import { loadModels, reloadModelsForProvider, setSelectedModel, clearAllWorkspaceModels, clearLoadingStateForProvider, setWorkspaceModel, setAvailableModels, clearWorkspaceModel, loadWorkspaceModelsFromStorage, loadProviderModelsFromStorage, GLOBAL_MODEL_KEY, WORKSPACE_MODELS_KEY, PROVIDER_MODELS_KEY, hydrateModelPickerCollapsedGroups, setModelPickerGroupCollapsed, requestHydrateModelFallbackInfo, hydrateModelFallbackInfo, setModelFallbackInfo, clearModelFallbackInfo, } from "../model-slice";
+import type { ModelFallbackInfo } from "../model-types";
+
+export const MODEL_PICKER_COLLAPSED_GROUPS_KEY = "model-picker-collapsed-groups";
+export const MODEL_FALLBACK_KEY_PREFIX = "workspaces-model-fallback:";
+
+function isFallbackInfo(value: unknown): value is ModelFallbackInfo {
+    const info = value as ModelFallbackInfo;
+    return !!info
+        && typeof info === "object"
+        && typeof info.fromModel === "string"
+        && typeof info.toModel === "string";
+}
+
+function parseCollapsedGroups(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((group): group is string => typeof group === "string") : [];
+}
 function parseStoredModels(stored: Record<string, string> | undefined): Record<string, string> {
     return stored ?? {};
 }
@@ -28,6 +44,8 @@ export function* initPersistenceSaga() {
     if (parsed) {
         yield* put(loadWorkspaceModelsFromStorage(parsed));
     }
+    const collapsedGroups = yield* call(getLocalStorageJSON<unknown>, MODEL_PICKER_COLLAPSED_GROUPS_KEY);
+    yield* put(hydrateModelPickerCollapsedGroups(parseCollapsedGroups(collapsedGroups)));
     // Load per-provider model preferences
     const stored = yield* call(getLocalStorageJSON<Record<string, string>>, PROVIDER_MODELS_KEY);
     const providerModels = normalizeProviderModels(parseStoredModels(stored));
@@ -61,10 +79,6 @@ export function* handleReloadModelsForProvider() {
     const savedModel = providerModels[newProviderId];
     const nextModel = savedModel ??
         normalizeModelForProvider(newProviderId, MODEL_DEFAULTS.UI_INITIAL_MODEL);
-    if (savedModel) {
-    }
-    else {
-    }
     yield* put(setSelectedModel({ providerId: newProviderId, model: nextModel }));
     yield* call(setLocalStorageItem, GLOBAL_MODEL_KEY, nextModel);
     yield* put(clearLoadingStateForProvider(newProviderId));
@@ -74,9 +88,26 @@ export function* handleReloadModelsForProvider() {
 /**
  * Persist workspace models to localStorage when they change.
  */
-function* handleWorkspaceModelChange() {
+export function* handleWorkspaceModelChange() {
     const workspaceModels: Record<string, string> = yield* selectWorkspaceModels.effect();
     yield* call(setLocalStorageJSON, WORKSPACE_MODELS_KEY, workspaceModels);
+}
+export function* handleCollapsedGroupsChange() {
+    const collapsedGroups = yield* selectModelPickerCollapsedGroups.effect();
+    yield* call(setLocalStorageJSON, MODEL_PICKER_COLLAPSED_GROUPS_KEY, collapsedGroups);
+}
+export function* handleHydrateModelFallbackInfo(action: ReturnType<typeof requestHydrateModelFallbackInfo>) {
+    const [agentId] = action.payload;
+    const stored = yield* call(getLocalStorageJSON<unknown>, `${MODEL_FALLBACK_KEY_PREFIX}${agentId}`);
+    yield* put(hydrateModelFallbackInfo(agentId, isFallbackInfo(stored) ? stored : null));
+}
+export function* handleSetModelFallbackInfo(action: ReturnType<typeof setModelFallbackInfo>) {
+    const [agentId, info] = action.payload;
+    yield* call(setLocalStorageJSON, `${MODEL_FALLBACK_KEY_PREFIX}${agentId}`, info);
+}
+export function* handleClearModelFallbackInfo(action: ReturnType<typeof clearModelFallbackInfo>) {
+    const [agentId] = action.payload;
+    yield* call(removeLocalStorageItem, `${MODEL_FALLBACK_KEY_PREFIX}${agentId}`);
 }
 /**
  * Persistence saga:
@@ -89,4 +120,8 @@ export function* persistenceSaga() {
     yield* takeLatest(reloadModelsForProvider, handleReloadModelsForProvider);
     yield* takeLatest(setWorkspaceModel, handleWorkspaceModelChange);
     yield* takeLatest(clearWorkspaceModel, handleWorkspaceModelChange);
+    yield* takeLatest(setModelPickerGroupCollapsed, handleCollapsedGroupsChange);
+    yield* takeEvery(requestHydrateModelFallbackInfo, handleHydrateModelFallbackInfo);
+    yield* takeEvery(setModelFallbackInfo, handleSetModelFallbackInfo);
+    yield* takeEvery(clearModelFallbackInfo, handleClearModelFallbackInfo);
 }

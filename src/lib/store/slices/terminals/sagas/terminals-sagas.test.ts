@@ -19,11 +19,15 @@ import {
   WORKSPACE_STATE_STORAGE_KEY,
   removeTerminal,
   renameTerminal,
+  saveTerminalMetadata,
   type TerminalOverlayState,
 } from "../terminals-slice";
 import { createCollection } from "../../../utils/collection-utils";
 import {
   getStoredCustomName,
+  TERMINAL_METADATA_STORAGE_PREFIX,
+  loadTerminalMetadataFromStorage,
+  watchTerminalMetadataPersistence,
   watchRenameTerminal,
   watchWorkspaceState,
 } from "./persistence-saga";
@@ -95,6 +99,25 @@ describe("terminal overlay sagas", () => {
         __legacy__: { "term-1": "Legacy Name" },
       });
     });
+
+    it("filters invalid terminal metadata and cleans storage", async () => {
+      window.localStorage.setItem(`${TERMINAL_METADATA_STORAGE_PREFIX}ws-1`, JSON.stringify([
+        { terminalId: "term-1", workspaceId: "ws-1", createdAt: "2026-04-29T00:00:00.000Z" },
+        { terminalId: "term-2", workspaceId: "other", createdAt: "2026-04-29T00:00:00.000Z" },
+        { terminalId: 42, workspaceId: "ws-1", createdAt: "2026-04-29T00:00:00.000Z" },
+      ]));
+
+      const metadata = await runSaga(
+        { dispatch: vi.fn(), getState: () => ({}) },
+        loadTerminalMetadataFromStorage,
+        "ws-1"
+      ).toPromise();
+
+      expect(metadata).toEqual([
+        { terminalId: "term-1", workspaceId: "ws-1", createdAt: "2026-04-29T00:00:00.000Z" },
+      ]);
+      expect(readStorage(`${TERMINAL_METADATA_STORAGE_PREFIX}ws-1`)).toEqual(metadata);
+    });
   });
 
   describe("watchRenameTerminal", () => {
@@ -108,6 +131,25 @@ describe("terminal overlay sagas", () => {
         "ws-1": { "term-1": "First Name" },
         "ws-2": { "term-1": "Second Name" },
       });
+    });
+  });
+
+  describe("watchTerminalMetadataPersistence", () => {
+    it("persists terminal metadata by workspace and prunes removed terminals", async () => {
+      await expectSaga(watchTerminalMetadataPersistence)
+        .dispatch(saveTerminalMetadata("ws-1", "term-1", "Setup", "2026-04-29T00:00:00.000Z"))
+        .dispatch(saveTerminalMetadata("ws-1", "term-2", "Terminal", "2026-04-29T00:01:00.000Z"))
+        .dispatch(removeTerminal("ws-1", "term-1"))
+        .silentRun(0);
+
+      expect(readStorage(`${TERMINAL_METADATA_STORAGE_PREFIX}ws-1`)).toEqual([
+        {
+          terminalId: "term-2",
+          workspaceId: "ws-1",
+          createdAt: "2026-04-29T00:01:00.000Z",
+          title: "Terminal",
+        },
+      ]);
     });
   });
 

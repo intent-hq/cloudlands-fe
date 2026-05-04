@@ -1,8 +1,6 @@
 import type { Editor } from '@tiptap/core';
 
-import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { ReduxStore } from '$lib/store/types';
 
 import type { LoggerLike } from './logger.types';
@@ -90,11 +88,8 @@ export async function runStartSectionTasks({
       setLastKnownContent(markdownContent);
 
       // Update Redux store to persist
-      const note = selectNoteById.select(getReduxStore().getState(), workspaceId, noteId);
-      if (note) {
-        dispatch(updateNoteContent(workspaceId, noteId, markdownContent));
-        logger.info('Note saved after bulk task delegation');
-      }
+      dispatch(updateNoteContent(workspaceId, noteId, markdownContent));
+      logger.info('Note saved after bulk task delegation');
     } catch (error) {
       logger.error('Failed to save note after bulk task delegation', error);
     }

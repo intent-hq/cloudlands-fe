@@ -4,10 +4,11 @@
  */
 
 import type { Note } from "$shared/types";
+import type { PaletteMruEntry, PaletteMruEntryType } from "../palette/palette-types";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type WorkspaceObjectType = "agent" | "note" | "change" | "terminal" | "file" | "browser";
+export type WorkspaceObjectType = PaletteMruEntryType;
 
 export interface WorkspaceObject {
   id: string;
@@ -22,11 +23,7 @@ export interface WorkspaceObject {
   breadcrumbs?: string;
 }
 
-export interface MRUEntry {
-  type: WorkspaceObjectType;
-  id: string;
-  timestamp: number;
-}
+export type MRUEntry = PaletteMruEntry;
 
 // ── Filter prefix mapping ──────────────────────────────────────────────────
 
@@ -127,39 +124,15 @@ export function parseQueryFilter(query: string): {
 
 // ── MRU helpers ────────────────────────────────────────────────────────────
 
-const MRU_STORAGE_KEY = "palette-mru-all";
 const MAX_RECENT_ITEMS = 3;
-
-export function getMRUEntries(): MRUEntry[] {
-  try {
-    const raw = localStorage.getItem(MRU_STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as MRUEntry[];
-  } catch {
-    return [];
-  }
-}
-
-export function saveMRUEntries(entries: MRUEntry[]): void {
-  try {
-    localStorage.setItem(MRU_STORAGE_KEY, JSON.stringify(entries));
-  } catch { /* noop */ }
-}
-
-export function recordMRUItem(type: WorkspaceObjectType, id: string): void {
-  const entries = getMRUEntries();
-  const filtered = entries.filter((e) => !(e.type === type && e.id === id));
-  filtered.unshift({ type, id, timestamp: Date.now() });
-  saveMRUEntries(filtered.slice(0, 50));
-}
 
 export function buildRecentItems(
   allObjects: WorkspaceObject[],
+  mruEntries: MRUEntry[],
 ): WorkspaceObject[] {
-  const mruEntries = getMRUEntries();
   return mruEntries
-    .slice(0, MAX_RECENT_ITEMS)
     .map((entry) => allObjects.find((obj) => obj.type === entry.type && obj.id === entry.id))
-    .filter((obj): obj is WorkspaceObject => obj !== undefined);
+    .filter((obj): obj is WorkspaceObject => obj !== undefined)
+    .slice(0, MAX_RECENT_ITEMS);
 }
 

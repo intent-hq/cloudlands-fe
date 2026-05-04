@@ -238,8 +238,6 @@ const ALLOWED_CHANNELS = [
   'file:copy',
   'file:move',
   'file:get-info',
-  'file:watch',
-  'file:unwatch',
   'file:readDirWithStats',
   'file:getGitignorePatterns',
   'file:read-batch',
@@ -648,7 +646,6 @@ const DYNAMIC_CHANNEL_PATTERNS = [
   'note:content-changed:',
   'note:deleted:',
   'directory:created:',
-  'file:content-changed:',
   'file:deleted:',
   'workspace:file-changes:',
   'workspace:metadata-changed:',
@@ -848,9 +845,9 @@ const electronAPI = {
   // IPC on (listen for events from main)
   // Returns a unique listener ID for reliable cleanup with offById()
   on: (channel: string, callback: (...args: any[]) => void): string => {
-    // Increase max listeners for dynamic channels (e.g., file:content-changed:uuid)
+    // Increase max listeners for dynamic channels (e.g., agent:stream:uuid)
     // These channels are commonly used and shouldn't trigger memory warnings
-    const dynamicPrefixes = ['file:content-changed:', 'agent:stream:', 'terminal:'];
+    const dynamicPrefixes = ['agent:stream:', 'terminal:'];
     const isDynamicChannel = dynamicPrefixes.some((prefix) => channel.startsWith(prefix));
     if (isDynamicChannel) {
       ipcRenderer.setMaxListeners(50); // Higher limit for dynamic channels

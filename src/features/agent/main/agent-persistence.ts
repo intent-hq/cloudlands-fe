@@ -588,32 +588,68 @@ export class UnifiedPersistence {
       // File doesn't exist or can't be read - that's fine, nothing to preserve
     }
 
-    // If the incoming save has assistant messages but NO user messages, and disk has
-    // user messages, prepend them. This targets stale backend streaming saves that
-    // loaded the session before the frontend wrote the user message to disk.
+    // If the incoming save has assistant messages and disk has user messages that
+    // the incoming snapshot is missing, preserve those disk user messages when the
+    // incoming users are only an older subset of the on-disk users. This targets
+    // stale backend streaming saves that loaded the session before the frontend
+    // wrote the latest user message to disk, while avoiding edited/new incoming
+    // user messages that should replace the old conversation branch.
     let messagesWithPreservedUserMsgs = agent.messages || [];
     if (existingMessagesOnDisk.length > 0 && messagesWithPreservedUserMsgs.length > 0) {
-      const incomingHasUserMsg = messagesWithPreservedUserMsgs.some((m: any) => m.role === 'user');
       const incomingHasAssistantMsg = messagesWithPreservedUserMsgs.some(
         (m: any) => m.role === 'assistant',
       );
 
-      // Only preserve when this looks like a stale backend save: has assistant
-      // messages (streaming/final) but is missing user messages that exist on disk.
-      // Don't preserve during edit/regenerate (which intentionally removes messages).
-      if (!incomingHasUserMsg && incomingHasAssistantMsg) {
+      if (incomingHasAssistantMsg) {
         const incomingIds = new Set(messagesWithPreservedUserMsgs.map((m: any) => m.id));
+        const existingIds = new Set(existingMessagesOnDisk.map((m: any) => m.id));
+        const incomingUserMessages = messagesWithPreservedUserMsgs.filter(
+          (m: any) => m.role === 'user',
+        );
+        const incomingHasUserMsg = incomingUserMessages.length > 0;
+        const incomingHasNewAssistantMsg = messagesWithPreservedUserMsgs.some(
+          (m: any) => m.role === 'assistant' && !existingIds.has(m.id),
+        );
+        const incomingHasOnlyDiskUserMessages = incomingUserMessages.every((m: any) =>
+          existingIds.has(m.id),
+        );
         const missingUserMessages = existingMessagesOnDisk.filter(
           (m: any) => m.role === 'user' && !incomingIds.has(m.id),
         );
-        if (missingUserMessages.length > 0) {
+        const shouldPreserveMissingUsers = !incomingHasUserMsg || incomingHasNewAssistantMsg;
+
+        if (
+          incomingHasOnlyDiskUserMessages &&
+          shouldPreserveMissingUsers &&
+          missingUserMessages.length > 0
+        ) {
           logger.warn('saveAgent - preserving user messages from disk that stale backend save is missing', {
             agentId,
             missingCount: missingUserMessages.length,
             incomingCount: messagesWithPreservedUserMsgs.length,
           });
-          // Prepend missing user messages (they were earlier in the conversation)
-          messagesWithPreservedUserMsgs = [...missingUserMessages, ...messagesWithPreservedUserMsgs];
+
+          const existingOrderById = new Map(
+            existingMessagesOnDisk.map((message: any, index) => [message.id, index]),
+          );
+          const timestampedMessages = [...messagesWithPreservedUserMsgs, ...missingUserMessages].map(
+            (message: any, index) => {
+              const timestamp = message.timestamp instanceof Date
+                ? message.timestamp.getTime()
+                : Date.parse(message.timestamp);
+              const order = existingOrderById.get(message.id) ?? existingMessagesOnDisk.length + index;
+              return { message, order, timestamp };
+            },
+          );
+
+          if (timestampedMessages.every(({ timestamp }) => Number.isFinite(timestamp))) {
+            messagesWithPreservedUserMsgs = timestampedMessages
+              .sort((a, b) => a.timestamp - b.timestamp || a.order - b.order)
+              .map(({ message }) => message);
+          } else {
+            // Fall back to the legacy behavior when timestamps do not establish order.
+            messagesWithPreservedUserMsgs = [...missingUserMessages, ...messagesWithPreservedUserMsgs];
+          }
         }
       }
     }

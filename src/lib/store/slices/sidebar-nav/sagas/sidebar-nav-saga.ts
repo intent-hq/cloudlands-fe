@@ -10,9 +10,13 @@
 import { call, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
 import {
   getLocalStorageItem,
+  getLocalStorageJSON,
   setLocalStorageItem,
+  setLocalStorageJSON,
   removeLocalStorageItem,
 } from "$lib/store/utils/safe-local-storage-saga";
+import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   hydrateSidebarNav,
   setAllSpacesViewMode,
@@ -28,6 +32,12 @@ import {
   unpinWorkspace,
   togglePinWorkspace,
   setPinnedWorkspaceIds,
+  setMultiSelectSidebarSelectedTabs,
+  setMultiSelectSidebarTabOrder,
+  setWorkspaceNoteOrder,
+  setWorkspaceCollapsedNoteIds,
+  toggleWorkspaceCollapsedNote,
+  hydrateWorkspaceSidebarUi,
   bumpActiveStreamsVersion,
   setOnboardingActive,
   PINNED_WORKSPACES_KEY,
@@ -35,6 +45,10 @@ import {
   PANEL_WIDTH_KEY,
   PANEL_ITEM_KEY,
   CARD_PINNED_KEY,
+  MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
+  MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
+  WORKSPACE_NOTE_ORDER_PREFIX,
+  WORKSPACE_COLLAPSED_NOTES_PREFIX,
 } from "../sidebar-nav-slice";
 import {
   selectIsCardPinned,
@@ -42,10 +56,19 @@ import {
   selectPanelWidth,
   selectAllSpacesViewMode,
   selectPinnedWorkspaceIds,
+  selectMultiSelectSidebarSelectedTabIds,
+  selectMultiSelectSidebarTabOrder,
+  selectWorkspaceNoteOrder,
+  selectWorkspaceCollapsedNoteIds,
 } from "../sidebar-nav-selectors";
 import type { AllSpacesViewMode, SidebarNavItem } from "../sidebar-nav-types";
 import { activeStreamsTracker } from "$features/agent/services/active-streams-tracker";
 
+function stringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : undefined;
+}
 
 // ── Init Saga ──
 
@@ -55,6 +78,9 @@ function* initSidebarNav(): SagaGenerator<void> {
   const panelWidthStr = yield* call(getLocalStorageItem, PANEL_WIDTH_KEY);
   const viewModeStr = yield* call(getLocalStorageItem, VIEW_MODE_KEY);
   const pinnedStr = yield* call(getLocalStorageItem, PINNED_WORKSPACES_KEY);
+  const tabOrder = stringArray(
+    yield* call(getLocalStorageJSON<unknown>, MULTISELECT_SIDEBAR_TAB_ORDER_KEY),
+  );
 
   const data: Parameters<typeof hydrateSidebarNav>[0] = {};
 
@@ -75,17 +101,93 @@ function* initSidebarNav(): SagaGenerator<void> {
       // ignore
     }
   }
+  if (tabOrder) data.multiSelectTabOrder = tabOrder;
 
   if (Object.keys(data).length > 0) {
     yield* put(hydrateSidebarNav(data));
   }
 }
 
+function getWorkspaceSelectedTabsKey(workspaceId: string): string {
+  return `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}${workspaceId}`;
+}
+
+function getWorkspaceNoteOrderKey(workspaceId: string): string {
+  return `${WORKSPACE_NOTE_ORDER_PREFIX}${workspaceId}`;
+}
+
+function getWorkspaceCollapsedNotesKey(workspaceId: string): string {
+  return `${WORKSPACE_COLLAPSED_NOTES_PREFIX}${workspaceId}`;
+}
+
+export function* hydrateWorkspaceSidebarUiSaga(
+  action: ReturnType<typeof workspaceMounted>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  let selectedTabIds: string[] | undefined;
+  let noteOrder: string[] | undefined;
+  let collapsedNoteIds: string[] | undefined;
+
+  try {
+    selectedTabIds = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, getWorkspaceSelectedTabsKey(workspaceId)),
+    );
+  } catch {
+    // Safe storage helpers catch internally; keep hydration resilient if a helper throws unexpectedly.
+  }
+  try {
+    noteOrder = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, getWorkspaceNoteOrderKey(workspaceId)),
+    );
+  } catch {
+    // Ignore storage errors and hydrate the default note order.
+  }
+  try {
+    collapsedNoteIds = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, getWorkspaceCollapsedNotesKey(workspaceId)),
+    );
+  } catch {
+    // Ignore storage errors and hydrate with no collapsed notes.
+  }
+
+  yield* put(
+    hydrateWorkspaceSidebarUi(workspaceId, {
+      selectedTabIds,
+      noteOrder,
+      collapsedNoteIds,
+    }),
+  );
+}
+
+/** @internal Exported for testing only. */
+export function* hydrateActiveWorkspaceSidebarUiSaga(): SagaGenerator<void> {
+  const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
+
+  if (
+    !activeWorkspaceId ||
+    activeWorkspaceId === "new" ||
+    activeWorkspaceId.startsWith("optimistic-") ||
+    activeWorkspaceId === "undefined"
+  ) {
+    return;
+  }
+
+  yield* call(hydrateWorkspaceSidebarUiSaga, workspaceMounted(activeWorkspaceId));
+}
+
 // ── Persistence Sagas ──
 
 function* persistCardPinned(): SagaGenerator<void> {
   yield* takeEvery(
-    [setCardPinned.type, toggleCardPinned.type, closeHoverCards.type, closePanel.type, togglePanel.type, closeAll.type, openPanel.type],
+    [
+      setCardPinned,
+      toggleCardPinned,
+      closeHoverCards,
+      closePanel,
+      togglePanel,
+      closeAll,
+      openPanel,
+    ],
     function* () {
       const pinned = yield* selectIsCardPinned.effect();
       yield* call(setLocalStorageItem, CARD_PINNED_KEY, String(pinned));
@@ -95,7 +197,7 @@ function* persistCardPinned(): SagaGenerator<void> {
 
 function* persistPanelItem(): SagaGenerator<void> {
   yield* takeEvery(
-    [openPanel.type, closePanel.type, togglePanel.type, closeAll.type],
+    [openPanel, closePanel, togglePanel, closeAll],
     function* () {
       const item = yield* selectPanelItem.effect();
       if (item) {
@@ -123,11 +225,75 @@ function* persistViewMode(): SagaGenerator<void> {
 
 function* persistPinnedWorkspaces(): SagaGenerator<void> {
   yield* takeEvery(
-    [pinWorkspace.type, unpinWorkspace.type, togglePinWorkspace.type, setPinnedWorkspaceIds.type],
+    [pinWorkspace, unpinWorkspace, togglePinWorkspace, setPinnedWorkspaceIds],
     function* () {
       const ids = yield* selectPinnedWorkspaceIds.effect();
       yield* call(setLocalStorageItem, PINNED_WORKSPACES_KEY, JSON.stringify(ids));
     },
+  );
+}
+
+export function* persistMultiSelectSidebarTabOrderSaga(): SagaGenerator<void> {
+  const tabOrder = yield* selectMultiSelectSidebarTabOrder.effect();
+  try {
+    yield* call(setLocalStorageJSON, MULTISELECT_SIDEBAR_TAB_ORDER_KEY, tabOrder);
+  } catch {
+    // Safe storage helpers catch internally; this preserves saga safety if they throw unexpectedly.
+  }
+}
+
+function* persistMultiSelectSidebarTabOrder(): SagaGenerator<void> {
+  yield* takeEvery(setMultiSelectSidebarTabOrder, persistMultiSelectSidebarTabOrderSaga);
+}
+
+export function* persistWorkspaceSelectedTabsSaga(
+  action: ReturnType<typeof setMultiSelectSidebarSelectedTabs>
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const selectedTabIds = yield* selectMultiSelectSidebarSelectedTabIds.effect(workspaceId);
+  try {
+    yield* call(setLocalStorageJSON, getWorkspaceSelectedTabsKey(workspaceId), selectedTabIds);
+  } catch {
+    // Ignore storage errors; Redux state remains the source of truth for the current session.
+  }
+}
+
+function* persistWorkspaceSelectedTabs(): SagaGenerator<void> {
+  yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabsSaga);
+}
+
+export function* persistWorkspaceNoteOrderSaga(
+  action: ReturnType<typeof setWorkspaceNoteOrder>
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const noteOrder = yield* selectWorkspaceNoteOrder.effect(workspaceId);
+  try {
+    yield* call(setLocalStorageJSON, getWorkspaceNoteOrderKey(workspaceId), noteOrder);
+  } catch {
+    // Ignore storage errors; note order still updates in Redux state.
+  }
+}
+
+function* persistWorkspaceNoteOrder(): SagaGenerator<void> {
+  yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrderSaga);
+}
+
+export function* persistWorkspaceCollapsedNotesSaga(
+  action: ReturnType<typeof setWorkspaceCollapsedNoteIds> | ReturnType<typeof toggleWorkspaceCollapsedNote>
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const collapsedNoteIds = yield* selectWorkspaceCollapsedNoteIds.effect(workspaceId);
+  try {
+    yield* call(setLocalStorageJSON, getWorkspaceCollapsedNotesKey(workspaceId), collapsedNoteIds);
+  } catch {
+    // Ignore storage errors; collapsed state still updates in Redux state.
+  }
+}
+
+function* persistWorkspaceCollapsedNotes(): SagaGenerator<void> {
+  yield* takeEvery(
+    [setWorkspaceCollapsedNoteIds, toggleWorkspaceCollapsedNote],
+    persistWorkspaceCollapsedNotesSaga,
   );
 }
 
@@ -186,6 +352,12 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* fork(persistPanelWidth);
   yield* fork(persistViewMode);
   yield* fork(persistPinnedWorkspaces);
+  yield* fork(persistMultiSelectSidebarTabOrder);
+  yield* fork(persistWorkspaceSelectedTabs);
+  yield* fork(persistWorkspaceNoteOrder);
+  yield* fork(persistWorkspaceCollapsedNotes);
+  yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiSaga);
+  yield* call(hydrateActiveWorkspaceSidebarUiSaga);
   yield* fork(watchOnboarding);
 }
 

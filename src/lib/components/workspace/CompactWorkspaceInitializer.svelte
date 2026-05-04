@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import {
     type InitialRepoInfo,
+    getLastSelectedRepoHydrationAction,
     getInitialRepoKey,
     mapInitialRepoToFormState,
   } from './initializer/initial-repo-utils';
@@ -13,6 +14,25 @@
   import { v4 as uuidv4 } from 'uuid';
   import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+  import {
+    setCompactWorkspaceInitializerFormState,
+    setWorkspaceInitializerBranchForRepo,
+    setWorkspaceInitializerLastSubmittedAgent,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    selectCompactWorkspaceInitializerFormState,
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerLastSelectedRepo,
+    selectWorkspaceInitializerLastSubmittedAgent,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import type {
+    CompactWorkspaceInitializerFormState,
+    WorkspaceInitializerRepoSelection,
+  } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
+  import {
+    hydrateWorkspaceNavigation,
+    type WorkspaceNavigationWorkspaceState,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
@@ -89,10 +109,15 @@
   // Constants
   const AGENT_ID_KEY = 'compact-workspace-initializer-agent-id';
   const FORM_STATE_KEY = 'compact-workspace-initializer-state';
-  // This key is shared with RepoSelector - keep in sync
-  const LAST_SELECTED_REPO_KEY = 'workspace-initializer-last-repo';
-  // This key is shared with BranchSelector - keep in sync
-  const BRANCH_BY_REPO_KEY = 'workspace-initializer-branch-by-repo';
+  const PREFILL_KEY = 'workspace-prefill';
+
+  function hasWorkspacePrefillData(): boolean {
+    try {
+      return typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem(PREFILL_KEY);
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Supported file extensions for file attachments.
@@ -358,37 +383,13 @@
   }
   let initialAgentId = $state(getOrCreateAgentId());
 
-  // Key for storing last submitted specialist/model (persists across form clears)
-  const LAST_SUBMITTED_AGENT_KEY = 'workspace-initializer-last-agent';
+  const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const compactFormState$ = selectCompactWorkspaceInitializerFormState();
+  const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
+  const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
 
-  // Load saved form state from localStorage
-  function loadSavedFormState() {
-    try {
-      const saved = localStorage.getItem(FORM_STATE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      logger.error('Failed to load saved form state:', e);
-    }
-    return null;
-  }
-
-  // Load last submitted specialist/model (used as defaults after form clear)
-  function loadLastSubmittedAgent() {
-    try {
-      const saved = localStorage.getItem(LAST_SUBMITTED_AGENT_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      logger.error('Failed to load last submitted agent:', e);
-    }
-    return null;
-  }
-
-  const savedState = loadSavedFormState();
-  const lastSubmittedAgent = loadLastSubmittedAgent();
+  const savedState = $compactFormState$;
+  const lastSubmittedAgent = $lastSubmittedAgent$;
 
   // Form state - initialize from saved state if available
   let repoPath = $state(savedState?.repoPath ?? '');
@@ -500,6 +501,79 @@
   let selectedPRBranch = $state<string>('');
   let selectedPRNumber = $state<number | null>(null);
 
+  let didApplyHydratedCompactState = $state(false);
+  let didApplyHydratedLastSelectedRepo = $state(false);
+  let hasInitialPrefillData = $state(hasWorkspacePrefillData());
+
+  function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
+    if (!settings) return;
+    if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
+    const model = settings.selectedModel;
+    if (model && parseCompoundModelId(model).providerId === ($activeProviderId$ ?? 'auggie')) {
+      selectedModel = model;
+      modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
+    }
+    if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+  }
+
+  function applyCompactFormState(formState: CompactWorkspaceInitializerFormState) {
+    repoPath = formState.repoPath ?? repoPath;
+    repoType = formState.repoType ?? repoType;
+    githubUrl = formState.githubUrl ?? githubUrl;
+    clonePath = formState.clonePath ?? clonePath;
+    branch = formState.branch ?? branch;
+    isNewRepo = formState.isNewRepo ?? isNewRepo;
+    isValidPath = formState.isValidPath ?? isValidPath;
+    scope = formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
+    remoteSetup = formState.remoteSetup ?? remoteSetup;
+    selectedProvider = formState.selectedProvider ?? selectedProvider;
+    setupScript = formState.setupScript ?? setupScript;
+    setupScriptName = formState.setupScriptName ?? setupScriptName;
+    isCustomSetupScript = formState.isCustomSetupScript ?? isCustomSetupScript;
+    skipWorktree = formState.skipWorktree ?? skipWorktree;
+    stayOnHomePage = formState.stayOnHomePage ?? stayOnHomePage;
+    applyAgentSettings(formState);
+  }
+
+  function applyLastSelectedRepo(data: WorkspaceInitializerRepoSelection) {
+    repoPath = data.path || '';
+    repoType = data.type || 'local';
+    githubUrl = data.githubUrl || '';
+    clonePath = data.clonePath || '';
+    isNewRepo = data.isNewRepo || false;
+    isValidPath = data.isValidPath ?? false;
+    scope = data.scope || '';
+  }
+
+  $effect(() => {
+    if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
+    if ($compactFormState$ && !repoPath) {
+      applyCompactFormState($compactFormState$);
+    } else if ($lastSubmittedAgent$) {
+      applyAgentSettings($lastSubmittedAgent$);
+    }
+    didApplyHydratedCompactState = true;
+  });
+
+  $effect(() => {
+    const lastSelectedRepo = $lastSelectedRepo$;
+    const hydrationAction = getLastSelectedRepoHydrationAction({
+      isHydrated: $workspaceInitializerHydrated$,
+      alreadyHandled: didApplyHydratedLastSelectedRepo,
+      hasPrefillData: hasInitialPrefillData,
+      isFormPersistenceEnabled: debugConfig.get('enableFormPersistence'),
+      currentRepoPath: repoPath,
+      hasLastSelectedRepo: !!lastSelectedRepo,
+    });
+
+    if (hydrationAction === 'wait') return;
+
+    didApplyHydratedLastSelectedRepo = true;
+    if (hydrationAction === 'restore' && lastSelectedRepo) {
+      applyLastSelectedRepo(lastSelectedRepo);
+    }
+  });
+
   // Save prompt to sessionStorage so it survives navigation (but not browser close)
   // Debounced to avoid blocking the main thread on every keystroke
   let promptSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -527,8 +601,9 @@
     }
   });
 
-  // Save form state to localStorage whenever it changes
+  // Save form state through Redux whenever it changes. Persistence is handled by the saga.
   $effect(() => {
+    if (!$workspaceInitializerHydrated$) return;
     // Only save if there's meaningful state to preserve
     if (repoPath || selectedSpecialist || selectedModel || setupScript) {
       const formState = {
@@ -554,7 +629,7 @@
         skipWorktree,
         stayOnHomePage,
       };
-      localStorage.setItem(FORM_STATE_KEY, JSON.stringify(formState));
+      dispatch(setCompactWorkspaceInitializerFormState(formState));
     }
   });
 
@@ -573,9 +648,6 @@
   // Track previous workspace info for inserting @ mention after mount
   let pendingPreviousWorkspace: { id: string; title: string } | null = $state(null);
 
-  // Key for prefill data from sessionStorage (shared with layout and other components)
-  const PREFILL_KEY = 'workspace-prefill';
-
   // Flag for reactive auto-submit: set by applyPrefill() when autoCreate is requested.
   // The $effect below watches this + isValid to submit once form validation settles.
   let pendingAutoCreate = $state(false);
@@ -585,8 +657,6 @@
 
   // Preload Linear and Sentry issues as soon as this component mounts
   // so they're ready when the user expands the form
-  // Also restore last selected repo from localStorage (moved from RepoSelector to avoid
-  // side effects when RepoSelector mounts/unmounts during reset)
   onMount(() => {
     logger.debug('Preloading issues on mount');
     preloadIssues();
@@ -611,7 +681,7 @@
       }
     })();
 
-    // First check for prefill data from sessionStorage (takes priority over localStorage)
+    // First check for prefill data from sessionStorage (takes priority over persisted Redux state)
     // This is set when:
     // - User clicks "Archive and start new space"
     // - Deep links with create params
@@ -674,23 +744,7 @@
         logger.error('Failed to parse prefill data:', e);
         // Clear malformed data to prevent repeated failures
         sessionStorage.removeItem(PREFILL_KEY);
-      }
-    } else if (debugConfig.get('enableFormPersistence') && !repoPath) {
-      // No prefill data - restore last selected repo from localStorage
-      const savedRepo = localStorage.getItem(LAST_SELECTED_REPO_KEY);
-      if (savedRepo) {
-        try {
-          const data = JSON.parse(savedRepo);
-          repoPath = data.path || '';
-          repoType = data.type || 'local';
-          githubUrl = data.githubUrl || '';
-          clonePath = data.clonePath || '';
-          isNewRepo = data.isNewRepo || false;
-          isValidPath = data.isValidPath ?? false;
-          scope = data.scope || '';
-        } catch (e) {
-          logger.error('Failed to parse saved repo:', e);
-        }
+        hasInitialPrefillData = false;
       }
     }
   });
@@ -1696,22 +1750,8 @@
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
       if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
-        try {
-          const branchByRepoStr = localStorage.getItem(BRANCH_BY_REPO_KEY);
-          let branchByRepo: Record<string, string> = {};
-          if (branchByRepoStr) {
-            try {
-              branchByRepo = JSON.parse(branchByRepoStr);
-            } catch (e) {
-              logger.error('Failed to parse branch by repo', e);
-            }
-          }
-          branchByRepo[repoPath] = baseBranch;
-          localStorage.setItem(BRANCH_BY_REPO_KEY, JSON.stringify(branchByRepo));
-          logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
-        } catch (e) {
-          logger.error('Failed to save branch per repo', e);
-        }
+        dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
+        logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
       }
 
       const result = await workspaceClient.create({
@@ -1837,16 +1877,17 @@
       // Store the initial agent ID
       sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, initialAgent.agentId);
 
-      // Pre-store the workspace state with the drawer open
-      const initialState = {
+      // Pre-store the workspace state with the drawer open. The workspace-navigation
+      // saga owns persistence for workspace state.
+      const initialState: WorkspaceNavigationWorkspaceState = {
         version: 2,
         workspace: { id: workspace.id, status: 'loading' },
         mainPanel: { type: 'notes', selectedNoteId: 'spec' },
         drawer: { open: true, type: 'agent' as const, itemId: initialAgent.agentId },
         navigation: { history: [], currentIndex: -1 },
-        ui: { hasInitialized: false, lastUpdated: Date.now() },
+        ui: { hasInitialized: false },
       };
-      localStorage.setItem(`workspace:state:${workspace.id}`, JSON.stringify(initialState));
+      dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
       // Note: Agent ID regeneration is now handled in clearForm() to prevent ID reuse in "stay on page" mode
 
       if (stayOnHomePage) {
@@ -1942,17 +1983,14 @@
         await goto(`/workspace/${workspace.id}`);
       }
 
-      // Save last submitted agent settings before clearing form
-      // This allows the form to restore these values after submission
-      localStorage.setItem(
-        LAST_SUBMITTED_AGENT_KEY,
-        JSON.stringify({
-          selectedSpecialist,
-          selectedModel,
-          modelWasOverridden,
-          isTeamMode,
-        }),
-      );
+      // Save last submitted agent settings before clearing form.
+      // This allows the form to restore these values after submission.
+      dispatch(setWorkspaceInitializerLastSubmittedAgent({
+        selectedSpecialist,
+        selectedModel,
+        modelWasOverridden,
+        isTeamMode,
+      }));
 
       clearForm({ preserveRepo: stayOnHomePage });
 
@@ -2014,10 +2052,10 @@
     showPullConflictDialog = false;
     // Note: intentionally not resetting stayOnHomePage or shouldPullBeforeCreate - user preferences should persist
 
-    // Immediately write the cleaned form state to localStorage so that even if
-    // the $effect doesn't fire before the component unmounts (e.g. navigation
+    // Immediately write the cleaned form state to Redux so that even if the
+    // $effect doesn't fire before the component unmounts (e.g. navigation
     // happens right after oncreate?.()), stale repo fields won't be restored.
-    const cleanedState: Record<string, unknown> = {
+    const cleanedState: CompactWorkspaceInitializerFormState = {
       // Agent prefs — always preserved
       selectedSpecialist,
       selectedModel,
@@ -2034,7 +2072,7 @@
       isCustomSetupScript,
     };
     if (preserveRepo) {
-      // Keep repo fields in localStorage when staying on the home page
+      // Keep repo fields in persisted form state when staying on the home page
       cleanedState.repoPath = repoPath;
       cleanedState.repoType = repoType;
       cleanedState.githubUrl = githubUrl;
@@ -2045,7 +2083,7 @@
       cleanedState.scope = scope;
       cleanedState.scopeRepoPath = scope ? repoPath : undefined;
     }
-    localStorage.setItem(FORM_STATE_KEY, JSON.stringify(cleanedState));
+    dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
 
     // Generate a new agent ID for the next workspace creation
     // This is critical for "stay on page" mode to prevent agent ID reuse

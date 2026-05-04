@@ -123,8 +123,19 @@ vi.mock('http', async (importOriginal) => {
 vi.mock('ws', () => {
   // Must use function (not arrow) so it can be called with `new`
   function MockWebSocketServer(this: any) {
+    const handlers: Record<string, Function[]> = {};
     const self: any = {
-      on: vi.fn(),
+      on: vi.fn((event: string, cb: Function) => {
+        handlers[event] = handlers[event] || [];
+        handlers[event].push(cb);
+        return self;
+      }),
+      emit: vi.fn((event: string, ...args: any[]) => {
+        for (const handler of handlers[event] || []) {
+          handler(...args);
+        }
+        return true;
+      }),
       clients: new Set(),
       close: vi.fn((cb?: Function) => cb?.()),
     };
@@ -271,6 +282,23 @@ describe('HttpMcpBridge', () => {
       // Routes should be registered
       expect(mockExpressApp.get).toHaveBeenCalled();
       expect(mockExpressApp.post).toHaveBeenCalled();
+    });
+
+    it('allows browser workspace identity header in CORS preflight', () => {
+      bridge = new HttpMcpBridge(5179);
+      const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
+      const req = { method: 'OPTIONS' };
+      const res = { header: vi.fn(), sendStatus: vi.fn() };
+      const next = vi.fn();
+
+      corsMiddleware(req, res, next);
+
+      expect(res.header).toHaveBeenCalledWith(
+        'Access-Control-Allow-Headers',
+        'Content-Type, x-workspace-id',
+      );
+      expect(res.sendStatus).toHaveBeenCalledWith(200);
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('setupWorkspaceCleanupListeners is a no-op (handled by sagas)', () => {
@@ -1360,6 +1388,254 @@ describe('HttpMcpBridge', () => {
       // call terminate() (and not rethrow).
       expect(() => fakeWs._errorHandler(new Error('client boom'))).not.toThrow();
       expect(fakeWs.terminate).toHaveBeenCalled();
+    });
+  });
+
+  describe('browser IPC workspace scoping', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    const makeFakeClient = (wss: any) => {
+      const client: any = {
+        readyState: 1,
+        send: vi.fn(),
+        on: vi.fn(),
+        terminate: vi.fn(() => {
+          client.readyState = 3;
+          wss.clients.delete(client);
+        }),
+      };
+      return client;
+    };
+
+    const connectBrowserClient = (wss: any, workspaceId: string) => {
+      const client = makeFakeClient(wss);
+      wss.clients.add(client);
+      wss.emit('connection', client, {
+        url: `/ipc-events?workspaceId=${workspaceId}`,
+        headers: {},
+      });
+      return client;
+    };
+
+    it('only forwards workspace-scoped content broadcasts to matching WebSocket clients', async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      const ws1 = connectBrowserClient(wss, 'ws-1');
+      const ws2 = connectBrowserClient(wss, 'ws-2');
+
+      try {
+        const cases = [
+          ['file:content-changed', { workspaceId: 'ws-1', content: 'file secret' }],
+          ['note:updated', { workspaceId: 'ws-1', noteId: 'spec', content: 'spec secret' }],
+          [
+            'note:content-changed',
+            { workspaceId: 'ws-1', noteId: 'task-1', content: 'task secret' },
+          ],
+          [
+            'note:content-changed:ws-1',
+            { workspaceId: 'ws-1', noteId: 'task-1', content: 'task secret' },
+          ],
+          [
+            'events:new',
+            {
+              workspaceId: 'ws-1',
+              event: {
+                type: 'note:updated',
+                workspaceId: 'ws-1',
+                data: { content: 'wrapped note secret' },
+              },
+            },
+          ],
+        ] as const;
+
+        for (const [channel, data] of cases) {
+          ws1.send.mockClear();
+          ws2.send.mockClear();
+
+          (global as any).__browserIpcBroadcast(channel, data);
+
+          expect(ws1.send).toHaveBeenCalledWith(JSON.stringify({ channel, data }));
+          expect(ws2.send).not.toHaveBeenCalled();
+        }
+      } finally {
+        ws1.terminate();
+        ws2.terminate();
+      }
+    });
+
+    it('drops content-bearing browser broadcasts when workspace identity is unavailable', async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      const ws1 = connectBrowserClient(wss, 'ws-1');
+      const ws2 = connectBrowserClient(wss, 'ws-2');
+
+      try {
+        (global as any).__browserIpcBroadcast('note:updated', {
+          noteId: 'spec',
+          content: 'unscoped spec secret',
+        });
+        (global as any).__browserIpcBroadcast('events:new', {
+          event: {
+            type: 'note:updated',
+            data: { content: 'unscoped wrapped secret' },
+          },
+        });
+
+        expect(ws1.send).not.toHaveBeenCalled();
+        expect(ws2.send).not.toHaveBeenCalled();
+      } finally {
+        ws1.terminate();
+        ws2.terminate();
+      }
+    });
+
+    it('routes IPC-over-HTTP agent stream sends only to the request workspace clients', async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      const ws1 = connectBrowserClient(wss, 'ws-1');
+      const ws2 = connectBrowserClient(wss, 'ws-2');
+      const handlers = new Map<string, (...args: any[]) => any>();
+      handlers.set(
+        'test-agent-stream',
+        async (event: any, data: { agentId: string }) => {
+          event.sender.send(`agent:stream:${data.agentId}`, {
+            type: 'chunk',
+            data: 'secret',
+          });
+          return { success: true };
+        },
+      );
+      (global as any).__ipcHandlerFunctions = handlers;
+
+      try {
+        const ipcPostCall = mockExpressApp.post.mock.calls.find(
+          (call: any[]) => call[0] === '/ipc',
+        );
+        expect(ipcPostCall).toBeDefined();
+        const ipcHandler = ipcPostCall![1];
+        const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+
+        await ipcHandler(
+          {
+            body: { channel: 'test-agent-stream', data: { agentId: 'agent-1' } },
+            headers: { 'x-workspace-id': 'ws-1' },
+            url: '/ipc',
+          },
+          res,
+        );
+
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+        expect(ws1.send).toHaveBeenCalledWith(
+          JSON.stringify({
+            channel: 'agent:stream:agent-1',
+            data: { type: 'chunk', data: 'secret' },
+          }),
+        );
+        expect(ws2.send).not.toHaveBeenCalled();
+      } finally {
+        delete (global as any).__ipcHandlerFunctions;
+        ws1.terminate();
+        ws2.terminate();
+      }
+    });
+
+    it('uses IPC body workspaceId as browser stream routing fallback', async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      const ws1 = connectBrowserClient(wss, 'ws-1');
+      const ws2 = connectBrowserClient(wss, 'ws-2');
+      const handlers = new Map<string, (...args: any[]) => any>();
+      handlers.set('test-agent-stream', async (event: any) => {
+        event.sender.send('agent:stream:agent-1', { type: 'chunk', data: 'secret' });
+        return { success: true };
+      });
+      (global as any).__ipcHandlerFunctions = handlers;
+
+      try {
+        const ipcPostCall = mockExpressApp.post.mock.calls.find(
+          (call: any[]) => call[0] === '/ipc',
+        );
+        expect(ipcPostCall).toBeDefined();
+        const ipcHandler = ipcPostCall![1];
+        const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+
+        await ipcHandler(
+          {
+            body: {
+              channel: 'test-agent-stream',
+              data: { agentId: 'agent-1', workspaceId: 'ws-1' },
+            },
+            headers: {},
+            url: '/ipc',
+          },
+          res,
+        );
+
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+        expect(ws1.send).toHaveBeenCalledWith(
+          JSON.stringify({
+            channel: 'agent:stream:agent-1',
+            data: { type: 'chunk', data: 'secret' },
+          }),
+        );
+        expect(ws2.send).not.toHaveBeenCalled();
+      } finally {
+        delete (global as any).__ipcHandlerFunctions;
+        ws1.terminate();
+        ws2.terminate();
+      }
+    });
+
+    it('drops IPC-over-HTTP stream sends when request workspace identity is unavailable', async () => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+
+      const ws1 = connectBrowserClient(wss, 'ws-1');
+      const ws2 = connectBrowserClient(wss, 'ws-2');
+      const handlers = new Map<string, (...args: any[]) => any>();
+      handlers.set('test-agent-stream', async (event: any) => {
+        event.sender.send('agent:stream:agent-1', { type: 'chunk', data: 'secret' });
+        return { success: true };
+      });
+      (global as any).__ipcHandlerFunctions = handlers;
+
+      try {
+        const ipcPostCall = mockExpressApp.post.mock.calls.find(
+          (call: any[]) => call[0] === '/ipc',
+        );
+        expect(ipcPostCall).toBeDefined();
+        const ipcHandler = ipcPostCall![1];
+        const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+
+        await ipcHandler(
+          {
+            body: { channel: 'test-agent-stream', data: { agentId: 'agent-1' } },
+            headers: {},
+            url: '/ipc',
+          },
+          res,
+        );
+
+        expect(res.json).toHaveBeenCalledWith({ success: true });
+        expect(ws1.send).not.toHaveBeenCalled();
+        expect(ws2.send).not.toHaveBeenCalled();
+      } finally {
+        delete (global as any).__ipcHandlerFunctions;
+        ws1.terminate();
+        ws2.terminate();
+      }
     });
   });
 

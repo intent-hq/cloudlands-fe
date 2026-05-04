@@ -17,25 +17,16 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { handleError } from '$lib/utils/error-handling';
   import { debugConfig } from '$lib/config/debug';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { setWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
 
   const logger = createLogger('RemoteSetupSelector');
+  const dispatch = getDispatch();
+  const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
 
-  interface RemoteSetup {
-    id: string;
-    name: string;
-    host: string;
-    port: number;
-    username: string;
-    password?: string;
-    keyPath?: string;
-    useAgent?: boolean;
-    workspacePath: string;
-    lastUsedRepo?: string;
-    lastUsed?: string;
-    transport?: 'ssh' | 'websocket';
-    wsUrl?: string;
-    branch?: string;
-  }
+  type RemoteSetup = WorkspaceInitializerRemoteSetup;
 
   interface Props {
     variant?: 'default' | 'ghost';
@@ -51,10 +42,14 @@
   let isExpanded = $state(false);
   let selectedSetup: RemoteSetup | null = $state(null);
   let selectedSetupId = $state('');
-  let remoteSetups: RemoteSetup[] = $state([]);
+  let remoteSetups: RemoteSetup[] = $state($workspaceInitializerRemoteSetups$);
   let showAddModal = $state(false);
 
-  // Load remote setups from storage
+  $effect(() => {
+    remoteSetups = $workspaceInitializerRemoteSetups$;
+  });
+
+  // Remote setups are hydrated from Redux; persistence is handled by the saga.
   onMount(async () => {
     performanceMonitor.start('loadRemoteSetups');
 
@@ -62,12 +57,6 @@
       // Simulate network delay if enabled
       if (debugConfig.get('simulateSlowNetwork')) {
         await new Promise((resolve) => setTimeout(resolve, debugConfig.get('networkDelay') || 0));
-      }
-
-      const stored = localStorage.getItem('remote-setups');
-      if (stored) {
-        remoteSetups = JSON.parse(stored);
-        logger.info(`Loaded ${remoteSetups.length} remote setups`);
       }
     } catch (err) {
       const appError = handleError(err, {
@@ -80,7 +69,7 @@
     }
 
     // Fire onchange on mount so the parent always gets the correct initial value.
-    // Without this, if the parent restored a stale remoteSetup from localStorage
+    // Without this, if the parent restored a stale remoteSetup from persistence
     // but the selector defaults to "Local environment" (selectedSetupId = ''),
     // the parent would never know to clear the stale value.
     const initialSetup = selectedSetupId
@@ -127,9 +116,7 @@
 
         // Update last used repo for this setup
         if (setup && repoPath) {
-          setup.lastUsedRepo = repoPath;
-          setup.lastUsed = new Date().toISOString();
-          saveSetups();
+          updateSetupLastUsed(setup);
         }
       }
     }
@@ -149,18 +136,20 @@
 
     // Update last used repo for this setup
     if (setup && repoPath) {
-      setup.lastUsedRepo = repoPath;
-      setup.lastUsed = new Date().toISOString();
-      saveSetups();
+      updateSetupLastUsed(setup);
     }
   }
 
-  function saveSetups() {
-    try {
-      localStorage.setItem('remote-setups', JSON.stringify(remoteSetups));
-    } catch (err) {
-      logger.error('Failed to save remote setups', err);
-    }
+  function saveSetups(setups = remoteSetups) {
+    dispatch(setWorkspaceInitializerRemoteSetups(setups));
+  }
+
+  function updateSetupLastUsed(setup: RemoteSetup) {
+    const updatedSetup = { ...setup, lastUsedRepo: repoPath, lastUsed: new Date().toISOString() };
+    const nextSetups = remoteSetups.map((s) => (s.id === setup.id ? updatedSetup : s));
+    remoteSetups = nextSetups;
+    selectedSetup = updatedSetup;
+    saveSetups(nextSetups);
   }
 
   function handleAddNewSetup() {
@@ -172,14 +161,16 @@
       ...setup,
       lastUsedRepo: repoPath,
     };
-    remoteSetups = [...remoteSetups, newSetup];
-    saveSetups();
+    const nextSetups = [...remoteSetups, newSetup];
+    remoteSetups = nextSetups;
+    saveSetups(nextSetups);
     selectSetup(newSetup);
   }
 
   function removeSetup(id: string) {
-    remoteSetups = remoteSetups.filter((s) => s.id !== id);
-    saveSetups();
+    const nextSetups = remoteSetups.filter((s) => s.id !== id);
+    remoteSetups = nextSetups;
+    saveSetups(nextSetups);
     // If the removed setup was selected, clear selection
     if (selectedSetup?.id === id) {
       selectSetup(null);

@@ -41,6 +41,12 @@ export const selectTerminalsForWorkspace = createSelector((state, wsId: string) 
   return getItems(getWsById(state, wsId).terminals);
 });
 
+export const selectWorkspaceHasSetupTerminal = createSelector((state, wsId: string) => {
+  return getItems(getWsById(state, wsId).terminals).some(
+    (terminal) => (terminal.customName || terminal.name) === 'Setup',
+  );
+});
+
 /** Select only user-created terminals, filtering out agent terminals (IDs starting with "agent-") */
 export const selectUserTerminals = createSelector((state) => {
   return getItems(getActiveWs(state).terminals).filter(

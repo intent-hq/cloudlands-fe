@@ -9,8 +9,6 @@
     sortNotes,
     isChildNote,
     isSpecNote,
-    loadNoteOrder,
-    saveNoteOrder,
     getChildNotes,
     getNoteDepth,
     isHiddenByAnyCollapsedAncestor,
@@ -35,8 +33,16 @@
   } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { selectAgentSessionsByIds } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { AgentStatus } from '$shared/types/agent.types';
-  import { tick } from 'svelte';
   import { writable } from 'svelte/store';
+  import {
+    setWorkspaceNoteOrder,
+    toggleWorkspaceCollapsedNote,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    selectWorkspaceCollapsedNoteIds,
+    selectWorkspaceNoteOrder,
+  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -71,6 +77,11 @@
     class: className,
     indentSize = 22,
   }: Props = $props();
+
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
 
   // Inline editing state
   let editingNoteId: string | null = $state(null);
@@ -212,43 +223,15 @@
   let draggedNoteId: string | null = $state(null);
   let dragOverNoteId: string | null = $state(null);
 
-  // Collapsed notes state (persisted in localStorage)
-  let collapsedNoteIds: Set<string> = $state(new Set());
-
-  // Note order state (persisted in localStorage)
-  let customNoteOrder: string[] = $state([]);
-
-  // Load custom order and collapsed state from localStorage on mount
-  $effect(() => {
-    if (workspaceId) {
-      customNoteOrder = loadNoteOrder(workspaceId);
-      // Load collapsed state
-      const storedCollapsed = localStorage.getItem(`workspace-collapsed-notes-${workspaceId}`);
-      if (storedCollapsed) {
-        try {
-          collapsedNoteIds = new Set(JSON.parse(storedCollapsed));
-        } catch {
-          collapsedNoteIds = new Set();
-        }
-      }
-    }
-  });
+  const noteOrderStore = selectWorkspaceNoteOrder(workspaceIdStore);
+  const collapsedNoteIdStore = selectWorkspaceCollapsedNoteIds(workspaceIdStore);
+  const customNoteOrder = $derived($noteOrderStore);
+  const collapsedNoteIds = $derived(new Set($collapsedNoteIdStore));
 
   // Helper to toggle collapse state
   function toggleCollapse(noteId: string, e: MouseEvent) {
     e.stopPropagation();
-    const newCollapsed = new Set(collapsedNoteIds);
-    if (newCollapsed.has(noteId)) {
-      newCollapsed.delete(noteId);
-    } else {
-      newCollapsed.add(noteId);
-    }
-    collapsedNoteIds = newCollapsed;
-    // Persist to localStorage
-    localStorage.setItem(
-      `workspace-collapsed-notes-${workspaceId}`,
-      JSON.stringify([...newCollapsed]),
-    );
+    dispatch(toggleWorkspaceCollapsedNote(workspaceId, noteId));
   }
 
   // Check if a note should be hidden (any ancestor is collapsed)
@@ -341,8 +324,7 @@
       const insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
       currentOrder.splice(insertIndex, 0, draggedNoteId);
 
-      customNoteOrder = currentOrder;
-      saveNoteOrder(workspaceId, currentOrder);
+      dispatch(setWorkspaceNoteOrder(workspaceId, currentOrder));
       onReorderNotes?.(currentOrder);
     }
 

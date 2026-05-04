@@ -8,7 +8,7 @@
  * called via `call()` so they remain mockable in tests.
  */
 
-import { call, fork, join, put, select, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
+import { call, fork, join, put, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord, AgentStatus } from "../types";
@@ -105,6 +105,10 @@ export async function sendBackendMessage(
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
 const DELIVERY_TIMEOUT_MS = 30_000;
+
+const eventTypesFor = (events: WorkspaceEvent[]): string[] => [
+  ...new Set(events.map((e) => e.type)),
+];
 
 // ---------------------------------------------------------------------------
 // Delivery idempotency guard
@@ -224,11 +228,7 @@ export function* handleDeliverEvents(
   if (rawEvents.length === 0) return;
 
   // Guard: skip delivery for deleted agents
-  const isDeleted: boolean = yield* select(
-    selectIsAgentDeleted.select,
-    wsId,
-    agentId,
-  );
+  const isDeleted: boolean = yield* selectIsAgentDeleted.effect(wsId, agentId);
   if (isDeleted) return;
 
   // Idempotency guard: filter out events already delivered by a prior attempt
@@ -248,6 +248,8 @@ export function* handleDeliverEvents(
     yield* put(recordDroppedEvents(wsId, events.length));
     return;
   }
+
+  let lastError = "Delivery failed";
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -281,6 +283,15 @@ export function* handleDeliverEvents(
           }));
         }
         yield* put(recordDeliveryTimeout(wsId));
+        yield* call(dispatchWorkspaceEvent, "agent:event-delivery-timeout", wsId, {
+          type: "agent",
+          id: agentId,
+        }, {
+          targetAgentId: agentId,
+          eventCount: events.length,
+          eventTypes: eventTypesFor(events),
+          timeoutMs: DELIVERY_TIMEOUT_MS,
+        });
         return;
       }
 
@@ -291,7 +302,7 @@ export function* handleDeliverEvents(
         const deliveredEventIds = events.map((e) => e.id).filter(Boolean) as string[];
 
         // Emit agent:woken-by-subscription domain event for UI listeners
-        const eventTypes = [...new Set(events.map((e) => e.type))];
+        const eventTypes = eventTypesFor(events);
         yield* call(dispatchWorkspaceEvent, "agent:woken-by-subscription", wsId, {
           type: "agent",
           id: agentId,
@@ -343,11 +354,7 @@ export function* handleDeliverEvents(
         // (it only triggers on the setAgentStatus ACTION). Dispatch delivery
         // manually with a small delay to avoid infinite recursion if the
         // stream hasn't fully cleaned up yet.
-        const currentStatus: string | undefined = yield* select(
-          selectAgentStatus.select,
-          wsId,
-          agentId,
-        );
+        const currentStatus: string | undefined = yield* selectAgentStatus.effect(wsId, agentId);
         if (currentStatus === "idle") {
           yield* delay(100);
           yield* put(requestDeliverQueuedEvents(wsId, agentId));
@@ -355,7 +362,10 @@ export function* handleDeliverEvents(
         return;
       }
 
+      lastError = result!.error ?? "Delivery failed";
+
     } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
       logger.error(`[subscriptions] deliver agentId=${agentId} workspaceId=${wsId} attempt=${attempt} step=deliver error=${err instanceof Error ? err.message : String(err)}`);
     }
 
@@ -368,6 +378,15 @@ export function* handleDeliverEvents(
   // All retries exhausted
   logger.error(`[subscriptions] deliver agentId=${agentId} workspaceId=${wsId} step=deliver status=failed retriesExhausted=true`);
   yield* put(recordDeliveryFailure(wsId));
+  yield* call(dispatchWorkspaceEvent, "agent:event-delivery-failed", wsId, {
+    type: "agent",
+    id: agentId,
+  }, {
+    targetAgentId: agentId,
+    eventCount: events.length,
+    eventTypes: eventTypesFor(events),
+    error: lastError,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -379,21 +398,13 @@ export function* handleDeliverQueuedEvents(
 ) {
   const [wsId, agentId] = action.payload;
 
-  const isDeleted: boolean = yield* select(
-    selectIsAgentDeleted.select,
-    wsId,
-    agentId,
-  );
+  const isDeleted: boolean = yield* selectIsAgentDeleted.effect(wsId, agentId);
   if (isDeleted) {
     yield* put(clearAgentQueue(wsId, agentId));
     return;
   }
 
-  const queue = yield* select(
-    selectAgentQueue.select,
-    wsId,
-    agentId,
-  );
+  const queue = yield* selectAgentQueue.effect(wsId, agentId);
   if (queue.length === 0) return;
 
   // Snapshot and clear the queue atomically
@@ -518,13 +529,10 @@ export function* periodicQueueSweep() {
   while (true) {
     yield* delay(SWEEP_INTERVAL_MS);
 
-    const workspaceIds: string[] = yield* select(selectAllWorkspaceIds.select);
+    const workspaceIds: string[] = yield* selectAllWorkspaceIds.effect();
 
     for (const wsId of workspaceIds) {
-      const wsState = yield* select(
-        selectWorkspaceSubscriptionState.select,
-        wsId,
-      );
+      const wsState = yield* selectWorkspaceSubscriptionState.effect(wsId);
 
       for (const agentId of Object.keys(wsState.agentQueues)) {
         const queue = wsState.agentQueues[agentId];
@@ -750,7 +758,7 @@ export function* periodicQueueSweep() {
     // for subscriptions that have been removed.
     const allActiveSubIds = new Set<string>();
     for (const wsId of workspaceIds) {
-      const wsState2 = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+      const wsState2 = yield* selectWorkspaceSubscriptionState.effect(wsId);
       for (const subId of Object.keys(wsState2.subscriptions)) {
         allActiveSubIds.add(subId);
       }
@@ -765,7 +773,7 @@ export function* periodicQueueSweep() {
     // Prune stuckGroupFirstSeen entries for groups that no longer exist
     const allActiveGroupIds = new Set<string>();
     for (const wsId of workspaceIds) {
-      const wsState3 = yield* select(selectWorkspaceSubscriptionState.select, wsId);
+      const wsState3 = yield* selectWorkspaceSubscriptionState.effect(wsId);
       for (const groupId of Object.keys(wsState3.delegationGroups)) {
         allActiveGroupIds.add(groupId);
       }

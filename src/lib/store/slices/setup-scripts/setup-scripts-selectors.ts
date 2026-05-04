@@ -71,3 +71,18 @@ export const selectIsPendingDeletion = createSelector(
   }
 );
 
+export const selectIsSetupScriptBannerDismissed = createSelector(
+  (state, workspaceId: string) =>
+    state.setupScripts.isBannerDismissedGlobally ||
+    state.setupScripts.bannerDismissedByWorkspaceId[workspaceId] === true,
+);
+
+export const selectSetupScriptBannerDismissalRecord = createSelector((state) => {
+  const dismissed: Record<string, boolean> = {};
+  if (state.setupScripts.isBannerDismissedGlobally) dismissed._global = true;
+  for (const workspaceId of Object.keys(state.setupScripts.bannerDismissedByWorkspaceId)) {
+    dismissed[workspaceId] = true;
+  }
+  return dismissed;
+});
+

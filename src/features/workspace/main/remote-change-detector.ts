@@ -785,17 +785,13 @@ export class RemoteChangeDetector extends EventEmitter {
         const absolutePath = path.posix.join(this.config.basePath, file.path);
         const result = await this.rpcClient!.readFile({ path: absolutePath });
 
-        sendToWorkspaceWindows(
-          this.config.workspaceId,
-          `file:content-changed:${this.config.workspaceId}`,
-          {
-            path: absolutePath,
-            relativePath: file.path,
-            content: result.content,
-            source: 'external',
-            workspaceId: this.config.workspaceId,
-          },
-        );
+        sendToWorkspaceWindows(this.config.workspaceId, 'file:content-changed', {
+          path: absolutePath,
+          relativePath: file.path,
+          content: result.content,
+          source: 'external',
+          workspaceId: this.config.workspaceId,
+        });
 
         logger.debug('[RemoteChangeDetector] Emitted file:content-changed', {
           path: file.path,

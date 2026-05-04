@@ -46,3 +46,11 @@ export function* removeLocalStorageItem(key: string): SagaGenerator<void> {
     // but catch here too for saga-level safety.
   }
 }
+
+export function* getLocalStorageKeysWithPrefix(prefix: string): SagaGenerator<string[]> {
+  try {
+    return yield* call([safeLocalStorage, safeLocalStorage.keysWithPrefix], prefix);
+  } catch {
+    return [];
+  }
+}
