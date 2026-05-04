@@ -44,6 +44,7 @@ import { agentBackendHandler } from '../../agent/main/agent-backend-handler.serv
 import { buildTaskAgentInitialMessage } from '../utils/task-agent-message-builder';
 import { generateAgentNameFromTask } from '../utils/agent-name-utils';
 import { findInvalidTaskLinks } from '../utils/task-link-validator';
+import { hasTaskBlocks as containsTaskBlocks } from '../utils/task-block-parser';
 import {
   FolderBasedNotesRepository,
   crdtDocumentManager,
@@ -577,32 +578,51 @@ export class NotesService {
         await crdtDocumentManager.updateContent(note.workspaceId, note.id, note.content);
       }
 
+      let responseNote = note;
+
+      if (request.content !== undefined && containsTaskBlocks(note.content || '')) {
+        const conversionResult = await this.convertTaskBlocks(note.workspaceId, note.id);
+        if (conversionResult.ok) {
+          const convertedNote = await this.notesRepository.findById(note.workspaceId, note.id);
+          if (convertedNote) {
+            responseNote = convertedNote;
+          }
+        } else {
+          logger.warn('Failed to auto-convert task blocks after note update', {
+            workspaceId: note.workspaceId,
+            noteId: note.id,
+            error: conversionResult.error,
+          });
+        }
+      }
+
       // Get current actor for proper attribution
       const provenanceManager = getProvenanceContextManager();
       const currentActor = provenanceManager.getCurrentActor();
+      const emittedChanges = responseNote === note ? request : { ...request, content: responseNote.content };
 
       // Emit event with actor information (include title for Activity Log)
       mainDispatch(noteUpdated({
-        workspaceId: note.workspaceId,
-        noteId: note.id,
-        title: note.title,
-        changes: request,
+        workspaceId: responseNote.workspaceId,
+        noteId: responseNote.id,
+        title: responseNote.title,
+        changes: emittedChanges,
         actor: currentActor,
         sessionId: provenanceManager.getCurrentSessionId(),
       }));
 
       // Track note edit
       trackMain('Edited Note', {
-        note_type: note.metadata?.task ? 'task' : 'regular',
-        note_id: note.id,
+        note_type: responseNote.metadata?.task ? 'task' : 'regular',
+        note_id: responseNote.id,
       });
 
       logger.info('Note updated', {
-        workspaceId: note.workspaceId,
-        noteId: note.id,
+        workspaceId: responseNote.workspaceId,
+        noteId: responseNote.id,
       });
 
-      return { ok: true, data: note };
+      return { ok: true, data: responseNote };
     } catch (error) {
       logger.error('Failed to update note', error as Error, {
         workspaceId: request.workspaceId,
@@ -2697,6 +2717,10 @@ export class NotesService {
 
       // Save the updated note
       await this.notesRepository.save(updatedNote);
+
+      if (this.crdtEnabled) {
+        await crdtDocumentManager.updateContent(updatedNote.workspaceId, updatedNote.id, updatedNote.content);
+      }
 
       // Emit note:updated and note:content-changed to workspace renderer windows with source='agent'
       // This triggers UI refresh and bypasses hasUserEditedSinceLastSave check

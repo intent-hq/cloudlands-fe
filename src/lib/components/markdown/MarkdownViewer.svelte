@@ -17,7 +17,10 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -30,15 +33,17 @@
     className?: string;
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
     onFileClick?: (path: string) => void;
+    taskBlockRenderMode?: 'placeholder' | 'content';
   }
 
   let {
     content,
     isStreaming = false,
     className = '',
-     
+
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
+    taskBlockRenderMode = 'placeholder',
   }: Props = $props();
 
   // PERF: Detect content complexity to choose rendering strategy
@@ -129,6 +134,7 @@
         allowEmpty: true,
         skipIfHTML: false,
         preserveAnchors: true,
+        taskBlockRenderMode,
       });
       processedContent = html;
       lastProcessedContent = markdown;
@@ -167,6 +173,7 @@
         allowEmpty: true,
         skipIfHTML: false,
         preserveAnchors: true,
+        taskBlockRenderMode,
       });
       lastProcessedContent = markdown;
       processedContent = html;
@@ -487,7 +494,11 @@
 <!-- complex: full TipTap for interactive content (task lists) -->
 {#if isStreaming}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="markdown-viewer streaming-content {className}" bind:this={streamingContentElement} onclick={handleLinkClick}>
+  <div
+    class="markdown-viewer streaming-content {className}"
+    bind:this={streamingContentElement}
+    onclick={handleLinkClick}
+  >
     {@html processedContent}
   </div>
 {:else if contentComplexity === 'simple'}

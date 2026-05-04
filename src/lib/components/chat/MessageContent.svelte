@@ -27,7 +27,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('MessageContent');
 
@@ -299,6 +302,7 @@
     <MarkdownViewer
       content={parsedBlock.content || ''}
       {isStreaming}
+      taskBlockRenderMode="content"
       onFileClick={(path) => handleOpenFile({ path })}
     />
   {/if}
@@ -323,6 +327,7 @@
           <MarkdownViewer
             content={cleanedText}
             {isStreaming}
+            taskBlockRenderMode="content"
             onFileClick={(path) => handleOpenFile({ path })}
           />
         {/if}
@@ -351,6 +356,7 @@
               <div class="w-full">
                 <MarkdownViewer
                   content={nestedBlock.text}
+                  taskBlockRenderMode="content"
                   onFileClick={(path) => handleOpenFile({ path })}
                 />
               </div>
@@ -374,7 +380,7 @@
     <details class="p-2 bg-muted/50 rounded-md">
       <summary class="cursor-pointer text-sm text-subtle"> 💭 Thinking... </summary>
       <div class="pl-4 mt-2 text-sm opacity-75">
-        <MarkdownViewer content={block.content || 'Processing...'} />
+        <MarkdownViewer content={block.content || 'Processing...'} taskBlockRenderMode="content" />
       </div>
     </details>
   {/if}

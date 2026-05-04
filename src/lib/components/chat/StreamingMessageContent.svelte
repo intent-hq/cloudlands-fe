@@ -29,7 +29,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
@@ -442,7 +445,6 @@
       return count > 0 ? `${key}-dup-${index}` : key;
     });
   });
-
 </script>
 
 <!-- Use animated component when streaming with animations enabled -->
@@ -543,12 +545,14 @@
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        taskBlockRenderMode="content"
         onFileClick={(path) => handleOpenFile({ path })}
       />
     {:else}
       <MarkdownViewer
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        taskBlockRenderMode="content"
         onFileClick={(path) => handleOpenFile({ path })}
       />
     {/if}
@@ -583,6 +587,7 @@
             <MarkdownViewer
               content={cleanedText}
               isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+              taskBlockRenderMode="content"
               onFileClick={(path) => handleOpenFile({ path })}
             />
           {/if}
@@ -622,7 +627,10 @@
     {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
       {#if block.type === 'content_group'}
         {@const group = block as ContentBlockGroup}
-        <div class="content-block content-block--group my-1.25" use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}>
+        <div
+          class="content-block content-block--group my-1.25"
+          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+        >
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
@@ -645,7 +653,10 @@
           </ResponseGroup>
         </div>
       {:else if ['text', 'tool_use', 'thinking'].includes(block.type)}
-        <div class="content-block content-block--{block.type} my-1.25" use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}>
+        <div
+          class="content-block content-block--{block.type} my-1.25"
+          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+        >
           {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
         </div>
       {/if}
@@ -654,7 +665,7 @@
     <!-- Show streaming cursor if streaming but no content yet -->
     {#if isStreaming && groupedBlocks.length === 0}
       <div class="w-full">
-        <MarkdownViewer content="" isStreaming={true} />
+        <MarkdownViewer content="" isStreaming={true} taskBlockRenderMode="content" />
       </div>
     {/if}
   </div>

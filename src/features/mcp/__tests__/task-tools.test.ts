@@ -98,7 +98,10 @@ describe('Task Management MCP Tools', () => {
 
   beforeEach(() => {
     repository = new InMemoryNotesRepository();
-    notesService = new NotesService(repository);
+    notesService = new NotesService(repository, {
+      findByNote: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue(undefined),
+    } as any);
     workspaceId = WorkspaceId(uuidv4());
   });
 
@@ -432,6 +435,105 @@ Task description
       expect(updatedNote.data.content).not.toContain('@@@task');
       expect(updatedNote.data.content).toContain('intent://local/task/');
       expect(updatedNote.data.content).toContain(convertResult.data.createdNoteIds[0]);
+    });
+
+    it('should auto-convert @@@task blocks saved through updateNote', async () => {
+      const mockSendToWorkspaceWindows = vi.mocked(sendToWorkspaceWindows);
+      mockSendToWorkspaceWindows.mockClear();
+
+      const createResult = await notesService.createNote({
+        workspaceId,
+        title: 'Spec Note',
+        content: '# My Spec\n\n## Tasks\n',
+      });
+
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const updateResult = await notesService.updateNote({
+        workspaceId,
+        id: createResult.data.id,
+        content: `# My Spec
+
+## Tasks
+
+@@@task
+# Saved Task
+Saved through the normal update path.
+@@@`,
+      });
+
+      expect(updateResult.ok).toBe(true);
+      if (!updateResult.ok) return;
+
+      expect(updateResult.data.content).not.toContain('@@@task');
+      expect(updateResult.data.content).toContain('- [ ] [Saved Task](intent://local/task/');
+
+      const childTasks = (await repository.findByWorkspace(workspaceId)).filter(
+        (note) => note.parentId === createResult.data.id,
+      );
+      expect(childTasks).toHaveLength(1);
+      expect(childTasks[0].title).toBe('Saved Task');
+      expect(childTasks[0].metadata?.task?.status).toBe('not_started');
+      expect(updateResult.data.content).toContain(childTasks[0].id);
+
+      expect(mockSendToWorkspaceWindows).toHaveBeenCalledWith(
+        workspaceId,
+        `note:content-changed:${workspaceId}`,
+        expect.objectContaining({
+          noteId: createResult.data.id,
+          content: updateResult.data.content,
+          source: 'agent',
+          workspaceId,
+        }),
+      );
+    });
+
+    it('should reuse an existing child task when updateNote saves the same task block again', async () => {
+      const createResult = await notesService.createNote({
+        workspaceId,
+        title: 'Spec Note',
+        content: '# My Spec\n',
+      });
+
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const rawTaskBlock = `# My Spec
+
+@@@task
+# Reused Task
+Do the reusable work.
+@@@`;
+
+      const firstUpdate = await notesService.updateNote({
+        workspaceId,
+        id: createResult.data.id,
+        content: rawTaskBlock,
+      });
+      expect(firstUpdate.ok).toBe(true);
+
+      const firstChildTasks = (await repository.findByWorkspace(workspaceId)).filter(
+        (note) => note.parentId === createResult.data.id,
+      );
+      expect(firstChildTasks).toHaveLength(1);
+
+      const secondUpdate = await notesService.updateNote({
+        workspaceId,
+        id: createResult.data.id,
+        content: rawTaskBlock,
+      });
+
+      expect(secondUpdate.ok).toBe(true);
+      if (!secondUpdate.ok) return;
+
+      const childTasks = (await repository.findByWorkspace(workspaceId)).filter(
+        (note) => note.parentId === createResult.data.id,
+      );
+      expect(childTasks).toHaveLength(1);
+      expect(childTasks[0].id).toBe(firstChildTasks[0].id);
+      expect(secondUpdate.data.content).not.toContain('@@@task');
+      expect(secondUpdate.data.content).toContain(firstChildTasks[0].id);
     });
 
     it('should clean up blank lines between consecutive linked task lines', async () => {

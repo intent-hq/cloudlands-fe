@@ -38,6 +38,41 @@ Task content here.
       expect(html).toContain('task-block-title-skeleton');
     });
 
+    it('should render @@@task block as readable content for completed chat messages', async () => {
+      const markdown = `@@@task
+# My Task
+Task content here.
+@@@`;
+
+      const html = await processMarkdownToHTML(markdown, { taskBlockRenderMode: 'content' });
+
+      expect(html).toContain('My Task');
+      expect(html).toContain('Task content here.');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-pending');
+      expect(html).not.toContain('task-block-checkbox');
+      expect(html).not.toContain('task-block-title-skeleton');
+    });
+
+    it('should render converted task links without pending placeholder markup', async () => {
+      const markdown = `# Tasks
+
+- [ ] [My Task](intent://local/task/task-123)
+
+Task content here.`;
+
+      const html = await processMarkdownToHTML(markdown);
+
+      // Raw @@@task blocks may be a transient pre-conversion state, but the
+      // persisted converted state must not keep rendering the pending skeleton.
+      expect(html).toContain('My Task');
+      expect(html).not.toContain('@@@task');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-pending');
+      expect(html).not.toContain('task-block-placeholder');
+      expect(html).not.toContain('task-block-title-skeleton');
+    });
+
     it('should render legacy ```task block with content as normal code block (legacy syntax removed)', async () => {
       const markdown = `\`\`\`task
 # Authentication System

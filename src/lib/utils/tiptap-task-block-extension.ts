@@ -45,6 +45,18 @@ function renderTaskBlock(text: string): string {
   `;
 }
 
+export function renderTaskBlocksAsReadableMarkdown(markdown: string): string {
+  return markdown.replace(/@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/g, (_match, blockContent: string) => {
+    const task = parseTaskBlockContent(blockContent);
+
+    if (!task) {
+      return blockContent.trim();
+    }
+
+    return [`### ${task.title}`, task.content.trim()].filter(Boolean).join('\n\n');
+  });
+}
+
 export function addTasksBlockSupport(markedInstance: Marked) {
   // Add custom tokenizer for @@@task...@@@ blocks
   markedInstance.use({

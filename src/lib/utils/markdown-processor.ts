@@ -1,5 +1,6 @@
 import { Logger } from '$shared/logger';
 import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
+import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extension';
 import { normalizeAnchorPositions } from './anchor-normalization';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import { toPromptToken } from '$lib/services/mentions/format';
@@ -63,10 +64,9 @@ const workerCallbacks = new Map<
  */
 function getMarkdownWorker(): Worker {
   if (!markdownWorker) {
-    markdownWorker = new Worker(
-      new URL('./markdown-worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    markdownWorker = new Worker(new URL('./markdown-worker.ts', import.meta.url), {
+      type: 'module',
+    });
     markdownWorker.onmessage = (event: MessageEvent<MarkdownWorkerResponse>) => {
       const { id, html, error } = event.data;
       const callback = workerCallbacks.get(id);
@@ -99,9 +99,7 @@ async function parseMarkdownMainThread(
   markdown: string,
   pipeline?: { preserveAnchors: boolean },
 ): Promise<string> {
-  const content = pipeline?.preserveAnchors
-    ? normalizeAnchorPositions(markdown)
-    : markdown;
+  const content = pipeline?.preserveAnchors ? normalizeAnchorPositions(markdown) : markdown;
 
   const markedInst = getMarkedInstance();
   let html = await markedInst.parse(content);
@@ -434,6 +432,8 @@ export async function processMarkdownToHTML(
     preserveAnchors?: boolean;
     /** Whether to process ws-block primitives */
     processPrimitives?: boolean;
+    /** How raw @@@task proposal blocks should render */
+    taskBlockRenderMode?: 'placeholder' | 'content';
   } = {},
 ): Promise<string> {
   const {
@@ -441,6 +441,7 @@ export async function processMarkdownToHTML(
     skipIfHTML = true,
     preserveAnchors = true,
     processPrimitives = true,
+    taskBlockRenderMode = 'placeholder',
   } = options;
 
   // Handle empty content
@@ -466,7 +467,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return cached;
@@ -489,9 +490,14 @@ export async function processMarkdownToHTML(
     // The front matter is not renderable content so we simply discard it from the HTML output.
     const { body: contentWithoutFrontMatter } = extractFrontMatter(content);
 
+    const contentWithTaskBlocksRendered =
+      taskBlockRenderMode === 'content'
+        ? renderTaskBlocksAsReadableMarkdown(contentWithoutFrontMatter)
+        : contentWithoutFrontMatter;
+
     // Escape HTML-like tags FIRST, before any processing that generates HTML
     // This prevents user content like <COMPANY>Adobe</COMPANY> from being interpreted as HTML
-    const contentWithEscapedTags = escapeHtmlTags(contentWithoutFrontMatter);
+    const contentWithEscapedTags = escapeHtmlTags(contentWithTaskBlocksRendered);
     const t1 = isLargeContent ? performance.now() : 0;
 
     // Process ws-block primitives (needs NotesPrimitivesSerializer, must run on main thread)
@@ -1666,7 +1672,9 @@ export function processHTMLToMarkdown(
     // Handle generic DIVs that wrap block-level content (e.g., TipTap table wrappers)
     // Instead of just getting textContent (which loses structure), recursively process children
     if (el.tagName === 'DIV') {
-      const hasBlockChild = el.querySelector('table, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6, details');
+      const hasBlockChild = el.querySelector(
+        'table, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6, details',
+      );
       if (hasBlockChild) {
         let result = '';
         for (const child of Array.from(el.children)) {
