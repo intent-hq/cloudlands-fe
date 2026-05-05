@@ -55,6 +55,8 @@
     "lint:fix": "eslint --fix .",
     "lint:dispatch-gate": "node scripts/check-workspace-event-dispatchers.mjs",
     "lint:selector-hygiene": "node scripts/check-saga-selector-hygiene.mjs",
+    "lint:selector-active-workspace": "node scripts/check-selector-active-workspace-hygiene.mjs",
+    "lint:redux-collections": "node scripts/check-redux-state-collections.mjs",
     "lint:saga-adapter-gate": "node scripts/check-saga-adapter-bypass.mjs",
     "test": "npm run test:unit && npm run test:playwright",
     "test:unit": "vitest run",
