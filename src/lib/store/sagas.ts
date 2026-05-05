@@ -76,6 +76,7 @@ import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
 import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
+import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
 
 /**
  * All registered sagas.
@@ -156,6 +157,7 @@ export const sagas = {
   agentStreamSaga,
   agentSubscriptionUISaga,
   agentAvailabilitySaga,
+  sessionStatsSaga,
 } as const;
 
 // SagaName is defined in ./types.ts as an explicit string literal union to

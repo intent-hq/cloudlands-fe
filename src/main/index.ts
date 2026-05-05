@@ -333,6 +333,7 @@ import {
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
+import { setupSessionStatsIPC } from '../features/session-stats/main/session-stats.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
@@ -1469,6 +1470,7 @@ app.whenReady().then(async () => {
     setupRepoConfigIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
     setupSkillsIPC();
+    setupSessionStatsIPC();
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
     registerLineChangesIPC();
     // registerSetupScriptsHandlers(); // Already called in critical IPC setup

@@ -56,6 +56,7 @@
     isFetchCurrent,
   } from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
+  import WorkspaceCreditStats from '$lib/components/workspace/WorkspaceCreditStats.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -1085,6 +1086,9 @@
           <span>{$workspace.branch}</span>
         {/if}
       </div>
+      {#if workspaceId}
+        <WorkspaceCreditStats {workspaceId} />
+      {/if}
     </div>
 
     <!-- Flame Graph Progress Section (compact) -->
@@ -1250,6 +1254,10 @@
         </Tooltip>
       </div>
     </div>
+
+    {#if workspaceId}
+      <WorkspaceCreditStats {workspaceId} />
+    {/if}
 
     <div class="w-full pb-2 pl-1 text-left flex flex-col gap-1.5">
       <!-- Flame Graph Progress Section (always show task-focused view) -->

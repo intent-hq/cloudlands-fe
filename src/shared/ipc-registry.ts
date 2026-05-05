@@ -1123,6 +1123,11 @@ export const IPC_CHANNELS = {
     DETECT: 'scripts:detect',
     SAVE_TO_REPO: 'scripts:save-to-repo',
   },
+
+  // Session Stats (credit usage)
+  SESSION_STATS: {
+    GET: 'session-stats:get',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer

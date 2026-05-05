@@ -748,6 +748,7 @@ const ALLOWED_CHANNELS = [
   "scripts:get-output",
   "scripts:detect",
   "scripts:save-to-repo",
+  "session-stats:get",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",

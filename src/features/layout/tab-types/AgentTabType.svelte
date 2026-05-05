@@ -32,9 +32,22 @@
     selectSpecialists,
   } from '$lib/store/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
-  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
+  import { TooltipRich } from '$lib/components/ui/tooltip';
+  import AgentStatsTooltip from '$lib/components/chat/AgentStatsTooltip.svelte';
+  import {
+    AGENT_STATS_TOOLTIP_TITLE,
+    AGENT_STATS_TRIGGER_LABEL,
+  } from '$lib/components/chat/agent-stats-tooltip-copy';
+  import {
+    selectAgentStats,
+    selectIsLoadingAgentStats,
+    selectAgentStatsError,
+  } from '$lib/store/slices/session-stats/session-stats-selectors';
+  import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
+  import { isAuggieSession } from '$shared/types/agent-session';
 
   const logger = createLogger('AgentTabType');
 
@@ -99,6 +112,89 @@
   const agentTaskNoteId = $derived(
     agentSession?.metadata?.taskNoteId || agentSession?.agentMetadata?.taskNoteId || null,
   );
+
+  // Agent stats selectors (for info-circle tooltip). Mirrors AgentCard.svelte.
+  // Fall back to empty-string arg so the derived value is always a Readable;
+  // rendering is gated on tab.agentId in the template.
+  const agentStats$ = $derived(selectAgentStats(tab.agentId ?? ''));
+  const agentStatsLoading$ = $derived(selectIsLoadingAgentStats(tab.agentId ?? ''));
+  const agentStatsError$ = $derived(selectAgentStatsError(tab.agentId ?? ''));
+  let statsTooltipOpen = $state(false);
+  let agentStatsFetchPending = $state(false);
+  let ignoredAgentStatsError: string | undefined = $state(undefined);
+  const agentStatsLoading = $derived(agentStatsFetchPending || ($agentStatsLoading$ ?? false));
+  const agentStatsError = $derived(
+    agentStatsFetchPending ? undefined : ($agentStatsError$ ?? undefined),
+  );
+  const agentStatsSession = $derived.by(() => {
+    if (!tab.agentId) return undefined;
+    return agentService.getSession(tab.agentId) ?? agentSession;
+  });
+  const showAgentStatsAction = $derived(
+    !!agentStatsSession && isAuggieSession(agentStatsSession),
+  );
+  const agentStatsEmptyState = $derived.by(() => {
+    if (!tab.agentId) return 'empty' as const;
+    if (!agentStatsSession) return undefined;
+    if (!isAuggieSession(agentStatsSession)) return 'empty' as const;
+    return agentStatsSession.acpSessionId || agentStatsSession.backendSessionId
+      ? undefined
+      : ('empty' as const);
+  });
+
+  $effect(() => {
+    void tab.agentId;
+    agentStatsFetchPending = false;
+    ignoredAgentStatsError = undefined;
+  });
+
+  $effect(() => {
+    if (!agentStatsFetchPending) return;
+
+    const currentError = $agentStatsError$ ?? undefined;
+    if (
+      $agentStatsLoading$ ||
+      $agentStats$ ||
+      (currentError && currentError !== ignoredAgentStatsError)
+    ) {
+      agentStatsFetchPending = false;
+      ignoredAgentStatsError = undefined;
+    }
+  });
+
+  function handleStatsTooltipOpenChange(isOpen: boolean) {
+    if (!isOpen) {
+      statsTooltipOpen = false;
+      return;
+    }
+
+    if (!tab.agentId) {
+      statsTooltipOpen = true;
+      return;
+    }
+
+    // On-demand fetch: dispatch fetchAgentStats before opening the tooltip so
+    // the first visible render sees the loading state instead of empty stats.
+    // Dispatching on every open attempt lets the reducer clear any prior
+    // error optimistically so the user can retry after a failed fetch.
+    // Only Auggie sessions go through `auggie session stats`; skip other
+    // providers so the tooltip surfaces no data instead of a stale error.
+    const session = agentService.getSession(tab.agentId) ?? agentSession;
+    if (!session || !isAuggieSession(session)) {
+      statsTooltipOpen = false;
+      return;
+    }
+
+    const sessionId = session.acpSessionId || session.backendSessionId;
+    if (sessionId) {
+      if (!$agentStats$ || $agentStatsError$) {
+        ignoredAgentStatsError = $agentStatsError$ ?? undefined;
+        agentStatsFetchPending = true;
+      }
+      getReduxStore().dispatch(fetchAgentStats(tab.agentId, sessionId));
+    }
+    statsTooltipOpen = true;
+  }
 
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
@@ -173,6 +269,35 @@
     >
       <Fa icon={faNote} size="xs" />
     </Button>
+  {/if}
+  {#if tab.agentId && showAgentStatsAction}
+    <TooltipRich
+      title={AGENT_STATS_TOOLTIP_TITLE}
+      side="bottom"
+      align="end"
+      delayDuration={300}
+      interactive
+      open={agentStatsError ? false : statsTooltipOpen}
+      onOpenChange={handleStatsTooltipOpenChange}
+      class="h-6 items-center align-middle"
+    >
+      {#snippet content()}
+        <AgentStatsTooltip
+          stats={$agentStats$ ?? undefined}
+          loading={agentStatsLoading}
+          error={agentStatsError}
+          emptyState={agentStatsEmptyState}
+        />
+      {/snippet}
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        aria-label={AGENT_STATS_TRIGGER_LABEL}
+        class="cursor-default"
+      >
+        <Fa icon={faCircleInfo} size="xs" />
+      </Button>
+    </TooltipRich>
   {/if}
   <Button
     variant="ghost-light"

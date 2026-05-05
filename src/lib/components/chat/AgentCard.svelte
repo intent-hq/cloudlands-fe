@@ -11,9 +11,7 @@
   import { toast } from 'svelte-sonner';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import {
-    selectAgentById,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
@@ -22,6 +20,16 @@
   import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
   import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import { TooltipRich } from '$lib/components/ui/tooltip';
+  import AgentStatsTooltip from './AgentStatsTooltip.svelte';
+  import { AGENT_STATS_TOOLTIP_TITLE } from './agent-stats-tooltip-copy';
+  import {
+    selectAgentStats,
+    selectIsLoadingAgentStats,
+    selectAgentStatsError,
+  } from '$lib/store/slices/session-stats/session-stats-selectors';
+  import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
+  import { isAuggieSession } from '$shared/types/agent-session';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
@@ -93,6 +101,88 @@
     if (wsId) {
       dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
+  });
+
+  // Agent stats selectors (for tooltip)
+  const agentStats$ = selectAgentStats(agentId);
+  const agentStatsLoading$ = selectIsLoadingAgentStats(agentId);
+  const agentStatsError$ = selectAgentStatsError(agentId);
+
+  // Tooltip state
+  let tooltipOpen = $state(false);
+  let agentStatsFetchPending = $state(false);
+  let ignoredAgentStatsError: string | undefined = $state(undefined);
+  const agentStatsLoading = $derived(agentStatsFetchPending || $agentStatsLoading$);
+  const agentStatsError = $derived(agentStatsFetchPending ? undefined : $agentStatsError$);
+
+  $effect(() => {
+    void agentId;
+    agentStatsFetchPending = false;
+    ignoredAgentStatsError = undefined;
+  });
+
+  $effect(() => {
+    if (!agentStatsFetchPending) return;
+
+    const currentError = $agentStatsError$;
+    if (
+      $agentStatsLoading$ ||
+      $agentStats$ ||
+      (currentError && currentError !== ignoredAgentStatsError)
+    ) {
+      agentStatsFetchPending = false;
+      ignoredAgentStatsError = undefined;
+    }
+  });
+
+  // Hover-intent delay (ms) before opening the tooltip and dispatching a
+  // stats fetch. TooltipRich forces `delayDuration` to 0 in `interactive`
+  // mode, so without this gate, sweeping the mouse across the agent list
+  // would spawn one `auggie session stats` CLI process per hovered card.
+  const TOOLTIP_HOVER_INTENT_MS = 400;
+  let openIntentTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearOpenIntentTimer() {
+    if (openIntentTimer != null) {
+      clearTimeout(openIntentTimer);
+      openIntentTimer = null;
+    }
+  }
+
+  function handleTooltipOpenChange(isOpen: boolean) {
+    clearOpenIntentTimer();
+    if (!isOpen) {
+      tooltipOpen = false;
+      return;
+    }
+    // Defer both the visible open and the dispatch until the user has
+    // hovered long enough to demonstrate intent. If the tooltip closes
+    // (mouse moved away) before this fires, the timer is cleared above
+    // and no CLI process is spawned.
+    openIntentTimer = setTimeout(() => {
+      openIntentTimer = null;
+      // On-demand fetch: dispatch fetchAgentStats when tooltip opens.
+      // Dispatching on every open attempt lets the reducer clear any prior
+      // error optimistically so the user can retry after a failed fetch.
+      // Only Auggie sessions go through `auggie session stats`; skip other
+      // providers so the tooltip surfaces no data instead of a stale error.
+      const session = selectAgentById.select(getReduxStore().getState(), agentId);
+      if (!session || !isAuggieSession(session)) return;
+      const sessionId = session.acpSessionId || session.backendSessionId;
+      if (!sessionId) return;
+      if (!$agentStats$ || $agentStatsError$) {
+        ignoredAgentStatsError = $agentStatsError$;
+        agentStatsFetchPending = true;
+      }
+      getReduxStore().dispatch(fetchAgentStats(agentId, sessionId));
+      tooltipOpen = true;
+    }, TOOLTIP_HOVER_INTENT_MS);
+  }
+
+  // Cancel any pending hover-intent timer if the card unmounts so we never
+  // dispatch a fetch for a card the user can no longer see.
+  $effect(() => {
+    return () => clearOpenIntentTimer();
   });
 
   // Inline editing state
@@ -200,7 +290,11 @@
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           {
-            const wsId = agent?.workspaceId ? String(agent.workspaceId) : (workspace?.id ? String(workspace.id) : undefined);
+            const wsId = agent?.workspaceId
+              ? String(agent.workspaceId)
+              : workspace?.id
+                ? String(workspace.id)
+                : undefined;
             if (wsId) {
               getReduxStore().dispatch(openAgentTabRequested(wsId, { agentId }));
             }
@@ -262,6 +356,12 @@
   // above handles the disk restore.
   const agent$ = selectAgentById(agentId);
   const agent = $derived($agent$);
+  const showAgentStatsTooltip = $derived(!!agent && isAuggieSession(agent));
+  const agentStatsEmptyState = $derived.by(() => {
+    if (!agent) return undefined;
+    if (!isAuggieSession(agent)) return 'empty' as const;
+    return agent.acpSessionId || agent.backendSessionId ? undefined : ('empty' as const);
+  });
   const agentData = $derived(getAgentPeekData(agent));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -418,7 +518,11 @@
     } else {
       const sourcePanelId = findSourcePanelId(event.target);
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-      const wsId = agent?.workspaceId ? String(agent.workspaceId) : (workspace?.id ? String(workspace.id) : undefined);
+      const wsId = agent?.workspaceId
+        ? String(agent.workspaceId)
+        : workspace?.id
+          ? String(workspace.id)
+          : undefined;
       if (!wsId) return;
       getReduxStore().dispatch(
         openAgentTabRequested(wsId, {
@@ -431,58 +535,59 @@
   }
 </script>
 
-<div
-  style="padding-left: {depth * 10}px; container-type: inline-size;"
-  class="relative agent-card-container"
-  data-agent-id={agentId}
-  data-testid="agent-list-item"
->
-  <button
-    type="button"
-    class="w-full text-left flex gap-2 px-1.75 pt-1.25 pb-1.5 transition-colors duration-150 cursor-pointer group border {selected ||
-    showBorder
-      ? `bg-background border-border ${glowClass} shadow-xs`
-      : 'border-transparent'}"
-    onclick={handleClick}
-    onkeydown={handleCardKeydown}
-    oncontextmenu={handleContextMenu}
+{#snippet agentCardContent()}
+  <div
+    style="padding-left: {depth * 10}px; container-type: inline-size;"
+    class="relative agent-card-container"
+    data-agent-id={agentId}
+    data-testid="agent-list-item"
   >
-    <div class="relative shrink-0 mt-[-0.8px] -mb-1">
-      <AugieAvatarWithState
-        {agentId}
-        size={20}
-        state={avatarState}
-        specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
-      />
-    </div>
+    <button
+      type="button"
+      class="w-full text-left flex gap-2 px-1.75 pt-1.25 pb-1.5 transition-colors duration-150 cursor-pointer group border {selected ||
+      showBorder
+        ? `bg-background border-border ${glowClass} shadow-xs`
+        : 'border-transparent'}"
+      onclick={handleClick}
+      onkeydown={handleCardKeydown}
+      oncontextmenu={handleContextMenu}
+    >
+      <div class="relative shrink-0 mt-[-0.8px] -mb-1">
+        <AugieAvatarWithState
+          {agentId}
+          size={20}
+          state={avatarState}
+          specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
+        />
+      </div>
 
-    <div class="agent-card-content flex-1 min-w-0 flex flex-col">
-      <!-- Header row -->
-      <div class="flex items-center gap-1.5 pr-1.5">
-        <!-- Avatar with streaming indicator -->
+      <div class="agent-card-content flex-1 min-w-0 flex flex-col">
+        <!-- Header row -->
+        <div class="flex items-center gap-1.5 pr-1.5">
+          <!-- Avatar with streaming indicator -->
 
-        <div class="flex-1 min-w-0 font-medium flex items-center">
-          {#if isEditing}
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              bind:this={editInputRef}
-              type="text"
-              bind:value={editingValue}
-              onblur={saveEdit}
-              onkeydown={handleEditKeydown}
-              class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
-              onclick={(e) => e.stopPropagation()}
-            />
-          {:else}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <h3
-              class="shrink whitespace-nowrap text-sm truncate text-foreground/90 group-hover:text-foreground"
-              ondblclick={handleNameDoubleClick}
-            >
-              {displayName}
-            </h3>
-          {/if}
-          <!-- {#if specialist}
+          <div class="flex-1 min-w-0 font-medium flex items-center">
+            {#if isEditing}
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                bind:this={editInputRef}
+                type="text"
+                bind:value={editingValue}
+                onblur={saveEdit}
+                onkeydown={handleEditKeydown}
+                class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
+                onclick={(e) => e.stopPropagation()}
+              />
+            {:else}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <h3
+                class="shrink whitespace-nowrap text-sm truncate text-foreground/90 group-hover:text-foreground"
+                ondblclick={handleNameDoubleClick}
+              >
+                {displayName}
+              </h3>
+            {/if}
+            <!-- {#if specialist}
             <span
               class="specialist-icon shrink-0 text-subtle dark:text-background ml-1.5 mr-0.5"
             >
@@ -492,71 +597,97 @@
               {specialistDisplayName}
             </span>
           {/if} -->
-          {#if delegatedByName}
-            <span
-              class="shrink-3 delegated-by-text truncate text-ui text-subtle whitespace-nowrap ml-1"
-            >
-              · Delegated by {delegatedByName}
-            </span>
-          {/if}
-          {#if isBackground}
-            <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
-              BG
-            </div>
-          {/if}
-        </div>
-
-        <div class="flex items-center gap-2 shrink-0">
-          {#if lineChanges && (lineChanges.additions > 0 || lineChanges.deletions > 0)}
-            <LineChangeStats
-              additions={lineChanges.additions}
-              deletions={lineChanges.deletions}
-              size="xs"
-            />
-          {/if}
-          {#if updatedAt}
-            <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
-          {/if}
-        </div>
-      </div>
-
-      <!-- Message preview - show completion report if available, otherwise last response -->
-      {#if !hidePreview}
-        {#if effectiveCompletionReport}
-          <div class="mt-0.5">
-            <p class="text-sm text-subtle truncate">
-              {effectiveCompletionReport}
-            </p>
-          </div>
-        {:else if lastUserMsg || lastResponse || lastToolUse}
-          <div class="space-y-0.5">
-            {#if lastResponse}
-              <p
-                class="text-sm text-subtle truncate"
-                data-testid="agent-card-preview"
-                transition:slide={{ axis: 'y', duration: 150 }}
+            {#if delegatedByName}
+              <span
+                class="shrink-3 delegated-by-text truncate text-ui text-subtle whitespace-nowrap ml-1"
               >
-                {lastResponse}
-              </p>
-            {:else if lastToolUse}
-              <div
-                class="text-sm text-subtle truncate"
-                data-testid="agent-card-preview"
-                transition:slide={{ axis: 'y', duration: 150 }}
-              >
-                <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
+                · Delegated by {delegatedByName}
+              </span>
+            {/if}
+            {#if isBackground}
+              <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
+                BG
               </div>
-            {:else if lastUserMsg}
-              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
-                {lastUserMsg}
-              </p>
             {/if}
           </div>
+
+          <div class="flex items-center gap-2 shrink-0">
+            {#if lineChanges && (lineChanges.additions > 0 || lineChanges.deletions > 0)}
+              <LineChangeStats
+                additions={lineChanges.additions}
+                deletions={lineChanges.deletions}
+                size="xs"
+              />
+            {/if}
+            {#if updatedAt}
+              <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
+            {/if}
+          </div>
+        </div>
+
+        <!-- Message preview - show completion report if available, otherwise last response -->
+        {#if !hidePreview}
+          {#if effectiveCompletionReport}
+            <div class="mt-0.5">
+              <p class="text-sm text-subtle truncate">
+                {effectiveCompletionReport}
+              </p>
+            </div>
+          {:else if lastUserMsg || lastResponse || lastToolUse}
+            <div class="space-y-0.5">
+              {#if lastResponse}
+                <p
+                  class="text-sm text-subtle truncate"
+                  data-testid="agent-card-preview"
+                  transition:slide={{ axis: 'y', duration: 150 }}
+                >
+                  {lastResponse}
+                </p>
+              {:else if lastToolUse}
+                <div
+                  class="text-sm text-subtle truncate"
+                  data-testid="agent-card-preview"
+                  transition:slide={{ axis: 'y', duration: 150 }}
+                >
+                  <AgentPreviewToolLabel toolUse={lastToolUse} animate={isRunning} />
+                </div>
+              {:else if lastUserMsg}
+                <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                  {lastUserMsg}
+                </p>
+              {/if}
+            </div>
+          {/if}
         {/if}
-      {/if}
-    </div>
-  </button>
-</div>
+      </div>
+    </button>
+  </div>
+{/snippet}
+
+{#if showAgentStatsTooltip}
+  <TooltipRich
+    title={AGENT_STATS_TOOLTIP_TITLE}
+    side="right"
+    align="start"
+    delayDuration={400}
+    interactive
+    open={agentStatsError ? false : tooltipOpen}
+    onOpenChange={handleTooltipOpenChange}
+    class="w-full block"
+  >
+    {#snippet content()}
+      <AgentStatsTooltip
+        stats={$agentStats$}
+        loading={agentStatsLoading}
+        error={agentStatsError}
+        emptyState={agentStatsEmptyState}
+      />
+    {/snippet}
+    {@render agentCardContent()}
+  </TooltipRich>
+{:else}
+  {@render agentCardContent()}
+{/if}
 
 {#if contextMenu}
   <SidebarContextMenu

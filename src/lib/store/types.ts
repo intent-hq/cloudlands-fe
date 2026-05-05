@@ -86,7 +86,8 @@ export type SagaName =
   | 'agentIpcSaga'
   | 'agentStreamSaga'
   | 'agentSubscriptionUISaga'
-  | 'agentAvailabilitySaga';
+  | 'agentAvailabilitySaga'
+  | 'sessionStatsSaga';
 
 // ============================================================================
 // Saga Status Types
