@@ -19,6 +19,7 @@ const availableModels$ = writable<ModelOption[]>([]);
 const isLoadingModels$ = writable(false);
 const activeProviderId$ = writable('auggie');
 const enabledProviderIds$ = writable(['auggie']);
+const providerWarnings$ = writable<Record<string, string>>({});
 const sessionVersion$ = writable(0);
 const sessions = new Map<string, Session>();
 
@@ -65,6 +66,7 @@ vi.mock('svelte-fa', async () => {
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronDown: { iconName: 'chevron-down' },
+  faCircleNotch: { iconName: 'circle-notch' },
   faLock: { iconName: 'lock' },
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
@@ -131,6 +133,11 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectModelPickerCollapsedGroups: () => writable([]),
   selectIsLoadingModels: () => isLoadingModels$,
   selectLoadError: () => writable(null),
+  selectAllProviderWarnings: () => providerWarnings$,
+}));
+
+vi.mock('$lib/store/slices/agent-availability/agent-availability-selectors', () => ({
+  selectManagedInstallStatusByProvider: () => writable(null),
 }));
 
 vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
@@ -144,6 +151,13 @@ vi.mock('$lib/store/slices/model/model-utils', () => ({
       return Promise.resolve([{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]);
     }
     return Promise.resolve([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
+  }),
+  getModelsForProviderForLoadingState: vi.fn((providerId: string) => {
+    const models =
+      providerId === 'anthropic'
+        ? [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]
+        : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
+    return Promise.resolve({ models });
   }),
 }));
 
@@ -179,7 +193,7 @@ vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warnin
 
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
+import { getModelsForProviderForLoadingState } from '$lib/store/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
 
 describe('ModelPicker trigger label regressions', () => {
@@ -195,6 +209,7 @@ describe('ModelPicker trigger label regressions', () => {
     isLoadingModels$.set(false);
     activeProviderId$.set('auggie');
     enabledProviderIds$.set(['auggie']);
+    providerWarnings$.set({});
   });
 
   afterEach(() => {
@@ -257,6 +272,6 @@ describe('ModelPicker trigger label regressions', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('anthropic');
-    expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('anthropic');
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('anthropic');
   });
 });

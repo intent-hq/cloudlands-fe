@@ -17,6 +17,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronDown: { iconName: 'chevron-down' },
   faChevronRight: { iconName: 'chevron-right' },
+  faCircleNotch: { iconName: 'circle-notch' },
   faLock: { iconName: 'lock' },
   faRotateRight: { iconName: 'rotate-right' },
   faArrowsRotate: { iconName: 'arrows-rotate' },
@@ -49,6 +50,28 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   }),
 }));
 
+const providerWarnings$ = writable<Record<string, string>>({});
+const codexManagedInstallStatus$ = writable<{
+  managedInstallState: string;
+  version?: string;
+  downloadProgress?: number;
+} | null>(null);
+const mockSvelteDispatch = vi.fn((action: { type?: string; payload?: unknown }) => {
+  if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
+    const [payload] = action.payload as [
+      { providerId: string; status: string; warning?: string } & Record<string, unknown>,
+    ];
+    providerWarnings$.update((warnings) => {
+      const { [payload.providerId]: _cleared, ...remaining } = warnings;
+      if (payload.status === 'success' && payload.warning) {
+        return { ...remaining, [payload.providerId]: payload.warning };
+      }
+      return remaining;
+    });
+  }
+  return action;
+});
+
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', async () => {
   const { readable } = await import('svelte/store');
   const selectAgentById = vi.fn(() => readable(undefined));
@@ -64,7 +87,7 @@ vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
 }));
 
 vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => vi.fn(),
+  getDispatch: () => mockSvelteDispatch,
   getStoreContext: () => undefined,
 }));
 
@@ -72,6 +95,7 @@ vi.mock('$lib/store/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(() =>
     Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }]),
   ),
+  getModelsForProviderForLoadingState: vi.fn(),
 }));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
@@ -81,6 +105,11 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectModelPickerCollapsedGroups: () => readable([]),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(mockModelState.loadError),
+  selectAllProviderWarnings: () => providerWarnings$,
+}));
+
+vi.mock('$lib/store/slices/agent-availability/agent-availability-selectors', () => ({
+  selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
 }));
 
 vi.mock('$shared/config/provider-config', async (importOriginal) => {
@@ -180,7 +209,10 @@ vi.mock('svelte-sonner', () => ({
   },
 }));
 
-import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
+import {
+  getModelsForProvider,
+  getModelsForProviderForLoadingState,
+} from '$lib/store/slices/model/model-utils';
 import ModelPicker from './ModelPicker.svelte';
 
 describe('ModelPicker locked state', () => {
@@ -279,9 +311,15 @@ describe('ModelPicker multi-provider mode', () => {
     mockModelState.availableModels = [
       { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
     ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockSvelteDispatch.mockClear();
     vi.mocked(getModelsForProvider).mockResolvedValue([
       { value: 'model-1', label: 'Model 1', description: 'A model' },
     ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
     enabledProviderIds$.set(['auggie']);
     activeProviderId$.set('auggie');
   });
@@ -395,6 +433,74 @@ describe('ModelPicker multi-provider mode', () => {
     await fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
 
     expect(onModelChange).toHaveBeenCalledWith('sonnet4.6');
+  });
+
+  it('shows an actionable Codex stale-list notice when the provider returns a fallback warning', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+          warning: 'Codex not installed; using static model list',
+        };
+      }
+
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    expect(await screen.findByText('Showing default model list.')).toBeTruthy();
+    expect(screen.getByText(/Install Codex CLI to see all your available models/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Setup docs/ }).getAttribute('href')).toBe(
+      'https://developers.openai.com/codex/cli#cli-setup',
+    );
+  });
+
+  it('does not show the Codex stale-list notice when no fallback warning is present', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+  });
+
+  it('shows a transient Codex setup notice while managed install is running', async () => {
+    codexManagedInstallStatus$.set({
+      managedInstallState: 'installing',
+      version: '0.13.0',
+      downloadProgress: 0.42,
+    });
+    enabledProviderIds$.set(['codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    expect(await screen.findByText('Setting up Codex…')).toBeTruthy();
+    expect(screen.getByText('Download progress: 42%.')).toBeTruthy();
   });
 
   it('shows the real provider error when the only enabled provider fails', async () => {

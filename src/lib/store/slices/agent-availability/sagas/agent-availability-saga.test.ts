@@ -25,14 +25,19 @@ vi.mock('typed-redux-saga', () => ({
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
 
 import { invoke } from '$lib/electron-bridge';
-import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { CODEX_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import {
   fetchProviderUserInfoComplete,
   fetchProviderUserInfoRequested,
   fetchProviderUserInfoSuccess,
+  setManagedInstallStatus,
 } from '../agent-availability-slice';
 import { selectProviderStatusMap } from '../agent-availability-selectors';
-import { handleFetchProviderUserInfo } from './agent-availability-saga';
+import {
+  handleCodexManagedInstallStatusEvent,
+  handleFetchProviderUserInfo,
+  hydrateCodexManagedInstallStatus,
+} from './agent-availability-saga';
 
 describe('handleFetchProviderUserInfo', () => {
   it('fetches provider info even though the trigger already marked loading', () => {
@@ -57,6 +62,38 @@ describe('handleFetchProviderUserInfo', () => {
 
     expect(iterator.next()).toEqual({
       value: sagaEffects.put(fetchProviderUserInfoComplete(providerId)),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+});
+
+describe('Codex managed install status saga', () => {
+  it('dispatches progress events into the agent availability slice', () => {
+    const status = {
+      managedInstallState: 'installing' as const,
+      version: '0.13.0',
+      downloadProgress: 0.5,
+    };
+    const iterator = handleCodexManagedInstallStatusEvent(status);
+
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.put(setManagedInstallStatus('codex', status)),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it('hydrates the initial managed install status from IPC', () => {
+    const status = { managedInstallState: 'installed' as const, version: '0.13.0' };
+    const iterator = hydrateCodexManagedInstallStatus();
+
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.call(invoke, CODEX_CHANNELS.MANAGED_INSTALL_STATUS),
+      done: false,
+    });
+    expect(iterator.next({ success: true, data: status })).toEqual({
+      value: sagaEffects.put(setManagedInstallStatus('codex', status)),
       done: false,
     });
     expect(iterator.next()).toEqual({ value: undefined, done: true });

@@ -25,6 +25,11 @@ export interface CodexModel {
   description?: string;
 }
 
+export interface CodexModelsResult {
+  models: CodexModel[];
+  warning?: string;
+}
+
 interface GetModelsResponse {
   success: boolean;
   data?: CodexModel[];
@@ -57,13 +62,13 @@ export async function checkCodexAvailability(): Promise<boolean> {
 }
 
 /**
- * Get available models from Codex
+ * Get available models from Codex, including any non-blocking warning returned by IPC.
  */
-export async function getCodexModels(): Promise<CodexModel[]> {
+export async function getCodexModelsWithMetadata(): Promise<CodexModelsResult> {
   // Skip in Node.js environment (backend)
   if (typeof window === 'undefined') {
     logger.debug('Skipping Codex models fetch - not in browser environment');
-    return [];
+    return { models: [] };
   }
 
   try {
@@ -75,7 +80,7 @@ export async function getCodexModels(): Promise<CodexModel[]> {
         logger.warn('Codex models returned with warning:', { warning: result.warning });
       }
       logger.info('Got models from Codex', { count: result.data.length });
-      return result.data;
+      return { models: result.data, warning: result.warning };
     }
     const errorMessage = result?.error || result?.warning || 'No models returned';
     logger.warn('Failed to get Codex models:', {
@@ -87,4 +92,12 @@ export async function getCodexModels(): Promise<CodexModel[]> {
     logger.warn('Failed to get Codex models:', { error });
     throw toCodexError(toErrorMessage(error));
   }
+}
+
+/**
+ * Get available models from Codex.
+ */
+export async function getCodexModels(): Promise<CodexModel[]> {
+  const result = await getCodexModelsWithMetadata();
+  return result.models;
 }

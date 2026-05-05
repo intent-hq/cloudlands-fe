@@ -7,11 +7,11 @@
 
 import { call, delay, fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { invoke } from '$lib/electron-bridge';
-import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { CODEX_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { ACP_PROVIDERS } from '$shared/config/provider-config';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
-import type { ProviderStatus } from '../agent-availability-types';
+import type { ManagedInstallStatus, ProviderStatus } from '../agent-availability-types';
 import {
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
@@ -25,6 +25,7 @@ import {
   trackInstallTerminal,
   removeWatchedTerminal,
   ensureProvidersChecked,
+  setManagedInstallStatus,
 } from '../agent-availability-slice';
 import {
   selectHasCheckedOnce,
@@ -41,6 +42,32 @@ type CheckSingleResult = {
   data?: ProviderStatus;
   error?: string;
 };
+
+type ManagedInstallStatusResult = {
+  success: boolean;
+  data?: ManagedInstallStatus;
+  error?: string;
+};
+
+export function* handleCodexManagedInstallStatusEvent(
+  status: ManagedInstallStatus,
+): SagaGenerator<void> {
+  yield* put(setManagedInstallStatus('codex', status));
+}
+
+export function* hydrateCodexManagedInstallStatus(): SagaGenerator<void> {
+  try {
+    const result: ManagedInstallStatusResult = yield* call(
+      invoke<ManagedInstallStatusResult>,
+      CODEX_CHANNELS.MANAGED_INSTALL_STATUS,
+    );
+    if (result.success && result.data) {
+      yield* put(setManagedInstallStatus('codex', result.data));
+    }
+  } catch (err) {
+    logger.debug('Failed to hydrate Codex managed install status', { error: (err as Error).message });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Single provider check
@@ -162,6 +189,17 @@ function* watchTerminalExit(): Generator {
   );
 }
 
+function* watchCodexManagedInstallStatus(): Generator {
+  yield* takeEveryFromElectronChannel<ManagedInstallStatus>(
+    CODEX_CHANNELS.MANAGED_INSTALL_STATUS,
+    handleCodexManagedInstallStatusEvent,
+  );
+  yield* takeEveryFromElectronChannel<ManagedInstallStatus>(
+    CODEX_CHANNELS.MANAGED_INSTALL_PROGRESS,
+    handleCodexManagedInstallStatusEvent,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Polling — when install terminals are being watched, poll every 5s (max 5 min)
 // ---------------------------------------------------------------------------
@@ -204,8 +242,10 @@ function* handleEnsureProvidersChecked(): SagaGenerator<void> {
 // ---------------------------------------------------------------------------
 
 export function* agentAvailabilitySaga(): SagaGenerator<void> {
+  yield* fork(hydrateCodexManagedInstallStatus);
   yield* fork(watchTerminalCommandFinished);
   yield* fork(watchTerminalExit);
+  yield* fork(watchCodexManagedInstallStatus);
   yield* fork(providerPollingSaga);
   yield* takeEvery(checkSingleProviderRequested, handleCheckSingleProvider);
   yield* takeEvery(checkAllProvidersRequested, handleCheckAllProviders);

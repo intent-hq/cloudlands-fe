@@ -18,6 +18,10 @@
   import { faSettings } from '$lib/icons/faSettings';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
+  import ModelPickerProviderNotice, {
+    createProviderWarningNotice,
+    type ProviderWarningNotice,
+  } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
 
   import {
@@ -27,21 +31,29 @@
     selectModelPickerCollapsedGroups,
     selectIsLoadingModels,
     selectLoadError,
+    selectAllProviderWarnings,
   } from '$lib/store/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
     requestHydrateModelFallbackInfo,
     selectModel,
+    setLoadingStateForProvider,
     setModelFallbackInfo,
     setModelPickerGroupCollapsed,
     setWorkspaceModel,
   } from '$lib/store/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$lib/store/slices/model/model-types';
   import {
+    selectManagedInstallStatusByProvider,
+  } from '$lib/store/slices/agent-availability/agent-availability-selectors';
+  import {
     selectActiveProviderId,
     selectEnabledProviderIds,
   } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
+  import {
+    getModelsForProvider,
+    getModelsForProviderForLoadingState,
+  } from '$lib/store/slices/model/model-utils';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
     ACP_PROVIDERS,
@@ -52,10 +64,7 @@
   } from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-  import {
-    formatProviderLoadError,
-    type ProviderLoadError,
-  } from './model-picker-provider-errors';
+  import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { isUserProviderSettled, toDropdownOptions } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
@@ -78,37 +87,30 @@
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
+  const allProviderWarnings$ = selectAllProviderWarnings();
+  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
   interface Props {
     selectedModel?: string;
     onModelChange?: (model: string) => void;
-    /** Optional provider override for non-agent contexts (e.g. specialist settings). */
     providerId?: string;
     isCompact?: boolean;
     isLocked?: boolean;
     lockedTitle?: string;
     showLockIconWhenLocked?: boolean;
-    /** Defer backend update until streaming ends - UI updates immediately but IPC call is delayed */
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
     size?: 'xs' | 'sm' | 'icon';
-    /** Optional workspace ID - if provided, model selection will also update the workspace default */
     workspaceId?: string;
-    /** Optional agent ID - if provided, model selection will also update the active agent's model */
     agentId?: string;
-    /** Whether to show the "Manage models" footer link */
     showManageLink?: boolean;
-    /** Whether to render dropdown in a portal (escapes overflow:hidden containers) */
     portal?: boolean;
     triggerClass?: string;
-    /** Default model ID to show when no model is explicitly selected (instead of "Default model" text) */
     defaultModelId?: string;
-    /** Whether to show the "Default model" option at the top of the dropdown. Set to false in settings where you're configuring the actual default. */
     showDefaultOption?: boolean;
-    /** Update global model store when selection changes - opt-in for places that should affect the main chat model */
     updateGlobalStore?: boolean;
-    /** When true, silently falls back to a default model if the selected model is unavailable. Used by onboarding. */
     silentFallback?: boolean;
+    showProviderWarningNotice?: boolean;
   }
 
   let {
@@ -132,17 +134,13 @@
     showDefaultOption = false,
     updateGlobalStore = false,
     silentFallback = false,
+    showProviderWarningNotice,
   }: Props = $props();
 
   const agentSession$ = useAgentSession(() => agentId);
 
-  // Track pending model update when deferUpdate is true
   let pendingModelUpdate = $state<string | null>(null);
 
-  // --- Effective provider resolution ---
-  // For existing agents (agentId), use the agent's stored provider.
-  // For new agent creation (no agentId), use the global active provider.
-  // Always normalize through getProviderConfig().id so aliases like 'acp' resolve to 'auggie'.
   const effectiveProviderId = $derived.by(() => {
     if (providerId) {
       return getProviderConfig(providerId).id;
@@ -158,32 +156,43 @@
     return $activeProviderId$;
   });
 
-  // Whether the agent's provider differs from the global active provider
   const isAgentProviderOverride = $derived(effectiveProviderId !== $activeProviderId$);
 
-  // --- Model list: use agent-specific models when provider differs ---
-  // When the effective provider matches the active provider, use the global model store.
-  // When it differs (agent locked to a different provider), fetch models locally.
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
   >(null);
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
-  // --- All-provider models for multi-provider display ---
+  function setProviderWarningState(providerId: string, warning: string | undefined) {
+    const normalizedId = getProviderConfig(providerId).id;
+    dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
+  }
+
+  function setProviderErrorState(providerId: string, error: string) {
+    const normalizedId = getProviderConfig(providerId).id;
+    dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }));
+  }
+
+  function getProviderWarningNotice(
+    providerId: string,
+    warnings: Record<string, string>,
+  ): ProviderWarningNotice | null {
+    const normalizedId = getProviderConfig(providerId).id;
+    return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
+  }
+
   let allProviderModels = $state<Record<string, DropdownOption[]>>({});
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
   let fetchGeneration = 0;
   let allProvidersLoaded = $state(false);
   let lastFetchedProviderIds = '';
 
-  /** Fetch models for all enabled providers, with generation tracking to discard stale results. */
   async function fetchAllProviderModels(enabledIds: string[]) {
     const key = enabledIds.slice().sort().join(',');
     if (key === lastFetchedProviderIds && allProvidersLoaded) return;
     lastFetchedProviderIds = key;
 
-    // Don't clear existing models — keep them visible while refreshing
     allProvidersLoaded = false;
     const currentGen = ++fetchGeneration;
 
@@ -196,27 +205,29 @@
     const results = await Promise.allSettled(
       enabledIds.map(async (pid) => {
         const normalizedId = getProviderConfig(pid).id;
-        const models = await getModelsForProvider(normalizedId);
-        return [normalizedId, toDropdownOptions(models)] as const;
+        const result = await getModelsForProviderForLoadingState(normalizedId);
+        return [normalizedId, toDropdownOptions(result.models), result.warning] as const;
       }),
     );
 
-    // Discard stale results if a newer fetch was triggered
     if (fetchGeneration !== currentGen) return;
 
     const models: Record<string, DropdownOption[]> = {};
     const errors: Record<string, ProviderLoadError> = {};
     for (const [index, result] of results.entries()) {
       if (result.status === 'fulfilled') {
-        const [pid, options] = result.value;
+        const [pid, options, warning] = result.value;
         models[pid] = options;
+        setProviderWarningState(pid, warning);
       } else {
         const providerId = getProviderConfig(enabledIds[index]).id;
         const cachedModels = allProviderModels[providerId];
         if (cachedModels && cachedModels.length > 0) {
           models[providerId] = cachedModels;
         }
-        errors[providerId] = formatProviderLoadError(providerId, result.reason);
+        const providerError = formatProviderLoadError(providerId, result.reason);
+        errors[providerId] = providerError;
+        setProviderErrorState(providerId, providerError.displayText);
       }
     }
 
@@ -229,40 +240,38 @@
     const epid = effectiveProviderId;
     const currentGen = ++fetchGeneration;
     if (epid === $activeProviderId$) {
-      // Active provider matches — use global model store, clear local override
       agentProviderModels = null;
       agentProviderLoading = false;
       agentProviderError = null;
       return;
     }
 
-    // Agent provider differs from active — fetch models for the agent's provider
     agentProviderLoading = true;
     agentProviderError = null;
-    getModelsForProvider(epid)
-      .then((models) => {
+    getModelsForProviderForLoadingState(epid)
+      .then((result) => {
         if (fetchGeneration !== currentGen) return;
-        agentProviderModels = models;
+        agentProviderModels = result.models;
+        setProviderWarningState(epid, result.warning);
         agentProviderLoading = false;
       })
       .catch((err) => {
         if (fetchGeneration !== currentGen) return;
-        agentProviderError = formatProviderLoadError(epid, err).displayText;
+        const providerError = formatProviderLoadError(epid, err);
+        agentProviderError = providerError.displayText;
+        setProviderErrorState(epid, providerError.displayText);
         agentProviderLoading = false;
       });
   });
 
-  // --- Fetch models for ALL enabled providers when not locked to an agent provider ---
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     if (isAgentProviderOverride) return;
     const providerIds = $enabledProviderIds$;
-    // Debounce rapid provider changes (e.g., enabling multiple providers at once)
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
 
-  // Effective model list — agent-specific models when overriding, global otherwise
   const availableModels = $derived(
     isAgentProviderOverride
       ? agentProviderLoading
@@ -284,7 +293,6 @@
     dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
   }
 
-  // Refreshing state for per-provider refresh buttons in group headers
   let refreshingProviders = $state<Set<string>>(new Set());
 
   async function handleRefreshProvider(providerId: string) {
@@ -292,23 +300,26 @@
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const gen = fetchGeneration;
     try {
-      const models = await getModelsForProvider(providerId);
+      const result = await getModelsForProviderForLoadingState(providerId);
       if (fetchGeneration !== gen) return;
+      setProviderWarningState(providerId, result.warning);
       if (isAgentProviderOverride && providerId === effectiveProviderId) {
-        agentProviderModels = models;
+        agentProviderModels = result.models;
       } else {
         const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
         allProviderErrors = remainingErrors;
         allProviderModels = {
           ...allProviderModels,
-          [providerId]: toDropdownOptions(models),
+          [providerId]: toDropdownOptions(result.models),
         };
       }
     } catch (err) {
+      const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
         ...allProviderErrors,
-        [providerId]: formatProviderLoadError(providerId, err),
+        [providerId]: providerError,
       };
+      setProviderErrorState(providerId, providerError.displayText);
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
       const next = new Set(refreshingProviders);
@@ -317,19 +328,20 @@
     }
   }
 
-  // Legacy refreshing state for the refresh button (kept for handleRetry/handleRefreshModels)
   let isRefreshing = $state(false);
 
-  /** Handle retry button click */
   async function handleRetry() {
     if (isAgentProviderOverride) {
-      // Reload models for the agent's specific provider
       agentProviderLoading = true;
       agentProviderError = null;
       try {
-        agentProviderModels = await getModelsForProvider(effectiveProviderId);
+        const result = await getModelsForProviderForLoadingState(effectiveProviderId);
+        agentProviderModels = result.models;
+        setProviderWarningState(effectiveProviderId, result.warning);
       } catch (err: unknown) {
-        agentProviderError = formatProviderLoadError(effectiveProviderId, err).displayText;
+        const providerError = formatProviderLoadError(effectiveProviderId, err);
+        agentProviderError = providerError.displayText;
+        setProviderErrorState(effectiveProviderId, providerError.displayText);
       } finally {
         agentProviderLoading = false;
       }
@@ -345,7 +357,9 @@
     isRefreshing = true;
     try {
       if (isAgentProviderOverride) {
-        agentProviderModels = await getModelsForProvider(effectiveProviderId);
+        const result = await getModelsForProviderForLoadingState(effectiveProviderId);
+        agentProviderModels = result.models;
+        setProviderWarningState(effectiveProviderId, result.warning);
         agentProviderError = null;
       } else {
         lastFetchedProviderIds = '';
@@ -353,7 +367,9 @@
       }
     } catch (err) {
       if (isAgentProviderOverride) {
-        agentProviderError = formatProviderLoadError(effectiveProviderId, err).displayText;
+        const providerError = formatProviderLoadError(effectiveProviderId, err);
+        agentProviderError = providerError.displayText;
+        setProviderErrorState(effectiveProviderId, providerError.displayText);
       }
     } finally {
       isRefreshing = false;
@@ -559,9 +575,38 @@
 
   const nonBlockingProviderWarnings = $derived(
     hasLoadedModelOptions
-      ? providerLoadWarnings.filter((warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0)
+      ? providerLoadWarnings.filter(
+          (warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0,
+        )
       : [],
   );
+
+  const providerFallbackWarnings = $derived.by<ProviderWarningNotice[]>(() => {
+    const warnings = $allProviderWarnings$;
+
+    if (isAgentProviderOverride) {
+      const warning = getProviderWarningNotice(effectiveProviderId, warnings);
+      return warning ? [warning] : [];
+    }
+
+    return $enabledProviderIds$
+      .map((pid) => getProviderWarningNotice(pid, warnings))
+      .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
+  });
+
+  const codexFallbackWarning = $derived(
+    providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null,
+  );
+
+  const isCodexManagedInstallInstalling = $derived(
+    $codexManagedInstallStatus$?.managedInstallState === 'installing',
+  );
+
+  const codexManagedInstallProgressText = $derived.by(() => {
+    const progress = $codexManagedInstallStatus$?.downloadProgress;
+    if (typeof progress !== 'number') return 'This may take a moment.';
+    return `Download progress: ${Math.round(progress * 100)}%.`;
+  });
 
   const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
     if (loadError) {
@@ -1131,4 +1176,14 @@
       <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
     {/snippet}
   </Dropdown>
+
+  <ModelPickerProviderNotice
+    warning={isCodexManagedInstallInstalling ? 'Codex managed setup in progress' : codexFallbackWarning?.message}
+    docsUrl={isCodexManagedInstallInstalling ? undefined : codexFallbackWarning?.docsUrl}
+    show={(showProviderWarningNotice ?? variant === 'default') &&
+      (isCodexManagedInstallInstalling || Boolean(codexFallbackWarning))}
+    title={isCodexManagedInstallInstalling ? 'Setting up Codex…' : undefined}
+    description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
+    variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
+  />
 {/if}

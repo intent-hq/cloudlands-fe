@@ -5,9 +5,19 @@
  * Safe to import from any process.
  */
 
-import type { ProviderStatus } from '$shared/types/provider-availability';
+import type { ProviderStatus as SharedProviderStatus } from '$shared/types/provider-availability';
 
-export type { ProviderStatus };
+export type ManagedInstallState = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unsupported';
+
+export type ManagedInstallStatus = {
+  managedInstallState: ManagedInstallState;
+  version?: string;
+  downloadProgress?: number;
+  error?: string;
+  usingFallback?: boolean;
+};
+
+export type ProviderStatus = SharedProviderStatus & Partial<ManagedInstallStatus>;
 
 export type AgentAvailabilityState = {
   /** Per-provider status results (e.g. availability, auth details). */

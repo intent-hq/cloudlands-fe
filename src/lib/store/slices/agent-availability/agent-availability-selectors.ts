@@ -3,6 +3,7 @@
  */
 
 import { createSelector } from '../../utils/create-selector';
+import type { ManagedInstallStatus } from './agent-availability-types';
 
 export const selectProviderStatusMap = createSelector(
   (state) => state.agentAvailability.providerStatusMap,
@@ -30,4 +31,22 @@ export const selectIsAnyProviderLoading = createSelector((state) =>
 
 export const selectHasAnyAvailableProvider = createSelector((state) =>
   Object.values(state.agentAvailability.providerStatusMap).some((s) => s?.available),
+);
+
+export const selectManagedInstallStatusByProvider = createSelector(
+  (state, providerId: string): ManagedInstallStatus | null => {
+    const status = state.agentAvailability.providerStatusMap[providerId];
+    if (!status?.managedInstallState) return null;
+    return {
+      managedInstallState: status.managedInstallState,
+      version: status.version,
+      downloadProgress: status.downloadProgress,
+      error: status.error,
+      usingFallback: status.usingFallback,
+    };
+  },
+);
+
+export const selectCodexManagedInstallStatus = createSelector((state) =>
+  selectManagedInstallStatusByProvider.select(state, 'codex'),
 );

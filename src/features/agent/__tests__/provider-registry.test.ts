@@ -4,6 +4,14 @@ import type { BaseAgentProvider, AgentConfig } from '../main/agent-providers/bas
 import { ACP_PROVIDERS } from '$shared/config/provider-config';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 
+const mocks = vi.hoisted(() => ({
+  resolveCodexCommand: vi.fn(),
+}));
+
+vi.mock('../../codex/main/codex-resolver', () => ({
+  resolveCodexCommand: mocks.resolveCodexCommand,
+}));
+
 // Mock the ACP provider module - path is relative to the file being mocked (provider-registry.ts in main/)
 vi.mock('../main/agent-providers/acp-provider.js', () => {
   class MockACPProvider {
@@ -28,6 +36,8 @@ describe('ProviderRegistry', () => {
 
   beforeEach(() => {
     registry = new ProviderRegistry();
+    vi.clearAllMocks();
+    mocks.resolveCodexCommand.mockResolvedValue(null);
   });
 
   describe('register', () => {
@@ -173,6 +183,33 @@ describe('ProviderRegistry', () => {
       const provider = await defaultRegistry.create('augment', config);
       expect(provider).toBeDefined();
       expect(provider).toBeInstanceOf(Object);
+    });
+
+    it('merges resolved Codex command env into ACPProvider config env', async () => {
+      mocks.resolveCodexCommand.mockResolvedValue({
+        command: process.execPath,
+        argsPrefix: ['/managed/codex-acp.js'],
+        usesNpx: false,
+        env: { ELECTRON_RUN_AS_NODE: '1' },
+      });
+      const defaultRegistry = ProviderRegistry.createDefault();
+      const config: AgentConfig = {
+        provider: 'codex',
+        model: 'gpt-5.5',
+        env: { EXISTING_ENV: 'kept' },
+      };
+
+      const provider = await defaultRegistry.create('codex', config, false);
+
+      expect((provider as any).config.env).toEqual(
+        expect.objectContaining({ EXISTING_ENV: 'kept', ELECTRON_RUN_AS_NODE: '1' }),
+      );
+      expect((provider as any).config.command).toBe(process.execPath);
+      expect((provider as any).config.args).toEqual([
+        '/managed/codex-acp.js',
+        '-c',
+        'model="gpt-5.5"',
+      ]);
     });
 
     it('should list all providers and aliases', () => {

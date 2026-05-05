@@ -5,6 +5,7 @@
   import { toast } from '$lib/components/ui/toast';
   import { invoke, shell } from '$lib/electron-bridge';
   import { identifyUser } from '$lib/services/analytics';
+  import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
@@ -26,6 +27,7 @@
 
   const logger = createLogger('AuggieSetupGate');
   const dispatch = getDispatch();
+  const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
   // =============================================================================
   // Feature flags for testing setup UX (set one to true to test that state)
@@ -653,6 +655,12 @@
   // Filter out providers hidden by env var gate
   const providerOptions = $derived.by(() => {
     const hidden = providerAvailability?.hiddenProviders ?? [];
+    const codexManagedInstallStatus = $codexManagedInstallStatus$;
+    const codexSetupInProgress = codexManagedInstallStatus?.managedInstallState === 'installing';
+    const codexProgress = codexManagedInstallStatus?.downloadProgress;
+    const codexSetupStatus = codexSetupInProgress
+      ? `Setting up Codex…${typeof codexProgress === 'number' ? ` ${Math.round(codexProgress * 100)}%` : ''}`
+      : undefined;
     return [
       {
         id: 'auggie',
@@ -678,7 +686,8 @@
         id: 'codex',
         name: ACP_PROVIDERS.codex.displayName,
         command: ACP_PROVIDERS.codex.command,
-        installCommand: 'npm install -g @openai/codex-acp',
+        installCommand: codexSetupInProgress ? undefined : 'npm install -g @zed-industries/codex-acp',
+        setupStatus: codexSetupStatus,
         description: "OpenAI's Codex as an ACP agent",
         available: providerAvailability?.providers.codex.available ?? false,
         requiresAuth: false,
@@ -784,14 +793,22 @@
                     {/if}
                   </Button>
                 {:else}
-                  <button
-                    class="install-command-button"
-                    onclick={() => copyCommand(provider.installCommand)}
-                    title="Click to copy"
-                  >
-                    <code>{provider.installCommand}</code>
-                    <Fa icon={faPaste} class="copy-icon" size="sm" />
-                  </button>
+                  {#if provider.setupStatus}
+                    <div class="setup-status" role="status">
+                      <Fa icon={faCircleNotch} class="animate-spin" size="sm" />
+                      <span>{provider.setupStatus}</span>
+                    </div>
+                  {:else if provider.installCommand}
+                    {@const installCommand = provider.installCommand}
+                    <button
+                      class="install-command-button"
+                      onclick={() => copyCommand(installCommand)}
+                      title="Click to copy"
+                    >
+                      <code>{installCommand}</code>
+                      <Fa icon={faPaste} class="copy-icon" size="sm" />
+                    </button>
+                  {/if}
                 {/if}
                 <button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
                   <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
@@ -1069,6 +1086,15 @@
 
   .install-command-button:hover .copy-icon {
     opacity: 1;
+  }
+
+  .setup-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem;
   }
 
   .error-message {

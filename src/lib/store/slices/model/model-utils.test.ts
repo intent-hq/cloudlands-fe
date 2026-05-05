@@ -10,6 +10,7 @@ vi.mock('$features/claude-code/claude-code-models.client', () => ({
 
 vi.mock('$features/codex/codex-models.client', () => ({
   getCodexModels: vi.fn(),
+  getCodexModelsWithMetadata: vi.fn(),
 }));
 
 vi.mock('$features/cortex/cortex-models.client', () => ({
@@ -21,8 +22,12 @@ vi.mock('$features/opencode/opencode-models.client', () => ({
 }));
 
 import { getAuggieModels } from '$features/auggie/auggie-models.client';
-import { getCodexModels } from '$features/codex/codex-models.client';
-import { fetchModelsForProvider, getModelsForProvider } from './model-utils';
+import { getCodexModelsWithMetadata } from '$features/codex/codex-models.client';
+import {
+  fetchModelsForProvider,
+  getModelsForProvider,
+  getModelsForProviderForLoadingState,
+} from './model-utils';
 
 describe('model-utils', () => {
   beforeEach(() => {
@@ -37,11 +42,25 @@ describe('model-utils', () => {
   });
 
   it('prefixes non-default provider models after a successful fetch', async () => {
-    vi.mocked(getCodexModels).mockResolvedValue([{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }]);
+    vi.mocked(getCodexModelsWithMetadata).mockResolvedValue({
+      models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+    });
 
     await expect(getModelsForProvider('codex')).resolves.toEqual([
       { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
     ]);
+  });
+
+  it('preserves Codex fallback warnings for loading-state callers', async () => {
+    vi.mocked(getCodexModelsWithMetadata).mockResolvedValue({
+      models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+      warning: 'Codex not installed; using static model list',
+    });
+
+    await expect(getModelsForProviderForLoadingState('codex')).resolves.toEqual({
+      models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' }],
+      warning: 'Codex not installed; using static model list',
+    });
   });
 
   it('returns an empty model list for the mock provider without throwing', async () => {

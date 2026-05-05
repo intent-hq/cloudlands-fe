@@ -16,6 +16,7 @@ const logger = new Logger('ProviderRegistry');
 type ResolvedCommand = {
   command: string;
   argsPrefix: string[];
+  env?: Record<string, string>;
 };
 
 async function resolveProviderCommand(providerConfig: ACPProviderConfig): Promise<ResolvedCommand> {
@@ -35,7 +36,7 @@ async function resolveProviderCommand(providerConfig: ACPProviderConfig): Promis
     const { resolveCodexCommand } = await import('../../codex/main/codex-resolver');
     const resolved = await resolveCodexCommand();
     if (resolved) {
-      return { command: resolved.command, argsPrefix: resolved.argsPrefix };
+      return { command: resolved.command, argsPrefix: resolved.argsPrefix, env: resolved.env };
     }
     logger.warn('Failed to resolve codex command, falling back to config');
   }
@@ -219,7 +220,7 @@ async function getACPWithProvider(
   // Pass undefined instead of 'default' so buildProviderEnv doesn't set an invalid model
   const envModelId = rawModelId === 'default' ? undefined : rawModelId;
   const providerEnv = buildProviderEnv(providerConfig.id, envModelId, providerConfig.defaultAgent);
-  config.env = { ...(config.env || {}), ...providerEnv };
+  config.env = { ...(config.env || {}), ...(resolvedCommand.env || {}), ...providerEnv };
 
   // Safety check: warn if a model was specified but no mechanism exists to pass it
   // at spawn time. This catches the class of bug where a new provider is added without

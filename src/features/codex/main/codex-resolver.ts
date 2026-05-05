@@ -8,6 +8,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { ensureManagedCodexAcp } from './codex-acp-manager';
 
 // Common paths to look for codex-acp
 const CODEX_PATHS = [
@@ -18,15 +19,17 @@ const CODEX_PATHS = [
   path.join(os.homedir(), '.bun/bin/codex-acp'),
   path.join(os.homedir(), '.npm-global/bin/codex-acp'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-acp.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-acp'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-acp.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'codex-acp.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-acp.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-acp.cmd'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-acp'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-acp.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-acp'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-acp.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'codex-acp.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-acp.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-acp.cmd'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-acp'),
+      ]
+    : []),
 ];
 
 // Common paths to look for codex CLI
@@ -38,15 +41,17 @@ const CODEX_CLI_PATHS = [
   path.join(os.homedir(), '.bun/bin/codex'),
   path.join(os.homedir(), '.npm-global/bin/codex'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'codex.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex.cmd'),
-    path.join(os.homedir(), '.local', 'bin', 'codex'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'codex.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex.cmd'),
+        path.join(os.homedir(), '.local', 'bin', 'codex'),
+      ]
+    : []),
 ];
 
 // Common paths to look for codex MCP server binary
@@ -58,15 +63,17 @@ const CODEX_MCP_SERVER_PATHS = [
   path.join(os.homedir(), '.bun/bin/codex-mcp-server'),
   path.join(os.homedir(), '.npm-global/bin/codex-mcp-server'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-mcp-server.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-mcp-server'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-mcp-server.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'codex-mcp-server.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.cmd'),
-    path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-mcp-server.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'codex-mcp-server'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'codex-mcp-server.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'codex-mcp-server.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.exe'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server.cmd'),
+        path.join(os.homedir(), '.local', 'bin', 'codex-mcp-server'),
+      ]
+    : []),
 ];
 
 // Common paths to look for npx (fallback runner)
@@ -82,12 +89,14 @@ const NPX_PATHS = [
   path.join(os.homedir(), '.asdf/shims/npx'),
   path.join(os.homedir(), '.npm-global/bin/npx'),
   // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'npx.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'npx.exe'),
-  ] : []),
+  ...(process.platform === 'win32'
+    ? [
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx.cmd'),
+        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'npx.exe'),
+        path.join(os.homedir(), 'scoop', 'shims', 'npx.exe'),
+      ]
+    : []),
 ];
 
 let cachedCodexPath: string | null = null;
@@ -199,6 +208,13 @@ export type CodexResolvedCommand = {
   command: string;
   argsPrefix: string[];
   usesNpx: boolean;
+  env?: Record<string, string>;
+};
+
+export type CodexModelListCommandSource = 'managed-codex-acp' | 'codex-acp' | 'npx-codex-acp';
+
+export type CodexResolvedModelListCommand = CodexResolvedCommand & {
+  source: CodexModelListCommandSource;
 };
 
 /**
@@ -218,11 +234,30 @@ export async function getCodexPath(): Promise<string | null> {
   return findCodexCliPath();
 }
 
+async function resolveManagedCodexAcpCommand(): Promise<CodexResolvedCommand | null> {
+  try {
+    const { wrapperPath } = await ensureManagedCodexAcp();
+    return {
+      command: process.execPath,
+      argsPrefix: [wrapperPath],
+      usesNpx: false,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve the command to run Codex ACP.
  * Prefer a direct binary, fall back to npx with auto-approve.
  */
 export async function resolveCodexCommand(): Promise<CodexResolvedCommand | null> {
+  const managedCommand = await resolveManagedCodexAcpCommand();
+  if (managedCommand) {
+    return managedCommand;
+  }
+
   const codexPath = await findCodexPath();
   if (codexPath) {
     return { command: codexPath, argsPrefix: [], usesNpx: false };
@@ -238,6 +273,38 @@ export async function resolveCodexCommand(): Promise<CodexResolvedCommand | null
   }
 
   return null;
+}
+
+/**
+ * Resolve ordered candidates for dynamic Codex model listing.
+ *
+ * Prefer the managed Codex ACP runtime, then a user-installed codex-acp binary,
+ * then the npx bridge.
+ */
+export async function resolveCodexModelListCommands(): Promise<CodexResolvedModelListCommand[]> {
+  const candidates: CodexResolvedModelListCommand[] = [];
+
+  const managedCommand = await resolveManagedCodexAcpCommand();
+  if (managedCommand) {
+    candidates.push({ ...managedCommand, source: 'managed-codex-acp' });
+  }
+
+  const codexPath = await findCodexPath();
+  if (codexPath) {
+    candidates.push({ command: codexPath, argsPrefix: [], usesNpx: false, source: 'codex-acp' });
+  }
+
+  const npxPath = await findNpxPath();
+  if (npxPath) {
+    candidates.push({
+      command: npxPath,
+      argsPrefix: ['-y', '@zed-industries/codex-acp'],
+      usesNpx: true,
+      source: 'npx-codex-acp',
+    });
+  }
+
+  return candidates;
 }
 
 export type CodexResolvedMcpCommand = {

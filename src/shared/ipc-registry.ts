@@ -267,6 +267,8 @@ export const IPC_CHANNELS = {
   CODEX: {
     CHECK_AVAILABILITY: 'codex:check-availability',
     GET_MODELS: 'codex:get-models',
+    MANAGED_INSTALL_STATUS: 'codex/managed-install/status',
+    MANAGED_INSTALL_PROGRESS: 'codex/managed-install/progress',
   },
 
   // Cortex Integration
@@ -1211,6 +1213,8 @@ export const EVENT_CHANNELS = [
   'terminal:professional:command:finished',
   'terminal:professional:command:executed',
   'terminal:professional:cwd:changed',
+  'codex/managed-install/status',
+  'codex/managed-install/progress',
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
   'events:cleared',

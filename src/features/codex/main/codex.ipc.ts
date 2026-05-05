@@ -7,7 +7,7 @@
  */
 
 import { spawn } from 'child_process';
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as os from 'os';
 import {
   CODEX_REASONING_EFFORTS,
@@ -17,18 +17,80 @@ import {
 import { CODEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
-import { resolveCodexCommand } from './codex-resolver';
+import {
+  resolveCodexModelListCommands,
+  type CodexResolvedModelListCommand,
+} from './codex-resolver';
+import { getManagedCodexAcpStatus, type ManagedCodexAcpStatus } from './codex-acp-manager';
 
 const logger = new Logger('CodexIPC');
 
 // Cache for model listing results to avoid spawning a new process on every call
-type CodexModel = { value: string; label: string; description?: string };
+export type CodexModel = { value: string; label: string; description?: string };
+type CodexModelListSource = 'codex-acp';
+type CodexModelListProbeResult = {
+  models: CodexModel[];
+  source: CodexModelListSource | null;
+  attemptedSources: CodexResolvedModelListCommand['source'][];
+};
+type CodexManagedInstallState = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unsupported';
+type CodexManagedInstallStatusPayload = {
+  managedInstallState: CodexManagedInstallState;
+  version?: string;
+  downloadProgress?: number;
+  error?: string;
+  usingFallback?: boolean;
+};
 let cachedModels: CodexModel[] | null = null;
 let cacheTimestamp = 0;
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /** Base models that get expanded into reasoning-effort variants */
 const EFFORT_VARIANT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
+
+function toManagedInstallStatusPayload(
+  status: ManagedCodexAcpStatus,
+  overrides: Partial<CodexManagedInstallStatusPayload> = {},
+): CodexManagedInstallStatusPayload {
+  const stateMap: Record<ManagedCodexAcpStatus['state'], CodexManagedInstallState> = {
+    not_installed: 'not_installed',
+    installing: 'installing',
+    ready: 'installed',
+    error: 'failed',
+    unsupported: 'unsupported',
+  };
+  return {
+    managedInstallState: stateMap[status.state],
+    version: status.version,
+    error: status.error,
+    ...overrides,
+  };
+}
+
+function sendManagedInstallEvent(
+  channel: string,
+  payload: CodexManagedInstallStatusPayload,
+): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  }
+}
+
+function publishManagedInstallStatus(
+  overrides: Partial<CodexManagedInstallStatusPayload> = {},
+): CodexManagedInstallStatusPayload {
+  const payload = toManagedInstallStatusPayload(getManagedCodexAcpStatus(), overrides);
+  sendManagedInstallEvent(CODEX_CHANNELS.MANAGED_INSTALL_STATUS, payload);
+  return payload;
+}
+
+function publishManagedInstallProgress(
+  payload: CodexManagedInstallStatusPayload,
+): void {
+  sendManagedInstallEvent(CODEX_CHANNELS.MANAGED_INSTALL_PROGRESS, payload);
+}
 
 /**
  * Parse raw model entries from the ACP response into our UI model format.
@@ -69,56 +131,169 @@ function parseModelsFromAcpResponse(raw: any): CodexModel[] {
   return models;
 }
 
-/**
- * Dynamically fetch available models from codex-acp.
- *
- * Spawns a short-lived codex-acp process, sends initialize + session/new,
- * and parses models from the session/new response (codex-acp returns models
- * in the response, not via a notification like Claude Code).
- */
-async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
-  // Return cached results if still valid
-  const now = Date.now();
-  if (cachedModels && now - cacheTimestamp < MODEL_CACHE_TTL_MS) {
-    logger.debug('Returning cached Codex models', { count: cachedModels.length });
-    return cachedModels;
+function formatEffortLabel(effort: string): string {
+  return effort
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('-');
+}
+
+export function parseModelsFromCodexCliResponse(raw: unknown): CodexModel[] {
+  let response = raw;
+  if (typeof response === 'string') {
+    try {
+      response = JSON.parse(response);
+    } catch {
+      return [];
+    }
   }
 
-  const resolved = await resolveCodexCommand();
-  if (!resolved) return [];
+  const payload = response && typeof response === 'object' && 'result' in response ? (response as any).result : response;
+  const candidates: any[] = Array.isArray((payload as any)?.data)
+    ? (payload as any).data
+    : Array.isArray((payload as any)?.models)
+      ? (payload as any).models
+      : [];
 
-  const args = [...resolved.argsPrefix];
-  const command = resolved.command;
+  if (candidates.length === 0) return [];
 
+  const models: CodexModel[] = [];
+  for (const m of candidates) {
+    if (m?.hidden === true) continue;
+
+    const modelId = (m?.model || m?.id || m?.value || '').toString().trim();
+    if (!modelId) continue;
+
+    const baseName = (m?.displayName || m?.name || m?.label || modelId).toString().trim();
+    const baseDesc = m?.description ? String(m.description) : undefined;
+    const efforts = Array.isArray(m?.supportedReasoningEfforts)
+      ? m.supportedReasoningEfforts
+          .map((effort: any) => ({
+            value: (effort?.reasoningEffort || effort?.effort || effort || '').toString().trim(),
+            description: effort?.description ? String(effort.description) : undefined,
+          }))
+          .filter((effort: { value: string }) => effort.value.length > 0)
+      : [];
+
+    if (efforts.length > 0) {
+      for (const effort of efforts) {
+        models.push({
+          value: `${modelId}/${effort.value}`,
+          label: `${baseName} (${formatEffortLabel(effort.value)})`,
+          description:
+            baseDesc && effort.description ? `${baseDesc} — ${effort.description}` : baseDesc,
+        });
+      }
+    } else {
+      models.push({ value: modelId, label: baseName, description: baseDesc });
+    }
+  }
+
+  return models;
+}
+
+function createJsonRpcRequester(child: ReturnType<typeof spawn>, label: string) {
+  let requestId = 0;
+  let stdoutBuffer = '';
+  const pending = new Map<
+    number,
+    {
+      resolve: (value: any) => void;
+      reject: (reason: Error) => void;
+      timeout: NodeJS.Timeout;
+    }
+  >();
+
+  const onStdoutChunk = (data: Buffer) => {
+    stdoutBuffer += data.toString();
+    let newlineIndex = stdoutBuffer.indexOf('\n');
+
+    while (newlineIndex !== -1) {
+      const line = stdoutBuffer.slice(0, newlineIndex).trim();
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      newlineIndex = stdoutBuffer.indexOf('\n');
+
+      if (!line) continue;
+
+      try {
+        const msg = JSON.parse(line);
+        const request = pending.get(msg?.id);
+        if (!request) continue;
+
+        clearTimeout(request.timeout);
+        pending.delete(msg.id);
+        request.resolve(msg);
+      } catch {
+        logger.debug(`${label} emitted non-JSON stdout`, { line });
+      }
+    }
+  };
+
+  child.stdout?.on('data', onStdoutChunk as any);
+
+  return {
+    sendRequest(method: string, params?: any, timeoutMs: number = 8000) {
+      return new Promise<any>((resolveRequest, rejectRequest) => {
+        const id = ++requestId;
+        const payload = { jsonrpc: '2.0', id, method, params };
+        const timeout = setTimeout(() => {
+          pending.delete(id);
+          rejectRequest(new Error(`${label} request timed out: ${method}`));
+        }, timeoutMs);
+
+        pending.set(id, { resolve: resolveRequest, reject: rejectRequest, timeout });
+
+        try {
+          child.stdin?.write(`${JSON.stringify(payload)}\n`);
+        } catch (e) {
+          clearTimeout(timeout);
+          pending.delete(id);
+          rejectRequest(e as Error);
+        }
+      });
+    },
+    dispose() {
+      child.stdout?.off('data', onStdoutChunk as any);
+      for (const [id, request] of pending) {
+        clearTimeout(request.timeout);
+        pending.delete(id);
+      }
+    },
+  };
+}
+
+function spawnCodexProbe(command: string, args: string[], env?: Record<string, string>) {
   // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
   const useShell = process.platform === 'win32';
   // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
   const spawnCommand = useShell ? `"${command}"` : command;
 
-  return await new Promise((resolve) => {
-    const child = spawn(spawnCommand, args, {
-      cwd: os.homedir(),
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
-    });
+  return spawn(spawnCommand, args, {
+    cwd: os.homedir(),
+    env: { ...process.env, ...(env || {}) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: useShell,
+    windowsHide: true,
+  });
+}
 
-    let requestId = 0;
+async function probeCodexModelsViaAcp(
+  resolved: CodexResolvedModelListCommand,
+): Promise<CodexModel[]> {
+  const child = spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  const rpc = createJsonRpcRequester(child, 'Codex ACP');
+
+  return await new Promise((resolve) => {
     let done = false;
 
     const finish = (models: CodexModel[]) => {
       if (done) return;
       done = true;
+      rpc.dispose();
       // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
       // child.kill() only sends SIGTERM to the direct child (npx), but the actual
       // codex-acp adapter runs as a grandchild and is left orphaned.
       killChildProcessTree(child);
-      // Cache successful results
-      if (models.length > 0) {
-        cachedModels = models;
-        cacheTimestamp = Date.now();
-      }
       resolve(models);
     };
 
@@ -127,44 +302,7 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
       finish([]);
     }, 15000);
 
-    const sendRequest = (method: string, params?: any, timeoutMs: number = 8000) =>
-      new Promise<any>((resolveRequest, rejectRequest) => {
-        const id = ++requestId;
-        const payload = { jsonrpc: '2.0', id, method, params };
-
-        const perRequestTimeout = setTimeout(() => {
-          rejectRequest(new Error(`Codex ACP request timed out: ${method}`));
-        }, timeoutMs);
-
-        const onStdoutChunk = (data: Buffer) => {
-          const text = data.toString();
-          for (const l of text.split('\n')) {
-            const trimmed = l.trim();
-            if (!trimmed) continue;
-            try {
-              const msg = JSON.parse(trimmed);
-              if (msg?.id === id) {
-                clearTimeout(perRequestTimeout);
-                child.stdout.off('data', onStdoutChunk as any);
-                resolveRequest(msg);
-              }
-            } catch {
-              // ignore non-JSON lines
-            }
-          }
-        };
-
-        child.stdout.on('data', onStdoutChunk as any);
-
-        try {
-          child.stdin?.write(`${JSON.stringify(payload)}\n`);
-        } catch (e) {
-          clearTimeout(perRequestTimeout);
-          rejectRequest(e as Error);
-        }
-      });
-
-    child.stderr.on('data', (data: Buffer) => {
+    child.stderr?.on('data', (data: Buffer) => {
       const stderr = data.toString().trim();
       if (stderr) {
         logger.debug('Codex ACP stderr', { stderr });
@@ -183,7 +321,7 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
 
     (async () => {
       try {
-        await sendRequest(
+        await rpc.sendRequest(
           'initialize',
           {
             protocolVersion: 1,
@@ -193,7 +331,7 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
         );
 
         // codex-acp returns models in the session/new response directly
-        const sessionResponse = await sendRequest(
+        const sessionResponse = await rpc.sendRequest(
           'session/new',
           {
             cwd: os.homedir(),
@@ -208,16 +346,12 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
         );
 
         const models = parseModelsFromAcpResponse(sessionResponse?.result);
-        if (models.length > 0) {
-          clearTimeout(timeoutId);
-          finish(models);
-          return;
+        if (models.length === 0) {
+          logger.debug('No models found in Codex ACP session/new response');
         }
 
-        // If no models in the response, let the overall timeout handle it
-        logger.debug('No models found in Codex ACP session/new response');
         clearTimeout(timeoutId);
-        finish([]);
+        finish(models);
       } catch (e) {
         logger.debug('Codex ACP model probe failed', { error: (e as Error).message });
         clearTimeout(timeoutId);
@@ -227,17 +361,71 @@ async function listCodexModelsViaAcp(): Promise<CodexModel[]> {
   });
 }
 
+/**
+ * Dynamically fetch available models from codex-acp.
+ */
+async function listCodexModelsDynamically(): Promise<CodexModelListProbeResult> {
+  // Return cached results if still valid
+  const now = Date.now();
+  if (cachedModels && now - cacheTimestamp < MODEL_CACHE_TTL_MS) {
+    logger.debug('Returning cached Codex models', { count: cachedModels.length });
+    return { models: cachedModels, source: null, attemptedSources: [] };
+  }
+
+  const startingStatus = getManagedCodexAcpStatus();
+  if (startingStatus.state !== 'ready' && startingStatus.state !== 'unsupported') {
+    publishManagedInstallProgress(
+      toManagedInstallStatusPayload(startingStatus, {
+        managedInstallState: 'installing',
+        downloadProgress: 0,
+        usingFallback: false,
+      }),
+    );
+  }
+
+  const candidates = await resolveCodexModelListCommands();
+  publishManagedInstallStatus({ downloadProgress: getManagedCodexAcpStatus().state === 'ready' ? 1 : undefined });
+  const attemptedSources = candidates.map((candidate) => candidate.source);
+
+  for (const candidate of candidates) {
+    const source: CodexModelListSource = 'codex-acp';
+    logger.info('Querying dynamic Codex model list', {
+      source,
+      command: candidate.command,
+      usesNpx: candidate.usesNpx,
+    });
+
+    const models = await probeCodexModelsViaAcp(candidate);
+
+    if (models.length > 0) {
+      cachedModels = models;
+      cacheTimestamp = Date.now();
+      logger.info('Using dynamic Codex model list', { source, count: models.length });
+      publishManagedInstallStatus({ downloadProgress: 1, usingFallback: false });
+      return { models, source, attemptedSources };
+    }
+  }
+
+  return { models: [], source: null, attemptedSources };
+}
+
 export function setupCodexIPC() {
-  // Check if codex-acp is available
+  ipcMain.handle(CODEX_CHANNELS.MANAGED_INSTALL_STATUS, async () => ({
+    success: true,
+    data: toManagedInstallStatusPayload(getManagedCodexAcpStatus()),
+  }));
+
+  // Check if a Codex model-listing path is available
   ipcMain.handle(CODEX_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
-      logger.debug('Checking codex-acp availability');
-      const resolved = await resolveCodexCommand();
-      const isAvailable = !!resolved;
+      logger.debug('Checking Codex availability');
+      const candidates = await resolveCodexModelListCommands();
+      const isAvailable = candidates.length > 0;
       logger.info('Codex availability check', {
         isAvailable,
-        command: resolved?.command,
-        usesNpx: resolved?.usesNpx,
+        sources: candidates.map((candidate) => candidate.source),
+        command: candidates[0]?.command,
+        usesNpx: candidates[0]?.usesNpx,
       });
       return { success: true, available: isAvailable };
     } catch (error) {
@@ -249,29 +437,35 @@ export function setupCodexIPC() {
   // Get available models for Codex — try dynamic ACP listing first, fall back to static list
   ipcMain.handle(CODEX_CHANNELS.GET_MODELS, async () => {
     try {
-      const resolved = await resolveCodexCommand();
-
-      if (resolved) {
-        const dynamicModels = await listCodexModelsViaAcp();
-        if (dynamicModels.length > 0) {
-          logger.info('Returning dynamic Codex model list', { count: dynamicModels.length });
-          return { success: true, data: dynamicModels };
-        }
+      const dynamicResult = await listCodexModelsDynamically();
+      if (dynamicResult.models.length > 0) {
+        logger.info('Returning dynamic Codex model list', {
+          source: dynamicResult.source ?? 'cache',
+          count: dynamicResult.models.length,
+        });
+        return { success: true, data: dynamicResult.models };
       }
 
-      // Fall back to static list when codex is not installed or ACP probe returned no models
+      // Fall back to static list when codex is not installed or dynamic probes returned no models
       const staticModels = getCodexModelList();
-      logger.info('Falling back to static Codex model list', { count: staticModels.length });
+      logger.info('Using static Codex model list', {
+        source: 'static',
+        attemptedSources: dynamicResult.attemptedSources,
+        count: staticModels.length,
+      });
+      publishManagedInstallStatus({ usingFallback: true });
       return {
         success: true,
         data: staticModels,
-        warning: resolved
-          ? 'Codex ACP model list unavailable; using static model list'
-          : 'Codex not installed; using static model list',
+        warning:
+          dynamicResult.attemptedSources.length > 0
+            ? 'Codex dynamic model list unavailable; using static model list'
+            : 'Codex not installed; using static model list',
       };
     } catch (error) {
       logger.warn('Could not get models for Codex', { error: (error as Error).message });
       const staticModels = getCodexModelList();
+      publishManagedInstallStatus({ usingFallback: true });
       return {
         success: true,
         data: staticModels,
@@ -292,13 +486,11 @@ export function setupCodexIPC() {
  */
 export async function getCachedCodexModels(): Promise<string[] | null> {
   try {
-    const resolved = await resolveCodexCommand();
-    if (resolved) {
-      const dynamic = await listCodexModelsViaAcp();
-      if (dynamic.length > 0) {
-        return dynamic.map((m) => m.value);
-      }
+    const dynamic = await listCodexModelsDynamically();
+    if (dynamic.models.length > 0) {
+      return dynamic.models.map((m) => m.value);
     }
+
     const staticModels = getCodexModelList();
     if (staticModels.length === 0) return null;
     return staticModels.map((m) => m.value);

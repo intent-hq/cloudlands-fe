@@ -6,7 +6,7 @@
 
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
-import type { AgentAvailabilityState, ProviderStatus } from './agent-availability-types';
+import type { AgentAvailabilityState, ManagedInstallStatus, ProviderStatus } from './agent-availability-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -79,6 +79,11 @@ export const ensureProvidersChecked = createAction(
   'agentAvailability/ensureProvidersChecked',
 );
 
+export const setManagedInstallStatus = createAction<[
+  providerId: string,
+  status: Partial<ManagedInstallStatus>,
+]>('agentAvailability/setManagedInstallStatus');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -128,6 +133,19 @@ export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(in
     ...state,
     providerUserInfoLoadingMap: { ...state.providerUserInfoLoadingMap, [providerId]: false },
   }))
+  .with(setManagedInstallStatus, (state, { payload: [providerId, managedStatus] }) => {
+    const existing = state.providerStatusMap[providerId] ?? { available: false };
+    return {
+      ...state,
+      providerStatusMap: {
+        ...state.providerStatusMap,
+        [providerId]: {
+          ...existing,
+          ...managedStatus,
+        },
+      },
+    };
+  })
   .with(trackInstallTerminal, (state, { payload: [terminalId] }) => {
     if (state.watchedTerminalIds.includes(terminalId)) return state;
     return {

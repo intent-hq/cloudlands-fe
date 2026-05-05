@@ -97,6 +97,14 @@ const MAX_TOOL_CONTENT_CHARS = 4_000;
 // with error: "messages.1.content.1.tool_use.name: String should have at most 200 characters"
 const MAX_TOOL_NAME_CHARS = 200;
 
+// Bounded stderr context to include when an ACP prompt response only reports a
+// generic JSON-RPC error such as "Internal error" while the provider printed the
+// actionable cause to stderr.
+const MAX_RECENT_STDERR_ERRORS = 5;
+const MAX_RECENT_STDERR_ENTRY_CHARS = 10_000;
+const MAX_PROMPT_STDERR_LINES = 5;
+const MAX_PROMPT_STDERR_CHARS = 1_000;
+
 /**
  * Common text file extensions used to determine if a file attachment
  * should be inlined as text or referenced as binary.
@@ -1044,6 +1052,103 @@ export function deriveSafeRawErrorMessage(
   return (typeof message === 'string' && message) || fallback;
 }
 
+function stripAnsiCodes(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, '').trim();
+}
+
+function extractFirstJsonObject(value: string): string | null {
+  const start = value.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < value.length; i++) {
+    const char = value[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === '{') {
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (depth === 0) {
+        return value.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractCodexAcpStderrErrorMessage(stderr: string): string | null {
+  const clean = stripAnsiCodes(stderr);
+  const marker = 'Unhandled error during turn:';
+  const markerIndex = clean.indexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const jsonText = extractFirstJsonObject(clean.slice(markerIndex + marker.length));
+  if (!jsonText) return null;
+
+  const payload = safeJsonParse<{
+    error?: { message?: unknown };
+    message?: unknown;
+  }>(jsonText);
+
+  const nestedMessage = payload?.error?.message;
+  if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+    return nestedMessage.trim();
+  }
+
+  const message = payload?.message;
+  if (typeof message === 'string' && message.trim()) {
+    return message.trim();
+  }
+
+  return null;
+}
+
+export function formatRecentStderrForPromptError(
+  recentStderrErrors: readonly string[],
+): string | undefined {
+  for (let i = recentStderrErrors.length - 1; i >= 0; i--) {
+    const parsed = extractCodexAcpStderrErrorMessage(recentStderrErrors[i]);
+    if (parsed) return parsed;
+  }
+
+  const stderrTail = recentStderrErrors
+    .flatMap((entry) => stripAnsiCodes(entry).split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-MAX_PROMPT_STDERR_LINES)
+    .join('\n')
+    .trim();
+
+  return stderrTail ? truncateMiddleContent(stderrTail, MAX_PROMPT_STDERR_CHARS) : undefined;
+}
+
+export function derivePromptErrorSafeFallbackMessage(
+  error: { message?: unknown } | null | undefined,
+  recentStderrErrors: readonly string[],
+): string | undefined {
+  return (
+    formatRecentStderrForPromptError(recentStderrErrors) ||
+    (typeof error?.message === 'string' ? error.message : undefined)
+  );
+}
+
 /**
  * Extracts only non-sensitive diagnostic fields from a JSON-RPC error response.
  * Used for error logging so future 400/invalidArgument failures stay actionable
@@ -1486,6 +1591,18 @@ export class ACPProvider extends BaseAgentProvider {
 
   // Promise chain for sequential message processing - ensures permission requests block subsequent messages
   private messageProcessingChain: Promise<void> = Promise.resolve();
+
+  private bufferRecentStderrError(stderr: string): void {
+    const boundedStderr =
+      stderr.length > MAX_RECENT_STDERR_ENTRY_CHARS
+        ? truncateMiddleContent(stderr, MAX_RECENT_STDERR_ENTRY_CHARS)
+        : stderr;
+
+    this.recentStderrErrors.push(boundedStderr);
+    if (this.recentStderrErrors.length > MAX_RECENT_STDERR_ERRORS) {
+      this.recentStderrErrors.shift();
+    }
+  }
 
   // Status callback for lifecycle phase events (set before streamMessage to capture early events)
   private statusCallback?: (data: StatusEventData) => void;
@@ -3318,10 +3435,7 @@ export class ACPProvider extends BaseAgentProvider {
 
           // Buffer recent stderr errors so we can include them in user-facing error messages
           // when streams fail with no content (e.g., "Unable to connect. Failed to fetch models.dev")
-          this.recentStderrErrors.push(stderr);
-          if (this.recentStderrErrors.length > 5) {
-            this.recentStderrErrors.shift();
-          }
+          this.bufferRecentStderrError(stderr);
 
           // Detect MCP server startup errors and forward to renderer UI
           // Auggie prints these with ANSI color codes:
@@ -3966,6 +4080,7 @@ export class ACPProvider extends BaseAgentProvider {
                 stderr.includes('ERROR')
               ) {
                 logger.error('Remote agent stderr error', { stderr });
+                this.bufferRecentStderrError(stderr);
 
                 // CRITICAL: Detect OpenCode's "agent.name undefined" error
                 if (
@@ -4414,6 +4529,7 @@ export class ACPProvider extends BaseAgentProvider {
                   stderr.includes('ERROR')
                 ) {
                   logger.error('Remote agent stderr error (after reconnection)', { stderr });
+                  this.bufferRecentStderrError(stderr);
                 } else {
                   logger.debug('Remote agent stderr output (after reconnection)', { stderr });
                 }
@@ -8495,6 +8611,10 @@ export class ACPProvider extends BaseAgentProvider {
                       httpUrl?: string;
                     }
                   | undefined;
+                const safeFallbackMessage = derivePromptErrorSafeFallbackMessage(
+                  response.error,
+                  this.recentStderrErrors,
+                );
 
                 // Check if this is a model not available error (404)
                 // If so, try to switch to a fallback model and retry using the recursive helper
@@ -8705,9 +8825,7 @@ export class ACPProvider extends BaseAgentProvider {
                           this.providerCapabilities.id,
                           errorData,
                           this.config.workspaceId,
-                          typeof response.error.message === 'string'
-                            ? response.error.message
-                            : undefined,
+                          safeFallbackMessage,
                           true,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
@@ -8729,9 +8847,7 @@ export class ACPProvider extends BaseAgentProvider {
                         this.providerCapabilities.id,
                         errorData,
                         this.config.workspaceId,
-                        typeof response.error.message === 'string'
-                          ? response.error.message
-                          : undefined,
+                        safeFallbackMessage,
                         true,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
@@ -8856,9 +8972,7 @@ export class ACPProvider extends BaseAgentProvider {
                           this.providerCapabilities.id,
                           errorData,
                           this.config.workspaceId,
-                          typeof response.error.message === 'string'
-                            ? response.error.message
-                            : undefined,
+                          safeFallbackMessage,
                           true,
                         );
                         const completionSessionId = this.frontendSessionId || callbackSessionId;
@@ -8882,9 +8996,7 @@ export class ACPProvider extends BaseAgentProvider {
                         this.providerCapabilities.id,
                         errorData,
                         this.config.workspaceId,
-                        typeof response.error.message === 'string'
-                          ? response.error.message
-                          : undefined,
+                        safeFallbackMessage,
                         true,
                       );
                       const completionSessionId = this.frontendSessionId || callbackSessionId;
@@ -9010,8 +9122,9 @@ export class ACPProvider extends BaseAgentProvider {
 
                 // Create user-friendly error message. `rawErrorMessage` is used only
                 // for keyword classification; for unclassified errors the function
-                // falls back to `response.error.message` (safe top-level JSON-RPC
-                // message) rather than the raw HTTP body in `data.details`.
+                // falls back to the recent stderr-derived message (when present) or
+                // `response.error.message` rather than the raw HTTP body in
+                // `data.details`.
                 //
                 // Terminal path: this branch is reached when the session-recovery
                 // or transient-retry budget is exhausted, or the error isn't
@@ -9025,9 +9138,7 @@ export class ACPProvider extends BaseAgentProvider {
                   this.providerCapabilities.id,
                   errorData,
                   this.config.workspaceId,
-                  typeof response.error.message === 'string'
-                    ? response.error.message
-                    : undefined,
+                  safeFallbackMessage,
                   true,
                 );
 
@@ -9035,8 +9146,7 @@ export class ACPProvider extends BaseAgentProvider {
                 // requestId/errorDetails) so 400/invalidArgument failures stay
                 // actionable without echoing prompt content or tool payloads.
                 // Neither `rawErrorMessage` nor `userFriendlyMessage` are logged
-                // here: both may be sourced from response.error.data.details
-                // (raw HTTP body) via the fallback path.
+                // here; userFriendlyMessage may include user-facing provider stderr.
                 logger.error('Prompt response returned error from agent', {
                   errorCode,
                   errorMessage:
@@ -9107,6 +9217,10 @@ export class ACPProvider extends BaseAgentProvider {
                     this.cleanupStreamingCallback(sessionIdToClean);
                   }
                 }
+
+                // The stderr context has now been surfaced to the caller; clear it
+                // so an unrelated future prompt error cannot inherit stale stderr.
+                this.recentStderrErrors = [];
 
                 // Reject instead of resolve - use user-friendly message
                 reject(new Error(userFriendlyMessage));
