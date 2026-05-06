@@ -24,10 +24,13 @@ import {
   addAgentMessage,
   removeAgentMessage,
   replaceAgentMessageById,
+  updateAgentMessage,
   recordAgentCreatedEvent,
   cleanupAgentCreatedEvents,
   triggerBackendStreamReconnect,
 } from "../workspace-agents-slice";
+import { streamCompleted } from "../../chat-state/chat-state-slice";
+import type { AgentIdlePayload } from "$features/events/types";
 import {
   selectAgentById,
   selectDiskMessageCount,
@@ -81,6 +84,91 @@ export function* watchStreamDisconnectedSaga() {
     ec("agent:stream:disconnected"),
     function* (data) {
       yield* call(handleStreamDisconnected, data);
+    },
+  );
+}
+
+// ============================================================================
+// 1b. agent:idle — reconcile stale streaming flags
+//
+// The session-level `isStreaming`/`isProcessing` flags and per-message
+// `isStreaming` flags are normally cleared by ChatService when it receives
+// the per-stream `complete` event on `agent:stream:${sessionId}`. That path
+// only fires for agents whose chat panel has registered a stream handler.
+// Delegated/background agents that never had a chat handler attached — or
+// agents whose `complete` event was lost due to a congested IPC pipe — end
+// up stuck with `isStreaming: true`, which causes the agent overview to
+// keep rendering them as "responding" indefinitely.
+//
+// `agent:idle` is the backend's authoritative "this turn is done" signal.
+// Treat it as a reconciliation point: clear the stale flags on the session
+// and on any in-flight assistant messages.
+// ============================================================================
+
+/** Exported for testing */
+export function* handleAgentIdle(data: AgentIdlePayload): SagaGenerator<void> {
+  const agentId = data?.agentId;
+  if (!agentId) return;
+
+  const session: AgentSession | undefined = yield* selectAgentById.effect(agentId);
+  if (!session) return;
+
+  // Prefer the session's own workspaceId so we never write to an unrelated
+  // workspace if the event payload's workspaceId is missing or stale.
+  const wsId = session.workspaceId || data.workspaceId;
+  if (!wsId) {
+    logger.warn("Cannot reconcile streaming state on agent:idle: no workspaceId", { agentId });
+    return;
+  }
+
+  // Detect stale state. Only dispatch reconciling actions if there's
+  // actually something to clean up. This keeps this handler as a strict
+  // fallback: when ChatService has already processed the per-stream
+  // `complete` event (the healthy path), there is nothing to do here and
+  // we avoid redundant dispatches that could otherwise race with a queued
+  // message's freshly-starting stream on the same agent.
+  let hasInFlightMessage = false;
+  const inFlightMessages: AgentMessage[] = [];
+  for (const message of session.messages || []) {
+    if (message.role !== "assistant") continue;
+    if (message.isStreaming || message.streamingComplete === false) {
+      hasInFlightMessage = true;
+      inFlightMessages.push(message);
+    }
+  }
+  const sessionStuckStreaming = !!(session.isStreaming || session.isProcessing);
+  if (!hasInFlightMessage && !sessionStuckStreaming) {
+    return;
+  }
+
+  // Mark any in-flight assistant messages as no-longer-streaming.
+  // getNodeStatus() in graph-helpers reads
+  // `lastAssistantMsg.isStreaming || lastAssistantMsg.streamingComplete === false`,
+  // so leaving these set keeps the overview's "responding" indicator on.
+  for (const message of inFlightMessages) {
+    yield* put(updateAgentMessage(wsId, agentId, message.id, {
+      isStreaming: false,
+      streamingComplete: true,
+    }));
+  }
+
+  // Clear session-level isStreaming/isProcessing only if currently set.
+  // The agent-session slice reduces `streamCompleted` by setting both flags
+  // to false (single source of truth for the agent overview's status
+  // computation).
+  if (sessionStuckStreaming) {
+    yield* put(streamCompleted(agentId, {
+      lastAttemptedMessage: null,
+      modelUnavailable: null,
+    }));
+  }
+}
+
+export function* watchAgentIdleSaga() {
+  yield* takeEveryFromElectronChannel<AgentIdlePayload>(
+    ec("agent:idle"),
+    function* (data) {
+      yield* call(handleAgentIdle, data);
     },
   );
 }
@@ -694,6 +782,7 @@ export function* agentIpcSaga() {
   if (typeof window === "undefined") return;
 
   yield* fork(watchStreamDisconnectedSaga);
+  yield* fork(watchAgentIdleSaga);
   yield* fork(watchStreamStartingSaga);
   yield* fork(watchPrepareHandlerSaga);
   yield* fork(watchAgentCreatedIpcSaga);

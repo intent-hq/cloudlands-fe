@@ -91,18 +91,24 @@ vi.mock("$lib/utils/client-logger", () => ({
   }),
 }));
 
-vi.mock("../workspace-agents-selectors", () => ({
-  selectAgentById: {
-    select: (_state: any, _agentId: string) => {
-      const result = selectState.results[selectState.index] ?? undefined;
-      selectState.index++;
-      return result;
+vi.mock("../workspace-agents-selectors", () => {
+  const selectAgentByIdImpl = (_state: any, _agentId: string) => {
+    const result = selectState.results[selectState.index] ?? undefined;
+    selectState.index++;
+    return result;
+  };
+  return {
+    selectAgentById: {
+      select: selectAgentByIdImpl,
+      effect: function* (agentId: string) {
+        return yield sagaEffects.select(selectAgentByIdImpl, agentId);
+      },
     },
-  },
-  selectDiskMessageCount: { select: () => 0 },
-  selectRecentAgentCreatedEvent: { select: () => undefined },
-  selectRecentAgentCreatedEventsCount: { select: () => 0 },
-}));
+    selectDiskMessageCount: { select: () => 0 },
+    selectRecentAgentCreatedEvent: { select: () => undefined },
+    selectRecentAgentCreatedEventsCount: { select: () => 0 },
+  };
+});
 
 vi.mock("../../workspace/workspace-selectors", () => ({
   selectActiveWorkspaceId: { select: () => "active-ws-id" },
@@ -125,8 +131,9 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 }));
 
 // Import after mocks
-import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate, handleStreamDisconnected } from "./agent-ipc-saga";
-import { setAgentStreaming, removeAgentMessage, replaceAgentMessageById } from "../workspace-agents-slice";
+import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate, handleStreamDisconnected, handleAgentIdle } from "./agent-ipc-saga";
+import { setAgentStreaming, removeAgentMessage, replaceAgentMessageById, updateAgentMessage } from "../workspace-agents-slice";
+import { streamCompleted } from "../../chat-state/chat-state-slice";
 
 const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   id: "agent-1",
@@ -582,5 +589,259 @@ describe("handleExistingSessionUpdate — in-place replacement preserves order",
     // Should NOT dispatch removeMessage
     const removeOps = dispatched.filter((a) => a.type === "agentSessions/removeMessage");
     expect(removeOps.length).toBe(0);
+  });
+});
+
+
+// ============================================================================
+// handleAgentIdle — backend authoritative "turn done" reconciliation
+//
+// The agent overview reads `session.isStreaming`/`session.isProcessing` and
+// `lastAssistantMsg.isStreaming`/`streamingComplete` to decide if an agent
+// is "responding". When ChatService misses the per-stream `complete` event
+// (e.g. delegated agent never had a chat handler, or IPC was congested),
+// these flags get stuck. `agent:idle` is the backend's authoritative signal,
+// and the saga must clear all stale flags so the overview matches reality.
+// ============================================================================
+
+describe("handleAgentIdle", () => {
+  beforeEach(() => {
+    selectState.index = 0;
+    selectState.results = [];
+  });
+
+  it("dispatches streamCompleted to clear session-level streaming flags", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, isStreaming: true });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-A" },
+    ).toPromise();
+
+    const completedAction = dispatched.find((a) => a.type === streamCompleted.type);
+    expect(completedAction).toBeDefined();
+    expect(completedAction.payload[0]).toBe("agent-1");
+    expect(completedAction.payload[1]).toEqual({
+      lastAttemptedMessage: null,
+      modelUnavailable: null,
+    });
+  });
+
+  it("clears isStreaming on in-flight assistant messages", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      isStreaming: true,
+      messages: [
+        { id: "msg-user-1", role: "user", contentBlocks: [], timestamp: "" } as any,
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-A" },
+    ).toPromise();
+
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].payload).toEqual([
+      "ws-A",
+      "agent-1",
+      "msg-asst-1",
+      { isStreaming: false, streamingComplete: true },
+    ]);
+  });
+
+  it("clears messages with streamingComplete === false even when isStreaming is unset", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", streamingComplete: false } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].payload[3]).toEqual({ isStreaming: false, streamingComplete: true });
+  });
+
+  it("does not dispatch updates for messages that are already finalized", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: false, streamingComplete: true } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(updates).toHaveLength(0);
+  });
+
+  it("prefers session.workspaceId over the event payload's workspaceId", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-WRONG" },
+    ).toPromise();
+
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(updates[0].payload[0]).toBe("ws-A");
+  });
+
+  it("falls back to the event's workspaceId when the session has none", async () => {
+    const session = makeSession({
+      workspaceId: "" as any,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-fallback" },
+    ).toPromise();
+
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(updates[0].payload[0]).toBe("ws-fallback");
+  });
+
+  it("skips when session is not found", async () => {
+    selectState.results = [undefined];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-missing", workspaceId: "ws-A" },
+    ).toPromise();
+
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it("skips when no agentId is provided", async () => {
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { workspaceId: "ws-A" } as any,
+    ).toPromise();
+
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it("skips when neither session nor payload has a workspaceId", async () => {
+    const session = makeSession({ workspaceId: "" as any, isStreaming: true });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1" },
+    ).toPromise();
+
+    expect(dispatched).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // Guard: only act if there is stale state to clean up. This keeps the
+  // handler as a strict fallback so it cannot interfere with the healthy
+  // path (where ChatService has already cleared the flags) or with a
+  // queued message's freshly-starting stream on the same agent.
+  // ---------------------------------------------------------------------
+  it("dispatches nothing when session flags are already cleared and no in-flight messages", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      isStreaming: false,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", streamingComplete: true } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-A" },
+    ).toPromise();
+
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it("does not dispatch streamCompleted when session flags are already cleared (only finalizes in-flight messages)", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      isStreaming: false,
+      messages: [
+        { id: "msg-asst-1", role: "assistant", contentBlocks: [], timestamp: "", streamingComplete: false } as any,
+      ],
+    });
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-A" },
+    ).toPromise();
+
+    const completed = dispatched.filter((a) => a.type === streamCompleted.type);
+    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    expect(completed).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+  });
+
+  it("dispatches streamCompleted when isProcessing is set even if isStreaming is false", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      isStreaming: false,
+      isProcessing: true,
+    } as any);
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-A" },
+    ).toPromise();
+
+    const completed = dispatched.filter((a) => a.type === streamCompleted.type);
+    expect(completed).toHaveLength(1);
   });
 });
