@@ -836,15 +836,23 @@
   }
 
   /* Links */
-  .markdown-viewer :global(.markdown-link) {
-    color: var(--color-primary);
+  .markdown-viewer :global(a) {
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
   }
 
-  .markdown-viewer :global(.markdown-link:hover) {
+  .markdown-viewer :global(.markdown-link) {
+    color: var(--color-primary);
+  }
+
+  .markdown-viewer :global(a:hover),
+  .markdown-viewer :global(a:focus-visible) {
+    text-decoration: underline;
     text-decoration-thickness: 2px;
+  }
+
+  .markdown-viewer :global(.markdown-link:hover) {
     opacity: 0.8;
   }
 

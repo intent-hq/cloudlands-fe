@@ -315,6 +315,19 @@
   margin-bottom: 0;
 }
 
+/* Links */
+.tiptap-editor a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tiptap-editor a:hover,
+.tiptap-editor a:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
 .tiptap-editor h1,
 .tiptap-editor h2,
 .tiptap-editor h3 {
