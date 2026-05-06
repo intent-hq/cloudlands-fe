@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import WorkspaceStatusCard from '$lib/components/workspace/WorkspaceStatusCard.svelte';
+  import WorkspaceTableView from '$lib/components/workspace/WorkspaceTableView.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import type {
     WorkspacePhaseInfo,
@@ -8,6 +9,8 @@
     WorkspacePhase,
   } from '$lib/components/workspace/workspace-phase';
   import { PHASE_META } from '$lib/components/workspace/workspace-phase';
+  import type { Workspace } from '$shared/types';
+  import { WorkspaceStatusEnum } from '$shared/types';
 
   onMount(() => {
     console.log('[test-workspace-cards] Page mounted successfully');
@@ -276,6 +279,53 @@
     },
   ];
 
+  const longTitleRegressionUpdatedAt = '2026-05-06T12:00:00.000Z';
+  const longTitleRegressionOwner =
+    'organization-with-an-extremely-long-owner-name-for-layout-regression';
+  const longTitleRegressionRepo =
+    'repository-name-that-should-truncate-in-the-home-workspace-column-header';
+
+  function makeTableWorkspace(
+    overrides: Partial<Workspace> & Pick<Workspace, 'id' | 'title'>,
+  ): Workspace {
+    return {
+      branch: 'main',
+      changesets: [],
+      conversationInfo: [],
+      createdAt: longTitleRegressionUpdatedAt,
+      lastActivity: longTitleRegressionUpdatedAt,
+      status: WorkspaceStatusEnum.Active,
+      taskStats: { total: 3, completed: 1, inProgress: 1 },
+      timeline: [],
+      updatedAt: longTitleRegressionUpdatedAt,
+      ...overrides,
+    };
+  }
+
+  const longTitleTableWorkspaces: Workspace[] = [
+    makeTableWorkspace({
+      id: 'long-title-regression-primary' as Workspace['id'],
+      title:
+        'Investigate and repair the home workspace columns when the workspace title is extraordinarily long and should ellipsize instead of widening its column',
+      branch: 'fix/extremely-long-home-workspace-title-regression',
+      repositoryOwner: longTitleRegressionOwner,
+      repositoryName: longTitleRegressionRepo,
+      repositoryPath: `/repos/${longTitleRegressionOwner}/${longTitleRegressionRepo}`,
+    }),
+    makeTableWorkspace({
+      id: 'long-title-regression-secondary' as Workspace['id'],
+      title: 'Short comparison workspace',
+      branch: 'main',
+      repositoryOwner: 'acme',
+      repositoryName: 'compact-repo',
+      repositoryPath: '/repos/acme/compact-repo',
+    }),
+  ];
+
+  function handleTableOpen(workspace: Workspace) {
+    console.log('open table fixture workspace', workspace.title);
+  }
+
   function handleAction(action: string) {
     console.log('Action:', action);
   }
@@ -283,9 +333,7 @@
 
 <div class="p-8 max-w-5xl mx-auto">
   <h1 class="text-2xl font-bold mb-1">Workspace Status Cards</h1>
-  <p class="text-subtle mb-10 text-sm">
-    Visual sandbox — all variants, phases, and edge cases
-  </p>
+  <p class="text-subtle mb-10 text-sm">Visual sandbox — all variants, phases, and edge cases</p>
 
   <!-- 0. Interactive click-through -->
   <section class="mb-12">
@@ -324,9 +372,7 @@
                   : 'text-subtle'}">{PHASE_META[p].label}</span
             >
             {#if isCurrentPhase}
-              <span class="text-ui text-subtle ml-auto"
-                >{currentInteractive.phase.subtitle}</span
-              >
+              <span class="text-ui text-subtle ml-auto">{currentInteractive.phase.subtitle}</span>
             {/if}
           </div>
         {/each}
@@ -470,6 +516,25 @@
           />
         {/each}
       </div>
+    </div>
+  </section>
+
+  <!-- 8. Workspace table long-title regression -->
+  <section class="mb-12">
+    <h2 class="text-lg font-semibold mb-2">Workspace Table Long-Title Regression</h2>
+    <p class="text-sm text-subtle mb-4 max-w-2xl">
+      Demonstrates grouped home workspace columns with a very long repository label and workspace
+      title. Expected: columns stay equal width, long labels truncate with ellipsis, and the preview
+      does not horizontally scroll.
+    </p>
+    <div class="bg-sidebar border border-border rounded-2xl p-6 overflow-hidden max-w-4xl">
+      <WorkspaceTableView
+        workspaces={longTitleTableWorkspaces}
+        showArchived={false}
+        groupByRepo={true}
+        searchQuery=""
+        onOpen={handleTableOpen}
+      />
     </div>
   </section>
 </div>

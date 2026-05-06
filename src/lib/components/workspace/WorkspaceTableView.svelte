@@ -455,7 +455,7 @@
 
 <!-- When grouped by repo, use explicit flexbox columns for masonry layout -->
 {#if groupByRepo}
-  <div class="flex gap-9" bind:clientWidth>
+  <div class="flex min-w-0 gap-9" bind:clientWidth>
     {#if filteredWorkspaces.length === 0 && masonryOrderedColumns.flat().length === 0}
       <div
         class="w-full pt-8 text-center text-subtle text-sm"
@@ -469,11 +469,11 @@
       </div>
     {:else}
       {#each masonryOrderedColumns as column}
-        <div class="flex-1 flex flex-col gap-10">
+        <div class="flex-1 min-w-0 flex flex-col gap-10">
           {#each column as group (group.key)}
             {@const isCollapsed = collapsedGroups.has(group.key)}
             <div
-              class="bg-background border border-border shadow-xs rounded-xl overflow-hidden"
+              class="min-w-0 bg-background border border-border shadow-xs rounded-xl overflow-hidden"
               in:receive={{ key: group.key }}
               out:send={{ key: group.key }}
             >

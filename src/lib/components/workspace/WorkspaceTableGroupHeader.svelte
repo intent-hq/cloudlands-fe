@@ -37,27 +37,29 @@
 </script>
 
 <div
-  class="group/header relative flex items-center justify-between w-full {isCollapsed
+  class="group/header relative flex min-w-0 items-center justify-between w-full {isCollapsed
     ? ''
     : 'border-b border-border/40'}"
 >
   <button
-    class="relative flex items-center gap-2.5 flex-1 h-10 px-4.5 text-left hover:bg-muted/30 transition-colors cursor-pointer"
+    class="relative flex min-w-0 items-center gap-2.5 flex-1 h-10 pl-4.5 pr-14 text-left hover:bg-muted/30 transition-colors cursor-pointer"
     onclick={onToggle}
   >
     {#if isGithub && owner}
       <img
         src={getGitHubAvatarUrl(owner, 32)}
         alt={owner}
-        class="w-5 h-5 rounded-full"
+        class="w-5 h-5 shrink-0 rounded-full"
         loading="lazy"
       />
     {:else}
-      <span class="text-subtle">
+      <span class="shrink-0 text-subtle">
         <Fa icon={faFolder} size="sm" />
       </span>
     {/if}
-    <span class="flex-1 text-[13px] font-medium text-subtle">{label}</span>
+    <span class="flex-1 min-w-0 truncate text-[13px] font-medium text-subtle" title={label}
+      >{label}</span
+    >
   </button>
   <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0">
     {#if isDev}

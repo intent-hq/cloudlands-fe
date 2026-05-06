@@ -129,7 +129,7 @@
       <div class="absolute bottom-0 left-5 right-5 h-px bg-border/40"></div>
     {/if}
 
-    <div class="flex items-start w-full gap-2.5">
+    <div class="flex min-w-0 items-start w-full gap-2.5">
       <!-- Left: phase indicator -->
       <div class="flex items-center shrink-0 pt-0.5">
         <WorkspacePhaseIndicator phase={workspacePhase.phase} progress={buildProgress} />
@@ -138,7 +138,7 @@
       <!-- Right: content - two rows -->
       <div class="flex-1 min-w-0 flex flex-col gap-0.5">
         <!-- Row 1: title + agents + PR + time -->
-        <div class="flex items-center gap-2">
+        <div class="flex min-w-0 items-center gap-2">
           <span
             class={cn(
               'text-base font-medium truncate flex-1 min-w-0',
@@ -199,7 +199,7 @@
           <!-- Activity time -->
           <RelativeTime
             date={ws.lastActivity || ws.updatedAt}
-            class="text-ui text-subtle whitespace-nowrap"
+            class="text-ui text-subtle whitespace-nowrap shrink-0"
             compact
           />
         </div>
