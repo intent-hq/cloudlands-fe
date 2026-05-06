@@ -161,6 +161,38 @@ export const HTTP_MCP_LISTEN_BACKOFF_MS: number[] = [100, 200, 400];
 // Maximum number of distinct ports to try before giving up.
 export const HTTP_MCP_MAX_PORT_ATTEMPTS = 10;
 
+// Explicit renderer origins allowed to make browser CORS requests to the local
+// HTTP MCP bridge. Non-browser bridge clients usually omit Origin and continue
+// through the middleware without CORS headers. Do not trust literal "null" or
+// file:// origins: hostile sandboxed/data/srcdoc browser contexts can send them.
+const TRUSTED_RENDERER_ORIGINS = new Set(['app://workspaces']);
+
+function getTrustedRendererOrigins(): Set<string> {
+  const origins = new Set(TRUSTED_RENDERER_ORIGINS);
+  const devPort = process.env.DEV_PORT || '5177';
+  origins.add(`http://127.0.0.1:${devPort}`);
+  origins.add(`http://localhost:${devPort}`);
+  return origins;
+}
+
+function isTrustedRendererOrigin(origin: string | undefined): origin is string {
+  return typeof origin === 'string' && getTrustedRendererOrigins().has(origin);
+}
+
+function getOriginHeader(headers: { origin?: string | string[] }): string | undefined {
+  const origin = headers.origin;
+  if (Array.isArray(origin)) return origin[0];
+  return typeof origin === 'string' ? origin : undefined;
+}
+
+function getRequestOrigin(req: Request): string | undefined {
+  return getOriginHeader(req.headers);
+}
+
+function isAllowedWebSocketOrigin(origin: string | undefined): boolean {
+  return origin === undefined || isTrustedRendererOrigin(origin);
+}
+
 // ---------------------------------------------------------------------------
 // Memory-critical signal (shared via module scope).
 // Set by the memory-pressure handler in src/main/index.ts via
@@ -280,14 +312,25 @@ export class HttpMcpBridge {
     try {
       this.app = express();
 
-      // CORS middleware
+      // CORS middleware. Echo only known renderer origins; never use '*'.
       this.app.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Content-Type, x-workspace-id');
+        const origin = getRequestOrigin(req);
+        const isTrustedOrigin = isTrustedRendererOrigin(origin);
+
+        if (isTrustedOrigin) {
+          res.header('Access-Control-Allow-Origin', origin);
+          res.header('Vary', 'Origin');
+          res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.header('Access-Control-Allow-Headers', 'Content-Type, x-workspace-id');
+        }
+
         if (req.method === 'OPTIONS') {
+          if (origin && !isTrustedOrigin) {
+            return res.sendStatus(403);
+          }
           return res.sendStatus(200);
         }
+
         next();
       });
 
@@ -1042,7 +1085,22 @@ export class HttpMcpBridge {
   > {
     return new Promise((resolve) => {
       const server = createServer(this.app);
-      const wss = new WebSocketServer({ server, path: '/ipc-events' });
+      const wss = new WebSocketServer({
+        server,
+        path: '/ipc-events',
+        verifyClient: ({ req }, done) => {
+          const origin = getOriginHeader(req.headers);
+          if (isAllowedWebSocketOrigin(origin)) {
+            done(true);
+            return;
+          }
+
+          this.logger.warn('Rejected Browser IPC WebSocket connection from untrusted origin', {
+            origin,
+          });
+          done(false, 403, 'Forbidden');
+        },
+      });
       wss.on('connection', (ws: InstanceType<typeof WebSocket>, request?: IncomingMessage) => {
         const workspaceId = getWorkspaceIdFromWsRequest(request);
         if (workspaceId) {
@@ -1158,10 +1216,8 @@ export class HttpMcpBridge {
       this.logger.warn(`Could not find available port, trying default ${this.port}:`, error);
     }
 
-    // Always use 127.0.0.1 to ensure IPv4 binding (avoids IPv6/IPv4 port conflicts with Vite)
-    // In production builds, use 0.0.0.0 to ensure binding works in ASAR
-    const host =
-      process.env.NODE_ENV === 'production' || app?.isPackaged ? '0.0.0.0' : '127.0.0.1';
+    // Always bind to IPv4 loopback so the bridge is only reachable locally.
+    const host = '127.0.0.1';
 
     const startPort = this.port;
     let boundServer: any = null;

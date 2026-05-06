@@ -17,6 +17,7 @@ const {
   mockStoreMcpToolParams,
   mockExpressApp,
   mockHttpServer,
+  mockElectronApp,
   eventHandlers,
   mockElectronStoreInstance,
   mockFromWebContents,
@@ -62,6 +63,8 @@ const {
 
   const eventHandlers: Record<string, Function[]> = {};
 
+  const mockElectronApp = { getPath: vi.fn().mockReturnValue('/tmp'), isPackaged: false };
+
   const mockElectronStoreInstance = {
     set: vi.fn(),
     get: vi.fn(),
@@ -89,6 +92,7 @@ const {
     mockStoreMcpToolParams: vi.fn(),
     mockExpressApp,
     mockHttpServer,
+    mockElectronApp,
     eventHandlers,
     mockElectronStoreInstance,
     mockFromWebContents,
@@ -122,9 +126,10 @@ vi.mock('http', async (importOriginal) => {
 // (created by the mock factory; hoisted so the factory can reference it).
 vi.mock('ws', () => {
   // Must use function (not arrow) so it can be called with `new`
-  function MockWebSocketServer(this: any) {
+  function MockWebSocketServer(this: any, options?: any) {
     const handlers: Record<string, Function[]> = {};
     const self: any = {
+      options,
       on: vi.fn((event: string, cb: Function) => {
         handlers[event] = handlers[event] || [];
         handlers[event].push(cb);
@@ -150,7 +155,7 @@ vi.mock('ws', () => {
 });
 
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn().mockReturnValue('/tmp'), isPackaged: false },
+  app: mockElectronApp,
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   BrowserWindow: { fromWebContents: mockFromWebContents },
 }));
@@ -185,6 +190,16 @@ vi.mock('../../shared/services/mcp-tool-params-cache', () => ({
 
 // ── Import after mocks ──────────────────────────────────────────────
 import { HttpMcpBridge } from '../http-mcp-bridge';
+
+const originalNodeEnv = process.env.NODE_ENV;
+
+function setNodeEnv(value: string | undefined) {
+  if (value === undefined) {
+    delete process.env.NODE_ENV;
+    return;
+  }
+  process.env.NODE_ENV = value;
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -226,6 +241,8 @@ describe('HttpMcpBridge', () => {
     mockHttpServer.once.mockImplementation(() => {});
     mockHttpServer.removeListener.mockImplementation(() => {});
     mockHttpServer.close.mockImplementation((cb?: Function) => cb?.());
+    mockElectronApp.isPackaged = false;
+    setNodeEnv(originalNodeEnv);
   });
 
   afterEach(async () => {
@@ -284,15 +301,74 @@ describe('HttpMcpBridge', () => {
       expect(mockExpressApp.post).toHaveBeenCalled();
     });
 
-    it('allows browser workspace identity header in CORS preflight', () => {
+    it.each(['http://127.0.0.1:5177', 'http://localhost:5177'])(
+      'allows explicit dev renderer origin %s in CORS response',
+      (origin) => {
+        bridge = new HttpMcpBridge(5179);
+        const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
+        const req = { method: 'POST', headers: { origin } };
+        const res = { header: vi.fn(), sendStatus: vi.fn() };
+        const next = vi.fn();
+
+        corsMiddleware(req, res, next);
+
+        expect(res.header).toHaveBeenCalledWith('Access-Control-Allow-Origin', origin);
+        expect(res.header).not.toHaveBeenCalledWith('Access-Control-Allow-Origin', '*');
+        expect(res.header).toHaveBeenCalledWith('Vary', 'Origin');
+        expect(next).toHaveBeenCalled();
+      },
+    );
+
+    it.each(['https://example.com', 'null', 'file://'])(
+      'does not grant CORS access to disallowed browser origin %s',
+      (origin) => {
+        bridge = new HttpMcpBridge(5179);
+        const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
+        const req = { method: 'POST', headers: { origin } };
+        const res = { header: vi.fn(), sendStatus: vi.fn() };
+        const next = vi.fn();
+
+        corsMiddleware(req, res, next);
+
+        expect(res.header).not.toHaveBeenCalledWith(
+          'Access-Control-Allow-Origin',
+          expect.anything(),
+        );
+        expect(res.sendStatus).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalled();
+      },
+    );
+
+    it('continues no-origin requests for non-browser clients without CORS headers', () => {
       bridge = new HttpMcpBridge(5179);
       const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
-      const req = { method: 'OPTIONS' };
+      const req = { method: 'POST', headers: {} };
       const res = { header: vi.fn(), sendStatus: vi.fn() };
       const next = vi.fn();
 
       corsMiddleware(req, res, next);
 
+      expect(res.header).not.toHaveBeenCalledWith(
+        'Access-Control-Allow-Origin',
+        expect.anything(),
+      );
+      expect(res.sendStatus).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('allows browser workspace identity header in trusted CORS preflight', () => {
+      bridge = new HttpMcpBridge(5179);
+      const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
+      const req = { method: 'OPTIONS', headers: { origin: 'app://workspaces' } };
+      const res = { header: vi.fn(), sendStatus: vi.fn() };
+      const next = vi.fn();
+
+      corsMiddleware(req, res, next);
+
+      expect(res.header).toHaveBeenCalledWith(
+        'Access-Control-Allow-Origin',
+        'app://workspaces',
+      );
       expect(res.header).toHaveBeenCalledWith(
         'Access-Control-Allow-Headers',
         'Content-Type, x-workspace-id',
@@ -300,6 +376,26 @@ describe('HttpMcpBridge', () => {
       expect(res.sendStatus).toHaveBeenCalledWith(200);
       expect(next).not.toHaveBeenCalled();
     });
+
+    it.each(['https://example.com', 'null', 'file://'])(
+      'rejects disallowed browser preflight from %s without CORS headers',
+      (origin) => {
+        bridge = new HttpMcpBridge(5179);
+        const corsMiddleware = mockExpressApp.use.mock.calls[0][0];
+        const req = { method: 'OPTIONS', headers: { origin } };
+        const res = { header: vi.fn(), sendStatus: vi.fn() };
+        const next = vi.fn();
+
+        corsMiddleware(req, res, next);
+
+        expect(res.header).not.toHaveBeenCalledWith(
+          'Access-Control-Allow-Origin',
+          expect.anything(),
+        );
+        expect(res.sendStatus).toHaveBeenCalledWith(403);
+        expect(next).not.toHaveBeenCalled();
+      },
+    );
 
     it('setupWorkspaceCleanupListeners is a no-op (handled by sagas)', () => {
       bridge = new HttpMcpBridge(5179);
@@ -321,7 +417,38 @@ describe('HttpMcpBridge', () => {
       await bridge.start();
 
       // Verify the HTTP server was told to listen on the correct port and host
-      expect(mockHttpServer.listen).toHaveBeenCalledWith(5179, expect.any(String), expect.any(Function));
+      expect(mockHttpServer.listen).toHaveBeenCalledWith(5179, '127.0.0.1', expect.any(Function));
+      expect(mockHttpServer.listen).not.toHaveBeenCalledWith(
+        5179,
+        '0.0.0.0',
+        expect.any(Function),
+      );
+    });
+
+    it('start() listens on IPv4 loopback in production', async () => {
+      setNodeEnv('production');
+
+      await bridge.start();
+
+      expect(mockHttpServer.listen).toHaveBeenCalledWith(5179, '127.0.0.1', expect.any(Function));
+      expect(mockHttpServer.listen).not.toHaveBeenCalledWith(
+        5179,
+        '0.0.0.0',
+        expect.any(Function),
+      );
+    });
+
+    it('start() listens on IPv4 loopback when packaged', async () => {
+      mockElectronApp.isPackaged = true;
+
+      await bridge.start();
+
+      expect(mockHttpServer.listen).toHaveBeenCalledWith(5179, '127.0.0.1', expect.any(Function));
+      expect(mockHttpServer.listen).not.toHaveBeenCalledWith(
+        5179,
+        '0.0.0.0',
+        expect.any(Function),
+      );
     });
 
     it('start() calls findAvailablePort', async () => {
@@ -1388,6 +1515,61 @@ describe('HttpMcpBridge', () => {
       // call terminate() (and not rethrow).
       expect(() => fakeWs._errorHandler(new Error('client boom'))).not.toThrow();
       expect(fakeWs.terminate).toHaveBeenCalled();
+    });
+  });
+
+  describe('/ipc-events WebSocket origin allowlist', () => {
+    beforeEach(() => {
+      bridge = new HttpMcpBridge(5179);
+      (bridge as any).listenBackoffMs = [0, 0, 0];
+    });
+
+    const runVerifyClient = async (origin?: string) => {
+      await startBridge(bridge);
+      const wss = (bridge as any).wss;
+      expect(wss).not.toBeNull();
+      const done = vi.fn();
+      const emitSpy = vi.spyOn(wss, 'emit');
+
+      wss.options.verifyClient(
+        {
+          origin,
+          secure: false,
+          req: { headers: origin === undefined ? {} : { origin } },
+        },
+        done,
+      );
+
+      return { done, emitSpy };
+    };
+
+    it.each(['app://workspaces', 'http://127.0.0.1:5177', 'http://localhost:5177'])(
+      'accepts trusted renderer WebSocket origin %s',
+      async (origin) => {
+        const { done } = await runVerifyClient(origin);
+
+        expect(done).toHaveBeenCalledWith(true);
+      },
+    );
+
+    it.each(['https://example.com', 'null', 'file://'])(
+      'rejects disallowed browser WebSocket origin %s before connection handlers run',
+      async (origin) => {
+        const { done, emitSpy } = await runVerifyClient(origin);
+
+        expect(done).toHaveBeenCalledWith(false, 403, 'Forbidden');
+        expect(emitSpy).not.toHaveBeenCalledWith(
+          'connection',
+          expect.anything(),
+          expect.anything(),
+        );
+      },
+    );
+
+    it('accepts no-origin WebSocket clients for local non-browser callers', async () => {
+      const { done } = await runVerifyClient();
+
+      expect(done).toHaveBeenCalledWith(true);
     });
   });
 
