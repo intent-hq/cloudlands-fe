@@ -78,6 +78,7 @@ export class ProtocolAdapter {
 
   async createWorkspace(params: {
     title?: string;
+    statusMessage?: string;
     repositoryPath?: string;
     branch?: string;
     baseRef?: string;
@@ -163,6 +164,7 @@ export class ProtocolAdapter {
   async updateWorkspace(params: {
     id: string;
     title?: string;
+    statusMessage?: string;
     branch?: string;
     baseRef?: string;
     status?: string;

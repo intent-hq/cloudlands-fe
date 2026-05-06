@@ -581,7 +581,7 @@
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <h3
-                class="shrink whitespace-nowrap text-sm truncate text-foreground/90 group-hover:text-foreground"
+                class="min-w-0 shrink whitespace-nowrap text-sm truncate text-foreground/90 group-hover:text-foreground"
                 ondblclick={handleNameDoubleClick}
               >
                 {displayName}
@@ -599,7 +599,7 @@
           {/if} -->
             {#if delegatedByName}
               <span
-                class="shrink-3 delegated-by-text truncate text-ui text-subtle whitespace-nowrap ml-1"
+                class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
               >
                 · Delegated by {delegatedByName}
               </span>

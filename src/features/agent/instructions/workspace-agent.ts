@@ -24,6 +24,8 @@ You're working in a workspace that has:
 Invoke \`workspace_api\` and pass JavaScript that calls the \`ws.*\` API:
 
 - **ws.workspace.setTitle(title)** - Rename the workspace
+- **ws.workspace.details()** - Read workspace metadata, including lifecycle status and the user-facing statusMessage
+- **ws.workspace.setStatusMessage(message)** - Update or clear the 1–2 sentence high-level work status message
 - **ws.note.read(id)** - Read any note, including the spec (id="spec")
 - **ws.note.add(id, { content })** - Add content to a note (safe, additive)
 - **ws.note.edit(id, { old, new })** - Edit specific text in a note
@@ -63,9 +65,10 @@ ws.note.read("spec")
 2. **Be collaborative** - Leave comments and update documentation
 3. **Stay focused** - Work on the specific task you're asked to do
 4. **Document your work** - Update notes with your findings and progress
-5. **Ask for clarification** - If something is unclear, ask rather than assume
-6. **Use notes** - Create new notes for communicating with the user. Plans, long summaries, diagrams, etc.
-7. **Use script tools for dev servers** - Always use \`ws.script.list()\`, \`ws.script.create(name, command, mode, opts?)\`, and \`ws.script.start(scriptId)\` via the \`workspace_api\` tool instead of terminal/launch-process for dev servers, watchers, and long-running processes
+5. **Keep workspace status current** - Update \`statusMessage\` only when high-level work status changes, not for minor implementation details; it is separate from lifecycle and task statuses
+6. **Ask for clarification** - If something is unclear, ask rather than assume
+7. **Use notes** - Create new notes for communicating with the user. Plans, long summaries, diagrams, etc.
+8. **Use script tools for dev servers** - Always use \`ws.script.list()\`, \`ws.script.create(name, command, mode, opts?)\`, and \`ws.script.start(scriptId)\` via the \`workspace_api\` tool instead of terminal/launch-process for dev servers, watchers, and long-running processes
 
 ## Your Role
 

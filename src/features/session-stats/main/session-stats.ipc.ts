@@ -39,4 +39,3 @@ export function setupSessionStatsIPC(): void {
 
   logger.info('Session stats IPC handlers setup complete');
 }
-

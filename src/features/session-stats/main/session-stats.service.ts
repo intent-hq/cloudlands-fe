@@ -66,7 +66,6 @@ function parseSessionStats(raw: unknown, sessionId: string): SessionStats {
     subAgentCreditsUsed: (obj.subAgentCreditsUsed as number | null) ?? null,
   };
 }
-
 /**
  * Fetch stats for a single session via the auggie CLI.
  */
@@ -154,4 +153,3 @@ export async function getAggregatedSessionStats(
     failedCount: failCount,
   };
 }
-

@@ -17,6 +17,7 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { deriveWorkspacePhase } from './workspace-phase';
+  import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
 
   // Agent display info with computed avatar state
@@ -87,8 +88,18 @@
   const prTooltipContent = $derived.by(() => getPRTooltipContent(ws.activePullRequest));
 
   // Hover state for agent cards
+  let hoveredWorkspace = $state(false);
   let hoveredAgentId: string | null = $state(null);
+  let rowButtonElement: HTMLButtonElement | null = $state(null);
   let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function handleWorkspaceMouseEnter() {
+    hoveredWorkspace = true;
+  }
+
+  function handleWorkspaceMouseLeave() {
+    hoveredWorkspace = false;
+  }
 
   function handleAgentMouseEnter(agentId: string) {
     if (hoverTimeout) clearTimeout(hoverTimeout);
@@ -115,15 +126,24 @@
       onArchive?.(ws);
     }
   }
+
+  const activeAgentIds = $derived(agents.filter((agent) => agent.isActive).map((agent) => agent.id));
 </script>
 
-<div class="group relative">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="group relative"
+  onmouseenter={handleWorkspaceMouseEnter}
+  onmouseleave={handleWorkspaceMouseLeave}
+>
   <button
+    bind:this={rowButtonElement}
     class={cn(
       'relative flex flex-col w-full min-w-0 pl-4.75 pr-5 py-3 text-left cursor-pointer transition-colors',
       isArchived ? 'bg-sidebar hover:bg-muted/20' : 'hover:bg-muted/30',
     )}
     onclick={(e) => onOpen(ws, e)}
+    style:anchor-name="--workspace-table-row-{ws.id}"
   >
     {#if !isLastInGroup}
       <div class="absolute bottom-0 left-5 right-5 h-px bg-border/40"></div>
@@ -242,6 +262,17 @@
         </Button>
       {/if}
     </div>
+  {/if}
+
+  {#if hoveredWorkspace && !hoveredAgentId}
+    <HoverCard
+      anchor="--workspace-table-row-{ws.id}"
+      position="right"
+      anchorElement={rowButtonElement}
+      class="w-auto border-0 bg-transparent shadow-xl"
+    >
+      <WorkspaceHoverCard workspace={ws} {activeAgentIds} />
+    </HoverCard>
   {/if}
 
   <!-- Agent Hover Card -->

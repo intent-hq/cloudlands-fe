@@ -16,6 +16,7 @@ import {
   codeReview,
   commitMessage,
   prDescription,
+  workspaceAgent,
 } from '../index';
 
 describe('Agent Instructions', () => {
@@ -135,6 +136,16 @@ describe('Agent Instructions', () => {
       expect(workspace).toContain('notes');
       expect(workspace).toContain('ws.agent.delegate');
       expect(workspace).toContain('ws.note.read');
+      expect(workspace).toContain('statusMessage');
+      expect(workspace).toContain('ws.workspace.setStatusMessage(message)');
+      expect(workspace).toContain('Workspace.status');
+      expect(workspace).toContain('task statuses');
+    });
+
+    it('workspace-agent instruction documents statusMessage APIs', () => {
+      expect(workspaceAgent).toContain('ws.workspace.details()');
+      expect(workspaceAgent).toContain('ws.workspace.setStatusMessage(message)');
+      expect(workspaceAgent).toContain('statusMessage');
     });
   });
 });

@@ -6,9 +6,11 @@
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import WorkspaceActionsMenu, { type MenuAction } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
+  import WorkspaceActionsMenu, {
+    type MenuAction,
+  } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import type { Workspace } from '$shared/types';
+  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type Workspace } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
@@ -35,6 +37,11 @@
   let isEditingTitle = $state(false);
   let editedTitle = $state('');
   let titleInputRef: HTMLInputElement | null = $state(null);
+  let isEditingStatusMessage = $state(false);
+  let editedStatusMessage = $state('');
+  let statusInputRef: HTMLInputElement | null = $state(null);
+  let isSavingStatusMessage = $state(false);
+  let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
   // Delete warning dialog state
@@ -47,6 +54,8 @@
   let editedBranch = $state('');
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
+
+  const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
 
   async function handleDelete() {
     if (isDeleting || !workspace) return;
@@ -119,6 +128,73 @@
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
       editedTitle = workspace?.title || 'Untitled';
+    }
+  }
+
+  function startEditingStatusMessage() {
+    if (!workspace) return;
+    skipNextStatusBlurSave = false;
+    isEditingStatusMessage = true;
+    editedStatusMessage = workspace.statusMessage || '';
+    tick().then(() => {
+      if (statusInputRef) {
+        statusInputRef.focus();
+        statusInputRef.select();
+      }
+    });
+  }
+
+  async function saveStatusMessage() {
+    if (skipNextStatusBlurSave) {
+      skipNextStatusBlurSave = false;
+      return;
+    }
+
+    if (isSavingStatusMessage) {
+      return;
+    }
+
+    if (!workspace) {
+      isEditingStatusMessage = false;
+      return;
+    }
+
+    const newStatusMessage = editedStatusMessage.trim();
+    if (newStatusMessage === currentStatusMessage) {
+      isEditingStatusMessage = false;
+      return;
+    }
+
+    isSavingStatusMessage = true;
+    try {
+      const result = await workspaceClient.update({
+        id: workspace.id,
+        statusMessage: newStatusMessage,
+      });
+      if (result.ok) {
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+      } else {
+        logger.error('Failed to update workspace status', { error: result.error });
+        editedStatusMessage = workspace.statusMessage || '';
+      }
+    } catch (error) {
+      logger.error('Failed to update workspace status:', error);
+      editedStatusMessage = workspace.statusMessage || '';
+    } finally {
+      isEditingStatusMessage = false;
+      isSavingStatusMessage = false;
+    }
+  }
+
+  function handleStatusMessageKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveStatusMessage();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      skipNextStatusBlurSave = true;
+      isEditingStatusMessage = false;
+      editedStatusMessage = workspace?.statusMessage || '';
     }
   }
 
@@ -267,6 +343,9 @@
     if (isEditingTitle && titleInputRef && !titleInputRef.contains(e.target as Node)) {
       saveTitle();
     }
+    if (isEditingStatusMessage && statusInputRef && !statusInputRef.contains(e.target as Node)) {
+      saveStatusMessage();
+    }
     if (isEditingBranch && branchInputRef && !branchInputRef.contains(e.target as Node)) {
       saveBranch();
     }
@@ -274,7 +353,7 @@
 
   // Add/remove click listener when editing state changes
   $effect(() => {
-    if (isEditingTitle || isEditingBranch) {
+    if (isEditingTitle || isEditingStatusMessage || isEditingBranch) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
@@ -322,6 +401,47 @@
         {#if workspace}
           {workspace.title || 'Untitled'}
         {/if}
+      </button>
+    {/if}
+
+    <!-- status message -->
+    {#if isEditingStatusMessage}
+      <input
+        bind:this={statusInputRef}
+        type="text"
+        bind:value={editedStatusMessage}
+        onblur={saveStatusMessage}
+        onkeydown={handleStatusMessageKeydown}
+        disabled={isSavingStatusMessage}
+        maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+        aria-label="Workspace status"
+        class="text-xs text-foreground bg-none
+               px-1.5 py-0.5 rounded
+               outline-none w-full max-w-[240px] leading-normal
+               focus:ring-none! focus:outline-none!
+               transition-all duration-150 disabled:opacity-50"
+        placeholder="Add workspace status"
+      />
+    {:else if workspace}
+      <button
+        class="text-xs text-subtle bg-transparent
+               border-none px-1.5 py-0.5 rounded cursor-pointer text-left
+               max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
+               transition-all duration-150 leading-snug
+               hover:text-foreground hover:opacity-80
+               focus-visible:outline focus-visible:outline-1
+               focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+               disabled:cursor-default disabled:opacity-50"
+        class:italic={!currentStatusMessage}
+        class:text-ghost={!currentStatusMessage}
+        onclick={startEditingStatusMessage}
+        title={currentStatusMessage
+          ? 'Click to edit workspace status'
+          : 'Click to add workspace status'}
+        aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+        disabled={!workspace}
+      >
+        {currentStatusMessage || 'Add status…'}
       </button>
     {/if}
 

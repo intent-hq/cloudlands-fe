@@ -1,8 +1,8 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import { slide } from 'svelte/transition';
   import type { Note } from '$shared/types';
-  import { WorkspaceStatusEnum } from '$shared/types';
+  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
     computeTaskStats,
@@ -38,9 +38,7 @@
   import { logger, createLogger } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import {
-    selectAllNotes,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
     fetchReadyTasks,
     applyReadyTasks,
@@ -230,6 +228,11 @@
   let isEditingTitle = $state(false);
   let editedTitle = $state('');
   let titleInputRef: HTMLInputElement | null = $state(null);
+  let isEditingStatusMessage = $state(false);
+  let editedStatusMessage = $state('');
+  let statusInputRef: HTMLInputElement | null = $state(null);
+  let isSavingStatusMessage = $state(false);
+  let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
   // Delete warning dialog state
@@ -239,6 +242,7 @@
 
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
@@ -379,6 +383,71 @@
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
       editedTitle = $workspace?.title || 'Untitled';
+    }
+  }
+
+  function startEditingStatusMessage() {
+    if (!$workspace) return;
+    skipNextStatusBlurSave = false;
+    isEditingStatusMessage = true;
+    editedStatusMessage = $workspace.statusMessage || '';
+    tick().then(() => {
+      if (statusInputRef) {
+        statusInputRef.focus();
+        statusInputRef.select();
+      }
+    });
+  }
+
+  async function saveStatusMessage() {
+    if (skipNextStatusBlurSave) {
+      skipNextStatusBlurSave = false;
+      return;
+    }
+
+    if (isSavingStatusMessage) return;
+
+    if (!$workspace) {
+      isEditingStatusMessage = false;
+      return;
+    }
+
+    const newStatusMessage = editedStatusMessage.trim();
+    if (newStatusMessage === currentStatusMessage) {
+      isEditingStatusMessage = false;
+      return;
+    }
+
+    isSavingStatusMessage = true;
+    try {
+      const result = await workspaceClient.update({
+        id: $workspace.id,
+        statusMessage: newStatusMessage,
+      });
+      if (result.ok) {
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+      } else {
+        logger.error('Failed to update workspace status', { error: result.error });
+        editedStatusMessage = $workspace.statusMessage || '';
+      }
+    } catch (error) {
+      logger.error('Failed to update workspace status:', error);
+      editedStatusMessage = $workspace.statusMessage || '';
+    } finally {
+      isEditingStatusMessage = false;
+      isSavingStatusMessage = false;
+    }
+  }
+
+  function handleStatusMessageKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveStatusMessage();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      skipNextStatusBlurSave = true;
+      isEditingStatusMessage = false;
+      editedStatusMessage = $workspace?.statusMessage || '';
     }
   }
 
@@ -1259,10 +1328,10 @@
       <WorkspaceCreditStats {workspaceId} />
     {/if}
 
-    <div class="w-full pb-2 pl-1 text-left flex flex-col gap-1.5">
+    <div class="w-full pb-2 pl-1 text-left flex flex-col gap-3">
       <!-- Flame Graph Progress Section (always show task-focused view) -->
       {#if flameRows.length > 0}
-        <div class="flex-1 shrink-0 flex mt-1" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div class="flex-1 shrink-0 flex" transition:slide={{ axis: 'y', duration: 200 }}>
           <FlameGraph
             notes={$notes}
             onCellClick={(noteId) => onOpenNote?.(noteId)}
@@ -1272,42 +1341,31 @@
             hasUnreadChanges={(noteId) => $unreadNoteIds.includes(noteId)}
           />
         </div>
-        <!-- Summary Section -->
-        {#if $notes.length > 0 || workflowStage !== 'loading'}
+        <!-- Workflow action button (styled like AI-assisted action prompts) -->
+        {#if summaryMessage.action}
           <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-            <div class="group w-full p-0 bg-transparent border-none text-left">
-              <div class="w-full flex flex-1">
-                <div class="text-xs text-subtle leading-tight transition-colors duration-150">
-                  {summaryMessage.headline}
-                </div>
-              </div>
-            </div>
-
-            <!-- Workflow action button (styled like AI-assisted action prompts) -->
-            {#if summaryMessage.action}
-              <div class="mt-1">
-                <Tooltip
-                  content={summaryMessage.action?.tooltip}
-                  side="bottom"
-                  align="start"
-                  disabled={!summaryMessage.action?.tooltip}
+            <div class="mt-1">
+              <Tooltip
+                content={summaryMessage.action?.tooltip}
+                side="bottom"
+                align="start"
+                disabled={!summaryMessage.action?.tooltip}
+              >
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="w-full text-left justify-start px-0! -mb-1"
+                  onclick={summaryMessage.action?.onClick}
                 >
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    class="w-full text-left justify-start px-0! -mb-1"
-                    onclick={summaryMessage.action?.onClick}
+                  {#if summaryMessage.action?.icon}
+                    <Fa icon={summaryMessage.action?.icon} size="xs" class="ml-1" />
+                  {/if}
+                  <span class="underline decoration-dotted underline-offset-2"
+                    >{summaryMessage.action?.label}</span
                   >
-                    {#if summaryMessage.action?.icon}
-                      <Fa icon={summaryMessage.action?.icon} size="xs" class="ml-1" />
-                    {/if}
-                    <span class="underline decoration-dotted underline-offset-2"
-                      >{summaryMessage.action?.label}</span
-                    >
-                  </Button>
-                </Tooltip>
-              </div>
-            {/if}
+                </Button>
+              </Tooltip>
+            </div>
 
             <!-- Contextual Action Prompts (AI-assisted actions) -->
             <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
@@ -1359,6 +1417,51 @@
         {/if} -->
           </div>
         {/if}
+      {/if}
+
+      <!-- status message -->
+      {#if isEditingStatusMessage || currentStatusMessage}
+        <div>
+          {#if isEditingStatusMessage}
+            <input
+              bind:this={statusInputRef}
+              type="text"
+              bind:value={editedStatusMessage}
+              onblur={saveStatusMessage}
+              onkeydown={handleStatusMessageKeydown}
+              disabled={isSavingStatusMessage}
+              maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+              aria-label="Workspace status"
+              class="text-xs text-foreground bg-none
+                   px-0.5 py-1 rounded
+                   outline-none w-full leading-snug
+                   focus:ring-none! focus:outline-none!
+                   transition-all duration-150 disabled:opacity-50"
+              placeholder="Add workspace status"
+            />
+          {:else if $workspace && currentStatusMessage}
+            <button
+              class="w-full text-xs text-subtle bg-transparent
+                   border-none px-0.5 py-1 rounded cursor-pointer text-left
+                   break-words whitespace-pre-wrap
+                   transition-all duration-150 leading-snug
+                   hover:text-foreground hover:opacity-80
+                   focus-visible:outline focus-visible:outline-1
+                   focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+                   disabled:cursor-default disabled:opacity-50"
+              class:italic={!currentStatusMessage}
+              class:text-ghost={!currentStatusMessage}
+              onclick={startEditingStatusMessage}
+              title={currentStatusMessage
+                ? 'Click to edit workspace status'
+                : 'Click to add workspace status'}
+              aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+              disabled={!$workspace}
+            >
+              {currentStatusMessage}
+            </button>
+          {/if}
+        </div>
       {/if}
 
       <!-- Ready Tasks Section (excludes spec from display) -->

@@ -191,6 +191,8 @@ export interface NavigationItem {
 // Workspace Types
 // ============================================================================
 
+export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -210,6 +212,8 @@ export interface Workspace {
   timeline: TimelineEntry[];
   conversationInfo: ConversationInfo[];
   status: WorkspaceStatus;
+  /** User-facing high-level work status message. Distinct from lifecycle status. */
+  statusMessage?: string;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -1278,6 +1282,7 @@ export interface WorkspaceUIContext {
 
 export interface CreateWorkspaceRequest {
   title?: string;
+  statusMessage?: string;
   repositoryPath?: string;
   githubUrl?: string; // GitHub URL to clone (e.g., https://github.com/owner/repo)
   clonePath?: string; // User-selected folder path where the GitHub repo should be cloned
@@ -1339,6 +1344,7 @@ export interface UpdateWorkspaceRequest {
   baseRef?: string;
   baseCommitSha?: string;
   status?: WorkspaceStatus;
+  statusMessage?: string;
   tags?: string[];
   prUrl?: string | null;
   prNumber?: number | null;

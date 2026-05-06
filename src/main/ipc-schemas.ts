@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { FirstVisitStateSchema } from '../shared/schemas';
+import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 
 // ============================================================================
@@ -69,6 +69,7 @@ const EnvironmentConfigSchema = z.object({
 
 export const WorkspaceCreateSchema = z.object({
   title: z.string().max(255, 'Title too long').optional(),
+  statusMessage: WorkspaceStatusMessageSchema.optional(),
   path: z.string().optional(),
   template: z.string().optional(),
   metadata: z.record(z.any()).optional(),
@@ -104,6 +105,7 @@ export const WorkspaceCreateSchema = z.object({
 export const WorkspaceUpdateSchema = z.object({
   id: WorkspaceIdSchema,
   title: z.string().optional(),
+  statusMessage: WorkspaceStatusMessageSchema.optional(),
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),

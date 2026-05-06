@@ -6,7 +6,14 @@
  */
 
 import { z } from 'zod';
-import { AgentStatus, AuthorType, ContentType, NoteVisibility, WorkspaceStatus } from './types';
+import {
+  AgentStatus,
+  AuthorType,
+  ContentType,
+  NoteVisibility,
+  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
+  WorkspaceStatus,
+} from './types';
 
 /**
  * Custom Validators
@@ -83,6 +90,10 @@ export const DiffSummarySchema = z.object({
   files: z.array(DiffSummaryFileSchema).max(50),
 });
 
+export const WorkspaceStatusMessageSchema = z
+  .string()
+  .max(WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, 'Workspace status message is too long');
+
 export const WorkspaceSchema = z.object({
   id: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
   title: z.string().max(100),
@@ -94,6 +105,7 @@ export const WorkspaceSchema = z.object({
   timeline: z.array(z.any()),
   conversationInfo: z.array(z.any()),
   status: z.nativeEnum(WorkspaceStatus),
+  statusMessage: WorkspaceStatusMessageSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),
@@ -141,6 +153,7 @@ export const EnvironmentConfigSchema = z.object({
 
 export const CreateWorkspaceRequestSchema = z.object({
   title: z.string().max(100).optional(),
+  statusMessage: WorkspaceStatusMessageSchema.optional(),
   repositoryPath: z.string().optional(),
   githubUrl: z.string().optional(), // GitHub URL to clone (e.g., https://github.com/owner/repo)
   clonePath: z.string().optional(), // User-selected folder path where the GitHub repo should be cloned
@@ -159,6 +172,7 @@ export const UpdateWorkspaceRequestSchema = z.object({
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   status: z.nativeEnum(WorkspaceStatus).optional(),
+  statusMessage: WorkspaceStatusMessageSchema.optional(),
   tags: z.array(z.string()).optional(),
   // prUrl does NOT use .url() validation because empty strings can come from
   // normalizePullRequestInfo when no URL is found

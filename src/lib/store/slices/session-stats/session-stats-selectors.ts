@@ -43,4 +43,3 @@ export const selectAgentStatsError = createSelector(
   (state, agentId: string): string | undefined =>
     state.sessionStats?.agentStatsErrors[agentId],
 );
-

@@ -1613,6 +1613,7 @@ task:
       const workspace: Workspace = {
         id,
         title: request.title || '',
+        statusMessage: request.statusMessage,
         branch,
         baseRef: request.baseRef,
         baseCommitSha,

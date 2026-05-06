@@ -3,7 +3,7 @@ import { Logger } from '$shared/logger';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
 import { renameAgentOnDisk } from '$features/agent/main/agent-rename';
-import type { WorkspaceId } from '$shared/types';
+import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type WorkspaceId } from '$shared/types';
 
 import { createWorkspaceEvent } from '../../../events/types';
 import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
@@ -59,6 +59,7 @@ export function buildWorkspaceApi({
           title: '(untitled)',
           hasTitle: false,
           status: 'active',
+          statusMessage: null,
           branch: null,
           repositoryName: null,
           tags: [],
@@ -70,6 +71,7 @@ export function buildWorkspaceApi({
         title: workspace.title || '(untitled)',
         hasTitle: !!workspace.title,
         status: workspace.status,
+        statusMessage: workspace.statusMessage ?? null,
         branch: workspace.branch,
         repositoryName: workspace.repositoryName,
         tags: workspace.tags || [],
@@ -126,6 +128,36 @@ export function buildWorkspaceApi({
       }
 
       return { ok: true, title: trimmedTitle, branch: finalBranch };
+    },
+
+    async setStatusMessage(statusMessage: string | null) {
+      logger.info('ws.workspace.setStatusMessage', { workspaceId });
+
+      if (statusMessage !== null && typeof statusMessage !== 'string') {
+        throw new Error('statusMessage must be a string or null');
+      }
+
+      const trimmedStatusMessage = statusMessage?.trim() || undefined;
+      if (
+        trimmedStatusMessage &&
+        trimmedStatusMessage.length > WORKSPACE_STATUS_MESSAGE_MAX_LENGTH
+      ) {
+        throw new Error(
+          `statusMessage must be ${WORKSPACE_STATUS_MESSAGE_MAX_LENGTH} characters or fewer`,
+        );
+      }
+
+      const manager = requireWorkspaceManager(workspaceManager);
+      const updated = await manager.updateWorkspace({
+        id: workspaceId,
+        statusMessage: trimmedStatusMessage,
+      });
+
+      if (!updated.ok) {
+        throw new Error(`Failed to update workspace status message: ${updated.error}`);
+      }
+
+      return { ok: true, statusMessage: trimmedStatusMessage ?? null };
     },
 
     async setAgentName(name: string) {

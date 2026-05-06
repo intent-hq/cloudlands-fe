@@ -73,10 +73,75 @@ vi.mock('diff', () => ({ default: {} }));
 
 import { buildWorkspaceApi } from '../ws-workspace-api';
 import { buildCrossWorkspaceApi } from '../ws-misc-api';
+import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH } from '$shared/types';
 
 // =====================================================================
 // Workspace API tests
 // =====================================================================
+describe('buildWorkspaceApi – details and statusMessage', () => {
+  const workspaceId = 'ws-status-test';
+  const call = { context: { agentId: 'agent-1' }, name: 'workspace_api', arguments: {} } as any;
+
+  function makeApi(workspaceManager: any) {
+    return buildWorkspaceApi({
+      workspacePath: '/tmp/test',
+      workspaceId,
+      workspaceManager,
+      call,
+    });
+  }
+
+  it('returns statusMessage separately from lifecycle status', async () => {
+    const api = makeApi({
+      getWorkspace: vi.fn().mockResolvedValue({
+        id: workspaceId,
+        title: 'Status Workspace',
+        status: 'Active',
+        statusMessage: 'Reviewing the implementation plan.',
+        branch: 'status-branch',
+        tags: [],
+      }),
+      updateWorkspace: vi.fn(),
+      getCurrentContext: vi.fn(),
+    });
+
+    await expect(api.details()).resolves.toMatchObject({
+      status: 'Active',
+      statusMessage: 'Reviewing the implementation plan.',
+    });
+  });
+
+  it('updates statusMessage through a dedicated setter', async () => {
+    const manager = {
+      getWorkspace: vi.fn(),
+      updateWorkspace: vi.fn().mockResolvedValue({ ok: true }),
+      getCurrentContext: vi.fn(),
+    };
+    const api = makeApi(manager);
+
+    await expect(api.setStatusMessage('  Building the data model.  ')).resolves.toEqual({
+      ok: true,
+      statusMessage: 'Building the data model.',
+    });
+    expect(manager.updateWorkspace).toHaveBeenCalledWith({
+      id: workspaceId,
+      statusMessage: 'Building the data model.',
+    });
+  });
+
+  it('rejects overly long statusMessage values', async () => {
+    const api = makeApi({
+      getWorkspace: vi.fn(),
+      updateWorkspace: vi.fn(),
+      getCurrentContext: vi.fn(),
+    });
+
+    await expect(
+      api.setStatusMessage('x'.repeat(WORKSPACE_STATUS_MESSAGE_MAX_LENGTH + 1)),
+    ).rejects.toThrow(`${WORKSPACE_STATUS_MESSAGE_MAX_LENGTH} characters or fewer`);
+  });
+});
+
 describe('buildWorkspaceApi – setTitle', () => {
   const workspaceId = 'ws-123';
   const call = { context: { agentId: 'agent-1' }, name: 'workspace_api', arguments: {} } as any;

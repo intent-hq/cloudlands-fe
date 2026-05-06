@@ -9,7 +9,9 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
@@ -76,6 +78,8 @@
 
   const phaseInfo = $derived(deriveWorkspacePhase(workspace, { hasActiveAgents: isRunning }));
   let isCurrent = $derived(page.url.pathname === `/workspace/${workspace.id}`);
+  let hoverCardVisible = $state(false);
+  let rowElement: HTMLDivElement | null = $state(null);
 
   // Task progress for building phase pie chart (0–1)
   let buildProgress = $derived.by(() => {
@@ -122,6 +126,23 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
   }
+
+  function handleMouseEnter() {
+    onHover?.();
+    if (!suppressHover) {
+      hoverCardVisible = true;
+    }
+  }
+
+  function handleMouseLeave() {
+    hoverCardVisible = false;
+  }
+
+  $effect(() => {
+    if (suppressHover) {
+      hoverCardVisible = false;
+    }
+  });
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
@@ -202,6 +223,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  bind:this={rowElement}
   class={cn(
     'wli-root group relative flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left',
     isCurrent ? 'bg-background' : highlighted ? 'bg-sidebar' : !suppressHover && 'hover:bg-sidebar',
@@ -211,7 +233,9 @@
   onclick={(e) => onClick?.(e)}
   onkeydown={handleKeydown}
   oncontextmenu={handleContextMenu}
-  onmouseenter={() => onHover?.()}
+  onmouseenter={handleMouseEnter}
+  onmouseleave={handleMouseLeave}
+  style:anchor-name="--workspace-list-{workspace.id}"
 >
   <!-- Left column: status indicator -->
   <div class="flex items-center shrink-0 mt-[3px]">
@@ -355,6 +379,17 @@
     </div>
   {/if}
 </div>
+
+{#if hoverCardVisible && !suppressHover}
+  <HoverCard
+    anchor="--workspace-list-{workspace.id}"
+    position="right"
+    anchorElement={rowElement}
+    class="w-auto border-0 bg-transparent shadow-xl"
+  >
+    <WorkspaceHoverCard workspace={workspace} activeAgentIds={streamingAgentIds} />
+  </HoverCard>
+{/if}
 
 {#if contextMenu}
   <SidebarContextMenu

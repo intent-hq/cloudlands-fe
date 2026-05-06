@@ -41,10 +41,20 @@ Notes support diagrams and interactive blocks to make documentation actionable:
 
 Call \`ws.workspace.referenceDocs("diagrams")\` or \`ws.workspace.referenceDocs("ws-blocks")\` for full syntax.
 
+## Workspace Status Message
+
+Keep the workspace \`statusMessage\` current when the high-level work status changes (plan, progress, blocker, review state), using 1–2 concise sentences. Be clear if the user needs to do anything, and put important info first. This is user-facing and separate from the \`Workspace.status\` lifecycle (Active/Archived/Deleted) and from task statuses; do not update it for minor implementation details. Examples:
+
+- Researching how to add dark mode. Will create a spec once done.
+- Implementing new toggle button and state, 8 more tasks to go.
+- Ready to review and create a PR or merge. Done implementing dark mode.
+- PR #123 open and waiting for a review.
+
 ## Workspace Management
 
 - \`ws.workspace.setTitle(title)\` — Set the workspace title (1-5 words describing the task)
-- \`ws.workspace.details()\` — Get workspace metadata (title, status, etc.)
+- \`ws.workspace.details()\` — Get workspace metadata, including lifecycle \`status\` and user-facing \`statusMessage\`
+- \`ws.workspace.setStatusMessage(message)\` — Update or clear the 1–2 sentence high-level work status message
 
 ## Agent Collaboration
 

@@ -125,4 +125,3 @@ export const sessionStatsReducer = createReducer<SessionStatsState>(initialState
     loadingAgentStats: omitKey(state.loadingAgentStats, agentId),
     agentStatsErrors: omitKey(state.agentStatsErrors, agentId),
   }));
-
