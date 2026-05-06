@@ -19,29 +19,31 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cubicOut } from 'svelte/easing';
 
 /**
- * Exact replica of collapseFromCurrent from ResponseGroup.svelte (lines 144-167).
+ * Exact replica of collapseFromCurrent from ResponseGroup.svelte.
  * This mirrors the production code so we can test it in isolation.
  */
 function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubicOut } = {}) {
-  const currentHeight = node.offsetHeight;
+  const safe = (n: number): number => (Number.isFinite(n) ? n : 0);
+  const currentHeight = safe(node.offsetHeight);
   const style = getComputedStyle(node);
-  const paddingTop = parseFloat(style.paddingTop) || 0;
-  const paddingBottom = parseFloat(style.paddingBottom) || 0;
-  const marginTop = parseFloat(style.marginTop) || 0;
-  const marginBottom = parseFloat(style.marginBottom) || 0;
+  const paddingTop = safe(parseFloat(style.paddingTop));
+  const paddingBottom = safe(parseFloat(style.paddingBottom));
+  const marginTop = safe(parseFloat(style.marginTop));
+  const marginBottom = safe(parseFloat(style.marginBottom));
 
   return {
     duration,
     easing,
     css: (t: number) => {
+      const tt = Number.isFinite(t) ? t : 0;
       return `
         overflow: hidden;
-        height: ${t * currentHeight}px;
-        padding-top: ${t * paddingTop}px;
-        padding-bottom: ${t * paddingBottom}px;
-        margin-top: ${t * marginTop}px;
-        margin-bottom: ${t * marginBottom}px;
-        opacity: ${Math.min(1, t * 2)};
+        height: ${tt * currentHeight}px;
+        padding-top: ${tt * paddingTop}px;
+        padding-bottom: ${tt * paddingBottom}px;
+        margin-top: ${tt * marginTop}px;
+        margin-bottom: ${tt * marginBottom}px;
+        opacity: ${Math.min(1, tt * 2)};
       `;
     },
   };
@@ -95,6 +97,32 @@ describe('ResponseGroup - collapseFromCurrent NaN regression', () => {
     // Which produces invalid CSS
     const css = `height: ${0.5 * result}px`;
     expect(css).toContain('NaN');
+  });
+
+  it('should not produce NaN CSS values when offsetHeight is not a finite number', () => {
+    // Some element/browser states yield non-finite offsetHeight (e.g. measuring
+    // a non-HTMLElement node). The transition must still emit valid CSS.
+    const node = document.createElement('div');
+    Object.defineProperty(node, 'offsetHeight', { value: NaN, configurable: true });
+
+    const transition = collapseFromCurrent(node);
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(transition.css(t), `t=${t}`).not.toContain('NaN');
+    }
+  });
+
+  it('should not produce NaN CSS values when t is not a finite number', () => {
+    // Defensive: if the framework ever feeds a non-finite t, the css output
+    // must remain valid.
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    try {
+      const transition = collapseFromCurrent(node);
+      const css = transition.css(NaN);
+      expect(css).not.toContain('NaN');
+    } finally {
+      document.body.removeChild(node);
+    }
   });
 
   it('should produce valid CSS values when getComputedStyle returns normal values', () => {

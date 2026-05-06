@@ -196,8 +196,14 @@ export function dispatchStreamEvent(sessionId: string, eventType: string, detail
     dispatchAgentStream(sessionId, detail as AgentStreamDetail);
     logger.debug('Dispatched stream event to registered handler', { sessionId, eventType });
   } else {
+    // Queueing is the expected behavior when stream events arrive before the
+    // ChatService DOM handler has registered (e.g. during sendMessage setup,
+    // backend-initiated streams, or HMR). The queue is drained immediately
+    // when registerDomHandler() runs via replayPendingEvents(). Logging at
+    // debug level keeps this off the production console while still letting
+    // us trace the lifecycle when needed.
     pendingEventQueue.queue(sessionId, eventType, detail);
-    logger.info('Queued stream event (no handler registered)', { sessionId, eventType });
+    logger.debug('Queued stream event (no handler registered yet)', { sessionId, eventType });
   }
 }
 

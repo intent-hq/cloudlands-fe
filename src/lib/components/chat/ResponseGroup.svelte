@@ -90,8 +90,9 @@
 
     const el = contentEl;
     if (el) {
-      // Capture current height before toggle
-      const startHeight = el.offsetHeight;
+      // Capture current height before toggle. Guard against non-finite values
+      // (some browser/element states can yield NaN/undefined for these).
+      const startHeight = Number.isFinite(el.offsetHeight) ? el.offsetHeight : 0;
 
       // Toggle state
       isExpanded = !isExpanded;
@@ -99,10 +100,14 @@
 
       // After Svelte updates the DOM, animate from old height to new height
       requestAnimationFrame(() => {
-        const endHeight = el.scrollHeight;
+        const endHeight = Number.isFinite(el.scrollHeight) ? el.scrollHeight : 0;
 
-        // Only animate if heights differ significantly
-        if (Math.abs(startHeight - endHeight) > 10) {
+        // Only animate if heights differ significantly and both are finite
+        if (
+          Number.isFinite(startHeight) &&
+          Number.isFinite(endHeight) &&
+          Math.abs(startHeight - endHeight) > 10
+        ) {
           el.animate(
             [
               { height: `${startHeight}px`, overflow: 'hidden' },
@@ -147,25 +152,30 @@
   // Custom collapse transition that reads the element's CURRENT offsetHeight
   // (constrained by the cylinder) instead of the full content height.
   function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubicOut } = {}) {
-    const currentHeight = node.offsetHeight;
+    // Coerce any non-finite measurement to 0. parseFloat('') returns NaN,
+    // and offsetHeight can be undefined on non-HTMLElement nodes; either
+    // would otherwise produce `NaNpx` keyframe values.
+    const safe = (n: number): number => (Number.isFinite(n) ? n : 0);
+    const currentHeight = safe(node.offsetHeight);
     const style = getComputedStyle(node);
-    const paddingTop = parseFloat(style.paddingTop) || 0;
-    const paddingBottom = parseFloat(style.paddingBottom) || 0;
-    const marginTop = parseFloat(style.marginTop) || 0;
-    const marginBottom = parseFloat(style.marginBottom) || 0;
+    const paddingTop = safe(parseFloat(style.paddingTop));
+    const paddingBottom = safe(parseFloat(style.paddingBottom));
+    const marginTop = safe(parseFloat(style.marginTop));
+    const marginBottom = safe(parseFloat(style.marginBottom));
 
     return {
       duration,
       easing,
       css: (t: number) => {
+        const tt = Number.isFinite(t) ? t : 0;
         return `
           overflow: hidden;
-          height: ${t * currentHeight}px;
-          padding-top: ${t * paddingTop}px;
-          padding-bottom: ${t * paddingBottom}px;
-          margin-top: ${t * marginTop}px;
-          margin-bottom: ${t * marginBottom}px;
-          opacity: ${Math.min(1, t * 2)};
+          height: ${tt * currentHeight}px;
+          padding-top: ${tt * paddingTop}px;
+          padding-bottom: ${tt * paddingBottom}px;
+          margin-top: ${tt * marginTop}px;
+          margin-bottom: ${tt * marginBottom}px;
+          opacity: ${Math.min(1, tt * 2)};
         `;
       },
     };
