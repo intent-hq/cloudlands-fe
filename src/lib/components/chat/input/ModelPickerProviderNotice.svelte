@@ -53,7 +53,7 @@
   async function openCodexDocs(event: MouseEvent) {
     event.preventDefault();
     if (docsUrl) {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Opening the setup docs is a shell action, not async domain data fetching.
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- shell.open is opening an external URL, not fetching domain data; rule misfires on the 'open' method name
       await shell.open(docsUrl);
     }
   }

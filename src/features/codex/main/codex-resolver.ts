@@ -8,6 +8,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { execFileAsync } from '../../../shared/main/async-utils';
 import { ensureManagedCodexAcp } from './codex-acp-manager';
 
 // Common paths to look for codex-acp
@@ -103,6 +104,10 @@ let cachedCodexPath: string | null = null;
 let cachedCodexCliPath: string | null = null;
 let cachedCodexMcpServerPath: string | null = null;
 let cachedNpxPath: string | null = null;
+let cachedCodexAppServerVersionProbe: CodexAppServerVersionProbeResult | null = null;
+
+export const MINIMUM_CODEX_APP_SERVER_VERSION = '0.128.0';
+const CODEX_APP_SERVER_VERSION_TIMEOUT_MS = 1500;
 
 /**
  * Clear cached paths to force re-detection on next check.
@@ -113,6 +118,73 @@ export function clearCodexCache(): void {
   cachedCodexCliPath = null;
   cachedCodexMcpServerPath = null;
   cachedNpxPath = null;
+  cachedCodexAppServerVersionProbe = null;
+}
+
+export type CodexAppServerVersionProbeResult =
+  | { ok: true; version: string }
+  | { ok: false; reason: string };
+
+type CodexVersionProbeError = Error & {
+  code?: string | number | null;
+  killed?: boolean;
+};
+
+function parseCodexCliVersion(output: string): string | null {
+  const match = output.match(
+    /codex(?:-cli)?\s+([0-9]+\.[0-9]+\.[0-9]+)(?:[-+][0-9A-Za-z.-]+)?(?:\s|$)/i,
+  );
+  return match?.[1] ?? null;
+}
+
+function parseSemverCore(version: string): [number, number, number] | null {
+  const match = version.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a: string, b: string): number {
+  const left = parseSemverCore(a);
+  const right = parseSemverCore(b);
+  if (!left && !right) return 0;
+  if (!left) return -1;
+  if (!right) return 1;
+  for (let i = 0; i < 3; i += 1) {
+    const diff = left[i] - right[i];
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+export async function probeCodexAppServerVersion(
+  codexCliPath: string,
+): Promise<CodexAppServerVersionProbeResult> {
+  if (cachedCodexAppServerVersionProbe) return cachedCodexAppServerVersionProbe;
+
+  try {
+    const result = await execFileAsync(codexCliPath, ['--version'], {
+      encoding: 'utf8',
+      timeout: CODEX_APP_SERVER_VERSION_TIMEOUT_MS,
+    });
+
+    const version = parseCodexCliVersion(`${result.stdout || ''}\n${result.stderr || ''}`);
+    const probeResult: CodexAppServerVersionProbeResult = version
+      ? { ok: true, version }
+      : { ok: false, reason: 'Unable to parse codex CLI version' };
+    if (probeResult.ok) cachedCodexAppServerVersionProbe = probeResult;
+    return probeResult;
+  } catch (error) {
+    const probeError = error as CodexVersionProbeError;
+    let reason = probeError.message;
+    if (probeError.code === 'ENOENT') {
+      reason = 'codex CLI not found';
+    } else if (typeof probeError.code === 'number') {
+      reason = `codex --version exited with status ${probeError.code}`;
+    } else if (probeError.killed) {
+      reason = `codex --version timed out after ${CODEX_APP_SERVER_VERSION_TIMEOUT_MS}ms`;
+    }
+    return { ok: false, reason };
+  }
 }
 
 async function findNpxPath(): Promise<string | null> {
@@ -211,10 +283,15 @@ export type CodexResolvedCommand = {
   env?: Record<string, string>;
 };
 
-export type CodexModelListCommandSource = 'managed-codex-acp' | 'codex-acp' | 'npx-codex-acp';
+export type CodexModelListCommandSource =
+  | 'codex-app-server'
+  | 'managed-codex-acp'
+  | 'codex-acp'
+  | 'npx-codex-acp';
 
 export type CodexResolvedModelListCommand = CodexResolvedCommand & {
   source: CodexModelListCommandSource;
+  codexCliVersion?: string;
 };
 
 /**
@@ -283,6 +360,22 @@ export async function resolveCodexCommand(): Promise<CodexResolvedCommand | null
  */
 export async function resolveCodexModelListCommands(): Promise<CodexResolvedModelListCommand[]> {
   const candidates: CodexResolvedModelListCommand[] = [];
+
+  const codexCliPath = await findCodexCliPath();
+  const versionProbe = codexCliPath ? await probeCodexAppServerVersion(codexCliPath) : null;
+  if (
+    codexCliPath &&
+    versionProbe?.ok &&
+    compareSemver(versionProbe.version, MINIMUM_CODEX_APP_SERVER_VERSION) >= 0
+  ) {
+    candidates.push({
+      command: codexCliPath,
+      argsPrefix: ['app-server', '--listen', 'stdio://'],
+      usesNpx: false,
+      source: 'codex-app-server',
+      codexCliVersion: versionProbe.version,
+    });
+  }
 
   const managedCommand = await resolveManagedCodexAcpCommand();
   if (managedCommand) {

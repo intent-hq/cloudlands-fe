@@ -17,6 +17,7 @@ import {
 import { CODEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import { CodexAppServerAcpAdapter } from './codex-app-server-transport';
 import {
   resolveCodexModelListCommands,
   type CodexResolvedModelListCommand,
@@ -27,13 +28,18 @@ const logger = new Logger('CodexIPC');
 
 // Cache for model listing results to avoid spawning a new process on every call
 export type CodexModel = { value: string; label: string; description?: string };
-type CodexModelListSource = 'codex-acp';
+type CodexModelListSource = 'codex-app-server' | 'codex-acp';
 type CodexModelListProbeResult = {
   models: CodexModel[];
   source: CodexModelListSource | null;
   attemptedSources: CodexResolvedModelListCommand['source'][];
 };
-type CodexManagedInstallState = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unsupported';
+type CodexManagedInstallState =
+  | 'not_installed'
+  | 'installing'
+  | 'installed'
+  | 'failed'
+  | 'unsupported';
 type CodexManagedInstallStatusPayload = {
   managedInstallState: CodexManagedInstallState;
   version?: string;
@@ -67,10 +73,7 @@ function toManagedInstallStatusPayload(
   };
 }
 
-function sendManagedInstallEvent(
-  channel: string,
-  payload: CodexManagedInstallStatusPayload,
-): void {
+function sendManagedInstallEvent(channel: string, payload: CodexManagedInstallStatusPayload): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
       window.webContents.send(channel, payload);
@@ -86,9 +89,7 @@ function publishManagedInstallStatus(
   return payload;
 }
 
-function publishManagedInstallProgress(
-  payload: CodexManagedInstallStatusPayload,
-): void {
+function publishManagedInstallProgress(payload: CodexManagedInstallStatusPayload): void {
   sendManagedInstallEvent(CODEX_CHANNELS.MANAGED_INSTALL_PROGRESS, payload);
 }
 
@@ -148,7 +149,10 @@ export function parseModelsFromCodexCliResponse(raw: unknown): CodexModel[] {
     }
   }
 
-  const payload = response && typeof response === 'object' && 'result' in response ? (response as any).result : response;
+  const payload =
+    response && typeof response === 'object' && 'result' in response
+      ? (response as any).result
+      : response;
   const candidates: any[] = Array.isArray((payload as any)?.data)
     ? (payload as any).data
     : Array.isArray((payload as any)?.models)
@@ -361,6 +365,65 @@ async function probeCodexModelsViaAcp(
   });
 }
 
+async function probeCodexModelsViaAppServer(
+  resolved: CodexResolvedModelListCommand,
+): Promise<CodexModel[]> {
+  const child = spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  const adapter = new CodexAppServerAcpAdapter(child, { requestTimeoutMs: 8000 });
+
+  return await new Promise((resolve) => {
+    let done = false;
+
+    const finish = (models: CodexModel[]) => {
+      if (done) return;
+      done = true;
+      adapter.dispose();
+      killChildProcessTree(child);
+      resolve(models);
+    };
+
+    const timeoutId = setTimeout(() => {
+      logger.warn('Timed out waiting for Codex models via app-server');
+      finish([]);
+    }, 15000);
+
+    child.on('error', () => {
+      clearTimeout(timeoutId);
+      finish([]);
+    });
+
+    child.on('close', () => {
+      clearTimeout(timeoutId);
+      if (!done) finish([]);
+    });
+
+    adapter.on('stderr', (stderr: string) => {
+      if (stderr.trim()) logger.debug('Codex app-server stderr', { stderr: stderr.trim() });
+    });
+    adapter.on('error', (error: Error) => {
+      logger.debug('Codex app-server adapter error', { error: error.message });
+    });
+
+    (async () => {
+      try {
+        await adapter.initialize();
+        const response = await adapter.listModels();
+        const models = parseModelsFromCodexCliResponse(response);
+        if (models.length === 0) {
+          logger.debug('No models found in Codex app-server model/list response');
+        }
+
+        clearTimeout(timeoutId);
+        finish(models);
+      } catch (error) {
+        logger.debug('Codex app-server model probe failed', { error: (error as Error).message });
+        clearTimeout(timeoutId);
+        finish([]);
+      }
+    })();
+  });
+}
+
 /**
  * Dynamically fetch available models from codex-acp.
  */
@@ -384,18 +447,25 @@ async function listCodexModelsDynamically(): Promise<CodexModelListProbeResult> 
   }
 
   const candidates = await resolveCodexModelListCommands();
-  publishManagedInstallStatus({ downloadProgress: getManagedCodexAcpStatus().state === 'ready' ? 1 : undefined });
+  publishManagedInstallStatus({
+    downloadProgress: getManagedCodexAcpStatus().state === 'ready' ? 1 : undefined,
+  });
   const attemptedSources = candidates.map((candidate) => candidate.source);
 
   for (const candidate of candidates) {
-    const source: CodexModelListSource = 'codex-acp';
+    const source: CodexModelListSource =
+      candidate.source === 'codex-app-server' ? 'codex-app-server' : 'codex-acp';
     logger.info('Querying dynamic Codex model list', {
       source,
       command: candidate.command,
       usesNpx: candidate.usesNpx,
+      codexCliVersion: candidate.codexCliVersion,
     });
 
-    const models = await probeCodexModelsViaAcp(candidate);
+    const models =
+      candidate.source === 'codex-app-server'
+        ? await probeCodexModelsViaAppServer(candidate)
+        : await probeCodexModelsViaAcp(candidate);
 
     if (models.length > 0) {
       cachedModels = models;
