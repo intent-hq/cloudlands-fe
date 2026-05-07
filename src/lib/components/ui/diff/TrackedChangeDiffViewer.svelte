@@ -22,7 +22,6 @@
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
-  import type { HunkData, ExpansionDirections } from '@pierre/diffs';
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
   import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
   import { hashContent } from './DiffViewer.svelte';
@@ -906,38 +905,6 @@
     }
   }
 
-  // Render hunk separator - shows expand button for hidden lines
-  function renderHunkSeparator(hunk: HunkData, expand: (dir: ExpansionDirections) => void) {
-    const lineCount = hunk.lines ?? 0;
-
-    // Outer wrapper spans both grid columns
-    const wrapper = document.createElement('div');
-    wrapper.style.gridColumn = 'span 2';
-    wrapper.className = 'hunk-separator-wrapper';
-
-    // Inner content is sticky positioned
-    const content = document.createElement('div');
-    content.className = 'hunk-separator-actions';
-
-    // Chevron icon (up/down arrows)
-    const chevron = document.createElement('span');
-    chevron.className = 'hunk-separator-chevron';
-    chevron.innerHTML =
-      '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M5.22 10.22a.75.75 0 0 1 1.06 0L8 11.94l1.72-1.72a.75.75 0 1 1 1.06 1.06l-2.25 2.25a.75.75 0 0 1-1.06 0l-2.25-2.25a.75.75 0 0 1 0-1.06ZM10.78 5.78a.75.75 0 0 1-1.06 0L8 4.06 6.28 5.78a.75.75 0 0 1-1.06-1.06l2.25-2.25a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>';
-    content.appendChild(chevron);
-
-    // Text label
-    const text = document.createElement('span');
-    text.className = 'hunk-separator-text';
-    text.textContent = `${lineCount} unmodified line${lineCount !== 1 ? 's' : ''}`;
-    content.appendChild(text);
-
-    content.onclick = () => expand('both');
-
-    wrapper.appendChild(content);
-    return wrapper;
-  }
-
   // Changed-line computation is lazy + memoized. It used to be a
   // `$derived.by` that re-ran whenever content, file path, or dependencies
   // changed — even when the user never interacted with the diff. For the
@@ -1243,7 +1210,6 @@
           showStats={false}
           expandUnchanged={!foldUnchanged}
           overflow={lineWrapping ? 'wrap' : 'scroll'}
-          {renderHunkSeparator}
           enableLineSelection={!!(onStageHunk || onUnstageHunk)}
           {selectedLines}
           onLineSelected={handleLineSelected}

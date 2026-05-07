@@ -1,45 +1,5 @@
 <script module lang="ts">
-  /**
-   * Module-scoped hash cache shared across all DiffViewer instances.
-   * Wave 3: previously kept per-component-instance, which defeated dedup
-   * across the N mounted diffs in "all changes". Keep the same FNV-1a
-   * string-hash behaviour and the same 512-entry LRU-ish eviction.
-   */
-
-  /**
-   * FNV-1a 32-bit hash of a string.
-   * Used only to generate stable cache keys for @pierre/diffs — never to key
-   * security-sensitive data. Collisions are acceptable; the cache still stays
-   * correct because @pierre/diffs reparses when the backing content differs.
-   */
-  function fnv1a32(str: string): string {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      // 32-bit FNV prime multiply via adds and shifts
-      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
-    }
-    return hash.toString(36);
-  }
-
-  const contentHashCache = new Map<string, string>();
-
-  export function hashContent(str: string): string {
-    if (str.length === 0) return '0';
-    const cached = contentHashCache.get(str);
-    if (cached !== undefined) return cached;
-    const h = fnv1a32(str);
-    if (contentHashCache.size > 512) {
-      // Drop the oldest half — cheap eviction, no priority queue required.
-      const keys = Array.from(contentHashCache.keys());
-      for (let i = 0; i < keys.length >> 1; i++) {
-        contentHashCache.delete(keys[i]);
-      }
-    }
-    contentHashCache.set(str, h);
-    return h;
-  }
-
+  export { hashContent } from './diff-content-hash.js';
 </script>
 
 <script lang="ts">
@@ -78,6 +38,7 @@
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { hashContent } from './diff-content-hash.js';
   import Fa from 'svelte-fa';
   import {
     faSearch,
@@ -96,37 +57,6 @@
 
   // `hashContent` is now imported from the module-scope block above so the
   // content-hash LRU is shared across all DiffViewer instances (Wave 3 perf).
-
-  /**
-   * Hoisted default hunk separator — referentially stable across renders so the
-   * options-diff check in buildFileDiffOptions() can skip rebuild/rerender when
-   * the consumer hasn't provided a custom renderer.
-   */
-  function defaultHunkSeparator(hunk: HunkData, instance: FileDiff) {
-    const lineCount = hunk.lines ?? 0;
-
-    const wrapper = document.createElement('div');
-    wrapper.style.gridColumn = 'span 2';
-    wrapper.className = 'hunk-separator-wrapper';
-
-    const container = document.createElement('div');
-    container.className = 'hunk-separator-default';
-
-    const chevron = document.createElement('span');
-    chevron.className = 'hunk-separator-chevron';
-    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5 5.3-5 5.4z"/></svg>';
-
-    const text = document.createElement('span');
-    text.className = 'hunk-separator-text';
-    text.textContent = `${lineCount} unmodified line${lineCount !== 1 ? 's' : ''}`;
-
-    container.appendChild(chevron);
-    container.appendChild(text);
-    container.onclick = () => instance.expandHunk(hunk.hunkIndex, 'both');
-
-    wrapper.appendChild(container);
-    return wrapper;
-  }
 
   let {
     // Input
@@ -222,6 +152,10 @@
   let fileDiffInstance: FileDiff | undefined = $state();
   let collapsed = $state(false);
 
+  const FOLDED_ROW_SELECTOR = "[data-separator='line-info'], [data-separator='line-info-basic']";
+  const FOLDED_ROW_NATIVE_EXPAND_SELECTOR = '[data-expand-button], [data-unmodified-lines]';
+  const FOLDED_ROW_EXPAND_BUTTON_SELECTOR = '[data-expand-button]:not([data-expand-all-button])';
+
   // Search state
   let searchOpen = $state(false);
   let searchQuery = $state('');
@@ -316,6 +250,145 @@
           position: sticky;
           left: 0;
         }
+        [data-gutter] [data-separator='line-info'],
+        [data-gutter] [data-separator='line-info-basic'],
+        [data-gutter] [data-separator='metadata'],
+        [data-gutter] [data-separator='custom'] {
+          contain: inline-size;
+          min-width: 0;
+        }
+        [data-gutter] [data-separator-content],
+        [data-gutter] [data-unmodified-lines] {
+          max-width: 0;
+          min-width: 0;
+          overflow: hidden;
+          padding-inline: 0;
+          visibility: hidden;
+        }
+        [data-separator='line-info'],
+        [data-separator='line-info-basic'] {
+          height: 24px;
+        }
+        [data-gutter] [data-separator='line-info'] [data-separator-wrapper],
+        [data-gutter] [data-separator='line-info-basic'] [data-separator-wrapper] {
+          align-items: center;
+          background: transparent;
+          cursor: pointer;
+          display: flex;
+          justify-content: flex-end;
+          min-width: 0;
+          padding: 0;
+          width: 100%;
+        }
+        [data-unified] [data-content] [data-separator='line-info'] [data-separator-wrapper],
+        [data-unified] [data-content] [data-separator='line-info-basic'] [data-separator-wrapper],
+        [data-deletions] [data-content] [data-separator='line-info'] [data-separator-wrapper],
+        [data-deletions] [data-content] [data-separator='line-info-basic'] [data-separator-wrapper] {
+          background-color: var(--diffs-bg-separator);
+          display: flex;
+          min-width: 0;
+        }
+        [data-content] [data-separator='line-info'] [data-separator-wrapper],
+        [data-content] [data-separator='line-info-basic'] [data-separator-wrapper] {
+          align-items: center;
+          background: transparent;
+          cursor: pointer;
+          gap: 0.25rem;
+        }
+        [data-separator='line-info'][data-expand-index],
+        [data-separator='line-info-basic'][data-expand-index],
+        [data-separator='line-info'][data-expand-index] [data-separator-content],
+        [data-separator='line-info-basic'][data-expand-index] [data-separator-content] {
+          cursor: pointer;
+        }
+        [data-unified] [data-content] [data-separator-content],
+        [data-deletions] [data-content] [data-separator-content] {
+          min-width: 0;
+        }
+        [data-content] [data-separator='line-info'] [data-expand-button],
+        [data-content] [data-separator='line-info-basic'] [data-expand-button] {
+          display: none;
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-button],
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-button] {
+          align-self: center;
+          background: transparent;
+          border-right: 0;
+          border-radius: 999px;
+          box-sizing: border-box;
+          color: var(--diffs-fg-number);
+          flex: 0 0 calc(12px + 1ch + 2px);
+          font: inherit;
+          height: 18px;
+          justify-content: flex-end;
+          margin-left: auto;
+          min-width: calc(12px + 1ch + 2px);
+          opacity: 0.72;
+          padding-inline: 0 calc(1ch + 2px);
+          position: relative;
+        }
+        [data-content] [data-separator='line-info'] [data-expand-button],
+        [data-content] [data-separator='line-info-basic'] [data-expand-button] {
+          border-right: 0;
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-button]:hover,
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-button]:hover,
+        [data-content] [data-separator='line-info'] [data-expand-button]:hover,
+        [data-content] [data-separator='line-info-basic'] [data-expand-button]:hover {
+          background-color: var(--diffs-bg-separator);
+          color: var(--diffs-fg);
+          opacity: 1;
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-button] [data-icon],
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-button] [data-icon],
+        [data-content] [data-separator='line-info'] [data-expand-button] [data-icon],
+        [data-content] [data-separator='line-info-basic'] [data-expand-button] [data-icon] {
+          display: none;
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-button]:not([data-expand-all-button])::before,
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-button]:not([data-expand-all-button])::before,
+        [data-content] [data-separator='line-info'] [data-expand-button]:not([data-expand-all-button])::before,
+        [data-content] [data-separator='line-info-basic'] [data-expand-button]:not([data-expand-all-button])::before {
+          background: currentColor;
+          content: '';
+          display: block;
+          height: 12px;
+          width: 12px;
+          -webkit-mask: var(--diffs-fold-expand-icon) center / contain no-repeat;
+          mask: var(--diffs-fold-expand-icon) center / contain no-repeat;
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-up],
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-up],
+        [data-content] [data-separator='line-info'] [data-expand-up],
+        [data-content] [data-separator='line-info-basic'] [data-expand-up] {
+          --diffs-fold-expand-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 3.25h8'/%3E%3Cpath d='M8 5v8'/%3E%3Cpath d='M4.75 9.75 8 13l3.25-3.25'/%3E%3C/svg%3E");
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-down],
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-down],
+        [data-content] [data-separator='line-info'] [data-expand-down],
+        [data-content] [data-separator='line-info-basic'] [data-expand-down] {
+          --diffs-fold-expand-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12.75h8'/%3E%3Cpath d='M8 11V3'/%3E%3Cpath d='M4.75 6.25 8 3l3.25 3.25'/%3E%3C/svg%3E");
+        }
+        [data-gutter] [data-separator='line-info'] [data-expand-both],
+        [data-gutter] [data-separator='line-info-basic'] [data-expand-both],
+        [data-content] [data-separator='line-info'] [data-expand-both],
+        [data-content] [data-separator='line-info-basic'] [data-expand-both] {
+          --diffs-fold-expand-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8h8'/%3E%3Cpath d='M8 6V3'/%3E%3Cpath d='M5.75 5.25 8 3l2.25 2.25'/%3E%3Cpath d='M8 10v3'/%3E%3Cpath d='M5.75 10.75 8 13l2.25-2.25'/%3E%3C/svg%3E");
+        }
+        [data-content] [data-separator='line-info'] [data-separator-content],
+        [data-content] [data-separator='line-info-basic'] [data-separator-content] {
+          background: transparent;
+          color: var(--diffs-fg-number);
+          font-size: 0.8125rem;
+          height: 18px;
+          line-height: 18px;
+          padding: 0 0.5rem;
+          text-decoration: none;
+        }
+        [data-expand-index] [data-separator-content]:hover,
+        [data-expand-index] [data-unmodified-lines]:hover {
+          text-decoration: none;
+        }
       `;
   let lastUnsafeSuffix: string | undefined;
   let lastUnsafeCombined = UNSAFE_CSS_BASE;
@@ -326,10 +399,9 @@
     return lastUnsafeCombined;
   }
 
-  // Build FileDiff options. Callers pass a stable custom hunk separator in
-  // `renderHunkSeparator` — if absent we use the hoisted `defaultHunkSeparator`
-  // so the returned options object is structurally stable across renders when
-  // no prop has changed.
+  // Build FileDiff options. Callers can pass a custom hunk separator in
+  // `renderHunkSeparator`; otherwise preserve @pierre/diffs' built-in separator
+  // structure so folded labels live outside the line-number gutter sizing path.
   function buildFileDiffOptions(): any {
     return {
       diffStyle: viewMode,
@@ -341,7 +413,7 @@
             renderHunkSeparator(hunk, (dir: ExpansionDirections) =>
               instance.expandHunk(hunk.hunkIndex, dir),
             )
-        : defaultHunkSeparator,
+        : hunkSeparators,
       expandUnchanged,
       // disableBackground: true,
       expansionLineCount,
@@ -568,11 +640,50 @@
     }
   }
 
+  function getComposedElementPath(event: MouseEvent): Element[] {
+    return event.composedPath().filter((target): target is Element => target instanceof Element);
+  }
+
+  function closestInComposedPath(path: Element[], selector: string): Element | null {
+    for (const element of path) {
+      const match = element.closest(selector);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  function handleFoldedSeparatorRowClick(event: MouseEvent) {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const elementPath = getComposedElementPath(event);
+    if (!containerRef || !elementPath.includes(containerRef)) return;
+    if (closestInComposedPath(elementPath, FOLDED_ROW_NATIVE_EXPAND_SELECTOR)) return;
+
+    const foldedRow = closestInComposedPath(elementPath, FOLDED_ROW_SELECTOR);
+    if (!foldedRow) return;
+
+    const expandButton = foldedRow.querySelector<HTMLElement>(FOLDED_ROW_EXPAND_BUTTON_SELECTOR);
+    if (!expandButton) return;
+
+    event.preventDefault();
+    expandButton.click();
+  }
+
   onMount(() => {
     // Add keydown listener to the wrapper
     wrapperRef?.addEventListener('keydown', handleKeydown);
     return () => {
       wrapperRef?.removeEventListener('keydown', handleKeydown);
+    };
+  });
+
+  $effect(() => {
+    const currentContainer = containerRef;
+    if (!currentContainer) return;
+
+    currentContainer.addEventListener('click', handleFoldedSeparatorRowClick);
+
+    return () => {
+      currentContainer.removeEventListener('click', handleFoldedSeparatorRowClick);
     };
   });
 
@@ -664,6 +775,7 @@
       diffIndicators,
       showLineNumbers,
       overflow,
+      typeof renderHunkSeparator === 'function' ? 'custom' : hunkSeparators,
       expandUnchanged,
       expansionLineCount,
       lineDiffType,
@@ -691,6 +803,7 @@
       maxLineDiffLength,
       enableLineSelection,
       enableHoverUtility,
+      renderHunkSeparator,
       renderHoverUtility,
       renderAnnotation,
     ];
