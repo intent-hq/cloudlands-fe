@@ -169,7 +169,7 @@
 </script>
 
 {#if open}
-  <Portal>
+  <Portal zIndex={100}>
     <div
       class="bg-black/50 flex items-center justify-center w-screen h-screen fixed inset-0"
       role="button"
