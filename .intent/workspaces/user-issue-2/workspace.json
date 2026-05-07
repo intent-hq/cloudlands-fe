@@ -1,0 +1,17 @@
+{
+  "title": "Fix attachment note links",
+  "branch": "fix-attachment-note-links",
+  "baseRef": "main",
+  "tags": [],
+  "createdAt": "2026-05-07T20:34:03.647Z",
+  "gitSync": {
+    "enabled": true,
+    "shareNotes": true,
+    "shareAgentChats": false,
+    "sharedBy": {
+      "displayName": "Amelia Wattenberger"
+    }
+  },
+  "repositoryOwner": "augmentcode",
+  "repositoryName": "intent"
+}
