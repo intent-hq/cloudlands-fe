@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.10
+
+- Workspace UI now shows Auggie credit usage stats, with per-agent breakdowns on hover.
+- Home view gets workspace status and hover cards so you can see what's happening across your spaces at a glance.
+- Codex model picker now uses your installed codex CLI when available, so newer models like GPT-5.5 show up automatically.
+- Links in notes are now underlined so they're easier to spot.
+- Workspace creation messaging is clearer when running without a worktree.
+- Security: tightened the HTTP MCP bridge so it no longer exposes itself broadly on the network.
+- Fixes: idle agents no longer appear as "responding" in the overview, animation glitches and noisy queued-stream logs, home workspace column widths, `.app` files now detected by content instead of extension, and stale agent replies no longer overwrite newer user messages.
+
 ## 0.3.9
 
 - Model picker now surfaces the actual provider error (e.g. invalid key, network failure) instead of a generic "Failed to load models" message.
