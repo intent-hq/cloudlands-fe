@@ -51,8 +51,8 @@ vi.mock('$lib/store/slices/unread-tracking/unread-tracking-selectors', () => ({
   selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => mocks.unreadAgentIds) },
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSessionsByWorkspace: vi.fn(mocks.createWorkspaceSessionReadable),
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: vi.fn(mocks.createWorkspaceSessionReadable),
 }));
 
 vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({

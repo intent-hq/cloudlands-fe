@@ -15,7 +15,7 @@
     selectUnreadAgentIds,
     selectUnreadAgentIdsForWorkspace,
   } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-  import { selectAgentSessionsByWorkspace } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -244,7 +244,7 @@
 
   // Subscribe to unread state via Redux selector for reactivity
   const unreadAgentIds$ = selectUnreadAgentIds();
-  const workspaceAgentSessions$ = selectAgentSessionsByWorkspace(workspaceIdStore);
+  const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   // Reactive version counter for active streams (non-Redux service)
   let activeStreamsVersion = $state(0);

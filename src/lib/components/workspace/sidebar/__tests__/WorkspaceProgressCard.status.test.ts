@@ -56,8 +56,8 @@ vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-selectors', () 
   selectUnreadNoteIds: mocks.selector(() => []),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSessionsByWorkspace: mocks.selector(() => []),
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
 vi.mock('$lib/store/slices/session-stats/session-stats-selectors', () => ({
