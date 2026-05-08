@@ -2,14 +2,14 @@
  * Stream Window Targeting Tests
  *
  * Tests for the cross-stream prevention fix that ensures stream messages
- * are sent only to the window that initiated each stream.
+ * are sent only to windows viewing the stream's workspace.
  *
  * This addresses a bug where running two coordinators simultaneously
  * caused their output to "cross streams" - coordinator A's output
  * would render in coordinator B's window and vice-versa.
  *
- * The fix tracks which window initiated each stream via streamWindowIds
- * and uses sendStreamToRenderer to target the correct window.
+ * The fix tracks each stream's workspace via streamWorkspaceIds
+ * and uses sendStreamToRenderer to target the correct workspace windows.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -82,37 +82,43 @@ describe('Stream Window Targeting (Cross-Stream Prevention)', () => {
    * Helper that mimics the sendStreamToRenderer logic from agent-backend-handler.service.ts
    * This tests the core targeting logic without the full service instantiation.
    */
-  const createStreamSender = (streamWindowIds: Map<string, number>) => (agentId: string, channel: string, data: any): boolean => {
-    const targetWindowId = streamWindowIds.get(agentId);
-    const windows = (BrowserWindow as any).mockWindows;
-
-    if (targetWindowId !== undefined) {
-      // Send only to target window (targeted delivery)
-      const targetWindow = windows.find((w: any) => w.id === targetWindowId);
-      if (targetWindow && !targetWindow.isDestroyed()) {
-        targetWindow.webContents.send(channel, data);
-        return true;
+  const createStreamSender =
+    (streamWorkspaceIds: Map<string, string>, workspaceWindowIds: Map<string, number[]>) =>
+    (agentId: string, channel: string, data: any): boolean => {
+      const workspaceId = streamWorkspaceIds.get(agentId);
+      if (!workspaceId) {
+        return false;
       }
-      return false;
-    } else {
-      // Broadcast to all windows (fallback for backend-initiated streams)
+
+      const targetWindowIds = workspaceWindowIds.get(workspaceId) ?? [];
+      if (targetWindowIds.length === 0) {
+        return false;
+      }
+
+      const targetWindowSet = new Set(targetWindowIds);
+      const windows = (BrowserWindow as any).mockWindows;
+      const dataWithWorkspaceId = { ...data, workspaceId };
+
       let sent = false;
       for (const window of windows) {
-        if (!window.isDestroyed()) {
-          window.webContents.send(channel, data);
+        if (targetWindowSet.has(window.id) && !window.isDestroyed()) {
+          window.webContents.send(channel, dataWithWorkspaceId);
           sent = true;
         }
       }
       return sent;
-    }
-  };
+    };
 
-  it('should send stream messages only to the originating window', () => {
-    const streamWindowIds = new Map<string, number>();
-    streamWindowIds.set('agent-1', mockWindow1.id);
-    streamWindowIds.set('agent-2', mockWindow2.id);
+  it('should send stream messages only to windows for the agent workspace', () => {
+    const streamWorkspaceIds = new Map<string, string>();
+    streamWorkspaceIds.set('agent-1', 'workspace-1');
+    streamWorkspaceIds.set('agent-2', 'workspace-2');
+    const workspaceWindowIds = new Map<string, number[]>([
+      ['workspace-1', [mockWindow1.id]],
+      ['workspace-2', [mockWindow2.id]],
+    ]);
 
-    const sendStreamToRenderer = createStreamSender(streamWindowIds);
+    const sendStreamToRenderer = createStreamSender(streamWorkspaceIds, workspaceWindowIds);
 
     // Agent 1 sends stream data
     sendStreamToRenderer('agent-1', 'agent:stream:agent-1', {
@@ -130,14 +136,14 @@ describe('Stream Window Targeting (Cross-Stream Prevention)', () => {
     expect(mockWindow1.webContents.send).toHaveBeenCalledTimes(1);
     expect(mockWindow1.webContents.send).toHaveBeenCalledWith(
       'agent:stream:agent-1',
-      expect.objectContaining({ content: 'Response from agent 1' }),
+      expect.objectContaining({ content: 'Response from agent 1', workspaceId: 'workspace-1' }),
     );
 
     // Window 2 should only receive agent 2's stream
     expect(mockWindow2.webContents.send).toHaveBeenCalledTimes(1);
     expect(mockWindow2.webContents.send).toHaveBeenCalledWith(
       'agent:stream:agent-2',
-      expect.objectContaining({ content: 'Response from agent 2' }),
+      expect.objectContaining({ content: 'Response from agent 2', workspaceId: 'workspace-2' }),
     );
 
     // Verify no cross-contamination
@@ -151,51 +157,59 @@ describe('Stream Window Targeting (Cross-Stream Prevention)', () => {
     );
   });
 
-  it('should fall back to broadcast when no window ID is tracked', () => {
-    // Empty map simulates no window tracking (e.g., backend-initiated stream)
-    const streamWindowIds = new Map<string, number>();
-    const sendStreamToRenderer = createStreamSender(streamWindowIds);
+  it('should drop workspace-scoped stream messages when no workspace is tracked', () => {
+    const streamWorkspaceIds = new Map<string, string>();
+    const workspaceWindowIds = new Map<string, number[]>([['workspace-1', [mockWindow1.id]]]);
+    const sendStreamToRenderer = createStreamSender(streamWorkspaceIds, workspaceWindowIds);
 
-    sendStreamToRenderer('agent-untracked', 'agent:stream:agent-untracked', {
+    const result = sendStreamToRenderer('agent-untracked', 'agent:stream:agent-untracked', {
       type: 'chunk',
-      content: 'Broadcast message',
+      content: 'Dropped message',
     });
 
-    // Both windows should receive the message (broadcast fallback)
-    expect(mockWindow1.webContents.send).toHaveBeenCalledTimes(1);
-    expect(mockWindow2.webContents.send).toHaveBeenCalledTimes(1);
-    expect(mockWindow1.webContents.send).toHaveBeenCalledWith(
-      'agent:stream:agent-untracked',
-      expect.objectContaining({ content: 'Broadcast message' }),
-    );
-    expect(mockWindow2.webContents.send).toHaveBeenCalledWith(
-      'agent:stream:agent-untracked',
-      expect.objectContaining({ content: 'Broadcast message' }),
-    );
+    expect(result).toBe(false);
+    expect(mockWindow1.webContents.send).not.toHaveBeenCalled();
+    expect(mockWindow2.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('should drop workspace-scoped stream messages when no workspace windows are tracked', () => {
+    const streamWorkspaceIds = new Map<string, string>([['agent-untracked', 'workspace-missing']]);
+    const workspaceWindowIds = new Map<string, number[]>();
+    const sendStreamToRenderer = createStreamSender(streamWorkspaceIds, workspaceWindowIds);
+
+    const result = sendStreamToRenderer('agent-untracked', 'agent:stream:agent-untracked', {
+      type: 'chunk',
+      content: 'Dropped message',
+    });
+
+    expect(result).toBe(false);
+    expect(mockWindow1.webContents.send).not.toHaveBeenCalled();
+    expect(mockWindow2.webContents.send).not.toHaveBeenCalled();
   });
 
   it('should clean up window tracking when stream ends', () => {
-    const streamWindowIds = new Map<string, number>();
-    streamWindowIds.set('agent-cleanup', mockWindow1.id);
+    const streamWorkspaceIds = new Map<string, string>();
+    streamWorkspaceIds.set('agent-cleanup', 'workspace-1');
 
-    // Verify window is tracked
-    expect(streamWindowIds.has('agent-cleanup')).toBe(true);
+    // Verify workspace is tracked
+    expect(streamWorkspaceIds.has('agent-cleanup')).toBe(true);
 
     // Simulate stream cleanup (what cleanupStreamResources does)
-    streamWindowIds.delete('agent-cleanup');
+    streamWorkspaceIds.delete('agent-cleanup');
 
     // Verify cleanup
-    expect(streamWindowIds.has('agent-cleanup')).toBe(false);
+    expect(streamWorkspaceIds.has('agent-cleanup')).toBe(false);
   });
 
   it('should skip destroyed windows when sending targeted messages', () => {
-    const streamWindowIds = new Map<string, number>();
-    streamWindowIds.set('agent-destroyed', mockWindow1.id);
+    const streamWorkspaceIds = new Map<string, string>();
+    streamWorkspaceIds.set('agent-destroyed', 'workspace-1');
+    const workspaceWindowIds = new Map<string, number[]>([['workspace-1', [mockWindow1.id]]]);
 
     // Mark window 1 as destroyed
     mockWindow1.isDestroyed.mockReturnValue(true);
 
-    const sendStreamToRenderer = createStreamSender(streamWindowIds);
+    const sendStreamToRenderer = createStreamSender(streamWorkspaceIds, workspaceWindowIds);
 
     const result = sendStreamToRenderer('agent-destroyed', 'agent:stream:agent-destroyed', {
       type: 'chunk',
@@ -208,12 +222,13 @@ describe('Stream Window Targeting (Cross-Stream Prevention)', () => {
   });
 
   it('should handle multiple streams to same window correctly', () => {
-    const streamWindowIds = new Map<string, number>();
-    // Two agents, both started from window 1
-    streamWindowIds.set('agent-a', mockWindow1.id);
-    streamWindowIds.set('agent-b', mockWindow1.id);
+    const streamWorkspaceIds = new Map<string, string>();
+    // Two agents, both in workspace 1
+    streamWorkspaceIds.set('agent-a', 'workspace-1');
+    streamWorkspaceIds.set('agent-b', 'workspace-1');
+    const workspaceWindowIds = new Map<string, number[]>([['workspace-1', [mockWindow1.id]]]);
 
-    const sendStreamToRenderer = createStreamSender(streamWindowIds);
+    const sendStreamToRenderer = createStreamSender(streamWorkspaceIds, workspaceWindowIds);
 
     sendStreamToRenderer('agent-a', 'agent:stream:agent-a', {
       type: 'chunk',

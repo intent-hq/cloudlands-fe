@@ -11,6 +11,11 @@ import {
   getLocalStorageItem,
   setLocalStorageItem,
 } from "../../../utils/safe-local-storage-saga";
+import { selectWorkspaceAgentIds } from "../../workspace-agents/workspace-agents-selectors";
+import {
+  selectCurrentlyViewedAgentId,
+  selectUnreadAgentIds,
+} from "../unread-tracking-selectors";
 import {
   hydrateUnreadTracking,
   markAgentAsViewed,
@@ -18,25 +23,18 @@ import {
   clearAgentUnread,
   clearWorkspaceUnread,
   clearAllUnread,
+  clearAgentsUnread,
 } from "../unread-tracking-slice";
-import {
-  selectAgentWorkspaceMap,
-  selectCurrentlyViewedAgentId,
-  selectUnreadAgentIds,
-} from "../unread-tracking-selectors";
 
 const STORAGE_KEY = "augment:unread-agents";
-const WORKSPACE_MAP_STORAGE_KEY = "augment:unread-agents-workspaces";
 
 // ── Init ──
 
 function* loadFromLocalStorage(): SagaGenerator<void> {
   try {
     const storedIds = yield* call(getLocalStorageItem, STORAGE_KEY);
-    const storedMap = yield* call(getLocalStorageItem, WORKSPACE_MAP_STORAGE_KEY);
 
     let unreadAgentIds: string[] = [];
-    let agentWorkspaceMap: Record<string, string> = {};
 
     if (storedIds) {
       const parsed = JSON.parse(storedIds);
@@ -45,15 +43,8 @@ function* loadFromLocalStorage(): SagaGenerator<void> {
       }
     }
 
-    if (storedMap) {
-      const parsed = JSON.parse(storedMap);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        agentWorkspaceMap = parsed as Record<string, string>;
-      }
-    }
-
-    if (unreadAgentIds.length > 0 || Object.keys(agentWorkspaceMap).length > 0) {
-      yield* put(hydrateUnreadTracking({ unreadAgentIds, agentWorkspaceMap }));
+    if (unreadAgentIds.length > 0) {
+      yield* put(hydrateUnreadTracking({ unreadAgentIds }));
     }
   } catch {
     // Ignore parse errors — start with empty state
@@ -62,26 +53,12 @@ function* loadFromLocalStorage(): SagaGenerator<void> {
 
 // ── Persistence ──
 
-/** Persist both unread IDs and workspace map on any state-changing action. */
+/** Persist unread IDs on any state-changing action. */
 function* persistAll(): SagaGenerator<void> {
   try {
     const unreadAgentIds = yield* selectUnreadAgentIds.effect();
-    const agentWorkspaceMap = yield* selectAgentWorkspaceMap.effect();
 
     yield* call(setLocalStorageItem, STORAGE_KEY, JSON.stringify(unreadAgentIds));
-
-    // Only persist workspace entries for agents that are still unread
-    const filteredMap: Record<string, string> = {};
-    for (const id of unreadAgentIds) {
-      if (agentWorkspaceMap[id]) {
-        filteredMap[id] = agentWorkspaceMap[id];
-      }
-    }
-    yield* call(
-      setLocalStorageItem,
-      WORKSPACE_MAP_STORAGE_KEY,
-      JSON.stringify(filteredMap)
-    );
   } catch {
     // Ignore storage errors — localStorage can throw (quota, private browsing)
   }
@@ -107,14 +84,33 @@ function* persistIfViewedAgentChanged(
   yield* call(persistAll);
 }
 
+/** @internal Exported for testing only. */
+export function* clearWorkspaceUnreadSaga(
+  action: ReturnType<typeof clearWorkspaceUnread>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+
+  const workspaceAgentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
+  if (workspaceAgentIds.length === 0) return;
+
+  const unreadAgentIds = yield* selectUnreadAgentIds.effect();
+  const unreadSet = new Set(unreadAgentIds);
+  const unreadWorkspaceAgentIds = workspaceAgentIds.filter((id) => unreadSet.has(id));
+  if (unreadWorkspaceAgentIds.length === 0) return;
+
+  yield* put(clearAgentsUnread(unreadWorkspaceAgentIds));
+}
+
 function* watchPersistence(): SagaGenerator<void> {
+  yield* takeEvery(clearWorkspaceUnread, clearWorkspaceUnreadSaga);
   // markAgentAsViewed gets a guarded handler to avoid redundant localStorage writes
   yield* takeEvery(markAgentAsViewed, persistIfViewedAgentChanged);
   yield* takeEvery(
     [
       newAssistantMessage,
       clearAgentUnread,
-      clearWorkspaceUnread,
+      clearAgentsUnread,
       clearAllUnread,
     ],
     persistAll,

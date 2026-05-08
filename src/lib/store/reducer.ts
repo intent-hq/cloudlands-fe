@@ -39,7 +39,6 @@ import { browserReducer } from "./slices/browser/browser-slice";
 import { sentryAuthReducer } from "./slices/sentry-auth/sentry-auth-slice";
 import { contextReducer } from "./slices/context/context-slice";
 import { setupScriptsReducer } from "./slices/setup-scripts/setup-scripts-slice";
-import { mcpServersReducer } from "./slices/mcp-servers/mcp-servers-slice";
 import { mcpSettingsReducer } from "./slices/mcp-settings/mcp-settings-slice";
 import { commentsReducer } from "./slices/comments/comments-slice";
 import { taskAgentAssociationsReducer } from "./slices/task-agent-associations/task-agent-associations-slice";
@@ -112,7 +111,6 @@ export const reducers = {
   browser: browserReducer,
   context: contextReducer,
   setupScripts: setupScriptsReducer,
-  mcpServers: mcpServersReducer,
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
   taskAgentAssociations: taskAgentAssociationsReducer,

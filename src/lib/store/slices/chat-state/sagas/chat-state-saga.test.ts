@@ -170,7 +170,7 @@ describe("chat-state-saga: reconciliation loop termination (P2-4)", () => {
               },
             },
           },
-          agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+          agentSessions: { byAgentId: {} },
           workspaceAgents: { byWorkspaceId: {} },
         }),
       },
@@ -238,7 +238,6 @@ describe("chat-state-saga: per-agentId dedup (P2-5)", () => {
                 messages: [{ role: "assistant", contentBlocks: [{ type: "text" }] }],
               },
             },
-            agentIdsByWorkspace: {},
           },
           workspaceAgents: { byWorkspaceId: {} },
         }),
@@ -317,9 +316,8 @@ describe("chat-state-saga: preserve per-agent tasks across workspace unmount (Ta
       },
       agentSessions: {
         byAgentId: { "agent-X": sessionA },
-        agentIdsByWorkspace: { "ws-A": ["agent-X"] },
       },
-      workspaceAgents: { byWorkspaceId: {} },
+      workspaceAgents: { byWorkspaceId: { "ws-A": { agentIds: ["agent-X"] } } },
     });
 
     runSaga(

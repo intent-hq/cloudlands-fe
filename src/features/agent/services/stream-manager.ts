@@ -754,7 +754,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
     this.emit(`stream:${session.streamId}:complete`, message);
 
     // Mark agent as having unread messages (if user isn't currently viewing it)
-    // Pass workspaceId to enable cross-workspace tab indicators
     // Pass isBackground to skip unread tracking for background agents
     const agentSession = selectAgentById.select(
       getReduxStore().getState(), session.config.agentId

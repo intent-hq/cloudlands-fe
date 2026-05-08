@@ -6,15 +6,26 @@
 
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
+import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { omitKey } from "../../utils/utils";
+import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type {
   McpSettingsState,
   McpServerConfig,
   McpServerStatus,
+  WorkspaceMcpSettingsState,
 } from "./mcp-settings-types";
 
 // ============================================================================
 // Initial State
 // ============================================================================
+
+export const emptyWorkspaceMcpSettingsState: WorkspaceMcpSettingsState = {
+  disabledServers: {},
+};
+
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
+  createWorkspaceScopedHelpers(emptyWorkspaceMcpSettingsState);
 
 export const initialState: McpSettingsState = {
   servers: [],
@@ -26,6 +37,7 @@ export const initialState: McpSettingsState = {
   error: null,
   enabled: false,
   lastImportedCount: null,
+  byWorkspaceId: {},
 };
 
 // ============================================================================
@@ -91,6 +103,21 @@ export const removeServerFromState = createAction<[name: string]>(
 export const bulkSetServerStatus = createAction<[statusMap: Record<string, McpServerStatus>]>(
   "mcpSettings/bulkSetServerStatus"
 );
+
+/** Set persisted disabled server names for a workspace */
+export const setWorkspaceDisabledServers = createAction<
+  [workspaceId: string, disabledServers: Record<string, true>]
+>("mcpSettings/setWorkspaceDisabledServers");
+
+/** Apply persisted disabled server names for a workspace */
+export const applyWorkspaceDisabledServers = createAction<
+  [workspaceId: string, disabledNames: string[]]
+>("mcpSettings/applyWorkspaceDisabledServers");
+
+/** Toggle a workspace-specific server enabled state and persist it */
+export const toggleWorkspaceMcpServer = createAction<
+  [workspaceId: string, serverName: string, enabled: boolean]
+>("mcpSettings/toggleWorkspaceMcpServer");
 
 // ============================================================================
 // Saga trigger actions (side-effect-only, no reducer handler)
@@ -213,5 +240,34 @@ export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
   .with(importFromJsonCompleted, (state, { payload: [count] }) => ({
     ...state,
     lastImportedCount: count,
-  }));
+  }))
+  .with(setWorkspaceDisabledServers, (state, { payload: [workspaceId, disabledServers] }) => {
+    if (!workspaceId) return state;
+    return setWorkspaceState(state, workspaceId, { disabledServers });
+  })
+  .with(applyWorkspaceDisabledServers, (state, { payload: [workspaceId, disabledNames] }) => {
+    if (!workspaceId) return state;
+    const disabledServers: Record<string, true> = {};
+    for (const name of disabledNames) {
+      disabledServers[name] = true;
+    }
+    return setWorkspaceState(state, workspaceId, { disabledServers });
+  })
+  .with(toggleWorkspaceMcpServer, (state, { payload: [workspaceId, serverName, enabled] }) => {
+    if (!workspaceId) return state;
+    const wsState = getWorkspaceState(state, workspaceId);
+    const currentlyDisabled = serverName in wsState.disabledServers;
+
+    if (enabled && !currentlyDisabled) return state;
+    if (!enabled && currentlyDisabled) return state;
+
+    const disabledServers = enabled
+      ? omitKey(wsState.disabledServers, serverName)
+      : { ...wsState.disabledServers, [serverName]: true as const };
+
+    return setWorkspaceState(state, workspaceId, { disabledServers });
+  })
+  .with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+    return clearWorkspaceState(state, workspaceId);
+  });
 

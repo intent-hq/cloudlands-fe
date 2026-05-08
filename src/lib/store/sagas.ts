@@ -49,7 +49,6 @@ import { sentryAuthSaga } from "./slices/sentry-auth/sagas/sentry-auth-saga";
 import { contextSaga } from "./slices/context/sagas/context-saga";
 import { browserSaga } from "./slices/browser/sagas/browser-saga";
 import { setupScriptsSaga } from "./slices/setup-scripts/sagas/setup-scripts-saga";
-import { mcpServersSaga } from "./slices/mcp-servers/sagas/mcp-servers-saga";
 import { mcpSettingsSaga } from "./slices/mcp-settings/sagas/mcp-settings-saga";
 import { commentsSaga } from "./slices/comments/sagas/comments-saga";
 import { workspaceInitializerSaga } from "./slices/workspace-initializer/sagas/workspace-initializer-saga";
@@ -114,7 +113,6 @@ export const sagas = {
   agentsSaga: workspaceAgentsSaga,
   contextSaga,
   browserSaga,
-  mcpSaga: mcpServersSaga,
   authSaga,
   uiSaga,
   layoutSaga: appLayoutSaga,

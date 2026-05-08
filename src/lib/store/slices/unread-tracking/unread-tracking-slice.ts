@@ -14,7 +14,6 @@ const MAX_UNREAD_AGENTS = 100;
 
 export const initialState: UnreadTrackingState = {
   unreadAgentIds: [],
-  agentWorkspaceMap: {},
   currentlyViewedAgentId: null,
 };
 
@@ -22,7 +21,7 @@ export const initialState: UnreadTrackingState = {
 
 /** Load persisted state from localStorage on startup. */
 export const hydrateUnreadTracking = createAction<
-  [data: { unreadAgentIds: string[]; agentWorkspaceMap: Record<string, string> }]
+  [data: { unreadAgentIds: string[] }]
 >("unreadTracking/hydrate");
 
 /** Mark an agent as currently viewed — clears its unread status. */
@@ -38,7 +37,7 @@ export const clearCurrentlyViewedAgent = createAction(
 /** Record a new assistant message — marks agent as unread if not currently viewed. */
 export const newAssistantMessage = createAction(
   "unreadTracking/newAssistantMessage",
-  (agentId: string, workspaceId?: string, isBackground?: boolean) => ({
+  (agentId: string, workspaceId: string, isBackground?: boolean) => ({
     agentId,
     workspaceId,
     isBackground,
@@ -55,6 +54,11 @@ export const clearWorkspaceUnread = createAction<[workspaceId: string]>(
   "unreadTracking/clearWorkspaceUnread"
 );
 
+/** Clear unread status for a derived set of agent IDs. */
+export const clearAgentsUnread = createAction<[agentIds: string[]]>(
+  "unreadTracking/clearAgentsUnread"
+);
+
 /** Clear all unread status. */
 export const clearAllUnread = createAction("unreadTracking/clearAllUnread");
 
@@ -67,9 +71,7 @@ function removeAgentFromUnread(
   const idx = state.unreadAgentIds.indexOf(agentId);
   if (idx === -1) return state;
   const unreadAgentIds = state.unreadAgentIds.filter((id) => id !== agentId);
-   
-  const { [agentId]: _, ...agentWorkspaceMap } = state.agentWorkspaceMap;
-  return { ...state, unreadAgentIds, agentWorkspaceMap };
+  return { ...state, unreadAgentIds };
 }
 
 // ── Reducer ──
@@ -78,7 +80,6 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
   .with(hydrateUnreadTracking, (state, { payload: [data] }) => ({
     ...state,
     unreadAgentIds: data.unreadAgentIds,
-    agentWorkspaceMap: data.agentWorkspaceMap,
   }))
   .with(markAgentAsViewed, (state, { payload: [agentId] }) => {
     if (!agentId) return state;
@@ -92,45 +93,28 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
     return { ...state, currentlyViewedAgentId: null };
   })
   .with(newAssistantMessage, (state, action) => {
-    const { agentId, workspaceId, isBackground } = action.payload;
+    const { agentId, isBackground } = action.payload;
     if (!agentId || isBackground) return state;
-
-    // Always store workspace mapping even if agent is currently viewed
-    let nextMap = state.agentWorkspaceMap;
-    if (workspaceId && state.agentWorkspaceMap[agentId] !== workspaceId) {
-      nextMap = { ...state.agentWorkspaceMap, [agentId]: workspaceId };
-    }
 
     // Don't mark as unread if user is currently viewing this agent
     if (state.currentlyViewedAgentId === agentId) {
-      return nextMap === state.agentWorkspaceMap
-        ? state
-        : { ...state, agentWorkspaceMap: nextMap };
+      return state;
     }
 
-    // Already unread — just update workspace map if needed
+    // Already unread
     if (state.unreadAgentIds.includes(agentId)) {
-      return nextMap === state.agentWorkspaceMap
-        ? state
-        : { ...state, agentWorkspaceMap: nextMap };
+      return state;
     }
 
     // Add to unread list with size limit (FIFO eviction)
     let unreadAgentIds = state.unreadAgentIds;
     if (unreadAgentIds.length >= MAX_UNREAD_AGENTS) {
-      const oldest = unreadAgentIds[0];
       unreadAgentIds = unreadAgentIds.slice(1);
-      if (oldest && nextMap[oldest]) {
-         
-        const { [oldest]: _, ...rest } = nextMap;
-        nextMap = rest;
-      }
     }
 
     return {
       ...state,
       unreadAgentIds: [...unreadAgentIds, agentId],
-      agentWorkspaceMap: nextMap,
     };
   })
   .with(clearAgentUnread, (state, { payload: [agentId] }) => {
@@ -140,18 +124,12 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
     }
     return next;
   })
-  .with(clearWorkspaceUnread, (state, { payload: [workspaceId] }) => {
-    const agentsToClear = state.unreadAgentIds.filter(
-      (id) => state.agentWorkspaceMap[id] === workspaceId
-    );
-    if (agentsToClear.length === 0) return state;
-    const clearSet = new Set(agentsToClear);
+  .with(clearAgentsUnread, (state, { payload: [agentIds] }) => {
+    if (agentIds.length === 0) return state;
+    const clearSet = new Set(agentIds);
     const unreadAgentIds = state.unreadAgentIds.filter((id) => !clearSet.has(id));
-    const agentWorkspaceMap = { ...state.agentWorkspaceMap };
-    for (const id of agentsToClear) {
-      delete agentWorkspaceMap[id];
-    }
-    return { ...state, unreadAgentIds, agentWorkspaceMap };
+    if (unreadAgentIds.length === state.unreadAgentIds.length) return state;
+    return { ...state, unreadAgentIds };
   })
   .with(clearAllUnread, () => initialState);
 

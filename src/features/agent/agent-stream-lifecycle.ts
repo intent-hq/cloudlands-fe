@@ -1864,7 +1864,6 @@ export async function sendMessage(
                             }
 
                             // Mark agent as having unread messages (if user isn't currently viewing it)
-                            // Pass workspaceId to enable cross-workspace tab indicators
                             // Pass isBackground to skip unread tracking for background agents
                             const sessionForUnread = getAgentSession(
                               workspace.id,

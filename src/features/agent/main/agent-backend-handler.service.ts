@@ -2902,15 +2902,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Since sendStreamToRenderer now targets all workspace windows (not just the initiator),
       // all windows will receive both chunks and the complete event, so no orphaned handlers.
       const workspaceWindowIds = getWindowIdsForWorkspace(request.workspaceId);
-      const useBroadcastFallback = workspaceWindowIds.length === 0;
       logger.info('agent:stream-starting emission', {
         agentId: request.agentId,
         workspaceId: request.workspaceId,
         sessionId: request.sessionId,
         windowIds: workspaceWindowIds,
         windowCount: workspaceWindowIds.length,
-        useBroadcastFallback,
       });
+      if (workspaceWindowIds.length === 0) {
+        logger.warn('agent:stream-starting not delivered - no windows found for workspace', {
+          agentId: request.agentId,
+          workspaceId: request.workspaceId,
+          sessionId: request.sessionId,
+        });
+      }
       this.sendToRenderer(
         'agent:stream-starting',
         {
@@ -2919,7 +2924,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           sessionId: request.sessionId,
           assistantAppMessageId: request.assistantAppMessageId,
         },
-        workspaceWindowIds.length > 0 ? workspaceWindowIds : undefined,
+        workspaceWindowIds,
       );
 
       // Update provider last used time (prevents idle cleanup during active use)
@@ -5417,7 +5422,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * Send stream-related event to ALL windows viewing the agent's workspace.
    * This ensures that if multiple windows are open for the same workspace,
    * all of them receive streaming updates (not just the window that initiated the stream).
-   * Falls back to broadcast if no workspace ID is tracked.
+   * Drops the event if workspace targeting is unavailable.
    * @param agentId - The agent ID to look up the target workspace for
    * @param channel - The IPC channel to send on
    * @param data - The data to send
@@ -5425,35 +5430,35 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    */
   private sendStreamToRenderer(agentId: string, channel: string, data: any): boolean {
     const workspaceId = this.streamWorkspaceIds.get(agentId);
-    if (workspaceId) {
-      // Send to ALL windows viewing this workspace
-      const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
-      if (targetWindowIds.length > 0) {
-        return this.sendToRenderer(channel, data, targetWindowIds, workspaceId);
-      }
-      // No windows found for workspace - fall back to broadcast
-      logger.warn('sendStreamToRenderer: no windows found for workspace, broadcasting', {
+    if (!workspaceId) {
+      logger.warn('sendStreamToRenderer: no workspace tracked, dropping stream event', {
+        agentId,
+        channel,
+      });
+      return false;
+    }
+
+    // Send to ALL windows viewing this workspace
+    const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
+    if (targetWindowIds.length === 0) {
+      logger.warn('sendStreamToRenderer: no windows found for workspace, using targeted browser delivery only', {
         agentId,
         workspaceId,
         channel,
       });
-    } else {
-      // No workspace tracked - fall back to broadcast
-      logger.warn('sendStreamToRenderer: no workspace tracked, broadcasting', {
-        agentId,
-        channel,
-      });
     }
-    return this.sendToRenderer(channel, data, undefined, workspaceId);
+
+    const dataWithWorkspaceId =
+      data && typeof data === 'object' && !Array.isArray(data) ? { ...data, workspaceId } : data;
+    return this.sendToRenderer(channel, dataWithWorkspaceId, targetWindowIds, workspaceId);
   }
 
   /**
    * Get workspace-scoped window IDs for an agent.
    * Used for non-streaming events (like queue updates) that should only go to
    * windows viewing the agent's workspace.
-   * Returns undefined to broadcast to all windows if workspace is unknown.
    */
-  private getWorkspaceWindowsForAgent(agentId: string): number[] | undefined {
+  private getWorkspaceWindowsForAgent(agentId: string): number[] {
     const workspaceId = this.streamWorkspaceIds.get(agentId);
     if (workspaceId) {
       const windowIds = getWindowIdsForWorkspace(workspaceId);
@@ -5461,7 +5466,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         return windowIds;
       }
     }
-    return undefined;
+    return [];
   }
 
   /**
@@ -5538,12 +5543,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       }
     });
 
-    // Also broadcast to browser-mode WebSocket clients (HTTP bridge)
-    // This allows the browser (non-Electron) renderer to receive streaming events
-    const broadcast = (global as any).__browserIpcBroadcast;
-    if (typeof broadcast === 'function') {
-      broadcast(channel, data, browserWorkspaceId);
-      sentToAtLeastOne = true;
+    // Also broadcast untargeted/global renderer events to browser-mode WebSocket clients (HTTP bridge).
+    // Workspace-targeted events must include browserWorkspaceId so browser clients can filter safely.
+    if (targetWindowIds === undefined || browserWorkspaceId !== undefined) {
+      const broadcast = (global as any).__browserIpcBroadcast;
+      if (typeof broadcast === 'function') {
+        broadcast(channel, data, browserWorkspaceId);
+        sentToAtLeastOne = true;
+      }
     }
 
     // Log when no window received a streaming message (potential data loss)

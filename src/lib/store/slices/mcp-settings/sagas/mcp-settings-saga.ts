@@ -4,10 +4,12 @@
  * Handles all side effects: IPC calls, error listener, connection tests.
  */
 
-import { call, put, fork, takeEvery, select } from "typed-redux-saga";
+import { call, put, fork, takeEvery, select, delay } from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
 import { on } from "$lib/electron-bridge";
+import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
+import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import type { McpServerConfig, McpServerStatus, McpAuthInfo } from "../mcp-settings-types";
 import {
   MCP_SERVER_NAME_REGEX,
@@ -36,12 +38,15 @@ import {
   importFromJson,
   importFromJsonCompleted,
   testServerConnection,
+  applyWorkspaceDisabledServers,
+  toggleWorkspaceMcpServer,
 } from "../mcp-settings-slice";
 import {
   selectMcpServers,
   selectMcpDisabledServers,
   selectMcpEnabled,
   selectMcpStatusMap,
+  selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
 } from "../mcp-settings-selectors";
 
 const logger = createLogger("McpSettingsSaga");
@@ -290,6 +295,79 @@ function* handleToggleServer(action: ReturnType<typeof toggleServer>): SagaGener
 }
 
 // ============================================================================
+// Workspace disabled-server state
+// ============================================================================
+
+function* loadWorkspaceState(workspaceId: string): SagaGenerator<void> {
+  try {
+    const result = yield* call(invokeIpc, "user-mcp:get-workspace-disabled", { workspaceId });
+
+    if (result?.success && Array.isArray(result.data)) {
+      const disabledNames = result.data.filter(
+        (item: unknown): item is string => typeof item === "string"
+      );
+      yield* put(applyWorkspaceDisabledServers(workspaceId, disabledNames));
+      logger.debug("Loaded workspace MCP disabled servers", {
+        workspaceId,
+        disabledCount: disabledNames.length,
+      });
+      return;
+    }
+
+    if (result?.success && result.data === null) {
+      yield* call(loadGlobalDefaultsForWorkspace, workspaceId);
+    }
+  } catch (error) {
+    logger.error("Failed to load workspace MCP disabled servers", { error });
+  }
+}
+
+function* loadGlobalDefaultsForWorkspace(workspaceId: string): SagaGenerator<void> {
+  try {
+    const result = yield* call(invokeIpc, "settings:get", { key: "disabledMcpServers" });
+    if (!result?.success || !Array.isArray(result.data)) return;
+
+    const disabledNames = result.data.filter(
+      (item: unknown): item is string => typeof item === "string"
+    );
+    yield* put(applyWorkspaceDisabledServers(workspaceId, disabledNames));
+    logger.debug("Inherited global disabled MCP servers for workspace", {
+      workspaceId,
+      disabledCount: disabledNames.length,
+    });
+  } catch (error) {
+    logger.error("Failed to load global MCP disabled defaults", { error });
+  }
+}
+
+function* handleWorkspaceChange({ payload: workspaceId }: { payload: string | null }): SagaGenerator<void> {
+  if (!workspaceId) return;
+  yield* delay(100);
+  yield* call(loadWorkspaceState, workspaceId);
+}
+
+function* handleToggleWorkspaceMcpServer(
+  action: ReturnType<typeof toggleWorkspaceMcpServer>
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+
+  const disabledServers = yield* selectWorkspaceDisabledMcpServerNamesByWorkspaceId.effect(workspaceId);
+
+  try {
+    const result = yield* call(invokeIpc, "user-mcp:set-workspace-disabled", {
+      workspaceId,
+      disabledServers,
+    });
+    if (!result?.success) {
+      logger.error("Failed to persist workspace MCP disabled servers", { error: result?.error });
+    }
+  } catch (error) {
+    logger.error("Failed to persist workspace MCP disabled servers", { error });
+  }
+}
+
+// ============================================================================
 // Add server saga
 // ============================================================================
 
@@ -531,9 +609,11 @@ function* mcpErrorListenerSaga(): SagaGenerator<void> {
 
 export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* fork(mcpErrorListenerSaga);
+  yield* takeLatestFromSelector(selectActiveWorkspaceId, handleWorkspaceChange);
   yield* takeEvery(loadServers, handleLoadServers);
   yield* takeEvery(toggleEnabled, handleToggleEnabled);
   yield* takeEvery(toggleServer, handleToggleServer);
+  yield* takeEvery(toggleWorkspaceMcpServer, handleToggleWorkspaceMcpServer);
   yield* takeEvery(addServer, handleAddServer);
   yield* takeEvery(removeServer, handleRemoveServer);
   yield* takeEvery(updateServer, handleUpdateServer);

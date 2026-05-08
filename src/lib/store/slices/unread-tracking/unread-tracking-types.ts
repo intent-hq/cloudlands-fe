@@ -9,8 +9,6 @@
 export type UnreadTrackingState = {
   /** Ordered list of agent IDs with unread messages (FIFO insertion order). */
   unreadAgentIds: string[];
-  /** Maps agent IDs to their workspace IDs (for cross-workspace tab indicators). */
-  agentWorkspaceMap: Record<string, string>;
   /** The agent currently being viewed (e.g. open in drawer/panel). */
   currentlyViewedAgentId: string | null;
 };

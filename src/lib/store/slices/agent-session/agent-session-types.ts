@@ -25,7 +25,5 @@ export type StoredAgentSession = Omit<AgentSession, "messages"> & {
 export interface AgentSessionState {
   /** Agent sessions keyed by agentId */
   byAgentId: Record<string, StoredAgentSession>;
-  /** Index: workspace ID → array of agent IDs belonging to that workspace */
-  agentIdsByWorkspace: Record<string, string[]>;
 }
 

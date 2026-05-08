@@ -68,7 +68,6 @@ function mockState(
   sessions: AgentSession[] = [],
 ): StoreState {
   const byAgentId: Record<string, any> = {};
-  const agentIdsByWorkspace: Record<string, string[]> = {};
   for (const s of sessions) {
     // The agent-session slice stores `messages` as a Collection. Convert the
     // array-backed mock session here so selectors that materialize messages
@@ -78,9 +77,6 @@ function mockState(
       ...s,
       messages: createCollection<AgentMessage, "id">("id", messages),
     };
-    const wsId = String(s.workspaceId);
-    if (!agentIdsByWorkspace[wsId]) agentIdsByWorkspace[wsId] = [];
-    agentIdsByWorkspace[wsId].push(String(s.id));
   }
   return {
     workspaceAgents: {
@@ -89,7 +85,6 @@ function mockState(
     },
     agentSessions: {
       byAgentId,
-      agentIdsByWorkspace,
     },
   } as StoreState;
 }

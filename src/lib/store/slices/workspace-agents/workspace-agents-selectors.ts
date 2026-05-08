@@ -49,6 +49,11 @@ export const selectRecentlyCreatedAgents = createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).recentlyCreatedAgents;
 });
 
+/** Get agent IDs tracked for a workspace. */
+export const selectWorkspaceAgentIds = createSelector((state, wsId: string): string[] => {
+  return getWorkspaceAgentState(state, wsId).agentIds;
+});
+
 export const selectInitialAgentConfig = createSelector(
   (state, wsId: string): InitialAgentConfig | null => {
     return getWorkspaceAgentState(state, wsId).initialAgentConfig ?? null;

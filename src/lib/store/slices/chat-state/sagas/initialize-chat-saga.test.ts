@@ -346,7 +346,6 @@ describe("initialize-chat-saga: disk message merge regression", () => {
             byAgentId: {
               "agent-1": existingSession,
             },
-            agentIdsByWorkspace: {},
           },
           workspaceAgents: { byWorkspaceId: {} },
         }),
@@ -409,7 +408,6 @@ describe("initialize-chat-saga: disk message merge regression", () => {
           chatState: { byAgentId: {} },
           agentSessions: {
             byAgentId: { "agent-1": streamingSession },
-            agentIdsByWorkspace: {},
           },
           workspaceAgents: { byWorkspaceId: {} },
         }),
@@ -461,7 +459,6 @@ describe("initialize-chat-saga: disk message merge regression", () => {
           chatState: { byAgentId: {} },
           agentSessions: {
             byAgentId: { "agent-1": session },
-            agentIdsByWorkspace: {},
           },
           workspaceAgents: { byWorkspaceId: {} },
         }),

@@ -5,18 +5,18 @@
    * Shows MCP servers from ~/.augment/settings.json and allows users
    * to enable/disable individual servers per workspace.
    */
-  import type { McpServerInfo } from '$lib/store/slices/mcp-servers/mcp-servers-types';
+  import { writable } from 'svelte/store';
+  import type { McpServerConfig } from '$lib/store/slices/mcp-settings/mcp-settings-types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    loadMcpServers,
-    toggleMcpServer,
-  } from '$lib/store/slices/mcp-servers/mcp-servers-slice';
+    loadServers,
+    toggleWorkspaceMcpServer,
+  } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
   import {
     selectMcpServers,
-    selectIsMcpServerEnabled,
-    selectMcpServerError,
-  } from '$lib/store/slices/mcp-servers/mcp-servers-selectors';
+    selectMcpErrorMessages,
+    selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+  } from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from 'svelte/transition';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -37,9 +37,31 @@
 
   let { workspaceId, class: className }: Props = $props();
 
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
   // ✅ At component init — these use getContext() internally
   const dispatch = getDispatch();
   const servers$ = selectMcpServers();
+  const disabledServerNames$ = selectWorkspaceDisabledMcpServerNamesByWorkspaceId(workspaceIdStore);
+  const serverErrors$ = selectMcpErrorMessages();
+
+  type McpServerRow = {
+    server: McpServerConfig;
+    enabled: boolean;
+    error?: string;
+  };
+
+  const serverRows = $derived<McpServerRow[]>(
+    $servers$.map((server) => ({
+      server,
+      enabled: !$disabledServerNames$.includes(server.name),
+      error: $serverErrors$[server.name],
+    })),
+  );
+  const enabledServerCount = $derived(serverRows.filter((row) => row.enabled).length);
 
   // Collapse state
   let isExpanded = $state(false);
@@ -52,7 +74,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      dispatch(loadMcpServers());
+      dispatch(loadServers());
     }
   });
 
@@ -72,7 +94,7 @@
    * Get favicon URL for a server.
    * Uses Google's favicon service with the root domain for better results.
    */
-  function getFaviconUrl(server: McpServerInfo): string | null {
+  function getFaviconUrl(server: McpServerConfig): string | null {
     if (!server.url) return null;
 
     try {
@@ -88,15 +110,7 @@
   // Get description for server type
 
   function handleToggle(serverName: string, enabled: boolean) {
-    dispatch(toggleMcpServer(workspaceId, serverName, enabled));
-  }
-
-  function isServerEnabled(serverName: string): boolean {
-    return selectIsMcpServerEnabled.select(getReduxStore().getState(), serverName);
-  }
-
-  function getServerError(serverName: string): string | undefined {
-    return selectMcpServerError.select(getReduxStore().getState(), serverName);
+    dispatch(toggleWorkspaceMcpServer(workspaceId, serverName, enabled));
   }
 
   function handleFaviconError(serverName: string) {
@@ -104,7 +118,7 @@
   }
 </script>
 
-{#if $servers$.length > 0}
+{#if serverRows.length > 0}
   <div class="mt-3 {className ?? ''}">
     <!-- Section Header -->
     <button
@@ -115,14 +129,14 @@
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
       <span>MCP Servers</span>
-      <span class="ml-auto text-ui opacity-60">{$servers$.filter((s) => isServerEnabled(s.name)).length} enabled</span>
+      <span class="ml-auto text-ui opacity-60">{enabledServerCount} enabled</span>
     </button>
 
     {#if isExpanded}
       <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
-        {#each $servers$ as server (server.name)}
-          {@const isEnabled = isServerEnabled(server.name)}
-          {@const serverError = getServerError(server.name)}
+        {#each serverRows as { server, enabled, error } (server.name)}
+          {@const isEnabled = enabled}
+          {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[server.name]}
           <div
@@ -134,9 +148,9 @@
                 ? ''
                 : 'opacity-50'}"
             >
-              {#if server.type === 'command' || showFallback}
+              {#if server.type === 'stdio' || showFallback}
                 <Fa
-                  icon={server.type === 'command' ? faTerminal : faPlug}
+                  icon={server.type === 'stdio' ? faTerminal : faPlug}
                   size="xs"
                   class={isEnabled ? 'text-primary' : 'text-muted-foreground'}
                 />

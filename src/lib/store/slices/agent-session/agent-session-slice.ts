@@ -547,22 +547,6 @@ function updateSessionFields(
   return setSession(state, agentId, { ...existing, ...partial });
 }
 
-function registerInWorkspaceIndex(
-  state: AgentSessionState,
-  agentId: string,
-  wsId: string,
-): AgentSessionState {
-  const existing = state.agentIdsByWorkspace[wsId] ?? [];
-  if (existing.includes(agentId)) return state;
-  return {
-    ...state,
-    agentIdsByWorkspace: {
-      ...state.agentIdsByWorkspace,
-      [wsId]: [...existing, agentId],
-    },
-  };
-}
-
 type SessionComparisonSnapshot = Pick<
   StoredAgentSession,
   | 'status'
@@ -619,39 +603,22 @@ function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): bool
   return shallowEqual(toSessionComparisonSnapshot(a), toSessionComparisonSnapshot(b));
 }
 
-function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
-  const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
-  for (const wsId of Object.keys(agentIdsByWorkspace)) {
-    const agents = agentIdsByWorkspace[wsId];
-    const filtered = agents.filter((id) => id !== agentId);
-    if (filtered.length !== agents.length) {
-      if (filtered.length === 0) {
-        delete agentIdsByWorkspace[wsId];
-      } else {
-        agentIdsByWorkspace[wsId] = filtered;
-      }
-    }
-  }
-  return { ...state, agentIdsByWorkspace };
-}
-
 // ============================================================================
 // Initial State
 // ============================================================================
 
 export const initialState: AgentSessionState = {
   byAgentId: {},
-  agentIdsByWorkspace: {},
 };
 
 // ============================================================================
 // Actions
 // ============================================================================
 
-/** Upsert a session — normalize dates, dedup messages, prune to 500, register in workspace index */
+/** Upsert a session — normalize dates, dedup messages, prune to 500 */
 export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
 
-/** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
+/** Remove a session by agentId */
 export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
 
 /**
@@ -739,13 +706,11 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(upsertSession, (state, { payload: [session] }) => {
     const finalSession = toStoredSession(session);
     const agentId = String(finalSession.id);
-    const wsId = String(session.workspaceId);
 
-    // No-op guard: if the session already exists with equivalent data
-    // and is already registered in the workspace index, return state unchanged.
+    // No-op guard: if the session already exists with equivalent data,
+    // return state unchanged.
     const existing = getSession(state, agentId);
-    const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
-    if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    if (existing && isSessionEquivalent(existing, finalSession)) {
       return state;
     }
 
@@ -760,17 +725,13 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       }
     }
 
-    let next = setSession(state, agentId, finalSession);
-    next = registerInWorkspaceIndex(next, agentId, wsId);
-    return next;
+    return setSession(state, agentId, finalSession);
   })
   .with(removeSession, (state, { payload: [agentId] }) => {
     if (!state.byAgentId[agentId]) return state;
      
     const { [agentId]: _, ...rest } = state.byAgentId;
-    let next: AgentSessionState = { ...state, byAgentId: rest };
-    next = removeFromWorkspaceIndex(next, agentId);
-    return next;
+    return { ...state, byAgentId: rest };
   })
   .with(setSessionStreaming, (state, { payload: [agentId, isStreaming] }) => {
     const session = getSession(state, agentId);
@@ -902,7 +863,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     for (const session of sessions) {
       const finalSession = toStoredSession(session);
       const agentId = String(finalSession.id);
-      const wsId = String(session.workspaceId);
 
       // Preserve in-flight isStreaming/isProcessing flags unconditionally.
       // bulkUpsertSessions is used for disk reconciliation; disk data is always
@@ -920,20 +880,19 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       }
 
       next = setSession(next, agentId, finalSession);
-      next = registerInWorkspaceIndex(next, agentId, wsId);
     }
     return next;
   })
   .with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
-    const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
-    if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
     const byAgentId = { ...state.byAgentId };
-    for (const id of agentIds) {
+    let changed = false;
+    for (const [id, session] of Object.entries(state.byAgentId)) {
+      if (String(session.workspaceId) !== String(wsId)) continue;
       delete byAgentId[id];
+      changed = true;
     }
-     
-    const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-    return { byAgentId, agentIdsByWorkspace: restWorkspaces };
+    if (!changed) return state;
+    return { ...state, byAgentId };
   })
   .with(clearAllSessions, () => initialState)
   // -----------------------------------------------------------------------
@@ -942,11 +901,9 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(upsertAgentSession, (state, { payload: [, session] }) => {
     const finalSession = toStoredSession(session);
     const agentId = String(finalSession.id);
-    const wsId = String(session.workspaceId);
 
     const existing = getSession(state, agentId);
-    const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
-    if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    if (existing && isSessionEquivalent(existing, finalSession)) {
       return state;
     }
 
@@ -961,9 +918,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       }
     }
 
-    let next = setSession(state, agentId, finalSession);
-    next = registerInWorkspaceIndex(next, agentId, wsId);
-    return next;
+    return setSession(state, agentId, finalSession);
   })
   .with(setAgentStreaming, (state, { payload: [, agentId, isStreaming] }) => {
     const session = getSession(state, agentId);
@@ -1103,9 +1058,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       createdAt: now,
       updatedAt: now,
     };
-    let next = setSession(state, agentId, placeholder);
-    next = registerInWorkspaceIndex(next, agentId, wsId);
-    return next;
+    return setSession(state, agentId, placeholder);
   })
   .with(chatSendFailed, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),

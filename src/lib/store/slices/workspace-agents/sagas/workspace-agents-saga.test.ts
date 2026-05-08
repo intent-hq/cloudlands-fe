@@ -655,7 +655,7 @@ describe("late initial-agent hydration recovery", () => {
           },
         },
       },
-      agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+      agentSessions: { byAgentId: {} },
     };
 
     expect((gen.next().value as any).type).toBe("SELECT");
@@ -801,6 +801,7 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       const setAgentsIdx = actionTypes.indexOf("workspaceAgents/setAgents");
       const setLoadedIdx = actionTypes.indexOf("workspaceAgents/setAgentsLoaded");
       const unlockIdx = actionTypes.indexOf("storeUtility/unlockUpdates");
+      const clearUnreadIdx = actionTypes.indexOf("unreadTracking/clearWorkspaceUnread");
 
       // All four actions must be present
       expect(lockIdx).toBeGreaterThanOrEqual(0);
@@ -808,6 +809,8 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       expect(setLoadedIdx).toBeGreaterThan(lockIdx);
       expect(unlockIdx).toBeGreaterThan(setAgentsIdx);
       expect(unlockIdx).toBeGreaterThan(setLoadedIdx);
+      expect(clearUnreadIdx).toBeGreaterThan(unlockIdx);
+      expect(dispatched[clearUnreadIdx]).toEqual(clearWorkspaceUnread("ws-atomic"));
     } finally {
       vi.useRealTimers();
     }
@@ -833,6 +836,11 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
+
+    expect(gen.next()).toEqual({
+      value: sagaEffects.put(clearWorkspaceUnread("ws-restore-sync")),
+      done: false,
+    });
 
     expect(gen.next()).toEqual({
       value: sagaEffects.call(waitForPanelLayoutRestore, "ws-restore-sync"),

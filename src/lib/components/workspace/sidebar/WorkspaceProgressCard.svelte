@@ -44,7 +44,7 @@
     applyReadyTasks,
   } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
-  import { selectAgentSessionsByWorkspace } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
@@ -749,9 +749,9 @@
   const completionRatio = $derived(taskStats.total > 0 ? taskStats.completed / taskStats.total : 0);
 
   // Track if any agent is currently working (streaming).
-  // Uses agent-session slice to check streaming state per workspace.
+  // Uses workspace-agents membership to check streaming state per workspace.
   // ✅ Selector called at component init time (uses getContext internally)
-  const workspaceAgentSessions$ = selectAgentSessionsByWorkspace(workspaceId ?? '');
+  const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceId ?? '');
   const isAgentWorking = $derived(
     compact ? false : $workspaceAgentSessions$.some((s) => s.isStreaming),
   );

@@ -23,6 +23,7 @@ import {
 } from "$lib/components/agent-overview/graph-helpers";
 import { getItems } from "$lib/store/utils/collection-utils";
 import type { AgentSession, Note } from "$shared/types";
+import { selectAllWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 
 // ============================================================================
 // Simple selectors
@@ -71,14 +72,10 @@ export const selectGraphState = createSelector(
     const ws = state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
 
-    // Derive agents from the canonical agent-session slice.
-    // Materialize the Collection-backed `messages` field back to an array so
-    // downstream pure helpers (which expect AgentMessage[]) keep working.
-    const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+    // Derive agents from workspace agentIds + the canonical agent-session slice.
     const agents: Record<string, AgentSession> = {};
-    for (const id of agentIds) {
-      const session = state.agentSessions?.byAgentId[id];
-      if (session) agents[id] = { ...session, messages: getItems(session.messages) };
+    for (const session of selectAllWorkspaceAgents.select(state, workspaceId)) {
+      agents[String(session.id)] = session;
     }
 
     // Build a note title lookup from Redux state (replaces old notesStore.notes access)

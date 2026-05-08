@@ -37,6 +37,7 @@ import {
   bulkUpsertSessions,
   removeWorkspaceSessions,
 } from '../../agent-session/agent-session-slice';
+import { clearWorkspaceUnread } from '../../unread-tracking/unread-tracking-slice';
 import {
   clearInitialAgentConfig,
   setInitialAgentId,
@@ -46,6 +47,10 @@ import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selec
 
 const PANEL_LAYOUT_RESTORE_POLL_MS = 100;
 const PANEL_LAYOUT_RESTORE_TIMEOUT_MS = 2_000;
+
+function shouldClearUnreadForLoadedWorkspace(wsId: string): boolean {
+  return !!wsId && wsId !== 'new' && !wsId.startsWith('optimistic-');
+}
 
 /**
  * Open an agent tab in the panel layout manager.
@@ -176,6 +181,9 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
       yield* put(setAgents(wsId, filteredAgents));
       yield* put(setAgentsLoaded(wsId, true));
     });
+    if (shouldClearUnreadForLoadedWorkspace(wsId)) {
+      yield* put(clearWorkspaceUnread(wsId));
+    }
     yield* call(waitForPanelLayoutRestore, wsId);
     // 6. Reconcile stale agent tabs in panel layout
     yield* reconcileStaleAgentTabs(wsId, restoredAgents);

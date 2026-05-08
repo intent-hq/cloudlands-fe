@@ -44,7 +44,6 @@ export type SagaName =
   | 'agentsSaga'
   | 'contextSaga'
   | 'browserSaga'
-  | 'mcpSaga'
   | 'authSaga'
   | 'uiSaga'
   | 'layoutSaga'

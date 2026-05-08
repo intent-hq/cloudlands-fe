@@ -78,22 +78,6 @@ export const selectAgentMessageById = createSelector(
   },
 );
 
-/** Select all sessions for a workspace using the index */
-export const selectAgentSessionsByWorkspace = createSelector(
-  (state: StoreState, wsId: string): AgentSession[] => {
-    const agentIds = state.agentSessions?.agentIdsByWorkspace[wsId] ?? [];
-    const result: AgentSession[] = [];
-    for (const id of agentIds) {
-      const stored = state.agentSessions?.byAgentId[id];
-      if (stored) {
-        const materialized = materializeSession(stored);
-        if (materialized) result.push(materialized);
-      }
-    }
-    return result;
-  },
-);
-
 /** Select all agent sessions across all workspaces */
 export const selectAllAgentSessions = createSelector(
   (state: StoreState): AgentSession[] => {

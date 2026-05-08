@@ -38,7 +38,6 @@ import {
   selectAgentSessionsByIds,
   selectAgentMessages,
   selectAgentMessageById,
-  selectAgentSessionsByWorkspace,
   selectAllAgentSessions,
   selectAgentIsStreaming,
   selectAgentQueuedMessages,
@@ -108,11 +107,9 @@ function makeSession(
  */
 function storeWith(agentSessions: {
   byAgentId: Record<string, AgentSession>;
-  agentIdsByWorkspace: Record<string, string[]>;
-}): StoreState {
+}, workspaceAgentIds: Record<string, string[]> = {}): StoreState {
   const converted: AgentSessionState = {
     byAgentId: {},
-    agentIdsByWorkspace: agentSessions.agentIdsByWorkspace,
   };
   for (const [id, session] of Object.entries(agentSessions.byAgentId)) {
     const messages = Array.isArray(session.messages) ? session.messages : [];
@@ -121,7 +118,14 @@ function storeWith(agentSessions: {
       messages: createCollection<AgentMessage, 'id'>('id', messages),
     };
   }
-  return { agentSessions: converted } as unknown as StoreState;
+  return {
+    agentSessions: converted,
+    workspaceAgents: {
+      byWorkspaceId: Object.fromEntries(
+        Object.entries(workspaceAgentIds).map(([wsId, agentIds]) => [wsId, { agentIds }]),
+      ),
+    },
+  } as unknown as StoreState;
 }
 
 /**
@@ -145,12 +149,11 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('upsertSession', () => {
-    it('adds a new session and registers in workspace index', () => {
+    it('adds a new session by agent ID', () => {
       const session = makeSession('a1', 'ws-1');
       const state = agentSessionReducer(initialState, upsertSession(session));
       expect(state.byAgentId['a1']).toBeDefined();
       expect(state.byAgentId['a1'].name).toBe('Agent a1');
-      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
     });
 
     it('normalizes Date objects to ISO strings', () => {
@@ -216,11 +219,10 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('removeSession', () => {
-    it('removes session and cleans workspace index', () => {
+    it('removes session by agent ID', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
       state = agentSessionReducer(state, removeSession('a1'));
       expect(state.byAgentId['a1']).toBeUndefined();
-      expect(state.agentIdsByWorkspace['ws-1']).toBeUndefined();
     });
 
     it('is a no-op for unknown agentId', () => {
@@ -447,8 +449,8 @@ describe('agent-session-slice reducer', () => {
       const s2 = makeSession('a2', 'ws-2');
       const state = agentSessionReducer(initialState, bulkUpsertSessions([s1, s2]));
       expect(Object.keys(state.byAgentId)).toHaveLength(2);
-      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
-      expect(state.agentIdsByWorkspace['ws-2']).toEqual(['a2']);
+      expect(state.byAgentId['a1']).toBeDefined();
+      expect(state.byAgentId['a2']).toBeDefined();
     });
 
     it('preserves isStreaming/isProcessing flags from placeholder when incoming omits them', () => {
@@ -520,8 +522,6 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1']).toBeUndefined();
       expect(state.byAgentId['a2']).toBeUndefined();
       expect(state.byAgentId['a3']).toBeDefined();
-      expect(state.agentIdsByWorkspace['ws-1']).toBeUndefined();
-      expect(state.agentIdsByWorkspace['ws-2']).toEqual(['a3']);
     });
   });
 
@@ -541,7 +541,7 @@ describe('agent-session-slice reducer', () => {
 describe('agent-session selectors', () => {
   it('selectAgentSession returns session or undefined', () => {
     const session = makeSession('a1');
-    const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentSession.select(state, 'a1')).toEqual(session);
     expect(selectAgentSession.select(state, 'unknown')).toBeUndefined();
   });
@@ -550,39 +550,28 @@ describe('agent-session selectors', () => {
     const s1 = makeSession('a1');
     const s2 = makeSession('a2');
     const s3 = makeSession('a3');
-    const state = storeWith({ byAgentId: { a1: s1, a2: s2, a3: s3 }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: s1, a2: s2, a3: s3 } });
     expect(selectAgentSessionsByIds.select(state, ['a2', 'missing', 'a1'])).toEqual([s2, s1]);
   });
 
   it('selectAgentMessages returns messages or empty array', () => {
     const msg = makeMessage('m1');
     const session = makeSession('a1', 'ws-1', { messages: [msg] });
-    const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentMessages.select(state, 'a1')).toEqual([msg]);
     expect(selectAgentMessages.select(state, 'unknown')).toEqual([]);
-  });
-
-  it('selectAgentSessionsByWorkspace returns sessions for a workspace', () => {
-    const s1 = makeSession('a1', 'ws-1');
-    const s2 = makeSession('a2', 'ws-1');
-    const state = storeWith({
-      byAgentId: { a1: s1, a2: s2 },
-      agentIdsByWorkspace: { 'ws-1': ['a1', 'a2'] },
-    });
-    expect(selectAgentSessionsByWorkspace.select(state, 'ws-1')).toHaveLength(2);
-    expect(selectAgentSessionsByWorkspace.select(state, 'ws-2')).toEqual([]);
   });
 
   it('selectAllAgentSessions returns all sessions', () => {
     const s1 = makeSession('a1');
     const s2 = makeSession('a2');
-    const state = storeWith({ byAgentId: { a1: s1, a2: s2 }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: s1, a2: s2 } });
     expect(selectAllAgentSessions.select(state)).toHaveLength(2);
   });
 
   it('selectAgentIsStreaming returns streaming flag', () => {
     const session = makeSession('a1', 'ws-1', { isStreaming: true });
-    const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentIsStreaming.select(state, 'a1')).toBe(true);
     expect(selectAgentIsStreaming.select(state, 'unknown')).toBe(false);
   });
@@ -590,7 +579,7 @@ describe('agent-session selectors', () => {
   it('selectAgentQueuedMessages returns queued messages or empty array', () => {
     const qm: QueuedMessage = { id: 'q1', content: 'hi', queuedAt: '2024-01-01', position: 0 };
     const session = makeSession('a1', 'ws-1', { queuedMessages: [qm] });
-    const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentQueuedMessages.select(state, 'a1')).toEqual([qm]);
     expect(selectAgentQueuedMessages.select(state, 'unknown')).toEqual([]);
   });
@@ -598,7 +587,7 @@ describe('agent-session selectors', () => {
   it('selectAllStreamingAgents returns only streaming sessions', () => {
     const s1 = makeSession('a1', 'ws-1', { isStreaming: true });
     const s2 = makeSession('a2', 'ws-1', { isStreaming: false });
-    const state = storeWith({ byAgentId: { a1: s1, a2: s2 }, agentIdsByWorkspace: {} });
+    const state = storeWith({ byAgentId: { a1: s1, a2: s2 } });
     const streaming = selectAllStreamingAgents.select(state);
     expect(streaming).toHaveLength(1);
     expect(streaming[0].id).toBe('a1');
@@ -609,18 +598,18 @@ describe('agent-session selectors', () => {
       const m1 = makeMessage('m1');
       const m2 = makeMessage('m2', 'assistant');
       const session = makeSession('a1', 'ws-1', { messages: [m1, m2] });
-      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      const state = storeWith({ byAgentId: { a1: session } });
       expect(selectAgentMessageById.select(state, 'a1', 'm2')).toEqual(m2);
     });
 
     it('returns undefined for an unknown messageId in an existing session (miss)', () => {
       const session = makeSession('a1', 'ws-1', { messages: [makeMessage('m1')] });
-      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      const state = storeWith({ byAgentId: { a1: session } });
       expect(selectAgentMessageById.select(state, 'a1', 'unknown')).toBeUndefined();
     });
 
     it('returns undefined when the agent session does not exist (no session)', () => {
-      const state = storeWith({ byAgentId: {}, agentIdsByWorkspace: {} });
+      const state = storeWith({ byAgentId: {} });
       expect(selectAgentMessageById.select(state, 'a1', 'm1')).toBeUndefined();
     });
 
@@ -631,7 +620,7 @@ describe('agent-session selectors', () => {
 
     it('returns undefined when agentId or messageId is empty', () => {
       const session = makeSession('a1', 'ws-1', { messages: [makeMessage('m1')] });
-      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      const state = storeWith({ byAgentId: { a1: session } });
       expect(selectAgentMessageById.select(state, '', 'm1')).toBeUndefined();
       expect(selectAgentMessageById.select(state, 'a1', '')).toBeUndefined();
     });
@@ -730,8 +719,6 @@ describe('chatSendStarted — placeholder session (restored workspace regression
     expect(session.isStreaming).toBe(true);
     expect(getMsgs(state, 'agent-new')).toEqual([]);
     expect(session.workspaceId).toBe('ws-1');
-    // Placeholder should be registered in workspace index
-    expect(state.agentIdsByWorkspace['ws-1']).toContain('agent-new');
   });
 
   it('sets isProcessing and isStreaming on an existing session', () => {

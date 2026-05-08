@@ -23,6 +23,12 @@ export type McpAuthInfo = {
   authHint?: string;
 };
 
+/** Per-workspace MCP disabled server names. */
+export type WorkspaceMcpSettingsState = {
+  /** Server names disabled for this workspace. Absence means enabled. */
+  disabledServers: Record<string, true>;
+};
+
 /** Redux-serializable MCP settings state */
 export type McpSettingsState = {
   /** Server configurations loaded from settings */
@@ -43,5 +49,7 @@ export type McpSettingsState = {
   enabled: boolean;
   /** Number of servers imported in the last JSON import (for UI feedback) */
   lastImportedCount: number | null;
+  /** Per-workspace disabled server names. */
+  byWorkspaceId: Record<string, WorkspaceMcpSettingsState>;
 };
 

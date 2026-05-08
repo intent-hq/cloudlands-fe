@@ -20,7 +20,6 @@ export {
   selectAgentSession,
   selectAgentMessages,
   selectAgentMessageById,
-  selectAgentSessionsByWorkspace,
   selectAllAgentSessions,
   selectAgentIsStreaming,
   selectAgentQueuedMessages,
