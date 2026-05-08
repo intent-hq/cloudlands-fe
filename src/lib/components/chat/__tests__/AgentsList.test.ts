@@ -22,6 +22,18 @@ vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
   ),
 }));
 
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentIsThinking: Object.assign(
+    () => ({
+      subscribe: (run: (value: boolean) => void) => {
+        run(false);
+        return () => {};
+      },
+    }),
+    { select: () => false },
+  ),
+}));
+
 describe('AgentsList', () => {
   const mockAgents: AgentSession[] = [
     {

@@ -2,6 +2,10 @@ import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
 
 /**
  * Avatar display states for AugieAvatarWithState component
@@ -50,6 +54,10 @@ export interface AgentStateInput {
  * Check if an agent is actively working (streaming, processing, or responding)
  */
 export function isAgentActivelyWorking(input: AgentStateInput): boolean {
+  if ((input.status === AgentStatus.Idle || input.status === 'idle') && !input.isStreaming && !input.isProcessing) {
+    return false;
+  }
+
   return !!(input.isStreaming || input.isProcessing || input.isResponding);
 }
 
@@ -126,17 +134,20 @@ export function getAvatarStateFromStore(
   agentId: string,
   options: AvatarStateOptions = {},
 ): AvatarState {
-  const session = selectAgentById.select(getReduxStore().getState(), agentId);
+  void workspaceId;
+  const state = getReduxStore().getState();
+  const session = selectAgentById.select(state, agentId);
   if (!session) {
     return 'idle';
   }
 
+  const isWaiting = selectAgentIsWaiting.select(state, agentId);
+  const isResponding = selectAgentIsResponding.select(state, agentId);
+
   return getAvatarState(
     {
-      isStreaming: session.isStreaming,
-      isProcessing: session.isProcessing,
-      isResponding: session.isResponding,
-      status: session.status,
+      isStreaming: isResponding && !isWaiting,
+      status: isWaiting ? AgentStatus.Waiting : session.status,
     },
     options,
   );
@@ -146,6 +157,6 @@ export function getAvatarStateFromStore(
  * Check if an agent is streaming by looking up in the Redux store.
  */
 export function isAgentStreamingFromStore(workspaceId: string, agentId: string): boolean {
-  const session = selectAgentById.select(getReduxStore().getState(), agentId);
-  return session?.isStreaming ?? false;
+  void workspaceId;
+  return selectAgentIsResponding.select(getReduxStore().getState(), agentId);
 }

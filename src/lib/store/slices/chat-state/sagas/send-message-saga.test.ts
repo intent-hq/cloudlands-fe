@@ -100,14 +100,18 @@ vi.mock("$lib/store/utils/selector-channel-effects", () => ({
 // Hoisted mock fns — vi.hoisted runs before vi.mock factories
 const {
   mockSelectAgentById,
+  mockSelectAgentIsResponding,
   mockSelectWorkspaceById,
   mockSelectChatIsRebinding,
   mockSelectChatTrackedWorkspaceId,
+  mockSelectPendingCount,
 } = vi.hoisted(() => ({
   mockSelectAgentById: vi.fn(),
+  mockSelectAgentIsResponding: vi.fn().mockReturnValue(false),
   mockSelectWorkspaceById: vi.fn(),
   mockSelectChatIsRebinding: vi.fn().mockReturnValue(false),
   mockSelectChatTrackedWorkspaceId: vi.fn().mockReturnValue(null),
+  mockSelectPendingCount: vi.fn().mockReturnValue(0),
 }));
 
 // Import hoisted so it's available in vi.mock factories
@@ -122,6 +126,18 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
     select: (...args: any[]) => mockSelectAgentById(...args),
     effect: function* (...args: any[]) {
       return yield hoistedSagaEffects.select(mockSelectAgentById, ...args);
+    },
+  },
+}));
+
+vi.mock("../../agent-session/agent-session-selectors", () => ({
+  selectAgentIsResponding: {
+    select: (_state: unknown, agentId: string) => mockSelectAgentIsResponding(agentId),
+    effect: function* (agentId: string) {
+      return yield hoistedSagaEffects.select(
+        (_state: unknown, id: string) => mockSelectAgentIsResponding(id),
+        agentId,
+      );
     },
   },
 }));
@@ -146,6 +162,15 @@ vi.mock("../chat-state-selectors", () => ({
     select: (...args: any[]) => mockSelectChatTrackedWorkspaceId(...args),
     effect: function* (...args: any[]) {
       return yield hoistedSagaEffects.select(mockSelectChatTrackedWorkspaceId, ...args);
+    },
+  },
+}));
+
+vi.mock("../../permission/permission-selectors", () => ({
+  selectPendingCount: {
+    select: (...args: any[]) => mockSelectPendingCount(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectPendingCount, ...args);
     },
   },
 }));
@@ -209,12 +234,15 @@ describe("send-message-saga", () => {
 
     // Default: agent is not streaming/processing
     mockSelectAgentById.mockReturnValue(undefined);
+    mockSelectAgentIsResponding.mockReturnValue(false);
     // Default: workspace exists
     mockSelectWorkspaceById.mockReturnValue(MOCK_WORKSPACE);
     // Default: not rebinding
     mockSelectChatIsRebinding.mockReturnValue(false);
     // Default: no tracked workspace (no workspace change)
     mockSelectChatTrackedWorkspaceId.mockReturnValue(null);
+    // Default: no pending permission/user-action wait
+    mockSelectPendingCount.mockReturnValue(0);
     // Default: waitFor succeeds
     mockWaitForResult.mockReturnValue(true);
     // Default: sendMessage succeeds
@@ -464,13 +492,31 @@ describe("send-message-saga", () => {
   // ========================================================================
   describe("queue path does not dispatch chatSendStarted", () => {
     it("takes queue path when agent is streaming and does not dispatch chatSendStarted", async () => {
-      mockSelectAgentById.mockReturnValue({
-        id: AGENT_ID,
-        isStreaming: true,
-        isProcessing: false,
-      });
+      mockSelectAgentIsResponding.mockReturnValue(true);
 
       const { dispatched } = await runSendMessageSaga();
+
+      expect(mockSelectAgentIsResponding).toHaveBeenCalledWith(AGENT_ID);
+
+      const sendStartedAction = dispatched.find(
+        (a) => a.type === chatSendStarted.type,
+      );
+      expect(sendStartedAction).toBeUndefined();
+      expect(mockQueueMessage).toHaveBeenCalledWith(
+        AGENT_ID,
+        'Hello world',
+        [],
+        undefined,
+        WS_ID,
+      );
+    });
+
+    it("takes queue path when agent is processing and does not dispatch chatSendStarted", async () => {
+      mockSelectAgentIsResponding.mockReturnValue(true);
+
+      const { dispatched } = await runSendMessageSaga();
+
+      expect(mockSelectAgentIsResponding).toHaveBeenCalledWith(AGENT_ID);
 
       const sendStartedAction = dispatched.find(
         (a) => a.type === chatSendStarted.type,
@@ -478,19 +524,67 @@ describe("send-message-saga", () => {
       expect(sendStartedAction).toBeUndefined();
     });
 
-    it("takes queue path when agent is processing and does not dispatch chatSendStarted", async () => {
+    it("sends directly for a stopped end_turn agent even when local processing flags are stale", async () => {
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: "end_turn",
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            contentBlocks: [{ type: "text", text: "Done" }],
+            timestamp: new Date().toISOString(),
+            metadata: { stopReason: "end_turn" },
+          },
+        ],
+      });
+
+      const { dispatched } = await runSendMessageSaga();
+
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeDefined();
+    });
+
+    it("continues queueing when canonical status still says the agent is responding", async () => {
+      mockSelectAgentIsResponding.mockReturnValue(true);
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        status: "responding",
+        activationState: "active",
+        isActive: true,
+        isStreaming: false,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: "end_turn",
+      });
+
+      const { dispatched } = await runSendMessageSaga();
+
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(mockQueueMessage).toHaveBeenCalledTimes(1);
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeUndefined();
+    });
+
+    it("sends directly when processing is a pending user-action wait", async () => {
       mockSelectAgentById.mockReturnValue({
         id: AGENT_ID,
         isStreaming: false,
         isProcessing: true,
       });
+      mockSelectPendingCount.mockReturnValue(1);
 
       const { dispatched } = await runSendMessageSaga();
 
-      const sendStartedAction = dispatched.find(
-        (a) => a.type === chatSendStarted.type,
-      );
-      expect(sendStartedAction).toBeUndefined();
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeDefined();
     });
   });
 
@@ -547,9 +641,180 @@ describe("send-message-saga", () => {
 
       // The queued message should have been routed to queueMessage
       expect(mockQueueMessage).toHaveBeenCalled();
+      expect(mockQueueMessage).toHaveBeenCalledWith(
+        AGENT_ID,
+        'Second message',
+        [],
+        undefined,
+        WS_ID,
+      );
 
       // Resolve the pending send to clean up
       resolveSend();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    it("bypasses a stale active send guard when the latest assistant turn ended", async () => {
+      let resolveFirst!: () => void;
+      let sendCalls = 0;
+      mockSendMessage.mockImplementation(() => {
+        sendCalls += 1;
+        if (sendCalls === 1) {
+          return new Promise<void>((resolve) => { resolveFirst = resolve; });
+        }
+        return Promise.resolve();
+      });
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      channel.put(makeSendAction({ text: "First message" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: "end_turn",
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            contentBlocks: [{ type: "text", text: "Done" }],
+            timestamp: new Date().toISOString(),
+            metadata: { stopReason: "end_turn" },
+          },
+        ],
+      });
+
+      channel.put(makeSendAction({ text: "Follow-up message" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(2);
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+      expect(dispatched.filter((a) => a.type === chatSendStarted.type)).toHaveLength(2);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Bypassing stale active send guard for ready agent",
+        expect.objectContaining({
+          agentId: AGENT_ID,
+          isStoppedTurnReadyForInput: true,
+        }),
+      );
+
+      resolveFirst();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    it("bypasses the active send guard when a pending user-action wait expects input", async () => {
+      let resolveFirst!: () => void;
+      let sendCalls = 0;
+      mockSendMessage.mockImplementation(() => {
+        sendCalls += 1;
+        if (sendCalls === 1) {
+          return new Promise<void>((resolve) => { resolveFirst = resolve; });
+        }
+        return Promise.resolve();
+      });
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const dispatched: any[] = [];
+      const channel = stdChannel();
+
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      channel.put(makeSendAction({ text: "First message" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: true,
+        isProcessing: true,
+      });
+      mockSelectPendingCount.mockReturnValue(1);
+
+      channel.put(makeSendAction({ text: "Unblock waiting agent" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(2);
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+      expect(dispatched.filter((a) => a.type === chatSendStarted.type)).toHaveLength(2);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Bypassing stale active send guard for ready agent",
+        expect.objectContaining({ agentId: AGENT_ID, isUserActionWait: true }),
+      );
+
+      resolveFirst();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    it("lets skipQueueCheck bypass the active send guard", async () => {
+      let resolveFirst!: () => void;
+      let sendCalls = 0;
+      mockSendMessage.mockImplementation(() => {
+        sendCalls += 1;
+        if (sendCalls === 1) {
+          return new Promise<void>((resolve) => { resolveFirst = resolve; });
+        }
+        return Promise.resolve();
+      });
+
+      const { watchSendMessage } = await import("./send-message-saga");
+
+      const channel = stdChannel();
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => channel.put(action),
+          getState: () => ({}),
+        },
+        watchSendMessage,
+      );
+
+      channel.put(makeSendAction({ text: "First message" }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      mockSelectAgentById.mockReturnValue({
+        id: AGENT_ID,
+        isStreaming: true,
+        isProcessing: true,
+      });
+
+      channel.put(makeSendAction({ text: "Send now", skipQueueCheck: true }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockSendMessage).toHaveBeenCalledTimes(2);
+      expect(mockQueueMessage).not.toHaveBeenCalled();
+
+      resolveFirst();
       await vi.advanceTimersByTimeAsync(0);
     });
   });
@@ -647,11 +912,7 @@ describe("send-message-saga", () => {
   describe("activeSends guard does not block queue-path messages (root cause #6)", () => {
     it("allows multiple queue-path messages while agent is streaming", async () => {
       // Set agent as streaming so all messages take the queue path
-      mockSelectAgentById.mockReturnValue({
-        id: AGENT_ID,
-        isStreaming: true,
-        isProcessing: false,
-      });
+      mockSelectAgentIsResponding.mockReturnValue(true);
 
       const { watchSendMessage } = await import("./send-message-saga");
 
@@ -706,11 +967,7 @@ describe("send-message-saga", () => {
   describe("skipQueueCheck forces send path (root cause #5)", () => {
     it("skipQueueCheck forces send path even when agent is streaming", async () => {
       // Agent is streaming — normally this would trigger the queue path
-      mockSelectAgentById.mockReturnValue({
-        id: AGENT_ID,
-        isStreaming: true,
-        isProcessing: false,
-      });
+      mockSelectAgentIsResponding.mockReturnValue(true);
 
       const { dispatched } = await runSendMessageSaga({ skipQueueCheck: true });
 

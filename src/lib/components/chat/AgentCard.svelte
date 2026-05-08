@@ -12,6 +12,10 @@
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
@@ -355,6 +359,8 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentById(agentId);
+  const agentIsResponding$ = selectAgentIsResponding(agentId);
+  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agent = $derived($agent$);
   const showAgentStatsTooltip = $derived(!!agent && isAuggieSession(agent));
   const agentStatsEmptyState = $derived.by(() => {
@@ -458,8 +464,8 @@
   const avatarState = $derived(
     getAvatarState(
       {
-        isStreaming: isStreamActive || agentData?.isResponding,
-        status: agentData?.status,
+        isStreaming: isStreamActive || ($agentIsResponding$ && !$agentIsWaiting$),
+        status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
       },
       {
         hasPermissionRequest: $agentPermCount > 0,

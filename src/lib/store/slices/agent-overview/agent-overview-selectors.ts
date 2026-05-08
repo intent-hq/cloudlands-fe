@@ -11,6 +11,7 @@ import type { StoreState } from "../../types";
 import type { InteractionEvent, GraphState, GraphNode, GraphEdge, AgentNode, FileNode, NoteNode, TaskNode } from "$lib/components/agent-overview/types";
 import type { FileLineChange } from "$lib/store/slices/changes/changes-types";
 import { selectWorkspaceFileChanges, selectAgentLineStats } from "$lib/store/slices/changes/changes-selectors";
+import { selectAgentIsResponding, selectAgentIsWaitingForOtherAgents } from "$lib/store/slices/agent-session/agent-session-selectors";
 import type { AgentOverviewWorkspaceState } from "./agent-overview-types";
 import { ACTIVE_EDGE_WINDOW_MS } from "$lib/components/agent-overview/constants";
 import {
@@ -110,8 +111,7 @@ function computeGraphState(
   currentTime: string,
   isLive: boolean,
   fileChanges: FileLineChange[],
-  // state param is unused now but kept in case we need it for additional selectors
-  _state: any,
+  state: StoreState,
   notesMap?: Map<string, Note>,
 ): GraphState {
   const currentTimestamp = new Date(currentTime).getTime();
@@ -169,10 +169,18 @@ function computeGraphState(
       null;
 
     const streamingState = getStreamingState(session);
+    // Use canonical agent-session selectors for graph-level derived status;
+    // UI consumers with agentId subscribe to the selectors directly where possible.
+    const isResponding = selectAgentIsResponding.select(state, agentId);
+    const isWaitingForOtherAgents = selectAgentIsWaitingForOtherAgents.select(state, agentId);
     const waitingForAgentIds = (session.metadata as any)?.waitingForAgentIds as string[] | undefined;
 
-    let nodeStatus = getNodeStatus(session);
-    if (nodeStatus === 'idle' && (streamingState.activeToolName || streamingState.isThinking || streamingState.streamingText)) {
+    let nodeStatus = getNodeStatus(session, isResponding);
+    if (isWaitingForOtherAgents) {
+      nodeStatus = 'waiting';
+    } else if (isResponding) {
+      nodeStatus = 'responding';
+    } else if (nodeStatus === 'idle' && (streamingState.activeToolName || streamingState.streamingText)) {
       nodeStatus = 'responding';
     }
 
@@ -189,7 +197,6 @@ function computeGraphState(
       createdAt: String(session.createdAt || currentTime),
       waitingForAgentIds,
       streamingText: streamingState.streamingText,
-      isThinking: streamingState.isThinking,
       activeToolName: streamingState.activeToolName,
       activeToolInput: streamingState.activeToolInput,
       lastResponse: streamingState.lastResponse,
@@ -265,7 +272,7 @@ function computeGraphState(
   processVisibleEvents(visibleEvents, isLive, currentTimestamp, agents, fileChangesMap, getNoteTitle, nodeMap, nodes, edgeSet, pendingEdges, edges);
 
   // STEP 4b: Fallback file nodes from workspace-level changes
-  createFallbackFileNodes(nodes, fileChanges, agents, coordinatorId, nodeMap, edgeSet, edges, isLive, currentTime, _state);
+  createFallbackFileNodes(nodes, fileChanges, agents, coordinatorId, nodeMap, edgeSet, edges, isLive, currentTime, state);
 
   // STEP 5: Create edges where both nodes exist
   for (const pending of pendingEdges) {

@@ -37,19 +37,15 @@
 
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import {
-    getChatService,
-    MessageGuardError,
-    type ChatState,
-  } from '$features/agent/services/chat.service';
+  import { getChatService, MessageGuardError } from '$features/agent/services/chat.service';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
-  import { browser } from '$app/environment';
   import { setAgentStreaming } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAgentSession,
     selectAgentMessages,
   } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectAgentQueueMessages } from '$lib/store/slices/agent-queue/agent-queue-selectors';
   import {
     addMessage as addAgentSessionMessage,
     updateMessage as updateAgentSessionMessage,
@@ -93,7 +89,7 @@
   import { selectTasksForAgent } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, AgentMetadata } from '$shared/types';
-  import { extractAllContent } from '$shared/types';
+  import { extractAllContent, type SuggestedPrompt } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -131,7 +127,6 @@
   import { createMessageId } from '$shared/types/branded-ids';
   import { createAppMessageId } from '$shared/utils/app-message-id';
   import { v4 as uuidv4 } from 'uuid';
-  import type { QueuedMessage } from '$shared/types';
   import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
   import Button from '../ui/button/button.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -158,6 +153,11 @@
   import { cleanErrorMessage } from '$shared/errors/messages';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import { resolveHydratedInputModel } from './input-hydration';
+  import {
+    isSessionActivelyResponding,
+    shouldShowEndOfListStreamingStatus,
+    shouldShowPendingAssistantStatus,
+  } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
 
   const logger = createLogger('ChatPanel');
@@ -228,16 +228,6 @@
     }) => void;
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
-    /** Sandbox/preview mode - bypasses services and uses mock data */
-    sandboxMode?: boolean;
-    /** Mock messages to display in sandbox mode */
-    sandboxMessages?: AgentMessage[];
-    /** Mock streaming state in sandbox mode */
-    sandboxIsStreaming?: boolean;
-    /** Mock processing state in sandbox mode */
-    sandboxIsProcessing?: boolean;
-    /** Mock error in sandbox mode */
-    sandboxError?: string | null;
   }
 
   let {
@@ -256,11 +246,6 @@
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
-    sandboxMode = false,
-    sandboxMessages = [],
-    sandboxIsStreaming = false,
-    sandboxIsProcessing = false,
-    sandboxError = null,
   }: Props = $props();
 
   // Service instance — per-agent, permanently bound to this agent's ID
@@ -279,47 +264,23 @@
   // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
   const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
 
-  // Redux selectors for chat state — called at init time, reactive via Svelte store protocol
-  const _chatAgentState$ = selectChatStateOrDefault(agentId ?? '');
-  const _agentSession$ = selectAgentSession(agentId ?? '');
-  const _agentMessages$ = selectAgentMessages(agentId ?? '');
+  // Redux selectors for chat values — called at init time, reactive via Svelte store protocol
+  const chatAgentState$ = selectChatStateOrDefault(agentId ?? '');
+  const agentSession$ = selectAgentSession(agentId ?? '');
+  const agentMessages$ = selectAgentMessages(agentId ?? '');
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
+  const queuedMessages$ = selectAgentQueueMessages(agentId ?? '');
 
-  // Effective chat state - composes ChatAgentState + session/messages from agent-session slice
-  let chatState = $derived.by((): ChatState => {
-    if (sandboxMode) {
-      return {
-        agentId: agentId ?? '',
-        session: { id: 'sandbox-session' } as ChatState['session'],
-        messages: sandboxMessages,
-        isStreaming: sandboxIsStreaming,
-        isProcessing: sandboxIsProcessing,
-        isInterrupting: false,
-        streamingContent: sandboxIsStreaming ? 'Streaming content...' : '',
-        error: sandboxError,
-        streamingStartTime: sandboxIsStreaming ? Date.now() : null,
-        lastAttemptedMessage: null,
-        lastChunkTime: null,
-        receivedFirstChunk: false,
-        isStalled: false,
-        modelUnavailable: null,
-        statusEvents: [],
-        trackedWorkspaceId: null,
-        isRebinding: false,
-        lastMessageTime: 0,
-        lastChunkReceivedAt: 0,
-      };
-    }
-    const session = $_agentSession$ ?? null;
-    return {
-      ...$_chatAgentState$,
-      session,
-      messages: $_agentMessages$,
-      // isStreaming/isProcessing come from agent-session (single source of truth)
-      isStreaming: session?.isStreaming ?? false,
-      isProcessing: session?.isProcessing ?? false,
-    };
-  });
+  const isStreaming = $derived($agentSession$?.isStreaming ?? false);
+  const isProcessing = $derived(isSessionActivelyResponding($agentSession$));
+  const streamingContent = $derived($chatAgentState$.streamingContent);
+  const error = $derived($chatAgentState$.error);
+  const isStalled = $derived($chatAgentState$.isStalled);
+  const streamingStartTime = $derived($chatAgentState$.streamingStartTime);
+  const lastChunkTime = $derived($chatAgentState$.lastChunkTime);
+  const modelUnavailable = $derived($chatAgentState$.modelUnavailable);
+  const statusEvents = $derived($chatAgentState$.statusEvents);
+  const receivedFirstChunk = $derived($chatAgentState$.receivedFirstChunk);
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -409,23 +370,20 @@
   });
 
   // Hoist suggested prompts so keyboard handlers can reference them
-  const suggestedPrompts = $derived.by(() => {
-    if (chatState.isStreaming || chatState.messages.length === 0) {
-      return [] as import('$shared/types').SuggestedPrompt[];
+  const suggestedPrompts = $derived.by((): SuggestedPrompt[] => {
+    if (isStreaming || $agentMessages$.length === 0) {
+      return [];
     }
-    const lastAssistantMessage = [...chatState.messages]
+    const lastAssistantMessage = [...$agentMessages$]
       .reverse()
       .find((m) => m.role === 'assistant');
     if (!lastAssistantMessage) {
-      return [] as import('$shared/types').SuggestedPrompt[];
+      return [];
     }
     const messageContent = extractAllContent(lastAssistantMessage);
     const { prompts } = parseSuggestedPrompts(messageContent);
     return prompts;
   });
-
-  // Alias — suggestedPrompts are displayed directly (no filtering needed)
-  const visibleSuggestedPrompts = $derived(suggestedPrompts);
 
   // Search state
   let showSearch = $state(false);
@@ -508,7 +466,7 @@
       turnKey: string;
     }> = [];
 
-    for (const msg of chatState.messages) {
+    for (const msg of $agentMessages$) {
       const content = extractSearchableContent(msg);
       const lowerContent = content.toLowerCase();
       const turnKey = turnKeyMap.get(msg.id) ?? msg.id;
@@ -861,7 +819,7 @@
   // This runs once when messages are first loaded
   $effect(() => {
     if (historyInitialized) return;
-    const messages = chatState.messages;
+    const messages = $agentMessages$;
     if (messages.length === 0) return;
 
     // Extract user messages and build history, excluding automated messages
@@ -1024,9 +982,6 @@
     }
   });
 
-  // Queued messages
-  let queuedMessages = $state<QueuedMessage[]>([]);
-  let queueListenerCleanup: (() => void) | null = null;
   // Reference to QueuedMessageList for programmatic editing via Up arrow
   let queuedMessageListRef: QueuedMessageList | undefined = $state();
 
@@ -1324,20 +1279,22 @@
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
-      session: chatState.session,
-      messages: chatState.messages,
+      session: $agentSession$,
+      messages: $agentMessages$,
       pendingInitialPrompt,
       pendingContextReferenceCount: pendingInitialData.contextReferences?.length ?? 0,
     }),
   );
 
   // Hydrated input model — uses session model when available, falls back to agentModel prop
-  let hydratedInputModel = $derived(resolveHydratedInputModel(chatState.session, agentModel));
+  let hydratedInputModel = $derived(
+    resolveHydratedInputModel($agentSession$, agentModel),
+  );
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
-    if (!chatState.session) return undefined;
-    return getAgentProvider(chatState.session);
+    if (!$agentSession$) return undefined;
+    return getAgentProvider($agentSession$);
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component
@@ -1360,14 +1317,14 @@
 
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
-  let groupedMessages = $derived(groupMessagesByDate(chatState.messages));
+  let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
 
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
   let auggieSessionId = $derived.by(() => {
     // Look for auggieSessionId in assistant messages (most recent first)
-    for (let i = chatState.messages.length - 1; i >= 0; i--) {
-      const msg = chatState.messages[i];
+    for (let i = $agentMessages$.length - 1; i >= 0; i--) {
+      const msg = $agentMessages$[i];
       if (msg.role === 'assistant' && msg.metadata?.auggieSessionId) {
         return msg.metadata.auggieSessionId as string;
       }
@@ -1377,7 +1334,7 @@
 
   // PERF: Pre-compute total turn count for lazy loading decisions
   // Count user messages as proxy for turns (each user message starts a turn)
-  const totalTurnCount = $derived(chatState.messages.filter((m) => m.role === 'user').length);
+  const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
   // PERF: Enable lazy loading only for larger conversations
   const shouldUseLazyLoading = $derived(totalTurnCount > LAZY_TURN_THRESHOLD);
@@ -1386,8 +1343,8 @@
   // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
   const messageIndexMap = $derived.by(() => {
     const map = new Map<string, number>();
-    for (let i = 0; i < chatState.messages.length; i++) {
-      map.set(chatState.messages[i].id, i);
+    for (let i = 0; i < $agentMessages$.length; i++) {
+      map.set($agentMessages$[i].id, i);
     }
     return map;
   });
@@ -1395,7 +1352,7 @@
   const messageTurnNumberMap = $derived.by(() => {
     const map = new Map<string, number>();
     let turnCount = 0;
-    for (const message of chatState.messages) {
+    for (const message of $agentMessages$) {
       if (message.role === 'assistant') {
         turnCount++;
         map.set(message.id, turnCount);
@@ -1409,7 +1366,7 @@
 
   // Auto-scroll to bottom when new messages are added and shouldFollowBottom is true
   $effect(() => {
-    const currentCount = chatState.messages.length;
+    const currentCount = $agentMessages$.length;
     // Scroll to bottom when:
     // 1. New message added AND following is enabled, OR
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
@@ -1445,11 +1402,11 @@
   // Group messages into conversation turns (user message + following assistant response)
   // This allows sticky behavior to be constrained within each turn
   interface ConversationTurn {
-    userMessage: (typeof chatState.messages)[0] | null;
-    assistantMessages: typeof chatState.messages;
+    userMessage: AgentMessage | null;
+    assistantMessages: AgentMessage[];
   }
 
-  function groupIntoTurns(messages: typeof chatState.messages): ConversationTurn[] {
+  function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
     const turns: ConversationTurn[] = [];
     let currentTurn: ConversationTurn | null = null;
 
@@ -1477,6 +1434,28 @@
 
     return turns;
   }
+
+  const lastConversationTurn = $derived.by((): ConversationTurn | null => {
+    const lastGroup = groupedMessages[groupedMessages.length - 1];
+    if (!lastGroup) return null;
+
+    const turns = groupIntoTurns(lastGroup.messages);
+    return turns[turns.length - 1] ?? null;
+  });
+
+  const showEndOfListStreamingStatus = $derived(
+    shouldShowEndOfListStreamingStatus({
+      isStreaming,
+      isProcessing,
+      error,
+      modelUnavailable,
+      hasMessages: $agentMessages$.length > 0,
+      lastTurnHasAssistantMessages:
+        (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
+      lastAssistantMessageIsStreaming:
+        isStreaming && (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
+    }),
+  );
 
   // PERF: Pre-compute global turn index map for lazy loading decisions
   // Maps turnKey (userMessageId or `group-${groupIndex}-turn-${turnIndex}`) to global index
@@ -1578,53 +1557,9 @@
   // Get the current specialist ID from the session metadata
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const currentSpecialistId = $derived.by(() => {
-    const session = chatState.session;
+    const session = $agentSession$;
     if (!session) return null;
     return session.metadata?.specialist || session.agentMetadata?.specialist || null;
-  });
-
-  // Track last fetched agent to prevent duplicate queue fetches
-  let lastQueueFetchAgentId: string | null = null;
-
-  // Fetch queue when agentId changes (handles tab switching)
-  $effect(() => {
-    if (!browser || sandboxMode || !agentId || !workspace) return;
-
-    // Skip if we already fetched for this agent
-    if (lastQueueFetchAgentId === agentId) return;
-
-    lastQueueFetchAgentId = agentId;
-
-    // Fetch queue when switching agents to ensure we have the latest state
-    logger.debug('Fetching queue state for agent', { agentId });
-
-    unifiedOrchestrator
-      .getQueue(agentId)
-      .then((result: { success: boolean; queue?: QueuedMessage[]; error?: string }) => {
-        // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
-        // This prevents "N is not a function" errors when Svelte's reactive system
-        // tries to call nullified internal functions after component destruction.
-        if (isComponentDestroyed) return;
-
-        if (result.success && result.queue) {
-          queuedMessages = result.queue;
-          logger.debug('Queue state fetched successfully', {
-            agentId,
-            count: result.queue.length,
-          });
-        } else {
-          logger.warn('Failed to fetch queue state', { agentId, error: result.error });
-        }
-      })
-      .catch((error) => {
-        // Also check destruction to avoid logging errors for destroyed component
-        if (isComponentDestroyed) return;
-
-        logger.error('Error fetching queue state', {
-          agentId,
-          error: error?.message,
-        });
-      });
   });
 
   // Generate URL for task navigation
@@ -1652,16 +1587,9 @@
       instanceId,
       agentId,
       workspace: workspace?.id,
-      sandboxMode,
     });
 
     // Permission store is now auto-initialized via Redux saga — no manual initialize() needed
-
-    // Skip service initialization in sandbox mode
-    if (sandboxMode) {
-      logger.info('ChatPanel in sandbox mode - skipping service initialization');
-      return;
-    }
 
     // Guard: Don't initialize chat for terminal IDs - they should use Terminal component
     if (agentId?.startsWith('terminal-')) {
@@ -1697,7 +1625,7 @@
       const repoName =
         workspace.repositoryName || workspace.repositoryPath?.split('/').pop() || workspace.title;
       if (repoName) {
-        const session = chatState?.session;
+        const session = $agentSession$;
         onboardingContext = {
           projectName: repoName,
           projectPath: workspace.repositoryPath || '',
@@ -1714,31 +1642,19 @@
       }
     }
 
-    // Set up queue listener using listenSync for proper cleanup without race conditions
-    queueListenerCleanup = listenSync('agent:queue:updated', (event: any) => {
-      const data = event.payload || event;
-      if (data.agentId === agentId) {
-        queuedMessages = data.queue;
-        logger.debug('Queue updated via IPC event', { agentId, count: data.queue.length });
-      }
-    });
-
-    // Note: Initial queue fetch is now handled by the reactive $effect above
-    // This ensures the queue is refetched when switching between agents
-
-    // Chat state is now fully reactive via the selectChatStateOrDefault selector.
-    // No manual Redux store subscription needed — the selector provides always-current state.
+    // Chat values are reactive via Redux selectors.
+    // No manual Redux store subscription needed — selectors provide always-current values.
 
     // Request initial message send if workspace creation left pending config.
     // The saga owns readiness waiting, sending, and storage cleanup.
-    if (workspace && agentId && chatState.messages.length === 0) {
+    if (workspace && agentId && $agentMessages$.length === 0) {
       multiPanelDispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
     }
 
     // Scroll handling on mount
     requestAnimationFrame(() => {
       if (scrollContainer) {
-        if ((chatState.messages?.length || 0) > 0) {
+        if ($agentMessages$.length > 0) {
           // Scroll to bottom if there are messages
           scrollToBottomUtil(scrollContainer);
         } else {
@@ -1758,7 +1674,7 @@
   // but the component does not remount (AgentTabType keys by agentId only).
   $effect(() => {
     const currentWorkspaceId = workspace?.id;
-    if (!currentWorkspaceId || !agentId || sandboxMode) return;
+    if (!currentWorkspaceId || !agentId) return;
 
     // Check if workspace actually changed (also handles null/first-run guard)
     if (!untrack(() => rebindTracker.shouldRebind(currentWorkspaceId))) return;
@@ -1884,7 +1800,7 @@
   function navigateToMessage(index: number) {
     if (!scrollContainer) return;
 
-    const messages = chatState.messages;
+    const messages = $agentMessages$;
     if (messages.length === 0) return;
 
     // Clamp index to valid range, or -1 for "at bottom"
@@ -1923,7 +1839,7 @@
 
     if (!direction) return;
 
-    const messages = chatState.messages;
+    const messages = $agentMessages$;
     if (messages.length === 0) return;
 
     if (direction === 'previous') {
@@ -2014,7 +1930,7 @@
       const subscriptionToolNames = ['subscribe_to_events', 'create_agent', 'delegate'];
 
       // Search messages from newest to oldest to find the most recent subscription
-      const allMessages = [...chatState.messages].reverse();
+      const allMessages = [...$agentMessages$].reverse();
 
       for (const message of allMessages) {
         if (message.role !== 'assistant') continue;
@@ -2233,7 +2149,7 @@
     if (!scrollContainer) return;
 
     // Get all user messages
-    const userMessages = chatState.messages.filter((m) => m.role === 'user');
+    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
     const currentIndex = userMessages.findIndex((m) => m.id === currentMessageId);
 
     if (currentIndex <= 0) {
@@ -2267,7 +2183,7 @@
   // Handle draft prompt - pre-fill the input without sending
   $effect(() => {
     if (!draftPrompt || draftPromptApplied) return;
-    if (!chatState.session) return; // Wait for session to be ready
+    if (!$agentSession$) return; // Wait for session to be ready
 
     // Pre-fill the input
     logger.info('[ChatPanel] Pre-filling input with draft prompt', {
@@ -2324,7 +2240,6 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
-    queueListenerCleanup?.();
     // Pause background timers (state reconciliation, stall detection) to prevent
     // false positives during workspace switches. The timers would otherwise keep
     // running and falsely reset streaming state when the backend query returns
@@ -2341,15 +2256,15 @@
 
   // Notify parent of chat state updates (replaces the old store subscription callback)
   $effect(() => {
-    if (typeof onChatUpdate !== 'function' || chatState.messages.length === 0) return;
-    const messages = chatState.messages;
+    if (typeof onChatUpdate !== 'function' || $agentMessages$.length === 0) return;
+    const messages = $agentMessages$;
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
       lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
-      isProcessing: chatState.isProcessing,
+      isProcessing,
       messageCount: messages.length,
     });
   });
@@ -2372,7 +2287,7 @@
 
   // Handle sending a queued message immediately (interrupts current stream)
   async function handleSendQueuedMessageNow(messageId: string) {
-    const message = queuedMessages.find((m) => m.id === messageId);
+    const message = $queuedMessages$.find((m) => m.id === messageId);
     if (!message || !workspace) return;
 
     logger.info('Send queued message now triggered', { messageId, agentId });
@@ -2385,7 +2300,7 @@
     }
 
     // Stop current streaming (fire-and-forget — the saga handles the wait)
-    if (chatState.isStreaming || chatState.isProcessing) {
+    if ((isStreaming || isProcessing)) {
       try {
         await chatService.stopChat(agentId);
       } catch (error) {
@@ -2462,7 +2377,7 @@
   function handleHistoryPrev(): string | null {
     // If there are queued messages and we're not already navigating history,
     // edit the last queued message instead of cycling through sent history
-    if (queuedMessages.length > 0 && historyIndex === -1 && !inputValue.trim()) {
+    if ($queuedMessages$.length > 0 && historyIndex === -1 && !inputValue.trim()) {
       const editStarted = queuedMessageListRef?.editLastMessage?.();
       if (editStarted) {
         // Return null so TipTapEditor doesn't change the input content
@@ -2597,7 +2512,7 @@
         getReduxStore().dispatch(setAgentStreaming(workspace.id, agentId, false));
 
         // Find and update the last assistant message with interrupted flag
-        const messages = chatState.messages;
+        const messages = $agentMessages$;
         const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
         if (lastAssistantMessage) {
           const updatedMetadata = {
@@ -2678,7 +2593,7 @@
   async function handleSpecialistChange(specialistId: string | null) {
     if (!workspace || !agentId) return;
 
-    const session = chatState.session;
+    const session = $agentSession$;
     if (!session) return;
 
     logger.info('Changing agent specialist', { agentId, specialistId });
@@ -2756,7 +2671,7 @@
     logger.info('Force submit triggered - stopping current stream and sending', { agentId });
 
     // Stop current streaming first
-    if (chatState.isStreaming || chatState.isProcessing) {
+    if ((isStreaming || isProcessing)) {
       try {
         await chatService.stopChat(agentId);
         // Wait for the interrupt to fully complete (isInterrupting becomes false)
@@ -2911,11 +2826,11 @@
   }
 
   export function getMessages() {
-    return chatState.messages;
+    return $agentMessages$;
   }
 
   export function getNavigationState() {
-    const userMessages = chatState.messages.filter((m) => m.role === 'user');
+    const userMessages = $agentMessages$.filter((m) => m.role === 'user');
     return {
       userMessageCount: userMessages.length,
       currentMessageIndex: -1, // Not tracking current visible message in simplified version
@@ -2939,7 +2854,7 @@
 
   // Resend/regenerate the last assistant message (triggered by Alt+Enter)
   async function handleResendLastMessage() {
-    const messages = chatState.messages;
+    const messages = $agentMessages$;
     if (messages.length === 0) return;
 
     // Find the last assistant message
@@ -2995,7 +2910,7 @@
       if (isNaN(num) && e.code.startsWith('Digit')) {
         num = parseInt(e.code.slice(5), 10);
       }
-      if (num >= 1 && num <= Math.min(visibleSuggestedPrompts.length, 3)) {
+      if (num >= 1 && num <= Math.min(suggestedPrompts.length, 3)) {
         const promptIndex = num - 1;
         const isMac = navigator.platform.toUpperCase().includes('MAC');
         const hasModifier = isMac
@@ -3003,7 +2918,7 @@
           : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey; // Alt on Win/Linux
         if (hasModifier) {
           e.preventDefault();
-          const prompt = visibleSuggestedPrompts[promptIndex];
+          const prompt = suggestedPrompts[promptIndex];
           handleSelectSuggestedPrompt(prompt);
         }
       }
@@ -3076,7 +2991,7 @@
           shouldFollowBottom &&
           !isScrollUnlocked &&
           !showSearch &&
-          chatState.messages.length > 0,
+          $agentMessages$.length > 0,
         threshold: 100,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
@@ -3104,13 +3019,22 @@
         </a>
       {/if}
 
-      {#if !isInitialWorkspaceAgent && chatState.messages.length === 0 && !chatState.isStreaming && chatState?.session && !pendingInitialPrompt}
+      {#if !isInitialWorkspaceAgent &&
+        $agentMessages$.length === 0 &&
+        !isStreaming &&
+        $agentSession$ &&
+        !pendingInitialPrompt}
         <div class="mt-16"></div>
         <RegularAgentWelcome
           onSpecialistChange={handleSpecialistChange}
-          session={chatState.session}
+          session={$agentSession$}
         />
-      {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && chatState.messages.length === 0 && !chatState.isStreaming && !pendingInitialPrompt}
+      {:else if isInitialWorkspaceAgent &&
+        onboardingContext &&
+        !onboardingContext.prompt?.trim() &&
+        $agentMessages$.length === 0 &&
+        !isStreaming &&
+        !pendingInitialPrompt}
         <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
         <div class="pt-16 pb-6">
           <WorkspaceSetupCard
@@ -3135,7 +3059,7 @@
             skipWorktree={onboardingContext.skipWorktree}
           />
         </div>
-      {:else if !chatState?.session && chatState.messages.length === 0 && !chatState.isStreaming && !pendingInitialPrompt}
+      {:else if !$agentSession$ && $agentMessages$.length === 0 && !isStreaming && !pendingInitialPrompt}
         <!-- Show setup card even while session is loading -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">
@@ -3197,14 +3121,14 @@
         </div>
       {:else}
         <!-- Pending initial prompt - shown as optimistic UI immediately -->
-        <!-- FIX: Keep showing pendingMessage until a USER message arrives in chatState.messages -->
+        <!-- FIX: Keep showing pendingMessage until a USER message arrives in $agentMessages$ -->
         <!-- This prevents the flash where pendingMessage disappears but only assistant streaming content has arrived -->
-        {@const hasUserMessage = chatState.messages.some((m) => m.role === 'user')}
+        {@const hasUserMessage = $agentMessages$.some((m) => m.role === 'user')}
         {@const pendingCondition = pendingMessage && !hasUserMessage}
-        {@const messagesCondition = hasUserMessage || chatState.messages.length > 0}
+        {@const messagesCondition = hasUserMessage || $agentMessages$.length > 0}
         {#if pendingCondition}
           <!-- Get any streaming assistant messages to render alongside the pending user message -->
-          {@const streamingAssistantMessages = chatState.messages.filter(
+          {@const streamingAssistantMessages = $agentMessages$.filter(
             (m) => m.role === 'assistant',
           )}
           {#if initialPromptProp}
@@ -3250,41 +3174,38 @@
                 <!-- Render any streaming assistant messages -->
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
-                  {@const isCurrentlyStreaming = isLastMessage && chatState.isStreaming}
+                  {@const isCurrentlyStreaming = isLastMessage && isStreaming}
                   <div
                     data-message-id={message.id}
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
-                    <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
-                         Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                     <ChatMessage
-                      message={sandboxMode ? message : undefined}
-                      agentId={sandboxMode ? undefined : agentId}
-                      messageId={sandboxMode ? undefined : message.id}
+                      agentId={agentId}
+                      messageId={message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
-                  {#if (isCurrentlyStreaming && (chatState.isProcessing || chatState.isStreaming)) || (isLastMessage && (chatState.error || chatState.modelUnavailable))}
+                  {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
                     <div class="mb-16">
                       <StreamingStatus
-                        isStreaming={chatState.isStreaming}
-                        isProcessing={chatState.isProcessing}
-                        lastChunkTime={chatState.lastChunkTime}
-                        receivedFirstChunk={chatState.receivedFirstChunk}
-                        streamingContentLength={chatState.streamingContent?.length ?? 0}
-                        error={chatState.error}
-                        isStalled={chatState.isStalled}
-                        modelUnavailable={chatState.modelUnavailable}
+                        isStreaming={isStreaming}
+                        isProcessing={isProcessing}
+                        lastChunkTime={lastChunkTime}
+                        receivedFirstChunk={receivedFirstChunk}
+                        streamingContentLength={streamingContent?.length ?? 0}
+                        error={error}
+                        isStalled={isStalled}
+                        modelUnavailable={modelUnavailable}
                         {hasPendingPermission}
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        statusEvents={chatState.statusEvents}
-                        streamingStartTime={chatState.streamingStartTime}
+                        statusEvents={statusEvents}
+                        streamingStartTime={streamingStartTime}
                       />
                     </div>
                   {/if}
@@ -3294,21 +3215,21 @@
                 {#if streamingAssistantMessages.length === 0}
                   <div class="mb-4">
                     <StreamingStatus
-                      isStreaming={chatState.isStreaming}
-                      isProcessing={chatState.isProcessing}
-                      lastChunkTime={chatState.lastChunkTime}
-                      receivedFirstChunk={chatState.receivedFirstChunk}
-                      streamingContentLength={chatState.streamingContent?.length ?? 0}
-                      error={chatState.error}
-                      isStalled={chatState.isStalled}
-                      modelUnavailable={chatState.modelUnavailable}
+                      isStreaming={isStreaming}
+                      isProcessing={isProcessing}
+                      lastChunkTime={lastChunkTime}
+                      receivedFirstChunk={receivedFirstChunk}
+                      streamingContentLength={streamingContent?.length ?? 0}
+                      error={error}
+                      isStalled={isStalled}
+                      modelUnavailable={modelUnavailable}
                       {hasPendingPermission}
                       onRetry={handleRetry}
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      statusEvents={chatState.statusEvents}
-                      streamingStartTime={chatState.streamingStartTime}
+                      statusEvents={statusEvents}
+                      streamingStartTime={streamingStartTime}
                     />
                   </div>
                 {/if}
@@ -3357,41 +3278,38 @@
                 <!-- Render any streaming assistant messages -->
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
-                  {@const isCurrentlyStreaming = isLastMessage && chatState.isStreaming}
+                  {@const isCurrentlyStreaming = isLastMessage && isStreaming}
                   <div
                     data-message-id={message.id}
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
-                    <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
-                         Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                     <ChatMessage
-                      message={sandboxMode ? message : undefined}
-                      agentId={sandboxMode ? undefined : agentId}
-                      messageId={sandboxMode ? undefined : message.id}
+                      agentId={agentId}
+                      messageId={message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
-                  {#if (isCurrentlyStreaming && (chatState.isProcessing || chatState.isStreaming)) || (isLastMessage && (chatState.error || chatState.modelUnavailable))}
+                  {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
                     <div class="mb-16">
                       <StreamingStatus
-                        isStreaming={chatState.isStreaming}
-                        isProcessing={chatState.isProcessing}
-                        lastChunkTime={chatState.lastChunkTime}
-                        receivedFirstChunk={chatState.receivedFirstChunk}
-                        streamingContentLength={chatState.streamingContent?.length ?? 0}
-                        error={chatState.error}
-                        isStalled={chatState.isStalled}
-                        modelUnavailable={chatState.modelUnavailable}
+                        isStreaming={isStreaming}
+                        isProcessing={isProcessing}
+                        lastChunkTime={lastChunkTime}
+                        receivedFirstChunk={receivedFirstChunk}
+                        streamingContentLength={streamingContent?.length ?? 0}
+                        error={error}
+                        isStalled={isStalled}
+                        modelUnavailable={modelUnavailable}
                         {hasPendingPermission}
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        statusEvents={chatState.statusEvents}
-                        streamingStartTime={chatState.streamingStartTime}
+                        statusEvents={statusEvents}
+                        streamingStartTime={streamingStartTime}
                       />
                     </div>
                   {/if}
@@ -3401,21 +3319,21 @@
                 {#if streamingAssistantMessages.length === 0}
                   <div class="mb-4">
                     <StreamingStatus
-                      isStreaming={chatState.isStreaming}
-                      isProcessing={chatState.isProcessing}
-                      lastChunkTime={chatState.lastChunkTime}
-                      receivedFirstChunk={chatState.receivedFirstChunk}
-                      streamingContentLength={chatState.streamingContent?.length ?? 0}
-                      error={chatState.error}
-                      isStalled={chatState.isStalled}
-                      modelUnavailable={chatState.modelUnavailable}
+                      isStreaming={isStreaming}
+                      isProcessing={isProcessing}
+                      lastChunkTime={lastChunkTime}
+                      receivedFirstChunk={receivedFirstChunk}
+                      streamingContentLength={streamingContent?.length ?? 0}
+                      error={error}
+                      isStalled={isStalled}
+                      modelUnavailable={modelUnavailable}
                       {hasPendingPermission}
                       onRetry={handleRetry}
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      statusEvents={chatState.statusEvents}
-                      streamingStartTime={chatState.streamingStartTime}
+                      statusEvents={statusEvents}
+                      streamingStartTime={streamingStartTime}
                     />
                   </div>
                 {/if}
@@ -3426,25 +3344,25 @@
 
         <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
         <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-        {#if !pendingCondition && !messagesCondition && (chatState.isProcessing || chatState.isStreaming || chatState.error || chatState.modelUnavailable)}
+        {#if !pendingCondition && !messagesCondition && (isProcessing || isStreaming || error || modelUnavailable)}
           <div class="w-full">
             <div class="mb-4">
               <StreamingStatus
-                isStreaming={chatState.isStreaming}
-                isProcessing={chatState.isProcessing}
-                lastChunkTime={chatState.lastChunkTime}
-                receivedFirstChunk={chatState.receivedFirstChunk}
-                streamingContentLength={chatState.streamingContent?.length ?? 0}
-                error={chatState.error}
-                isStalled={chatState.isStalled}
-                modelUnavailable={chatState.modelUnavailable}
+                isStreaming={isStreaming}
+                isProcessing={isProcessing}
+                lastChunkTime={lastChunkTime}
+                receivedFirstChunk={receivedFirstChunk}
+                streamingContentLength={streamingContent?.length ?? 0}
+                error={error}
+                isStalled={isStalled}
+                modelUnavailable={modelUnavailable}
                 {hasPendingPermission}
                 onRetry={handleRetry}
                 onRetryWithModel={handleRetryWithModel}
                 onStop={handleStop}
                 seed={agentId}
-                statusEvents={chatState.statusEvents}
-                streamingStartTime={chatState.streamingStartTime}
+                statusEvents={statusEvents}
+                streamingStartTime={streamingStartTime}
               />
             </div>
           </div>
@@ -3500,7 +3418,7 @@
                     {turnKey}
                     scrollRoot={scrollContainer}
                     forceVisible={isTurnForceVisible(turnKey) ||
-                      (chatState.isStreaming && isLastTurnInConversation) ||
+                      (isStreaming && isLastTurnInConversation) ||
                       visibleSearchTurnKeys.has(turnKey)}
                   >
                     {#snippet children()}
@@ -3604,12 +3522,9 @@
                           data-message-index={globalIndex}
                           class="message-nav-target z-20 mb-9 bg-sidebar relative"
                         >
-                          <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
-                               Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                           <ChatMessage
-                            message={sandboxMode ? message : undefined}
-                            agentId={sandboxMode ? undefined : agentId}
-                            messageId={sandboxMode ? undefined : message.id}
+                            agentId={agentId}
+                            messageId={message.id}
                             {workspace}
                             onEditSubmit={(newText, model) =>
                               handleEditMessage(message.id, newText, model)}
@@ -3623,25 +3538,33 @@
                         </div>
                       {/if}
 
-                      <!-- Show streaming status when processing but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && (chatState.isProcessing || chatState.error || chatState.modelUnavailable)}
+                      <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
+                      {#if groupIndex === groupedMessages.length - 1 &&
+                        turnIndex === turns.length - 1 &&
+                        turn.assistantMessages.length === 0 &&
+                        shouldShowPendingAssistantStatus({
+                          isStreaming,
+                          isProcessing,
+                          error,
+                          modelUnavailable,
+                        })}
                         <div class="mb-8">
                           <StreamingStatus
-                            isStreaming={chatState.isStreaming}
-                            isProcessing={chatState.isProcessing}
-                            lastChunkTime={chatState.lastChunkTime}
-                            receivedFirstChunk={chatState.receivedFirstChunk}
-                            streamingContentLength={chatState.streamingContent?.length ?? 0}
-                            error={chatState.error}
-                            isStalled={chatState.isStalled}
-                            modelUnavailable={chatState.modelUnavailable}
+                            isStreaming={isStreaming}
+                            isProcessing={isProcessing}
+                            lastChunkTime={lastChunkTime}
+                            receivedFirstChunk={receivedFirstChunk}
+                            streamingContentLength={streamingContent?.length ?? 0}
+                            error={error}
+                            isStalled={isStalled}
+                            modelUnavailable={modelUnavailable}
                             {hasPendingPermission}
                             onRetry={handleRetry}
                             onRetryWithModel={handleRetryWithModel}
                             onStop={handleStop}
                             seed={agentId}
-                            statusEvents={chatState.statusEvents}
-                            streamingStartTime={chatState.streamingStartTime}
+                            statusEvents={statusEvents}
+                            streamingStartTime={streamingStartTime}
                           />
                         </div>
                       {/if}
@@ -3655,7 +3578,7 @@
                         {@const isLastAssistant =
                           assistantIndex === turn.assistantMessages.length - 1}
                         {@const isLastMessage = isLastTurn && isLastAssistant}
-                        {@const isCurrentlyStreaming = isLastMessage && chatState.isStreaming}
+                        {@const isCurrentlyStreaming = isLastMessage && isStreaming}
                         {@const turnNumber = getMessageTurnNumber(message.id)}
                         {@const globalIndex = getMessageIndex(message.id)}
                         <div
@@ -3665,12 +3588,9 @@
                           data-turn-number={turnNumber}
                           class="message-nav-target"
                         >
-                          <!-- Redux-backed: pass ids so ChatMessage gets its own per-message subscription.
-                               Sandbox messages are NOT in Redux — fall back to the message prop there. -->
                           <ChatMessage
-                            message={sandboxMode ? message : undefined}
-                            agentId={sandboxMode ? undefined : agentId}
-                            messageId={sandboxMode ? undefined : message.id}
+                            agentId={agentId}
+                            messageId={message.id}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
                             onEditSubmit={(newText, model) =>
@@ -3681,24 +3601,24 @@
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                        {#if (isCurrentlyStreaming && (chatState.isProcessing || chatState.isStreaming)) || (isLastMessage && (chatState.error || chatState.modelUnavailable))}
+                        {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
                           <div class="mb-16">
                             <StreamingStatus
-                              isStreaming={chatState.isStreaming}
-                              isProcessing={chatState.isProcessing}
-                              lastChunkTime={chatState.lastChunkTime}
-                              receivedFirstChunk={chatState.receivedFirstChunk}
-                              streamingContentLength={chatState.streamingContent?.length ?? 0}
-                              error={chatState.error}
-                              isStalled={chatState.isStalled}
-                              modelUnavailable={chatState.modelUnavailable}
+                              isStreaming={isStreaming}
+                              isProcessing={isProcessing}
+                              lastChunkTime={lastChunkTime}
+                              receivedFirstChunk={receivedFirstChunk}
+                              streamingContentLength={streamingContent?.length ?? 0}
+                              error={error}
+                              isStalled={isStalled}
+                              modelUnavailable={modelUnavailable}
                               {hasPendingPermission}
                               onRetry={handleRetry}
                               onRetryWithModel={handleRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
-                              statusEvents={chatState.statusEvents}
-                              streamingStartTime={chatState.streamingStartTime}
+                              statusEvents={statusEvents}
+                              streamingStartTime={streamingStartTime}
                             />
                           </div>
                         {/if}
@@ -3728,27 +3648,48 @@
                 {/if}
               {/each}
             {/each}
+            {#if showEndOfListStreamingStatus}
+              <div class="mb-16">
+                <StreamingStatus
+                  isStreaming={isStreaming}
+                  isProcessing={isProcessing}
+                  lastChunkTime={lastChunkTime}
+                  receivedFirstChunk={receivedFirstChunk}
+                  streamingContentLength={streamingContent?.length ?? 0}
+                  error={error}
+                  isStalled={isStalled}
+                  modelUnavailable={modelUnavailable}
+                  {hasPendingPermission}
+                  onRetry={handleRetry}
+                  onRetryWithModel={handleRetryWithModel}
+                  onStop={handleStop}
+                  seed={agentId}
+                  statusEvents={statusEvents}
+                  streamingStartTime={streamingStartTime}
+                />
+              </div>
+            {/if}
           </div>
         {/if}
       {/if}
       <!-- Aggregate File Changes Summary (show if more than one assistant message, updates during streaming) -->
-      {#if chatState.messages.filter((m) => m.role === 'assistant').length > 1}
+      {#if $agentMessages$.filter((m) => m.role === 'assistant').length > 1}
         <div class="w-full">
           <ChatFileChangesSummary
-            messages={chatState.messages}
+            messages={$agentMessages$}
             suffix="in conversation"
             isAggregate={true}
-            isStreaming={chatState.isStreaming}
+            isStreaming={isStreaming}
             {agentId}
           />
         </div>
       {/if}
 
       <!-- Show suggested prompts for the last message only, when not streaming -->
-      {#if visibleSuggestedPrompts.length > 0}
+      {#if suggestedPrompts.length > 0}
         <div class="w-full pt-8 pb-12">
           <SuggestedPrompts
-            prompts={visibleSuggestedPrompts}
+            prompts={suggestedPrompts}
             onSelect={handleSelectSuggestedPrompt}
             onEdit={handleEditSuggestedPrompt}
           />
@@ -3781,7 +3722,7 @@
       <div class="min-h-px min-w-6 shrink-0"></div>
     </div>
     <!-- Scroll Lock/Unlock Button -->
-    {#if chatState.messages.length > 0}
+    {#if $agentMessages$.length > 0}
       {@const isAtBottom = distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD}
       {@const showLock = isAtBottom && !isScrollUnlocked}
       {@const showUnlock = isAtBottom && isScrollUnlocked}
@@ -3817,10 +3758,10 @@
   </div>
 
   <!-- Queued Messages -->
-  {#if queuedMessages.length > 0}
+  {#if $queuedMessages$.length > 0}
     <QueuedMessageList
       bind:this={queuedMessageListRef}
-      messages={queuedMessages}
+      messages={$queuedMessages$}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
@@ -3829,9 +3770,13 @@
   {/if}
 
   <!-- Message Input with Aurora Background -->
-  <div class="relative w-full px-2 z-0" class:input-flash={showInputFlash} data-streaming={chatState.isStreaming}>
+  <div
+    class="relative w-full px-2 z-0"
+    class:input-flash={showInputFlash}
+    data-streaming={isStreaming}
+  >
     <!-- Aurora northern lights effect during streaming -->
-    {#if chatState.isStreaming}
+    {#if isStreaming}
       <div
         class="absolute -inset-x-2 -bottom-2 pointer-events-none z-0 overflow-hidden"
         transition:fade
@@ -3850,8 +3795,8 @@
       onstop={handleStop}
       onHistoryPrev={handleHistoryPrev}
       onHistoryNext={handleHistoryNext}
-      disabled={!workspace || !chatState.session}
-      isStreaming={chatState.isStreaming}
+      disabled={!workspace || !$agentSession$}
+      isStreaming={isStreaming}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}

@@ -6,16 +6,13 @@
  */
 
 import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
-import { AgentStatus } from '$shared/types';
 import { AuggieTextParser } from './auggie-text-parser';
 import { stripGroupTags } from './text-utils';
 
 export interface AgentPeekData {
   id: string;
   name: string;
-  status: AgentStatus;
-  isActive: boolean;
-  isResponding: boolean;
+  status: AgentSession['status'];
   lastUserMessage: string;
   lastResponse: string;
   /**
@@ -92,8 +89,6 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     id: agent.id,
     name: agent.name || 'New Chat',
     status: agent.status,
-    isActive: agent.status === AgentStatus.Active,
-    isResponding: agent.isProcessing || false,
     lastUserMessage,
     lastResponse,
     lastToolUse,

@@ -26,6 +26,7 @@ import { applyTaskStatusChanged } from '../../workspace-notes/workspace-notes-sl
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import { recomputeAgentLocks, setAgentLockState } from '../agent-lock-slice';
 import { selectAgentById } from '../../workspace-agents/workspace-agents-selectors';
+import { selectAgentIsResponding } from '../../agent-session/agent-session-selectors';
 import type { TrackedChange } from '../../changes/changes-types';
 
 const agentLockLogger = new Logger({ category: 'AgentLockSaga' });
@@ -46,7 +47,7 @@ function* isAgentActivelyWorking(
     const session = yield* selectAgentById.effect(agentId);
     if (!session) return false;
 
-    if (session.isStreaming) {
+    if (yield* selectAgentIsResponding.effect(agentId)) {
       return true;
     }
 

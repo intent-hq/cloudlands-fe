@@ -135,8 +135,7 @@
           >
             <div class="flex items-start gap-2 w-full">
               <AuggieAvatar
-                faceSeed={agent.id}
-                colorSeed={agent.id}
+                agentId={agent.id}
                 size={18}
                 specialist={specialistId === 'spec-writer' ||
                 specialistId === 'implementor' ||
@@ -181,8 +180,7 @@
             title={getAgentDisplayName(agent)}
           >
             <AuggieAvatar
-              faceSeed={agent.id}
-              colorSeed={agent.id}
+              agentId={agent.id}
               size={18}
               specialist={collapsedSpecialistId === 'spec-writer' ||
               collapsedSpecialistId === 'implementor' ||

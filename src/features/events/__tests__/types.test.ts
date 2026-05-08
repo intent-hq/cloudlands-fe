@@ -20,10 +20,20 @@ import {
   normalizeActor,
   createWorkspaceEvent,
   generateEventId,
+  type AgentStatusPayload,
   type WorkspaceEvent,
 } from '../types';
 
 describe('event types', () => {
+  const requiredCanonicalStatusFields = {
+    activationState: 'active',
+    isActive: true,
+    isStreaming: true,
+    isProcessing: true,
+    isResponding: true,
+    stopReason: null,
+  } as const;
+
   const createEvent = (type: string, data?: any): WorkspaceEvent => ({
     id: 'test-event',
     workspaceId: 'test-workspace',
@@ -31,6 +41,24 @@ describe('event types', () => {
     type: type as any,
     actor: { type: 'user' },
     data,
+  });
+
+  it('requires canonical fields on raw agent:status IPC payloads', () => {
+    const payload = {
+      agentId: 'agent-1',
+      status: 'responding',
+      ...requiredCanonicalStatusFields,
+    } satisfies AgentStatusPayload;
+
+    // @ts-expect-error agent:status payloads must include all canonical status fields.
+    const missingCanonicalFields = { agentId: 'agent-1', status: 'responding' } satisfies AgentStatusPayload;
+
+    expect(payload).toMatchObject({
+      agentId: 'agent-1',
+      status: 'responding',
+      ...requiredCanonicalStatusFields,
+    });
+    expect(missingCanonicalFields).toMatchObject({ agentId: 'agent-1', status: 'responding' });
   });
 
   describe('type guards', () => {

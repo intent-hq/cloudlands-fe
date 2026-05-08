@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
-import type { AgentSession } from "$shared/types";
+import { AgentStatus, type AgentSession } from "$shared/types";
 
 const {
   sendMock,
@@ -131,7 +131,14 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 }));
 
 // Import after mocks
-import { handleQueueProcessing, handleQueueCancelled, handleExistingSessionUpdate, handleStreamDisconnected, handleAgentIdle } from "./agent-ipc-saga";
+import {
+  handleQueueProcessing,
+  handleQueueCancelled,
+  handleExistingSessionUpdate,
+  handleAgentCreated,
+  handleStreamDisconnected,
+  handleAgentIdle,
+} from "./agent-ipc-saga";
 import { setAgentStreaming, removeAgentMessage, replaceAgentMessageById, updateAgentMessage } from "../workspace-agents-slice";
 import { streamCompleted } from "../../chat-state/chat-state-slice";
 
@@ -149,6 +156,46 @@ const queueData = {
   messageId: "msg-1",
   content: "Hello",
 };
+
+describe("handleAgentCreated", () => {
+  beforeEach(() => {
+    selectState.index = 0;
+    selectState.results = [];
+    ensureStreamHandlerMock.mockClear();
+  });
+
+  it("creates blank backend-created sessions as idle and non-streaming", async () => {
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentCreated,
+      {
+        agentId: "agent-blank",
+        workspaceId: "ws-blank",
+        agent: {
+          id: "agent-blank",
+          workspaceId: "ws-blank",
+          name: "Blank Agent",
+          status: AgentStatus.Active,
+          messages: [],
+        },
+      },
+    ).toPromise();
+
+    const upsert = dispatched.find((a) => a.type === "agentSessions/upsertSession");
+    expect(upsert?.payload).toMatchObject({
+      id: "agent-blank",
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
+    expect(ensureStreamHandlerMock).toHaveBeenCalledWith("agent-blank", {
+      workspaceId: "ws-blank",
+    });
+  });
+});
 
 describe("handleQueueProcessing", () => {
   beforeEach(() => {

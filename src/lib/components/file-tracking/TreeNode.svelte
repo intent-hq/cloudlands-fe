@@ -188,7 +188,7 @@
         <div class="flex items-center -space-x-1 mr-2">
           {#each agentIds.slice(0, 3) as agentId (agentId)}
             <div class="rounded-full overflow-hidden" title="Recently edited by agent">
-              <AuggieAvatar faceSeed={agentId} colorSeed={agentId} size={16} />
+              <AuggieAvatar {agentId} size={16} />
             </div>
           {/each}
         </div>
@@ -292,7 +292,7 @@
         <div class="flex items-center -space-x-1">
           {#each agentIds.slice(0, 3) as agentId (agentId)}
             <div class="rounded-full overflow-hidden" title="Recently edited by agent">
-              <AuggieAvatar faceSeed={agentId} colorSeed={agentId} size={16} />
+              <AuggieAvatar {agentId} size={16} />
             </div>
           {/each}
         </div>

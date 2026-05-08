@@ -140,7 +140,7 @@
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
           <span class="text-subtle whitespace-nowrap shrink-0">Message</span>
-          <AuggieAvatar seed={parsedResult.toAgentId} size={16} class="shrink-0" />
+          <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
           <span
             class="text-foreground font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
           >

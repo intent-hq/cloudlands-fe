@@ -14,6 +14,11 @@
   import { PullRequestStatus } from '$shared/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSession,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -120,16 +125,22 @@
     // Reference version counters for reactivity
     void activeStreamsVersion;
     void $unreadAgentIds$;
-    const state = getReduxStore().getState();
+    const reduxState = getReduxStore().getState();
     const summary = ws.agentSummary;
     const summaryAgents = summary?.agents || [];
     if (summaryAgents.length === 0) return [];
 
-    const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(state, ws.id));
+    const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(reduxState, ws.id));
 
     return summaryAgents
       .map((agent) => {
-        const isStreaming = activeStreamsTracker.isAgentStreaming(agent.id);
+        const loadedSession = selectAgentSession.select(reduxState, agent.id);
+        const isWaiting = loadedSession
+          ? selectAgentIsWaiting.select(reduxState, agent.id)
+          : agent.status === 'waiting';
+        const isResponding = loadedSession
+          ? selectAgentIsResponding.select(reduxState, agent.id)
+          : activeStreamsTracker.isAgentStreaming(agent.id) || agent.status === 'busy' || agent.status === 'processing';
         const isUnread = unreadAgentIdsForWs.has(agent.id);
 
         const hasPermissionRequest = $allPermissionRequests.some((r) => r.sessionId === agent.id);
@@ -138,20 +149,17 @@
           state = 'failed';
         } else if (hasPermissionRequest) {
           state = 'needs-permission';
-        } else if (isStreaming) {
-          state = 'running';
-        } else if (agent.status === 'busy' || agent.status === 'processing') {
-          state = 'running';
-        } else if (agent.status === 'waiting') {
+        } else if (isWaiting) {
           state = 'waiting';
+        } else if (isResponding) {
+          state = 'running';
         }
 
         return {
           id: agent.id,
           state,
           specialist: agent.specialist,
-          isActive:
-            isStreaming || agent.status === 'busy' || agent.status === 'processing',
+          isActive: isResponding && !isWaiting,
           isUnread,
         };
       })

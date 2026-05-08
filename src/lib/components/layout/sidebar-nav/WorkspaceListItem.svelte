@@ -12,6 +12,7 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
@@ -26,6 +27,11 @@
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSession,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
@@ -115,11 +121,26 @@
   });
   // Agent info — only show unread and in-progress agents
   const activeAgentStatuses = new Set(['streaming', 'processing', 'busy', 'responding']);
+  function getSummaryAgentState(agent: { id: string; status?: string }): AvatarState {
+    const reduxState = getReduxStore().getState();
+    const loadedSession = selectAgentSession.select(reduxState, agent.id);
+    const isWaiting = loadedSession
+      ? selectAgentIsWaiting.select(reduxState, agent.id)
+      : agent.status === 'waiting';
+    const isResponding = loadedSession
+      ? selectAgentIsResponding.select(reduxState, agent.id)
+      : activeAgentStatuses.has(agent.status ?? '');
+
+    if (isWaiting) return 'waiting';
+    if (isResponding) return 'running';
+    return 'idle';
+  }
+
   const agentInfos = $derived.by(() => {
     const all = workspace.agentSummary?.agents ?? [];
     const unreadSet = new Set(unreadAgentIds);
     return all.filter(
-      (agent) => activeAgentStatuses.has(agent.status ?? '') || unreadSet.has(agent.id),
+      (agent) => getSummaryAgentState(agent) !== 'idle' || unreadSet.has(agent.id),
     );
   });
 
@@ -284,9 +305,7 @@
             <AugieAvatarWithState
               agentId={agent.id}
               size={14}
-              state={agent.status === 'streaming' || agent.status === 'processing'
-                ? 'running'
-                : 'idle'}
+              state={getSummaryAgentState(agent)}
               specialist={agent.specialist}
             />
           {/each}

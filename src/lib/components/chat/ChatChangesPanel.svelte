@@ -2217,11 +2217,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
                 title="Open agent"
               >
                 <span class="shrink-0">
-                  <AuggieAvatar
-                    faceSeed={displayAgentId ?? undefined}
-                    colorSeed={displayAgentId ?? undefined}
-                    size={14}
-                  />
+                  <AuggieAvatar agentId={displayAgentId ?? undefined} size={14} />
                 </span>
                 <span class="truncate">{agentName}</span>
               </button>

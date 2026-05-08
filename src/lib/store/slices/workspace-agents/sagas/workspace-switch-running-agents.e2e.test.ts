@@ -56,8 +56,8 @@ vi.mock("typed-redux-saga", () => ({
   delay: function* (ms: any) {
     return yield sagaEffects.delay(ms);
   },
-  select: function* (selector: any) {
-    return yield sagaEffects.select(selector);
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
   },
 }));
 

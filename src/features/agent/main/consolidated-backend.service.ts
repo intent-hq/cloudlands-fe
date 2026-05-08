@@ -681,7 +681,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: initialMessages,
-        status: AgentStatus.Active,
+        status: AgentStatus.Idle,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
         // Local backend session ID is assigned immediately for persistence/routing,
         // but blank agents are still considered unused until they get an ACP session
         // or any real conversation messages.
@@ -770,8 +773,23 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       record.session.status = status;
       record.lastActivity = new Date();
 
-      // Emit status change event
-      this.emit('agent:status', { agentId, status });
+      // Emit status change event with required canonical status metadata.
+      const isActive = status === AgentStatus.Active || status === AgentStatus.Processing;
+      const isTerminal =
+        status === AgentStatus.Idle ||
+        status === AgentStatus.Completed ||
+        status === AgentStatus.Error ||
+        status === AgentStatus.Deleted;
+      this.emit('agent:status', {
+        agentId,
+        status: String(status),
+        activationState: status === AgentStatus.Error ? 'error' : isActive ? 'active' : null,
+        isActive,
+        isStreaming: isActive,
+        isProcessing: isActive,
+        isResponding: isActive,
+        stopReason: isTerminal ? String(status) : null,
+      });
 
 
     } catch (error) {
@@ -1788,6 +1806,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     content: string,
     contextItems?: any[],
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    workspaceId?: string,
   ): Promise<{ success: boolean; queuedMessage?: any; error?: string }> {
     if (isMainProcess()) {
       throw new Error('queueMessage should only be called from frontend');
@@ -1800,6 +1819,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         content,
         contextItems,
         imageBlocks,
+        workspaceId,
       })) as {
         success: boolean;
         data?: { success: boolean; queuedMessage?: any; error?: string };

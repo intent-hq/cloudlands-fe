@@ -1,5 +1,6 @@
 <script lang="ts">
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { selectActiveWorkspaceId, selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { updateDigest as updateAgentDigestAction } from '$lib/store/slices/agent-session/agent-session-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -41,12 +42,14 @@ const logger = createLogger('TaskAgentStatus');
 
   const activeWorkspaceId$ = selectActiveWorkspaceId();
   const serviceAgent$ = selectAgentById(agentId);
+  const agentIsResponding$ = selectAgentIsResponding(agentId);
 
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let streamListenerCleanup: (() => void) | undefined;
   let prevAgentRef: import('$shared/types').AgentSession | undefined;
+  let prevAgentResponding = false;
   let pollCount = 0;
   let isPollingActive = false; // Track if we're registered with the polling manager
 
@@ -244,11 +247,11 @@ const logger = createLogger('TaskAgentStatus');
           needsUpdate = true;
         }
 
-        // Check for streaming state from Redux (backup for events)
-        const currentStreaming = reduxAgent?.isStreaming ?? false;
+        // Check responding state from Redux (backup for events)
+        const currentResponding = selectAgentIsResponding.select(pollState, agentId);
 
-        if (currentStreaming && !isStreamActive) {
-          // Store says streaming started - only trust "start" signals from store
+        if (currentResponding && !isStreamActive) {
+          // Store says the agent is responding - only trust "start" signals from polling
           // Don't trust "stop" signals as they may be stale
           isStreamActive = true;
           needsUpdate = true;
@@ -323,7 +326,12 @@ const logger = createLogger('TaskAgentStatus');
   $effect(() => {
     const activeWorkspaceId = $activeWorkspaceId$;
     const currentAgent = $serviceAgent$;
-    if (!activeWorkspaceId || !currentAgent || currentAgent === prevAgentRef) return;
+    const currentResponding = $agentIsResponding$;
+    if (
+      !activeWorkspaceId ||
+      !currentAgent ||
+      (currentAgent === prevAgentRef && currentResponding === prevAgentResponding)
+    ) return;
 
     let needsUpdate = false;
 
@@ -334,13 +342,11 @@ const logger = createLogger('TaskAgentStatus');
       needsUpdate = true;
     }
 
-    // Handle streaming state changes
-    const prevStreaming = prevAgentRef?.isStreaming ?? false;
-    const curStreaming = currentAgent.isStreaming ?? false;
-    if (curStreaming && !prevStreaming && !isStreamActive) {
+    // Handle responding state changes through the canonical selector
+    if (currentResponding && !isStreamActive) {
       isStreamActive = true;
       needsUpdate = true;
-    } else if (!curStreaming && prevStreaming && isStreamActive) {
+    } else if (!currentResponding && isStreamActive) {
       isStreamActive = false;
       needsUpdate = true;
     }
@@ -365,6 +371,7 @@ const logger = createLogger('TaskAgentStatus');
     }
 
     prevAgentRef = currentAgent;
+    prevAgentResponding = currentResponding;
   });
 
   onDestroy(() => {
@@ -468,11 +475,10 @@ const logger = createLogger('TaskAgentStatus');
 
     if (!storeAgent && !serviceAgent) return 'unknown';
 
-    // Fallback to store/service state
-    if (storeAgent?.isStreaming) return 'streaming';
+    // Fallback to canonical current-state selector
+    if ($agentIsResponding$) return 'active';
 
     const status = storeAgent?.status || serviceAgent?.status;
-    if (status === AgentStatus.Processing) return 'active';
     if (status === AgentStatus.Completed) return 'complete';
     if (status === AgentStatus.Error) return 'error';
 
@@ -499,12 +505,6 @@ const logger = createLogger('TaskAgentStatus');
     }
 
     if (!storeAgent && !serviceAgent) return null;
-
-    // Check store streaming state as fallback
-    if (storeAgent?.isStreaming) {
-      // Agent is streaming but we don't have a local buffer reference here;
-      // fall through to messages-based content extraction below.
-    }
 
     // Otherwise show the last message
     const messages = storeAgent?.messages || serviceAgent?.messages;

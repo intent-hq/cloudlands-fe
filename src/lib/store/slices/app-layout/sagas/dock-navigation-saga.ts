@@ -1,5 +1,6 @@
-import { agentService } from "$features/agent/agent-ipc-bridge";
 import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
+import { selectAgentIsResponding } from "$lib/store/slices/agent-session/agent-session-selectors";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
 import { createTerminalRequested, type WorkspaceTerminal, } from "$lib/store/slices/terminals/terminals-slice";
@@ -35,7 +36,7 @@ function isCurrentAgentStreaming(drawerState: WorkspaceNavigationDrawerState): b
     const currentAgentId = drawerState.type === "agent" ? drawerState.itemId : null;
     if (!currentAgentId)
         return false;
-    return agentService.isStreaming(currentAgentId);
+    return selectAgentIsResponding.select(getReduxStore().getState(), currentAgentId);
 }
 function getDockItems(agents: AgentSession[], terminals: WorkspaceTerminal[]): DockItem[] {
     return [

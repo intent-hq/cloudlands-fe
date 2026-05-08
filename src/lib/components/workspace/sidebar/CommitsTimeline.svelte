@@ -674,8 +674,7 @@
                 class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none"
               >
                 <AuggieAvatar
-                  faceSeed={commit.agentId}
-                  colorSeed={commit.agentId}
+                  agentId={commit.agentId}
                   size={14}
                   class="mr-[-2px]"
                 />

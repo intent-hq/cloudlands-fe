@@ -279,7 +279,14 @@ export function* watchPrepareHandlerSaga() {
           }
           yield* put(setAgentStreaming(prepareWsId, agentId, true));
           if (typeof window !== "undefined") {
-            dispatchAgentSessionUpdated(agentId);
+            dispatchAgentSessionUpdated(agentId, {
+              status: "responding",
+              activationState: "active",
+              isActive: true,
+              isStreaming: true,
+              isProcessing: true,
+              isResponding: true,
+            });
           }
         }
       } catch (error) {
@@ -324,7 +331,7 @@ interface AgentCreatedEventData {
   };
 }
 
-function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<void> {
+export function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<void> {
   const isWorkspaceEvent = data?.type === "agent:created" && !!data?.data;
   const agentId = isWorkspaceEvent ? data.data!.agentId : data?.agentId;
   const workspaceId = isWorkspaceEvent ? data.workspaceId : data?.workspaceId;
@@ -372,20 +379,36 @@ function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<void> {
 
   // Create a new session from agent data
   if (agent) {
-    const hasHandler: boolean = yield* call([agentService, agentService.hasActiveStreamHandler], agentId);
+    const hasHandler: boolean = yield* call(
+      [agentService, agentService.hasActiveStreamHandler],
+      agentId,
+    );
+    const messages = agent.messages || [];
+    const hasWorkSignal =
+      hasHandler ||
+      agent.isStreaming === true ||
+      agent.isProcessing === true ||
+      agent.isResponding === true ||
+      messages.length > 0;
+    const status =
+      agent.status === AgentStatus.Active && !hasWorkSignal
+        ? AgentStatus.Idle
+        : agent.status || (hasHandler ? AgentStatus.Active : AgentStatus.Idle);
     const newSession: AgentSession = {
       id: agentId as AgentId,
       backendSessionId: agentId as AgentId,
       workspaceId: (workspaceId || "") as WorkspaceId,
       name: agent.name || "Task Agent",
-      status: "active" as typeof AgentStatus[keyof typeof AgentStatus],
-      messages: agent.messages || [],
+      status,
+      messages,
       model: agent.model || DEFAULT_AGENT_MODEL,
       provider: agent.provider,
       systemPrompt: agent.systemPrompt,
       createdAt: new Date(agent.createdAt || Date.now()),
       updatedAt: new Date(agent.updatedAt || Date.now()),
-      isStreaming: hasHandler,
+      isStreaming: agent.isStreaming === true || hasHandler,
+      isProcessing: agent.isProcessing === true,
+      isResponding: agent.isResponding === true,
       isBackground: agent.isBackground || agent.metadata?.isBackground || false,
       metadata: agent.metadata,
     };
@@ -570,7 +593,14 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // Set streaming state
   yield* put(setAgentStreaming(wsId, agentId, true));
   if (typeof window !== "undefined") {
-    dispatchAgentSessionUpdated(agentId);
+    dispatchAgentSessionUpdated(agentId, {
+      status: "responding",
+      activationState: "active",
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
   }
 
   // Persist the queued user message immediately
@@ -643,7 +673,13 @@ export function* handleQueueCancelled(data: { agentId: string; messageId: string
   }
 
   if (typeof window !== "undefined") {
-    dispatchAgentSessionUpdated(agentId);
+    dispatchAgentSessionUpdated(agentId, {
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: "queue_cancelled",
+    });
   }
 
   yield* call([agentService, agentService.clearPendingStreamRegistration], agentId);
@@ -727,7 +763,7 @@ function* handleBeforeUnload(): SagaGenerator<void> {
 }
 
 // ============================================================================
-// 8. pagehide — dispose AgentService on actual page unload
+// 9. pagehide — dispose AgentService on actual page unload
 // ============================================================================
 
 function createPagehideChannel() {
@@ -757,7 +793,7 @@ export function* watchPagehideSaga() {
 }
 
 // ============================================================================
-// 9. Backend stream reconnect — debounced via takeLatest + delay
+// 10. Backend stream reconnect — debounced via takeLatest + delay
 // ============================================================================
 
 function* handleBackendStreamReconnect(): SagaGenerator<void> {

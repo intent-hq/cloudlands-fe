@@ -21,24 +21,6 @@ export const selectChatAgentState = createSelector(
     getAgentChatState(state, agentId),
 );
 
-/**
- * Select streaming flag — reads from agent-session slice (single source of truth).
- * @deprecated Prefer selectAgentIsStreaming from agent-session-selectors directly.
- */
-export const selectChatIsStreaming = createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.byAgentId[agentId]?.isStreaming ?? false,
-);
-
-/**
- * Select processing flag — reads from agent-session slice (single source of truth).
- * @deprecated Prefer selectAgentIsProcessing from agent-session-selectors directly.
- */
-export const selectChatIsProcessing = createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.byAgentId[agentId]?.isProcessing ?? false,
-);
-
 /** Select interrupting flag */
 export const selectChatIsInterrupting = createSelector(
   (state, agentId: string): boolean =>

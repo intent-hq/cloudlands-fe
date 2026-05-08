@@ -139,4 +139,11 @@ describe('getAgentPeekData', () => {
     expect(data?.lastUserMessage).toBe('');
     expect(data?.lastToolUse).toBeUndefined();
   });
+
+  it('does not expose derived activity state', () => {
+    const session = makeSession([]);
+    const data = getAgentPeekData(session);
+    expect(data).not.toHaveProperty('isActive');
+    expect(data?.status).toBe(AgentStatus.Active);
+  });
 });

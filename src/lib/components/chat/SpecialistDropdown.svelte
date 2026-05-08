@@ -58,7 +58,7 @@
         className,
       )}
     >
-      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} specialist={value} />
+      <AuggieAvatar seed="blank" size={16} specialist={value} />
       <span class="text-subtle">{displayLabel}</span>
       <Fa icon={faChevronDown} class="text-ghost h-2.5 w-2.5" />
     </button>
@@ -76,7 +76,7 @@
         )}
         onclick={() => handleSelect(null)}
       >
-        <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={null} />
+        <AuggieAvatar seed="blank" size={20} specialist={null} />
         <div class="flex flex-col">
           <span class="font-medium text-foreground">General</span>
           <span class="text-xs text-subtle">No specialized behavior</span>
@@ -96,7 +96,7 @@
           )}
           onclick={() => handleSelect(specialist.id)}
         >
-          <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
+          <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
           <div class="flex flex-col min-w-0">
             <span class="font-medium text-foreground">{specialist.name}</span>
             <span class="text-xs text-subtle truncate">{specialist.description}</span>

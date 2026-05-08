@@ -169,7 +169,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
     <div class="flex items-center gap-2">
-      <AuggieAvatar size={20} faceSeed={agentId} colorSeed={agentId} />
+      <AuggieAvatar size={20} {agentId} />
       <span class="text-sm font-medium">Setup Script Generator</span>
       {#if isStreaming}
         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>

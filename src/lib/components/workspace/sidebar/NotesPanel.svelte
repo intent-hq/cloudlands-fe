@@ -29,10 +29,13 @@
   import {
     type AvatarState,
     getAvatarState,
-    isAgentActivelyWorking,
   } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { selectAgentSessionsByIds } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { AgentStatus } from '$shared/types/agent.types';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSessionsByIds,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { writable } from 'svelte/store';
   import {
     setWorkspaceNoteOrder,
@@ -354,29 +357,23 @@
       specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
     }> = [];
 
+    const reduxState = getReduxStore().getState();
+
     for (const agentId of assignedAgentIds) {
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      const isStreaming = agent.isStreaming ?? false;
-
-      // Only show agents that are ACTIVELY working right now
-      // Use centralized helper to check if agent is working
-      const activelyWorking = isAgentActivelyWorking({
-        isStreaming,
-        isProcessing: agent.status === AgentStatus.Processing,
-        isResponding: agent.isResponding,
-      });
+      const isWaiting = selectAgentIsWaiting.select(reduxState, agentId);
+      const isResponding = selectAgentIsResponding.select(reduxState, agentId);
+      const activelyWorking = isResponding && !isWaiting;
 
       if (!activelyWorking) continue;
 
       // Use centralized getAvatarState for consistent state calculation
       const state = getAvatarState(
         {
-          isStreaming,
-          isProcessing: agent.isProcessing,
-          isResponding: agent.isResponding,
-          status: agent.status,
+          isStreaming: activelyWorking,
+          status: isWaiting ? 'waiting' : agent.status,
         },
         {},
       );

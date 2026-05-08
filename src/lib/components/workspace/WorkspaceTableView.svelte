@@ -1,6 +1,12 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectUnreadAgentIdsByWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSession,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -112,31 +118,35 @@
 
     // Get unread agent IDs for this workspace
     const unreadAgentIds = new Set($unreadAgentIdsByWorkspace$[ws.id] ?? []);
+    const reduxState = getReduxStore().getState();
 
     return summaryAgents
       .map((agent) => {
-        // Check if this agent is currently streaming (real-time status)
-        const isStreaming = activeStreamsTracker.isAgentStreaming(agent.id);
+        const loadedSession = selectAgentSession.select(reduxState, agent.id);
+        const isWaiting = loadedSession
+          ? selectAgentIsWaiting.select(reduxState, agent.id)
+          : agent.status === 'waiting';
+        const isResponding = loadedSession
+          ? selectAgentIsResponding.select(reduxState, agent.id)
+          : activeStreamsTracker.isAgentStreaming(agent.id) || agent.status === 'busy' || agent.status === 'processing';
         const isUnread = unreadAgentIds.has(agent.id);
 
-        // Determine avatar state based on persisted status + real-time streaming state
+        // Determine avatar state using canonical selectors when the session is loaded;
+        // otherwise fall back to persisted cross-workspace summary data.
         let state: AvatarState = 'idle';
-        if (isStreaming) {
-          state = 'running';
-        } else if (agent.status === 'busy' || agent.status === 'processing') {
-          state = 'running';
-        } else if (agent.status === 'error' || agent.status === 'failed') {
+        if (agent.status === 'error' || agent.status === 'failed') {
           state = 'failed';
-        } else if (agent.status === 'waiting') {
+        } else if (isWaiting) {
           state = 'waiting';
+        } else if (isResponding) {
+          state = 'running';
         }
 
         return {
           id: agent.id,
           state,
           specialist: agent.specialist,
-          isActive:
-            isStreaming || agent.status === 'busy' || agent.status === 'processing',
+          isActive: isResponding && !isWaiting,
           isUnread,
         };
       })

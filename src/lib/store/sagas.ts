@@ -71,6 +71,7 @@ import { chatStateSaga } from "./slices/chat-state/sagas/chat-state-saga";
 import { chatStreamSaga } from "./slices/chat-state/sagas/chat-stream-saga";
 import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-saga";
 import { filesSaga } from "./slices/files/sagas/files-saga";
+import { agentQueueSaga } from "./slices/agent-queue/sagas/agent-queue-saga";
 import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
 import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
@@ -151,6 +152,7 @@ export const sagas = {
   chatStreamSaga,
   fileExplorerSaga,
   filesSaga,
+  agentQueueSaga,
   agentIpcSaga,
   agentStreamSaga,
   agentSubscriptionUISaga,

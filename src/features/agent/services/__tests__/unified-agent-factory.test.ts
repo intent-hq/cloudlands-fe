@@ -32,7 +32,7 @@ vi.mock('$shared/ipc/typed-invoke', () => ({
         workspaceId: 'workspace-123',
         name: 'Test Agent',
         model: 'sonnet4.5',
-        status: 'active',
+        status: 'Idle',
         messages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -105,7 +105,7 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(true);
       expect(result.agent).toBeDefined();
       expect(result.agent?.name).toBe('Test Agent');
-      expect(result.agent?.status).toBe(AgentStatus.Active);
+      expect(result.agent?.status).toBe(AgentStatus.Idle);
       expect(result.agentId).toBeDefined();
       expect(result.sessionId).toBeDefined();
       // Note: streamId is no longer returned - agentId is the canonical key for streams

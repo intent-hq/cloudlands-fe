@@ -170,8 +170,28 @@ describe('Agent Stream Lifecycle Integration', () => {
     replayPendingEvents('session-A');
 
     expect(dispatchedEvents.length).toBe(2);
-    expect(dispatchedEvents[0].detail).toEqual({ type: 'chunk', content: 'hello' });
-    expect(dispatchedEvents[1].detail).toEqual({ type: 'chunk', content: ' world' });
+    expect(dispatchedEvents[0].detail).toMatchObject({
+      type: 'chunk',
+      content: 'hello',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
+    expect(dispatchedEvents[1].detail).toMatchObject({
+      type: 'chunk',
+      content: ' world',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
   });
 
   // 2. Event arrives during replay → newly queued event survives
@@ -185,7 +205,17 @@ describe('Agent Stream Lifecycle Integration', () => {
     // After replay, handler is registered so new events dispatch directly
     dispatchStreamEvent('session-A', 'chunk', { type: 'chunk', content: 'second' });
     expect(dispatchedEvents.length).toBe(2);
-    expect(dispatchedEvents[1].detail).toEqual({ type: 'chunk', content: 'second' });
+    expect(dispatchedEvents[1].detail).toMatchObject({
+      type: 'chunk',
+      content: 'second',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
   });
 
   // 3. Unregister → event queued → re-register → both queue and live dispatch preserved
@@ -201,7 +231,17 @@ describe('Agent Stream Lifecycle Integration', () => {
     registerDomHandler('session-A');
     replayPendingEvents('session-A');
     expect(dispatchedEvents.length).toBe(2);
-    expect(dispatchedEvents[1].detail).toEqual({ type: 'chunk', content: 'queued1' });
+    expect(dispatchedEvents[1].detail).toMatchObject({
+      type: 'chunk',
+      content: 'queued1',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
 
     dispatchStreamEvent('session-A', 'chunk', { type: 'chunk', content: 'live2' });
     expect(dispatchedEvents.length).toBe(3);
@@ -260,7 +300,17 @@ describe('Agent Stream Lifecycle Integration', () => {
 
     // Should get exactly 1 new dispatch (no double-delivery)
     expect(dispatchedEvents.length).toBe(2);
-    expect(dispatchedEvents[1].detail).toEqual({ type: 'chunk', content: 'b' });
+    expect(dispatchedEvents[1].detail).toMatchObject({
+      type: 'chunk',
+      content: 'b',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
 
     // Unmount + remount again
     unregisterDomHandler('session-A');
@@ -301,5 +351,45 @@ describe('Agent Stream Lifecycle Integration', () => {
     expect(dispatchedEvents[1].detail.content).toBe('hello');
     expect(dispatchedEvents[2].detail.content).toBe(' world');
     expect(dispatchedEvents[3].detail.statusData).toBe('done');
+  });
+
+  it('adds canonical status fields to dynamic stream events', () => {
+    registerDomHandler('session-A');
+
+    dispatchStreamEvent('session-A', 'start', { type: 'start' });
+    dispatchStreamEvent('session-A', 'chunk', { type: 'chunk', content: 'hello' });
+    dispatchStreamEvent('session-A', 'end', { type: 'end', finishReason: 'provider_stopped' });
+
+    expect(dispatchedEvents[0].detail).toMatchObject({
+      type: 'start',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
+    expect(dispatchedEvents[1].detail).toMatchObject({
+      type: 'chunk',
+      content: 'hello',
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    });
+    expect(dispatchedEvents[2].detail).toMatchObject({
+      type: 'end',
+      status: 'idle',
+      activationState: null,
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: 'provider_stopped',
+    });
   });
 });

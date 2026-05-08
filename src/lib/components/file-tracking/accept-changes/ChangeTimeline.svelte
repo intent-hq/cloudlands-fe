@@ -972,8 +972,7 @@
                                 {#if group.agentId}
                                   <AuggieAvatar
                                     class="-mt-1 -mr-0.5"
-                                    faceSeed={group.agentId}
-                                    colorSeed={group.agentId}
+                                    agentId={group.agentId}
                                     size={18}
                                   />
                                 {:else}
@@ -1135,8 +1134,7 @@
                                 {#if group.agentId}
                                   <AuggieAvatar
                                     class="-mt-1"
-                                    faceSeed={group.agentId}
-                                    colorSeed={group.agentId}
+                                    agentId={group.agentId}
                                     size={18}
                                   />
                                 {:else}
@@ -1526,7 +1524,7 @@
                           </Button>
                         </div>
                         {#if generatingMessagePreview}
-                          <div class="text-sm text-foreground/80 line-clamp-2 whitespace-pre-wrap">
+                          <div class="text-sm text-foreground line-clamp-2 whitespace-pre-wrap">
                             {generatingMessagePreview}
                           </div>
                         {:else}

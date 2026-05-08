@@ -113,6 +113,9 @@ export interface AgentSession {
   /** Activation state (pending/activating/active/error) */
   activationState?: AgentActivationState;
 
+  /** Canonical runtime activity flag from backend/status events */
+  isActive?: boolean;
+
   /** Last activation error if activation failed */
   lastActivationError?: string;
 
@@ -177,6 +180,9 @@ export interface AgentSession {
 
   /** Whether the agent is currently responding */
   isResponding?: boolean;
+
+  /** Canonical stop/finish reason from the latest terminal stream/status event */
+  stopReason?: string | null;
 
   // ========== Metadata & Progress ==========
   /** Session metadata */

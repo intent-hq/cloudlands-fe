@@ -173,7 +173,7 @@
           }}
           title="View agent"
         >
-          <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />
+          <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
       {:else}
         <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />

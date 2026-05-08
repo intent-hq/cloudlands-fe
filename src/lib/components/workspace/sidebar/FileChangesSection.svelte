@@ -638,8 +638,7 @@
                       class="-mt-0.5 {hasAnyActions
                         ? 'group-hover/agent-header:opacity-0'
                         : ''}"
-                      faceSeed={group.agentId}
-                      colorSeed={group.agentId}
+                      agentId={group.agentId}
                       size={15}
                     />
                   {:else}
@@ -860,8 +859,7 @@
                       class="-mt-0.5 {hasAnyActions
                         ? 'group-hover/agent-header:opacity-0'
                         : ''}"
-                      faceSeed={group.agentId}
-                      colorSeed={group.agentId}
+                      agentId={group.agentId}
                       size={15}
                     />
                   {:else}

@@ -6,6 +6,10 @@
    */
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
@@ -28,6 +32,8 @@
   // Reactive agent session from Redux; the ensure saga handles the
   // disk restore.
   const agent$ = selectAgentById(agentId);
+  const agentIsResponding$ = selectAgentIsResponding(agentId);
+  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agent = $derived($agent$);
   const agentData = $derived(getAgentPeekData(agent));
 
@@ -42,8 +48,8 @@
   const state = $derived(
     getAvatarState(
       {
-        isStreaming: agentData?.isResponding,
-        status: agentData?.status,
+        isStreaming: $agentIsResponding$ && !$agentIsWaiting$,
+        status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
       },
       {
         hasPermissionRequest: $permissionCount > 0,
@@ -54,7 +60,11 @@
   // Get specialist from agent metadata (typed to match AugieAvatarWithState)
   const specialist = $derived.by(() => {
     const specialistId = agent?.metadata?.specialist || agent?.agentMetadata?.specialist;
-    if (specialistId === 'spec-writer' || specialistId === 'implementor' || specialistId === 'verifier') {
+    if (
+      specialistId === 'spec-writer' ||
+      specialistId === 'implementor' ||
+      specialistId === 'verifier'
+    ) {
       return specialistId;
     }
     return null;

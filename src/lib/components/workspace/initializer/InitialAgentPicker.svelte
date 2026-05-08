@@ -424,10 +424,10 @@
   >
     <div class="text-sm font-medium text-foreground">Agent orchestration</div>
     <div class="flex items-center gap-1 py-1.5">
-      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="spec-writer" />
+      <AuggieAvatar seed="blank" size={22} specialist="spec-writer" />
       <span class="text-subtle text-xs mx-0.5">→</span>
-      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="implementor" />
-      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} specialist="verifier" />
+      <AuggieAvatar seed="blank" size={22} specialist="implementor" />
+      <AuggieAvatar seed="blank" size={22} specialist="verifier" />
     </div>
     <div class="text-sm text-subtle leading-snug">
       A coordinator agent will write a spec for your task and manage the work for you across
@@ -495,8 +495,7 @@
             class="specialist-trigger"
           >
             <AuggieAvatar
-              faceSeed="blank"
-              colorSeed="blank"
+              seed="blank"
               size={20}
               specialist={currentSpecialistInfo ? displayedSpecialist : null}
             />
@@ -523,7 +522,7 @@
                 : ''}"
               onclick={() => handleSpecialistSelect(null)}
             >
-              <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} />
+              <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground text-sm">General</span>
                 <span class="text-xs text-subtle">No specialized behavior</span>
@@ -542,8 +541,7 @@
                   onclick={() => handleSpecialistSelect(specialist.id)}
                 >
                   <AuggieAvatar
-                    faceSeed="blank"
-                    colorSeed="blank"
+                    seed="blank"
                     size={20}
                     specialist={specialist.id}
                   />

@@ -36,8 +36,6 @@ export interface AgentNode extends BaseNode {
   waitingForAgentIds?: string[];
   /** Current streaming text preview (truncated) */
   streamingText?: string;
-  /** Whether the agent is currently thinking */
-  isThinking?: boolean;
   /** Name of the currently active tool call */
   activeToolName?: string;
   /** Input parameters of the currently active tool call */

@@ -34,10 +34,11 @@
 
   // Whether to show as dimmed (completed agents)
   let isDimmed = $derived(state === 'completed');
+
 </script>
 
 <div class={cn('relative inline-flex', isDimmed ? 'opacity-30' : '', className)}>
-  <AuggieAvatar colorSeed={agentId} faceSeed={agentId} {size} {specialist} isThinking={state === 'running' || state === 'responding'} />
+  <AuggieAvatar {agentId} {size} {specialist} />
 
   {#if state === 'running' || state === 'responding'}
     <!-- Running indicator - green pulsing dot -->

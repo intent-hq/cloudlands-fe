@@ -17,6 +17,11 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import Header from '../ui/Header.svelte';
   import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
 
@@ -72,11 +77,14 @@
     };
   });
 
-  // Helper to check if an agent is currently streaming (real-time check)
+  // Helper to check if an agent is currently responding.
   function isAgentRunning(agentId: string): boolean {
-    // Reference activeStreamsVersion for reactivity
+    // Reference activeStreamsVersion for reactivity while deriving from canonical selectors.
     activeStreamsVersion;
-    return activeStreamsTracker.isAgentStreaming(agentId);
+    const state = getReduxStore().getState();
+    const isWaiting = selectAgentIsWaiting.select(state, agentId);
+    const isResponding = selectAgentIsResponding.select(state, agentId);
+    return isResponding && !isWaiting;
   }
 
   // Helper to check if an agent is a background agent
@@ -111,10 +119,12 @@
 
   // Helper to get avatar state for an agent
   function getAgentAvatarState(agent: AgentSession) {
-    const isRunning = isAgentRunning(agent.id) || agent.isStreaming || agent.isProcessing;
+    const state = getReduxStore().getState();
+    const isWaiting = selectAgentIsWaiting.select(state, agent.id);
+    const isRunning = isAgentRunning(agent.id);
     return getAvatarState({
       isStreaming: isRunning,
-      status: agent.status,
+      status: isWaiting ? 'waiting' : agent.status,
     });
   }
 
@@ -219,9 +229,7 @@
   // Count running standalone background agents
   let runningStandaloneBackgroundCount = $derived.by(() => {
     activeStreamsVersion;
-    return standaloneBackgroundAgents.filter(
-      (a) => isAgentRunning(a.id) || a.isStreaming || a.isProcessing,
-    ).length;
+    return standaloneBackgroundAgents.filter((a) => isAgentRunning(a.id)).length;
   });
 
   // Whether the workspace has a coordinator agent (must be a spec-writer specialist)
@@ -305,7 +313,7 @@
     {@const children = getDelegatedChildren(agent.id)}
     {#if children.length > 0}
       {@const isExpanded = expandedDelegations.has(agent.id)}
-      {@const runningChildCount = children.filter((c) => isAgentRunning(c.id) || c.isStreaming || c.isProcessing).length}
+      {@const runningChildCount = children.filter((c) => isAgentRunning(c.id)).length}
       <div style="padding-left: {(depth + 1) * 26}px;" class="mb-2">
         <!-- Toggle row: avatars preview + count + chevron -->
         <button
@@ -354,7 +362,7 @@
           </div>
         {:else}
           <!-- Collapsed: show only running delegated agents as flat cards -->
-          {@const runningChildren = children.filter((c) => isAgentRunning(c.id) || c.isStreaming || c.isProcessing)}
+          {@const runningChildren = children.filter((c) => isAgentRunning(c.id))}
           {#if runningChildren.length > 0}
             <div class="flex flex-col gap-0.5">
               {#each runningChildren as child (child.id)}
@@ -463,7 +471,7 @@
   <!-- Background agents list: show all when expanded, only running when collapsed -->
   <div class="flex flex-col gap-0.5 pl-2 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
-      {@const isRunning = isAgentRunning(agent.id) || agent.isStreaming || agent.isProcessing}
+      {@const isRunning = isAgentRunning(agent.id)}
       {#if showBackgroundAgents || isRunning}
         <div class="w-full" transition:slide={{ axis: 'y', duration: 150 }}>
           <AgentCard

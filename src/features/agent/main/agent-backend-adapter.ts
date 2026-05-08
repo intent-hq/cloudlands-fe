@@ -540,11 +540,13 @@ class AgentBackendAdapter implements IAgentBackendService {
   async queueMessage(request: {
     agentId: string;
     content: string;
+    workspaceId?: string;
     contextItems?: any[];
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   }): Promise<{ success: boolean; queuedMessage?: any; error?: string }> {
     logger.debug('Adapter: queueMessage', {
       agentId: request.agentId,
+      workspaceId: request.workspaceId,
       hasImages: !!request.imageBlocks?.length,
     });
     return await (this.handler as any).handleQueueMessage(null, request);

@@ -459,7 +459,7 @@
             <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
               {#if isAgent && event.actor?.id}
                 <div class="flex items-center justify-center bg-sidebar">
-                  <AuggieAvatar size={14} faceSeed={event.actor.id} colorSeed={event.actor.id} />
+                  <AuggieAvatar size={14} agentId={event.actor.id} />
                 </div>
               {:else}
                 <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">

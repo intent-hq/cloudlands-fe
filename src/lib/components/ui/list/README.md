@@ -92,7 +92,7 @@ An empty state component for when there are no items.
 ```svelte
 <ListItem
   iconComponent={AuggieAvatar}
-  iconProps={{ faceSeed: '123', colorSeed: '123', size: 16 }}
+  iconProps={{ agentId: '123', size: 16 }}
   title="Agent Name"
   subtitle="Last message..."
 />

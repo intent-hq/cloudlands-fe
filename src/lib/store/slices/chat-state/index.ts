@@ -47,8 +47,6 @@ export {
 
 export {
   selectChatAgentState,
-  selectChatIsStreaming,
-  selectChatIsProcessing,
   selectChatIsInterrupting,
   selectChatStreamingContent,
   selectChatError,

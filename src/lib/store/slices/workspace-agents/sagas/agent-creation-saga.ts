@@ -338,7 +338,7 @@ export function* handleDelegateTaskRequestedSaga(
           model: agentData.model || defaultModel,
           createdAt: agentData.createdAt || new Date().toISOString(),
           backendSessionId: agentData.backendSessionId,
-          status: AgentStatus.Active,
+          status: AgentStatus.Idle,
           messages: [],
           updatedAt: new Date().toISOString(),
         } as AgentSession;

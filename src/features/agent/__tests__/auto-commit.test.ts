@@ -187,6 +187,13 @@ describe('Auto-Commit Service', () => {
       finishReason: 'end_turn',
       taskNoteId: 'note-1',
       taskTitle: 'Implement feature X',
+      status: 'idle',
+      activationState: null,
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: 'end_turn',
     },
     ...overrides,
   });

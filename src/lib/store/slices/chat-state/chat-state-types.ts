@@ -43,7 +43,7 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 export interface ChatAgentState {
   agentId: string;
   // NOTE: isStreaming and isProcessing have been moved to agent-session slice.
-  // Read them from AgentSession via selectAgentSession / selectAgentIsStreaming / selectAgentIsProcessing.
+  // Read them from AgentSession via canonical agent-session selectors.
   isInterrupting: boolean;
   streamingContent: string;
   error: string | null;

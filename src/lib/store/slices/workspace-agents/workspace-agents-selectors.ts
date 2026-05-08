@@ -1,7 +1,8 @@
 import type { AgentSession, QueuedMessage } from "$shared/types";
 import type { StoreState } from "../../types";
 import { createSelector } from "../../utils/create-selector";
-import { selectAgentSession, selectAllStreamingAgents as selectAllStreamingFromAgentSession } from "../agent-session/agent-session-selectors";
+import { selectAgentSession } from "../agent-session/agent-session-selectors";
+import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
 import { emptyWorkspaceAgentState, type InitialAgentConfig } from "./workspace-agents-slice";
 
 function isBackgroundAgent(agent: AgentSession): boolean {
@@ -81,7 +82,7 @@ export const selectActiveAgentId = createSelector((state, wsId: string): string 
 /** Get a specific agent session by ID — reads from agent-session slice */
 export const selectAgentById = createSelector(
   (state, agentId: string): AgentSession | undefined => {
-    return selectAgentSession.select(state, agentId);
+    return selectAgentSession.select(state, agentId) ?? undefined;
   }
 );
 
@@ -104,7 +105,7 @@ export const selectActiveAgent = createSelector(
   (state, wsId: string): AgentSession | undefined => {
     const wsState = getWorkspaceAgentState(state, wsId);
     if (!wsState.activeAgentId) return undefined;
-    return selectAgentSession.select(state, wsState.activeAgentId);
+    return selectAgentSession.select(state, wsState.activeAgentId) ?? undefined;
   }
 );
 
@@ -113,11 +114,10 @@ export const selectIsInitialSpecWriteInProgress = createSelector((state, wsId: s
   return getWorkspaceAgentState(state, wsId).isInitialSpecWriteInProgress;
 });
 
-/** Get queued messages for a specific agent — reads from agent-session slice */
+/** @deprecated Renderer-visible queues live in agentQueue. Use selectAgentQueueMessages directly. */
 export const selectAgentQueuedMessages = createSelector(
   (state, _wsId: string, agentId: string): QueuedMessage[] => {
-    const session = selectAgentSession.select(state, agentId);
-    return session?.queuedMessages ?? [];
+    return selectAgentQueueMessages.select(state, agentId);
   }
 );
 
@@ -145,8 +145,3 @@ export const selectRecentAgentCreatedEventsCount = createSelector(
     return Object.keys(getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents).length;
   }
 );
-
-/** Get all streaming agents across all workspaces — delegates to agent-session slice */
-export const selectAllStreamingAgents = createSelector((state): AgentSession[] => {
-  return selectAllStreamingFromAgentSession.select(state);
-});

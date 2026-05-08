@@ -995,7 +995,7 @@
                 <!-- Icon or Avatar -->
                 {#if item.type === 'agent'}
                   <div class="flex-none mt-0.5">
-                    <AuggieAvatar faceSeed={item.id} colorSeed={item.id} size={18} />
+                    <AuggieAvatar agentId={item.id} size={18} />
                   </div>
                 {:else}
                   <Fa icon={item.icon} class="text-[15px] text-foreground/25 flex-none mt-0.5" />

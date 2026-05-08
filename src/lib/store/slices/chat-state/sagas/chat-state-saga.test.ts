@@ -26,8 +26,8 @@ vi.mock("typed-redux-saga", () => ({
   delay: function* (ms: any) {
     return yield sagaEffects.delay(ms);
   },
-  select: function* (selector: any) {
-    return yield sagaEffects.select(selector);
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
   },
 }));
 
@@ -122,6 +122,32 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
     effect: function* (wsId: string) { return yield sagaEffects.select(selectAllWorkspaceAgentsMock, wsId); },
   },
 }));
+
+vi.mock("../../agent-session/agent-session-selectors", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../agent-session/agent-session-selectors")>();
+  const selectSessionIsProcessing = (state: any, agentId: string) =>
+    state.agentSessions?.byAgentId?.[agentId]?.isProcessing === true;
+  const selectIsResponding = (state: any, agentId: string) => {
+    const agent = selectAgentByIdMock(state, agentId) ?? state.agentSessions?.byAgentId?.[agentId];
+    return !!(agent?.isStreaming || agent?.isProcessing || agent?.isResponding);
+  };
+
+  return {
+    ...actual,
+    selectAgentSessionIsProcessing: {
+      select: selectSessionIsProcessing,
+      effect: function* (agentId: string) {
+        return yield sagaEffects.select(selectSessionIsProcessing, agentId);
+      },
+    },
+    selectAgentIsResponding: {
+      select: selectIsResponding,
+      effect: function* (agentId: string) {
+        return yield sagaEffects.select(selectIsResponding, agentId);
+      },
+    },
+  };
+});
 
 import {
   chatSendStarted,

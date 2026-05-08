@@ -113,7 +113,7 @@
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >
-      <AuggieAvatar size={20} faceSeed={agentId} colorSeed={agentId} />
+      <AuggieAvatar size={20} {agentId} />
     </button>
   {/if}
 </div>

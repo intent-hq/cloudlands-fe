@@ -6,7 +6,11 @@
  * 2. The safety timeout force-clears pendingBackendDeliveries after 5 minutes
  */
 
-import { beforeAll, describe, it, expect, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
+
+const { getWindowIdsForWorkspaceMock } = vi.hoisted(() => ({
+  getWindowIdsForWorkspaceMock: vi.fn(),
+}));
 
 vi.mock('electron', () => ({
   app: {
@@ -34,12 +38,22 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: {},
 }));
 
+vi.mock('../../../system/main/system.ipc', () => ({
+  getWindowIdForWorkspace: vi.fn(),
+  getWindowIdsForWorkspace: getWindowIdsForWorkspaceMock,
+}));
+
 let HandlerClass: any;
 
 describe('pendingBackendDeliveries safety timeout', () => {
   beforeAll(async () => {
     ({ AgentBackendHandler: HandlerClass } =
       await vi.importActual('../agent-backend-handler.service'));
+  });
+
+  beforeEach(() => {
+    getWindowIdsForWorkspaceMock.mockReset();
+    getWindowIdsForWorkspaceMock.mockReturnValue([]);
   });
 
   function createHandler(): any {
@@ -68,6 +82,8 @@ describe('pendingBackendDeliveries safety timeout', () => {
     handler.emptyResponseRetries = new Map();
     handler.queueAgentWorkspaceIds = new Map();
     handler.queueWatchdogInterval = null;
+    handler.sendToRenderer = vi.fn();
+    handler.getWorkspaceWindowsForAgent = vi.fn(() => []);
     return handler;
   }
 
@@ -149,5 +165,82 @@ describe('pendingBackendDeliveries safety timeout', () => {
 
     clearTimeoutSpy.mockRestore();
     vi.useRealTimers();
+  });
+
+  it('stores queued workspaceId from request and watchdog recovers backend-idle queues', async () => {
+    vi.useFakeTimers();
+    const handler = createHandler();
+    const agentId = 'test-agent-queued-workspace';
+    const workspaceId = 'ws-queued';
+    const processNextQueuedMessage = vi.fn().mockResolvedValue(undefined);
+    handler.processNextQueuedMessage = processNextQueuedMessage;
+
+    const result = await handler.handleQueueMessage(null, {
+      agentId,
+      content: 'Follow-up',
+      workspaceId,
+    });
+
+    expect(result.success).toBe(true);
+    expect(handler.queueAgentWorkspaceIds.get(agentId)).toBe(workspaceId);
+    expect(getWindowIdsForWorkspaceMock).toHaveBeenCalledWith(workspaceId);
+    expect(handler.sendToRenderer).toHaveBeenCalledWith(
+      'agent:queue:updated',
+      { agentId, queue: expect.any(Array) },
+      [],
+      workspaceId,
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(processNextQueuedMessage).toHaveBeenCalledWith(agentId, workspaceId);
+
+    if (handler.queueWatchdogInterval) {
+      clearInterval(handler.queueWatchdogInterval);
+      handler.queueWatchdogInterval = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('falls back to active stream workspaceId when queue request omits workspaceId', async () => {
+    const handler = createHandler();
+    handler.startQueueWatchdog = vi.fn();
+    const agentId = 'test-agent-stream-workspace';
+
+    handler.streamWorkspaceIds.set(agentId, 'ws-stream');
+
+    const result = await handler.handleQueueMessage(null, {
+      agentId,
+      content: 'Follow-up',
+    });
+
+    expect(result.success).toBe(true);
+    expect(handler.queueAgentWorkspaceIds.get(agentId)).toBe('ws-stream');
+  });
+
+  it('notifies queued workspace windows when no active stream mapping exists', async () => {
+    const handler = createHandler();
+    handler.startQueueWatchdog = vi.fn();
+    handler.getWorkspaceWindowsForAgent = vi.fn(() => [999]);
+    getWindowIdsForWorkspaceMock.mockReturnValue([101, 102]);
+    const agentId = 'test-agent-stale-renderer-busy';
+    const workspaceId = 'ws-stale-renderer';
+
+    const result = await handler.handleQueueMessage(null, {
+      agentId,
+      content: 'Follow-up from stale renderer busy state',
+      workspaceId,
+    });
+
+    expect(result.success).toBe(true);
+    expect(handler.streamWorkspaceIds.has(agentId)).toBe(false);
+    expect(getWindowIdsForWorkspaceMock).toHaveBeenCalledWith(workspaceId);
+    expect(handler.getWorkspaceWindowsForAgent).not.toHaveBeenCalled();
+    expect(handler.sendToRenderer).toHaveBeenCalledWith(
+      'agent:queue:updated',
+      { agentId, queue: expect.any(Array) },
+      [101, 102],
+      workspaceId,
+    );
   });
 });

@@ -58,6 +58,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
 vi.mock('$lib/store/slices/chat-state/chat-state-slice', () => ({
   chatInitialized: vi.fn((...a: any[]) => ({ type: 'chatInitialized', payload: a })),
   chatInitFailed: vi.fn((...a: any[]) => ({ type: 'chatInitFailed', payload: a })),
+  chatSendStarted: vi.fn((...a: any[]) => ({ type: 'chatSendStarted', payload: a })),
   chatSendFailed: vi.fn((...a: any[]) => ({ type: 'chatSendFailed', payload: a })),
   chatInterrupted: vi.fn((...a: any[]) => ({ type: 'chatInterrupted', payload: a })),
   chatModelUnavailableSet: vi.fn((...a: any[]) => ({ type: 'chatModelUnavailableSet', payload: a })),
@@ -151,8 +152,9 @@ vi.mock('$lib/components/chat/streaming-status-utils', () => ({
 
 import { agentService } from '$features/agent/agent-ipc-bridge';
 import { memoryManager } from '../memory-manager';
-import { streamStarted } from '$lib/store/slices/chat-state/chat-state-slice';
+import { chatSendStarted, streamStarted } from '$lib/store/slices/chat-state/chat-state-slice';
 import {
+  replaceMessages,
   replaceMessages as replaceAgentSessionMessages,
 } from '$lib/store/slices/agent-session/agent-session-slice';
 import { replaceAgentMessages } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
@@ -268,6 +270,7 @@ describe('ChatService Race Condition Regressions', () => {
     if (typeof globalThis.performance === 'undefined') {
       (globalThis as any).performance = { now: () => Date.now() };
     }
+    (agentService.saveSession as Mock).mockResolvedValue(undefined);
     // localStorage — may already exist in jsdom; spy instead of replacing
     try {
       vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
@@ -544,6 +547,62 @@ describe('ChatService Race Condition Regressions', () => {
     expect(results[1].status).toBe('rejected');
     expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(
       MessageGuardError,
+    );
+  });
+
+  it('editAndRegenerate dispatches send-start before truncating messages', async () => {
+    const messages = [
+      makeMessage('1', 'user', 'First request'),
+      makeMessage('2', 'assistant', 'First response'),
+      makeMessage('3', 'user', 'Original follow-up'),
+      makeMessage('4', 'assistant', 'Original answer'),
+    ];
+    setupDefaultState({ messages });
+    mockSelectAgentMessages.mockReturnValue(messages);
+    (agentService.sendMessage as Mock).mockResolvedValue(undefined);
+
+    await service.editAndRegenerate('msg_3', 'Edited follow-up', mockWorkspace as any, AGENT_ID);
+
+    expect(chatSendStarted).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID);
+    expect(replaceMessages).toHaveBeenCalledWith(AGENT_ID, messages.slice(0, 2));
+
+    const dispatchedTypes = mockDispatch.mock.calls.map(([action]) => action.type);
+    expect(dispatchedTypes.indexOf('chatSendStarted')).toBeLessThan(
+      dispatchedTypes.indexOf('replaceMessages'),
+    );
+    expect(agentService.sendMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Edited follow-up',
+      mockWorkspace,
+      expect.objectContaining({ resetHistory: true }),
+    );
+  });
+
+  it('regenerateFromMessage dispatches send-start before truncating messages', async () => {
+    const messages = [
+      makeMessage('1', 'user', 'First request'),
+      makeMessage('2', 'assistant', 'First response'),
+      makeMessage('3', 'user', 'Regenerate this'),
+      makeMessage('4', 'assistant', 'Original answer'),
+    ];
+    setupDefaultState({ messages });
+    mockSelectAgentMessages.mockReturnValue(messages);
+    (agentService.sendMessage as Mock).mockResolvedValue(undefined);
+
+    await service.regenerateFromMessage('msg_4', mockWorkspace as any, AGENT_ID);
+
+    expect(chatSendStarted).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID);
+    expect(replaceMessages).toHaveBeenCalledWith(AGENT_ID, messages.slice(0, 2));
+
+    const dispatchedTypes = mockDispatch.mock.calls.map(([action]) => action.type);
+    expect(dispatchedTypes.indexOf('chatSendStarted')).toBeLessThan(
+      dispatchedTypes.indexOf('replaceMessages'),
+    );
+    expect(agentService.sendMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Regenerate this',
+      mockWorkspace,
+      expect.objectContaining({ resetHistory: true }),
     );
   });
 });

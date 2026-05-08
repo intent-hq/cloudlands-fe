@@ -509,8 +509,7 @@
             <div class="absolute right-5 top-0 -translate-y-full pointer-events-none z-1001">
               <AuggieAvatar
                 size={20}
-                faceSeed={indicator.author.id}
-                colorSeed={indicator.author.id}
+                agentId={indicator.author.id}
               />
             </div>
           {/if}

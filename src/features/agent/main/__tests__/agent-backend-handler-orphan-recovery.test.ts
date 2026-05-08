@@ -632,6 +632,91 @@ describe('AgentBackendHandler orphan recovery', () => {
     ]);
   });
 
+  it('persists interrupted active-provider streams as non-streaming before completion emission', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-active-interrupted';
+    const workspaceId = 'ws-active-interrupted';
+    const assistantMessageId = 'assistant-streaming';
+    const assistantAppMessageId = 'app-assistant-streaming';
+
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] },
+        {
+          id: assistantMessageId,
+          appMessageId: assistantAppMessageId,
+          role: 'assistant',
+          isStreaming: true,
+          streamingComplete: false,
+          contentBlocks: [{ type: 'text', text: 'partial' }],
+          timestamp: new Date(0).toISOString(),
+        },
+      ],
+      isStreaming: true,
+      isProcessing: true,
+      status: 'active',
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({
+      getSession: vi.fn(() => backendSession),
+    }));
+    handler.emitAgentStartedEvent = vi.fn();
+    handler.startStreamHealthCheck = vi.fn();
+    handler.sendToRenderer = vi.fn();
+    handler.sendStreamToRenderer = vi.fn();
+
+    const mockProvider: any = {
+      isHealthy: vi.fn(() => true),
+      streamMessage: vi.fn(async (_messages: any, options: any) => {
+        await options.onError(new Error('Agent interrupted'));
+      }),
+    };
+    handler.providers.set(agentId, mockProvider);
+    handler.providerLastUsed.set(agentId, Date.now());
+    mockGetPartialContent.mockReturnValue({
+      contentBlocks: [{ type: 'text', text: 'interrupted partial' }],
+    });
+
+    const result = await handler.handleSendMessage(null, {
+      agentId,
+      sessionId: agentId,
+      streamId: 'stream-interrupted',
+      workspaceId,
+      assistantMessageId,
+      assistantAppMessageId,
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          contentBlocks: [{ type: 'text', text: 'hello' }],
+        },
+      ],
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.isStreaming).toBe(false);
+    expect(saved.isProcessing).toBe(false);
+    expect(saved.status).toBe('Idle');
+    const savedAssistant = saved.messages.find((m: any) => m.id === assistantMessageId);
+    expect(savedAssistant.isStreaming).toBe(false);
+    expect(savedAssistant.streamingComplete).toBe(true);
+    expect(savedAssistant.contentBlocks).toEqual([
+      { type: 'text', text: 'interrupted partial' },
+    ]);
+    expect(savedAssistant.metadata).toEqual(
+      expect.objectContaining({ interrupted: true, stopReason: 'cancelled' }),
+    );
+    expect(handler.sendStreamToRenderer).toHaveBeenCalledWith(
+      agentId,
+      `agent:stream:${agentId}`,
+      expect.objectContaining({ type: 'complete', streamId: 'stream-interrupted' }),
+    );
+  });
+
   // T8 completion second guard (P1): the extracted method must re-check the
   // guard IMMEDIATELY BEFORE `saveAgent` so a concurrent shutdown/bridge
   // event that flips the guard during the `getBackend()` await does not
@@ -756,6 +841,7 @@ describe('AgentBackendHandler orphan recovery', () => {
     const m1 = saved.messages.find((m: any) => m.id === 'm1');
     expect(m1).toBeDefined();
     expect(m1.isStreaming).toBe(false);
+    expect(m1.streamingComplete).toBe(true);
     for (const msg of saved.messages) {
       expect(msg.isStreaming).not.toBe(true);
     }
@@ -763,6 +849,7 @@ describe('AgentBackendHandler orphan recovery', () => {
     expect(first.agentData.isStreaming).toBe(false);
     const m1Returned = first.agentData.messages.find((m: any) => m.id === 'm1');
     expect(m1Returned.isStreaming).toBe(false);
+    expect(m1Returned.streamingComplete).toBe(true);
     for (const msg of first.agentData.messages) {
       expect(msg.isStreaming).not.toBe(true);
     }
@@ -918,6 +1005,7 @@ describe('AgentBackendHandler orphan recovery', () => {
     const aMsg = saved.messages.find((m: any) => m.id === 'a-1');
     expect(aMsg).toBeDefined();
     expect(aMsg.isStreaming).toBe(false);
+    expect(aMsg.streamingComplete).toBe(true);
     for (const msg of saved.messages) {
       expect(msg.isStreaming).not.toBe(true);
     }
@@ -933,5 +1021,6 @@ describe('AgentBackendHandler orphan recovery', () => {
     expect(result.agentData.isStreaming).toBe(false);
     const aReturned = result.agentData.messages.find((m: any) => m.id === 'a-1');
     expect(aReturned.isStreaming).toBe(false);
+    expect(aReturned.streamingComplete).toBe(true);
   });
 });

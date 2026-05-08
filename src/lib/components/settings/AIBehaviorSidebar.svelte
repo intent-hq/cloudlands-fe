@@ -115,9 +115,9 @@
         <!-- Avatar -->
         <div class="shrink-0">
           {#if isBuiltInSpecialistId(specialist.id)}
-            <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
+            <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
           {:else}
-            <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} />
+            <AuggieAvatar seed="blank" size={20} />
           {/if}
         </div>
 

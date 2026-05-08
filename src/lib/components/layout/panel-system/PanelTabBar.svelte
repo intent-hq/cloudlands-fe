@@ -51,6 +51,10 @@
     selectAgentById,
     selectAllWorkspaceAgents,
   } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -245,21 +249,22 @@
 
   /**
    * Get the avatar state for an agent tab.
-   * Uses centralized getAvatarState to properly check isStreaming, isProcessing,
-   * isResponding flags in addition to status for consistent behavior across the app.
+   * Uses canonical agent-session selectors for live running/waiting state.
    */
   function getAgentAvatarState(tab: PanelTab): AvatarState {
     if (tab.type !== 'agent' || !tab.agentId) return 'idle';
     const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     if (!agent) return 'idle';
 
+    const state = getReduxStore().getState();
+    const isWaiting = selectAgentIsWaiting.select(state, tab.agentId);
+    const isResponding = selectAgentIsResponding.select(state, tab.agentId);
+
     // Use centralized getAvatarState for consistent state determination
     return getAvatarState(
       {
-        isStreaming: agent.isStreaming,
-        isProcessing: agent.isProcessing,
-        isResponding: agent.isResponding,
-        status: agent.status,
+        isStreaming: isResponding && !isWaiting,
+        status: isWaiting ? 'waiting' : agent.status,
       },
       {
         hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId) ,
@@ -1282,7 +1287,7 @@
                       close();
                     }}
                   >
-                    <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} />
+                    <AuggieAvatar seed="blank" size={16} />
                     <span>Blank Agent</span>
                   </button>
                   <!-- Specialist options -->
@@ -1294,7 +1299,7 @@
                         close();
                       }}
                     >
-                      <AuggieAvatar faceSeed="blank" colorSeed="blank" size={16} specialist={specialist.id} />
+                      <AuggieAvatar seed="blank" size={16} specialist={specialist.id} />
                       <span>{specialist.name}</span>
                     </button>
                   {/each}

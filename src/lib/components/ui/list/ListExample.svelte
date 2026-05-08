@@ -108,7 +108,7 @@
           <ListItem
             selected={selectedAgentId === agent.id}
             iconComponent={AuggieAvatar}
-            iconProps={{ faceSeed: agent.id, colorSeed: agent.id, size: 16 }}
+            iconProps={{ agentId: agent.id, size: 16 }}
             title={agent.name}
             subtitle={agent.lastMessage}
             badge={agent.status}

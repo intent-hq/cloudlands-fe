@@ -394,7 +394,10 @@
 
     <!-- Children with connectors -->
     {#if hasChildren}
-      {@const parentWaitingFor = node.agent.waitingForAgentIds || []}
+      <!-- `waiting` graph status is selector-derived by selectGraphState and only
+        used here to keep waiting-for-other-agents connectors visually distinct
+        without adding waiting fields to AgentNode transport. -->
+      {@const parentWaitingFor = node.agent.status === 'waiting' ? node.agent.waitingForAgentIds || [] : []}
       {@const hasAnyWaiting = parentWaitingFor.length > 0}
       {@const horizontalY = connectorHeight / 2}
 
@@ -580,11 +583,7 @@
           <div class="p-3 space-y-2">
             <!-- Header with avatar and name -->
             <div class="flex items-center gap-2">
-              <AuggieAvatar
-                size={24}
-                colorSeed={hoveredAgent.agentId}
-                faceSeed={hoveredAgent.agentId}
-              />
+              <AuggieAvatar size={24} agentId={hoveredAgent.agentId} />
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}
@@ -600,10 +599,12 @@
 
             <!-- Status -->
             <div class="text-xs text-subtle">
-              {#if hoveredAgent.status === 'responding'}
-                <span class="text-primary">● Responding</span>
-              {:else if hoveredAgent.status === 'waiting'}
+              <!-- Hover status reads the selector-derived graph status; AgentNode
+                intentionally carries no separate waiting boolean. -->
+              {#if hoveredAgent.status === 'waiting'}
                 <span class="text-yellow-500">● Waiting</span>
+              {:else if hoveredAgent.status === 'responding'}
+                <span class="text-primary">● Responding</span>
               {:else if hoveredAgent.status === 'completed'}
                 <span class="text-green-500">● Completed</span>
               {:else if hoveredAgent.status === 'failed'}

@@ -45,6 +45,7 @@ import type { ChatAgentState } from '$lib/store/slices/chat-state/chat-state-typ
 import {
   chatInitialized,
   chatInitFailed,
+  chatSendStarted,
   chatSendFailed,
   chatInterrupted,
   chatModelUnavailableSet,
@@ -1902,6 +1903,10 @@ export class ChatService implements IDisposable {
       }
     }
 
+    // Match the normal send-message saga preflight before truncating messages so
+    // the UI keeps showing Thinking while the edited turn is being resent.
+    this.reduxDispatch(chatSendStarted(agentId, workspace.id));
+
     // Remove all messages from this point onwards
     const messagesBeforeEdit = currentState.messages.slice(0, messageIndex);
 
@@ -1926,7 +1931,21 @@ export class ChatService implements IDisposable {
     }
 
     // Send the new message with resetHistory flag to clear ACP session history
-    await this.sendMessage(newText, workspace, agentId, { ...options, resetHistory: true });
+    try {
+      await this.sendMessage(newText, workspace, agentId, { ...options, resetHistory: true });
+    } catch (error) {
+      // Normal sends rely on the saga catch block to clear chatSendStarted for
+      // synchronous guard failures. Edit/resend bypasses that saga, so clear the
+      // optimistic flags here while preserving sendMessage's existing stream
+      // error/interruption cleanup semantics.
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      if (error instanceof MessageGuardError) {
+        this.reduxDispatch(chatSendFailed(agentId, ''));
+      } else if (!errorMessage.includes('Agent interrupted')) {
+        this.reduxDispatch(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));
+      }
+      throw error;
+    }
   }
 
 
@@ -2028,6 +2047,10 @@ export class ChatService implements IDisposable {
       throw new Error('Could not extract text from user message');
     }
 
+    // Match the normal send-message saga preflight before truncating messages so
+    // regenerate keeps the pending Thinking state visible until streaming starts.
+    this.reduxDispatch(chatSendStarted(agentId, workspace.id));
+
     logger.info('Regenerating from specific message', {
       assistantMessageId,
       userMessageIndex,
@@ -2063,7 +2086,19 @@ export class ChatService implements IDisposable {
         ...mediaContextItems,
       ];
     }
-    await this.sendMessage(userText, workspace, agentId, regenerateOptions);
+    try {
+      await this.sendMessage(userText, workspace, agentId, regenerateOptions);
+    } catch (error) {
+      // See editAndRegenerate: this path bypasses the send-message saga cleanup
+      // for synchronous send guards after the optimistic start dispatch.
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      if (error instanceof MessageGuardError) {
+        this.reduxDispatch(chatSendFailed(agentId, ''));
+      } else if (!errorMessage.includes('Agent interrupted')) {
+        this.reduxDispatch(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));
+      }
+      throw error;
+    }
   }
 
   /**

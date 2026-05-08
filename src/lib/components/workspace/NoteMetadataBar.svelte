@@ -205,7 +205,7 @@
                   onclick={(e) => handleAgentClick(e, agentId)}
                   class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
                 >
-                  <AuggieAvatar size={22} colorSeed={agentId} faceSeed={agentId} />
+                  <AuggieAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
                     >{getAgentName(agentId) || 'Agent'}</span
                   >

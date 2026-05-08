@@ -34,8 +34,6 @@ import {
 } from './chat-state-slice';
 import {
   selectChatAgentState,
-  selectChatIsStreaming,
-  selectChatIsProcessing,
   selectChatError,
   selectChatIsStalled,
   selectChatStreamingContent,
@@ -303,16 +301,6 @@ describe('chatStateReducer', () => {
 });
 
 describe('chatState selectors', () => {
-  it('selectChatIsStreaming reads from agent-session (returns false without session)', () => {
-    const storeState = asStoreState(initialState);
-    expect(selectChatIsStreaming.select(storeState, AGENT)).toBe(false);
-  });
-
-  it('selectChatIsProcessing reads from agent-session (returns false without session)', () => {
-    const storeState = asStoreState(initialState);
-    expect(selectChatIsProcessing.select(storeState, AGENT)).toBe(false);
-  });
-
   it('selectChatError returns null for clean state', () => {
     const storeState = asStoreState(initialState);
     expect(selectChatError.select(storeState, AGENT)).toBeNull();

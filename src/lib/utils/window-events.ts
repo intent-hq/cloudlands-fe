@@ -1,3 +1,5 @@
+import type { CanonicalAgentStatusFields } from '$features/events/types';
+
 type KnownWindowEventName =
   | 'agent-associations-removed'
   | 'agent-follow-animation'
@@ -80,7 +82,85 @@ export type WorkspaceNewTerminalDetail = {
 export type AgentStreamDetail = {
   type: string;
   [key: string]: unknown;
-};
+} & CanonicalAgentStatusFields;
+
+export type AgentStreamInputDetail = {
+  type: string;
+  [key: string]: unknown;
+} & Partial<CanonicalAgentStatusFields>;
+
+export type AgentSessionUpdatedDetail = CanonicalAgentStatusFields;
+export type AgentSessionUpdatedInputDetail = Partial<CanonicalAgentStatusFields>;
+
+function withCanonicalAgentStreamFields(detail: AgentStreamInputDetail): AgentStreamDetail {
+  let fields: CanonicalAgentStatusFields;
+
+  if (detail.type === 'start' || detail.type === 'status') {
+    fields = {
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    };
+  } else if (detail.type === 'end' || detail.type === 'complete') {
+    fields = {
+      status: 'idle',
+      activationState: null,
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: typeof detail.stopReason === 'string'
+        ? detail.stopReason
+        : typeof detail.finishReason === 'string'
+          ? detail.finishReason
+          : null,
+    };
+  } else if (detail.type === 'error') {
+    fields = {
+      status: 'failed',
+      activationState: 'error',
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: typeof detail.stopReason === 'string'
+        ? detail.stopReason
+        : typeof detail.error === 'string'
+          ? detail.error
+          : null,
+    };
+  } else {
+    fields = {
+      status: 'responding',
+      activationState: 'active',
+      isActive: true,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      stopReason: null,
+    };
+  }
+
+  return { ...fields, ...detail };
+}
+
+function withCanonicalSessionUpdatedFields(
+  detail: AgentSessionUpdatedInputDetail = {},
+): AgentSessionUpdatedDetail {
+  return {
+    status: detail.status ?? null,
+    activationState: detail.activationState ?? null,
+    isActive: detail.isActive ?? null,
+    isStreaming: detail.isStreaming ?? null,
+    isProcessing: detail.isProcessing ?? null,
+    isResponding: detail.isResponding ?? null,
+    stopReason: detail.stopReason ?? null,
+  };
+}
 
 export function dispatchWindowEvent(eventName: WindowEventName): void;
 export function dispatchWindowEvent(
@@ -124,12 +204,12 @@ export function dispatchWindowEvent<T>(eventName: string, detail?: T, options?: 
 // names are unchanged.
 // ---------------------------------------------------------------------------
 
-export function dispatchAgentStream(agentId: string, detail: AgentStreamDetail): void {
-  dispatchWindowEvent(`agent:stream:${agentId}`, detail);
+export function dispatchAgentStream(agentId: string, detail: AgentStreamInputDetail): void {
+  dispatchWindowEvent(`agent:stream:${agentId}`, withCanonicalAgentStreamFields(detail));
 }
 
-export function dispatchAgentSessionUpdated(agentId: string): void {
-  dispatchWindowEvent(`agent:session-updated:${agentId}`);
+export function dispatchAgentSessionUpdated(agentId: string, detail?: AgentSessionUpdatedInputDetail): void {
+  dispatchWindowEvent(`agent:session-updated:${agentId}`, withCanonicalSessionUpdatedFields(detail));
 }
 
 export function dispatchAgentMessageSent(agentId: string): void {

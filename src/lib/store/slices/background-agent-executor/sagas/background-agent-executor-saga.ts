@@ -34,6 +34,7 @@ import {
 import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { AgentStatus } from '$shared/types';
 import type { AgentMessage } from '$shared/types/agent.types';
 import { removeLocalStorageItem, setLocalStorageJSON, getLocalStorageJSON } from '$lib/store/utils/safe-local-storage-saga';
@@ -136,7 +137,7 @@ function createAgentStateChannel(
       if (!session) return;
 
       const messages = [...(session.messages ?? [])];
-      const isStreaming = !!session.isStreaming;
+      const isStreaming = selectAgentIsResponding.select(state, agentId);
 
       if (isStreaming) {
         wasStreaming = true;
@@ -148,8 +149,7 @@ function createAgentStateChannel(
         if (noNewMessageTimer) clearTimeout(noNewMessageTimer);
         noNewMessageTimer = setTimeout(() => {
           const currentState = getReduxStore().getState();
-          const currentSession = selectAgentById.select(currentState, agentId);
-          const isStillActive = currentSession?.isStreaming || currentSession?.isProcessing;
+          const isStillActive = selectAgentIsResponding.select(currentState, agentId);
           if (!isStillActive) {
             emitter({ messages, isComplete: true, isError: false, isStreaming: false });
             emitter(END);
@@ -160,7 +160,7 @@ function createAgentStateChannel(
       const completionReasons = {
         idleWithMessages: session.status === AgentStatus.Idle && messages.length > 0,
         statusCompleted: session.status === AgentStatus.Completed,
-        streamingStopped: wasStreaming && !isStreaming && !session.isProcessing && messages.length > 0,
+        streamingStopped: wasStreaming && !isStreaming && messages.length > 0,
       };
       const isComplete = Object.values(completionReasons).some(Boolean);
 
@@ -447,7 +447,7 @@ function* handleReconnect(action: ReturnType<typeof reconnectAgent>): SagaGenera
   const agentSession = yield* selectAgentById.effect(agentId);
   if (!agentSession) return;
 
-  if (agentSession.isStreaming || agentSession.isProcessing) {
+  if (yield* selectAgentIsResponding.effect(agentId)) {
     yield* put(setExecutorState(workspaceId, executorType, {
       status: 'running',
       agentId,

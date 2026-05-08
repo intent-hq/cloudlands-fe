@@ -1,5 +1,6 @@
 import { shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
+import type { CanonicalAgentStatusFields } from '$features/events/types';
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
 import {
@@ -22,6 +23,7 @@ import {
   updateAgentDigest,
   renameAgent,
 } from '../workspace-agents/workspace-agents-slice';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
 import {
   chatSendStarted,
   chatSendFailed,
@@ -547,6 +549,94 @@ function updateSessionFields(
   return setSession(state, agentId, { ...existing, ...partial });
 }
 
+type CanonicalAgentSessionUpdates = {
+  status?: AgentSession['status'];
+  activationState?: AgentSession['activationState'];
+  isActive?: boolean;
+  isStreaming?: boolean;
+  isProcessing?: boolean;
+  isResponding?: boolean;
+  stopReason?: string | null;
+};
+
+function canonicalSessionUpdates(fields: CanonicalAgentStatusFields): CanonicalAgentSessionUpdates {
+  const updates: CanonicalAgentSessionUpdates = {};
+  if (fields.status !== null) updates.status = fields.status as AgentSession['status'];
+  if (fields.activationState !== null) {
+    updates.activationState = fields.activationState as AgentSession['activationState'];
+  }
+  if (fields.isActive !== null) updates.isActive = fields.isActive;
+  if (fields.isStreaming !== null) updates.isStreaming = fields.isStreaming;
+  if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
+  if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
+  updates.stopReason = fields.stopReason;
+
+  const status = typeof fields.status === 'string' ? fields.status.toLowerCase() : undefined;
+  if (
+    fields.isActive === false ||
+    status === 'idle' ||
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'error' ||
+    status === 'deleted'
+  ) {
+    updates.isStreaming = fields.isStreaming ?? false;
+    updates.isProcessing = fields.isProcessing ?? false;
+    updates.isResponding = fields.isResponding ?? false;
+  }
+
+  return updates;
+}
+
+function canonicalFieldsFromWorkspaceEvent(
+  event: { type?: string; data?: any },
+): [string, CanonicalAgentStatusFields] | null {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId ?? data.sessionId;
+  if (!agentId) return null;
+
+  if (event.type === 'agent:idle') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'idle',
+      activationState: data.activationState ?? null,
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.finishReason ?? null,
+    }];
+  }
+  if (event.type === 'agent:failed') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'failed',
+      activationState: data.activationState ?? 'error',
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.error ?? null,
+    }];
+  }
+  if (event.type === 'agent:session-completed') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'completed',
+      activationState: data.activationState ?? null,
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.finishReason ?? null,
+    }];
+  }
+  if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+    return [agentId, data];
+  }
+  return null;
+}
 type SessionComparisonSnapshot = Pick<
   StoredAgentSession,
   | 'status'
@@ -565,6 +655,8 @@ type SessionComparisonSnapshot = Pick<
   | 'currentTurnNumber'
   | 'isBackground'
   | 'activationState'
+  | 'isActive'
+  | 'stopReason'
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
@@ -589,6 +681,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     currentTurnNumber: session.currentTurnNumber,
     isBackground: session.isBackground,
     activationState: session.activationState,
+    isActive: session.isActive,
+    stopReason: session.stopReason,
     messageCount: ids.length,
     lastMessageId: ids.length === 0 ? undefined : ids[ids.length - 1],
   };
@@ -670,9 +764,19 @@ export const updateSession = createAction<[agentId: string, updates: Partial<Age
   'agentSessions/updateSession',
 );
 
-/** Set queued messages for an agent */
+/** Reconcile canonical status metadata from IPC/domain events. */
+export const reconcileCanonicalStatus = createAction<[agentId: string, fields: CanonicalAgentStatusFields]>(
+  'agentSessions/reconcileCanonicalStatus',
+);
+
+/** @deprecated Renderer-visible queues live in agentQueue. Use replaceAgentQueue instead. */
 export const setQueuedMessages = createAction<[agentId: string, messages: QueuedMessage[]]>(
   'agentSessions/setQueuedMessages',
+);
+
+/** @deprecated Renderer-visible queue hydration lives in agentQueue. Use hydrateAgentQueueRequested instead. */
+export const hydrateQueuedMessagesRequested = createAction<[agentId: string]>(
+  'agentSessions/hydrateQueuedMessagesRequested',
 );
 
 /** Update agent digest */
@@ -846,6 +950,19 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       merged = { ...merged, messages: buildMessagesCollection(deduped) };
     }
     return setSession(state, agentId, merged);
+  })
+  .with(reconcileCanonicalStatus, (state, { payload: [agentId, fields] }) => {
+    const updates = canonicalSessionUpdates(fields);
+    if (Object.keys(updates).length === 0) return state;
+    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
+  })
+  .with(eventReceived, (state, { payload: [, event] }) => {
+    const canonical = canonicalFieldsFromWorkspaceEvent(event);
+    if (!canonical) return state;
+    const [agentId, fields] = canonical;
+    const updates = canonicalSessionUpdates(fields);
+    if (Object.keys(updates).length === 0) return state;
+    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
   })
   .with(setQueuedMessages, (state, { payload: [agentId, messages] }) =>
     updateSessionFields(state, agentId, { queuedMessages: messages }),
@@ -1051,7 +1168,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       backendSessionId: null,
       workspaceId: wsId as AgentSession['workspaceId'],
       name: '',
-      status: 'active' as any,
+      status: 'idle' as any,
       messages: buildMessagesCollection([]),
       isStreaming: true,
       isProcessing: true,
@@ -1061,16 +1178,16 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     return setSession(state, agentId, placeholder);
   })
   .with(chatSendFailed, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(chatStopCompleted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(chatReset, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
     updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
@@ -1090,14 +1207,14 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     updateSessionFields(state, agentId, { isStreaming: true }),
   )
   .with(streamCompleted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(streamErrored, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   )
   .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false }),
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
   );

@@ -2,12 +2,17 @@ import type { AgentMessage, AgentSession, AgentStatus } from "$shared/types";
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
 import { createCollection } from "../../utils/collection-utils";
+import { selectAgentQueuedMessages } from "../agent-session/agent-session-selectors";
+import {
+  agentQueueReducer,
+  initialState as initialAgentQueueState,
+  replaceAgentQueue,
+} from "../agent-queue/agent-queue-slice";
 import {
   selectAgentById,
   selectActiveAgent,
   selectAllWorkspaceAgents,
   selectAgentsLoaded,
-  selectAgentQueuedMessages,
   selectForegroundWorkspaceAgents,
   selectInitialAgentConfig,
   selectInitialAgentConfigProcessed,
@@ -452,20 +457,22 @@ describe("workspace-agents selectors", () => {
     });
   });
 
-  describe("selectAgentQueuedMessages (reads from agent-session)", () => {
-    it("returns queued messages from agent-session slice", () => {
+  describe("selectAgentQueuedMessages (deprecated agentQueue bridge)", () => {
+    it("returns queued messages from agentQueue slice", () => {
       const queued = [{ id: "q1", content: "hi", queuedAt: "2024-01-01", position: 0 }];
-      const agent = { ...mockAgent("agent-1"), queuedMessages: queued };
-      const state = mockState(
-        { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"] } } },
-        [agent],
-      );
-      expect(selectAgentQueuedMessages.select(state, WS_1, "agent-1")).toEqual(queued);
+      const state = {
+        ...mockState(
+          { byWorkspaceId: { [WS_1]: { ...emptyWorkspaceAgentState, agentIds: ["agent-1"] } } },
+          [mockAgent("agent-1")],
+        ),
+        agentQueue: agentQueueReducer(initialAgentQueueState, replaceAgentQueue("agent-1", queued)),
+      } as StoreState;
+      expect(selectAgentQueuedMessages.select(state, "agent-1")).toEqual(queued);
     });
 
     it("returns empty array when no session", () => {
       const state = mockState();
-      expect(selectAgentQueuedMessages.select(state, WS_1, "agent-1")).toEqual([]);
+      expect(selectAgentQueuedMessages.select(state, "agent-1")).toEqual([]);
     });
   });
 

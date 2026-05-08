@@ -9,6 +9,7 @@
   import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
   import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
@@ -52,6 +53,7 @@
   // re-dispatch when the active workspace or agentId changes while the
   // component stays mounted.
   const agent$ = selectAgentById(agentId);
+  const agentIsResponding$ = selectAgentIsResponding(agentId);
   const agent = $derived($agent$);
   const agentData = $derived(getAgentPeekData(agent));
 
@@ -64,12 +66,6 @@
   // Get line change stats
   const lineStats$ = selectAgentLineStats(agentId);
   const lineStats = $derived($lineStats$);
-
-  // Truncate last response to 6 lines
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const truncatedResponse = $derived(
-    agentData?.lastResponse ? truncateToLines(agentData.lastResponse, 6) : '',
-  );
 
   const truncatedOneLine = $derived(
     agentData?.lastResponse ? truncateToLines(agentData.lastResponse, 1) : '',
@@ -126,9 +122,8 @@
       <div class="icon-wrapper">
         <AuggieAvatar
           size={24}
-          colorSeed={agentData.id}
-          faceSeed={agentData.id}
-          class={cn(agentData.isResponding && 'animate-pulse')}
+          agentId={agentData.id}
+          class={cn($agentIsResponding$ && 'animate-pulse')}
         />
       </div>
     </button>
@@ -170,9 +165,8 @@
       <div class="flex items-center gap-2 px-3 py-2">
         <AuggieAvatar
           size={isCollapsed ? 18 : 20}
-          colorSeed={agentData.id}
-          faceSeed={agentData.id}
-          class={cn(agentData.isResponding && 'animate-pulse')}
+          agentId={agentData.id}
+          class={cn($agentIsResponding$ && 'animate-pulse')}
         />
         <div class="flex-1 min-w-0">
           {#if isCollapsed}
@@ -182,14 +176,14 @@
               {:else if agentData.lastToolUse}
                 <AgentPreviewToolLabel
                   toolUse={agentData.lastToolUse}
-                  animate={agentData.isResponding}
+                  animate={$agentIsResponding$}
                 />
               {/if}
             </div>
           {:else}
             <div class="font-medium text-sm truncate">
               {agentData.name}<span class="text-xs text-subtle"
-                >{agentData.isActive ? 'Active' : 'Idle'}</span
+                >{$agentIsResponding$ ? 'Active' : 'Idle'}</span
               >
             </div>
           {/if}
@@ -245,7 +239,7 @@
             <div class="text-xs mb-2 line-clamp-3">
               <AgentPreviewToolLabel
                 toolUse={agentData.lastToolUse}
-                animate={agentData.isResponding}
+                animate={$agentIsResponding$}
               />
             </div>
           {/if}
@@ -267,9 +261,7 @@
             <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
             <div class="flex-1">
               <div class="text-sm font-medium">Waiting for Agent to Launch</div>
-              <div class="text-xs text-subtle mt-0.5">
-                Agent will appear here once ready...
-              </div>
+              <div class="text-xs text-subtle mt-0.5">Agent will appear here once ready...</div>
             </div>
           </div>
         {:else}
@@ -281,10 +273,7 @@
                 {#if displayMode === 'full'}
                   Assigned{/if} Agent Not Found
               </div>
-              <div
-                class="text-xs text-subtle mt-0.5"
-                class:hidden={displayMode !== 'full'}
-              >
+              <div class="text-xs text-subtle mt-0.5" class:hidden={displayMode !== 'full'}>
                 The agent working on this area may have been deleted or failed to launch.
               </div>
             </div>

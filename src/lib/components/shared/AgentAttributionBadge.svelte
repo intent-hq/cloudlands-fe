@@ -92,7 +92,7 @@
   {#if !compact}
     <span class="text-subtle">edited by</span>
   {/if}
-  <AuggieAvatar faceSeed={attribution.agentId} colorSeed={attribution.agentId} size={avatarSize} />
+  <AuggieAvatar agentId={attribution.agentId} size={avatarSize} />
   {#if !compact}
     <span class="text-foreground truncate max-w-[150px] font-medium">
       {displayName}

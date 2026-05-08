@@ -32,6 +32,21 @@ export interface EventActor {
   metadata?: Record<string, any>;
 }
 
+/**
+ * Canonical agent status metadata carried by agent IPC/domain events.
+ * Properties are required for in-scope lifecycle event payloads; use explicit
+ * null when a value is not semantically known for a refresh-style notification.
+ */
+export interface CanonicalAgentStatusFields {
+  status: string | null;
+  activationState: string | null;
+  isActive: boolean | null;
+  isStreaming: boolean | null;
+  isProcessing: boolean | null;
+  isResponding: boolean | null;
+  stopReason: string | null;
+}
+
 // ============================================================================
 // Event Types
 // ============================================================================
@@ -427,7 +442,7 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */
     parentAgentId?: string;
-  };
+  } & CanonicalAgentStatusFields;
 }
 
 /**
@@ -435,7 +450,7 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
  */
 export interface AgentStatusChangedEvent extends WorkspaceEventBase {
   type: 'agent:status-changed';
-  data: {
+  data: Omit<CanonicalAgentStatusFields, 'status'> & {
     agentId: string;
     previousStatus: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
     status: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
@@ -1087,7 +1102,7 @@ export interface AgentUnsubscribedPayload {
 /**
  * IPC payload for agent:idle events
  */
-export interface AgentIdlePayload {
+export interface AgentIdlePayload extends CanonicalAgentStatusFields {
   agentId: string;
   agentName?: string;
   workspaceId?: string;
@@ -1103,9 +1118,18 @@ export interface AgentIdlePayload {
 }
 
 /**
+ * IPC payload for raw agent:status events
+ */
+export interface AgentStatusPayload extends Omit<CanonicalAgentStatusFields, 'status'> {
+  agentId: string;
+  workspaceId?: string;
+  status: string;
+}
+
+/**
  * IPC payload for agent:status-changed events
  */
-export interface AgentStatusChangedPayload {
+export interface AgentStatusChangedPayload extends Omit<CanonicalAgentStatusFields, 'status'> {
   agentId: string;
   workspaceId?: string;
   previousStatus?: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
@@ -1260,6 +1284,7 @@ export type AgentEventPayload =
   | AgentSubscribedPayload
   | AgentUnsubscribedPayload
   | AgentIdlePayload
+  | AgentStatusPayload
   | AgentStatusChangedPayload
   | AgentWokenBySubscriptionPayload
   | AgentDeliveryConfirmedPayload
@@ -1409,8 +1434,16 @@ export interface DomainEventPayloads {
   };
 
   'agent:session-created': { workspaceId: WorkspaceId; sessionId: string };
-  'agent:session-updated': { workspaceId: WorkspaceId; sessionId: string };
-  'agent:session-completed': { workspaceId: WorkspaceId; sessionId: string };
+  'agent:session-updated': {
+    workspaceId: WorkspaceId;
+    sessionId: string;
+    agentId?: string;
+  } & CanonicalAgentStatusFields;
+  'agent:session-completed': {
+    workspaceId: WorkspaceId;
+    sessionId: string;
+    agentId?: string;
+  } & CanonicalAgentStatusFields;
 
   'git:commit-created': {
     workspaceId: WorkspaceId;

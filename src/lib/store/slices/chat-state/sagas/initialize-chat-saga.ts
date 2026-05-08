@@ -52,6 +52,7 @@ import {
   upsertSession,
   replaceMessages,
 } from '../../agent-session/agent-session-slice';
+import { hydrateAgentQueueRequested } from '../../agent-queue/agent-queue-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
 import { createChannelFromSelector } from '../../../utils/selector-channel-effects';
@@ -531,7 +532,8 @@ function* handleInitializeChat(
       yield* put(replaceMessages(agentId, deduplicatedMessages));
     }
 
-    // Step 9b: Dispatch chatInitialized to Redux (streaming/UI flags only)
+    // Step 9b: Request backend-owned queue hydration, then dispatch chatInitialized to Redux (streaming/UI flags only)
+    yield* put(hydrateAgentQueueRequested(agentId));
     yield* put(
       chatInitialized(agentId, {
         isStreaming: isCurrentlyStreaming,

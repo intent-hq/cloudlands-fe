@@ -3,50 +3,49 @@
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectAgentIsThinking } from '$lib/store/slices/agent-session/agent-session-selectors';
 
   interface Props {
+    agentId?: string;
     seed?: string;
-    colorSeed?: string;
-    faceSeed?: string;
     size?: number;
     class?: string;
     specialist?: 'spec-writer' | 'implementor' | 'verifier' | string | null;
-    isThinking?: boolean;
   }
 
   let {
+    agentId = '',
     seed = '',
-    colorSeed = '',
-    faceSeed = '',
     size = 40,
     class: className = '',
     specialist = null,
-    isThinking = false,
   }: Props = $props();
 
   // Get specialist icon and glow color
   let specialistIconSvg = $derived(getSpecialistIcon(specialist));
   const isDarkTheme = selectIsDarkTheme();
+  // svelte-ignore state_referenced_locally -- avatars are mounted per agent; selector subscription is initialized once.
+  const agentIsThinking$ = selectAgentIsThinking(agentId);
 
   // Ensure seeds are always strings to prevent flickering from undefined -> string transitions
-  // Use seed as fallback if colorSeed or faceSeed are not provided
-  let stableColorSeed = $derived(colorSeed || seed || 'default-color');
-  let stableFaceSeed = $derived(faceSeed || seed || 'default-face');
+  // Agent avatars use agentId for deterministic colors/faces; seed remains for non-agent previews.
+  let stableColorSource = $derived(agentId || seed || 'default-color');
+  let stableFaceSource = $derived(agentId || seed || 'default-face');
 
   // Create seeded random generator for face features
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let faceRandom = $derived.by(() => {
-    const faceSeedStr =
-      typeof stableFaceSeed === 'string' ? stableFaceSeed : String(stableFaceSeed);
-    return new SeededRandom(stringToHash(faceSeedStr));
+    const faceSource =
+      typeof stableFaceSource === 'string' ? stableFaceSource : String(stableFaceSource);
+    return new SeededRandom(stringToHash(faceSource));
   });
 
   // Generate selections based on seeds - always use the consistent color system
   // Use darker colors in dark mode for better contrast
   let [selectedColor, selectedColor2] = $derived.by(() => {
-    const colorSeedStr =
-      typeof stableColorSeed === 'string' ? stableColorSeed : String(stableColorSeed);
-    return getRandomColorsWithSeed(colorSeedStr, $isDarkTheme);
+    const colorSource =
+      typeof stableColorSource === 'string' ? stableColorSource : String(stableColorSource);
+    return getRandomColorsWithSeed(colorSource, $isDarkTheme);
   });
 
   // Generate deterministic unique ID to avoid conflicts and flickering
@@ -54,15 +53,15 @@
     return Math.random().toString(36).substring(2, 11);
   });
   let gradientId = $derived.by(() => {
-    const colorSeedStr =
-      typeof stableColorSeed === 'string' ? stableColorSeed : String(stableColorSeed);
-    return `auggie-gradient-${colorSeedStr.slice(0, 8)}-${uniqueId}`;
+    const colorSource =
+      typeof stableColorSource === 'string' ? stableColorSource : String(stableColorSource);
+    return `auggie-gradient-${colorSource.slice(0, 8)}-${uniqueId}`;
   });
 
   let clipPathId = $derived.by(() => {
-    const colorSeedStr =
-      typeof stableColorSeed === 'string' ? stableColorSeed : String(stableColorSeed);
-    return `auggie-clip-path-${colorSeedStr.slice(0, 8)}-${uniqueId}`;
+    const colorSource =
+      typeof stableColorSource === 'string' ? stableColorSource : String(stableColorSource);
+    return `auggie-clip-path-${colorSource.slice(0, 8)}-${uniqueId}`;
   });
 </script>
 
@@ -189,7 +188,7 @@
   <!-- Specialist tool icon overlay (bottom right with glow) -->
   {#if specialistIconSvg}
     <div class="absolute inset-0 flex items-center justify-center text-black">
-      <div class="flex w-[50%] {isThinking ? 'animate-thinking' : ''}">
+      <div class="flex w-[50%] {$agentIsThinking$ ? 'animate-thinking' : ''}">
         {@html specialistIconSvg}
       </div>
     </div>

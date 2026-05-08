@@ -472,8 +472,7 @@
                     {#if event.agentId}
                       <div title="Agent: {event.agentId}">
                         <AuggieAvatar
-                          colorSeed={event.agentId}
-                          faceSeed={event.agentId}
+                          agentId={event.agentId}
                           size={20}
                         />
                       </div>
@@ -556,8 +555,7 @@
             <div class="flex items-center gap-2">
               {#if selectedEvent.agentId}
                 <AuggieAvatar
-                  colorSeed={selectedEvent.agentId}
-                  faceSeed={selectedEvent.agentId}
+                  agentId={selectedEvent.agentId}
                   size={32}
                 />
                 <div class="flex-1 flex items-center gap-2">

@@ -112,6 +112,7 @@ export interface IAgentBackendService {
   queueMessage(request: {
     agentId: string;
     content: string;
+    workspaceId?: string;
     contextItems?: any[];
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   }): Promise<{ success: boolean; queuedMessage?: any; error?: string }>;

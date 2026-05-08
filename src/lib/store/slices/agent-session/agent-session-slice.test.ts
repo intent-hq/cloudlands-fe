@@ -4,6 +4,11 @@ import type { AgentSessionState } from './agent-session-types';
 import type { StoreState } from '../../types';
 import { createCollection, getItems } from '../../utils/collection-utils';
 import {
+  agentQueueReducer,
+  initialState as initialAgentQueueState,
+  replaceAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import {
   agentSessionReducer,
   initialState,
   upsertSession,
@@ -17,6 +22,7 @@ import {
   setQueuedMessages,
   updateDigest,
   renameSession,
+  reconcileCanonicalStatus,
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
@@ -32,16 +38,24 @@ import {
   setAgentStreaming,
   upsertAgentSession,
 } from '../workspace-agents/workspace-agents-slice';
-import { chatSendStarted } from '../chat-state/chat-state-slice';
+import {
+  chatSendFailed,
+  chatSendStarted,
+  streamCompleted,
+} from '../chat-state/chat-state-slice';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
 import {
   selectAgentSession,
   selectAgentSessionsByIds,
   selectAgentMessages,
   selectAgentMessageById,
   selectAllAgentSessions,
-  selectAgentIsStreaming,
+  selectAgentSessionIsProcessing,
   selectAgentQueuedMessages,
-  selectAllStreamingAgents,
+  selectAgentIsResponding,
+  selectAgentIsThinking,
+  selectAgentIsWaiting,
+  selectAgentIsWaitingForOtherAgents,
 } from './agent-session-selectors';
 
 // ============================================================================
@@ -400,6 +414,101 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
+  describe('canonical status reconciliation', () => {
+    it('merges canonical status fields from the reconcile action', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', {
+          status: 'active' as any,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+        })),
+      );
+
+      state = agentSessionReducer(state, reconcileCanonicalStatus('a1', {
+        status: 'idle',
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'provider_stopped',
+      }));
+
+      expect(state.byAgentId['a1']).toMatchObject({
+        status: 'idle',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'provider_stopped',
+      });
+    });
+
+    it('merges canonical fields from workspace status events', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(state, eventReceived('ws-1', {
+        type: 'agent:status-changed',
+        data: {
+          agentId: 'a1',
+          status: 'responding',
+          activationState: 'active',
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          stopReason: null,
+        },
+      } as any));
+
+      expect(state.byAgentId['a1']).toMatchObject({
+        status: 'responding',
+        activationState: 'active',
+        isActive: true,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+      });
+    });
+
+    it('clears runtime flags from terminal session-completed events', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', {
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+        })),
+      );
+
+      state = agentSessionReducer(state, eventReceived('ws-1', {
+        type: 'agent:session-completed',
+        data: {
+          workspaceId: 'ws-1',
+          sessionId: 'a1',
+          status: 'completed',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: 'complete',
+        },
+      } as any));
+
+      expect(state.byAgentId['a1']).toMatchObject({
+        status: 'completed',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'complete',
+      });
+    });
+  });
+
   describe('setQueuedMessages', () => {
     it('sets queued messages', () => {
       const qm: QueuedMessage = { id: 'q1', content: 'hello', queuedAt: '2024-01-01', position: 0 };
@@ -539,11 +648,13 @@ describe('agent-session-slice reducer', () => {
 // ============================================================================
 
 describe('agent-session selectors', () => {
-  it('selectAgentSession returns session or undefined', () => {
+  it('selectAgentSession returns session or null', () => {
     const session = makeSession('a1');
     const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentSession.select(state, 'a1')).toEqual(session);
-    expect(selectAgentSession.select(state, 'unknown')).toBeUndefined();
+    expect(selectAgentSession.select(state, 'unknown')).toBeNull();
+    expect(selectAgentSession.select(state, '')).toBeNull();
+    expect(selectAgentSession.select(state)).toBeNull();
   });
 
   it('selectAgentSessionsByIds returns only requested sessions', () => {
@@ -569,28 +680,295 @@ describe('agent-session selectors', () => {
     expect(selectAllAgentSessions.select(state)).toHaveLength(2);
   });
 
-  it('selectAgentIsStreaming returns streaming flag', () => {
-    const session = makeSession('a1', 'ws-1', { isStreaming: true });
-    const state = storeWith({ byAgentId: { a1: session } });
-    expect(selectAgentIsStreaming.select(state, 'a1')).toBe(true);
-    expect(selectAgentIsStreaming.select(state, 'unknown')).toBe(false);
+  describe('selectAgentSessionIsProcessing', () => {
+    it('returns the raw processing flag without conflating responding or waiting state', () => {
+      const processing = makeSession('processing', 'ws-1', { isProcessing: true });
+      const responding = makeSession('responding', 'ws-1', { isResponding: true });
+      const waiting = makeSession('waiting', 'ws-1', { status: 'Waiting' as any });
+      const state = storeWith({
+        byAgentId: { processing, responding, waiting },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentSessionIsProcessing.select(state, 'processing')).toBe(true);
+      expect(selectAgentSessionIsProcessing.select(state, 'responding')).toBe(false);
+      expect(selectAgentSessionIsProcessing.select(state, 'waiting')).toBe(false);
+      expect(selectAgentSessionIsProcessing.select(state, 'unknown')).toBe(false);
+    });
   });
 
-  it('selectAgentQueuedMessages returns queued messages or empty array', () => {
+  describe('selectAgentIsResponding', () => {
+    it('returns true for active session lifecycle flags and statuses', () => {
+      const activeSessions = [
+        makeSession('streaming', 'ws-1', { isStreaming: true }),
+        makeSession('processing-flag', 'ws-1', { isProcessing: true }),
+        makeSession('responding-flag', 'ws-1', { isResponding: true }),
+        makeSession('activating', 'ws-1', { activationState: 'activating' as any }),
+        makeSession('active-status', 'ws-1', { status: 'active' as any }),
+        makeSession('processing-status', 'ws-1', { status: 'Processing' as any }),
+        makeSession('waiting-status', 'ws-1', { status: 'Waiting' as any }),
+      ];
+      const state = storeWith({
+        byAgentId: Object.fromEntries(activeSessions.map((session) => [session.id, session])),
+        agentIdsByWorkspace: {},
+      });
+
+      for (const session of activeSessions) {
+        expect(selectAgentIsResponding.select(state, session.id)).toBe(true);
+      }
+    });
+
+    it('returns false for a blank idle-created agent session', () => {
+      const session = makeSession('blank-created', 'ws-1', {
+        status: 'Idle' as any,
+        messages: [],
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+      });
+      const state = storeWith({
+        byAgentId: { 'blank-created': session },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentIsResponding.select(state, 'blank-created')).toBe(false);
+    });
+
+    it('returns true for a streaming assistant message', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            isStreaming: true,
+            contentBlocks: [{ type: 'text', text: 'Streaming response' }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
+    });
+
+    it('ignores stale streaming fields on interrupted/cancelled assistant messages', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            isStreaming: true,
+            streamingComplete: false,
+            metadata: { interrupted: true, stopReason: 'cancelled' },
+            contentBlocks: [{ type: 'text', text: 'Stopped response' }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+    });
+
+    it('ignores stale streaming fields on terminal assistant messages', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            isStreaming: true,
+            streamingComplete: false,
+            metadata: { stopReason: 'end_turn' },
+            contentBlocks: [{ type: 'text', text: 'Finished response' }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns true while running a tool or waiting for its MCP/tool result', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns false for completed tool use without another active lifecycle signal', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [
+              { type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} },
+              { type: 'tool_result', tool_use_id: 'tool-1', output: 'done' },
+            ],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns false for inactive agents', () => {
+      const session = makeSession('a1', 'ws-1', { status: 'Completed' as any, isStreaming: true, isProcessing: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsResponding.select(state, 'unknown')).toBe(false);
+    });
+  });
+
+  it('selectAgentQueuedMessages returns agentQueue messages or empty array', () => {
     const qm: QueuedMessage = { id: 'q1', content: 'hi', queuedAt: '2024-01-01', position: 0 };
-    const session = makeSession('a1', 'ws-1', { queuedMessages: [qm] });
-    const state = storeWith({ byAgentId: { a1: session } });
+    const session = makeSession('a1');
+    const state = {
+      ...storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} }),
+      agentQueue: agentQueueReducer(initialAgentQueueState, replaceAgentQueue('a1', [qm])),
+    } as StoreState;
     expect(selectAgentQueuedMessages.select(state, 'a1')).toEqual([qm]);
     expect(selectAgentQueuedMessages.select(state, 'unknown')).toEqual([]);
   });
 
-  it('selectAllStreamingAgents returns only streaming sessions', () => {
-    const s1 = makeSession('a1', 'ws-1', { isStreaming: true });
-    const s2 = makeSession('a2', 'ws-1', { isStreaming: false });
-    const state = storeWith({ byAgentId: { a1: s1, a2: s2 } });
-    const streaming = selectAllStreamingAgents.select(state);
-    expect(streaming).toHaveLength(1);
-    expect(streaming[0].id).toBe('a1');
+  describe('selectAgentIsThinking', () => {
+    it('preserves the verified active-thread behavior via selector composition', () => {
+      const session = makeSession('a1', 'ws-1', { isResponding: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsThinking.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsThinking.select(state, 'unknown')).toBe(false);
+    });
+  });
+
+  describe('selectAgentIsWaitingForOtherAgents', () => {
+    it('returns true only from waiting-for-agent relationship metadata', () => {
+      const session = makeSession('a1', 'ws-1', {
+        metadata: { waitingForAgentIds: ['a2'] } as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns false for empty, invalid, terminal, or unknown relationship state', () => {
+      const empty = makeSession('empty', 'ws-1', {
+        metadata: { waitingForAgentIds: [] } as any,
+      });
+      const invalid = makeSession('invalid', 'ws-1', {
+        metadata: { waitingForAgentIds: 'a2' } as any,
+      });
+      const terminal = makeSession('terminal', 'ws-1', {
+        status: 'Completed' as any,
+        metadata: { waitingForAgentIds: ['a2'] } as any,
+      });
+      const state = storeWith({
+        byAgentId: { empty, invalid, terminal },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'empty')).toBe(false);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'invalid')).toBe(false);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'terminal')).toBe(false);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'unknown')).toBe(false);
+    });
+  });
+
+  describe('selectAgentIsWaiting', () => {
+    it('returns true for explicit Waiting status', () => {
+      const session = makeSession('a1', 'ws-1', { status: 'Waiting' as any });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true for waiting-for-other-agents relationships', () => {
+      const session = makeSession('a1', 'ws-1', {
+        metadata: { waitingForAgentIds: ['a2'] } as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true while waiting for an unresolved MCP/tool result', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns true for pending message tool calls', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            toolCalls: [{ id: 'tool-1', name: 'read_file', arguments: {}, status: 'running' }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+    });
+
+    it('returns false after a message tool result resolves the tool call', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            toolCalls: [{ id: 'tool-1', name: 'read_file', arguments: {} }],
+            toolResults: [{ toolCallId: 'tool-1', content: 'done' }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns false after a tool result resolves the tool use', () => {
+      const session = makeSession('a1', 'ws-1', {
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [
+              { type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} },
+              { type: 'tool_result', tool_use_id: 'tool-1', output: 'done' },
+            ],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(false);
+    });
+
+    it('returns false for terminal or unknown agents', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Completed' as any,
+        metadata: { waitingForAgentIds: ['a2'] } as any,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsWaiting.select(state, 'unknown')).toBe(false);
+    });
   });
 
   describe('selectAgentMessageById', () => {
@@ -729,6 +1107,41 @@ describe('chatSendStarted — placeholder session (restored workspace regression
 
     expect(state.byAgentId['a1'].isProcessing).toBe(true);
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
+  });
+});
+
+describe('stream completion clears stale responding flags', () => {
+  it('clears isResponding when a stream completes', () => {
+    const existing = makeSession('a1', 'ws-1', {
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(
+      state,
+      streamCompleted('a1', { lastAttemptedMessage: null, modelUnavailable: null }),
+    );
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    expect(state.byAgentId['a1'].isResponding).toBe(false);
+  });
+
+  it('clears isResponding when send fails before completion', () => {
+    const existing = makeSession('a1', 'ws-1', {
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(existing));
+
+    state = agentSessionReducer(state, chatSendFailed('a1', ''));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    expect(state.byAgentId['a1'].isResponding).toBe(false);
   });
 });
 

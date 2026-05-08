@@ -670,6 +670,7 @@ export const AgentRenameSchema = z.object({
 export const AgentQueueMessageSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
   content: z.string().min(1, 'Message content is required'),
+  workspaceId: z.string().min(1, 'Workspace ID is required').optional(),
   contextItems: z.array(z.any()).optional(),
   imageBlocks: z
     .array(

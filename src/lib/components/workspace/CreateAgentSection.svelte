@@ -152,7 +152,7 @@
         class="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left border-b border-border cursor-pointer"
         onclick={() => handleCreateAgent(null)}
       >
-        <AuggieAvatar faceSeed="blank" colorSeed="blank" size={22} class="-mt-1" />
+        <AuggieAvatar seed="blank" size={22} class="-mt-1" />
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium">Blank Agent</div>
           <div class="text-sm text-subtle">Start fresh, no custom prompt</div>
@@ -174,8 +174,7 @@
             onclick={() => handleCreateAgent(specialist.id)}
           >
             <AuggieAvatar
-              faceSeed="blank"
-              colorSeed="blank"
+              seed="blank"
               size={20}
               specialist={specialist.id}
               class="mt-0.5 shrink-0"

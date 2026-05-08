@@ -13,7 +13,12 @@
 
 import type { Task } from 'redux-saga';
 import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { selectAgentMessages, selectAgentSession } from '../../agent-session/agent-session-selectors';
+import {
+  selectAgentSessionIsProcessing,
+  selectAgentIsResponding,
+  selectAgentMessages,
+  selectAgentSession,
+} from '../../agent-session/agent-session-selectors';
 import { initializeChatSaga } from './initialize-chat-saga';
 import { watchSendMessage } from './send-message-saga';
 import { chatLifecycleSaga } from './chat-lifecycle-saga';
@@ -42,7 +47,6 @@ import {
   streamStatusReceived,
 } from '../chat-state-slice';
 import {
-  selectChatIsProcessing,
   selectChatAgentState,
   selectChatLastChunkReceivedAt,
   selectChatStatusEvents,
@@ -200,7 +204,7 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
     }
 
     // Re-check isProcessing since state may have changed during IPC call
-    const stateAfterCheck = yield* selectChatIsProcessing.effect(agentId);
+    const stateAfterCheck = yield* selectAgentSessionIsProcessing.effect(agentId);
     if (!stateAfterCheck) {
       failureCount = 0;
       continue;
@@ -371,7 +375,7 @@ function* watchWorkspaceUnmountedForCleanup(): SagaGenerator<void> {
     for (const agent of agents) {
       const existing = activeSendTasks.get(agent.id);
       if (!existing) continue;
-      const stillActive = agent.isStreaming === true || agent.isProcessing === true;
+      const stillActive = yield* selectAgentIsResponding.effect(agent.id);
       if (stillActive) {
         continue;
       }

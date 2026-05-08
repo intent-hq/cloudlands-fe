@@ -84,7 +84,7 @@ describe('Agent Creation with agentType', () => {
       expect(result.success).toBe(true);
       expect(result.agent?.name).toBe('Debug Agent');
       expect(result.agent?.metadata?.agentType).toBe('debug');
-      expect(result.agent?.status).toBe(AgentStatus.Active);
+      expect(result.agent?.status).toBe(AgentStatus.Idle);
     });
 
     it('should create agent with chat type', async () => {

@@ -70,7 +70,7 @@ import { resumeSession, saveSession } from './agent-ipc-bridge';
 import {
   dispatchAgentStream,
   dispatchAgentSessionUpdated,
-  type AgentStreamDetail,
+  type AgentStreamInputDetail,
 } from '$lib/utils/window-events';
 
 const logger = createLogger('AgentStreamLifecycle');
@@ -171,7 +171,7 @@ export function replayPendingEvents(sessionId: string): void {
 
   logger.info('Replaying pending stream events', { sessionId, eventCount: events.length });
   for (const pendingEvent of events) {
-    dispatchAgentStream(sessionId, pendingEvent.detail as AgentStreamDetail);
+    dispatchAgentStream(sessionId, pendingEvent.detail as AgentStreamInputDetail);
   }
 }
 
@@ -193,7 +193,7 @@ export function dispatchStreamEvent(sessionId: string, eventType: string, detail
   const hasHandler = hasActiveStreamListener(sessionId);
 
   if (hasHandler) {
-    dispatchAgentStream(sessionId, detail as AgentStreamDetail);
+    dispatchAgentStream(sessionId, detail as AgentStreamInputDetail);
     logger.debug('Dispatched stream event to registered handler', { sessionId, eventType });
   } else {
     // Queueing is the expected behavior when stream events arrive before the
@@ -1118,7 +1118,14 @@ export async function sendMessage(
             getReduxStore().dispatch(addAgentMessage(workspace.id, session.id, userMessage));
             // Set streaming flag BEFORE dispatching session-updated event so handlers see isStreaming=true
             getReduxStore().dispatch(setAgentStreaming(workspace.id, session.id, true));
-            dispatchAgentSessionUpdated(session.id);
+            dispatchAgentSessionUpdated(session.id, {
+              status: 'responding',
+              activationState: 'active',
+              isActive: true,
+              isStreaming: true,
+              isProcessing: true,
+              isResponding: true,
+            });
 
             try {
 
@@ -1261,7 +1268,14 @@ export async function sendMessage(
                         type: 'end',
                         message: null,
                       });
-                      dispatchAgentSessionUpdated(handlerSessionId);
+                      dispatchAgentSessionUpdated(handlerSessionId, {
+                        status: 'idle',
+                        isActive: false,
+                        isStreaming: false,
+                        isProcessing: false,
+                        isResponding: false,
+                        stopReason: 'timeout',
+                      });
 
                       // Remove from the map after timeout fires
                       streamRegistry.deleteStreamTimeout(agentId);
@@ -1720,7 +1734,14 @@ export async function sendMessage(
                                 // Also dispatch session-updated event as a fallback
                                 // This ensures ChatService's sessionUpdatedHandler syncs isProcessing
                                 // even if the stream end event is not received
-                                dispatchAgentSessionUpdated(handlerSessionId);
+                                dispatchAgentSessionUpdated(handlerSessionId, {
+                                  status: 'idle',
+                                  isActive: false,
+                                  isStreaming: false,
+                                  isProcessing: false,
+                                  isResponding: false,
+                                  stopReason: data.finishReason,
+                                });
                                 logger.debug('Dispatched session-updated event as fallback', {
                                   agentId,
                                   sessionId: handlerSessionId,
@@ -1823,7 +1844,14 @@ export async function sendMessage(
                                 });
 
                                 // Also dispatch session-updated event as a fallback
-                                dispatchAgentSessionUpdated(handlerSessionId);
+                                dispatchAgentSessionUpdated(handlerSessionId, {
+                                  status: 'idle',
+                                  isActive: false,
+                                  isStreaming: false,
+                                  isProcessing: false,
+                                  isResponding: false,
+                                  stopReason: emptyMsgReason,
+                                });
                               }
                             } else {
                               // Just mark streaming as complete without updating session
@@ -1860,7 +1888,14 @@ export async function sendMessage(
                               });
 
                               // Also dispatch session-updated event as a fallback
-                              dispatchAgentSessionUpdated(handlerSessionId);
+                              dispatchAgentSessionUpdated(handlerSessionId, {
+                                status: 'idle',
+                                isActive: false,
+                                isStreaming: false,
+                                isProcessing: false,
+                                isResponding: false,
+                                stopReason: noMsgReason,
+                              });
                             }
 
                             // Mark agent as having unread messages (if user isn't currently viewing it)
@@ -1937,7 +1972,15 @@ export async function sendMessage(
                           });
 
                           // Also dispatch session-updated event as a fallback
-                          dispatchAgentSessionUpdated(handlerSessionId);
+                          dispatchAgentSessionUpdated(handlerSessionId, {
+                            status: 'failed',
+                            activationState: 'error',
+                            isActive: false,
+                            isStreaming: false,
+                            isProcessing: false,
+                            isResponding: false,
+                            stopReason: 'error',
+                          });
 
                           // Use workspace-aware method for cross-workspace stream completion
                           getReduxStore().dispatch(setAgentStreaming(workspace.id, agentId, false));
@@ -2250,7 +2293,15 @@ export async function sendMessage(
                 type: 'error',
                 error: finalErrorMsg,
               });
-              dispatchAgentSessionUpdated(agentId);
+              dispatchAgentSessionUpdated(agentId, {
+                status: 'failed',
+                activationState: 'error',
+                isActive: false,
+                isStreaming: false,
+                isProcessing: false,
+                isResponding: false,
+                stopReason: finalErrorMsg,
+              });
 
               // Don't re-wrap - the error already has a clean user-facing message
               // from the error boundary service

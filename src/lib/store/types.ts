@@ -82,6 +82,7 @@ export type SagaName =
   | 'chatStreamSaga'
   | 'fileExplorerSaga'
   | 'filesSaga'
+  | 'agentQueueSaga'
   | 'agentIpcSaga'
   | 'agentStreamSaga'
   | 'agentSubscriptionUISaga'

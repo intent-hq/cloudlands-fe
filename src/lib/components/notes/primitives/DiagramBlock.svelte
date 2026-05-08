@@ -560,7 +560,7 @@
             }}
             title="View agent"
           >
-            <AuggieAvatar faceSeed={linkedAgentId} colorSeed={linkedAgentId} size={16} />
+            <AuggieAvatar agentId={linkedAgentId} size={16} />
           </button>
         {/if}
         <button

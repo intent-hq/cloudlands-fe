@@ -11,7 +11,7 @@
   } from '$lib/store/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
-  import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
@@ -29,6 +29,10 @@
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { loadWorkspacesRequested } from '$lib/store/slices/workspace/workspace-slice';
   import { locateItemInSidebarConsumed } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$lib/store/slices/app-layout/app-layout-selectors';
@@ -223,6 +227,22 @@
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
   const tabOrder = $derived(normalizeTabOrder($persistedTabOrder));
   let previousWorkspaceId = $state<string | null>(null);
+
+  function isAgentCurrentlyRunning(agentId: string): boolean {
+    const state = getReduxStore().getState();
+    const isWaiting = selectAgentIsWaiting.select(state, agentId);
+    return selectAgentIsResponding.select(state, agentId) && !isWaiting;
+  }
+
+  function getLiveAgentAvatarState(agent: { id: string; status?: string }): AvatarState {
+    const state = getReduxStore().getState();
+    const isWaiting = selectAgentIsWaiting.select(state, agent.id);
+    const isResponding = selectAgentIsResponding.select(state, agent.id);
+    return getAvatarState({
+      isStreaming: isResponding && !isWaiting,
+      status: isWaiting ? 'waiting' : agent.status,
+    });
+  }
   // Drag state for tab reordering
   let draggedTabId = $state<TabId | null>(null);
   let dropIndicator = $state<{ tabId: TabId; position: 'before' | 'after' } | null>(null);
@@ -420,9 +440,7 @@
   let cachedPhaseStats: WorkspacePhaseStats = defaultPhaseStats;
   const workspacePhaseInfo = $derived.by(() => {
     if (!$workspace) return defaultPhaseInfo;
-    const hasActiveAgents = $allWorkspaceAgents.some(
-      (a) => a.isStreaming || a.isProcessing || a.isResponding,
-    );
+    const hasActiveAgents = $allWorkspaceAgents.some((a) => isAgentCurrentlyRunning(a.id));
     const next = deriveWorkspacePhase($workspace, { hasActiveAgents });
     if (
       next.phase !== cachedPhaseInfo.phase ||
@@ -573,15 +591,7 @@
   const activeAgents = $derived.by(() => {
     const newResult = $allWorkspaceAgents
       .map((agent) => {
-        const state = getAvatarState(
-          {
-            isStreaming: agent.isStreaming,
-            isProcessing: agent.isProcessing,
-            isResponding: agent.isResponding,
-            status: agent.status,
-          },
-          {},
-        );
+        const state = getLiveAgentAvatarState(agent);
         return { agent, state };
       })
       .filter(({ state }) => state === 'running' || state === 'responding' || state === 'unread');
@@ -968,15 +978,7 @@
               <div class="h-full pt-2 pb-6">
                 {#if tabId === 'overview'}
                   {@const overviewAgents = $foregroundWorkspaceAgents.map((agent) => {
-                    const state = getAvatarState(
-                      {
-                        isStreaming: agent.isStreaming,
-                        isProcessing: agent.isProcessing,
-                        isResponding: agent.isResponding,
-                        status: agent.status,
-                      },
-                      {},
-                    );
+                    const state = getLiveAgentAvatarState(agent);
                     const specialist = (agent.metadata?.specialist as string) || null;
                     const validSpecialist =
                       specialist === 'spec-writer' ||

@@ -478,7 +478,7 @@
                     );
                   }}
                 >
-                  <AuggieAvatar seed={agent.agentId} size={18} class="shrink-0" />
+                  <AuggieAvatar agentId={agent.agentId} size={18} class="shrink-0" />
                   <span class="text-sm font-medium text-foreground truncate flex-1">{agent.name}</span>
                   {#if agent.status}
                     <span class="text-xs px-1.5 py-0.5 rounded bg-muted {statusColor}">{agent.status}</span>
@@ -590,7 +590,7 @@
                       );
                     }}
                   >
-                    <AuggieAvatar seed={agentId} size={14} class="shrink-0" />
+                    <AuggieAvatar {agentId} size={14} class="shrink-0" />
                     <span>{agentName}</span>
                   </button>
                 {:else}

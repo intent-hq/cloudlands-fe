@@ -17,6 +17,7 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
+  import { selectAgentIsWaitingForOtherAgents } from '$lib/store/slices/agent-session/agent-session-selectors';
 
   interface Props {
     agent: AgentNode;
@@ -28,17 +29,19 @@
   let { agent, onclick, onmouseenter, onmouseleave }: Props = $props();
 
   const isActive = $derived(agent.status === 'responding');
+  const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  const isWaitingForOtherAgents = $derived($agentIsWaitingForOtherAgents$);
 
   // Map agent status to avatar state
-  function getAvatarState(status: AgentNode['status']): AvatarState {
+  function getAvatarState(status: AgentNode['status'], waitingForOtherAgents: boolean): AvatarState {
+    if (waitingForOtherAgents) return 'waiting';
     if (status === 'responding') return 'running';
-    if (status === 'waiting') return 'waiting';
     if (status === 'completed') return 'completed';
     if (status === 'failed') return 'failed';
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status));
+  const avatarState = $derived(getAvatarState(agent.status, isWaitingForOtherAgents));
 </script>
 
 <button

@@ -61,6 +61,7 @@ import { chatChangesReducer } from "./slices/chat-changes/chat-changes-slice";
 import { fileExplorerReducer } from "./slices/file-explorer/file-explorer-slice";
 import { filesReducer } from "./slices/files/files-slice";
 import { agentSessionReducer } from "./slices/agent-session/agent-session-slice";
+import { agentQueueReducer } from "./slices/agent-queue/agent-queue-slice";
 import { agentSubscriptionUIReducer } from "./slices/agent-subscription-ui/agent-subscription-ui-slice";
 import { onboardingReducer } from "./slices/onboarding/onboarding-slice";
 import { agentAvailabilityReducer } from "./slices/agent-availability/agent-availability-slice";
@@ -133,6 +134,7 @@ export const reducers = {
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
   agentSessions: agentSessionReducer,
+  agentQueue: agentQueueReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,

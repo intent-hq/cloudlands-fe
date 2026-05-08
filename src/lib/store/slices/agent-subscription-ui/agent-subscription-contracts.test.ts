@@ -208,7 +208,20 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
       { type: 'agent:event-delivery-failed', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], error: 'boom' } },
       { type: 'agent:event-delivery-timeout', data: { targetAgentId: AGENT, eventCount: 1, eventTypes: ['file:changed'], timeoutMs: 30000 } },
       { type: 'agent:subscriptions-restored', data: { count: 1, agentIds: [AGENT] } },
-      { type: 'agent:status-changed', data: { agentId: AGENT, previousStatus: 'idle', status: 'responding' } },
+      {
+        type: 'agent:status-changed',
+        data: {
+          agentId: AGENT,
+          previousStatus: 'idle',
+          status: 'responding',
+          activationState: 'active',
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          stopReason: null,
+        },
+      },
       { type: 'agent:unsubscribed', data: { agentId: AGENT, subscriptionId: 'sub-1', reason: 'manual-unsubscribe' } },
     ];
 

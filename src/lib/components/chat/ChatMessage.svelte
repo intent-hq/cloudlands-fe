@@ -95,7 +95,7 @@
   interface Props {
     /**
      * Fallback message object. Used when `agentId` + `messageId` are not both
-     * provided (e.g. pending/optimistic messages, sandbox mode). When both ids
+     * provided (e.g. pending/optimistic messages). When both ids
      * are supplied, the component subscribes to Redux via `selectAgentMessageById`
      * and the selector result drives rendering instead of this prop.
      */
@@ -167,7 +167,7 @@
   // attribute, and the `{#if !message}` guard. When both ids are provided we use
   // the selector result (live reference from Redux); otherwise we fall back to
   // the `message` prop to preserve today's behavior for pending/optimistic
-  // messages and sandbox mode where ids may not be Redux-backed.
+  // messages where ids may not be Redux-backed.
   let message = $derived(agentId && messageId ? $storeMessage$ : messageProp);
 
   // Edit mode state

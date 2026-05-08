@@ -314,7 +314,7 @@
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
                 title="Open agent"
               >
-                <AuggieAvatar size={24} faceSeed={event.actor.id} colorSeed={event.actor.id} />
+                <AuggieAvatar size={24} agentId={event.actor.id} />
               </button>
             {/if}
           </div>

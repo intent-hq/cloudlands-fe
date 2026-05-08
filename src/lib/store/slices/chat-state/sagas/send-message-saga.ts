@@ -15,11 +15,14 @@ import { call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typ
 import { createLogger } from '$lib/utils/client-logger';
 import { getChatService, MessageGuardError, type SendMessageOptions } from '$features/agent/services/chat.service';
 import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
+import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
 import { clearChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
 import { uncheckAllSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
 import { cleanErrorMessage } from '$shared/errors/messages';
+import type { AgentSession } from '$shared/types';
 import { waitFor } from '$lib/store/slices/store-utility/sagas/waitFor';
 import {
   sendMessage,
@@ -39,6 +42,44 @@ import {
 import type { SendMessagePayload } from '../chat-state-types';
 
 const logger = createLogger('SendMessageSaga');
+
+function getLastAssistantStopReason(agent: AgentSession | undefined): string | undefined {
+  const messages = agent?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === 'assistant') {
+      return message.metadata?.stopReason;
+    }
+  }
+  return undefined;
+}
+
+function getStoppedTurnStopReason(agent: AgentSession | undefined): string | undefined {
+  return agent?.stopReason ?? getLastAssistantStopReason(agent);
+}
+
+function isCompletedTurnReadyForInput(agent: AgentSession | undefined): boolean {
+  const activationState = agent?.activationState as string | undefined;
+  const status = agent ? String(agent.status).toLowerCase() : undefined;
+  const hasReadyCanonicalStatus =
+    agent?.isActive === false ||
+    status === 'idle' ||
+    status === 'waiting' ||
+    status === 'completed';
+
+  return Boolean(
+    agent &&
+      (activationState == null || activationState === 'active') &&
+      !agent.isStreaming &&
+      hasReadyCanonicalStatus &&
+      getStoppedTurnStopReason(agent) === 'end_turn',
+  );
+}
+
+function* isWaitingForUserAction(agentId: string): SagaGenerator<boolean> {
+  const pendingPermissionCount = yield* selectPendingCount.effect(agentId);
+  return pendingPermissionCount > 0;
+}
 
 // ============================================================================
 // Toast helper — call via yield* call() so it's testable
@@ -72,6 +113,7 @@ function* handleQueuePath(
     text.trim(),
     serializedContextItems,
     imageBlocks && imageBlocks.length > 0 ? imageBlocks : undefined,
+    wsId,
   );
 
   if (result.success) {
@@ -253,12 +295,13 @@ function* handleSendMessage(
 
   // --- Check streaming state (queue-vs-send decision) ---
   if (!payload.skipQueueCheck) {
-    // agent-session is the single source of truth for streaming/processing state
+    // agent-session canonical selector is the single source of truth for responding state
+    const isResponding = yield* selectAgentIsResponding.effect(agentId);
     const agent = yield* selectAgentById.effect(agentId);
-    const isStreaming: boolean = agent?.isStreaming ?? false;
-    const isProcessing: boolean = agent?.isProcessing ?? false;
+    const isUserActionWait = yield* call(isWaitingForUserAction, agentId);
+    const isStoppedTurnReadyForInput = isCompletedTurnReadyForInput(agent);
 
-    const shouldQueue = isProcessing || isStreaming;
+    const shouldQueue = isResponding && !isUserActionWait && !isStoppedTurnReadyForInput;
 
     if (shouldQueue) {
       // Queue path: no concurrency guard needed — multiple messages can be queued
@@ -294,8 +337,27 @@ export function* watchSendMessage(): SagaGenerator<void> {
     const wsId = payload.wsId;
 
     if (activeSends.has(agentId)) {
-      yield* call(handleQueuePath, agentId, payload, wsId, 'Send already in flight, queueing message');
-      return;
+      const agent = yield* selectAgentById.effect(agentId);
+      const isUserActionWait = yield* call(isWaitingForUserAction, agentId);
+      const isStoppedTurnReadyForInput = isCompletedTurnReadyForInput(agent);
+      if (payload.skipQueueCheck || isStoppedTurnReadyForInput || isUserActionWait) {
+        logger.info('Bypassing stale active send guard for ready agent', {
+          agentId,
+          skipQueueCheck: !!payload.skipQueueCheck,
+          isStoppedTurnReadyForInput,
+          isUserActionWait,
+        });
+        activeSends.delete(agentId);
+      } else {
+        yield* call(
+          handleQueuePath,
+          agentId,
+          payload,
+          wsId,
+          'Send already in flight, queueing message',
+        );
+        return;
+      }
     }
 
     activeSends.add(agentId);

@@ -83,6 +83,10 @@ vi.mock('$lib/store/slices/session-stats/session-stats-selectors', () => ({
   selectIsLoadingAgentStats: () => mocks.readable(() => mocks.statsState.loading),
   selectAgentStatsError: () => mocks.readable(() => mocks.statsState.error),
 }));
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentIsResponding: () => mocks.readable(() => false),
+  selectAgentIsWaiting: () => mocks.readable(() => false),
+}));
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentById: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
     select: (_state: unknown, agentId: string) => mocks.agents[agentId],

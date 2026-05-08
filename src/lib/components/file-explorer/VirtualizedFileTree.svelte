@@ -1191,7 +1191,7 @@
                         onSelectAgent?.(agentId);
                       }}
                     >
-                      <AuggieAvatar faceSeed={agentId} colorSeed={agentId} size={16} />
+                      <AuggieAvatar {agentId} size={16} />
                     </button>
                   {/each}
                 </div>

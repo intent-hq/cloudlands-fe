@@ -121,7 +121,18 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
       expect(sent).toBe(true);
       expect(broadcast).toHaveBeenCalledWith(
         'agent:stream:agent-1',
-        { type: 'chunk', data: 'secret', workspaceId: 'ws-1' },
+        {
+          type: 'chunk',
+          data: 'secret',
+          status: 'responding',
+          activationState: 'active',
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          stopReason: null,
+          workspaceId: 'ws-1',
+        },
         'ws-1',
       );
     } finally {

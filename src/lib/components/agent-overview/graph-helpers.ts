@@ -26,7 +26,10 @@ import { parseSuggestedPrompts } from '$lib/utils/messageParser';
  * Convert AgentSession.status (AgentStatus enum) to AgentNode status string.
  * Handles the various flags and enum values to determine the display status.
  */
-export function getNodeStatus(session: AgentSession | undefined): AgentNode['status'] {
+export function getNodeStatus(
+  session: AgentSession | undefined,
+  isResponding = false,
+): AgentNode['status'] {
   if (!session) return 'idle';
 
   // Terminal session statuses are authoritative — if the session is marked
@@ -37,8 +40,14 @@ export function getNodeStatus(session: AgentSession | undefined): AgentNode['sta
 
   // Check processing flags for responding state
   // These flags indicate the agent is actively working
-  if (session.isProcessing || session.isStreaming || (session as any).isResponding) {
+  if (isResponding || hasActiveResponseFlags(session)) {
     return 'responding';
+  }
+
+  // If backend/session status is explicitly idle and no active flags remain, trust
+  // that source of truth over stale assistant-message streaming metadata.
+  if (isExplicitlyIdleStatus(session.status)) {
+    return 'idle';
   }
 
   // Also check the last assistant message's streaming state.
@@ -61,12 +70,20 @@ export function getNodeStatus(session: AgentSession | undefined): AgentNode['sta
     case AgentStatus.Idle:
       return 'idle';
     case AgentStatus.Processing:
-      return 'responding';
+      return isResponding ? 'responding' : 'idle';
     case AgentStatus.Waiting:
       return 'waiting';
     default:
       return 'idle';
   }
+}
+
+function hasActiveResponseFlags(session: AgentSession): boolean {
+  return Boolean(session.isProcessing || session.isStreaming || (session as any).isResponding);
+}
+
+function isExplicitlyIdleStatus(status: AgentSession['status'] | string | undefined): boolean {
+  return status === AgentStatus.Idle || status === 'idle';
 }
 
 // ============================================================================
@@ -76,8 +93,6 @@ export function getNodeStatus(session: AgentSession | undefined): AgentNode['sta
 export interface StreamingState {
   /** Truncated streaming text preview */
   streamingText?: string;
-  /** Whether the agent is currently thinking */
-  isThinking: boolean;
   /** Name of the currently active tool call */
   activeToolName?: string;
   /** Input parameters of the currently active tool call */
@@ -110,9 +125,7 @@ function getLastMeaningfulLine(text: string): string {
  * Looks at the last message to determine current activity.
  */
 export function getStreamingState(session: AgentSession | undefined): StreamingState {
-  const result: StreamingState = {
-    isThinking: false,
-  };
+  const result: StreamingState = {};
 
   if (!session || !session.messages || session.messages.length === 0) {
     return result;
@@ -138,6 +151,10 @@ export function getStreamingState(session: AgentSession | undefined): StreamingS
     }
   }
 
+  if (isExplicitlyIdleStatus(session.status) && !hasActiveResponseFlags(session)) {
+    return result;
+  }
+
   // Check if the message is still streaming for active state.
   // Use explicit === false check: undefined means the field was never set (completed message),
   // only false means actively streaming and not yet complete.
@@ -145,11 +162,6 @@ export function getStreamingState(session: AgentSession | undefined): StreamingS
   if (!isStreaming) return result;
 
   for (const block of contentBlocks) {
-    // Check for thinking block
-    if (block.type === 'thinking') {
-      result.isThinking = true;
-    }
-
     // Check for active tool use (no result yet)
     if (block.type === 'tool_use' && block.name) {
       // Check if there's a corresponding tool_result

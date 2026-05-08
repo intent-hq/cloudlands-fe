@@ -78,7 +78,7 @@
               'bg-sidebar/50 cursor-pointer',
             )}
           >
-            <AuggieAvatar faceSeed="blank" colorSeed="blank" size={18} specialist={specialistInfo?.id ?? null} />
+            <AuggieAvatar seed="blank" size={18} specialist={specialistInfo?.id ?? null} />
             <span class="text-foreground font-medium">{displayLabel}</span>
             <Fa icon={faChevronDown} class="text-ghost" size={10} />
           </button>
@@ -96,7 +96,7 @@
               )}
               onclick={() => { onSpecialistChange?.(null); close(); }}
             >
-              <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} />
+              <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
                 <span class="font-medium text-foreground">General</span>
                 <span class="text-xs text-subtle">No specialized behavior</span>
@@ -118,7 +118,7 @@
                 )}
                 onclick={() => { onSpecialistChange?.(specialist.id); close(); }}
               >
-                <AuggieAvatar faceSeed="blank" colorSeed="blank" size={20} specialist={specialist.id} />
+                <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
                 <div class="flex flex-col min-w-0">
                   <span class="font-medium text-foreground">{specialist.name}</span>
                   <span class="text-xs text-subtle truncate">{specialist.description}</span>

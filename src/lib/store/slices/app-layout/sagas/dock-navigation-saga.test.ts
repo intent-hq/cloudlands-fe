@@ -32,13 +32,13 @@ vi.mock("$lib/store/utils/selector-channel-effects", () => ({
   },
 }));
 
-const { eventChannelMock, getReduxStoreMock, isFocusInEditableElementMock, isFocusInTerminalMock, isStreamingMock } =
+const { eventChannelMock, getReduxStoreMock, isFocusInEditableElementMock, isFocusInTerminalMock, isRespondingMock } =
   vi.hoisted(() => ({
     eventChannelMock: vi.fn(),
     getReduxStoreMock: vi.fn(),
     isFocusInEditableElementMock: vi.fn(),
     isFocusInTerminalMock: vi.fn(),
-    isStreamingMock: vi.fn(),
+    isRespondingMock: vi.fn(),
   }));
 
 vi.mock("redux-saga", async () => {
@@ -55,8 +55,10 @@ vi.mock("$lib/utils/keyboardShortcuts", () => ({
   isFocusInTerminal: isFocusInTerminalMock,
 }));
 
-vi.mock("$features/agent/agent-ipc-bridge", () => ({
-  agentService: { isStreaming: isStreamingMock },
+vi.mock("$lib/store/slices/agent-session/agent-session-selectors", () => ({
+  selectAgentIsResponding: {
+    select: isRespondingMock,
+  },
 }));
 
 import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
@@ -101,7 +103,7 @@ describe("dockNavigationSaga", () => {
     getReduxStoreMock.mockReturnValue({ getState: () => currentState });
     isFocusInEditableElementMock.mockReturnValue(false);
     isFocusInTerminalMock.mockReturnValue(false);
-    isStreamingMock.mockReturnValue(false);
+    isRespondingMock.mockReturnValue(false);
   });
 
   function getDrawerStateForWs1() {
@@ -181,7 +183,7 @@ describe("dockNavigationSaga", () => {
       subscriber(emit);
       return { close: vi.fn() };
     });
-    isStreamingMock.mockReturnValue(true);
+    isRespondingMock.mockReturnValue(true);
 
     createDockNavigationChannel("ws-1", getDrawerStateForWs1);
     const keydown = windowStub.addEventListener.mock.calls[0][1];

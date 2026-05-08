@@ -69,12 +69,7 @@
       )}
       title={option.description}
     >
-      <AuggieAvatar
-        faceSeed="blank"
-        colorSeed="blank"
-        size={avatarSize}
-        specialist={option.id}
-      />
+      <AuggieAvatar seed="blank" size={avatarSize} specialist={option.id} />
       <span class={cn('font-medium', textSize)}>{option.name}</span>
     </button>
   {/each}

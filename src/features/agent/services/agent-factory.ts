@@ -446,7 +446,7 @@ export class UnifiedAgentFactory {
         backendSessionId: sessionId,
         workspaceId: workspace.id as BrandedWorkspaceId,
         name: normalized.name,
-        status: AgentStatus.Active,
+        status: AgentStatus.Idle,
         messages: [],
         model: resolvedModel,
         provider, // Top-level ACP provider — immutable after creation

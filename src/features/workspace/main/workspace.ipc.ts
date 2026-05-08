@@ -960,6 +960,13 @@ export function setupWorkspaceIPC(): void {
                         agentSessionUpdated({
                           workspaceId: workspace.id,
                           sessionId: '',
+                          status: null,
+                          activationState: null,
+                          isActive: null,
+                          isStreaming: null,
+                          isProcessing: null,
+                          isResponding: null,
+                          stopReason: null,
                         }),
                       );
                     }

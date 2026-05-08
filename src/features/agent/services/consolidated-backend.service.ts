@@ -47,12 +47,14 @@ export const unifiedOrchestrator = {
     content: string,
     context?: unknown[],
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    workspaceId?: string,
   ): Promise<QueueOperationResult> {
     const result = (await invoke(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, {
       agentId,
       content,
       contextItems: context,
       imageBlocks,
+      workspaceId,
     })) as { success: boolean; data?: QueueOperationResult; error?: { message?: string } };
     return unwrapIpcResponse(result) as QueueOperationResult;
   },

@@ -16,6 +16,12 @@
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
+  import {
+    selectAgentIsResponding,
+    selectAgentIsThinking,
+    selectAgentIsWaiting,
+    selectAgentIsWaitingForOtherAgents,
+  } from '$lib/store/slices/agent-session/agent-session-selectors';
   import Fa from 'svelte-fa';
   import { faHourglass, faFile, faStickyNote } from '@fortawesome/free-solid-svg-icons';
 
@@ -33,27 +39,37 @@
   let { agent, activeFile, activeNote, agentNames, onclick, onmouseenter, onmouseleave }: Props =
     $props();
 
-  const isActive = $derived(agent.status === 'responding');
-  const isWaiting = $derived(
-    agent.status === 'waiting' || (agent.waitingForAgentIds && agent.waitingForAgentIds.length > 0),
-  );
-
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const agentIsResponding$ = selectAgentIsResponding(agent.agentId);
+  const isActive = $derived($agentIsResponding$);
   // Get names of agents we're waiting for
   const waitingForNames = $derived.by(() => {
     if (!agent.waitingForAgentIds || agent.waitingForAgentIds.length === 0) return [];
     return agent.waitingForAgentIds.map((id) => agentNames?.get(id) || 'Agent').slice(0, 2);
   });
 
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const agentIsThinking$ = selectAgentIsThinking(agent.agentId);
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const agentIsWaiting$ = selectAgentIsWaiting(agent.agentId);
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  const isWaitingForOtherAgents = $derived($agentIsWaitingForOtherAgents$);
+
   // Map agent status to avatar state
-  function getAvatarState(status: AgentNode['status']): AvatarState {
-    if (status === 'responding') return 'running';
-    if (status === 'waiting') return 'waiting';
+  function getAvatarState(
+    status: AgentNode['status'],
+    waitingForOtherAgents: boolean,
+    responding: boolean,
+  ): AvatarState {
+    if (waitingForOtherAgents) return 'waiting';
+    if (responding) return 'running';
     if (status === 'completed') return 'completed';
     if (status === 'failed') return 'failed';
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status));
+  const avatarState = $derived(getAvatarState(agent.status, isWaitingForOtherAgents, isActive));
 </script>
 
 <div class="agent-card-wrapper flex items-center gap-3 shadow">
@@ -71,8 +87,8 @@
     type="button"
     class="agent-card flex flex-col items-center px-2.5 py-4 bg-card border border-border
       hover:shadow transition-all cursor-pointer"
-    class:border-primary={isWaiting}
-    class:border-2={isWaiting}
+    class:border-primary={$agentIsWaiting$}
+    class:border-2={$agentIsWaiting$}
     style="width: {CARD_WIDTH}px; height: {CARD_HEIGHT}px; anchor-name: --agent-hierarchy-{agent.agentId};"
     {onclick}
     {onmouseenter}
@@ -97,26 +113,26 @@
 
     <!-- Status footer - shows current activity or last response -->
     <div class="status-footer mt-auto pt-2 w-full text-center">
-      {#if isWaiting && waitingForNames.length > 0}
+      {#if isWaitingForOtherAgents}
         <!-- Waiting for other agents -->
         <div class="text-sm text-primary flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />
           <span class="truncate">Waiting for {waitingForNames.join(', ')}</span>
         </div>
-      {:else if isActive}
+      {:else if isActive || $agentIsThinking$}
         <!-- Active: always show spinner + descriptive label -->
         {@const toolDisplay = agent.activeToolName ? classifyTool(agent.activeToolName, agent.activeToolInput || {}) : null}
         <div class="flex flex-col items-center gap-1">
           <div class="flex items-center justify-center gap-1.5">
             <Spinner seed={agent.agentId} size={4} />
-            {#if toolDisplay && toolDisplay.subject}
+            {#if $agentIsThinking$}
+              <span class="text-xs text-subtle">Thinking...</span>
+            {:else if toolDisplay && toolDisplay.subject}
               <span class="status-pill text-xs px-1.5 py-0.5 bg-muted/80 rounded-md text-subtle truncate max-w-[130px]">
                 {toolDisplay.verb} {toolDisplay.subject}
               </span>
             {:else if toolDisplay}
               <span class="text-xs text-subtle">{toolDisplay.verb}...</span>
-            {:else if agent.isThinking}
-              <span class="text-xs text-subtle">Thinking...</span>
             {:else}
               <span class="text-xs text-subtle">Responding...</span>
             {/if}

@@ -40,6 +40,7 @@ import {
   AgentId as createAgentId,
   WorkspaceId as createWorkspaceId,
 } from '$shared/types/branded-ids';
+import type { CanonicalAgentStatusFields } from '../../events/types';
 import type { IpcMainInvokeEvent } from 'electron';
 import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
@@ -2950,7 +2951,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Mark agent as responding for event subscription service
       // This allows events to be queued until the agent becomes idle
       try {
-        updateAgentStatus(request.workspaceId, request.agentId, 'responding');
+        updateAgentStatus(request.workspaceId, request.agentId, 'responding', {
+          activationState: 'active',
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+        });
       } catch (err) {
         logger.warn('Failed to set agent status to responding', {
           agentId: request.agentId,
@@ -3596,10 +3603,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             });
           }
 
-          // CRITICAL FIX: Persist any accumulated content before cleanup
-          // This ensures tool calls and partial content are saved even when errors occur
+          // CRITICAL FIX: Persist any accumulated content before cleanup.
+          // Interruption cleanup must persist a non-streaming snapshot; using the
+          // normal streaming persister here would re-dirty disk with isStreaming=true.
           try {
-            await persistStreamingState(isInterruption ? 'interruption' : 'error-recovery');
+            if (isInterruption) {
+              await this.persistInterruptedStreamingSessionState(
+                request.agentId,
+                'interruption',
+                request.assistantMessageId,
+                request.assistantAppMessageId,
+              );
+            } else {
+              await persistStreamingState('error-recovery');
+            }
             logger.info('Backend: Persisted streaming state on error/interruption', {
               agentId: request.agentId,
               isInterruption,
@@ -5428,7 +5445,57 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    * @param data - The data to send
    * @returns true if the message was sent successfully
    */
+  private withCanonicalStreamStatus(data: any): any {
+    const type = data?.type;
+    let fields: CanonicalAgentStatusFields;
+
+    if (type === 'status' || type === 'start') {
+      fields = {
+        status: 'responding',
+        activationState: 'active',
+        isActive: true,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: null,
+      };
+    } else if (type === 'complete' || type === 'end') {
+      fields = {
+        status: 'idle',
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: data?.stopReason ?? data?.finishReason ?? null,
+      };
+    } else if (type === 'error') {
+      fields = {
+        status: 'failed',
+        activationState: 'error',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: data?.stopReason ?? data?.finishReason ?? data?.error ?? null,
+      };
+    } else {
+      fields = {
+        status: 'responding',
+        activationState: 'active',
+        isActive: true,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: null,
+      };
+    }
+
+    return { ...fields, ...data };
+  }
+
   private sendStreamToRenderer(agentId: string, channel: string, data: any): boolean {
+    const payload = this.withCanonicalStreamStatus(data);
     const workspaceId = this.streamWorkspaceIds.get(agentId);
     if (!workspaceId) {
       logger.warn('sendStreamToRenderer: no workspace tracked, dropping stream event', {
@@ -5448,9 +5515,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       });
     }
 
-    const dataWithWorkspaceId =
-      data && typeof data === 'object' && !Array.isArray(data) ? { ...data, workspaceId } : data;
-    return this.sendToRenderer(channel, dataWithWorkspaceId, targetWindowIds, workspaceId);
+    const payloadWithWorkspaceId =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? { ...payload, workspaceId }
+        : payload;
+    return this.sendToRenderer(channel, payloadWithWorkspaceId, targetWindowIds, workspaceId);
   }
 
   /**
@@ -5878,6 +5947,139 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   }
 
   /**
+   * Persist the interrupted stream snapshot as non-streaming. This mirrors the
+   * mid-stream persistence path's accumulated content handling while clearing
+   * both session-level and message-level streaming flags before saveAgent.
+   */
+  private async persistInterruptedStreamingSessionState(
+    agentId: string,
+    reason: string,
+    assistantMessageId?: string,
+    assistantAppMessageId?: string,
+  ): Promise<void> {
+    if (this.terminatingAgents.has(agentId)) {
+      logger.debug('persistInterruptedStreamingSessionState: skipped, agent terminating', {
+        agentId,
+        reason,
+      });
+      return;
+    }
+
+    try {
+      const backend = await this.getBackend();
+      const backendSession = backend.getSession(agentId);
+      if (!backendSession) {
+        logger.warn('Backend: No backend session during interruption cleanup', {
+          agentId,
+          reason,
+        });
+        return;
+      }
+
+      if (this.terminatingAgents.has(agentId)) {
+        logger.debug('persistInterruptedStreamingSessionState: skipped at save, agent terminating', {
+          agentId,
+          reason,
+        });
+        return;
+      }
+
+      const { contentBlocks: currentContentBlocks } =
+        messageAccumulator.getPartialContent(agentId);
+      if (!Array.isArray(backendSession.messages)) {
+        backendSession.messages = [];
+      }
+
+      const interruptedMsgIndex = this.findInterruptedAssistantMessageIndex(
+        backendSession.messages,
+        assistantMessageId,
+      );
+
+      const interruptedMetadata = { interrupted: true, stopReason: 'cancelled' };
+      if (interruptedMsgIndex >= 0) {
+        const existingMessage = backendSession.messages[interruptedMsgIndex];
+        backendSession.messages[interruptedMsgIndex] = {
+          ...existingMessage,
+          appMessageId:
+            existingMessage.appMessageId || assistantAppMessageId || createAppMessageId(),
+          contentBlocks:
+            currentContentBlocks.length > 0
+              ? currentContentBlocks
+              : existingMessage.contentBlocks,
+          isStreaming: false,
+          streamingComplete: true,
+          metadata: {
+            ...(existingMessage.metadata || {}),
+            ...interruptedMetadata,
+          },
+        };
+      } else if (currentContentBlocks.length > 0) {
+        backendSession.messages.push({
+          id: assistantMessageId || `msg_${uuidv4()}`,
+          appMessageId: assistantAppMessageId || createAppMessageId(),
+          role: 'assistant' as const,
+          contentBlocks: currentContentBlocks,
+          timestamp: new Date().toISOString(),
+          isStreaming: false,
+          streamingComplete: true,
+          metadata: interruptedMetadata,
+        });
+      }
+
+      backendSession.status = AgentStatus.Idle;
+      backendSession.isStreaming = false;
+      (backendSession as any).isProcessing = false;
+      backendSession.updatedAt = new Date();
+
+      const saveResult = await agentPersistence.saveAgent(backendSession);
+      if (saveResult.success) {
+        logger.info('Backend: Interrupted streaming state persisted', {
+          agentId,
+          reason,
+          messageUpdated: interruptedMsgIndex >= 0,
+          blocksCount: currentContentBlocks.length,
+        });
+      } else {
+        logger.warn('Backend: Failed to persist interrupted streaming state', {
+          agentId,
+          reason,
+          error: saveResult.error,
+        });
+      }
+    } catch (error) {
+      logger.warn('Backend: Error persisting interrupted streaming state', {
+        agentId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private findInterruptedAssistantMessageIndex(
+    messages: AgentMessage[],
+    assistantMessageId?: string,
+  ): number {
+    if (assistantMessageId) {
+      const exactIndex = messages.findIndex(
+        (message: any) => message.role === 'assistant' && message.id === assistantMessageId,
+      );
+      if (exactIndex >= 0) return exactIndex;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index] as any;
+      if (
+        message?.role === 'assistant' &&
+        (message.isStreaming === true || message.streamingComplete === false)
+      ) {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+
+  /**
    * Repair a persisted agent session whose streaming flags are stale because
    * the provider/bridge was torn down mid-stream. Clears isStreaming /
    * isProcessing, forces status to Idle, optionally appends a final assistant
@@ -5902,8 +6104,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // flags say idle.
     if (Array.isArray(agent.messages)) {
       for (const msg of agent.messages) {
-        if (msg && (msg as any).isStreaming) {
+        if (msg && ((msg as any).isStreaming || (msg as any).streamingComplete === false)) {
           (msg as any).isStreaming = false;
+          (msg as any).streamingComplete = true;
         }
       }
     }
@@ -7808,11 +8011,12 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     params: {
       agentId: string;
       content: string;
+      workspaceId?: string;
       contextItems?: any[];
       imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
     },
   ): Promise<{ success: boolean; queuedMessage?: QueuedMessage; error?: string }> {
-    const { agentId, content, contextItems, imageBlocks } = params;
+    const { agentId, content, workspaceId: queuedWorkspaceId, contextItems, imageBlocks } = params;
 
     try {
       const queue = this.messageQueues.get(agentId) || [];
@@ -7832,8 +8036,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       queue.push(queuedMessage);
       this.messageQueues.set(agentId, queue);
 
-      // Track workspace ID for this agent so the watchdog can process stuck queues
-      const workspaceId = this.streamWorkspaceIds.get(agentId);
+      // Track workspace ID for this agent so the watchdog can process stuck queues.
+      // Queue requests can be created from stale renderer busy state after the backend
+      // has already gone idle, so prefer the request workspaceId and fall back to the
+      // active stream mapping for truly in-flight queues.
+      const workspaceId = queuedWorkspaceId ?? this.streamWorkspaceIds.get(agentId);
       if (workspaceId) {
         this.queueAgentWorkspaceIds.set(agentId, workspaceId);
       }
@@ -7845,15 +8052,21 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         agentId,
         messageId: queuedMessage.id,
         position: queuedMessage.position,
+        workspaceId,
         hasImageBlocks: !!imageBlocks?.length,
         imageCount: imageBlocks?.length || 0,
       });
 
-      // Notify frontend of queue update (workspace-scoped)
+      // Notify frontend of queue update (workspace-scoped). Use the resolved workspaceId
+      // so stale-renderer-busy queue requests without active stream mappings still notify.
+      const queueTargetWindowIds = workspaceId
+        ? getWindowIdsForWorkspace(workspaceId)
+        : this.getWorkspaceWindowsForAgent(agentId);
       this.sendToRenderer(
         'agent:queue:updated',
         { agentId, queue },
-        this.getWorkspaceWindowsForAgent(agentId),
+        queueTargetWindowIds,
+        workspaceId,
       );
 
       return { success: true, queuedMessage };
@@ -8383,7 +8596,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // This ensures queued events for this agent are delivered first,
     // and the agent's status is correct when event handlers run.
     try {
-      updateAgentStatus(workspaceId, agentId, 'idle');
+      updateAgentStatus(workspaceId, agentId, 'idle', {
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: finishReason,
+      });
     } catch (err) {
       logger.warn('Failed to update agent subscription status', { agentId, error: err });
     }
@@ -8545,6 +8764,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isBackground,
           completionReport,
           parentAgentId,
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: finishReason,
         },
       }));
 
@@ -8896,7 +9122,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // Step 1: Set agent status to failed BEFORE emitting the event.
     // This ensures correct ordering for subscription delivery.
     try {
-      updateAgentStatus(workspaceId, agentId, 'failed');
+      updateAgentStatus(workspaceId, agentId, 'failed', {
+        activationState: 'error',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: error,
+      });
     } catch (err) {
       logger.warn('Failed to set agent status to failed', { agentId, error: err });
     }
@@ -8935,6 +9168,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           error,
           isBackground,
           parentAgentId,
+          status: 'failed',
+          activationState: 'error',
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: error,
         },
       }));
       logger.debug('Emitted agent:failed event via Redux', {
