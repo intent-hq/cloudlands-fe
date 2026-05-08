@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess } from 'node:child_process';
 import { HttpMcpBridge } from '../http-mcp-bridge';
 import path from 'path';
 import fs from 'fs/promises';
@@ -14,11 +14,13 @@ import fs from 'fs/promises';
 // Mock electron-store
 vi.mock('electron-store', () => ({
   __esModule: true,
-  default: vi.fn().mockImplementation(() => ({
-    set: vi.fn(),
-    get: vi.fn(),
-    store: {},
-  })),
+  default: vi.fn().mockImplementation(function () {
+    return {
+      set: vi.fn(),
+      get: vi.fn(),
+      store: {},
+    };
+  }),
 }));
 
 // Mock unified event bus
@@ -43,6 +45,7 @@ vi.mock('../../features/protocol/main/protocol-adapter', () => ({
 describe('MCP STDIO Proxy Integration Tests', () => {
   let bridge: HttpMcpBridge;
   let stdioProcess: ChildProcess;
+  let nonAsciiStdioProcess: ChildProcess;
   const testPort = 3003; // Use different port to avoid conflicts
   const testWorkspaceId = 'test-workspace';
   const testWorkspacePath = '/tmp/test-workspace';
@@ -63,6 +66,9 @@ describe('MCP STDIO Proxy Integration Tests', () => {
     // Clean up STDIO process
     if (stdioProcess && !stdioProcess.killed) {
       stdioProcess.kill();
+    }
+    if (nonAsciiStdioProcess && !nonAsciiStdioProcess.killed) {
+      nonAsciiStdioProcess.kill();
     }
 
     // Stop HTTP bridge
@@ -276,5 +282,94 @@ describe('MCP STDIO Proxy Integration Tests', () => {
         expect(response.error.message).toBeDefined();
       }
     }, 10000);
+
+    it('should handle tools/list with a non-ASCII agent name', async () => {
+      const stdioServerPath = path.join(process.cwd(), 'dist/main/mcp-stdio-server.js');
+
+      let serverExists = false;
+      try {
+        await fs.access(stdioServerPath);
+        serverExists = true;
+      } catch {
+        // Will use TypeScript version with tsx
+      }
+
+      const command = serverExists ? 'node' : 'npx';
+      const args = serverExists
+        ? [stdioServerPath, testWorkspaceId, testWorkspacePath]
+        : ['tsx', 'src/main/mcp-stdio-server.ts', testWorkspaceId, testWorkspacePath];
+      const env = {
+        ...process.env,
+        HTTP_MCP_PORT: testPort.toString(),
+        HTTP_MCP_HOST: 'localhost',
+        AGENT_NAME: 'Coordinator — em-dash test',
+      };
+
+      nonAsciiStdioProcess = spawn(command, args, {
+        cwd: process.cwd(),
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('STDIO proxy failed to start within timeout'));
+        }, 10000);
+
+        const checkForReadyMessage = (text: string) => {
+          if (
+            text.includes('HTTP MCP server is available') ||
+            text.includes('MCP STDIO proxy ready')
+          ) {
+            clearTimeout(timeout);
+            resolve(void 0);
+          }
+        };
+
+        nonAsciiStdioProcess.stderr?.on('data', (data) => checkForReadyMessage(data.toString()));
+        nonAsciiStdioProcess.stdout?.on('data', (data) => checkForReadyMessage(data.toString()));
+        nonAsciiStdioProcess.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+
+      nonAsciiStdioProcess.stdin?.write(
+        `${JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 3 })}\n`,
+      );
+
+      const response = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('No response received within timeout'));
+        }, 5000);
+
+        let buffer = '';
+        const onData = (data: Buffer) => {
+          buffer += data.toString();
+          let idx: number;
+          while ((idx = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 1);
+            if (!line) continue;
+            try {
+              const responseObj = JSON.parse(line);
+              clearTimeout(timeout);
+              nonAsciiStdioProcess.stdout?.off('data', onData);
+              resolve(responseObj);
+              return;
+            } catch {
+              // not a complete JSON line yet, continue accumulating
+            }
+          }
+        };
+
+        nonAsciiStdioProcess.stdout?.on('data', onData);
+      });
+
+      expect(response.jsonrpc).toBe('2.0');
+      expect(response.id).toBe(3);
+      expect(response.result?.tools).toBeDefined();
+    }, 15000);
   });
 });

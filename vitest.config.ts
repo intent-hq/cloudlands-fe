@@ -20,7 +20,6 @@ export default defineConfig(async () => {
         '**/.{idea,git,cache,output,temp}/**',
         '**/test/**', // Exclude Playwright tests directory
         '**/*.ct.spec.ts', // Exclude Playwright component tests
-        '**/mcp-stdio-proxy.test.ts', // Exclude MCP STDIO proxy integration tests
         '**/parallel-runner/**', // Exclude parallel-runner tests (separate project)
         '**/remote-env.test.ts', // Exclude remote env tests - requires real environment
         '**/remote-git.test.ts', // Exclude remote git tests - requires real environment

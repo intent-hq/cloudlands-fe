@@ -179,13 +179,15 @@ async function makeHttpRequest(
       hasTurnNumber: !!turnNumber,
     });
 
+    const safeAgentId = agentId.replace(/[^\x20-\x7E]/g, '?');
+    const safeAgentName = agentName.replace(/[^\x20-\x7E]/g, '?');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
       'X-Workspace-Id': workspaceId,
       'X-Workspace-Path': workspacePath,
-      'X-Agent-Id': agentId,
-      'X-Agent-Name': agentName,
+      'X-Agent-Id': safeAgentId,
+      'X-Agent-Name': safeAgentName,
     };
 
     // Add optional headers if available
