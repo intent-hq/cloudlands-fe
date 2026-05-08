@@ -130,6 +130,49 @@ describe('WorkspaceHoverCard', () => {
     await waitFor(() => expect(screen.getByText('Loaded Workspace Agent')).toBeTruthy());
   });
 
+  it('prefers live session status while preserving summary display metadata', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      {
+        id: 'agent-duplicate',
+        status: 'processing',
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-live-name',
+        name: 'Live Named Agent',
+        status: 'processing',
+        messages: [],
+      } as AgentSession,
+    ];
+
+    await renderHoverCard({
+      agentSummary: {
+        count: 2,
+        agents: [
+          {
+            id: 'agent-duplicate',
+            name: 'Snapshot Specialist Agent',
+            status: 'waiting',
+            specialist: 'implementor',
+            lastActivity: '2026-05-05T18:00:00.000Z',
+          },
+          {
+            id: 'agent-live-name',
+            name: 'Stale Snapshot Agent',
+            status: 'waiting',
+          },
+        ],
+      },
+    });
+
+    const row = screen.getAllByRole('listitem')[0];
+    expect(screen.getByText('Snapshot Specialist Agent')).toBeTruthy();
+    expect(screen.getByText('Live Named Agent')).toBeTruthy();
+    expect(screen.queryByText('Stale Snapshot Agent')).toBeNull();
+    expect(row.getAttribute('aria-label')).toContain('Processing');
+    expect(row.getAttribute('aria-label')).not.toContain('Waiting');
+  });
+
   it('renders the workspace status message prominently without truncation classes', async () => {
     await renderHoverCard({
       statusMessage: 'Reviewing the richer workspace hover card before wiring it into lists.',

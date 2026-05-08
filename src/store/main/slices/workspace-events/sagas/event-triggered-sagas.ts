@@ -8,9 +8,14 @@
  * 1. agent:message:sent → message delivery between agents
  * 2. agent:idle → auto-commit of agent changes
  * 3. agent:idle → OS notification + bell (NotificationService)
+ * 4. agent lifecycle → workspace summary invalidation (keeps agentSummary
+ *    snapshot fresh for the workspace list / hover card)
  */
 
 import { call, takeEvery } from "typed-redux-saga";
+import { workspaceService } from "../../../../../features/workspace/main/workspace.service";
+import { Logger } from "../../../../../shared/logger";
+import { restoreWorkspaceId } from "../../../../../shared/types/type-guards";
 import { workspaceEventAccepted } from "../workspace-events-slice";
 import type {
   AgentIdleEvent,
@@ -190,6 +195,47 @@ export function* handleAgentIdleNotification(
 }
 
 // ---------------------------------------------------------------------------
+// 4. Workspace summary invalidation: agent lifecycle events
+//
+// The workspace.agentSummary snapshot used by the workspace list and hover
+// card is rebuilt by `workspaceService` on demand and is otherwise stale.
+// Invalidating it on agent lifecycle transitions ensures non-mounted
+// workspaces also reflect up-to-date agent statuses.
+// ---------------------------------------------------------------------------
+
+const SUMMARY_INVALIDATING_AGENT_EVENT_TYPES = new Set<string>([
+  "agent:created",
+  "agent:deleted",
+  "agent:idle",
+  "agent:status-changed",
+  "agent:completed",
+  "agent:failed",
+]);
+
+export function* handleAgentLifecycleForSummary(
+  action: ReturnType<typeof workspaceEventAccepted>,
+) {
+  const [event] = action.payload;
+  if (!SUMMARY_INVALIDATING_AGENT_EVENT_TYPES.has(event.type)) return;
+  if (!event.workspaceId) return;
+
+  try {
+    const workspaceId = restoreWorkspaceId(event.workspaceId);
+    if (!workspaceId) return;
+    yield* call([workspaceService, workspaceService.onAgentLifecycleChanged], {
+      workspaceId,
+    });
+  } catch (error) {
+    const logger = new Logger("EventTriggeredAgents");
+    logger.error(
+      "[SUMMARY-INVALIDATION] Error invalidating workspace summary for agent event",
+      error as Error,
+      { workspaceId: event.workspaceId, eventType: event.type },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
 
@@ -197,5 +243,6 @@ export function* eventTriggeredSagas() {
   yield* takeEvery(workspaceEventAccepted, handleMessageSentEvent);
   yield* takeEvery(workspaceEventAccepted, handleAgentIdleAutoCommit);
   yield* takeEvery(workspaceEventAccepted, handleAgentIdleNotification);
+  yield* takeEvery(workspaceEventAccepted, handleAgentLifecycleForSummary);
 }
 

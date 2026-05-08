@@ -227,19 +227,40 @@
     };
   }
 
+  function mergeAgentFields(
+    preferred: WorkspaceAgentInfo,
+    fallback: WorkspaceAgentInfo,
+  ): WorkspaceAgentInfo {
+    return {
+      ...fallback,
+      ...preferred,
+      name:
+        preferred.name && preferred.name !== 'Agent'
+          ? preferred.name
+          : fallback.name || preferred.name,
+      specialist: preferred.specialist ?? fallback.specialist,
+      lastActivity: preferred.lastActivity ?? fallback.lastActivity,
+    };
+  }
+
   function mergeAgentInfo(...agentGroups: WorkspaceAgentInfo[][]) {
-    const merged: WorkspaceAgentInfo[] = [];
-    const seen = new Set<string>();
+    const agentIds: string[] = [];
+    const agentsById = new Map<string, WorkspaceAgentInfo>();
 
     for (const agents of agentGroups) {
       for (const agent of agents) {
-        if (seen.has(agent.id)) continue;
-        seen.add(agent.id);
-        merged.push(agent);
+        const existingAgent = agentsById.get(agent.id);
+        if (existingAgent) {
+          agentsById.set(agent.id, mergeAgentFields(existingAgent, agent));
+          continue;
+        }
+
+        agentIds.push(agent.id);
+        agentsById.set(agent.id, agent);
       }
     }
 
-    return merged;
+    return agentIds.map((agentId) => agentsById.get(agentId)!);
   }
 
   // Subscribe to unread state via Redux selector for reactivity
@@ -315,7 +336,10 @@
 
   let hoverAgentInfos = $derived.by(() => {
     const summaryAgents = workspace?.agentSummary?.agents ?? [];
-    const knownAgents = mergeAgentInfo(summaryAgents, loadedAgentInfos);
+    // Live Redux session data takes precedence over the on-disk agentSummary
+    // snapshot, which is rebuilt asynchronously by the main process and can
+    // lag behind real-time agent status transitions.
+    const knownAgents = mergeAgentInfo(loadedAgentInfos, summaryAgents);
     const knownAgentIds = new Set(knownAgents.map((agent) => agent.id));
     const activePlaceholders = [...activeAgentIdSet]
       .filter((agentId) => !knownAgentIds.has(agentId))

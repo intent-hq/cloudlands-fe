@@ -4173,6 +4173,12 @@ task:
     this.invalidateWorkspaceSummaries(workspaceId, 'git-status-changed');
   }
 
+  /** Handle agent lifecycle events (created/deleted/idle/status-changed/completed/failed). */
+  public onAgentLifecycleChanged({ workspaceId }: { workspaceId: WorkspaceId }): void {
+    if (!workspaceId) return;
+    this.invalidateWorkspaceSummaries(workspaceId, 'agent-lifecycle-changed');
+  }
+
   /**
    * Cleanup service resources (timers, listeners, etc.)
    */
