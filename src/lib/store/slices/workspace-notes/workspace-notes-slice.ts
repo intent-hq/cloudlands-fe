@@ -12,6 +12,7 @@ import {
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from "./workspace-notes-types";
+import { normalizeNoteUpdatePatch } from "./workspace-notes-normalization";
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
 
@@ -103,12 +104,15 @@ export const clearNewlyCreatedNoteId = createAction<[workspaceId: string]>(
 /** Apply a local note content/title update (optimistic, user-driven) */
 export const applyLocalNoteUpdate = createAction(
   "workspaceNotes/applyLocalNoteUpdate",
-  (workspaceId: string, noteId: string, updates: Partial<Note>) => ({
-    workspaceId,
-    noteId,
-    updates,
-    timestamp: updates.updatedAt || new Date().toISOString(),
-  }),
+  (workspaceId: string, noteId: string, updates: Partial<Note>) => {
+    const normalizedUpdates = normalizeNoteUpdatePatch(updates);
+    return {
+      workspaceId,
+      noteId,
+      updates: normalizedUpdates,
+      timestamp: typeof normalizedUpdates.updatedAt === "string" ? normalizedUpdates.updatedAt : new Date().toISOString(),
+    };
+  },
 );
 
 /** Add an optimistic note (for immediate UI feedback before server confirms) */

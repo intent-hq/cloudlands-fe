@@ -153,8 +153,12 @@ import {
   chatSendStarted,
   chatStuckStateCleared,
   streamCompleted,
+  streamStatusReceived,
 } from "../chat-state-slice";
 import { STATE_RECONCILIATION_INTERVAL_MS } from "../chat-state-types";
+import { setLocalStorageJSON } from "../../../utils/safe-local-storage-saga";
+
+const setLocalStorageJSONMock = setLocalStorageJSON as unknown as ReturnType<typeof vi.fn>;
 
 
 
@@ -286,6 +290,69 @@ describe("chat-state-saga: per-agentId dedup (P2-5)", () => {
     // If dedup works, we shouldn't accumulate tasks — only the latest set runs
     // This test passes as long as it doesn't hang or error from task accumulation
     expect(true).toBe(true);
+  });
+});
+
+describe("chat-state-saga: clone-safe status event persistence", () => {
+  beforeEach(() => {
+    setLocalStorageJSONMock.mockReset();
+  });
+
+  it("persists sanitized status events when Redux state contains non-cloneable payloads", async () => {
+    const { chatStateSaga } = await import("./chat-state-saga");
+    const channel = stdChannel();
+    const unsafeEvent: Record<string, unknown> = {
+      phase: 'tool-call',
+      message: new Error('tool failed'),
+      level: 'error',
+      timestamp: 3000,
+      callback: () => undefined,
+      token: Symbol('token'),
+    };
+    unsafeEvent.self = unsafeEvent;
+
+    setLocalStorageJSONMock.mockImplementation((_key: string, value: unknown) => {
+      expect(JSON.parse(JSON.stringify(value))).toEqual(value);
+      expect(() => structuredClone(value)).not.toThrow();
+    });
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => channel.put(action),
+        getState: () => ({
+          chatState: {
+            byAgentId: {
+              "agent-1": {
+                isStreaming: false,
+                isProcessing: false,
+                isStalled: false,
+                lastChunkTime: null,
+                streamingStartTime: null,
+                lastChunkReceivedAt: null,
+                statusEvents: [unsafeEvent],
+                trackedWorkspaceId: null,
+              },
+            },
+          },
+          agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+          workspaceAgents: { byWorkspaceId: {} },
+        }),
+      },
+      chatStateSaga,
+    );
+
+    channel.put(streamStatusReceived("agent-1", unsafeEvent, false));
+    await Promise.resolve();
+
+    expect(setLocalStorageJSONMock).toHaveBeenCalledWith('chat-status-events:agent-1', [
+      {
+        phase: 'tool-call',
+        message: 'tool failed',
+        level: 'error',
+        timestamp: 3000,
+      },
+    ]);
   });
 });
 

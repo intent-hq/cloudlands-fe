@@ -10,6 +10,7 @@ import type {
   InitialMessagePayload,
   InitializeChatOptions,
 } from './chat-state-types';
+import { sanitizeStatusEvent } from './chat-state-serialization';
 
 // ============================================================================
 // Initial State
@@ -182,9 +183,14 @@ export const streamErrored = createAction<
 >('chatState/streamErrored');
 
 /** Status event received during streaming */
-export const streamStatusReceived = createAction<
-  [agentId: string, statusEvent: StatusEvent, resetFirstChunk: boolean]
->('chatState/streamStatusReceived');
+export const streamStatusReceived = createAction(
+  'chatState/streamStatusReceived',
+  (agentId: string, statusEvent: unknown, resetFirstChunk: boolean): [string, StatusEvent, boolean] => [
+    agentId,
+    sanitizeStatusEvent(statusEvent, Date.now()),
+    resetFirstChunk,
+  ],
+);
 
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>(
@@ -400,7 +406,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
-      statusEvents: [...agent.statusEvents, statusEvent],
+      statusEvents: [...agent.statusEvents, sanitizeStatusEvent(statusEvent)],
       receivedFirstChunk: resetFirstChunk ? false : agent.receivedFirstChunk,
     });
   })

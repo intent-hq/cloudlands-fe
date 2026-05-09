@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { ChangeStage } from "$features/file-tracking/types";
 
 vi.mock("typed-redux-saga", () => ({
   call: function* (fn: any, ...args: any[]) {
@@ -27,28 +28,13 @@ vi.mock("typed-redux-saga", () => ({
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { hydrateWorkspaceNavigation, updateWorkspaceCodeReview, workspaceNavigationStorageKey } from "../workspace-navigation-slice";
 import { selectWorkspaceNavigationState } from "../workspace-navigation-selectors";
-import { panelContextSaga } from "./panel-context-saga";
 import { removeWorkspaceEntity } from "../../workspace/workspace-slice";
-import { cleanupDeletedWorkspaceCacheSaga, hydrateWorkspaceNavigationStateSaga, persistWorkspaceNavigationSaga, retroactiveNavigationMountCheckSaga, watchWorkspaceNavigationForWorkspaceSaga, watchWorkspaceNavigationLifecycleSaga, watchWorkspaceNavigationPersistenceSaga, workspaceNavigationSaga } from "./workspace-navigation-saga";
+import { cleanupDeletedWorkspaceCacheSaga, hydrateWorkspaceNavigationStateSaga, persistWorkspaceNavigationSaga, retroactiveNavigationMountCheckSaga, watchWorkspaceNavigationForWorkspaceSaga, watchWorkspaceNavigationLifecycleSaga } from "./workspace-navigation-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 
-describe("workspaceNavigationSaga", () => {
+describe("workspace navigation sagas", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("forks lifecycle and persistence watchers", () => {
-    testSaga(workspaceNavigationSaga)
-      .next()
-      .fork(watchWorkspaceNavigationLifecycleSaga)
-      .next()
-      .fork(retroactiveNavigationMountCheckSaga)
-      .next()
-      .fork(watchWorkspaceNavigationPersistenceSaga)
-      .next()
-      .fork(panelContextSaga)
-      .next()
-      .isDone();
   });
 
   it("subscribes to workspace mount, unmount, and remove lifecycle actions", () => {
@@ -102,6 +88,129 @@ describe("workspaceNavigationSaga", () => {
       type: "notes",
       selectedNoteId: "note-1",
     });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("sanitizes persisted selected tracked changes without preserving malformed extra fields", () => {
+    const stored = {
+      version: 2,
+      workspace: { id: "ws-missing-stats", status: "ready" },
+      mainPanel: {
+        type: "file-tracking-diff",
+        selectedFile: "src/example.ts",
+        selectedChangeId: "change-1",
+        selectedTrackedChange: {
+          id: "change-1",
+          file: "src/example.ts",
+          relativePath: "src/example.ts",
+          stage: ChangeStage.Unstaged,
+          status: "modified",
+          commitHash: "abc123",
+          prNumber: 610,
+          content: {
+            oldContent: "old",
+            newContent: "new",
+            diffSha: "diff-sha",
+            isFullFileContent: true,
+            unexpectedContentKey: "drop me",
+          },
+          hunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 1,
+              lines: [
+                {
+                  type: "context",
+                  content: "line",
+                  oldLineNumber: 1,
+                  newLineNumber: 1,
+                  selected: false,
+                  unexpectedLineKey: "drop me",
+                },
+                { type: "invalid", content: "drop me" },
+              ],
+              unexpectedHunkKey: "drop me",
+            },
+            { oldStart: "invalid", lines: [] },
+          ],
+          attribution: { manual: true, timestamp: 123 },
+          unexpectedTopLevelKey: "drop me",
+        },
+      },
+      drawer: { open: false, type: null, itemId: null },
+      navigation: { history: [], currentIndex: -1 },
+      ui: { hasInitialized: true },
+    };
+
+    const iterator = hydrateWorkspaceNavigationStateSaga("ws-missing-stats");
+    iterator.next();
+
+    const putEffect = iterator.next(stored).value as any;
+    const hydratedState = putEffect.payload.action.payload[1];
+
+    expect(hydratedState.mainPanel.selectedTrackedChange).toEqual({
+      id: "change-1",
+      file: "src/example.ts",
+      relativePath: "src/example.ts",
+      stage: ChangeStage.Unstaged,
+      status: "modified",
+      stats: { additions: 0, deletions: 0 },
+      attribution: { manual: true, timestamp: 123 },
+      commitHash: "abc123",
+      prNumber: 610,
+      content: {
+        oldContent: "old",
+        newContent: "new",
+        diffSha: "diff-sha",
+        isFullFileContent: true,
+      },
+      hunks: [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
+          lines: [
+            {
+              type: "context",
+              content: "line",
+              oldLineNumber: 1,
+              newLineNumber: 1,
+              selected: false,
+            },
+          ],
+        },
+      ],
+    });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("omits persisted selected tracked changes missing required fields", () => {
+    const stored = {
+      version: 2,
+      workspace: { id: "ws-malformed-change", status: "ready" },
+      mainPanel: {
+        type: "file-tracking-diff",
+        selectedFile: "src/example.ts",
+        selectedChangeId: "change-1",
+        selectedTrackedChange: {
+          stats: { additions: 1, deletions: 2 },
+        },
+      },
+      drawer: { open: false, type: null, itemId: null },
+      navigation: { history: [], currentIndex: -1 },
+      ui: { hasInitialized: true },
+    };
+
+    const iterator = hydrateWorkspaceNavigationStateSaga("ws-malformed-change");
+    iterator.next();
+
+    const putEffect = iterator.next(stored).value as any;
+    const hydratedState = putEffect.payload.action.payload[1];
+
+    expect(hydratedState.mainPanel.selectedTrackedChange).toBeUndefined();
     expect(iterator.next()).toEqual({ value: undefined, done: true });
   });
 

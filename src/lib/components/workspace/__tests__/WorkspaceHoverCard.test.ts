@@ -55,6 +55,14 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   selectAllWorkspaceAgents: vi.fn(mocks.createWorkspaceSessionReadable),
 }));
 
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: Object.assign(vi.fn(mocks.createWorkspaceSessionReadable), {
+    select: vi.fn(
+      (_state: unknown, workspaceId: string) => mocks.agentSessionsByWorkspace[workspaceId] ?? [],
+    ),
+  }),
+}));
+
 vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));

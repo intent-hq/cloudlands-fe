@@ -1,7 +1,8 @@
-import type { WorkspaceEvent } from "$features/events/types";
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import type { WorkspaceEvent } from '$features/events/types';
+import { createAction } from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
 
 const MAX_EVENTS = 100;
 
@@ -31,19 +32,17 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // ---------------------------------------------------------------------------
 
 export const eventReceived = createAction<[workspaceId: string, event: WorkspaceEvent]>(
-  "workspaceEvents/eventReceived"
+  'workspaceEvents/eventReceived',
 );
 export const eventsLoaded = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
-  "workspaceEvents/eventsLoaded"
+  'workspaceEvents/eventsLoaded',
 );
-export const eventsCleared = createAction<[workspaceId: string]>(
-  "workspaceEvents/eventsCleared"
-);
+export const eventsCleared = createAction<[workspaceId: string]>('workspaceEvents/eventsCleared');
 export const loadEventsRequested = createAction<[workspaceId: string]>(
-  "workspaceEvents/loadEventsRequested"
+  'workspaceEvents/loadEventsRequested',
 );
 export const setEventsLoading = createAction<[workspaceId: string, loading: boolean]>(
-  "workspaceEvents/setEventsLoading"
+  'workspaceEvents/setEventsLoading',
 );
 
 // ---------------------------------------------------------------------------
@@ -52,15 +51,18 @@ export const setEventsLoading = createAction<[workspaceId: string, loading: bool
 
 export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState)
   .with(eventReceived, (state, { payload: [workspaceId, event] }) => {
+    const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
+    if (!safeEvent) return state;
     const wsState = getWorkspaceState(state, workspaceId);
-    const events = [...wsState.events, event].slice(-MAX_EVENTS);
+    const events = [...wsState.events, safeEvent].slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events });
   })
   .with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
+    const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
-      events: events.slice(-MAX_EVENTS),
+      events: safeEvents.slice(-MAX_EVENTS),
       loading: false,
     });
   })
@@ -71,4 +73,3 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, { ...wsState, loading });
   });
-

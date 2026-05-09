@@ -126,12 +126,14 @@ export function* watchAgentDeletion() {
 }
 
 // ---------------------------------------------------------------------------
-// Root cleanup saga
+// Static registry entry: cleanup request watchers
+//
+// initMainStore starts this zero-argument saga independently from the main saga
+// registry. Runtime-argument cleanup work remains internal to these watchers.
 // ---------------------------------------------------------------------------
 
 export function* cleanupSaga() {
   yield* takeEvery(requestEvictStaleAgents, handleEvictStaleAgents);
   yield* takeEvery(requestValidateSubscriptions, handleValidateSubscriptions);
-  yield* watchAgentDeletion();
 }
 

@@ -7,8 +7,8 @@ import type {
 import { notesIpc } from "./notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
-import type { Note, TaskStatus, WorkspaceId } from "$shared/types";
-import { fork, put, takeEvery, call, select } from "typed-redux-saga";
+import type { Note, WorkspaceId } from "$shared/types";
+import { fork, put, takeEvery, call } from "typed-redux-saga";
 import { notesCrudSaga } from "./notes-crud-saga";
 import { selectNoteById } from "../workspace-notes-selectors";
 import {
@@ -27,16 +27,14 @@ import {
   setWorkspaceNotesLoading,
 } from "../workspace-notes-slice";
 import { dispatchContentUpdateEvent } from "./dispatch-content-update-event";
-
-const TASK_STATUSES: TaskStatus[] = [
-  "not_started",
-  "waiting",
-  "discussion_needed",
-  "in_progress",
-  "review_required",
-  "complete",
-  "cancelled",
-];
+import {
+  asString,
+  isFullNote,
+  isRecord,
+  isTaskStatus,
+  normalizeNoteEventContent,
+  normalizeNoteUpdateSource,
+} from "../workspace-notes-normalization";
 
 type TaskStatusChangedEventPayload = TaskStatusChangedPayload & {
   data?: { noteId?: string; newStatus?: string };
@@ -53,31 +51,16 @@ function normalizeWorkspaceIds(workspaceIds: string[]): string[] {
   return [...new Set(workspaceIds.filter(Boolean))];
 }
 
-function isTaskStatus(value: string): value is TaskStatus {
-  return TASK_STATUSES.includes(value as TaskStatus);
-}
-
-function isFullNote(note: NoteCreatedEventPayload["note"] | NoteUpdatedEventPayload["note"]): note is Note {
-  return !!note &&
-    typeof note.id === "string" &&
-    typeof note.workspaceId === "string" &&
-    typeof note.title === "string" &&
-    typeof note.content === "string" &&
-    typeof note.contentType === "string" &&
-    Array.isArray(note.tags) &&
-    typeof note.isPinned === "boolean" &&
-    typeof note.isArchived === "boolean" &&
-    typeof note.visibility === "string" &&
-    typeof note.createdAt === "string" &&
-    typeof note.updatedAt === "string";
-}
-
 function toWorkspaceNotesRecord(
   workspaceIds: string[],
-  notesByWorkspace: Record<string, Note[]>
+  notesByWorkspace: unknown
 ): Record<string, Note[]> {
+  const notesRecord = isRecord(notesByWorkspace) ? notesByWorkspace : {};
   return workspaceIds.reduce<Record<string, Note[]>>((acc, workspaceId) => {
-    acc[workspaceId] = notesByWorkspace[workspaceId] ?? [];
+    const notes = notesRecord[workspaceId];
+    acc[workspaceId] = Array.isArray(notes)
+      ? notes.filter((note): note is Note => isFullNote(note) && note.workspaceId === workspaceId)
+      : [];
     return acc;
   }, {});
 }
@@ -140,9 +123,11 @@ export function* watchRefreshWorkspaceNotesRequestedSaga() {
 
 export function* watchTaskStatusChangedSaga() {
   yield* takeEveryFromListenSync<TaskStatusChangedEventPayload>("task:status-changed", function* (data) {
-    const workspaceId = data.workspaceId;
-    const noteId = data.noteId || data.data?.noteId;
-    const newStatus = data.newStatus || data.data?.newStatus;
+    if (!isRecord(data)) return;
+    const nestedData = isRecord(data.data) ? data.data : undefined;
+    const workspaceId = asString(data.workspaceId);
+    const noteId = asString(data.noteId) || asString(nestedData?.noteId);
+    const newStatus = asString(data.newStatus) || asString(nestedData?.newStatus);
 
     if (!workspaceId || !noteId || !newStatus || !isTaskStatus(newStatus)) return;
     yield* put(applyTaskStatusChanged(workspaceId, noteId, newStatus));
@@ -151,16 +136,21 @@ export function* watchTaskStatusChangedSaga() {
 
 export function* watchNoteCreatedSaga() {
   yield* takeEveryFromListenSync<NoteCreatedEventPayload>("note:created", function* (data) {
-    if (!data.workspaceId || !isFullNote(data.note)) return;
-    yield* put(applyNoteCreated(data.workspaceId, data.note));
+    if (!isRecord(data)) return;
+    const workspaceId = asString(data.workspaceId);
+    if (!workspaceId || !isFullNote(data.note) || data.note.workspaceId !== workspaceId) return;
+    yield* put(applyNoteCreated(workspaceId, data.note));
   });
 }
 
 export function* watchNoteDeletedSaga() {
   yield* takeEveryFromListenSync<NoteDeletedEventPayload>("note:deleted", function* (data) {
-    const noteId = data.noteId || data.data?.noteId;
-    if (!data.workspaceId || !noteId) return;
-    yield* put(applyNoteDeleted(data.workspaceId, noteId));
+    if (!isRecord(data)) return;
+    const nestedData = isRecord(data.data) ? data.data : undefined;
+    const workspaceId = asString(data.workspaceId);
+    const noteId = asString(data.noteId) || asString(nestedData?.noteId);
+    if (!workspaceId || !noteId) return;
+    yield* put(applyNoteDeleted(workspaceId, noteId));
   });
 }
 
@@ -186,12 +176,16 @@ function isNewerUpdate(key: string, timestamp: number): boolean {
 
 export function* watchNoteUpdatedSaga() {
   yield* takeEveryFromListenSync<NoteUpdatedEventPayload>("note:updated", function* (data) {
-    const noteId = data.noteId || data.data?.noteId || data.note?.id;
-    if (!data.workspaceId || !noteId) return;
+    if (!isRecord(data)) return;
+    const nestedData = isRecord(data.data) ? data.data : undefined;
+    const eventNote = isRecord(data.note) ? data.note : undefined;
+    const workspaceId = asString(data.workspaceId);
+    const noteId = asString(data.noteId) || asString(nestedData?.noteId) || asString(eventNote?.id);
+    if (!workspaceId || !noteId) return;
 
-    const key = makeNoteKey(data.workspaceId, noteId);
+    const key = makeNoteKey(workspaceId, noteId);
     const timestamp = Date.now();
-    const source = data.source ?? "external";
+    const source = normalizeNoteUpdateSource(data.source);
 
     const hasTaskBlock = (c: string) => c.includes("@@@task") || c.includes("```task");
 
@@ -200,10 +194,10 @@ export function* watchNoteUpdatedSaga() {
     // event with converted content will arrive shortly and we don't want
     // to overwrite already-converted content with raw @@@task blocks.
     if (isFullNote(data.note)) {
-      if (hasTaskBlock(data.note.content ?? "")) return;
+      if (data.note.workspaceId !== workspaceId || hasTaskBlock(data.note.content)) return;
       if (isNewerUpdate(key, timestamp)) {
-        yield* put(applyNoteUpdated(data.workspaceId, noteId, data.note));
-        dispatchContentUpdateEvent(noteId, data.note.content, source, data.workspaceId);
+        yield* put(applyNoteUpdated(workspaceId, noteId, data.note));
+        dispatchContentUpdateEvent(noteId, data.note.content, source, workspaceId);
       }
       return;
     }
@@ -212,21 +206,17 @@ export function* watchNoteUpdatedSaga() {
     // exists in the store, merge the content without an IPC roundtrip.
     // This prevents the race where two rapid note:updated events (pre-conversion
     // and post-conversion) both trigger IPC fetches that resolve out of order.
-    const eventContent = data.content ?? data.changes?.content;
+    const eventContent = normalizeNoteEventContent(data);
     if (eventContent !== undefined) {
       // Skip raw content that still has unconverted task blocks —
       // the conversion will emit a clean version shortly.
       if (hasTaskBlock(eventContent)) return;
-      const existingNote: Note | undefined = yield* select(
-        selectNoteById.select,
-        data.workspaceId,
-        noteId,
-      );
+      const existingNote: Note | undefined = yield* selectNoteById.effect(workspaceId, noteId);
       if (existingNote) {
         if (isNewerUpdate(key, timestamp)) {
           const mergedNote: Note = { ...existingNote, content: eventContent, updatedAt: new Date().toISOString() };
-          yield* put(applyNoteUpdated(data.workspaceId, noteId, mergedNote));
-          dispatchContentUpdateEvent(noteId, eventContent, source, data.workspaceId);
+          yield* put(applyNoteUpdated(workspaceId, noteId, mergedNote));
+          dispatchContentUpdateEvent(noteId, eventContent, source, workspaceId);
         }
         return;
       }
@@ -234,13 +224,13 @@ export function* watchNoteUpdatedSaga() {
 
     // Fallback: fetch the full note via IPC when payload doesn't include it
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.GET, {
-      workspaceId: data.workspaceId,
+      workspaceId,
       noteId,
     });
-    if (result.ok && result.data && isFullNote(result.data)) {
+    if (result.ok && result.data && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       if (isNewerUpdate(key, timestamp)) {
-        yield* put(applyNoteUpdated(data.workspaceId, noteId, result.data));
-        dispatchContentUpdateEvent(noteId, result.data.content, source, data.workspaceId);
+        yield* put(applyNoteUpdated(workspaceId, noteId, result.data));
+        dispatchContentUpdateEvent(noteId, result.data.content, source, workspaceId);
       }
     }
   });

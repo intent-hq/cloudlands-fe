@@ -2,7 +2,7 @@
  * Main-process Redux store initialization.
  *
  * Creates the Redux store with saga middleware, store-guard, and logger,
- * initializes the store bridge, and starts the root saga.
+ * initializes the store bridge, and starts registered main sagas.
  */
 
 import {
@@ -16,7 +16,7 @@ import { Logger } from "../../shared/logger";
 import type { MainReduxStore, MainStoreState } from "./types";
 import { reducers } from "./reducer";
 import { middleware, runSaga } from "./middleware";
-import { mainRootSaga } from "./sagas";
+import { mainSagaEntries, mainSagaNames } from "./sagas";
 import { initMainStoreBridge } from "./redux-store-bridge";
 
 const logger = new Logger("MainStore");
@@ -50,7 +50,9 @@ export function initMainStore(): MainStoreContext {
   // Wire up the global bridge so services can access the store
   initMainStoreBridge(store);
 
-  // Track saga tasks for potential cleanup
+  // Track task handles for sagas started by initMainStore. This wrapper does
+  // not aggregate saga lifetimes; each runSaga call below starts an independent
+  // registry entry.
   const tasksStarted: Task[] = [];
   const runSagaSafely: SagaRunner = <S extends Saga>(
     saga: S,
@@ -61,12 +63,21 @@ export function initMainStore(): MainStoreContext {
     return task;
   };
 
-  // Start the root saga
-  runSagaSafely(mainRootSaga);
+  // Start each registered static zero-argument saga independently from the
+  // registry. Dynamic/runtime-argument worker forks stay inside the owning
+  // saga that creates them, rather than being listed here.
+  logger.info("Starting main-process Redux sagas", {
+    sagaCount: mainSagaEntries.length,
+    sagaNames: mainSagaNames,
+  });
+  for (const { saga } of mainSagaEntries) {
+    runSagaSafely(saga);
+  }
 
   logger.info("Main-process Redux store initialized", {
     reducerCount: Object.keys(reducers).length,
     middlewareCount: middleware.length,
+    sagaCount: mainSagaEntries.length,
   });
 
   return { store, runSaga: runSagaSafely };

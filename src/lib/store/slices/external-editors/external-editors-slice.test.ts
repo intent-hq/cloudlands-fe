@@ -62,6 +62,15 @@ describe("externalEditorsReducer", () => {
       const state = externalEditorsReducer(prev, setOpenAction("vscode"));
       expect(state.selectedAction).toBe("vscode");
     });
+
+    it("should coerce malformed selected actions to a string", () => {
+      const state = externalEditorsReducer(
+        initialState,
+        setOpenAction(123 as unknown as string)
+      );
+
+      expect(state.selectedAction).toBe("123");
+    });
   });
 
   describe("fetchEditorsSuccess", () => {
@@ -109,6 +118,45 @@ describe("externalEditorsReducer", () => {
       );
       expect(getItems(state.editors)).toHaveLength(1);
     });
+
+    it("should normalize malformed editor records before storing", () => {
+      const state = externalEditorsReducer(
+        initialState,
+        fetchEditorsSuccess(
+          [
+            {
+              id: "malformed",
+              name: 42,
+              shortLabel: { text: "Bad label" },
+              appName: null,
+              category: "unknown",
+              handlerType: ["generic"],
+              shortcut: 99,
+              priority: "high",
+              installed: "true",
+              iconBase64: { data: "not base64" },
+            },
+            { id: { bad: true }, name: "Dropped" },
+          ] as unknown as InstalledEditor[],
+          Number.NaN
+        )
+      );
+
+      expect(getItems(state.editors)).toEqual([
+        {
+          id: "malformed",
+          name: "42",
+          shortLabel: "malformed",
+          appName: "malformed",
+          category: "ide",
+          handlerType: "generic",
+          shortcut: "99",
+          priority: 0,
+          installed: true,
+        },
+      ]);
+      expect(state.lastFetched).toBe(0);
+    });
   });
 
   describe("fetchEditorsFailure", () => {
@@ -136,6 +184,15 @@ describe("externalEditorsReducer", () => {
 
       const state = externalEditorsReducer(prev, fetchEditorsFailure("Failed"));
       expect(getItems(state.editors)).toEqual([mockEditor]);
+    });
+
+    it("should coerce malformed errors before storing", () => {
+      const state = externalEditorsReducer(
+        initialState,
+        fetchEditorsFailure({ message: 500 } as unknown as string)
+      );
+
+      expect(state.error).toBe("500");
     });
   });
 

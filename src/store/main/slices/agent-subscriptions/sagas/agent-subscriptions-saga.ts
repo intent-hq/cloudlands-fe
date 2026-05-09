@@ -1,49 +1,40 @@
 /**
- * Root saga for the agent-subscriptions slice.
+ * Crash-recovery wrappers for agent-subscriptions sagas.
  *
- * Forks all sub-sagas (delivery, delegation group, cleanup, IPC bridge, matching)
- * so they run concurrently.
+ * Main-process startup registers static zero-argument child sagas directly in
+ * the main saga registry. Runtime worker forks remain inside their owning sagas.
  */
 
-import { call, delay, fork, spawn } from "typed-redux-saga";
-import { deliverySaga } from "./delivery-saga";
+import { call, delay } from "typed-redux-saga";
 import { delegationGroupSaga } from "./delegation-group-saga";
-import { cleanupSaga } from "./cleanup-saga";
-import { ipcBridgeSaga } from "./ipc-bridge-saga";
 import { matchingSaga } from "./matching-saga";
-import { subscriptionsChangedEmitterSaga } from "./subscriptions-changed-emitter-saga";
 import { Logger } from "../../../../../shared/logger";
 
 const logger = new Logger("AgentSubscriptionsSaga");
 
-export function* agentSubscriptionsSaga() {
-  yield* fork(deliverySaga);
-  yield* spawn(function* () {
-    while (true) {
-      try {
-        yield* call(delegationGroupSaga);
-        logger.warn("Delegation group saga exited unexpectedly, restarting in 1s");
-      } catch (error) {
-        logger.error("Delegation group saga crashed, restarting in 1s", { error });
-      }
-      yield* delay(1000);
+export function* supervisedDelegationGroupSaga() {
+  while (true) {
+    try {
+      yield* call(delegationGroupSaga);
+      logger.warn("Delegation group saga exited unexpectedly, restarting in 1s");
+    } catch (error) {
+      logger.error("Delegation group saga crashed, restarting in 1s", { error });
     }
-  });
-  yield* fork(cleanupSaga);
-  yield* fork(ipcBridgeSaga);
-  yield* fork(subscriptionsChangedEmitterSaga);
-  yield* spawn(function* () {
-    while (true) {
-      try {
-        yield* call(matchingSaga);
-        // matchingSaga uses takeEvery and should never return normally.
-        // If it does, log and delay before restarting.
-        logger.warn("Matching saga exited unexpectedly, restarting in 1s");
-      } catch (error) {
-        logger.error("Matching saga crashed, restarting in 1s", { error });
-      }
-      yield* delay(1000);
+    yield* delay(1000);
+  }
+}
+
+export function* supervisedMatchingSaga() {
+  while (true) {
+    try {
+      yield* call(matchingSaga);
+      // matchingSaga uses takeEvery and should never return normally.
+      // If it does, log and delay before restarting.
+      logger.warn("Matching saga exited unexpectedly, restarting in 1s");
+    } catch (error) {
+      logger.error("Matching saga crashed, restarting in 1s", { error });
     }
-  });
+    yield* delay(1000);
+  }
 }
 

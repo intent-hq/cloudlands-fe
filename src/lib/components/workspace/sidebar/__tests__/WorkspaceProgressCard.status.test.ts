@@ -60,6 +60,10 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: mocks.selector(() => []),
+}));
+
 vi.mock('$lib/store/slices/session-stats/session-stats-selectors', () => ({
   selectWorkspaceStats: mocks.selector(() => undefined),
 }));

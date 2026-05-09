@@ -261,6 +261,31 @@ describe('chatStateReducer', () => {
     expect(s2.byAgentId[AGENT].statusEvents[0]).toEqual(event);
   });
 
+  it('streamStatusReceived stores a clone-safe status event from non-cloneable payloads', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const payload: Record<string, unknown> = {
+      phase: 'tool-call',
+      message: new Error('tool failed'),
+      level: 'error',
+      timestamp: 3000,
+      callback: () => undefined,
+      token: Symbol('token'),
+    };
+    payload.self = payload;
+
+    const s2 = chatStateReducer(s1, streamStatusReceived(AGENT, payload, false));
+    const [storedEvent] = s2.byAgentId[AGENT].statusEvents;
+
+    expect(storedEvent).toEqual({
+      phase: 'tool-call',
+      message: 'tool failed',
+      level: 'error',
+      timestamp: 3000,
+    });
+    expect(JSON.parse(JSON.stringify(storedEvent))).toEqual(storedEvent);
+    expect(() => structuredClone(storedEvent)).not.toThrow();
+  });
+
   it('streamStatusReceived resets receivedFirstChunk when resetFirstChunk is true', () => {
     let s = chatStateReducer(initialState, chatSendStarted(AGENT));
     s = chatStateReducer(s, streamChunkReceived(AGENT, true));

@@ -637,7 +637,7 @@ export function* matchingSaga() {
     yield* takeEvery(addSubscription, handleNewSubscriptionCatchUp);
 
     // Block indefinitely so the crash-recovery wrapper in
-    // agentSubscriptionsSaga only restarts when this saga actually throws.
+    // supervisedMatchingSaga only restarts when this saga actually throws.
     // Without this, matchingSaga returns immediately after the non-blocking
     // takeEvery registrations, causing the while(true) wrapper to re-register
     // duplicate watchers every ~1 second.

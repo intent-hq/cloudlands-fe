@@ -13,24 +13,36 @@ import {
   fetchEditors,
   fetchEditorsFailure,
   fetchEditorsSuccess,
+  normalizeExternalEditorsError,
+  normalizeInstalledEditors,
   setLoading,
   type InstalledEditor,
 } from "../external-editors-slice";
 
 export function normalizeEditorsCacheData(cachedEditors: unknown): InstalledEditor[] | null {
-  if (Array.isArray(cachedEditors)) {
-    return cachedEditors;
-  }
+  let editorRecords: unknown;
 
-  if (
+  if (Array.isArray(cachedEditors)) {
+    editorRecords = cachedEditors;
+  } else if (
     cachedEditors &&
     typeof cachedEditors === "object" &&
     isCollection<InstalledEditor, "id">(cachedEditors)
   ) {
-    return getItems(cachedEditors);
+    editorRecords = getItems(cachedEditors);
+  } else {
+    return null;
   }
 
-  return null;
+  return normalizeInstalledEditors(editorRecords);
+}
+
+function isDetectionResult(value: unknown): value is {
+  success?: unknown;
+  data?: unknown;
+  error?: unknown;
+} {
+  return typeof value === "object" && value !== null;
 }
 
 export function* loadCachedEditors() {
@@ -74,27 +86,22 @@ export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
   try {
     const result = (yield* call(invoke, "external-editors:detect-installed", {
       forceRefresh: forceRefresh ?? false,
-    })) as {
-      success: boolean;
-      data?: InstalledEditor[];
-      error?: string;
-    };
+    })) as unknown;
 
-    if (result?.success && result.data) {
+    if (isDetectionResult(result) && result.success === true && Array.isArray(result.data)) {
       const now = Date.now();
-      yield* put(fetchEditorsSuccess(result.data, now));
+      const editors = normalizeInstalledEditors(result.data);
+      yield* put(fetchEditorsSuccess(editors, now));
 
       // Persist to localStorage
       if (typeof window !== "undefined") {
-        yield* call(setLocalStorageJSON, STORAGE_KEY, { editors: result.data, timestamp: now });
+        yield* call(setLocalStorageJSON, STORAGE_KEY, { editors, timestamp: now });
       }
-    } else if (result?.error) {
-      yield* put(fetchEditorsFailure(result.error));
+    } else if (isDetectionResult(result) && "error" in result) {
+      yield* put(fetchEditorsFailure(normalizeExternalEditorsError(result.error)));
     }
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Failed to detect editors";
-    yield* put(fetchEditorsFailure(errorMessage));
+    yield* put(fetchEditorsFailure(normalizeExternalEditorsError(error)));
   } finally {
     yield* put(setLoading(false));
   }

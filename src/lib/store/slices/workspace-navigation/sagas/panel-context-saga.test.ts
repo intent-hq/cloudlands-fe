@@ -151,6 +151,98 @@ describe("panelContextSaga", () => {
       .isDone();
   });
 
+  it("uses zero diff counts when tracked diff stats are missing", () => {
+    const navState = {
+      mainPanel: {
+        type: "file-tracking-diff",
+        selectedFile: "src/main.ts",
+        selectedChangeId: "change-1",
+        selectedTrackedChange: {
+          id: "change-1",
+          file: "src/main.ts",
+          relativePath: "src/main.ts",
+          stage: ChangeStage.Unstaged,
+          status: "modified",
+          attribution: {
+            timestamp: 0,
+          },
+        },
+      },
+    } as const;
+
+    testSaga(handlePanelChanged, setWorkspaceMainPanel("ws-1", "file-tracking-diff", navState.mainPanel as any))
+      .next()
+      .select(selectWorkspaceNavigationState.select, "ws-1")
+      .next(navState)
+      .call([workspaceClient, workspaceClient.updateCurrentContext], WorkspaceId("ws-1"), {
+        workspaceId: WorkspaceId("ws-1"),
+        mainContentType: "diff",
+        mainContentId: "change-1",
+        mainContentPath: "src/main.ts",
+        mainContentUrl: undefined,
+        diffInfo: {
+          additions: 0,
+          deletions: 0,
+          isStaged: false,
+          gitStatus: "modified",
+          changeType: "modified",
+        },
+        lastUpdated: "2026-03-25T01:15:00.000Z",
+      })
+      .next()
+      .put(clearCurrentlyViewed())
+      .next()
+      .isDone();
+  });
+
+  it("uses zero for malformed diff stat counts", () => {
+    const navState = {
+      mainPanel: {
+        type: "file-tracking-diff",
+        selectedFile: "src/main.ts",
+        selectedChangeId: "change-1",
+        selectedTrackedChange: {
+          id: "change-1",
+          file: "src/main.ts",
+          relativePath: "src/main.ts",
+          stage: ChangeStage.Staged,
+          stats: {
+            additions: "12",
+            deletions: null,
+          },
+          status: "deleted",
+          attribution: {
+            timestamp: 0,
+          },
+        },
+      },
+    } as const;
+
+    testSaga(handlePanelChanged, setWorkspaceMainPanel("ws-1", "file-tracking-diff", navState.mainPanel as any))
+      .next()
+      .select(selectWorkspaceNavigationState.select, "ws-1")
+      .next(navState)
+      .call([workspaceClient, workspaceClient.updateCurrentContext], WorkspaceId("ws-1"), {
+        workspaceId: WorkspaceId("ws-1"),
+        mainContentType: "diff",
+        mainContentId: "change-1",
+        mainContentPath: "src/main.ts",
+        mainContentUrl: undefined,
+        diffInfo: {
+          additions: 0,
+          deletions: 0,
+          isStaged: true,
+          gitStatus: "deleted",
+          changeType: "deleted",
+        },
+        lastUpdated: "2026-03-25T01:15:00.000Z",
+      })
+      .next()
+      .put(clearCurrentlyViewed())
+      .next()
+      .isDone();
+  });
+
   it("registers panel-change watchers including hydration", () => {
     const iterator = panelContextSaga();
 

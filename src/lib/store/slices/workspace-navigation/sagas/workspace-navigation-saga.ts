@@ -1,12 +1,12 @@
 import type { Task } from "redux-saga";
 import { cancel, call, fork, put, select, takeEvery } from "typed-redux-saga";
 import type { ReviewStatus } from "$lib/components/code-review/types";
+import { ChangeStage, type DiffHunk, type TrackedChange } from "$features/file-tracking/types";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
 import type { WorkspaceEvent } from "$features/events/types";
-import type { TrackedChange } from "$features/file-tracking/types";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -35,7 +35,6 @@ import {
   updateWorkspaceCodeReview,
   workspaceNavigationStorageKey,
 } from "../workspace-navigation-slice";
-import { panelContextSaga } from "./panel-context-saga";
 
 const workspaceNavigationTasks = new Map<string, Task[]>();
 const workspaceNavigationCache = new Map<string, WorkspaceNavigationWorkspaceState>();
@@ -64,6 +63,147 @@ function isReviewStatus(value: unknown): value is ReviewStatus {
     value === "error" ||
     value === "stale"
   );
+}
+
+function isChangeStage(value: unknown): value is ChangeStage {
+  return Object.values(ChangeStage).includes(value as ChangeStage);
+}
+
+function isFileChangeStatus(value: unknown): value is NonNullable<TrackedChange["status"]> {
+  return (
+    value === "added" ||
+    value === "modified" ||
+    value === "deleted" ||
+    value === "renamed"
+  );
+}
+
+function normalizePersistedTrackedChangeStats(value: unknown): TrackedChange["stats"] {
+  const stats = isRecord(value) ? value : undefined;
+  const additions = stats?.additions;
+  const deletions = stats?.deletions;
+  const binary = stats?.binary;
+
+  return {
+    additions: isNumber(additions) ? additions : 0,
+    deletions: isNumber(deletions) ? deletions : 0,
+    ...(isBoolean(binary) ? { binary } : {}),
+  };
+}
+
+function normalizePersistedTrackedChangeAttribution(value: unknown): TrackedChange["attribution"] {
+  if (!isRecord(value)) {
+    return { manual: true, timestamp: 0 };
+  }
+
+  const agent = isRecord(value.agent)
+    ? (value.agent as unknown as NonNullable<TrackedChange["attribution"]["agent"]>)
+    : undefined;
+
+  return {
+    ...(agent ? { agent } : {}),
+    ...(isBoolean(value.manual) ? { manual: value.manual } : {}),
+    timestamp: isNumber(value.timestamp) ? value.timestamp : 0,
+  };
+}
+
+function isDiffLineType(value: unknown): value is DiffHunk["lines"][number]["type"] {
+  return value === "add" || value === "remove" || value === "context";
+}
+
+function normalizePersistedTrackedChangeContent(value: unknown): TrackedChange["content"] {
+  if (!isRecord(value)) return undefined;
+
+  const content = {
+    ...(isString(value.oldContent) ? { oldContent: value.oldContent } : {}),
+    ...(isString(value.newContent) ? { newContent: value.newContent } : {}),
+    ...(isString(value.oldContentSha) ? { oldContentSha: value.oldContentSha } : {}),
+    ...(isString(value.newContentSha) ? { newContentSha: value.newContentSha } : {}),
+    ...(isString(value.diff) ? { diff: value.diff } : {}),
+    ...(isString(value.diffSha) ? { diffSha: value.diffSha } : {}),
+    ...(isBoolean(value.isFullFileContent) ? { isFullFileContent: value.isFullFileContent } : {}),
+  };
+
+  return Object.keys(content).length > 0 ? content : undefined;
+}
+
+function normalizePersistedDiffLine(value: unknown): DiffHunk["lines"][number] | undefined {
+  if (!isRecord(value) || !isDiffLineType(value.type) || !isString(value.content)) {
+    return undefined;
+  }
+
+  return {
+    type: value.type,
+    content: value.content,
+    ...(isNumber(value.oldLineNumber) ? { oldLineNumber: value.oldLineNumber } : {}),
+    ...(isNumber(value.newLineNumber) ? { newLineNumber: value.newLineNumber } : {}),
+    ...(isBoolean(value.selected) ? { selected: value.selected } : {}),
+  };
+}
+
+function normalizePersistedDiffHunk(value: unknown): DiffHunk | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const lines = Array.isArray(value.lines)
+    ? value.lines.map(normalizePersistedDiffLine).filter((line) => line !== undefined)
+    : undefined;
+
+  if (
+    !isNumber(value.oldStart) ||
+    !isNumber(value.oldLines) ||
+    !isNumber(value.newStart) ||
+    !isNumber(value.newLines) ||
+    !lines
+  ) {
+    return undefined;
+  }
+
+  return {
+    oldStart: value.oldStart,
+    oldLines: value.oldLines,
+    newStart: value.newStart,
+    newLines: value.newLines,
+    lines,
+  };
+}
+
+function normalizePersistedTrackedChangeHunks(value: unknown): TrackedChange["hunks"] {
+  if (!Array.isArray(value)) return undefined;
+
+  const hunks = value.map(normalizePersistedDiffHunk).filter((hunk) => hunk !== undefined);
+  return hunks.length > 0 ? hunks : undefined;
+}
+
+function normalizePersistedTrackedChange(value: unknown): TrackedChange | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const file = isString(value.file)
+    ? value.file
+    : isString(value.relativePath)
+      ? value.relativePath
+      : undefined;
+  const relativePath = isString(value.relativePath) ? value.relativePath : file;
+
+  if (!isString(value.id) || !file || !relativePath || !isChangeStage(value.stage)) {
+    return undefined;
+  }
+
+  const content = normalizePersistedTrackedChangeContent(value.content);
+  const hunks = normalizePersistedTrackedChangeHunks(value.hunks);
+
+  return {
+    id: value.id,
+    file,
+    relativePath,
+    stage: value.stage,
+    stats: normalizePersistedTrackedChangeStats(value.stats),
+    status: isFileChangeStatus(value.status) ? value.status : undefined,
+    attribution: normalizePersistedTrackedChangeAttribution(value.attribution),
+    ...(isString(value.commitHash) ? { commitHash: value.commitHash } : {}),
+    ...(isNumber(value.prNumber) ? { prNumber: value.prNumber } : {}),
+    ...(content ? { content } : {}),
+    ...(hunks ? { hunks } : {}),
+  };
 }
 
 function normalizePersistedWorkspaceNavigationState(
@@ -106,9 +246,7 @@ function normalizePersistedWorkspaceNavigationState(
       selectedNoteId: isString(mainPanel?.selectedNoteId) ? mainPanel.selectedNoteId : fallback.mainPanel.selectedNoteId,
       selectedChangeId: isString(mainPanel?.selectedChangeId) ? mainPanel.selectedChangeId : undefined,
       selectedBrowserUrl: isString(mainPanel?.selectedBrowserUrl) ? mainPanel.selectedBrowserUrl : undefined,
-      selectedTrackedChange: isRecord(mainPanel?.selectedTrackedChange)
-        ? (mainPanel.selectedTrackedChange as unknown as TrackedChange)
-        : undefined,
+      selectedTrackedChange: normalizePersistedTrackedChange(mainPanel?.selectedTrackedChange),
       selectedActivityEvent: isRecord(mainPanel?.selectedActivityEvent)
         ? (mainPanel.selectedActivityEvent as unknown as WorkspaceEvent)
         : undefined,
@@ -270,11 +408,4 @@ export function* watchWorkspaceNavigationPersistenceSaga() {
   yield* takeEvery(openWorkspaceLocalChanges, persistWorkspaceNavigationSaga);
   yield* takeEvery(openWorkspaceNote, persistWorkspaceNavigationSaga);
   yield* takeEvery(updateWorkspaceCodeReview, persistWorkspaceNavigationSaga);
-}
-
-export function* workspaceNavigationSaga() {
-  yield* fork(watchWorkspaceNavigationLifecycleSaga);
-  yield* fork(retroactiveNavigationMountCheckSaga);
-  yield* fork(watchWorkspaceNavigationPersistenceSaga);
-  yield* fork(panelContextSaga);
 }

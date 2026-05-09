@@ -48,6 +48,15 @@ import {
   selectMcpStatusMap,
   selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
 } from "../mcp-settings-selectors";
+import {
+  normalizeDisabledServers,
+  normalizeMcpAuthInfo,
+  normalizeMcpAuthType,
+  normalizeMcpServerStatus,
+  normalizeMcpServersPayload,
+  optionalString,
+  toMcpErrorMessage,
+} from "../mcp-settings-normalization";
 
 const logger = createLogger("McpSettingsSaga");
 
@@ -64,7 +73,7 @@ async function invokeIpc(channel: string, data?: any): Promise<any> {
 // Load servers saga
 // ============================================================================
 
-function* handleLoadServers(): SagaGenerator<void> {
+export function* handleLoadServers(): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* select(selectMcpServers.select);
   const isFirstLoad = servers.length === 0;
 
@@ -93,47 +102,21 @@ function* handleLoadServers(): SagaGenerator<void> {
       key: "disabledMcpServers",
     });
     if (disabledResult?.success && Array.isArray(disabledResult.data)) {
-      const disabledMap: Record<string, true> = {};
-      for (const name of disabledResult.data) {
-        disabledMap[name] = true;
-      }
-      yield* put(setDisabledServers(disabledMap));
+      yield* put(setDisabledServers(normalizeDisabledServers(disabledResult.data)));
     }
 
     // Load servers - try CLI first, fall back to direct settings.json read
     let result = yield* call(invokeIpc, "user-mcp:mcp-list", undefined);
     if (!result?.success) {
+      const errorMessage = toMcpErrorMessage(result?.error, "Failed to list servers");
       logger.warn("CLI mcp-list failed, falling back to direct settings read", {
-        error: result?.error,
+        error: errorMessage,
       });
       result = yield* call(invokeIpc, "user-mcp:get-servers", undefined);
     }
 
     if (result?.success) {
-      const data = result.data;
-      let serverList: any[] = [];
-
-      if (Array.isArray(data)) {
-        serverList = data;
-      } else if (data?.servers && Array.isArray(data.servers)) {
-        serverList = data.servers;
-      } else if (typeof data === "object" && data !== null) {
-        serverList = Object.entries(data).map(([name, config]: [string, any]) => ({
-          name,
-          ...config,
-        }));
-      }
-
-      const parsedServers: McpServerConfig[] = serverList.map((s: any) => ({
-        name: s.name || "unknown",
-        type: s.type || s.transport || (s.command ? "stdio" : "http"),
-        url: s.url,
-        command: s.command,
-        args: s.args,
-        env: s.env,
-        headers: s.headers,
-        authType: s.authType,
-      }));
+      const parsedServers = normalizeMcpServersPayload(result.data);
 
       // Supplement authType from direct settings read if needed
       const hasAnyAuthType = parsedServers.some((s) => s.authType);
@@ -151,13 +134,12 @@ function* handleLoadServers(): SagaGenerator<void> {
       // Test HTTP connections in background
       yield* fork(testAllHttpConnectionsSaga, parsedServers);
     } else {
-      yield* put(setError(result?.error || "Failed to load servers"));
+      yield* put(setError(toMcpErrorMessage(result?.error, "Failed to load servers")));
     }
   } catch (error) {
-    yield* put(
-      setError(error instanceof Error ? error.message : "Failed to load servers")
-    );
-    logger.error("Failed to load MCP servers:", error);
+    const errorMessage = toMcpErrorMessage(error, "Failed to load servers");
+    yield* put(setError(errorMessage));
+    logger.error("Failed to load MCP servers:", errorMessage);
   } finally {
     yield* put(setLoading(false));
   }
@@ -167,17 +149,18 @@ function* handleLoadServers(): SagaGenerator<void> {
 async function supplementAuthType(servers: McpServerConfig[]): Promise<void> {
   try {
     const settingsRaw = await invokeIpc("user-mcp:get-servers", undefined);
-    if (settingsRaw?.success && settingsRaw.data) {
+    if (settingsRaw?.success && settingsRaw.data && typeof settingsRaw.data === "object") {
       const rawMap = settingsRaw.data as Record<string, any>;
       for (const server of servers) {
         const raw = rawMap[server.name];
-        if (raw?.authType) {
-          server.authType = raw.authType;
+        const authType = normalizeMcpAuthType(raw?.authType);
+        if (authType) {
+          server.authType = authType;
         }
       }
     }
   } catch (e) {
-    logger.debug("Could not supplement authType from settings.json", e);
+    logger.debug("Could not supplement authType from settings.json", toMcpErrorMessage(e, "Unknown error"));
   }
 }
 
@@ -234,19 +217,32 @@ function* handleTestServerConnection(
       name,
     });
 
-    if (result?.success && result.data) {
-      const { status, errorMessage } = result.data;
+    if (result?.success && result.data && typeof result.data === "object") {
+      const data = result.data as Record<string, unknown>;
+      const status = normalizeMcpServerStatus(data.status);
+      const errorMessage = data.errorMessage
+        ? toMcpErrorMessage(data.errorMessage, "Connection test failed")
+        : null;
       logger.info("Connection test result:", { name, status, errorMessage });
-      yield* put(setServerStatus(name, status));
+      if (status) {
+        yield* put(setServerStatus(name, status));
+      }
 
       if (errorMessage) {
         yield* put(setServerErrorMessage(name, errorMessage));
       } else {
         yield* put(clearServerErrorMessage(name));
       }
+    } else if (!result?.success) {
+      const errorMessage = toMcpErrorMessage(result?.error, "Connection test failed");
+      yield* put(setServerStatus(name, "error"));
+      yield* put(setServerErrorMessage(name, errorMessage));
     }
   } catch (error) {
-    logger.error("Failed to test server connection:", { name, error });
+    logger.error("Failed to test server connection:", {
+      name,
+      error: toMcpErrorMessage(error, "Connection test failed"),
+    });
   }
 }
 
@@ -270,7 +266,7 @@ function* handleToggleEnabled(): SagaGenerator<void> {
       yield* call(handleLoadServers);
     }
   } catch (error) {
-    logger.error("Failed to save enabled setting:", error);
+    logger.error("Failed to save enabled setting:", toMcpErrorMessage(error, "Failed to save enabled setting"));
   }
 }
 
@@ -290,7 +286,10 @@ function* handleToggleServer(action: ReturnType<typeof toggleServer>): SagaGener
       value: Object.keys(disabledServers),
     });
   } catch (error) {
-    logger.error("Failed to persist disabled MCP servers:", error);
+    logger.error(
+      "Failed to persist disabled MCP servers:",
+      toMcpErrorMessage(error, "Failed to persist disabled MCP servers")
+    );
   }
 }
 
@@ -397,50 +396,57 @@ async function checkAuthRequirement(url: string): Promise<McpAuthInfo> {
   try {
     const result = await invokeIpc("user-mcp:check-auth", { url });
     if (result?.success && result.data) {
-      return result.data;
+      return normalizeMcpAuthInfo(result.data);
     }
   } catch (error) {
-    logger.error("Failed to check auth requirement:", error);
+    logger.error("Failed to check auth requirement:", toMcpErrorMessage(error, "Failed to check auth requirement"));
   }
   return { requiresAuth: false, hasAuth: false };
 }
 
 function* handleAddServer(action: ReturnType<typeof addServer>): SagaGenerator<void> {
-  const [config] = action.payload;
-  const servers: McpServerConfig[] = yield* select(selectMcpServers.select);
+  try {
+    const [config] = action.payload;
+    const servers: McpServerConfig[] = yield* selectMcpServers.effect();
 
-  // Validate
-  validateServerName(config.name, servers);
+    // Validate
+    validateServerName(config.name, servers);
 
-  // Check auth for HTTP/SSE servers
-  let authInfo: McpAuthInfo | undefined;
-  if (config.type !== "stdio" && config.url) {
-    authInfo = yield* call(checkAuthRequirement, config.url);
-    if (authInfo.requiresAuth && !authInfo.hasAuth) {
-      logger.warn("MCP server requires auth but credentials not found:", {
-        name: config.name,
-        provider: authInfo.providerName,
-      });
+    // Check auth for HTTP/SSE servers
+    let authInfo: McpAuthInfo | undefined;
+    if (config.type !== "stdio" && config.url) {
+      authInfo = yield* call(checkAuthRequirement, config.url);
+      if (authInfo.requiresAuth && !authInfo.hasAuth) {
+        logger.warn("MCP server requires auth but credentials not found:", {
+          name: config.name,
+          provider: authInfo.providerName,
+        });
+      }
     }
-  }
 
-  const ipcConfig: any = {
-    name: config.name,
-    transport: config.type,
-  };
+    const ipcConfig: any = {
+      name: config.name,
+      transport: config.type,
+    };
 
-  if (config.type === "stdio") {
-    ipcConfig.command = config.command;
-    if (config.args) ipcConfig.args = config.args.join(" ");
-    if (config.env) ipcConfig.env = config.env;
-  } else {
-    ipcConfig.url = config.url;
-    if (config.headers) ipcConfig.headers = config.headers;
-    if (config.authType) ipcConfig.authType = config.authType;
-  }
+    if (config.type === "stdio") {
+      ipcConfig.command = config.command;
+      if (config.args) ipcConfig.args = config.args.join(" ");
+      if (config.env) ipcConfig.env = config.env;
+    } else {
+      ipcConfig.url = config.url;
+      if (config.headers) ipcConfig.headers = config.headers;
+      if (config.authType) ipcConfig.authType = config.authType;
+    }
 
-  const result = yield* call(invokeIpc, "user-mcp:mcp-add", ipcConfig);
-  if (result?.success) {
+    const result = yield* call(invokeIpc, "user-mcp:mcp-add", ipcConfig);
+    if (!result?.success) {
+      const errorMessage = toMcpErrorMessage(result?.error, "Failed to add server");
+      yield* put(setError(errorMessage));
+      logger.error("Failed to add MCP server:", errorMessage);
+      return;
+    }
+
     yield* call(handleLoadServers);
     logger.info("Added MCP server:", config.name);
 
@@ -461,8 +467,10 @@ function* handleAddServer(action: ReturnType<typeof addServer>): SagaGenerator<v
         testServerConnection(config.name, config.url, config.headers)
       );
     }
-  } else {
-    throw new Error(result?.error || "Failed to add server");
+  } catch (error) {
+    const errorMessage = toMcpErrorMessage(error, "Failed to add server");
+    yield* put(setError(errorMessage));
+    logger.error("Failed to add MCP server:", errorMessage);
   }
 }
 
@@ -470,15 +478,28 @@ function* handleAddServer(action: ReturnType<typeof addServer>): SagaGenerator<v
 // Remove server saga
 // ============================================================================
 
+function* removeServerByName(name: string): SagaGenerator<boolean> {
+  try {
+    const result = yield* call(invokeIpc, "user-mcp:mcp-remove", { name });
+    if (result?.success) {
+      yield* put(removeServerFromState(name));
+      logger.info("Removed MCP server:", name);
+      return true;
+    }
+    const errorMessage = toMcpErrorMessage(result?.error, "Failed to remove server");
+    yield* put(setError(errorMessage));
+    logger.error("Failed to remove MCP server:", errorMessage);
+  } catch (error) {
+    const errorMessage = toMcpErrorMessage(error, "Failed to remove server");
+    yield* put(setError(errorMessage));
+    logger.error("Failed to remove MCP server:", errorMessage);
+  }
+  return false;
+}
+
 function* handleRemoveServer(action: ReturnType<typeof removeServer>): SagaGenerator<void> {
   const [name] = action.payload;
-  const result = yield* call(invokeIpc, "user-mcp:mcp-remove", { name });
-  if (result?.success) {
-    yield* put(removeServerFromState(name));
-    logger.info("Removed MCP server:", name);
-  } else {
-    throw new Error(result?.error || "Failed to remove server");
-  }
+  yield* call(removeServerByName, name);
 }
 
 // ============================================================================
@@ -487,7 +508,8 @@ function* handleRemoveServer(action: ReturnType<typeof removeServer>): SagaGener
 
 function* handleUpdateServer(action: ReturnType<typeof updateServer>): SagaGenerator<void> {
   const [name, config] = action.payload;
-  yield* call(handleRemoveServer, removeServer(name));
+  const removed = yield* call(removeServerByName, name);
+  if (!removed) return;
   yield* call(handleAddServer, addServer(config));
 }
 
@@ -496,44 +518,20 @@ function* handleUpdateServer(action: ReturnType<typeof updateServer>): SagaGener
 // ============================================================================
 
 function* handleImportFromJson(action: ReturnType<typeof importFromJson>): SagaGenerator<void> {
-  const [jsonString] = action.payload;
-  const data = JSON.parse(jsonString);
+  try {
+    const [jsonString] = action.payload;
+    const data = JSON.parse(jsonString);
+    const serverConfigs = normalizeMcpServersPayload(data);
 
-  let serversObj: Record<string, any> = data;
-  if (data.mcpServers && typeof data.mcpServers === "object") {
-    serversObj = data.mcpServers;
-  } else if (data.servers && typeof data.servers === "object") {
-    serversObj = data.servers;
-  }
-
-  let importedCount = 0;
-  if (typeof serversObj === "object" && !Array.isArray(serversObj)) {
-    const entries = Object.entries(serversObj);
-    importedCount = entries.length;
-    for (const [name, cfg] of entries) {
-      const config = cfg as any;
-      let transportType: "stdio" | "http" | "sse" = "stdio";
-      if (config.type === "http" || config.type === "sse") {
-        transportType = config.type;
-      } else if (config.url) {
-        transportType = "http";
-      }
-
-      const serverConfig: McpServerConfig = {
-        name,
-        type: transportType,
-        command: config.command,
-        args: config.args,
-        env: config.env,
-        url: config.url,
-        headers: config.headers,
-        authType: config.authType,
-      };
+    for (const serverConfig of serverConfigs) {
       yield* call(handleAddServer, addServer(serverConfig));
     }
+    yield* put(importFromJsonCompleted(serverConfigs.length));
+  } catch (error) {
+    const errorMessage = toMcpErrorMessage(error, "Failed to import servers");
+    yield* put(setError(errorMessage));
+    logger.error("Failed to import MCP servers:", errorMessage);
   }
-
-  yield* put(importFromJsonCompleted(importedCount));
 }
 
 // ============================================================================
@@ -551,7 +549,11 @@ function* mcpErrorListenerSaga(): SagaGenerator<void> {
     );
 
     yield* call(on, "mcp:server-error", (_event: any, data: any) => {
-      const { serverName, command, errorMessage } = data || {};
+      const serverName = optionalString(data?.serverName);
+      const command = optionalString(data?.command);
+      const errorMessage = data?.errorMessage
+        ? toMcpErrorMessage(data.errorMessage, "MCP server error")
+        : null;
       if (!errorMessage) return;
 
       const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);

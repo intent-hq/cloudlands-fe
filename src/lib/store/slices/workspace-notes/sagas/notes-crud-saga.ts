@@ -53,6 +53,11 @@ import { markNoteRead } from "../../note-read-tracking/note-read-tracking-slice"
 import { Logger } from "$shared/logger";
 import { getItem } from "$lib/store/utils/collection-utils";
 import { selectWorkspaceNotesState } from "../workspace-notes-selectors";
+import {
+  isFullNote,
+  normalizeNoteUpdatePatch,
+  normalizeNoteUpdateSource,
+} from "../workspace-notes-normalization";
 
 const logger = new Logger("NotesCrudSaga");
 
@@ -85,7 +90,7 @@ export function* handleInitializeNotes(action: ReturnType<typeof initializeNotes
 
     if (result.ok) {
       // Filter notes that belong to this workspace
-      const validNotes = result.data.filter((note) => note.workspaceId === workspaceId);
+      const validNotes = normalizeIpcNotes(result.data, workspaceId);
 
       // For optimistic workspaces, ensure spec note exists
       let notes = validNotes;
@@ -152,6 +157,12 @@ function createPlaceholderSpec(workspaceId: string): Note {
   } as unknown as Note;
 }
 
+function normalizeIpcNotes(value: unknown, workspaceId: string): Note[] {
+  return Array.isArray(value)
+    ? value.filter((note): note is Note => isFullNote(note) && note.workspaceId === workspaceId)
+    : [];
+}
+
 // ============================================================================
 // Reload notes for a workspace
 // ============================================================================
@@ -163,7 +174,7 @@ export function* handleReloadNotes(action: ReturnType<typeof reloadNotes>) {
     const result = yield* call(notesIpc<Note[]>, NOTES_CHANNELS.LIST, { workspaceId });
 
     if (result.ok) {
-      const validNotes = result.data.filter((note) => note.workspaceId === workspaceId);
+      const validNotes = normalizeIpcNotes(result.data, workspaceId);
       yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: validNotes }));
 
       // Preserve selection: if selected note no longer exists, clear selection
@@ -193,7 +204,7 @@ export function* handleSelectNote(action: ReturnType<typeof selectNote>) {
   try {
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.GET, { workspaceId, noteId });
 
-    if (result.ok && result.data) {
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       yield* put(applyLocalNoteUpdate(workspaceId, noteId, result.data));
     }
   } catch (error) {
@@ -206,7 +217,7 @@ export function* handleSelectNote(action: ReturnType<typeof selectNote>) {
 // ============================================================================
 export function* handleUpdateNoteContent(action: ReturnType<typeof updateNoteContent>) {
   const [workspaceId, noteId, content, immediate] = action.payload;
-  if (!workspaceId || !noteId) return;
+  if (!workspaceId || !noteId || typeof content !== "string") return;
 
   // Mark as user typing
   yield* put(setIsUserTyping(workspaceId, true));
@@ -275,7 +286,7 @@ function* saveNoteToServer(workspaceId: string, noteId: string) {
   try {
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.UPDATE, completeUpdate);
 
-    if (result.ok && result.data) {
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       yield* put(applyLocalNoteUpdate(workspaceId, noteId, result.data));
       yield* put(markNoteRead(workspaceId, noteId));
     } else {
@@ -292,7 +303,7 @@ function* saveNoteToServer(workspaceId: string, noteId: string) {
 // ============================================================================
 export function* handleUpdateNoteTitle(action: ReturnType<typeof updateNoteTitle>) {
   const [workspaceId, noteId, title] = action.payload;
-  if (!workspaceId || !noteId) return;
+  if (!workspaceId || !noteId || typeof title !== "string") return;
 
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
 
@@ -317,9 +328,9 @@ export function* handleCreateNote(action: ReturnType<typeof createNote>) {
 
   try {
     const cleanData: CreateNoteRequest = {
-      title: data.title || "New Note",
-      content: data.content || "",
-      tags: data.tags || [],
+      title: typeof data.title === "string" && data.title ? data.title : "New Note",
+      content: typeof data.content === "string" ? data.content : "",
+      tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === "string") : [],
       contentType: data.contentType,
       visibility: data.visibility,
       parentId: data.parentId,
@@ -328,7 +339,7 @@ export function* handleCreateNote(action: ReturnType<typeof createNote>) {
 
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.CREATE, cleanData);
 
-    if (result.ok) {
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       yield* put(addOptimisticNote(workspaceId, result.data));
       yield* put(markNoteRead(workspaceId, result.data.id));
       yield* put(selectNote(workspaceId, result.data.id));
@@ -368,15 +379,15 @@ export function* handleDeleteNote(action: ReturnType<typeof deleteNote>) {
 export function* handleUpdateNote(action: ReturnType<typeof updateNote>) {
   const [workspaceId, noteId, updates] = action.payload;
   if (!workspaceId || !noteId) return;
+  const normalizedUpdates = normalizeNoteUpdatePatch(updates);
+  if (Object.keys(normalizedUpdates).length === 0) return;
 
   try {
-    const updateRequest = { id: NoteId(noteId), workspaceId: WorkspaceId(workspaceId), ...updates } as UpdateNoteRequest;
+    const updateRequest = { id: NoteId(noteId), workspaceId: WorkspaceId(workspaceId), ...normalizedUpdates } as UpdateNoteRequest;
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.UPDATE, updateRequest);
 
-    if (result.ok && result.data) {
-      if (result.data.workspaceId === workspaceId) {
-        yield* put(applyLocalNoteUpdate(workspaceId, noteId, result.data));
-      }
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
+      yield* put(applyLocalNoteUpdate(workspaceId, noteId, result.data));
     }
   } catch (err) {
     logger.error("Error updating note", err as Error);
@@ -403,6 +414,8 @@ export function* handleFlushPendingSaves(action: ReturnType<typeof flushPendingS
 export function* handleExternalNoteUpdateSaga(action: ReturnType<typeof handleExternalNoteUpdate>) {
   const [workspaceId, noteId, updates, origin] = action.payload;
   if (!workspaceId || !noteId) return;
+  const normalizedUpdates = normalizeNoteUpdatePatch(updates);
+  if (Object.keys(normalizedUpdates).length === 0) return;
 
   const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (!ws) return;
@@ -415,14 +428,15 @@ export function* handleExternalNoteUpdateSaga(action: ReturnType<typeof handleEx
 
   if (note.workspaceId !== workspaceId) return;
 
-  const normalizedOrigin = origin ?? "external";
+  const normalizedOrigin = typeof origin === "string" ? origin : "external";
+  const content = normalizedUpdates.content;
 
   // Safety: prevent untrusted source from populating empty spec
   if (
     noteId === "spec" &&
     note.content === "" &&
-    updates.content &&
-    updates.content.trim() !== "" &&
+    content !== undefined &&
+    content.trim() !== "" &&
     normalizedOrigin !== "file-system" &&
     normalizedOrigin !== "agent" &&
     normalizedOrigin !== "restore"
@@ -431,8 +445,8 @@ export function* handleExternalNoteUpdateSaga(action: ReturnType<typeof handleEx
   }
 
   // Safety: prevent clearing spec content from external sources
-  if (noteId === "spec" && updates.content !== undefined && !(updates as any).isUserAction) {
-    if (String(updates.content).trim().length === 0) return;
+  if (noteId === "spec" && content !== undefined && !(normalizedUpdates as any).isUserAction) {
+    if (content.trim().length === 0) return;
   }
 
   // Check if user is currently editing this note
@@ -445,12 +459,12 @@ export function* handleExternalNoteUpdateSaga(action: ReturnType<typeof handleEx
   }
 
   // Apply the update
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, updates));
+  yield* put(applyLocalNoteUpdate(workspaceId, noteId, normalizedUpdates));
 
   // Dispatch content update event for editor synchronization
-  if (updates.content !== undefined) {
-    const source = normalizedOrigin === "agent" ? "agent" : "external";
-    dispatchContentUpdateEvent(noteId, updates.content || "", source, workspaceId);
+  if (content !== undefined) {
+    const source = normalizeNoteUpdateSource(normalizedOrigin);
+    dispatchContentUpdateEvent(noteId, content, source, workspaceId);
   }
 }
 
@@ -469,7 +483,7 @@ export function* handleRestoreNoteVersion(action: ReturnType<typeof restoreNoteV
   try {
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.RESTORE_VERSION, { workspaceId, noteId, versionId });
 
-    if (result.ok && result.data) {
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       yield* put(handleExternalNoteUpdate(workspaceId, noteId, result.data, "restore"));
     } else {
       logger.error("Failed to restore note version", { error: result.ok ? undefined : result.error, workspaceId, noteId, versionId });
@@ -486,7 +500,7 @@ export function* handleUpdateTaskStatus(action: ReturnType<typeof updateTaskStat
   const [workspaceId, noteId, status] = action.payload;
   try {
     const result = yield* call(notesIpc<Note>, NOTES_CHANNELS.UPDATE_TASK_STATUS, { workspaceId, noteId, status });
-    if (result.ok && result.data) {
+    if (result.ok && isFullNote(result.data) && result.data.workspaceId === workspaceId) {
       yield* put(applyLocalNoteUpdate(workspaceId, noteId, result.data));
     } else {
       logger.error("Failed to update task status", { error: result.ok ? undefined : result.error, workspaceId, noteId });
@@ -559,7 +573,7 @@ export function* handleFetchReadyTasks(action: ReturnType<typeof fetchReadyTasks
   try {
     const result = yield* call(notesIpc<{ flattened: Note[]; ready: Note[] }>, NOTES_CHANNELS.FIND_READY_TASKS, { workspaceId });
     if (result.ok) {
-      yield* put(applyReadyTasks(workspaceId, result.data.ready));
+      yield* put(applyReadyTasks(workspaceId, normalizeIpcNotes(result.data?.ready, workspaceId)));
     } else {
       yield* put(applyReadyTasks(workspaceId, []));
     }

@@ -97,7 +97,7 @@ function* handleClearAll() {
 // Stale accumulator cleanup (periodic sweep)
 // ---------------------------------------------------------------------------
 
-function* staleCleanupLoop() {
+export function* staleCleanupLoop() {
   while (true) {
     yield* delay(STALE_CLEANUP_INTERVAL_MS);
 
@@ -140,7 +140,6 @@ export function* messageAccumulatorSaga() {
   // Reset module-level state on (re)start
   flushTasks.clear();
 
-  yield* fork(staleCleanupLoop);
   yield* takeEvery(startAccumulation, handleStart);
   yield* takeEvery(clearAccumulator, handleClear);
   yield* takeEvery(clearAllAccumulators, handleClearAll);

@@ -1,16 +1,8 @@
-/**
- * Main-process saga registry.
- *
- * This registry is the startup source of truth for static zero-argument main
- * sagas. initMainStore starts each entry independently so a crash in one saga
- * does not cancel sibling sagas; there is intentionally no aggregate root saga
- * wrapping these static startup entries.
- *
- * Dynamic/runtime-argument worker forks remain internal to the sagas that own
- * them and should not be listed here as startup entries.
- */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 
-import type { Saga } from "redux-saga";
+import { mainSagaEntries, mainSagaNames, mainSagas } from "./sagas";
 import {
   supervisedDelegationGroupSaga,
   supervisedMatchingSaga,
@@ -48,9 +40,9 @@ import {
   staleCleanupLoop,
 } from "./slices/message-accumulator/sagas/message-accumulator-saga";
 
-export type MainSaga = () => ReturnType<Saga>;
+const SAGAS_SOURCE = readFileSync(join(process.cwd(), "src/store/main/sagas.ts"), "utf-8");
 
-export const mainSagas = {
+const expectedSagas = {
   deliverySaga,
   watchAgentIdleForDelivery,
   periodicQueueSweep,
@@ -62,16 +54,13 @@ export const mainSagas = {
   ipcBridgeSaga,
   subscriptionsChangedEmitterSaga,
   supervisedMatchingSaga,
-
   workspaceEventsSaga,
   workspaceEventsPersistenceSaga,
   workspaceEventsBroadcastSaga,
   rendererSubscriptionSaga,
   eventTriggeredSagas,
-
   messageAccumulatorSaga,
   staleCleanupLoop,
-
   workspaceLifecycleEventsSaga,
   noteEventsSaga,
   agentEventsSaga,
@@ -80,13 +69,20 @@ export const mainSagas = {
   scriptEventsSaga,
   appEventsSaga,
   sourceEventsSaga,
-} satisfies Record<string, MainSaga>;
+} as const;
 
-export type MainSagaName = keyof typeof mainSagas;
+describe("main saga registry", () => {
+  it("lists every static zero-argument main saga with a stable name", () => {
+    expect(mainSagas).toEqual(expectedSagas);
+    expect(mainSagaNames).toEqual(Object.keys(expectedSagas));
+    expect(mainSagaEntries).toEqual(
+      mainSagaNames.map((name) => ({ name, saga: expectedSagas[name] })),
+    );
+  });
 
-export const mainSagaNames = Object.keys(mainSagas) as MainSagaName[];
-
-export const mainSagaEntries = mainSagaNames.map((name) => ({
-  name,
-  saga: mainSagas[name],
-}));
+  it("does not reintroduce a broad static main root fork tree", () => {
+    expect(mainSagas).not.toHaveProperty("mainRootSaga");
+    expect(SAGAS_SOURCE).not.toMatch(/function\*\s+mainRootSaga/);
+    expect(SAGAS_SOURCE).not.toContain("yield* fork(");
+  });
+});

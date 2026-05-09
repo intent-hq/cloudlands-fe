@@ -14,13 +14,9 @@
  * reached sagas regardless of reducer behavior.
  */
 
-import { fork, put, takeEvery } from "typed-redux-saga";
+import { put, takeEvery } from "typed-redux-saga";
 import { emitWorkspaceEvent, cleanupWorkspace, workspaceEventAccepted } from "../workspace-events-slice";
 import { isDuplicateEvent, clearWorkspaceCache } from "../dedup-cache";
-import { workspaceEventsPersistenceSaga } from "./persistence-saga";
-import { workspaceEventsBroadcastSaga } from "./broadcast-saga";
-import { eventTriggeredSagas } from "./event-triggered-sagas";
-import { rendererSubscriptionSaga } from "./renderer-subscription-saga";
 import { Logger } from "../../../../../shared/logger";
 
 const logger = new Logger("DedupGate");
@@ -65,7 +61,8 @@ function* handleCleanupWorkspace(action: ReturnType<typeof cleanupWorkspace>) {
 }
 
 // ---------------------------------------------------------------------------
-// Root saga
+// Dedup gate saga. Downstream workspace event sagas are registered directly in
+// the main saga registry so each long-running worker starts independently.
 // ---------------------------------------------------------------------------
 
 export function* workspaceEventsSaga() {
@@ -74,15 +71,5 @@ export function* workspaceEventsSaga() {
 
   // Clean up module-level dedup cache when workspace is removed
   yield* takeEvery(cleanupWorkspace, handleCleanupWorkspace);
-
-  // All downstream sagas listen to workspaceEventAccepted (not emitWorkspaceEvent)
-  yield* fork(workspaceEventsPersistenceSaga);
-  yield* fork(workspaceEventsBroadcastSaga);
-
-  // Renderer subscription delivery (replaces store.subscribe() in events.ipc.ts)
-  yield* fork(rendererSubscriptionSaga);
-
-  // Event-triggered sagas (message delivery, auto-commit)
-  yield* fork(eventTriggeredSagas);
 }
 

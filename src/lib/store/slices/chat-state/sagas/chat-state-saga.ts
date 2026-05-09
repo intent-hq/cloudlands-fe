@@ -54,6 +54,7 @@ import {
 import { selectAgentById, selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
 import { removeAgent, removeWorkspaceAgentState } from '../../workspace-agents/workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { sanitizeStatusEvents } from '../chat-state-serialization';
 
 const logger = createLogger('ChatStateSaga');
 
@@ -269,7 +270,7 @@ function makeStorageKey(agentId: string): string {
 function* persistStatusEvents(agentId: string): SagaGenerator<void> {
   // Read current status events from state (flat: byAgentId)
   const statusEvents: StatusEvent[] = yield* selectChatStatusEvents.effect(agentId);
-  yield* call(setLocalStorageJSON, makeStorageKey(agentId), statusEvents);
+  yield* call(setLocalStorageJSON, makeStorageKey(agentId), sanitizeStatusEvents(statusEvents));
 }
 
 function* clearStatusEventsStorage(agentId: string): SagaGenerator<void> {

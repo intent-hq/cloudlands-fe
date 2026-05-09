@@ -289,7 +289,11 @@ export function* watchDelegationAgentDeleted() {
 }
 
 // ---------------------------------------------------------------------------
-// Root delegation group saga
+// Internal delegation-group watcher owned by supervisedDelegationGroupSaga.
+//
+// supervisedDelegationGroupSaga is the static zero-argument registry entry;
+// this watcher stays inside that owner so the crash-recovery loop can restart
+// it without moving runtime behavior into the startup registry.
 // ---------------------------------------------------------------------------
 
 export function* delegationGroupSaga() {
@@ -297,10 +301,8 @@ export function* delegationGroupSaga() {
     requestDelegationGroupDelivery,
     handleDelegationGroupDelivery,
   );
-  yield* watchDelegationAgentCompleted();
-  yield* watchDelegationAgentDeleted();
 
-  // Block forever so the crash-recovery wrapper in agentSubscriptionsSaga
+  // Block forever so the crash-recovery wrapper in supervisedDelegationGroupSaga
   // doesn't restart us in a tight loop when nothing has gone wrong.
   yield* take("@@NEVER_RESOLVE");
 }

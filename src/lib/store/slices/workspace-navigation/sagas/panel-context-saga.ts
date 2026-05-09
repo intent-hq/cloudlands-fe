@@ -61,14 +61,22 @@ function mapTrackedChangeStatusToContextType(
   }
 }
 
+function getSafeDiffStat(
+  stats: Partial<Record<"additions" | "deletions", unknown>> | undefined,
+  key: "additions" | "deletions",
+): number {
+  const value = stats?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function getDiffInfo(trackedChange?: TrackedChange): WorkspaceUIContext["diffInfo"] {
   if (!trackedChange) {
     return undefined;
   }
 
   return {
-    additions: trackedChange.stats.additions,
-    deletions: trackedChange.stats.deletions,
+    additions: getSafeDiffStat(trackedChange.stats, "additions"),
+    deletions: getSafeDiffStat(trackedChange.stats, "deletions"),
     isStaged: trackedChange.stage === ChangeStage.Staged,
     gitStatus: trackedChange.status ?? "modified",
     changeType: mapTrackedChangeStatusToContextType(trackedChange.status),

@@ -8,7 +8,7 @@
  * called via `call()` so they remain mockable in tests.
  */
 
-import { call, fork, join, put, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
+import { call, join, put, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord, AgentStatus } from "../types";
@@ -787,13 +787,15 @@ export function* periodicQueueSweep() {
 }
 
 // ---------------------------------------------------------------------------
-// Root delivery saga
+// Static registry entry: delivery request watchers
+//
+// initMainStore starts this zero-argument saga independently from the main saga
+// registry. Runtime-argument delivery workers remain owned by these watchers
+// and are forked/spawned internally when needed.
 // ---------------------------------------------------------------------------
 
 export function* deliverySaga() {
   yield* takeEvery(requestDeliverEvents, handleDeliverEvents);
   yield* takeEvery(requestDeliverQueuedEvents, handleDeliverQueuedEvents);
-  yield* watchAgentIdleForDelivery();
-  yield* fork(periodicQueueSweep);
 }
 

@@ -33,7 +33,12 @@ import { paletteSaga } from "./slices/palette/sagas/palette-saga";
 import { authSaga } from "./slices/auth/sagas/auth-saga";
 import { autoUpdateSaga } from "./slices/auto-update/sagas/auto-update-saga";
 import { appLayoutSaga } from "./slices/app-layout/sagas/app-layout-saga";
-import { workspaceNavigationSaga } from "./slices/workspace-navigation/sagas/workspace-navigation-saga";
+import { panelContextSaga } from "./slices/workspace-navigation/sagas/panel-context-saga";
+import {
+  retroactiveNavigationMountCheckSaga,
+  watchWorkspaceNavigationLifecycleSaga,
+  watchWorkspaceNavigationPersistenceSaga,
+} from "./slices/workspace-navigation/sagas/workspace-navigation-saga";
 import { workspaceSwitcherSaga } from "./slices/workspace-switcher/sagas/workspace-switcher-saga";
 import { releaseNotesSaga } from "./slices/release-notes/sagas/release-notes-saga";
 import { transientUiSaga } from "./slices/transient-ui/sagas/transient-ui-saga";
@@ -118,7 +123,10 @@ export const sagas = {
   uiSaga,
   layoutSaga: appLayoutSaga,
   autoUpdateSaga,
-  workspaceNavigationSaga,
+  workspaceNavigationLifecycleSaga: watchWorkspaceNavigationLifecycleSaga,
+  retroactiveNavigationMountCheckSaga,
+  workspaceNavigationPersistenceSaga: watchWorkspaceNavigationPersistenceSaga,
+  panelContextSaga,
   workspaceSwitcherSaga,
   releaseNotesSaga,
   transientUiSaga,

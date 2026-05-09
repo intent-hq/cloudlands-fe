@@ -62,6 +62,12 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   selectAllWorkspaceAgents: vi.fn(() => mocks.readable([])),
 }));
 
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: Object.assign(vi.fn(() => mocks.readable([])), {
+    select: vi.fn(() => []),
+  }),
+}));
+
 vi.mock('$lib/components/ui/tooltip', async () => ({
   Tooltip: (await import('../sidebar/__tests__/mocks/MockTooltip.svelte')).default,
 }));

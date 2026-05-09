@@ -1,15 +1,15 @@
-import type { WorkspaceEvent } from "$features/events/types";
-import { invoke } from "$lib/electron-bridge";
-import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
-import { call, fork, put, takeEvery } from "typed-redux-saga";
+import { invoke } from '$lib/electron-bridge';
+import { takeEveryFromListenSync } from '$lib/store/utils/ipc-channel';
+import { call, fork, put, takeEvery } from 'typed-redux-saga';
 import {
   eventReceived,
   eventsCleared,
   eventsLoaded,
   loadEventsRequested,
   setEventsLoading,
-} from "../workspace-events-slice";
-import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+} from '../workspace-events-slice';
+import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from '../workspace-events-sanitizer';
+import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 // ---------------------------------------------------------------------------
 // Types for IPC payloads
@@ -17,7 +17,7 @@ import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-
 
 interface EventsNewPayload {
   workspaceId: string;
-  event: WorkspaceEvent;
+  event: unknown;
 }
 
 interface EventsClearedPayload {
@@ -26,7 +26,7 @@ interface EventsClearedPayload {
 
 interface EventsQueryResponse {
   success: boolean;
-  events?: WorkspaceEvent[];
+  events?: unknown;
   error?: string;
 }
 
@@ -55,15 +55,17 @@ function isDuplicate(eventId: string): boolean {
 // ---------------------------------------------------------------------------
 
 export function* watchEventsNewSaga() {
-  yield* takeEveryFromListenSync<EventsNewPayload>("events:new", function* (data) {
-    if (!data.workspaceId || !data.event?.id) return;
-    if (isDuplicate(data.event.id)) return;
-    yield* put(eventReceived(data.workspaceId, data.event));
+  yield* takeEveryFromListenSync<EventsNewPayload>('events:new', function* (data) {
+    if (!data || typeof data.workspaceId !== 'string') return;
+    const event = sanitizeWorkspaceEvent(data.event, data.workspaceId);
+    if (!event) return;
+    if (isDuplicate(event.id)) return;
+    yield* put(eventReceived(data.workspaceId, event));
   });
 }
 
 export function* watchEventsClearedSaga() {
-  yield* takeEveryFromListenSync<EventsClearedPayload>("events:cleared", function* (data) {
+  yield* takeEveryFromListenSync<EventsClearedPayload>('events:cleared', function* (data) {
     if (!data.workspaceId) return;
     yield* put(eventsCleared(data.workspaceId));
   });
@@ -80,14 +82,15 @@ export function* handleLoadEventsRequested(action: ReturnType<typeof loadEventsR
   yield* put(setEventsLoading(workspaceId, true));
 
   try {
-    const result: EventsQueryResponse = yield* call(
-      invoke<EventsQueryResponse>,
-      "events:query",
-      { workspaceId, limit: 100 }
-    );
+    const result: EventsQueryResponse = yield* call(invoke<EventsQueryResponse>, 'events:query', {
+      workspaceId,
+      limit: 100,
+    });
 
-    if (result.success && result.events) {
-      yield* put(eventsLoaded(workspaceId, result.events));
+    if (result.success && Array.isArray(result.events)) {
+      yield* put(
+        eventsLoaded(workspaceId, sanitizeWorkspaceEventsList(result.events, workspaceId)),
+      );
     } else {
       yield* put(setEventsLoading(workspaceId, false));
     }
@@ -120,4 +123,3 @@ export function* workspaceEventsSaga() {
   yield* fork(watchLoadEventsRequestedSaga);
   yield* takeEvery(workspaceMounted, handleWorkspaceMounted);
 }
-

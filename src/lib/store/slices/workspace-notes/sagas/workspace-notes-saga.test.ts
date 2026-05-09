@@ -286,6 +286,31 @@ describe("workspaceNotesSaga", () => {
     expect(putEffect.payload.action.payload[2].content).toBe("Changed content");
   });
 
+  it("ignores non-string note:updated content and falls back without crashing", () => {
+    watchNoteUpdatedSaga().next();
+
+    const handler = getListenSyncHandler("note:updated")({
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      changes: { content: { slice: "not-a-function" } },
+      source: { invalid: true },
+    } as any);
+
+    const callEffect = handler.next().value as any;
+    expect(callEffect.type).toBe("CALL");
+    expect(callEffect.payload.args).toEqual(["notes:get", { workspaceId: "ws-1", noteId: "note-1" }]);
+
+    const fetchedNote = mockNote("note-1");
+    expect(handler.next({ ok: true, data: fetchedNote })).toEqual({
+      value: sagaEffects.put(applyNoteUpdated("ws-1", "note-1", fetchedNote)),
+      done: false,
+    });
+    expect(handler.next().done).toBe(true);
+    expect(dispatchContentUpdateEventMock).toHaveBeenCalledWith(
+      "note-1", fetchedNote.content, "external", "ws-1",
+    );
+  });
+
   it("falls back to IPC when content-only update arrives but note not in store", () => {
     watchNoteUpdatedSaga().next();
 

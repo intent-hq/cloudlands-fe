@@ -2341,8 +2341,8 @@ describe("sweep catch-up double-delivery prevention", () => {
 describe("matchingSaga blocking behavior", () => {
   it("does not return after registering takeEvery watchers", async () => {
     // matchingSaga registers takeEvery watchers (non-blocking) and then must
-    // block indefinitely. If it returns, the crash-recovery wrapper in
-    // agentSubscriptionsSaga would loop and re-register duplicate watchers.
+    // block indefinitely. If it returns, the crash-recovery wrapper would loop
+    // and re-register duplicate watchers.
     //
     // Strategy: run the saga in the crash-recovery wrapper pattern and verify
     // it does NOT loop (i.e., the "restarting" log never fires).
@@ -2371,8 +2371,8 @@ describe("matchingSaga blocking behavior", () => {
 describe("delegationGroupSaga restart wrapper behavior", () => {
   it("does not spin when healthy because delegationGroupSaga blocks", async () => {
     // delegationGroupSaga registers takeEvery watchers and then blocks on
-    // take("@@NEVER_RESOLVE"). The crash-recovery wrapper in
-    // agentSubscriptionsSaga should therefore never loop.
+    // take("@@NEVER_RESOLVE"). The crash-recovery wrapper should therefore
+    // never loop.
     let loopCount = 0;
 
     function* testWrapper() {

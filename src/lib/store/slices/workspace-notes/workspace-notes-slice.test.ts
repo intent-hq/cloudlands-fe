@@ -4,6 +4,7 @@ import { getItem, getItems } from "../../utils/collection-utils";
 import {
   applyNoteCreated,
   applyNoteDeleted,
+  applyLocalNoteUpdate,
   applyNoteUpdated,
   applyTaskStatusChanged,
   clearWorkspaceNotesForWorkspaces,
@@ -165,6 +166,27 @@ describe("workspaceNotesReducer", () => {
     expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.title).toBe(
       "Updated title"
     );
+  });
+
+  it("drops non-string local content/title/source updates before storing notes", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+    );
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyLocalNoteUpdate(WS_1, "note-1", {
+        content: { slice: "not-a-function" },
+        title: 42,
+        source: { invalid: true },
+      } as unknown as Partial<Note>)
+    );
+
+    const note = getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
+    expect(note?.content).toBe("Content note-1");
+    expect(note?.title).toBe("Note note-1");
+    expect((note as any).source).toBeUndefined();
   });
 
   it("clears workspace state on workspaceUnmounted", () => {
