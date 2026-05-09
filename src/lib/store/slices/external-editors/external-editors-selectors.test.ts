@@ -7,6 +7,7 @@ import {
   selectInstalledEditorsByCategory,
   selectInstalledEditorsCollection,
   selectInstalledEditorsFiltered,
+  selectHiddenEditorIds,
   selectInstalledIdes,
   selectInstalledTerminals,
   selectLastFetched,
@@ -51,6 +52,7 @@ function mockState(editors: InstalledEditor[] = mockEditors): StoreState {
     externalEditors: {
       selectedAction: "cursor",
       editors: createCollection<InstalledEditor, "id">("id", editors),
+      hiddenEditorIds: ["iterm2"],
       loading: false,
       error: null,
       lastFetched: 123,
@@ -91,9 +93,13 @@ describe("external-editors selectors", () => {
   it("filters to installed editors only", () => {
     const state = mockState();
 
-    expect(selectInstalledEditorsFiltered.select(state)).toEqual(
-      mockEditors.slice(0, 2)
-    );
+    expect(selectInstalledEditorsFiltered.select(state)).toEqual([mockEditors[0]]);
+  });
+
+  it("returns hidden editor ids", () => {
+    const state = mockState();
+
+    expect(selectHiddenEditorIds.select(state)).toEqual(["iterm2"]);
   });
 
   it("returns the last fetched timestamp", () => {

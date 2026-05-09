@@ -14,6 +14,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
+  import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -447,6 +448,18 @@
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <BackgroundAgentSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- Open In Apps -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Open In
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <OpenInAppsSettings />
             </section>
           </div>
         </div>

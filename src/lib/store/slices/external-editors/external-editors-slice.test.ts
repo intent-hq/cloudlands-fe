@@ -7,8 +7,10 @@ import {
   fetchEditorsSuccess,
   initialState,
   isSpecialAction,
+  setHiddenEditorIds,
   setLoading,
   setOpenAction,
+  toggleHiddenEditor,
   type ExternalEditorsState,
   type InstalledEditor,
 } from "./external-editors-slice";
@@ -210,6 +212,30 @@ describe("externalEditorsReducer", () => {
 
       const state = externalEditorsReducer(prev, setLoading(false));
       expect(state.loading).toBe(false);
+    });
+  });
+
+  describe("hidden editor actions", () => {
+    it("should replace hidden editor ids with normalized unique strings", () => {
+      const state = externalEditorsReducer(
+        initialState,
+        setHiddenEditorIds(["vscode", "cursor", "vscode", 123 as unknown as string])
+      );
+
+      expect(state.hiddenEditorIds).toEqual(["vscode", "cursor"]);
+    });
+
+    it("should toggle editor ids in and out of the hidden list", () => {
+      const hiddenState = externalEditorsReducer(initialState, toggleHiddenEditor("vscode"));
+      expect(hiddenState.hiddenEditorIds).toEqual(["vscode"]);
+
+      const visibleState = externalEditorsReducer(hiddenState, toggleHiddenEditor("vscode"));
+      expect(visibleState.hiddenEditorIds).toEqual([]);
+    });
+
+    it("should ignore empty editor ids", () => {
+      const state = externalEditorsReducer(initialState, toggleHiddenEditor(""));
+      expect(state).toBe(initialState);
     });
   });
 

@@ -103,6 +103,7 @@
   }: Props = $props();
 
   const logger = createLogger('WorkspaceActionsMenu');
+
   const dispatch = getDispatch();
   const installedEditors$ = selectInstalledEditorsFiltered();
 

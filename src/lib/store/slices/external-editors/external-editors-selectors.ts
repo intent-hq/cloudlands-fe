@@ -64,11 +64,17 @@ export const selectLastFetched = createSelector((state): number => {
   return state.externalEditors.lastFetched;
 });
 
-/** Select editors where installed === true */
+/** Select editor IDs hidden from Open In menus */
+export const selectHiddenEditorIds = createSelector((state): string[] => {
+  return state.externalEditors.hiddenEditorIds;
+});
+
+/** Select editors where installed === true and not hidden */
 export const selectInstalledEditorsFiltered = createSelector(
   (state): InstalledEditor[] => {
+    const hiddenEditorIds = selectHiddenEditorIds.select(state);
     return selectInstalledEditors
       .select(state)
-      .filter((editor) => editor.installed);
+      .filter((editor) => editor.installed && !hiddenEditorIds.includes(editor.id));
   }
 );

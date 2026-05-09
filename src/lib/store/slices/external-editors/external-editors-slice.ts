@@ -36,6 +36,7 @@ export interface InstalledEditor {
 export type ExternalEditorsState = {
   selectedAction: OpenAction;
   editors: Collection<InstalledEditor, "id">;
+  hiddenEditorIds: string[];
   loading: boolean;
   error: string | null;
   lastFetched: number;
@@ -66,6 +67,7 @@ const VALID_HANDLER_TYPES = new Set<InstalledEditor["handlerType"]>([
 export const initialState: ExternalEditorsState = {
   selectedAction: DEFAULT_ACTION,
   editors: createCollection<InstalledEditor, "id">("id"),
+  hiddenEditorIds: [],
   loading: false,
   error: null,
   lastFetched: 0,
@@ -100,6 +102,16 @@ export const clearError = createAction("externalEditors/clearError");
 /** Set loading state */
 export const setLoading = createAction<[loading: boolean]>(
   "externalEditors/setLoading"
+);
+
+/** Replace hidden editor IDs loaded from persisted settings */
+export const setHiddenEditorIds = createAction<[editorIds: string[]]>(
+  "externalEditors/setHiddenEditorIds"
+);
+
+/** Toggle whether an editor is hidden from Open In menus */
+export const toggleHiddenEditor = createAction<[editorId: string]>(
+  "externalEditors/toggleHiddenEditor"
 );
 
 // ============================================================================
@@ -191,6 +203,11 @@ export function normalizeInstalledEditors(editors: unknown): InstalledEditor[] {
   });
 }
 
+export function normalizeHiddenEditorIds(editorIds: unknown): string[] {
+  if (!Array.isArray(editorIds)) return [];
+  return Array.from(new Set(editorIds.filter((id): id is string => typeof id === "string")));
+}
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -221,4 +238,21 @@ export const externalEditorsReducer = createReducer<ExternalEditorsState>(
   .with(setLoading, (state, { payload: [loading] }) => ({
     ...state,
     loading,
-  }));
+  }))
+  .with(setHiddenEditorIds, (state, { payload: [editorIds] }) => ({
+    ...state,
+    hiddenEditorIds: normalizeHiddenEditorIds(editorIds),
+  }))
+  .with(toggleHiddenEditor, (state, { payload: [editorId] }) => {
+    const normalizedEditorId = coerceString(editorId, "");
+    if (!normalizedEditorId) return state;
+
+    const hiddenEditorIds = state.hiddenEditorIds.includes(normalizedEditorId)
+      ? state.hiddenEditorIds.filter((id) => id !== normalizedEditorId)
+      : [...state.hiddenEditorIds, normalizedEditorId];
+
+    return {
+      ...state,
+      hiddenEditorIds,
+    };
+  });

@@ -18,7 +18,7 @@
     type OpenAction,
   } from '$lib/store/slices/external-editors/external-editors-slice';
   import {
-    selectInstalledEditors,
+    selectInstalledEditorsFiltered,
     selectOpenAction,
   } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -37,7 +37,6 @@
   import Fa from 'svelte-fa';
 
   const logger = createLogger('OpenComboButton');
-
   /** Icon mapping from editor ID to Svelte component */
   const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
     vscode: VSCodeIcon,
@@ -105,7 +104,7 @@
 
   const dispatch = getDispatch();
   const openAction = selectOpenAction();
-  const installedEditors$ = selectInstalledEditors();
+  const installedEditors$ = selectInstalledEditorsFiltered();
 
   let dropdownOpen = $state(false);
 
@@ -134,9 +133,7 @@
     const installedEditors = $installedEditors$;
 
     // Convert installed editors to action configs, sorted by priority
-    const editorActions: ActionConfig[] = installedEditors
-      .filter((e) => e.installed)
-      .map(editorToAction);
+    const editorActions: ActionConfig[] = installedEditors.map(editorToAction);
 
     // Add "Other..." option to pick any app
     const otherAction: ActionConfig = {
@@ -261,7 +258,7 @@
   }
 
   function handlePrimaryClick() {
-    executeAction($openAction);
+    executeAction(currentAction.id);
   }
 
   function handleActionClick(actionId: OpenAction) {
