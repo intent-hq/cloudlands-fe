@@ -41,6 +41,7 @@
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
+  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
   const dispatch = getDispatch();
   const switcherState = selectSwitcherState();
@@ -282,11 +283,13 @@
                   </span>
                 {/if}
 
-                <RelativeTime
-                  date={workspace.lastActivity || workspace.updatedAt}
-                  class="text-ui text-subtle whitespace-nowrap shrink-0"
-                  compact
-                />
+                {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+                  <RelativeTime
+                    date={getWorkspaceActivityDisplayTime(workspace)}
+                    class="text-ui text-subtle whitespace-nowrap shrink-0"
+                    compact
+                  />
+                {/if}
               </div>
 
               <!-- Row 2: repo info -->

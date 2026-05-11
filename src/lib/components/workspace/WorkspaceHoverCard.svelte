@@ -19,6 +19,7 @@
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
   interface Props {
     workspace: Workspace | null;
@@ -58,10 +59,12 @@
     'in_progress',
   ]);
 
-  function formatRelativeDate(date: string | undefined) {
+  function formatRelativeDate(date: string | number | undefined) {
     if (!date) return null;
     try {
-      return formatDistanceToNow(new Date(date), { addSuffix: true });
+      const parsed = new Date(date);
+      if (!Number.isFinite(parsed.getTime())) return null;
+      return formatDistanceToNow(parsed, { addSuffix: true });
     } catch {
       return 'Recently';
     }
@@ -298,12 +301,12 @@
   // Filter out streaming agents from unread list
   let unreadOnlyAgentIds = $derived(unreadAgentIds.filter((id) => !streamingAgentIds.includes(id)));
 
-  // Format last activity time (use lastActivity if available, otherwise updatedAt)
+  // Format last activity time using shared workspace display recency semantics.
   let lastActivityText = $derived(
     !workspace
       ? 'No recent activity'
       : (() => {
-          const activityDate = workspace.lastActivity || workspace.updatedAt;
+          const activityDate = getWorkspaceActivityDisplayTime(workspace);
           return formatRelativeDate(activityDate) ?? 'No recent activity';
         })(),
   );

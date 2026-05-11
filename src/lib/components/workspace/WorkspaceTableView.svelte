@@ -14,6 +14,10 @@
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
   import { scale, slide } from 'svelte/transition';
+  import {
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
   import WorkspaceTableCollapseButton from './WorkspaceTableCollapseButton.svelte';
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
   import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
@@ -241,9 +245,7 @@
   // Get the most recent activity timestamp for a group
   function getGroupMostRecentActivity(workspaces: Workspace[]): number {
     if (workspaces.length === 0) return 0;
-    return Math.max(
-      ...workspaces.map((ws) => new Date(ws.lastActivity || ws.updatedAt || 0).getTime()),
-    );
+    return Math.max(...workspaces.map(getWorkspaceActivityDisplayTime));
   }
 
   // Masonry layout configuration
@@ -260,11 +262,7 @@
   });
 
   let groupedWorkspaces = $derived.by((): GroupedWorkspaces => {
-    const sorted = [...filteredWorkspaces].sort((a, b) => {
-      const dateA = new Date(a.lastActivity || a.updatedAt || 0).getTime();
-      const dateB = new Date(b.lastActivity || b.updatedAt || 0).getTime();
-      return dateB - dateA;
-    });
+    const sorted = [...filteredWorkspaces].sort(compareWorkspaceActivityDisplayTimeDesc);
 
     if (!groupByRepo) {
       return [

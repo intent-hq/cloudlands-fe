@@ -8,6 +8,7 @@
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
+  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { faBoxArchive, faBoxOpen, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
@@ -217,11 +218,13 @@
           {/if}
 
           <!-- Activity time -->
-          <RelativeTime
-            date={ws.lastActivity || ws.updatedAt}
-            class="text-ui text-subtle whitespace-nowrap shrink-0"
-            compact
-          />
+          {#if getWorkspaceActivityDisplayTime(ws) > 0}
+            <RelativeTime
+              date={getWorkspaceActivityDisplayTime(ws)}
+              class="text-ui text-subtle whitespace-nowrap shrink-0"
+              compact
+            />
+          {/if}
         </div>
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->

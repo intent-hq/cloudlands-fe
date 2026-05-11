@@ -29,6 +29,10 @@
     setAllSpacesViewMode,
   } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import type { AllSpacesViewMode } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+  import {
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -72,10 +76,6 @@
     activeStreamsTracker.fetchActiveStreams();
   });
 
-  function getWorkspaceUpdatedTime(workspace: Workspace): number {
-    return new Date(workspace.lastActivity || workspace.updatedAt || 0).getTime();
-  }
-
   const allWorkspaces = $derived.by(() => {
     void $pinnedIds$;
 
@@ -92,7 +92,7 @@
           return aPinned ? -1 : 1;
         }
 
-        return getWorkspaceUpdatedTime(b) - getWorkspaceUpdatedTime(a);
+        return compareWorkspaceActivityDisplayTimeDesc(a, b);
       });
   });
 
@@ -154,8 +154,8 @@
       groups.get(key)!.workspaces.push(ws);
     }
     return [...groups.entries()].sort((a, b) => {
-      const aTime = getWorkspaceUpdatedTime(a[1].workspaces[0]);
-      const bTime = getWorkspaceUpdatedTime(b[1].workspaces[0]);
+      const aTime = getWorkspaceActivityDisplayTime(a[1].workspaces[0]);
+      const bTime = getWorkspaceActivityDisplayTime(b[1].workspaces[0]);
       return bTime - aTime;
     });
   });

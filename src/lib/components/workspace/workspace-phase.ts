@@ -18,7 +18,8 @@
  * phase will show "planning" even when agents are actively working but no
  * tasks have transitioned to in_progress yet.
  *
- * The canonical timestamp for workspace recency is `lastActivity || updatedAt`.
+ * The canonical timestamp for workspace recency is centralized in
+ * `$shared/utils/workspace-activity-time`.
  * - `updatedAt`: set by explicit backend update() calls (rename, archive, etc.)
  * - `lastActivity`: set locally in the store on meaningful event-driven changes.
  * - When agents are streaming, display components should show "Active" instead

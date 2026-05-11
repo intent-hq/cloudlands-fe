@@ -7,6 +7,7 @@ import {
   getWorkspaceStage,
   getStageLabel,
   getStageDescription,
+  getRecentRepos,
   type WorkspaceStage,
 } from '../workspace-utils';
 import { PullRequestStatus } from '$shared/types';
@@ -105,6 +106,30 @@ describe('workspace-utils', () => {
 
     it('should return empty string for invalid stage', () => {
       expect(getStageDescription('invalid' as WorkspaceStage)).toBe('');
+    });
+  });
+
+  describe('getRecentRepos', () => {
+    it('ranks repositories by workspace activity time instead of background updatedAt', () => {
+      const repos = getRecentRepos([
+        createWorkspace({
+          id: 'stale-updated-at' as Workspace['id'],
+          repositoryPath: '/repo/stale',
+          repositoryName: 'stale',
+          lastActivity: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2026-05-07T00:00:00.000Z',
+        }),
+        createWorkspace({
+          id: 'active' as Workspace['id'],
+          repositoryPath: '/repo/active',
+          repositoryName: 'active',
+          lastActivity: '2025-01-01T00:00:00.000Z',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+        }),
+      ]);
+
+      expect(repos.map((repo) => repo.path)).toEqual(['/repo/active', '/repo/stale']);
+      expect(repos[0]?.updatedAt).toBe('2025-01-01T00:00:00.000Z');
     });
   });
 });

@@ -1925,6 +1925,162 @@ task:
   }
 
   /**
+   * Repair legacy workspace metadata whose `updatedAt` was advanced by background writes.
+   * The repair is intentionally conservative: preserve valid `lastActivity`, otherwise
+   * derive activity from durable workspace-owned records and fall back to creation time.
+   */
+  private async repairWorkspaceActivityTimestamp(workspace: Workspace): Promise<Workspace> {
+    if (this.isValidActivityTimestamp(workspace.lastActivity)) {
+      return workspace;
+    }
+
+    const lastActivity = await this.deriveWorkspaceLastActivity(workspace);
+    if (!lastActivity || workspace.lastActivity === lastActivity) {
+      return workspace;
+    }
+
+    const repairedWorkspace = { ...workspace, lastActivity };
+    await this.saveWorkspace(repairedWorkspace);
+    this.workspaceCache.delete(workspace.id);
+    return repairedWorkspace;
+  }
+
+  private async repairWorkspaceActivityTimestamps(workspaces: Workspace[]): Promise<Workspace[]> {
+    if (workspaces.length === 0) {
+      return workspaces;
+    }
+
+    const results = new Array<Workspace>(workspaces.length);
+    let nextIndex = 0;
+    const concurrency = Math.min(10, workspaces.length);
+
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (true) {
+          const currentIndex = nextIndex++;
+          if (currentIndex >= workspaces.length) return;
+          results[currentIndex] = await this.repairWorkspaceActivityTimestamp(
+            workspaces[currentIndex]!,
+          );
+        }
+      }),
+    );
+
+    return results;
+  }
+
+  private async deriveWorkspaceLastActivity(workspace: Workspace): Promise<string | undefined> {
+    const candidates: string[] = [];
+
+    for (const entry of workspace.timeline || []) {
+      this.addActivityCandidate(candidates, entry?.timestamp);
+    }
+    for (const changeset of workspace.changesets || []) {
+      this.addActivityCandidate(candidates, changeset?.createdAt);
+    }
+    for (const conversation of workspace.conversationInfo || []) {
+      this.addActivityCandidate(candidates, conversation?.endedAt);
+      this.addActivityCandidate(candidates, conversation?.startedAt);
+    }
+
+    await Promise.all([
+      this.addNoteActivityCandidates(workspace.id, candidates),
+      this.addAgentActivityCandidates(workspace.id, candidates),
+    ]);
+
+    const latestActivity = this.getLatestActivityCandidate(candidates);
+    if (latestActivity) {
+      return latestActivity;
+    }
+
+    return this.normalizeActivityTimestamp(workspace.createdAt);
+  }
+
+  private async addNoteActivityCandidates(
+    workspaceId: WorkspaceId,
+    candidates: string[],
+  ): Promise<void> {
+    try {
+      const notes = await this.notesRepository.findByWorkspace(workspaceId);
+      for (const note of notes) {
+        this.addActivityCandidate(candidates, note.updatedAt);
+        this.addActivityCandidate(candidates, note.updated_at);
+        this.addActivityCandidate(candidates, note.createdAt);
+        this.addActivityCandidate(candidates, note.created_at);
+      }
+    } catch (error) {
+      logger.warn('Failed to derive workspace activity from notes', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  private async addAgentActivityCandidates(
+    workspaceId: WorkspaceId,
+    candidates: string[],
+  ): Promise<void> {
+    try {
+      const agentIds = await agentPersistence.listAgents(workspaceId);
+      const agents = await Promise.all(
+        agentIds.map(async (agentId) => {
+          try {
+            const result = await agentPersistence.loadAgent(agentId as AgentId, workspaceId);
+            return result.success ? result.data : undefined;
+          } catch {
+            return undefined;
+          }
+        }),
+      );
+
+      for (const agent of agents) {
+        this.addActivityCandidate(candidates, agent?.lastActivity);
+        this.addActivityCandidate(candidates, agent?.updatedAt);
+        this.addActivityCandidate(candidates, agent?.createdAt);
+      }
+    } catch (error) {
+      logger.warn('Failed to derive workspace activity from agents', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  private addActivityCandidate(candidates: string[], value: unknown): void {
+    const timestamp = this.normalizeActivityTimestamp(value);
+    if (timestamp) {
+      candidates.push(timestamp);
+    }
+  }
+
+  private getLatestActivityCandidate(candidates: string[]): string | undefined {
+    let latestTime = 0;
+    let latestTimestamp: string | undefined;
+
+    for (const candidate of candidates) {
+      const time = Date.parse(candidate);
+      if (Number.isFinite(time) && time > latestTime) {
+        latestTime = time;
+        latestTimestamp = candidate;
+      }
+    }
+
+    return latestTimestamp;
+  }
+
+  private isValidActivityTimestamp(value: unknown): value is string | Date {
+    return !!this.normalizeActivityTimestamp(value);
+  }
+
+  private normalizeActivityTimestamp(value: unknown): string | undefined {
+    if (!value) return undefined;
+    const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
+    if (!date) return undefined;
+    const time = date.getTime();
+    return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+  }
+
+  /**
    * List all workspaces with optional pagination
    */
   async listWorkspaces(options?: {
@@ -1949,11 +2105,12 @@ task:
         }
         return true;
       });
+      const repairedWorkspaces = await this.repairWorkspaceActivityTimestamps(filteredWorkspaces);
 
       // Apply pagination
       const offset = options?.offset || 0;
-      const limit = options?.limit || filteredWorkspaces.length;
-      const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
+      const limit = options?.limit || repairedWorkspaces.length;
+      const paginatedWorkspaces = repairedWorkspaces.slice(offset, offset + limit);
 
       let sanitizedWorkspaces: Workspace[];
       // PERF: Default workspace lists to lite mode so startup and validation flows
@@ -2024,8 +2181,8 @@ task:
         ok: true,
         data: {
           workspaces: sanitizedWorkspaces,
-          total: filteredWorkspaces.length,
-          hasMore: offset + limit < filteredWorkspaces.length,
+          total: repairedWorkspaces.length,
+          hasMore: offset + limit < repairedWorkspaces.length,
         },
       };
     } catch (error) {
@@ -2577,7 +2734,6 @@ task:
                   pullRequests: (updatedWorkspace.pullRequests || []).filter(
                     (p) => p.number !== pr.number,
                   ),
-                  updatedAt: new Date().toISOString(),
                 };
                 updated = true;
                 await this.saveWorkspace(updatedWorkspace);
@@ -2831,7 +2987,6 @@ task:
               prStatus: undefined,
               activePullRequest: undefined,
               pullRequests: (workspace.pullRequests || []).filter((p) => p.number !== pr.number),
-              updatedAt: new Date().toISOString(),
             };
             await this.saveWorkspace(clearedWorkspace);
             return;
@@ -2963,6 +3118,8 @@ task:
           error: 'Workspace not found',
         };
       }
+
+      workspace = await this.repairWorkspaceActivityTimestamp(workspace);
 
       let updated = false;
 

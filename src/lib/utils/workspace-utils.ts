@@ -1,5 +1,6 @@
 import type { Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
+import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
 /**
  * Represents the current stage of work in a workspace.
@@ -122,14 +123,14 @@ export interface RecentRepo {
 }
 
 /**
- * Extract unique repositories from workspaces, sorted by most recent updatedAt.
+ * Extract unique repositories from workspaces, sorted by most recent workspace activity.
  *
- * Iterates through all workspaces, tracks the most recent `updatedAt` per repository path,
+ * Iterates through all workspaces, tracks the most recent display activity per repository path,
  * and returns a sorted array of unique repositories.
  *
  * @param workspaces - Array of workspaces to extract repos from
  * @param limit - Optional maximum number of repos to return (default: all)
- * @returns Array of unique repositories sorted by updatedAt descending
+ * @returns Array of unique repositories sorted by workspace activity descending
  * @example
  * ```typescript
  * const repos = getRecentRepos(workspaces, 5);
@@ -152,13 +153,18 @@ export function getRecentRepos(workspaces: Workspace[], limit?: number): RecentR
     const key = workspace.repositoryPath;
     const existing = repoMap.get(key);
 
+    const activityTime = getWorkspaceActivityDisplayTime(workspace);
+    const activityTimestamp =
+      activityTime > 0 ? new Date(activityTime).toISOString() : workspace.updatedAt;
+    const existingTime = existing ? Date.parse(existing.updatedAt) || 0 : 0;
+
     // Only update if this workspace is newer or it's the first occurrence
-    if (!existing || workspace.updatedAt > existing.updatedAt) {
+    if (!existing || activityTime > existingTime) {
       repoMap.set(key, {
         path: workspace.repositoryPath,
         name:
           workspace.repositoryName || workspace.repositoryPath.split('/').pop() || 'Unknown',
-        updatedAt: workspace.updatedAt,
+        updatedAt: activityTimestamp,
         owner: workspace.repositoryOwner,
       });
     }

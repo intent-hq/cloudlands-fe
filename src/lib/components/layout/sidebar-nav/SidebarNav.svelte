@@ -29,6 +29,7 @@
   import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { isWorkspaceActivityWithin } from '$shared/utils/workspace-activity-time';
 
   const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();
@@ -58,8 +59,7 @@
       // Skip if currently streaming (not "unread")
       if (activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0) continue;
       const unreadIds = selectUnreadAgentIdsForWorkspace.select(state, ws.id);
-      const updatedAt = new Date(ws.updatedAt).getTime();
-      if (unreadIds.length > 0 && now - updatedAt < ONE_DAY_MS) count++;
+      if (unreadIds.length > 0 && isWorkspaceActivityWithin(ws, now, ONE_DAY_MS)) count++;
     }
     return count;
   });

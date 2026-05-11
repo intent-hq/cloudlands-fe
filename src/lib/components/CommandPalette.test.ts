@@ -298,3 +298,48 @@ describe('CommandPalette duplicate-key regression', () => {
     });
   });
 });
+
+describe('CommandPalette workspace activity recency', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    browserRecentUrls.value = [];
+    sessionSessions.value = [];
+    paletteMruEntries.value = [];
+    paletteFileMru.value = {};
+  });
+
+  it('sorts and labels workspace results by semantic activity instead of touched updatedAt', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'current',
+        title: 'Current Space',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'old-semantic',
+        title: 'Old Semantic Space',
+        repositoryPath: '/repos/old-semantic',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        lastActivity: '2025-01-15T12:00:00.000Z',
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'newer-semantic',
+        title: 'Newer Semantic Space',
+        repositoryPath: '/repos/newer-semantic',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'current', onClose: vi.fn() } });
+
+    const newer = await screen.findByRole('button', { name: /Newer Semantic Space/i });
+    const old = screen.getByRole('button', { name: /Old Semantic Space/i });
+
+    expect(newer.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(old.textContent).toContain('Jan 15');
+    expect(old.textContent).not.toContain('just now');
+  });
+});

@@ -17,6 +17,7 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
+  import { compareWorkspaceActivityDisplayTimeDesc } from '$shared/utils/workspace-activity-time';
   import Header from '$lib/components/ui/Header.svelte';
 
   const dispatch = getDispatch();
@@ -45,10 +46,7 @@
           // w.status !== WorkspaceStatusEnum.Deleted &&
           w.repositoryName,
       )
-      .sort(
-        (a: Workspace, b: Workspace) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      );
+      .sort(compareWorkspaceActivityDisplayTimeDesc);
 
     for (const ws of workspaces) {
       if (!ws.repositoryPath || repoMap.has(ws.repositoryPath)) continue;

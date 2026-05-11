@@ -74,6 +74,10 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
   import { track } from '$lib/services/analytics';
+  import {
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
 
   const logger = createLogger('CommandPalette');
 
@@ -411,21 +415,20 @@
   function buildResults(q: string, files: any[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
-      .sort((a: any, b: any) => {
-        const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-        const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-        return bTime - aTime;
-      })
-      .map((w: any) => ({
-        id: w.id,
-        label: w.title || w.id,
-        icon: faFolderOpen,
-        description: w.repositoryPath
-          ? w.repositoryPath.split('/').pop() || w.repositoryPath
-          : undefined,
-        _workspace: true as const,
-        _time: formatRelativeTime(w.updatedAt),
-      }));
+      .sort(compareWorkspaceActivityDisplayTimeDesc)
+      .map((w: any) => {
+        const activityTime = getWorkspaceActivityDisplayTime(w);
+        return {
+          id: w.id,
+          label: w.title || w.id,
+          icon: faFolderOpen,
+          description: w.repositoryPath
+            ? w.repositoryPath.split('/').pop() || w.repositoryPath
+            : undefined,
+          _workspace: true as const,
+          _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
+        };
+      });
 
     return computeResults({
       query: q,

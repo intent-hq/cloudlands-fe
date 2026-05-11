@@ -25,6 +25,10 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+  import {
+    compareWorkspaceActivityDisplayTimeDesc,
+    isWorkspaceActivityWithin,
+  } from '$shared/utils/workspace-activity-time';
 
   const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();
@@ -58,10 +62,7 @@
         workspace: w,
         streamingIds: activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id),
       }))
-      .sort(
-        (a, b) =>
-          new Date(b.workspace.updatedAt).getTime() - new Date(a.workspace.updatedAt).getTime(),
-      );
+      .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
   // Unread workspaces (not streaming, has unread, updated within last day)
@@ -78,18 +79,14 @@
         if (streamingIds.length > 0) return false; // already in running
         const wsUnreadIds = selectUnreadAgentIdsForWorkspace.select(state, w.id);
         if (wsUnreadIds.length === 0) return false;
-        // Only show unread if updated within last day
-        const updatedAt = new Date(w.updatedAt).getTime();
-        return now - updatedAt < ONE_DAY_MS;
+        // Only show unread if display activity is within the last day.
+        return isWorkspaceActivityWithin(w, now, ONE_DAY_MS);
       })
       .map((w) => ({
         workspace: w,
         unreadIds: selectUnreadAgentIdsForWorkspace.select(state, w.id),
       }))
-      .sort(
-        (a, b) =>
-          new Date(b.workspace.updatedAt).getTime() - new Date(a.workspace.updatedAt).getTime(),
-      );
+      .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
   // Pinned workspaces (not already in running or unread)

@@ -177,6 +177,7 @@ import { dialog, protocol } from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
+import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { setupWebviewSecurity } from './webview-security';
@@ -688,9 +689,11 @@ app.whenReady().then(async () => {
     try {
       const result = await protocolAdapter.listAllWorkspaces({ lite: true });
       if (result.ok && result.data) {
-        // Sort by updatedAt descending and take top 5
+        // Sort by shared display activity semantics and take top 5
         type WorkspaceItem = {
           status?: string;
+          createdAt: string;
+          lastActivity?: string;
           updatedAt: string;
           title?: string;
           name?: string;
@@ -698,10 +701,7 @@ app.whenReady().then(async () => {
         };
         const recentWorkspaces = (result.data as WorkspaceItem[])
           .filter((w: WorkspaceItem) => w.status !== 'deleted' && w.status !== 'archived')
-          .sort(
-            (a: WorkspaceItem, b: WorkspaceItem) =>
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-          )
+          .sort(compareWorkspaceActivityDisplayTimeDesc)
           .slice(0, 5);
 
         for (const workspace of recentWorkspaces) {

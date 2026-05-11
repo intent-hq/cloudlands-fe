@@ -39,6 +39,7 @@
   import { selectWorkspaceActivePullRequest } from '$lib/store/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
+  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
   interface Props {
     workspace: Workspace;
@@ -348,11 +349,13 @@
               : 'group-hover:opacity-0'
           : ''}"
       >
-        <RelativeTime
-          date={workspace.lastActivity || workspace.updatedAt}
-          class="text-ui text-subtle whitespace-nowrap"
-          compact
-        />
+        {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+          <RelativeTime
+            date={getWorkspaceActivityDisplayTime(workspace)}
+            class="text-ui text-subtle whitespace-nowrap"
+            compact
+          />
+        {/if}
       </span>
     </div>
 

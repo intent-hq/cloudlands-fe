@@ -10,6 +10,10 @@
   import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
+  import {
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
   import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
   interface Props {
     workspaces: Workspace[];
@@ -51,21 +55,9 @@
       {} as Record<string, Workspace[]>,
     );
 
-    // Sort workspaces within each repository by last activity (newest first)
+    // Sort workspaces within each repository by display activity (newest first)
     Object.keys(grouped).forEach((key) => {
-      grouped[key].sort((a, b) => {
-        const dateA = a.lastActivity
-          ? new Date(a.lastActivity).getTime()
-          : a.createdAt
-            ? new Date(a.createdAt).getTime()
-            : 0;
-        const dateB = b.lastActivity
-          ? new Date(b.lastActivity).getTime()
-          : b.createdAt
-            ? new Date(b.createdAt).getTime()
-            : 0;
-        return dateB - dateA; // Sort descending (newest first)
-      });
+      grouped[key].sort(compareWorkspaceActivityDisplayTimeDesc);
     });
 
     // Sort repository groups by the most recent workspace activity
@@ -73,16 +65,8 @@
       const mostRecentA = a[1][0]; // First workspace is the most recent after sorting
       const mostRecentB = b[1][0];
 
-      const dateA = mostRecentA.lastActivity
-        ? new Date(mostRecentA.lastActivity).getTime()
-        : mostRecentA.createdAt
-          ? new Date(mostRecentA.createdAt).getTime()
-          : 0;
-      const dateB = mostRecentB.lastActivity
-        ? new Date(mostRecentB.lastActivity).getTime()
-        : mostRecentB.createdAt
-          ? new Date(mostRecentB.createdAt).getTime()
-          : 0;
+      const dateA = getWorkspaceActivityDisplayTime(mostRecentA);
+      const dateB = getWorkspaceActivityDisplayTime(mostRecentB);
 
       return dateB - dateA; // Sort descending (newest first)
     });
@@ -141,10 +125,12 @@
     }
   }
 
-  function formatDate(dateInput: string | Date | undefined): string {
+  function formatDate(dateInput: string | Date | number | undefined): string {
     if (!dateInput) return 'Never';
 
-    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (!Number.isFinite(date.getTime())) return 'Never';
+
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -230,7 +216,7 @@
               <div
                 class="text-subtle font-normal text-xs text-left flex justify-start items-start w-full"
               >
-                {formatDate(workspace.lastActivity || workspace.updatedAt)}
+                {formatDate(getWorkspaceActivityDisplayTime(workspace))}
               </div>
             </Button>
           </div>
