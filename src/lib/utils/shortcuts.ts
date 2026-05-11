@@ -123,6 +123,7 @@ export const SHORTCUTS = {
   SAVE: { key: 'mod+s', label: 'Save' },
   UNDO: { key: 'mod+z', label: 'Undo' },
   REDO: { key: 'mod+shift+z', label: 'Redo' },
+  TOGGLE_TASK_LIST: { key: 'mod+shift+9', label: 'Toggle Task List' },
   TOGGLE_WORD_WRAP: { key: 'alt+z', label: 'Toggle Word Wrap' },
 
   // ============================================================================
@@ -262,6 +263,7 @@ export const SHORTCUT_CATEGORIES: Record<
       { key: 'mod+s', label: 'Save', contexts: ['editor'] },
       { key: 'mod+z', label: 'Undo', contexts: ['editor'] },
       { key: 'mod+shift+z', label: 'Redo', contexts: ['editor'] },
+      { key: 'mod+shift+9', label: 'Toggle Task List', contexts: ['editor'] },
       { key: 'alt+z', label: 'Toggle Word Wrap', contexts: ['editor'] },
       { key: 'mod+c', label: 'Copy', contexts: ['editor'] },
       { key: 'mod+a', label: 'Select All', contexts: ['editor'] },
