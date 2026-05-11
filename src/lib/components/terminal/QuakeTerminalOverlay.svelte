@@ -541,6 +541,7 @@
   function createNewTerminal() {
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
+    selectedScriptId = null;
     dispatch(addTerminal(workspaceId, newId, `Terminal ${$terminals.length + 1}`));
     if (!$isOpen) {
       dispatch(openTerminalOverlay(workspaceId, newId));
@@ -955,6 +956,7 @@
                 selectedScriptId = null;
                 if (workspaceId) dispatch(selectTerminal(workspaceId, id));
               }}
+              onCreateTerminal={createNewTerminal}
             />
           {/if}
         </div>

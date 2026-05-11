@@ -1,10 +1,4 @@
 <script lang="ts">
-  /**
-   * TerminalSidebar - Vertical sidebar within the terminal panel
-   *
-   * Shows Scripts section (top) and Terminals section (bottom).
-   * Collapsible to 48px icon-only mode, resizable via drag handle.
-   */
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
@@ -56,6 +50,7 @@
     selectedScriptId?: string | null;
     onSelectScript?: (scriptId: string | null) => void;
     onSelectTerminal?: (terminalId: string) => void;
+    onCreateTerminal?: () => void;
     class?: string;
   }
 
@@ -64,12 +59,12 @@
     selectedScriptId = null,
     onSelectScript,
     onSelectTerminal,
+    onCreateTerminal,
     class: className,
   }: Props = $props();
 
   const logger = createLogger('TerminalSidebar');
 
-  // ---- Agent-assisted script detection ----
   const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
 
 For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
@@ -105,23 +100,19 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let showAgentAssist = $state(false);
   let showAllScripts = $state(false);
 
-  // Multi-select and context menu state
   let selectedScriptIds = $state<Set<string>>(new Set());
   let contextMenuPos = $state<{ x: number; y: number } | null>(null);
   let contextMenuScriptId = $state<string | null>(null);
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
-  /** Process a parsed detection result (diff or array format). */
   async function handleDetectionResult(parsed: any): Promise<void> {
-    // Snapshot full script objects for undo (preserves cwd, env, autoStart, etc.)
     const snapshot = selectScriptEntries.select(getReduxStore().getState()).map((s) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { runtime, ...scriptDef } = s;
       return { ...scriptDef };
     });
 
-    // Handle diff format: { add: [...], update: [...], remove: [...] }
     if (
       parsed &&
       typeof parsed === 'object' &&
@@ -132,12 +123,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let updatedCount = 0;
       let removedCount = 0;
 
-      // Only allow remove/update on auto-detected scripts — user scripts are sacred
       const autoDetectedIds = new Set(
         selectScriptEntries.select(getReduxStore().getState()).filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
 
-      // Process removals (only auto-detected scripts)
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
@@ -148,7 +137,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         }
       }
 
-      // Process updates (only auto-detected scripts)
       if (Array.isArray(parsed.update)) {
         for (const entry of parsed.update) {
           if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
@@ -164,7 +152,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         }
       }
 
-      // Process additions
       if (Array.isArray(parsed.add)) {
         for (const entry of parsed.add) {
           if (
@@ -201,11 +188,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           action: {
             label: 'Undo',
             onClick: async () => {
-              // Remove all current scripts
               for (const s of selectScriptEntries.select(getReduxStore().getState())) {
                 await scriptsClient.remove(workspaceId, s.id);
               }
-              // Re-create from snapshot (preserving all fields)
               for (const s of snapshot) {
                 await scriptsClient.create(workspaceId, {
                   name: s.name,
@@ -401,6 +386,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const MIN_WIDTH = 48;
   const MAX_WIDTH = 400;
   const COLLAPSED_WIDTH = 48;
+  const COLLAPSED_SCRIPT_LIMIT = 6;
 
   // Store bindings
   const sidebarDispatch = getDispatch();
@@ -414,6 +400,19 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // Derived
   const scripts = $derived($scriptEntries$);
   const hasScripts = $derived(scripts.length > 0);
+  const sortedScripts = $derived(sortScripts(scripts));
+  const collapsedScriptLimit = $derived(
+    scripts.length === COLLAPSED_SCRIPT_LIMIT + 1
+      ? COLLAPSED_SCRIPT_LIMIT + 1
+      : COLLAPSED_SCRIPT_LIMIT,
+  );
+  const visibleScripts = $derived(
+    showAllScripts ? sortedScripts : sortedScripts.slice(0, collapsedScriptLimit),
+  );
+  const hiddenScriptCount = $derived(Math.max(0, scripts.length - collapsedScriptLimit));
+  const showScriptListToggle = $derived(
+    showAllScripts ? scripts.length > collapsedScriptLimit : hiddenScriptCount >= 2,
+  );
   const effectiveWidth = $derived(collapsed ? COLLAPSED_WIDTH : sidebarWidth);
   const scriptDetectIsRunning = $derived($_scriptDetectIsRunning$);
   const scriptDetectAgentId = $derived($_scriptDetectAgentId$);
@@ -968,7 +967,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         <!-- Script List -->
         {#if hasScripts}
           <ListContainer spacing="compact" class="py-0.5 px-1.5">
-            {#each showAllScripts ? sortScripts(scripts) : sortScripts(scripts).slice(0, 6) as script (script.id)}
+            {#each visibleScripts as script (script.id)}
               <div animate:flip={{ duration: 200 }} data-script-id={script.id}>
               <ListItem
                 size="sm"
@@ -1009,13 +1008,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               </ListItem>
               </div>
             {/each}
-            {#if scripts.length > 6}
+            {#if showScriptListToggle}
               <button
                 type="button"
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
               >
-                {showAllScripts ? 'Show less' : `+ ${scripts.length - 6} scripts`}
+                {showAllScripts ? 'Show less' : `+ ${hiddenScriptCount} scripts`}
               </button>
             {/if}
           </ListContainer>
@@ -1130,6 +1129,22 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         icon={faTerminal}
         class="py-1 shrink-0"
       >
+        {#snippet actions()}
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            onclick={(e) => {
+              e.stopPropagation();
+              onCreateTerminal?.();
+            }}
+            tooltip="New terminal"
+            aria-label="New terminal"
+          >
+            <Fa icon={faPlus} size="xs" />
+          </Button>
+        {/snippet}
+
         {#if sidebarTerminals.length > 0}
           <ListContainer spacing="compact" class="py-0.5 px-2">
             {#each sidebarTerminals as term (term.id)}
