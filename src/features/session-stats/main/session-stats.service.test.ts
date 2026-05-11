@@ -163,4 +163,28 @@ describe('getAggregatedSessionStats', () => {
     expect(result.totalMessageCount).toBe(9);
     expect(result.totalToolCount).toBe(5);
   });
+
+  it('limits concurrent CLI stats requests', async () => {
+    const sessionIds = Array.from({ length: 12 }, (_, i) => `s${i}`);
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    mockExecute.mockImplementation(async (command) => {
+      const sessionId = command.split(' ')[2];
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight--;
+      return {
+        stdout: JSON.stringify(makeCLIResponse({ sessionId })),
+        stderr: '',
+      };
+    });
+
+    const result = await getAggregatedSessionStats(sessionIds);
+
+    expect(result.sessions).toHaveLength(sessionIds.length);
+    expect(mockExecute).toHaveBeenCalledTimes(sessionIds.length);
+    expect(maxInFlight).toBeLessThanOrEqual(4);
+  });
 });

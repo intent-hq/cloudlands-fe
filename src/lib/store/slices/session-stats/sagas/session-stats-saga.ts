@@ -19,7 +19,6 @@ import {
 import type { Task } from "redux-saga";
 import { invoke, isElectron } from "$lib/electron-bridge";
 import { SESSION_STATS_CHANNELS } from "$shared/ipc/channels";
-import { isAuggieSession } from "$shared/types/agent-session";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   selectAgentsLoaded,
@@ -45,7 +44,10 @@ import {
 import type {
   AgentSessionStats,
   WorkspaceAggregateStats,
+  WorkspaceStatsSessionRequest,
 } from "../session-stats-types";
+import { selectAllAgentStats } from "../session-stats-selectors";
+import { getWorkspaceStatsSessionRequests } from "../utils/workspace-session-selection";
 
 /** Polling interval for workspace stats (60 seconds) */
 const POLL_INTERVAL_MS = 60_000;
@@ -107,23 +109,118 @@ async function fetchStatsFromIpc(sessionIds: string[]): Promise<{
 // Saga handlers
 // ---------------------------------------------------------------------------
 
+function isWorkspaceStatsSessionRequest(
+  value: string | WorkspaceStatsSessionRequest,
+): value is WorkspaceStatsSessionRequest {
+  return typeof value !== "string";
+}
+
+function normalizeWorkspaceStatsRequests(
+  values: WorkspaceStatsSessionRequest[] | string[],
+): WorkspaceStatsSessionRequest[] {
+  return values.map((value) =>
+    isWorkspaceStatsSessionRequest(value)
+      ? value
+      : { agentId: value, sessionId: value, messageCount: 0, isActive: true },
+  );
+}
+
+function makeAgentStatsFromSession(
+  session: {
+    sessionId: string;
+    messageCount: number;
+    toolCount: number;
+    creditsUsed: number | null;
+    parentCreditsUsed: number | null;
+    subAgentCreditsUsed: number | null;
+  },
+  lastFetchedAt: string,
+): AgentSessionStats {
+  return {
+    sessionId: session.sessionId,
+    messageCount: session.messageCount,
+    toolCount: session.toolCount,
+    creditsUsed: session.creditsUsed,
+    parentCreditsUsed: session.parentCreditsUsed,
+    subAgentCreditsUsed: session.subAgentCreditsUsed,
+    lastFetchedAt,
+  };
+}
+
+function aggregateAgentStats(
+  stats: AgentSessionStats[],
+  requestedCount: number,
+  failedCount: number,
+  lastFetchedAt: string,
+): WorkspaceAggregateStats {
+  return {
+    totalCreditsUsed:
+      Math.round(stats.reduce((sum, s) => sum + (s.creditsUsed ?? 0), 0) * 100) / 100,
+    totalMessageCount: stats.reduce((sum, s) => sum + s.messageCount, 0),
+    totalToolCount: stats.reduce((sum, s) => sum + s.toolCount, 0),
+    agentCount: requestedCount,
+    hasPendingCredits: stats.some((s) => s.creditsUsed === null),
+    isPartial: failedCount > 0 || stats.length < requestedCount,
+    failedCount,
+    lastFetchedAt,
+  };
+}
+
+function shouldRefreshStats(
+  request: WorkspaceStatsSessionRequest,
+  cached: AgentSessionStats | undefined,
+): boolean {
+  return (
+    request.isActive ||
+    !cached ||
+    cached.sessionId !== request.sessionId ||
+    cached.creditsUsed === null ||
+    request.messageCount > cached.messageCount
+  );
+}
+
 function* handleFetchWorkspaceStats(
   action: ReturnType<typeof fetchWorkspaceStats>,
 ): SagaGenerator<void> {
-  const [wsId, sessionIds] = action.payload;
+  const [wsId, sessionRequestValues, explicitRefreshSessionIds] = action.payload;
+  const sessionRequests = normalizeWorkspaceStatsRequests(sessionRequestValues);
+  const sessionIds = sessionRequests.map((request) => request.sessionId);
   try {
-    const raw = yield* call(fetchStatsFromIpc, sessionIds);
-    const stats: WorkspaceAggregateStats = {
-      totalCreditsUsed: raw.totalCreditsUsed,
-      totalMessageCount: raw.totalMessageCount,
-      totalToolCount: raw.totalToolCount,
-      agentCount: sessionIds.length,
-      hasPendingCredits: raw.hasPendingCredits,
-      isPartial: raw.isPartial,
-      failedCount: raw.failedCount,
-      lastFetchedAt: new Date().toISOString(),
-    };
-    yield* put(workspaceStatsReceived(wsId, stats));
+    const cachedAgentStats: Record<string, AgentSessionStats> = yield* selectAllAgentStats.effect();
+    const refreshSessionIds = explicitRefreshSessionIds ?? sessionIds;
+    const raw = refreshSessionIds.length > 0
+      ? yield* call(fetchStatsFromIpc, refreshSessionIds)
+      : { sessions: [], failedCount: 0 };
+    const lastFetchedAt = new Date().toISOString();
+    const fetchedBySessionId = new Map(
+      raw.sessions.map((session) => [session.sessionId, makeAgentStatsFromSession(session, lastFetchedAt)]),
+    );
+    const aggregateStats: AgentSessionStats[] = [];
+
+    for (const request of sessionRequests) {
+      const fetched = fetchedBySessionId.get(request.sessionId);
+      if (fetched) {
+        aggregateStats.push(fetched);
+        yield* put(agentStatsReceived(request.agentId, fetched));
+        continue;
+      }
+      const cached = cachedAgentStats[request.agentId];
+      if (cached?.sessionId === request.sessionId) {
+        aggregateStats.push(cached);
+      }
+    }
+
+    yield* put(
+      workspaceStatsReceived(
+        wsId,
+        aggregateAgentStats(
+          aggregateStats,
+          sessionRequests.length,
+          raw.failedCount,
+          lastFetchedAt,
+        ),
+      ),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     yield* put(workspaceStatsFailed(wsId, message));
@@ -160,25 +257,23 @@ function* handleFetchAgentStats(
 // Workspace polling
 // ---------------------------------------------------------------------------
 
-function* getSessionIdsForWorkspace(wsId: string): SagaGenerator<string[]> {
+function* getSessionRequestsForWorkspace(
+  wsId: string,
+): SagaGenerator<WorkspaceStatsSessionRequest[]> {
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-  // Mirror AgentCard.svelte's per-agent fallback (acpSessionId ?? backendSessionId)
-  // so persisted agents that have a backend session but no ACP session yet are
-  // still counted in the workspace aggregate. Dedupe in case two agents resolve
-  // to the same session ID. Skip non-Auggie agents — the IPC handler shells out
-  // to the `auggie` CLI and would fail (or return misleading errors) for
-  // sessions belonging to other providers (claude-code, codex, opencode, ...).
-  const seen = new Set<string>();
-  const sessionIds: string[] = [];
-  for (const agent of agents) {
-    if (!isAuggieSession(agent)) continue;
-    const id = agent.acpSessionId ?? agent.backendSessionId;
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      sessionIds.push(id);
-    }
-  }
-  return sessionIds;
+  // Keep workspace-level polling bounded for large historical workspaces. Per-agent
+  // hover stats still fetch a single session on demand; the aggregate prioritizes
+  // active, foreground, and recent Auggie sessions instead of every persisted agent.
+  return getWorkspaceStatsSessionRequests(agents);
+}
+
+function* getRefreshSessionIds(
+  sessionRequests: WorkspaceStatsSessionRequest[],
+): SagaGenerator<string[]> {
+  const cachedAgentStats: Record<string, AgentSessionStats> = yield* selectAllAgentStats.effect();
+  return sessionRequests
+    .filter((request) => shouldRefreshStats(request, cachedAgentStats[request.agentId]))
+    .map((request) => request.sessionId);
 }
 
 /** Wait for agents to finish loading from disk before collecting session IDs.
@@ -206,8 +301,11 @@ function* watchWorkspaceStatsPollingSaga(wsId: string): SagaGenerator<void> {
   yield* call(waitForAgentsLoaded, wsId);
 
   // Initial fetch
-  const sessionIds: string[] = yield* call(getSessionIdsForWorkspace, wsId);
-  yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionIds);
+  const sessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
+    getSessionRequestsForWorkspace,
+    wsId,
+  );
+  yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionRequests);
 
   // Periodic polling
   while (true) {
@@ -217,8 +315,11 @@ function* watchWorkspaceStatsPollingSaga(wsId: string): SagaGenerator<void> {
       // Workspace changed, stop polling
       return;
     }
-    const freshSessionIds: string[] = yield* call(getSessionIdsForWorkspace, wsId);
-    yield* call(dispatchWorkspaceStatsOrClear, wsId, freshSessionIds);
+    const freshSessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
+      getSessionRequestsForWorkspace,
+      wsId,
+    );
+    yield* call(dispatchWorkspaceStatsOrClear, wsId, freshSessionRequests);
   }
 }
 
@@ -228,12 +329,13 @@ function* watchWorkspaceStatsPollingSaga(wsId: string): SagaGenerator<void> {
  *  semantics and may not be tolerated downstream). */
 function* dispatchWorkspaceStatsOrClear(
   wsId: string,
-  sessionIds: string[],
+  sessionRequests: WorkspaceStatsSessionRequest[],
 ): SagaGenerator<void> {
-  if (sessionIds.length === 0) {
+  if (sessionRequests.length === 0) {
     yield* put(clearSessionStats(wsId));
   } else {
-    yield* put(fetchWorkspaceStats(wsId, sessionIds));
+    const refreshSessionIds: string[] = yield* call(getRefreshSessionIds, sessionRequests);
+    yield* put(fetchWorkspaceStats(wsId, sessionRequests, refreshSessionIds));
   }
 }
 
@@ -378,8 +480,11 @@ export function* sessionStatsSaga(): SagaGenerator<void> {
       const task: Task = yield* fork(function* () {
         try {
           yield* delay(AGENT_ACTIVITY_DEBOUNCE_MS);
-          const sessionIds: string[] = yield* call(getSessionIdsForWorkspace, wsId);
-          yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionIds);
+          const sessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
+            getSessionRequestsForWorkspace,
+            wsId,
+          );
+          yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionRequests);
         } finally {
           if (agentActivityRefetchTasks[wsId] === task) {
             delete agentActivityRefetchTasks[wsId];

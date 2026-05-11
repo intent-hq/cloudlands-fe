@@ -14,6 +14,12 @@ const logger = new Logger('SessionStatsService');
 /** Timeout per CLI call (ms). */
 const SESSION_STATS_TIMEOUT_MS = 10_000;
 
+/** Keep CLI subprocess fan-out bounded so large workspaces cannot freeze the app. */
+const SESSION_STATS_CONCURRENCY = 4;
+
+/** Avoid producing hundreds of near-identical log lines per failed poll. */
+const MAX_INDIVIDUAL_FAILURE_LOGS = 10;
+
 /**
  * Validate and parse raw CLI JSON into a {@link SessionStats}.
  * Throws with a descriptive message when the shape is wrong.
@@ -89,18 +95,18 @@ export async function getSessionStats(sessionId: string): Promise<SessionStats> 
 /**
  * Fetch and aggregate stats across multiple sessions.
  *
- * Uses `Promise.allSettled` so a single failed CLI call doesn't sink the
- * entire workspace aggregate. If every call fails, throws an error.
+ * Uses a bounded worker pool so a single failed CLI call doesn't sink the
+ * entire workspace aggregate or spawn unbounded subprocesses. If every call
+ * fails, throws an error.
  */
 export async function getAggregatedSessionStats(
   sessionIds: string[],
 ): Promise<AggregatedSessionStats> {
   logger.debug('Fetching aggregated session stats', {
     count: sessionIds.length,
-    sessionIds,
   });
 
-  const results = await Promise.allSettled(sessionIds.map(getSessionStats));
+  const results = await runSessionStatsRequests(sessionIds);
 
   const sessions: SessionStats[] = [];
   let failCount = 0;
@@ -111,11 +117,21 @@ export async function getAggregatedSessionStats(
       sessions.push(result.value);
     } else {
       failCount++;
-      logger.warn('Failed to fetch session stats', {
-        sessionId: sessionIds[i],
-        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      });
+      if (failCount <= MAX_INDIVIDUAL_FAILURE_LOGS) {
+        logger.warn('Failed to fetch session stats', {
+          sessionId: sessionIds[i],
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
     }
+  }
+
+  if (failCount > MAX_INDIVIDUAL_FAILURE_LOGS) {
+    logger.warn('Additional session stats requests failed', {
+      omittedLogCount: failCount - MAX_INDIVIDUAL_FAILURE_LOGS,
+      failed: failCount,
+      requested: sessionIds.length,
+    });
   }
 
   logger.debug('Aggregated session stats results', {
@@ -152,4 +168,29 @@ export async function getAggregatedSessionStats(
     isPartial: failCount > 0,
     failedCount: failCount,
   };
+}
+
+async function runSessionStatsRequests(
+  sessionIds: string[],
+): Promise<Array<PromiseSettledResult<SessionStats>>> {
+  const results = new Array<PromiseSettledResult<SessionStats>>(sessionIds.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(SESSION_STATS_CONCURRENCY, sessionIds.length);
+
+  async function worker(): Promise<void> {
+    while (nextIndex < sessionIds.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = {
+          status: 'fulfilled',
+          value: await getSessionStats(sessionIds[index]),
+        };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }

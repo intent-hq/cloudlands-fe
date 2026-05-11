@@ -33,6 +33,13 @@ export type WorkspaceAggregateStats = {
   lastFetchedAt: string;
 };
 
+export type WorkspaceStatsSessionRequest = {
+  agentId: string;
+  sessionId: string;
+  messageCount: number;
+  isActive: boolean;
+};
+
 /** Session stats slice state */
 export type SessionStatsState = {
   /** Per-agent stats keyed by agentId */

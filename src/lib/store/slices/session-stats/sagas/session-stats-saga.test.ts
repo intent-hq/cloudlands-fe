@@ -100,6 +100,20 @@ const SESSION_ID = "sess-1";
 const AGENT_ID = "agent-1";
 const FIXED_ISO = "2026-04-16T00:00:00.000Z";
 
+function workspaceStatsRequest(
+  agentId: string,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    agentId,
+    sessionId,
+    messageCount: 0,
+    isActive: false,
+    ...overrides,
+  };
+}
+
 const rawIpcSuccess = {
   sessions: [
     {
@@ -216,7 +230,7 @@ describe("session-stats-saga — handlers", () => {
 
 type DispatchedAction = { type: string; payload?: any };
 
-function startSaga(opts: { activeWorkspaceId?: string | null } = {}) {
+function startSaga(opts: { activeWorkspaceId?: string | null; state?: any } = {}) {
   const dispatched: DispatchedAction[] = [];
   const channel = stdChannel();
   mockSelectActiveWorkspaceId.mockReturnValue(opts.activeWorkspaceId ?? null);
@@ -227,7 +241,7 @@ function startSaga(opts: { activeWorkspaceId?: string | null } = {}) {
         dispatched.push(action);
         channel.put(action as any);
       },
-      getState: () => ({}),
+      getState: () => opts.state ?? {},
     },
     sessionStatsSaga,
   );
@@ -275,7 +289,88 @@ describe("session-stats-saga — polling lifecycle", () => {
     await flush();
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(1);
-    expect(fetched[0].payload).toEqual([WS, [SESSION_ID]]);
+    expect(fetched[0].payload).toEqual([
+      WS,
+      [workspaceStatsRequest(AGENT_ID, SESSION_ID)],
+      [SESSION_ID],
+    ]);
+    task.cancel();
+  });
+
+  it("uses cached stable stats without invoking IPC", async () => {
+    mockSelectAllWorkspaceAgents.mockReturnValue([
+      {
+        id: AGENT_ID,
+        acpSessionId: SESSION_ID,
+        provider: "auggie",
+        messages: [{}, {}, {}],
+      } as any,
+    ]);
+    const { task, dispatched, channel } = startSaga({
+      state: {
+        sessionStats: {
+          agentStats: {
+            [AGENT_ID]: {
+              sessionId: SESSION_ID,
+              messageCount: 3,
+              toolCount: 2,
+              creditsUsed: 0.5,
+              parentCreditsUsed: 0.4,
+              subAgentCreditsUsed: 0.1,
+              lastFetchedAt: "2026-04-15T00:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+
+    await flush();
+    channel.put(workspaceMounted(WS) as any);
+    await flush();
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched[0].payload[2]).toEqual([]);
+    expect(
+      dispatched.some((a) => a.type === workspaceStatsReceived.type),
+    ).toBe(true);
+    task.cancel();
+  });
+
+  it("refreshes cached stats when the thread message count increased", async () => {
+    mockSelectAllWorkspaceAgents.mockReturnValue([
+      {
+        id: AGENT_ID,
+        acpSessionId: SESSION_ID,
+        provider: "auggie",
+        messages: [{}, {}, {}],
+      } as any,
+    ]);
+    const { task, dispatched, channel } = startSaga({
+      state: {
+        sessionStats: {
+          agentStats: {
+            [AGENT_ID]: {
+              sessionId: SESSION_ID,
+              messageCount: 2,
+              toolCount: 2,
+              creditsUsed: 0.5,
+              parentCreditsUsed: 0.4,
+              subAgentCreditsUsed: 0.1,
+              lastFetchedAt: "2026-04-15T00:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+
+    await flush();
+    channel.put(workspaceMounted(WS) as any);
+    await flush();
+
+    const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched[0].payload[2]).toEqual([SESSION_ID]);
+    expect(mockInvoke).toHaveBeenCalledWith(expect.any(String), { sessionIds: [SESSION_ID] });
     task.cancel();
   });
 
@@ -299,6 +394,11 @@ describe("session-stats-saga — polling lifecycle", () => {
     expect(fetched).toHaveLength(1);
     expect(fetched[0].payload).toEqual([
       WS,
+      [
+        workspaceStatsRequest("agent-acp-only", "sess-acp"),
+        workspaceStatsRequest("agent-backend-only", "sess-backend"),
+        workspaceStatsRequest("agent-both", "sess-both-acp"),
+      ],
       ["sess-acp", "sess-backend", "sess-both-acp"],
     ]);
     task.cancel();
@@ -601,7 +701,12 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
       const thisCall = callCount;
       const data = {
         ...rawIpcSuccess,
-        totalMessageCount: thisCall * 10,
+        sessions: [
+          {
+            ...rawIpcSuccess.sessions[0],
+            messageCount: thisCall * 10,
+          },
+        ],
       };
       return new Promise((resolve) =>
         setTimeout(() => resolve({ success: true, data }), 200),
@@ -727,7 +832,11 @@ describe("session-stats-saga — agent:idle refetch", () => {
     await flush();
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(baseline + 1);
-    expect(fetched[fetched.length - 1].payload).toEqual([WS, [SESSION_ID]]);
+    expect(fetched[fetched.length - 1].payload).toEqual([
+      WS,
+      [workspaceStatsRequest(AGENT_ID, SESSION_ID)],
+      [SESSION_ID],
+    ]);
 
     task.cancel();
   });
@@ -875,7 +984,14 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(1);
-    expect(fetched[0].payload).toEqual([WS, ["sess-a", "sess-b"]]);
+    expect(fetched[0].payload).toEqual([
+      WS,
+      [
+        workspaceStatsRequest("agent-auggie-acp", "sess-a"),
+        workspaceStatsRequest("agent-auggie-backend", "sess-b"),
+      ],
+      ["sess-a", "sess-b"],
+    ]);
 
     task.cancel();
   });
@@ -914,7 +1030,11 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(1);
-    expect(fetched[0].payload).toEqual([WS, [SESSION_ID]]);
+    expect(fetched[0].payload).toEqual([
+      WS,
+      [workspaceStatsRequest(AGENT_ID, SESSION_ID)],
+      [SESSION_ID],
+    ]);
 
     task.cancel();
   });

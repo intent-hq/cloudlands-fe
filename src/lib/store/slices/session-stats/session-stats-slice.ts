@@ -12,6 +12,7 @@ import type {
   SessionStatsState,
   AgentSessionStats,
   WorkspaceAggregateStats,
+  WorkspaceStatsSessionRequest,
 } from "./session-stats-types";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +33,11 @@ export const initialState: SessionStatsState = {
 // ---------------------------------------------------------------------------
 
 /** Request workspace-level aggregate stats */
-export const fetchWorkspaceStats = createAction<[wsId: string, sessionIds: string[]]>(
+export const fetchWorkspaceStats = createAction<[
+  wsId: string,
+  sessionRequests: WorkspaceStatsSessionRequest[] | string[],
+  refreshSessionIds?: string[],
+]>(
   "sessionStats/fetchWorkspaceStats",
 );
 
