@@ -14,12 +14,24 @@
   import type { TaskStatus } from '$shared/types';
   import { draw, scale } from 'svelte/transition';
 
+  type NormalizedTaskStatus = TaskStatus | 'unknown';
+
+  const taskStatuses = new Set<TaskStatus>([
+    'not_started',
+    'waiting',
+    'discussion_needed',
+    'in_progress',
+    'review_required',
+    'complete',
+    'cancelled',
+  ]);
+
   let {
     status,
     size = 16,
     onclick,
   }: {
-    status: TaskStatus | 'todo' | 'in-progress' | 'done';
+    status: unknown;
     size?: number;
     onclick?: (e: MouseEvent) => void;
   } = $props();
@@ -28,11 +40,16 @@
   const uniqueId = Math.random().toString(36).substring(2, 9);
 
   // Normalize legacy status values
-  let normalizedStatus = $derived.by((): TaskStatus => {
+  let normalizedStatus = $derived.by((): NormalizedTaskStatus => {
     if (status === 'todo') return 'not_started';
     if (status === 'in-progress') return 'in_progress';
     if (status === 'done') return 'complete';
-    return status as TaskStatus;
+
+    if (typeof status === 'string' && taskStatuses.has(status as TaskStatus)) {
+      return status as TaskStatus;
+    }
+
+    return 'unknown';
   });
 
   const statusColors = {
@@ -43,9 +60,11 @@
     review_required: { stroke: '#3b82f6', fill: '#3b82f6', innerCircleRPercentage: 100 },
     complete: { stroke: '#22c55e', fill: '#00BD7D', innerCircleRPercentage: 100 },
     cancelled: { stroke: '#99999966', fill: '#99999966', innerCircleRPercentage: 0 },
+    unknown: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
   };
 
   let colors = $derived(statusColors[normalizedStatus] || statusColors.not_started);
+  let statusLabel = $derived(String(normalizedStatus ?? 'unknown').replace(/_/g, ' '));
 </script>
 
 <button
@@ -53,7 +72,7 @@
   class="task-status-icon inline-flex items-center justify-center shrink-0 cursor-pointer bg-transparent border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary rounded-full"
   style="width: {size}px; height: {size}px;"
   {onclick}
-  title="Status: {normalizedStatus.replace(/_/g, ' ')}"
+  title="Status: {statusLabel}"
 >
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <!-- Clip path for half-fill effect -->
