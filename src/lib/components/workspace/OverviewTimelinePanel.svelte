@@ -91,7 +91,7 @@
 
   let {
     workspace,
-     
+
     phase: _phase,
     stats,
     notes = [],
@@ -307,11 +307,11 @@
             {/each}
             {#if otherAgents.length > 3}
               <button
-                class="text-ui text-ghost text-left px-2 py-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
+                class="text-ui text-ghost text-left px-2 py-0.5 hover:text-muted-foreground transition-colors cursor-pointer flex items-center"
                 onclick={() => onSwitchTab?.('agents')}
               >
                 <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-                +{otherAgents.length - 3} more
+                {otherAgents.length - 3} more agent{otherAgents.length - 3 === 1 ? '' : 's'}
               </button>
             {/if}
           </div>
