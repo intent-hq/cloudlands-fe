@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.11
+
+- New "Open in…" toggles in workspace settings let you hide editors you don't use from the Open In menu and combo button.
+- Terminal sidebar now has a button for creating new terminals directly from the sidebar.
+- Notes editor now supports inline checkbox shortcuts so you can create checkboxes without leaving the keyboard.
+- Workspace recency timestamps are accurate again, so your most recently used spaces stay sorted correctly across the homepage, command palette, and spaces switcher.
+- Workspace hover cards now stay in sync as agent statuses change in real time.
+- Fixes: memory spike from session stats polling, occasional saga crash on startup, task status icons handle unknown states gracefully, and MCP agent headers no longer fail when names contain non-ASCII characters.
+
 ## 0.3.10
 
 - Workspace UI now shows Auggie credit usage stats, with per-agent breakdowns on hover.
