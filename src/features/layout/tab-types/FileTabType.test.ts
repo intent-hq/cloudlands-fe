@@ -260,16 +260,105 @@ describe('FileTabType Redux integration', () => {
     cleanup();
   });
 
-  function renderFileTab() {
+  function renderFileTab(tab: PanelTab = fileTab) {
     return render(FileTabTypeHarness, {
       props: {
-        tab: fileTab,
+        tab,
         workspaceId: 'ws-1',
         isActive: true,
         isPanelFocused: true,
       },
     });
   }
+
+  it.each([
+    ['src/main.js', 'main.js', 'javascript'],
+    ['src/App.jsx', 'App.jsx', 'javascript'],
+    ['src/main.ts', 'main.ts', 'typescript'],
+    ['src/App.tsx', 'App.tsx', 'typescript'],
+    ['src/config.json', 'config.json', 'json'],
+    ['src/tsconfig.jsonc', 'tsconfig.jsonc', 'json'],
+    ['src/styles.css', 'styles.css', 'css'],
+    ['src/styles.scss', 'styles.scss', 'scss'],
+    ['src/styles.less', 'styles.less', 'less'],
+    ['public/index.html', 'index.html', 'html'],
+    ['public/feed.xml', 'feed.xml', 'xml'],
+    ['config/app.yaml', 'app.yaml', 'yaml'],
+    ['scripts/setup.sh', 'setup.sh', 'bash'],
+    ['notes/unknown.custom', 'unknown.custom', 'text'],
+  ])(
+    'passes %s to CodeEditor with expected editor language',
+    async (filePath, title, expectedLanguage) => {
+      mockReduxState.files[filePath] = {
+        localContent: 'export const loaded = true;',
+        originalContent: 'export const loaded = true;',
+        loading: false,
+        saving: false,
+        error: null,
+        isBinary: false,
+      };
+
+      renderFileTab({ ...fileTab, id: `tab-${filePath}`, title, filePath });
+
+      const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+      await waitFor(() => expect(editor.getAttribute('data-file-name')).toBe(filePath));
+      expect(editor.getAttribute('data-language')).toBe(expectedLanguage);
+    },
+  );
+
+  it('keeps markdown files in the markdown preview instead of CodeEditor by default', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+    };
+
+    renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
+
+    expect(await screen.findByTestId('markdown-file-editor')).toBeTruthy();
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+    expect(screen.queryByTestId('file-viewer')).toBeNull();
+  });
+
+  it('keeps SVG files in FileViewer while preserving the XML language mapping', async () => {
+    mockReduxState.files['public/icon.svg'] = {
+      localContent: '<svg viewBox="0 0 1 1" />',
+      originalContent: '<svg viewBox="0 0 1 1" />',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+    };
+
+    renderFileTab({ ...fileTab, id: 'tab-svg', title: 'icon.svg', filePath: 'public/icon.svg' });
+
+    const viewer = await screen.findByTestId('file-viewer');
+    expect(viewer.getAttribute('data-file-path')).toBe('public/icon.svg');
+    expect(viewer.getAttribute('data-language')).toBe('xml');
+    expect(viewer.getAttribute('data-is-binary')).toBe('false');
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
+
+  it('keeps binary files in FileViewer instead of CodeEditor', async () => {
+    mockReduxState.files['assets/logo.png'] = {
+      localContent: '',
+      originalContent: '',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: true,
+    };
+
+    renderFileTab({ ...fileTab, id: 'tab-png', title: 'logo.png', filePath: 'assets/logo.png' });
+
+    const viewer = await screen.findByTestId('file-viewer');
+    expect(viewer.getAttribute('data-file-path')).toBe('assets/logo.png');
+    expect(viewer.getAttribute('data-is-binary')).toBe('true');
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
 
   it('renders Redux file content, dispatches edits, and saves current content', async () => {
     renderFileTab();

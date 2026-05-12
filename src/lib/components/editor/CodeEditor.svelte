@@ -19,6 +19,10 @@
   import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import {
+    createUniqueMonacoModelPath,
+    normalizeMonacoModelPath,
+  } from '$lib/utils/monaco-model-uri';
 
   const logger = createLogger('CodeEditor');
 
@@ -158,9 +162,11 @@
   // without proxying DOM nodes.
   let container = $state.raw<HTMLDivElement | undefined>(undefined);
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
+  let editorModel: monaco.editor.ITextModel | null = null;
   let editorReady = $state(false);
   const isFollowing$ = selectIsFollowing();
   let isFollowingAgent = $derived($isFollowing$);
+  const modelUriInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // Track decoration IDs for line changes
   let lineChangeDecorationIds: string[] = [];
@@ -178,6 +184,48 @@
     } catch {
       return String(val);
     }
+  }
+
+  function createEditorModelUri(sourcePath: string): monaco.Uri {
+    const modelUri = monaco.Uri.file(normalizeMonacoModelPath(sourcePath));
+    if (!monaco.editor.getModel(modelUri)) {
+      return modelUri;
+    }
+
+    return monaco.Uri.file(createUniqueMonacoModelPath(sourcePath, modelUriInstanceId));
+  }
+
+  function createEditorModel(content: string, languageId: string): monaco.editor.ITextModel {
+    disposeEditorModel();
+
+    const sourcePath = filePath || fileName;
+    if (!sourcePath) {
+      editorModel = monaco.editor.createModel(content, languageId);
+      return editorModel;
+    }
+
+    editorModel = monaco.editor.createModel(content, languageId, createEditorModelUri(sourcePath));
+    return editorModel;
+  }
+
+  function disposeEditorModel() {
+    if (editorModel) {
+      editorModel.dispose();
+      editorModel = null;
+    }
+  }
+
+  function disposeEditorInstance() {
+    if (editor) {
+      try {
+        editor.dispose();
+      } catch {
+        // Silently ignore Monaco internal disposal errors.
+      }
+      editor = null;
+      editorReady = false;
+    }
+    disposeEditorModel();
   }
 
   // Track whether we need to initialize the editor after contentTooLarge is cleared
@@ -214,8 +262,7 @@
         contentSize = currentSize;
         // Dispose of existing editor if any
         if (editor) {
-          editor.dispose();
-          editor = null;
+          disposeEditorInstance();
         }
       }
     }
@@ -256,9 +303,9 @@
             return;
           }
 
+          const model = createEditorModel(initialValue, languageId);
           editor = monaco.editor.create(container, {
-            value: initialValue,
-            language: languageId,
+            model,
             theme: selectedTheme,
             readOnly: readOnly,
             lineNumbers: lineNumbers ? 'on' : 'off',
@@ -574,9 +621,9 @@
       }
 
       // Create the editor with the appropriate theme
+      const model = createEditorModel(initialValue, languageId);
       editor = monaco.editor.create(container, {
-        value: initialValue,
-        language: languageId,
+        model,
         theme: selectedTheme,
         readOnly: readOnly,
         lineNumbers: lineNumbers ? 'on' : 'off',
@@ -643,9 +690,9 @@
         await ensureMonacoInitialized();
 
         const fallbackValue = toEditorContent(value);
+        const fallbackModel = createEditorModel(fallbackValue, getLanguageId(language));
         editor = monaco.editor.create(container, {
-          value: fallbackValue,
-          language: getLanguageId(language),
+          model: fallbackModel,
           theme: getActiveMonacoThemeName($isDarkTheme),
           readOnly: readOnly,
           lineNumbers: lineNumbers ? 'on' : 'off',
@@ -762,20 +809,7 @@
 
   onDestroy(() => {
     scrollCleanup?.();
-
-    if (editor) {
-      // Wrap entire disposal in try-catch to handle any Monaco internal errors
-      try {
-        // Dispose the editor directly without clearing the model
-        // Monaco will handle model cleanup internally
-        editor.dispose();
-      } catch {
-        // Silently ignore all disposal errors
-        // These are usually harmless Monaco internal cleanup issues
-      }
-      editor = null;
-      editorReady = false;
-    }
+    disposeEditorInstance();
   });
 
   // Jump to a specific line/column when requested
