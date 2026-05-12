@@ -7,12 +7,18 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import {
+    openTab,
+    openTabInAdjacentOrSplit,
+  } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { selectFileTrackingChanges, selectFileTrackingCommits } from '$lib/store/slices/changes/changes-selectors';
+  import {
+    selectFileTrackingChanges,
+    selectFileTrackingCommits,
+  } from '$lib/store/slices/changes/changes-selectors';
   import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
@@ -23,8 +29,16 @@
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+    selectLineWrapping,
+    selectFoldUnchanged,
+    selectDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    toggleLineWrapping,
+    toggleFoldUnchanged,
+    toggleDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { track, getFileExtension } from '$lib/services/analytics';
@@ -34,6 +48,9 @@
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
+  const headerToggleActiveClass =
+    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
+  const headerToggleInactiveClass = 'text-subtle';
 
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
@@ -246,7 +263,10 @@
 
   // Handle staging a hunk
   async function handleStageHunk(filePath: string, hunkPatch: string) {
-    console.log('[DiffTabType] handleStageHunk called', { filePath, patchLength: hunkPatch.length });
+    console.log('[DiffTabType] handleStageHunk called', {
+      filePath,
+      patchLength: hunkPatch.length,
+    });
     if (!workspaceId) {
       toast.error('No workspace available');
       return;
@@ -302,11 +322,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping
-      ? 'Wrapping lines. Click to disable.'
-      : 'Click to wrap lines'}
+    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$lineWrapping}
+    class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
@@ -318,7 +337,8 @@
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={$foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$foldUnchanged}
+    class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
@@ -326,11 +346,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide
-      ? 'Click to show unified view'
-      : 'Click to show split view'}
+    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
-    class={$diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$diffSideBySide}
+    class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>
@@ -352,7 +371,7 @@
       viewMode={$diffSideBySide ? 'split' : 'unified'}
       foldUnchanged={$foldUnchanged}
       lineWrapping={$lineWrapping}
-      refreshKey={refreshKey}
+      {refreshKey}
       {branchBaseRef}
       {branchBaseCommitSha}
       onStageHunk={change.stage === ChangeStage.Unstaged ? handleStageHunk : undefined}

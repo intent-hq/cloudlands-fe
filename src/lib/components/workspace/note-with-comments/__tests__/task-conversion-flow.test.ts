@@ -121,67 +121,98 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 vi.mock('$lib/components/ui/skeleton', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { Skeleton: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/BubbleMenu.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/CommentDialog.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/CommentsSidebar.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/LineAttributionGutter.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/SuggestionTooltip.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/TaskMenu.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/workspace/NoteMetadataBar.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/workspace/NoteCodeChangesCard.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
+vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
+  default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
+    .default,
+}));
+
 vi.mock('$lib/components/tiptap/TaskAgentStatus.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/TaskNotePreview.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
 vi.mock('$lib/components/tiptap/TaskStatusIcon.svelte', async () => {
-  const MockSimple = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default;
+  const MockSimple = (
+    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
+  ).default;
   return { default: MockSimple };
 });
 
@@ -282,6 +313,10 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
     type: 'workspaceNotes/updateTaskStatus',
     payload: { workspaceId, noteId, status },
   })),
+}));
+
+vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+  selectIsRawNoteViewEnabled: () => constantReadable(false),
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -385,7 +420,12 @@ const WORKSPACE_ID = 'ws-1';
 const SPEC_NOTE_ID = 'spec';
 const TASK_NOTE_ID = 'task-note-123';
 
-function createNote(id: string, title: string, content: string, overrides: Partial<Note> = {}): Note {
+function createNote(
+  id: string,
+  title: string,
+  content: string,
+  overrides: Partial<Note> = {},
+): Note {
   return {
     id: id as Note['id'],
     workspaceId: WORKSPACE_ID as Note['workspaceId'],

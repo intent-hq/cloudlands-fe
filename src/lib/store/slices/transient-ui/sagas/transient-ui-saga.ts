@@ -1,9 +1,13 @@
-import { removeLocalStorageItem, setLocalStorageJSON, getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, fork, put, select, takeEvery, type SagaGenerator } from "typed-redux-saga";
-import type { StoreState } from "../../../types";
-import { debounceWithKeySaga } from "../../../utils/debounce-saga";
-import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { removeWorkspaceEntity } from "../../workspace/workspace-slice";
+import {
+  removeLocalStorageItem,
+  setLocalStorageJSON,
+  getLocalStorageJSON,
+} from '$lib/store/utils/safe-local-storage-saga';
+import { call, fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import type { StoreState } from '../../../types';
+import { debounceWithKeySaga } from '../../../utils/debounce-saga';
+import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
   clearChatDraft,
   clearWorkspaceTransientUi,
@@ -12,25 +16,26 @@ import {
   requestPersistWorkspaceTransientUi,
   SAVE_DEBOUNCE_MS,
   setChatDraft,
+  setRawNoteViewEnabled,
   setSidebarActiveTab,
   setViewedFiles,
+  toggleRawNoteView,
   type TransientUiWorkspaceState,
-} from "../transient-ui-slice";
-import {
-  getTransientUiStorageKey,
-  sanitizePersistedTransientUiState,
-} from "../utils/persistence";
+} from '../transient-ui-slice';
+import { getTransientUiStorageKey, sanitizePersistedTransientUiState } from '../utils/persistence';
 
 const DEBOUNCED_PERSIST_ACTION_TYPES = [
   setViewedFiles,
   setSidebarActiveTab,
+  setRawNoteViewEnabled,
+  toggleRawNoteView,
   setChatDraft,
   clearChatDraft,
 ] as const;
 
 function* persistWorkspaceState(
   workspaceId: string,
-  workspaceState: TransientUiWorkspaceState
+  workspaceState: TransientUiWorkspaceState,
 ): SagaGenerator<void> {
   yield* call(setLocalStorageJSON, getTransientUiStorageKey(workspaceId), {
     ...workspaceState,
@@ -50,7 +55,7 @@ export function* queueTransientUiPersistence(action: WorkspaceScopedAction): Sag
 }
 
 export function* handlePersistWorkspace(
-  action: ReturnType<typeof persistWorkspaceTransientUi>
+  action: ReturnType<typeof persistWorkspaceTransientUi>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const workspaceState = yield* select(selectWorkspaceStateEntry, workspaceId);
@@ -64,7 +69,7 @@ export function* handlePersistWorkspace(
 }
 
 export function* handleWorkspaceMounted(
-  action: ReturnType<typeof workspaceMounted>
+  action: ReturnType<typeof workspaceMounted>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const storageKey = getTransientUiStorageKey(workspaceId);
@@ -90,14 +95,16 @@ export function* handleWorkspaceMounted(
 }
 
 export function* handleRemovedWorkspace(
-  action: ReturnType<typeof removeWorkspaceEntity>
+  action: ReturnType<typeof removeWorkspaceEntity>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   yield* put(clearWorkspaceTransientUi(workspaceId));
   yield* call(removeLocalStorageItem, getTransientUiStorageKey(workspaceId));
 }
 
-function getWorkspaceIdFromWrappedPersistAction(action: ReturnType<typeof persistWorkspaceTransientUi>): string {
+function getWorkspaceIdFromWrappedPersistAction(
+  action: ReturnType<typeof persistWorkspaceTransientUi>,
+): string {
   return action.payload[0];
 }
 
@@ -115,6 +122,6 @@ export function* transientUiSaga() {
     debounceWithKeySaga,
     requestPersistWorkspaceTransientUi,
     SAVE_DEBOUNCE_MS,
-    getWorkspaceIdFromWrappedPersistAction
+    getWorkspaceIdFromWrappedPersistAction,
   );
 }

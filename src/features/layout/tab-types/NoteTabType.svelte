@@ -10,10 +10,16 @@
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { selectIsInitialSpecWriteInProgress, selectInitialAgentId, selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectIsInitialSpecWriteInProgress,
+    selectInitialAgentId,
+    selectAgentById,
+  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { createNote, deleteNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { toggleRawNoteView } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -30,7 +36,13 @@
   import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import Fa from 'svelte-fa';
-  import { faCheck, faCopy, faSpellCheck, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faCode,
+    faCopy,
+    faSpellCheck,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { track } from '$lib/services/analytics';
 
@@ -46,6 +58,13 @@
   const scrollPosition = selectScrollPosition(tab.id);
 
   const note = selectNoteById(workspaceId, tab.noteId);
+  const rawNoteViewEnabled = selectIsRawNoteViewEnabled(workspaceId, tab.noteId ?? '');
+  const headerToggleActiveClass =
+    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
+  const headerToggleInactiveClass = 'text-subtle';
+  const rawNoteToggleLabel = $derived(
+    $rawNoteViewEnabled ? 'Show rich note view' : 'Show raw markdown note view',
+  );
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -66,7 +85,9 @@
   });
 
   const noteFilePath = $derived(
-    actualWorkspaceRoot && $note?.id ? `${actualWorkspaceRoot}/.workspace/notes/${$note.id}.md` : '',
+    actualWorkspaceRoot && $note?.id
+      ? `${actualWorkspaceRoot}/.workspace/notes/${$note.id}.md`
+      : '',
   );
 
   // Track if initial spec write is in progress — read from Redux
@@ -140,7 +161,11 @@
     const noteIdToDelete = tab.noteId;
 
     // Get note info for tracking before deletion
-    const noteToDelete = selectNoteById.select(getReduxStore().getState(), workspaceId, noteIdToDelete);
+    const noteToDelete = selectNoteById.select(
+      getReduxStore().getState(),
+      workspaceId,
+      noteIdToDelete,
+    );
     const noteType = noteToDelete?.metadata?.task ? 'task' : 'regular';
     let noteAgeDays: number | undefined;
     if (noteToDelete?.createdAt) {
@@ -161,33 +186,32 @@
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(
-        `Deleted "${noteTitle}"`,
-        {
-          duration: 15000,
-          action: savedNote
-            ? {
-                label: 'Undo',
-                onClick: () => {
-                  try {
-                    dispatch(createNote(savedNote.workspaceId, {
+      const toastId = toast.warning(`Deleted "${noteTitle}"`, {
+        duration: 15000,
+        action: savedNote
+          ? {
+              label: 'Undo',
+              onClick: () => {
+                try {
+                  dispatch(
+                    createNote(savedNote.workspaceId, {
                       title: savedNote.title,
                       content: savedNote.content,
                       contentType: savedNote.contentType,
                       tags: savedNote.tags,
                       parentId: savedNote.parentId,
                       visibility: savedNote.visibility,
-                    }));
-                    toast.dismiss(toastId);
-                  } catch (err) {
-                    logger.error('Failed to restore note', err);
-                    toast.error('Failed to restore note');
-                  }
-                },
-              }
-            : undefined,
-        },
-      );
+                    }),
+                  );
+                  toast.dismiss(toastId);
+                } catch (err) {
+                  logger.error('Failed to restore note', err);
+                  toast.error('Failed to restore note');
+                }
+              },
+            }
+          : undefined,
+      });
     } catch (error) {
       logger.error('Failed to delete note', error);
       const { toast } = await import('svelte-sonner');
@@ -195,6 +219,11 @@
     } finally {
       isNoteDeleting = false;
     }
+  }
+
+  function handleToggleRawNoteView() {
+    if (!tab.noteId) return;
+    dispatch(toggleRawNoteView(workspaceId, tab.noteId));
   }
 
   // Register header actions
@@ -219,6 +248,21 @@
       <Fa icon={faCopy} size="xs" />
     {/if}
   </Button>
+  {#if tab.noteId}
+    <Button
+      variant="ghost-light"
+      size="icon-xs"
+      onclick={handleToggleRawNoteView}
+      tooltip={rawNoteToggleLabel}
+      tooltipSide="bottom"
+      aria-label={rawNoteToggleLabel}
+      aria-pressed={$rawNoteViewEnabled}
+      class={$rawNoteViewEnabled ? headerToggleActiveClass : headerToggleInactiveClass}
+      data-testid="note-raw-view-toggle"
+    >
+      <Fa icon={faCode} size="xs" />
+    </Button>
+  {/if}
   <!-- Version history toggle hidden for now -->
   <!-- <Button
     variant="ghost-light"
@@ -237,7 +281,8 @@
     onclick={() => dispatch(toggleSpellcheck())}
     tooltip={$spellcheckEnabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
     tooltipSide="bottom"
-    class={$spellcheckEnabled ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$spellcheckEnabled}
+    class={$spellcheckEnabled ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faSpellCheck} size="xs" />
   </Button>

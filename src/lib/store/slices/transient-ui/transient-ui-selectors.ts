@@ -1,5 +1,5 @@
-import { createSelector } from "../../utils/create-selector";
-import { emptyWorkspaceTransientUiState } from "./transient-ui-slice";
+import { createSelector } from '../../utils/create-selector';
+import { emptyWorkspaceTransientUiState } from './transient-ui-slice';
 
 export const selectTransientUiWorkspaceState = createSelector((state, workspaceId: string) => {
   return state.transientUi.byWorkspaceId[workspaceId] ?? emptyWorkspaceTransientUiState;
@@ -13,6 +13,15 @@ export const selectViewedFiles = createSelector((state, workspaceId: string) => 
   return selectTransientUiWorkspaceState.select(state, workspaceId).viewedFiles;
 });
 
+export const selectIsRawNoteViewEnabled = createSelector(
+  (state, workspaceId: string, noteId: string) => {
+    return (
+      selectTransientUiWorkspaceState.select(state, workspaceId).rawNoteViewByNoteId[noteId] ===
+      true
+    );
+  },
+);
+
 export const selectChatDraft = createSelector((state, workspaceId: string, agentId: string) => {
-  return selectTransientUiWorkspaceState.select(state, workspaceId).chatDrafts[agentId] ?? "";
+  return selectTransientUiWorkspaceState.select(state, workspaceId).chatDrafts[agentId] ?? '';
 });

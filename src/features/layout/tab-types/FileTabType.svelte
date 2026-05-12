@@ -35,20 +35,36 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
-  import { selectLineWrapping, selectDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleLineWrapping, toggleDiffIndicators } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+    selectLineWrapping,
+    selectDiffIndicators,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    toggleLineWrapping,
+    toggleDiffIndicators,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faPaintbrush, faTextWidth, faPencil, faTrash, faEye, faCode } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faPaintbrush,
+    faTextWidth,
+    faPencil,
+    faTrash,
+    faEye,
+    faCode,
+  } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { track, getFileExtension } from '$lib/services/analytics';
   import { writable } from 'svelte/store';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
+  const headerToggleActiveClass =
+    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
+  const headerToggleInactiveClass = 'text-subtle';
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
@@ -258,7 +274,8 @@
     const filePath = tab.filePath;
     const fileName = filePath.split('/').pop() || 'file';
     // Capture current content so we can restore on undo
-    const savedContent = selectFileContent.select(getReduxStore().getState(), workspaceId, filePath) ?? '';
+    const savedContent =
+      selectFileContent.select(getReduxStore().getState(), workspaceId, filePath) ?? '';
 
     await deleteWithUndo(
       `"${fileName}"`,
@@ -281,7 +298,11 @@
       },
       async () => {
         // Undo action — re-create the file with saved content
-        dispatch(saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent, { intent: 'restore' }));
+        dispatch(
+          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent, {
+            intent: 'restore',
+          }),
+        );
       },
     );
   }
@@ -315,7 +336,8 @@
         onclick={() => (markdownPreview = !markdownPreview)}
         tooltip={markdownPreview ? 'Switch to code editor' : 'Switch to rich text preview'}
         tooltipSide="bottom"
-        class={markdownPreview ? 'text-foreground' : 'text-muted-foreground'}
+        aria-pressed={markdownPreview}
+        class={markdownPreview ? headerToggleActiveClass : headerToggleInactiveClass}
       >
         <Fa icon={markdownPreview ? faCode : faEye} size="xs" />
       </Button>
@@ -338,7 +360,8 @@
         onclick={() => dispatch(toggleDiffIndicators())}
         tooltip={$diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
         tooltipSide="bottom"
-        class={$diffIndicators ? 'text-foreground' : 'text-muted-foreground'}
+        aria-pressed={$diffIndicators}
+        class={$diffIndicators ? headerToggleActiveClass : headerToggleInactiveClass}
       >
         <Fa icon={faPaintbrush} size="xs" />
       </Button>
@@ -346,11 +369,10 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => dispatch(toggleLineWrapping())}
-        tooltip={$lineWrapping
-          ? 'Wrapping lines. Click to disable.'
-          : 'Click to wrap lines'}
+        tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
         tooltipSide="bottom"
-        class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+        aria-pressed={$lineWrapping}
+        class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
       >
         <Fa icon={faTextWidth} size="xs" />
       </Button>

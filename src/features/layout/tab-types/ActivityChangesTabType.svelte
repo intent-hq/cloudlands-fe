@@ -14,13 +14,24 @@
 
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { openTab, openTabInAdjacentOrSplit } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import {
+    openTab,
+    openTabInAdjacentOrSplit,
+  } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+    selectLineWrapping,
+    selectFoldUnchanged,
+    selectDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    toggleLineWrapping,
+    toggleFoldUnchanged,
+    toggleDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { patchToContents } from '$lib/utils/diff-utils';
   import { Button } from '$lib/components/ui/button';
@@ -32,6 +43,9 @@
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
+  const headerToggleActiveClass =
+    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
+  const headerToggleInactiveClass = 'text-subtle';
 
   const logger = createLogger('ActivityChangesTabType');
 
@@ -54,11 +68,7 @@
 
   // Compute absolute path for "open in" actions
   const diffAbsolutePath = $derived(
-    filePath && repoPath
-      ? filePath.startsWith('/')
-        ? filePath
-        : `${repoPath}/${filePath}`
-      : null,
+    filePath && repoPath ? (filePath.startsWith('/') ? filePath : `${repoPath}/${filePath}`) : null,
   );
 
   // Extract the diff string from the event (try multiple locations)
@@ -119,7 +129,11 @@
         additions: data?.additions || activityChange?.stats?.additions || 0,
         deletions: data?.deletions || activityChange?.stats?.deletions || 0,
       },
-      attribution: { timestamp: activityEvent?.timestamp ? new Date(activityEvent.timestamp).getTime() : Date.now() },
+      attribution: {
+        timestamp: activityEvent?.timestamp
+          ? new Date(activityEvent.timestamp).getTime()
+          : Date.now(),
+      },
       content: diffContents
         ? {
             oldContent: diffContents.oldContent,
@@ -193,11 +207,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping
-      ? 'Wrapping lines. Click to disable.'
-      : 'Click to wrap lines'}
+    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$lineWrapping}
+    class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
@@ -209,7 +222,8 @@
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={$foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$foldUnchanged}
+    class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
@@ -217,11 +231,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide
-      ? 'Click to show unified view'
-      : 'Click to show split view'}
+    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
-    class={$diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$diffSideBySide}
+    class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>
@@ -238,7 +251,9 @@
 {#if filePath && diffContents}
   <div class="flex flex-col h-full">
     {#if isPartialDiff}
-      <div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-subtle bg-muted/50 border-b border-border">
+      <div
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-subtle bg-muted/50 border-b border-border"
+      >
         <span>Showing partial diff starting at line {lineOffset}</span>
       </div>
     {/if}
@@ -250,7 +265,7 @@
           viewMode={$diffSideBySide ? 'split' : 'unified'}
           foldUnchanged={$foldUnchanged}
           lineWrapping={$lineWrapping}
-          lineOffset={lineOffset}
+          {lineOffset}
         />
       {/key}
     </div>

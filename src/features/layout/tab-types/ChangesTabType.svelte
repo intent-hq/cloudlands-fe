@@ -9,12 +9,24 @@
   import { untrack } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { selectFileTrackingCommits, selectFileTrackingOlderCommits, selectFileTrackingLoading } from '$lib/store/slices/changes/changes-selectors';
+  import {
+    selectFileTrackingCommits,
+    selectFileTrackingOlderCommits,
+    selectFileTrackingLoading,
+  } from '$lib/store/slices/changes/changes-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { selectLineWrapping, selectFoldUnchanged, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleLineWrapping, toggleFoldUnchanged, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+    selectLineWrapping,
+    selectFoldUnchanged,
+    selectDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+    toggleLineWrapping,
+    toggleFoldUnchanged,
+    toggleDiffSideBySide,
+  } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
@@ -25,6 +37,9 @@
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
+  const headerToggleActiveClass =
+    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
+  const headerToggleInactiveClass = 'text-subtle';
 
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
@@ -141,7 +156,8 @@
     }}
     tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
     tooltipSide="bottom"
-    class={changesAllExpanded ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={changesAllExpanded}
+    class={changesAllExpanded ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faCompressAlt} size="xs" class={changesAllExpanded ? '' : 'rotate-180'} />
   </Button>
@@ -149,11 +165,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping
-      ? 'Wrapping lines. Click to disable.'
-      : 'Click to wrap lines'}
+    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
-    class={$lineWrapping ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$lineWrapping}
+    class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faTextWidth} size="xs" />
   </Button>
@@ -165,7 +180,8 @@
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
     tooltipSide="bottom"
-    class={$foldUnchanged ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$foldUnchanged}
+    class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faMap} size="xs" />
   </Button>
@@ -173,11 +189,10 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide
-      ? 'Click to show unified view'
-      : 'Click to show split view'}
+    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
-    class={$diffSideBySide ? 'text-foreground' : 'text-muted-foreground'}
+    aria-pressed={$diffSideBySide}
+    class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
   >
     <Fa icon={faColumns} size="xs" />
   </Button>
@@ -201,9 +216,7 @@
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      dispatch(
-        openAgentTabRequested(workspaceId, { agentId, openInAdjacentPanel, sourcePanelId }),
-      );
+      dispatch(openAgentTabRequested(workspaceId, { agentId, openInAdjacentPanel, sourcePanelId }));
     }}
     onOpenNote={(noteId, event) => {
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;

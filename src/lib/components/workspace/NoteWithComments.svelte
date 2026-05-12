@@ -1,10 +1,11 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import CommentDialog from '$lib/components/tiptap/CommentDialog.svelte';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
   import LineAttributionGutter from '$lib/components/tiptap/LineAttributionGutter.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
+  import RawNoteCodeEditor from '$lib/components/workspace/RawNoteCodeEditor.svelte';
   import SuggestionTooltip from '$lib/components/tiptap/SuggestionTooltip.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Fa from 'svelte-fa';
@@ -95,6 +96,7 @@
   import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceNavigationHistory } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
   import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -534,12 +536,21 @@
   // when workspace.id or noteId changes (same pattern as file-tree-view / AgentSubscriptions).
   const workspaceIdStore = writable(workspace?.id ?? '');
   const noteIdStore = writable(noteId ?? '');
-  $effect(() => { workspaceIdStore.set(workspace?.id ?? ''); });
-  $effect(() => { noteIdStore.set(noteId ?? ''); });
+  $effect(() => {
+    workspaceIdStore.set(workspace?.id ?? '');
+  });
+  $effect(() => {
+    noteIdStore.set(noteId ?? '');
+  });
 
   // Get the current note for task metadata (reactive via Redux selector)
   const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
   const currentNote = $derived($currentNote$ ?? null);
+  const rawNoteViewEnabled$ = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
+  let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
+  let shouldShowRawNoteView = $derived(
+    isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
+  );
 
   // Reactive selector subscriptions at component init time
 
@@ -657,6 +668,8 @@
   });
 
   let hasActiveComments = $derived.by(() => {
+    if (isRawNoteViewEnabled) return false;
+
     // Only reserve space for comments if:
     // 1. Comments feature is enabled (showComments is true)
     // 2. There are actual comments to display (not resolved and not replies)
@@ -664,6 +677,51 @@
 
     const activeComments = $allComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
     return activeComments.length > 0;
+  });
+
+  let wasRawNoteViewEnabled = false;
+  let rawNoteEditorRef = $state<{ flushPendingSave: () => void } | null>(null);
+
+  $effect(() => {
+    if (!isRawNoteViewEnabled) {
+      rawNoteEditorRef?.flushPendingSave();
+      if (wasRawNoteViewEnabled && !editor && element && !isComponentDestroyed) {
+        wasRawNoteViewEnabled = false;
+        isInitializing = true;
+        void initializeEditor()
+          .catch((err) => {
+            logger.error(
+              '[NoteWithComments] Failed to initialize editor after raw view closed',
+              err,
+            );
+          })
+          .finally(() => {
+            isInitializing = false;
+            isInitialized = true;
+          });
+      }
+      return;
+    }
+
+    wasRawNoteViewEnabled = true;
+    showCommentDialog = false;
+    selectedSuggestion = null;
+    taskMenuData = [];
+    cleanupCommentClickHandler?.();
+    cleanupCommentClickHandler = null;
+    commentManager = destroyAndClearCommentManagerV2(commentManager);
+
+    if (editor && !editor.isDestroyed) {
+      cleanup();
+      editor = null!;
+      cleanupFn = null;
+    }
+
+    lastKnownContent = currentNoteContent;
+    if (!isTooLargeForRichEditor) {
+      isInitializing = false;
+    }
+    isInitialized = true;
   });
 
   // Debounce content updates
@@ -771,20 +829,31 @@
       noteId,
     );
     const currentTaskKeys = getTaskAssociationKeysInEditor(editor);
-    const currentTaskTextCounts = getTaskTextsInEditor(editor).reduce<Record<string, number>>((counts, taskText) => {
-      counts[taskText] = (counts[taskText] ?? 0) + 1;
-      return counts;
-    }, {});
-    const associationTextCounts = associations.reduce<Record<string, number>>((counts, association) => {
-      counts[association.taskText] = (counts[association.taskText] ?? 0) + 1;
-      return counts;
-    }, {});
+    const currentTaskTextCounts = getTaskTextsInEditor(editor).reduce<Record<string, number>>(
+      (counts, taskText) => {
+        counts[taskText] = (counts[taskText] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
+    const associationTextCounts = associations.reduce<Record<string, number>>(
+      (counts, association) => {
+        counts[association.taskText] = (counts[association.taskText] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
     const hasAmbiguousDuplicateAssociations = Object.entries(associationTextCounts).some(
       ([taskText, count]) => count > (currentTaskTextCounts[taskText] ?? 0),
     );
-    if (hasAmbiguousDuplicateAssociations || associations.some((association) => association.taskKey
-      ? !currentTaskKeys.includes(association.taskKey)
-      : !currentTaskKeys.includes(association.taskText))) {
+    if (
+      hasAmbiguousDuplicateAssociations ||
+      associations.some((association) =>
+        association.taskKey
+          ? !currentTaskKeys.includes(association.taskKey)
+          : !currentTaskKeys.includes(association.taskText),
+      )
+    ) {
       reduxDispatch(pruneTaskAgentAssociationsForNote(workspace.id, noteId, currentTaskKeys));
       return;
     }
@@ -1001,9 +1070,17 @@
 
     isTooLargeForRichEditor = false;
 
+    if (isRawNoteViewEnabled) {
+      plainTextFallbackContent = '';
+      isInitializing = false;
+      isInitialized = true;
+      return;
+    }
+
     // Create editor immediately with empty content so the user sees the editor chrome
     // right away instead of a blank screen while markdown processing runs
     const isLargeContent = goalContent.length > 5000;
+    const enableRichEditorComments = showComments && !isRawNoteViewEnabled;
 
     const config = createEditorConfig({
       element,
@@ -1059,7 +1136,7 @@
       },
       useMarkdown: true,
       copySelectionAsMarkdown: true,
-      enableComments: showComments,
+      enableComments: enableRichEditorComments,
       enableMentions: true, // Enable mentions in notes
       enableNotePrimitives: true, // Enable note primitives for ws-block support
     });
@@ -1125,7 +1202,7 @@
 
     // Add click handler for comment marks (wait for view to be ready)
     cleanupCommentClickHandler?.();
-    cleanupCommentClickHandler = showComments
+    cleanupCommentClickHandler = enableRichEditorComments
       ? setupCommentMarkClickHandlerV2({
           editor,
           store: getReduxStore(),
@@ -1136,7 +1213,7 @@
 
     // Initialize comment manager
     commentManager = await maybeCreateCommentManagerV2({
-      showComments,
+      showComments: enableRichEditorComments,
       workspaceId: workspace?.id,
       noteId,
       editor,
@@ -1612,7 +1689,7 @@
     const handlePanelFocusContent = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       // Only focus if this event is for our note
-      if (detail?.tabType === 'note' && detail?.noteId === noteId) {
+      if (detail?.tabType === 'note' && detail?.noteId === noteId && !isRawNoteViewEnabled) {
         // Focus the editor if it's available and editable
         // Use requestAnimationFrame to ensure DOM is fully updated
         if (editor && !editor.isDestroyed && editable) {
@@ -1875,12 +1952,15 @@
     <!-- Editor Content with relative positioning for comments -->
     <section
       bind:this={scrollContainer}
-      class="relative flex-1 pt-6 overflow-y-auto"
+      class="relative flex-1"
+      class:pt-6={!shouldShowRawNoteView}
+      class:overflow-y-auto={!shouldShowRawNoteView}
+      class:overflow-hidden={shouldShowRawNoteView}
       id="editor-content"
       class:hidden={showVersionHistory}
     >
       <!-- Note Metadata Bar (task status, etc.) -->
-      {#if currentNote && noteId}
+      {#if currentNote && noteId && !shouldShowRawNoteView}
         <NoteMetadataBar workspaceId={workspace.id} note={currentNote} />
 
         <!-- Code Changes Card (shows files changed by assigned agents) -->
@@ -1891,9 +1971,10 @@
       <div
         class="positioning-relative-container relative min-h-full"
         class:with-comments={hasActiveComments}
+        class:raw-code-editor-container={shouldShowRawNoteView}
       >
         <!-- Line Attribution Gutter (PoC) -->
-        {#if editor && noteId}
+        {#if editor && noteId && !shouldShowRawNoteView}
           <LineAttributionGutter
             {editor}
             workspaceId={workspace.id}
@@ -1931,6 +2012,17 @@
           </div>
         {/if}
 
+        {#if shouldShowRawNoteView && noteId}
+          <RawNoteCodeEditor
+            bind:this={rawNoteEditorRef}
+            workspaceId={workspace.id}
+            {noteId}
+            content={currentNoteContent}
+            {editable}
+            {isPanelFocused}
+          />
+        {/if}
+
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           bind:this={element}
@@ -1938,9 +2030,9 @@
           class:pointer-events-none={!editable}
           class:with-comments={hasActiveComments}
           class:is-dragging={isDragging}
-          class:opacity-0={isInitializing || isTooLargeForRichEditor}
-          class:absolute={isInitializing || isTooLargeForRichEditor}
-          class:invisible={isTooLargeForRichEditor}
+          class:opacity-0={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:absolute={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:invisible={isTooLargeForRichEditor || shouldShowRawNoteView}
           class:streaming-in={isStreamingIn}
           onpaste={handleImagePaste}
           ondrop={handleDrop}
@@ -1950,7 +2042,7 @@
         ></div>
 
         <!-- Suggestion Tooltip -->
-        {#if selectedSuggestion}
+        {#if selectedSuggestion && !shouldShowRawNoteView}
           <SuggestionTooltip
             suggestion={selectedSuggestion}
             x={tooltipPosition.x}
@@ -1965,7 +2057,7 @@
         {/if}
 
         <!-- Bubble Menu for formatting and comments -->
-        {#if editor}
+        {#if editor && !shouldShowRawNoteView}
           <BubbleMenu
             {editor}
             {workspace}
@@ -1976,7 +2068,7 @@
         {/if}
 
         <!-- Comment Dialog -->
-        {#if showCommentDialog}
+        {#if showCommentDialog && !shouldShowRawNoteView}
           <CommentDialog
             x={commentDialogPosition.x}
             y={commentDialogPosition.y}
@@ -1986,7 +2078,7 @@
         {/if}
 
         <!-- Comments Layer (inside scrollable wrapper) -->
-        {#if showComments && editor && hasActiveComments && commentManager}
+        {#if showComments && editor && hasActiveComments && commentManager && !shouldShowRawNoteView}
           <CommentsSidebar
             {editor}
             {workspace}
@@ -2006,13 +2098,15 @@
 </div>
 
 <!-- Task Menu Popovers - Rendered based on discovered task buttons -->
-{#each taskMenuData as menuData (menuData.id)}
-  <TaskMenu
-    id={menuData.id}
-    anchorName={menuData.anchorName}
-    onSelectAction={(action) => handleTaskMenuAction(action, menuData.taskData)}
-  />
-{/each}
+{#if !shouldShowRawNoteView}
+  {#each taskMenuData as menuData (menuData.id)}
+    <TaskMenu
+      id={menuData.id}
+      anchorName={menuData.anchorName}
+      onSelectAction={(action) => handleTaskMenuAction(action, menuData.taskData)}
+    />
+  {/each}
+{/if}
 
 <style>
   .workspace-spec-with-comments {
@@ -2057,6 +2151,16 @@
 
   .positioning-relative-container.with-comments {
     max-width: calc(60rem + 2rem + 360px);
+  }
+
+  .positioning-relative-container.raw-code-editor-container {
+    align-items: stretch;
+    align-self: stretch;
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   :global(.tiptap-editor-wrapper) {

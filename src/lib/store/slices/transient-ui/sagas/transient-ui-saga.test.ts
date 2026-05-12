@@ -30,8 +30,9 @@ import {
   persistWorkspaceTransientUi,
   SAVE_DEBOUNCE_MS,
   requestPersistWorkspaceTransientUi,
-  setSidebarActiveTab,
+  setRawNoteViewEnabled,
   setViewedFiles,
+  toggleRawNoteView,
 } from "../transient-ui-slice";
 import {
   handlePersistWorkspace,
@@ -62,6 +63,23 @@ describe("transientUi persistence utils", () => {
     expect(result.state).not.toHaveProperty("sidebarChanges");
     expect(result.persistSanitized).toBe(true);
   });
+
+  it("sanitizes persisted raw note view state to enabled note IDs only", () => {
+    const now = 4_000_000;
+    const persisted = {
+      rawNoteViewByNoteId: {
+        "note-1": true,
+        "note-2": false,
+        "note-3": "true",
+      },
+      timestamp: now,
+    };
+
+    const result = sanitizePersistedTransientUiState(persisted, now);
+
+    expect(result.state?.rawNoteViewByNoteId).toEqual({ "note-1": true });
+    expect(result.persistSanitized).toBe(true);
+  });
 });
 
 describe("transientUiSaga workers", () => {
@@ -77,9 +95,9 @@ describe("transientUiSaga workers", () => {
       done: false,
     });
 
-    // Skip remaining debounced persist takeEvery calls (3 more),
+    // Skip remaining debounced persist takeEvery calls (5 more),
     // persistWorkspaceTransientUi, removeWorkspaceEntity
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 7; i += 1) {
       iterator.next();
     }
 
@@ -92,13 +110,30 @@ describe("transientUiSaga workers", () => {
   });
 
   it("queues debounced persistence for workspace-scoped mutations", () => {
-    const iterator = queueTransientUiPersistence(setSidebarActiveTab("ws-1", "changes"));
+    const iterator = queueTransientUiPersistence(setRawNoteViewEnabled("ws-1", "note-1", true));
 
     expect(iterator.next()).toEqual({
       value: sagaEffects.put(requestPersistWorkspaceTransientUi(persistWorkspaceTransientUi("ws-1"))),
       done: false,
     });
     expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("registers raw note view persistence watchers", () => {
+    const iterator = transientUiSaga();
+
+    iterator.next();
+    iterator.next();
+    iterator.next();
+
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.takeEvery(setRawNoteViewEnabled, queueTransientUiPersistence),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({
+      value: sagaEffects.takeEvery(toggleRawNoteView, queueTransientUiPersistence),
+      done: false,
+    });
   });
 
   it("hydrates persisted workspace state on workspace mount", () => {

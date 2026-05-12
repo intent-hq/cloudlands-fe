@@ -3,19 +3,19 @@ import {
   STORAGE_KEY_PREFIX,
   type SidebarTabId,
   type TransientUiWorkspaceState,
-} from "../transient-ui-slice";
+} from '../transient-ui-slice';
 
 const sidebarTabs = new Set<SidebarTabId>([
-  "notes",
-  "changes",
-  "files",
-  "agents",
-  "terminals",
-  "browser",
+  'notes',
+  'changes',
+  'files',
+  'agents',
+  'terminals',
+  'browser',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function normalizeStringRecord(value: unknown): Record<string, string> {
@@ -24,18 +24,30 @@ function normalizeStringRecord(value: unknown): Record<string, string> {
   }
 
   return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  );
+}
+
+function normalizeEnabledRecord(value: unknown): Record<string, boolean> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, true] => entry[1] === true),
   );
 }
 
 function normalizeSidebarTab(value: unknown): SidebarTabId {
-  if (value === "activity") {
-    return "agents";
+  if (value === 'activity') {
+    return 'agents';
   }
 
-  return typeof value === "string" && sidebarTabs.has(value as SidebarTabId)
+  return typeof value === 'string' && sidebarTabs.has(value as SidebarTabId)
     ? (value as SidebarTabId)
-    : "notes";
+    : 'notes';
 }
 
 export function getTransientUiStorageKey(workspaceId: string): string {
@@ -44,7 +56,7 @@ export function getTransientUiStorageKey(workspaceId: string): string {
 
 export function sanitizePersistedTransientUiState(
   persisted: unknown,
-  now: number = Date.now()
+  now: number = Date.now(),
 ): { state: TransientUiWorkspaceState | null; removeStorage: boolean; persistSanitized: boolean } {
   if (!isRecord(persisted)) {
     return { state: null, removeStorage: true, persistSanitized: false };
@@ -52,9 +64,10 @@ export function sanitizePersistedTransientUiState(
 
   const state: TransientUiWorkspaceState = {
     chatDrafts: normalizeStringRecord(persisted.chatDrafts),
+    rawNoteViewByNoteId: normalizeEnabledRecord(persisted.rawNoteViewByNoteId),
     sidebarActiveTab: normalizeSidebarTab(persisted.sidebarActiveTab),
     viewedFiles: normalizeStringRecord(persisted.viewedFiles),
-    timestamp: typeof persisted.timestamp === "number" ? persisted.timestamp : now,
+    timestamp: typeof persisted.timestamp === 'number' ? persisted.timestamp : now,
   };
 
   const originalSerialized = JSON.stringify(persisted);
