@@ -21,6 +21,11 @@
     updateUrlMetadata,
   } from '$lib/store/slices/browser/browser-slice';
   import { selectPendingBrowserZoom } from '$lib/store/slices/browser/browser-selectors';
+  import {
+    createEmbeddedBrowserNavigationSyncState,
+    reconcileEmbeddedBrowserUrlProp,
+    recordEmbeddedBrowserNavigation,
+  } from './embedded-browser-navigation-sync';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -200,9 +205,11 @@
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
 
-  // Track the previous URL prop value to detect when it changes externally
-  // svelte-ignore state_referenced_locally - intentional: we want initial value
-  let previousUrlProp = $state<string | null>(url || null);
+  // Track the previous URL prop value to detect when it changes externally.
+  // This is intentionally non-reactive: navigation event handlers update it as
+  // bookkeeping before notifying the parent, and those writes must not wake the
+  // prop-change effect or they can cause a redundant webview load/reload.
+  const navigationSync = createEmbeddedBrowserNavigationSyncState(url);
 
   // Focus URL bar on mount if requested
   $effect(() => {
@@ -223,18 +230,14 @@
   // This is for when the parent component changes the url prop (e.g., clicking a different URL in sidebar)
   // IMPORTANT: Only triggers when the PROP changes, not when user navigates internally
   $effect(() => {
-    if (!url) return;
-    if (previousUrlProp === null) {
-      previousUrlProp = url;
-      return;
-    }
-    if (url !== previousUrlProp) {
-      previousUrlProp = url;
-      // If webview is ready, navigate to the new URL
-      if (webviewReady && isValidBrowserUrl(url)) {
-        displayUrl = url;
-        loadUrl(url);
-      }
+    const decision = reconcileEmbeddedBrowserUrlProp(navigationSync, url, {
+      webviewReady,
+      isValidBrowserUrl,
+    });
+
+    if (decision.shouldLoad && decision.targetUrl) {
+      displayUrl = decision.targetUrl;
+      loadUrl(decision.targetUrl);
     }
   });
 
@@ -505,7 +508,7 @@
       errorMessage = '';
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
-      previousUrlProp = e.url;
+      recordEmbeddedBrowserNavigation(navigationSync, e.url);
       onNavigate?.(e.url);
       updateNavigationState();
     });
@@ -513,7 +516,7 @@
     addWebviewListener('did-navigate-in-page', (e: any) => {
       displayUrl = e.url;
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
-      previousUrlProp = e.url;
+      recordEmbeddedBrowserNavigation(navigationSync, e.url);
       // Also call onNavigate for in-page navigation (e.g., clicking links that don't reload)
       onNavigate?.(e.url);
       updateNavigationState();
@@ -750,7 +753,7 @@
     logger.info('Form submitted', {
       displayUrl,
       currentWebviewUrl,
-      previousUrlProp,
+      previousUrlProp: navigationSync.previousUrlProp,
       webviewReady,
       webviewRef: !!webviewRef,
     });
