@@ -1,4 +1,5 @@
 <script module lang="ts">
+  /* eslint-disable max-lines */
   export { hashContent } from './diff-content-hash.js';
 </script>
 
@@ -38,14 +39,9 @@
   import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { hashContent } from './diff-content-hash.js';
-  import Fa from 'svelte-fa';
-  import {
-    faSearch,
-    faXmark,
-    faChevronUp,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
 
   type Props = PureDiffProps;
 
@@ -157,12 +153,27 @@
   const FOLDED_ROW_EXPAND_BUTTON_SELECTOR = '[data-expand-button]:not([data-expand-all-button])';
 
   // Search state
+  type SearchResult = { element: HTMLElement; text: string };
+
+  const SEARCH_CONTENT_SELECTOR = [
+    '[data-column-content]',
+    '[data-content] [data-line]',
+    '[data-content] [data-no-newline]',
+    'pre [data-line]',
+  ].join(',');
+  const SEARCH_HIGHLIGHT_BACKGROUND = 'rgba(255, 213, 0, 0.4)';
+  const SEARCH_CURRENT_BACKGROUND = 'rgba(59, 130, 246, 0.5)';
+  const SEARCH_SCROLL_MARGIN_PX = 16;
+  const SEARCH_DEBOUNCE_MS = 150;
+
   let searchOpen = $state(false);
   let searchQuery = $state('');
-  let searchResults: { element: HTMLElement; text: string }[] = $state([]);
+  let searchResults: SearchResult[] = $state([]);
   let currentSearchIndex = $state(0);
-  let searchInputRef: HTMLInputElement | undefined = $state();
+  let searchInputRef: HTMLInputElement | null = $state(null);
   let wrapperRef: HTMLDivElement | undefined = $state();
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchRefreshQueued = false;
 
   // Sync collapsed state with initialCollapsed prop
   $effect(() => {
@@ -451,11 +462,20 @@
 
   // === Search functions ===
   function openSearch() {
+    const selectedText = getSelectedTextWithinSurface(wrapperRef, { extraRoots: getSearchRoots() });
+    if (selectedText) {
+      searchQuery = selectedText;
+      currentSearchIndex = 0;
+    }
     searchOpen = true;
-    tick().then(() => searchInputRef?.focus());
+    tick().then(() => {
+      searchInputRef?.focus();
+      searchInputRef?.select();
+    });
   }
 
   function closeSearch() {
+    cancelSearchDebounce();
     searchOpen = false;
     searchQuery = '';
     clearSearchHighlights();
@@ -463,22 +483,97 @@
     currentSearchIndex = 0;
   }
 
+  function resetSearchState() {
+    clearSearchHighlights();
+    searchResults = [];
+    currentSearchIndex = 0;
+  }
+
+  function cancelSearchDebounce() {
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+  }
+
+  function flushSearchDebounce() {
+    if (searchDebounceTimer === null) return;
+    cancelSearchDebounce();
+    if (searchOpen && searchQuery.trim()) {
+      performSearch(searchQuery);
+    }
+  }
+
+  function scheduleSearch(query: string) {
+    cancelSearchDebounce();
+    currentSearchIndex = 0;
+
+    if (!searchOpen || !query.trim()) {
+      resetSearchState();
+      return;
+    }
+
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null;
+      if (searchOpen && searchQuery.trim()) {
+        performSearch(searchQuery);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  async function refreshSearchAfterDiffRender() {
+    if (searchRefreshQueued) return;
+    searchRefreshQueued = true;
+    await tick();
+    searchRefreshQueued = false;
+
+    if (searchDebounceTimer !== null) return;
+    if (searchOpen && searchQuery.trim()) {
+      performSearch(searchQuery);
+    } else if (searchOpen) {
+      resetSearchState();
+    }
+  }
+
   function clearSearchHighlights() {
     // Remove all search highlights
     if (!containerRef) return;
 
-    // Access shadow root if present (for @pierre/diffs custom element)
-    const diffsContainer = containerRef.querySelector('diffs-container');
-    const searchRoot = diffsContainer?.shadowRoot || containerRef;
-
-    const highlights = searchRoot.querySelectorAll('.diff-search-highlight');
-    highlights.forEach((el) => {
-      const parent = el.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(el.textContent || ''), el);
-        parent.normalize();
-      }
+    getSearchRoots().forEach((searchRoot) => {
+      const highlights = searchRoot.querySelectorAll('.diff-search-highlight');
+      highlights.forEach((el) => {
+        const parent = el.parentNode;
+        if (parent) {
+          while (el.firstChild) {
+            parent.insertBefore(el.firstChild, el);
+          }
+          parent.removeChild(el);
+          parent.normalize();
+        }
+      });
     });
+  }
+
+  function getSearchRoots(): ParentNode[] {
+    if (!containerRef) return [];
+
+    const shadowRoots = Array.from(containerRef.querySelectorAll('diffs-container'))
+      .map((diffsContainer) => diffsContainer.shadowRoot)
+      .filter((root): root is ShadowRoot => root != null);
+
+    return shadowRoots.length > 0 ? shadowRoots : [containerRef];
+  }
+
+  function getSearchContentElements(searchRoot: ParentNode): HTMLElement[] {
+    const candidates = Array.from(searchRoot.querySelectorAll<HTMLElement>(SEARCH_CONTENT_SELECTOR));
+    const elements: HTMLElement[] = [];
+
+    for (const candidate of candidates) {
+      if (elements.some((element) => element.contains(candidate))) continue;
+      elements.push(candidate);
+    }
+
+    return elements;
   }
 
   function performSearch(query: string) {
@@ -488,37 +583,20 @@
 
     if (!query || !containerRef) return;
 
-    // The @pierre/diffs library uses a custom element <diffs-container> with Shadow DOM
-    // We need to access the shadow root to find the code content
-    const diffsContainer = containerRef.querySelector('diffs-container');
-    const searchRoot = diffsContainer?.shadowRoot || containerRef;
+    const results: SearchResult[] = [];
+    getSearchRoots().forEach((searchRoot) => {
+      getSearchContentElements(searchRoot).forEach((el) => {
+        highlightTextInElement(el, query);
+      });
 
-    // Search within code content - [data-column-content] contains the actual code
-    let codeElements = searchRoot.querySelectorAll('[data-column-content]');
-
-    // If no elements found with that selector, try alternatives
-    if (codeElements.length === 0) {
-      codeElements = searchRoot.querySelectorAll('[data-line] [data-column-content], pre [data-line]');
-    }
-
-    // Highlight matches in each code element
-    codeElements.forEach((el) => {
-      highlightTextInElement(el as HTMLElement, query);
-    });
-
-    // Collect all highlighted elements from the shadow root
-    // Filter out elements that are not visible (e.g., in collapsed sections or hidden)
-    const results: { element: HTMLElement; text: string }[] = [];
-    const highlighted = searchRoot.querySelectorAll('.diff-search-highlight');
-    highlighted.forEach((el) => {
-      const htmlEl = el as HTMLElement;
-      const rect = htmlEl.getBoundingClientRect();
-      const isVisible = rect.width > 0 && rect.height > 0;
-
-      // Only include visible elements
-      if (isVisible) {
-        results.push({ element: htmlEl, text: el.textContent || '' });
-      }
+      // Collect all highlighted elements from the shadow root in DOM order.
+      // Filter out elements that are not rendered (e.g., folded or virtualized out).
+      const highlighted = searchRoot.querySelectorAll<HTMLElement>('.diff-search-highlight');
+      highlighted.forEach((el) => {
+        if (isRenderedElement(el)) {
+          results.push({ element: el, text: el.textContent || '' });
+        }
+      });
     });
 
     searchResults = results;
@@ -528,59 +606,79 @@
   }
 
   function highlightTextInElement(element: HTMLElement, query: string) {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    const nodesToHighlight: { node: Text; start: number; end: number }[] = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const segments: { node: Text; start: number; end: number }[] = [];
     const lowerQuery = query.toLowerCase();
+    let fullText = '';
 
     let node: Text | null;
     while ((node = walker.nextNode() as Text | null)) {
       const text = node.textContent || '';
-      const lowerText = text.toLowerCase();
-      let idx = 0;
-
-      while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
-        nodesToHighlight.push({ node, start: idx, end: idx + query.length });
-        idx += query.length;
-      }
+      segments.push({ node, start: fullText.length, end: fullText.length + text.length });
+      fullText += text;
     }
 
-    // Apply highlights in reverse order to preserve indices
-    for (let i = nodesToHighlight.length - 1; i >= 0; i--) {
-      const { node, start, end } = nodesToHighlight[i];
-      const text = node.textContent || '';
+    const lowerText = fullText.toLowerCase();
+    const matches: { start: number; end: number }[] = [];
+    let idx = 0;
 
-      const before = text.slice(0, start);
-      const match = text.slice(start, end);
-      const after = text.slice(end);
+    while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
+      matches.push({ start: idx, end: idx + query.length });
+      idx += query.length;
+    }
+
+    // Apply highlights in reverse order to preserve original text offsets.
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const start = getTextPosition(segments, matches[i].start, false);
+      const end = getTextPosition(segments, matches[i].end, true);
+      if (!start || !end) continue;
+
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
 
       const span = document.createElement('span');
       span.className = 'diff-search-highlight';
-      // Apply inline styles since we're inside Shadow DOM and scoped CSS won't apply
-      span.style.backgroundColor = 'rgba(255, 213, 0, 0.4)';
-      span.textContent = match;
-
-      const parent = node.parentNode;
-      if (parent) {
-        if (after) {
-          parent.insertBefore(document.createTextNode(after), node.nextSibling);
-        }
-        parent.insertBefore(span, node.nextSibling);
-        if (before) {
-          node.textContent = before;
-        } else {
-          parent.removeChild(node);
-        }
-      }
+      // Apply inline styles since we're inside Shadow DOM and scoped CSS won't apply.
+      span.style.backgroundColor = SEARCH_HIGHLIGHT_BACKGROUND;
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
     }
   }
 
+  function getTextPosition(
+    segments: { node: Text; start: number; end: number }[],
+    offset: number,
+    preferPrevious: boolean,
+  ): { node: Text; offset: number } | null {
+    const orderedSegments = preferPrevious ? [...segments].reverse() : segments;
+    for (const segment of orderedSegments) {
+      const withinSegment = preferPrevious
+        ? offset > segment.start && offset <= segment.end
+        : offset >= segment.start && offset < segment.end;
+      if (withinSegment) {
+        return { node: segment.node, offset: offset - segment.start };
+      }
+    }
+    return null;
+  }
+
+  function isRenderedElement(element: HTMLElement): boolean {
+    return Array.from(element.getClientRects()).some((rect) => rect.width > 0 && rect.height > 0);
+  }
+
   function navigateToResult(index: number) {
+    flushSearchDebounce();
     if (searchResults.length === 0) return;
 
     // Remove current highlight style from previous result (reset to normal highlight)
     searchResults.forEach((r) => {
       r.element.classList.remove('diff-search-current');
-      r.element.style.backgroundColor = 'rgba(255, 213, 0, 0.4)';
+      r.element.style.backgroundColor = SEARCH_HIGHLIGHT_BACKGROUND;
     });
 
     // Wrap around
@@ -591,20 +689,69 @@
     const result = searchResults[index];
     result.element.classList.add('diff-search-current');
     // Apply current highlight style inline (selection-like blue color, no border)
-    result.element.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
-    result.element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    result.element.style.backgroundColor = SEARCH_CURRENT_BACKGROUND;
+    revealSearchResult(result.element);
+  }
+
+  function revealSearchResult(element: HTMLElement) {
+    const scrollContainers = getScrollableAncestors(element);
+    if (scrollContainers.length === 0) {
+      element.scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      return;
+    }
+
+    scrollContainers.forEach((container) => scrollElementIntoContainer(element, container));
+  }
+
+  function getScrollableAncestors(element: HTMLElement): HTMLElement[] {
+    const ancestors: HTMLElement[] = [];
+    let current = getComposedParentElement(element);
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (isScrollableElement(current)) ancestors.push(current);
+      current = getComposedParentElement(current);
+    }
+
+    return ancestors;
+  }
+
+  function getComposedParentElement(node: Node): HTMLElement | null {
+    if (node.parentElement) return node.parentElement;
+    const root = node.getRootNode();
+    return root instanceof ShadowRoot && root.host instanceof HTMLElement ? root.host : null;
+  }
+
+  function isScrollableElement(element: HTMLElement): boolean {
+    const style = window.getComputedStyle(element);
+    const canScrollY = /(auto|scroll|overlay)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+    const canScrollX = /(auto|scroll|overlay)/.test(style.overflowX) && element.scrollWidth > element.clientWidth;
+    return canScrollY || canScrollX;
+  }
+
+  function scrollElementIntoContainer(element: HTMLElement, container: HTMLElement) {
+    const elementRect = element.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const targetTop = elementRect.top - containerRect.top + container.scrollTop;
+    const targetLeft = elementRect.left - containerRect.left + container.scrollLeft;
+    const nextTop = Math.max(0, targetTop - container.clientHeight / 2 + elementRect.height / 2);
+    let nextLeft = container.scrollLeft;
+
+    if (elementRect.left < containerRect.left + SEARCH_SCROLL_MARGIN_PX) {
+      nextLeft = Math.max(0, targetLeft - SEARCH_SCROLL_MARGIN_PX);
+    } else if (elementRect.right > containerRect.right - SEARCH_SCROLL_MARGIN_PX) {
+      nextLeft = Math.max(0, targetLeft - container.clientWidth + elementRect.width + SEARCH_SCROLL_MARGIN_PX);
+    }
+
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: nextTop, left: nextLeft, behavior: 'smooth' });
+    } else {
+      container.scrollTop = nextTop;
+      container.scrollLeft = nextLeft;
+    }
   }
 
   function handleSearchKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      closeSearch();
-    } else if (e.key === 'Enter') {
-      if (e.shiftKey) {
-        navigateToResult(currentSearchIndex - 1);
-      } else {
-        navigateToResult(currentSearchIndex + 1);
-      }
-    } else if (e.key === 'F3' || (e.key === 'g' && (e.ctrlKey || e.metaKey))) {
+    if (e.key === 'F3' || (e.key === 'g' && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       if (e.shiftKey) {
         navigateToResult(currentSearchIndex - 1);
@@ -622,10 +769,10 @@
 
     untrack(() => {
       if (isOpen && query) {
-        performSearch(query);
+        scheduleSearch(query);
       } else if (!query) {
-        clearSearchHighlights();
-        searchResults = [];
+        cancelSearchDebounce();
+        resetSearchState();
       }
     });
   });
@@ -752,6 +899,10 @@
     lastDiffDataRef = diffData;
     lastContainerRef = containerRef;
     lastVirtualizerRef = virtualizer;
+
+    untrack(() => {
+      refreshSearchAfterDiffRender();
+    });
   });
 
   // Annotations effect: use `setLineAnnotations` (targeted update) instead of
@@ -762,6 +913,7 @@
     if (!fileDiffInstance || !lastDiffDataRef) return;
     untrack(() => {
       fileDiffInstance!.setLineAnnotations((currentAnnotations ?? []) as any);
+      refreshSearchAfterDiffRender();
     });
   });
 
@@ -817,6 +969,9 @@
     if (sig !== lastStructuralSig) {
       lastStructuralSig = sig;
       fileDiffInstance.rerender();
+      untrack(() => {
+        refreshSearchAfterDiffRender();
+      });
     }
   });
 
@@ -837,11 +992,15 @@
     const dark = $isDarkTheme;
     if (fileDiffInstance) {
       fileDiffInstance.setThemeType(dark ? 'dark' : 'light');
+      untrack(() => {
+        refreshSearchAfterDiffRender();
+      });
     }
   });
 
   // Cleanup on destroy
   onDestroy(() => {
+    cancelSearchDebounce();
     fileDiffInstance?.cleanUp();
   });
 </script>
@@ -869,59 +1028,31 @@
     />
   {/if}
 
-  <!-- Search bar -->
-  {#if searchOpen}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="diff-search-bar" onkeydown={handleSearchKeydown}>
-      <div class="diff-search-input-wrapper">
-        <Fa icon={faSearch} class="diff-search-icon" />
-        <input
-          bind:this={searchInputRef}
-          bind:value={searchQuery}
-          type="text"
-          placeholder="Find in diff..."
-          class="diff-search-input"
-        />
-        {#if searchResults.length > 0}
-          <span class="diff-search-count">
-            {currentSearchIndex + 1} / {searchResults.length}
-          </span>
-        {:else if searchQuery}
-          <span class="diff-search-count diff-search-no-results">No results</span>
-        {/if}
-      </div>
-      <div class="diff-search-actions">
-        <button
-          type="button"
-          class="diff-search-nav-btn"
-          onclick={() => navigateToResult(currentSearchIndex - 1)}
-          disabled={searchResults.length === 0}
-          title="Previous match (Shift+Enter)"
-        >
-          <Fa icon={faChevronUp} />
-        </button>
-        <button
-          type="button"
-          class="diff-search-nav-btn"
-          onclick={() => navigateToResult(currentSearchIndex + 1)}
-          disabled={searchResults.length === 0}
-          title="Next match (Enter)"
-        >
-          <Fa icon={faChevronDown} />
-        </button>
-        <button type="button" class="diff-search-close-btn" onclick={closeSearch} title="Close (Esc)">
-          <Fa icon={faXmark} />
-        </button>
-      </div>
-    </div>
-  {/if}
-
   {#if !collapsed}
     <div
       class="pure-diff-content"
       class:overflow-auto={overflow === 'scroll'}
       style={maxHeight ? `max-height: calc(${maxHeight} - 40px);` : ''}
     >
+      <!-- Search bar -->
+      {#if searchOpen}
+        <div class="diff-search-bar">
+          <PanelFindBar
+            bind:query={searchQuery}
+            bind:inputRef={searchInputRef}
+            layout="inline"
+            placeholder="Find in diff..."
+            currentMatchIndex={currentSearchIndex}
+            totalMatches={searchResults.length}
+            emptyResultText="No results"
+            onKeydown={handleSearchKeydown}
+            onPrevious={() => navigateToResult(currentSearchIndex - 1)}
+            onNext={() => navigateToResult(currentSearchIndex + 1)}
+            onClose={closeSearch}
+          />
+        </div>
+      {/if}
+
       {#if diffData}
         <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={$codeFontFamilyCSS}></div>
       {:else}
@@ -954,6 +1085,21 @@
 
   .pure-diff-content {
     overflow-x: auto;
+  }
+
+  .diff-search-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    width: 100%;
+    min-width: 100%;
+    padding: 0.5rem 1rem;
+    background: hsl(var(--background));
   }
 
   .pure-diff-container {
@@ -999,92 +1145,6 @@
 
   .pure-diff-preview-button:hover {
     background: var(--accent, hsl(var(--accent)));
-  }
-
-  /* === Search bar styles === */
-  .diff-search-bar {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background: hsl(var(--background));
-    border-left: 1px solid hsl(var(--border));
-    border-bottom: 1px solid hsl(var(--border));
-    box-shadow: -2px 2px 8px hsl(var(--background) / 0.5);
-  }
-
-  .diff-search-input-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: hsl(var(--muted) / 0.5);
-    border: 1px solid hsl(var(--border));
-    padding: 0.25rem 0.5rem;
-  }
-
-  .diff-search-input-wrapper :global(.diff-search-icon) {
-    color: hsl(var(--muted-foreground));
-    font-size: 0.75rem;
-    flex-shrink: 0;
-  }
-
-  .diff-search-input {
-    width: 140px;
-    border: none;
-    background: transparent;
-    font-size: 0.8125rem;
-    color: hsl(var(--foreground));
-    outline: none;
-    min-width: 0;
-  }
-
-  .diff-search-input::placeholder {
-    color: hsl(var(--muted-foreground));
-  }
-
-  .diff-search-count {
-    font-size: 0.75rem;
-    color: hsl(var(--muted-foreground));
-    white-space: nowrap;
-  }
-
-  .diff-search-no-results {
-    color: hsl(var(--destructive));
-  }
-
-  .diff-search-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.125rem;
-  }
-
-  .diff-search-nav-btn,
-  .diff-search-close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.25rem;
-    height: 1.25rem;
-    border: none;
-    background: transparent;
-    color: hsl(var(--muted-foreground));
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .diff-search-nav-btn:hover:not(:disabled),
-  .diff-search-close-btn:hover {
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
-  }
-
-  .diff-search-nav-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   /* === Search highlight styles === */

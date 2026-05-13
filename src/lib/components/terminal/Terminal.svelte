@@ -24,6 +24,7 @@
   let searchOpen = $state(false);
   let hasMatches = $state(true);
   let searchFocusTrigger = $state(0);
+  let searchSeedQuery = $state('');
   let currentMatchIndex = $state(-1);
   let totalMatches = $state(0);
 
@@ -50,7 +51,9 @@
     if (searchOpen) {
       handleSearchClose();
     } else {
+      searchSeedQuery = terminal?.getSelection().replace(/\u00a0/g, ' ').replace(/[\t\r\n]+/g, ' ').trim() ?? '';
       searchOpen = true;
+      searchFocusTrigger += 1;
     }
   }
 
@@ -179,6 +182,7 @@
       {currentMatchIndex}
       {totalMatches}
       focusTrigger={searchFocusTrigger}
+      initialQuery={searchSeedQuery}
       onFindNext={handleFindNext}
       onFindPrevious={handleFindPrevious}
       onClose={handleSearchClose}

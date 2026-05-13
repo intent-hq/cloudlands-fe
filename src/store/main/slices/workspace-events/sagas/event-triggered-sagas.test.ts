@@ -153,7 +153,6 @@ describe("handleAgentIdleNotification", () => {
     expect(handleAgentIdleMock).toHaveBeenCalledTimes(1);
   });
 });
-
 // ---------------------------------------------------------------------------
 // handleAgentLifecycleForSummary
 // ---------------------------------------------------------------------------
@@ -253,4 +252,3 @@ describe("handleAgentLifecycleForSummary", () => {
     );
   });
 });
-

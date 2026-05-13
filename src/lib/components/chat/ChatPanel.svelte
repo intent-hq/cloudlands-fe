@@ -108,16 +108,7 @@
   import { toast } from 'svelte-sonner';
   import Fa from 'svelte-fa';
   import { formatDistanceToNow } from '$lib/utils/date';
-  import {
-    faArrowDown,
-    faSquareCheck,
-    faLock,
-    faLockOpen,
-    faSearch,
-    faTimes,
-    faChevronUp,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowDown, faSquareCheck, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
   import { fade, slide } from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
@@ -129,6 +120,8 @@
   import { v4 as uuidv4 } from 'uuid';
   import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
   import Button from '../ui/button/button.svelte';
+  import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
@@ -735,20 +728,18 @@
     triggerHighlight();
   }
 
-  // Handle search keyboard shortcuts
-  function handleSearchKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      closeSearch();
-    } else if (e.key === 'Enter') {
-      // Pressing Enter before the debounce fires should navigate immediately
-      // using the latest typed query, not the stale debounced one.
-      flushSearchDebounce();
-      if (e.shiftKey) {
-        scrollToSearchMatch(currentSearchIndex - 1);
-      } else {
-        scrollToSearchMatch(currentSearchIndex + 1);
-      }
-    }
+  function navigateToPreviousSearchMatch() {
+    // Pressing Enter before the debounce fires should navigate immediately
+    // using the latest typed query, not the stale debounced one.
+    flushSearchDebounce();
+    scrollToSearchMatch(currentSearchIndex - 1);
+  }
+
+  function navigateToNextSearchMatch() {
+    // Pressing Enter before the debounce fires should navigate immediately
+    // using the latest typed query, not the stale debounced one.
+    flushSearchDebounce();
+    scrollToSearchMatch(currentSearchIndex + 1);
   }
 
   // Handle search input changes — debounce the expensive match derivation so
@@ -770,6 +761,27 @@
       debouncedSearchQuery = searchQuery;
       triggerHighlight();
     }, SEARCH_DEBOUNCE_MS);
+  }
+
+  function openSearchFromSelection() {
+    const selectedText = getSelectedTextWithinSurface(panelElement);
+
+    if (selectedText) {
+      if (searchDebounceTimer !== null) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+      }
+      searchQuery = selectedText;
+      debouncedSearchQuery = selectedText;
+      currentSearchIndex = 0;
+    }
+
+    showSearch = true;
+    tick().then(() => {
+      searchInputRef?.focus();
+      searchInputRef?.select();
+      if (selectedText) triggerHighlight();
+    });
   }
 
   // Context items for the input
@@ -2893,8 +2905,7 @@
         !isFocusInTerminal(document.activeElement as HTMLElement | null)
       ) {
         e.preventDefault();
-        showSearch = true;
-        tick().then(() => searchInputRef?.focus());
+        openSearchFromSelection();
       }
     }
 
@@ -2929,52 +2940,20 @@
 <div bind:this={panelElement} class="group/panel flex flex-col h-full w-full min-w-0 relative z-20" data-agent-model={agentModel}>
   <!-- Search Bar -->
   {#if showSearch}
-    <div
-      class="absolute top-2 right-4 z-50 flex items-center gap-2 bg-background border border-border rounded-lg shadow-lg px-3 py-2"
-      transition:fade={{ duration: 150 }}
-    >
-      <Fa icon={faSearch} class="w-3.5 h-3.5 text-ghost" />
-      <input
-        bind:this={searchInputRef}
-        bind:value={searchQuery}
-        type="text"
-        placeholder="Search messages..."
-        class="w-48 text-sm bg-transparent border-0 focus:outline-none placeholder:text-muted-foreground/50"
-        onkeydown={handleSearchKeydown}
-        oninput={handleSearchInput}
-      />
-      {#if searchMatchCount > 0}
-        <span class="text-xs text-subtle whitespace-nowrap">
-          {currentSearchIndex + 1} / {searchMatchCount}
-        </span>
-        <button
-          type="button"
-          class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onclick={() => scrollToSearchMatch(currentSearchIndex - 1)}
-          title="Previous match (Shift+Enter)"
-        >
-          <Fa icon={faChevronUp} class="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onclick={() => scrollToSearchMatch(currentSearchIndex + 1)}
-          title="Next match (Enter)"
-        >
-          <Fa icon={faChevronDown} class="w-3 h-3" />
-        </button>
-      {:else if searchQuery}
-        <span class="text-xs text-subtle">No matches</span>
-      {/if}
-      <button
-        type="button"
-        class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        onclick={closeSearch}
-        title="Close (Esc)"
-      >
-        <Fa icon={faTimes} class="w-3.5 h-3.5" />
-      </button>
-    </div>
+    <PanelFindBar
+      bind:query={searchQuery}
+      bind:inputRef={searchInputRef}
+      placeholder="Search messages..."
+      currentMatchIndex={currentSearchIndex}
+      totalMatches={searchMatchCount}
+      disableNavigationWhenNoMatches={false}
+      resultVariant="muted"
+      inputClass="w-48"
+      onInput={handleSearchInput}
+      onPrevious={navigateToPreviousSearchMatch}
+      onNext={navigateToNextSearchMatch}
+      onClose={closeSearch}
+    />
   {/if}
 
   <!-- Messages Area -->

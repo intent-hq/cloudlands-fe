@@ -193,9 +193,10 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
-  import { untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
   } from '$lib/components/file-tracking/change-set-visualization';
@@ -240,6 +241,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentFileRefreshes } from '$lib/store/slices/chat-changes/chat-changes-selectors';
+  import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -1790,13 +1792,77 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     expandedCommits = newSet;
   }
 
+  const VIEWED_COLLAPSE_SCROLL_SETTLE_MS = 230;
+
+  function getRenderedFileExpandKeys(): string[] {
+    if (groupByCommit && commitGroups) {
+      const keys: string[] = [];
+      for (const group of commitGroups) {
+        if (group.hash && !expandedCommits.has(group.hash)) continue;
+        keys.push(...group.changes.map((change) => getExpandKey(change)));
+      }
+      return keys;
+    }
+
+    return mergedChanges.map((change) => getExpandKey(change));
+  }
+
+  function getViewedScrollTargetExpandKey(expandKey: string): string {
+    const renderedKeys = getRenderedFileExpandKeys();
+    const currentIndex = renderedKeys.indexOf(expandKey);
+    return currentIndex >= 0 ? (renderedKeys[currentIndex + 1] ?? expandKey) : expandKey;
+  }
+
+  function findFileHeader(expandKey: string): HTMLElement | null {
+    const content = virtualizerContentRef;
+    if (!content) return null;
+
+    for (const header of content.querySelectorAll<HTMLElement>('[data-change-header-key]')) {
+      if (header.dataset.changeHeaderKey === expandKey) return header;
+    }
+    return null;
+  }
+
+  function scrollFileHeaderIntoView(expandKey: string) {
+    const container = scrollContainerRef;
+    const header = findFileHeader(expandKey);
+    if (!container || !header) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const stickyTop = Number.parseFloat(header.dataset.changeStickyTop ?? '0') || 0;
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    const nextScrollTop = container.scrollTop + headerRect.top - containerRect.top - stickyTop;
+
+    container.scrollTo({
+      top: Math.min(maxScrollTop, Math.max(0, nextScrollTop)),
+      behavior: 'auto',
+    });
+  }
+
+  function scheduleViewedCollapseScroll(expandKey: string) {
+    const targetExpandKey = getViewedScrollTargetExpandKey(expandKey);
+
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        scrollFileHeaderIntoView(targetExpandKey);
+        window.setTimeout(() => {
+          scrollFileHeaderIntoView(targetExpandKey);
+        }, VIEWED_COLLAPSE_SCROLL_SETTLE_MS);
+      });
+    });
+  }
+
   // Toggle a file's "viewed" state (like GitHub PR review checkboxes)
   // viewedFiles always stores file paths (not expand keys) for consistency
   // across combined and by-commit modes.
   function toggleViewed(filePath: string, expandKey: string) {
     const newViewed = new Set(viewedFiles);
     const newExpanded = new Set(expandedFiles);
-    if (newViewed.has(filePath)) {
+    const wasViewed = newViewed.has(filePath);
+    const shouldScrollAfterMarkViewed = !wasViewed && newExpanded.has(expandKey);
+
+    if (wasViewed) {
       // Unmark as viewed — re-expand the diff
       newViewed.delete(filePath);
       newExpanded.add(expandKey);
@@ -1811,6 +1877,10 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
     }
     viewedFiles = newViewed;
     expandedFiles = newExpanded;
+
+    if (shouldScrollAfterMarkViewed) {
+      scheduleViewedCollapseScroll(expandKey);
+    }
 
     // Persist to transient store
     if ($activeWorkspaceId) {
@@ -1852,6 +1922,8 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   // Track which file/line to scroll to in the diff viewer
   let scrollTarget = $state<{ filePath: string; lineNumber: number } | null>(null);
 
+  let panelRootRef: HTMLDivElement | null = $state(null);
+
   // Reference to scroll container for preserving scroll position
   let scrollContainerRef: HTMLElement | null = $state(null);
 
@@ -1881,6 +1953,398 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
       instance.cleanUp();
       if (virtualizer === instance) virtualizer = undefined;
     };
+  });
+
+  type AllChangesSearchResult = { element: HTMLElement; headerKey?: string };
+  type SearchTextSegment = { text: string; isMatch: boolean };
+
+  const ALL_CHANGES_SEARCH_CONTENT_SELECTOR = [
+    '[data-column-content]',
+    '[data-content] [data-line]',
+    '[data-content] [data-no-newline]',
+    'pre [data-line]',
+  ].join(',');
+  const ALL_CHANGES_SEARCH_HIGHLIGHT_BACKGROUND = 'rgba(255, 213, 0, 0.4)';
+  const ALL_CHANGES_SEARCH_CURRENT_BACKGROUND = 'rgba(59, 130, 246, 0.5)';
+  const ALL_CHANGES_SEARCH_SCROLL_MARGIN_PX = 16;
+  const ALL_CHANGES_SEARCH_DEBOUNCE_MS = 150;
+
+  let allChangesSearchOpen = $state(false);
+  let allChangesSearchQuery = $state('');
+  let allChangesSearchResults = $state<AllChangesSearchResult[]>([]);
+  let allChangesSearchIndex = $state(0);
+  let allChangesSearchInputRef: HTMLInputElement | null = $state(null);
+  let allChangesSearchHeaderMatchKeys = $state<Set<string>>(new Set());
+  let allChangesSearchCurrentHeaderKey = $state<string | null>(null);
+  let allChangesSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let allChangesSearchRenderKey = $derived.by(() => {
+    const renderedKeys = groupByCommit && commitGroups
+      ? commitGroups
+          .filter((group) => !group.hash || expandedCommits.has(group.hash))
+          .flatMap((group) => group.changes.map((change) => getExpandKey(change)))
+      : mergedChanges.map((change) => getExpandKey(change));
+
+    return [
+      groupByCommit ? 'grouped' : 'combined',
+      renderedKeys.join('|'),
+      [...expandedFiles].join('|'),
+      [...visibleFiles].join('|'),
+    ].join('::');
+  });
+
+  function getAllChangesSearchRoots(): ParentNode[] {
+    const content = virtualizerContentRef;
+    if (!content) return [];
+
+    return Array.from(content.querySelectorAll('diffs-container'))
+      .map((diffsContainer) => diffsContainer.shadowRoot)
+      .filter((root): root is ShadowRoot => root != null);
+  }
+
+  function openAllChangesSearchFromSelection() {
+    const selectedText = getSelectedTextWithinSurface(panelRootRef, {
+      extraRoots: getAllChangesSearchRoots(),
+    });
+
+    if (selectedText) {
+      allChangesSearchQuery = selectedText;
+      allChangesSearchIndex = 0;
+    }
+
+    allChangesSearchOpen = true;
+    void tick().then(() => {
+      allChangesSearchInputRef?.focus();
+      allChangesSearchInputRef?.select();
+    });
+  }
+
+  function closeAllChangesSearch() {
+    cancelAllChangesSearchDebounce();
+    allChangesSearchOpen = false;
+    allChangesSearchQuery = '';
+    resetAllChangesSearchState();
+  }
+
+  function resetAllChangesSearchState() {
+    clearAllChangesSearchHighlights();
+    allChangesSearchResults = [];
+    allChangesSearchIndex = 0;
+    allChangesSearchHeaderMatchKeys = new Set();
+    allChangesSearchCurrentHeaderKey = null;
+  }
+
+  function cancelAllChangesSearchDebounce() {
+    if (allChangesSearchDebounceTimer !== null) {
+      clearTimeout(allChangesSearchDebounceTimer);
+      allChangesSearchDebounceTimer = null;
+    }
+  }
+
+  function scheduleAllChangesSearch(query: string) {
+    cancelAllChangesSearchDebounce();
+    allChangesSearchIndex = 0;
+
+    if (!allChangesSearchOpen || !query.trim()) {
+      resetAllChangesSearchState();
+      return;
+    }
+
+    allChangesSearchDebounceTimer = setTimeout(() => {
+      allChangesSearchDebounceTimer = null;
+      if (allChangesSearchOpen && allChangesSearchQuery.trim()) {
+        performAllChangesSearch(allChangesSearchQuery);
+      }
+    }, ALL_CHANGES_SEARCH_DEBOUNCE_MS);
+  }
+
+  onDestroy(cancelAllChangesSearchDebounce);
+
+  function clearAllChangesSearchHighlights() {
+    const roots = getAllChangesSearchRoots();
+    for (const root of roots) {
+      root.querySelectorAll('.all-changes-search-highlight').forEach((el) => {
+        const parent = el.parentNode;
+        if (!parent) return;
+        while (el.firstChild) {
+          parent.insertBefore(el.firstChild, el);
+        }
+        parent.removeChild(el);
+        parent.normalize();
+      });
+    }
+  }
+
+  function performAllChangesSearch(query: string) {
+    clearAllChangesSearchHighlights();
+    allChangesSearchResults = [];
+    allChangesSearchHeaderMatchKeys = new Set();
+    allChangesSearchCurrentHeaderKey = null;
+    allChangesSearchIndex = 0;
+
+    const normalizedQuery = query.trim();
+    const content = virtualizerContentRef;
+    if (!normalizedQuery || !content) return;
+
+    const results: AllChangesSearchResult[] = [];
+    const headerMatchKeys = new Set<string>();
+    const lowerQuery = normalizedQuery.toLowerCase();
+
+    content.querySelectorAll<HTMLElement>('[data-change-card-key]').forEach((card) => {
+      const header = card.querySelector<HTMLElement>('[data-change-header-key]');
+      const headerKey = header?.dataset.changeHeaderKey;
+      const headerText = header?.dataset.changeSearchText ?? '';
+      if (header && headerKey && hasVisibleAllChangesHeaderMatch(headerText, lowerQuery)) {
+        headerMatchKeys.add(headerKey);
+        results.push({ element: header, headerKey });
+      }
+
+      card.querySelectorAll('diffs-container').forEach((diffsContainer) => {
+        const searchRoot = diffsContainer.shadowRoot;
+        if (!searchRoot) return;
+
+        getAllChangesSearchContentElements(searchRoot).forEach((el) => {
+          highlightAllChangesSearchText(el, normalizedQuery);
+        });
+
+        searchRoot.querySelectorAll<HTMLElement>('.all-changes-search-highlight').forEach((el) => {
+          if (isRenderedAllChangesSearchElement(el)) results.push({ element: el });
+        });
+      });
+    });
+
+    allChangesSearchHeaderMatchKeys = headerMatchKeys;
+    allChangesSearchResults = results;
+    if (results.length > 0) navigateToAllChangesSearchResult(0);
+  }
+
+  function getAllChangesSearchContentElements(searchRoot: ParentNode): HTMLElement[] {
+    const candidates = Array.from(
+      searchRoot.querySelectorAll<HTMLElement>(ALL_CHANGES_SEARCH_CONTENT_SELECTOR),
+    );
+    const elements: HTMLElement[] = [];
+
+    for (const candidate of candidates) {
+      if (elements.some((element) => element.contains(candidate))) continue;
+      elements.push(candidate);
+    }
+
+    return elements;
+  }
+
+  function highlightAllChangesSearchText(element: HTMLElement, query: string) {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const segments: { node: Text; start: number; end: number }[] = [];
+    const lowerQuery = query.toLowerCase();
+    let fullText = '';
+
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const text = node.textContent || '';
+      segments.push({ node, start: fullText.length, end: fullText.length + text.length });
+      fullText += text;
+    }
+
+    const lowerText = fullText.toLowerCase();
+    const matches: { start: number; end: number }[] = [];
+    let index = 0;
+
+    while ((index = lowerText.indexOf(lowerQuery, index)) !== -1) {
+      matches.push({ start: index, end: index + query.length });
+      index += query.length;
+    }
+
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const start = getAllChangesSearchTextPosition(segments, matches[i].start, false);
+      const end = getAllChangesSearchTextPosition(segments, matches[i].end, true);
+      if (!start || !end) continue;
+
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
+
+      const span = document.createElement('span');
+      span.className = 'all-changes-search-highlight';
+      span.style.backgroundColor = ALL_CHANGES_SEARCH_HIGHLIGHT_BACKGROUND;
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
+    }
+  }
+
+  function getAllChangesSearchTextPosition(
+    segments: { node: Text; start: number; end: number }[],
+    offset: number,
+    preferPrevious: boolean,
+  ): { node: Text; offset: number } | null {
+    const orderedSegments = preferPrevious ? [...segments].reverse() : segments;
+    for (const segment of orderedSegments) {
+      const withinSegment = preferPrevious
+        ? offset > segment.start && offset <= segment.end
+        : offset >= segment.start && offset < segment.end;
+      if (withinSegment) return { node: segment.node, offset: offset - segment.start };
+    }
+    return null;
+  }
+
+  function isRenderedAllChangesSearchElement(element: HTMLElement): boolean {
+    return Array.from(element.getClientRects()).some((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function navigateToAllChangesSearchResult(index: number) {
+    if (allChangesSearchResults.length === 0) return;
+
+    allChangesSearchResults.forEach((result) => {
+      result.element.classList.remove('all-changes-search-current');
+      if (!result.headerKey) {
+        result.element.style.backgroundColor = ALL_CHANGES_SEARCH_HIGHLIGHT_BACKGROUND;
+      }
+    });
+
+    if (index < 0) index = allChangesSearchResults.length - 1;
+    if (index >= allChangesSearchResults.length) index = 0;
+
+    allChangesSearchIndex = index;
+    const result = allChangesSearchResults[index];
+    allChangesSearchCurrentHeaderKey = result.headerKey ?? null;
+    result.element.classList.add('all-changes-search-current');
+    if (!result.headerKey) {
+      result.element.style.backgroundColor = ALL_CHANGES_SEARCH_CURRENT_BACKGROUND;
+    }
+    scrollAllChangesSearchResultIntoView(result.element);
+  }
+
+  function scrollAllChangesSearchResultIntoView(element: HTMLElement) {
+    const container = scrollContainerRef;
+    if (!container) {
+      element.scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      return;
+    }
+    scrollAllChangesSearchElementIntoContainer(element, container);
+  }
+
+  function scrollAllChangesSearchElementIntoContainer(element: HTMLElement, container: HTMLElement) {
+    const elementRect = element.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const targetTop = elementRect.top - containerRect.top + container.scrollTop;
+    const targetLeft = elementRect.left - containerRect.left + container.scrollLeft;
+    const nextTop = Math.max(0, targetTop - container.clientHeight / 2 + elementRect.height / 2);
+    let nextLeft = container.scrollLeft;
+
+    if (elementRect.left < containerRect.left + ALL_CHANGES_SEARCH_SCROLL_MARGIN_PX) {
+      nextLeft = Math.max(0, targetLeft - ALL_CHANGES_SEARCH_SCROLL_MARGIN_PX);
+    } else if (elementRect.right > containerRect.right - ALL_CHANGES_SEARCH_SCROLL_MARGIN_PX) {
+      nextLeft = Math.max(
+        0,
+        targetLeft - container.clientWidth + elementRect.width + ALL_CHANGES_SEARCH_SCROLL_MARGIN_PX,
+      );
+    }
+
+    container.scrollTo({ top: nextTop, left: nextLeft, behavior: 'smooth' });
+  }
+
+  function getAllChangesHighlightedTextSegments(text: string): SearchTextSegment[] {
+    const query = allChangesSearchOpen ? allChangesSearchQuery.trim() : '';
+    if (!query) return [{ text, isMatch: false }];
+
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    const segments: SearchTextSegment[] = [];
+    let cursor = 0;
+    let index = 0;
+
+    while ((index = lowerText.indexOf(lowerQuery, cursor)) !== -1) {
+      if (index > cursor) segments.push({ text: text.slice(cursor, index), isMatch: false });
+      segments.push({ text: text.slice(index, index + query.length), isMatch: true });
+      cursor = index + query.length;
+    }
+
+    if (cursor < text.length) segments.push({ text: text.slice(cursor), isMatch: false });
+    return segments.length > 0 ? segments : [{ text, isMatch: false }];
+  }
+
+  function hasVisibleAllChangesHeaderMatch(displayPath: string, lowerQuery: string): boolean {
+    return [getFileName(displayPath), getDirectoryPath(displayPath)]
+      .filter(Boolean)
+      .some((segment) => segment.toLowerCase().includes(lowerQuery));
+  }
+
+  function isNodeInAllChangesPanel(node: Node | null): boolean {
+    if (!panelRootRef || !node) return false;
+    if (panelRootRef.contains(node)) return true;
+
+    const root = node.getRootNode();
+    return root instanceof ShadowRoot && panelRootRef.contains(root.host);
+  }
+
+  function shouldHandleAllChangesFindShortcut(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) return false;
+    if (event.composedPath().some((node) => node instanceof Node && isNodeInAllChangesPanel(node))) {
+      return true;
+    }
+    return isNodeInAllChangesPanel(document.activeElement);
+  }
+
+  function handleAllChangesGlobalKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
+      if (shouldHandleAllChangesFindShortcut(event)) {
+        event.preventDefault();
+        openAllChangesSearchFromSelection();
+      }
+      return;
+    }
+
+    if (allChangesSearchOpen && event.key === 'Escape' && shouldHandleAllChangesFindShortcut(event)) {
+      event.preventDefault();
+      closeAllChangesSearch();
+    }
+  }
+
+  function handleAllChangesSearchKeydown(event: KeyboardEvent) {
+    if (event.key === 'F3' || (event.key === 'g' && (event.ctrlKey || event.metaKey))) {
+      event.preventDefault();
+      if (event.shiftKey) navigateToAllChangesSearchResult(allChangesSearchIndex - 1);
+      else navigateToAllChangesSearchResult(allChangesSearchIndex + 1);
+    }
+  }
+
+  function handlePanelPointerDown(event: PointerEvent) {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'button, input, textarea, select, a, [contenteditable="true"], diffs-container',
+      )
+    ) {
+      return;
+    }
+    panelRootRef?.focus({ preventScroll: true });
+  }
+
+  let allChangesSearchRunVersion = 0;
+  $effect(() => {
+    const isOpen = allChangesSearchOpen;
+    const query = allChangesSearchQuery;
+    // Reference renderKey in the tracked scope so Svelte subscribes to it.
+    const _renderKey = allChangesSearchRenderKey;
+
+    untrack(() => {
+      if (!isOpen || !query.trim()) {
+        allChangesSearchRunVersion++;
+        cancelAllChangesSearchDebounce();
+        resetAllChangesSearchState();
+        return;
+      }
+
+      const version = ++allChangesSearchRunVersion;
+      void tick().then(() => {
+        if (version !== allChangesSearchRunVersion) return;
+        scheduleAllChangesSearch(query);
+      });
+    });
   });
 
   // State for copy SHA functionality
@@ -1955,8 +2419,32 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   }
 </script>
 
+<svelte:window onkeydown={handleAllChangesGlobalKeydown} />
+
 <!-- header is managed by panel tab bar -->
-<div class="h-full w-full flex flex-col overflow-hidden">
+<div
+  bind:this={panelRootRef}
+  class="h-full w-full flex flex-col overflow-hidden relative"
+  tabindex="-1"
+  onpointerdown={handlePanelPointerDown}
+>
+  {#if allChangesSearchOpen}
+    <PanelFindBar
+      bind:query={allChangesSearchQuery}
+      bind:inputRef={allChangesSearchInputRef}
+      placeholder="Find in changes..."
+      currentMatchIndex={allChangesSearchIndex}
+      totalMatches={allChangesSearchResults.length}
+      emptyResultText="No results"
+      resultVariant="muted"
+      inputClass="w-48"
+      onKeydown={handleAllChangesSearchKeydown}
+      onPrevious={() => navigateToAllChangesSearchResult(allChangesSearchIndex - 1)}
+      onNext={() => navigateToAllChangesSearchResult(allChangesSearchIndex + 1)}
+      onClose={closeAllChangesSearch}
+    />
+  {/if}
+
   <!-- Scroll container -->
   <div class="h-full overflow-auto p-5 pt-0" bind:this={scrollContainerRef}>
     <!--
@@ -2250,9 +2738,16 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   <div
     class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed ? 'opacity-50' : ''}"
     style="overflow-anchor: none;"
+    data-change-card-key={expandKey}
   >
     <!-- File Header (sticky within scroll container) -->
-    <div class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar" style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey) ? 'var(--border)' : 'transparent'}">
+    <div
+      class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(expandKey) ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10' : ''} {allChangesSearchCurrentHeaderKey === expandKey ? 'ring-2 ring-blue-400/70 bg-blue-500/10' : ''}"
+      style="top: {stickyTop}; border-bottom: 1px solid {expandedFiles.has(expandKey) ? 'var(--border)' : 'transparent'}"
+      data-change-header-key={expandKey}
+      data-change-sticky-top={stickyTop}
+      data-change-search-text={displayPath}
+    >
       <button
         onclick={() => toggleFile(expandKey)}
         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
@@ -2263,11 +2758,23 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
         />
 
         <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
-          {getFileName(displayPath)}
+          {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
+            {#if segment.isMatch}
+              <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground">{segment.text}</mark>
+            {:else}
+              {segment.text}
+            {/if}
+          {/each}
         </span>
         {#if getDirectoryPath(displayPath)}
           <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
-            {getDirectoryPath(displayPath)}
+            {#each getAllChangesHighlightedTextSegments(getDirectoryPath(displayPath)) as segment, i (i)}
+              {#if segment.isMatch}
+                <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground">{segment.text}</mark>
+              {:else}
+                {segment.text}
+              {/if}
+            {/each}
           </span>
         {/if}
         <LineChangesBadge additions={change.additions} deletions={change.deletions} size="xs" />

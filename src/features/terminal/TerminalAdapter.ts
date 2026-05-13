@@ -1513,6 +1513,10 @@ export class TerminalAdapter {
     this.searchAddon.clearDecorations();
   }
 
+  getSelection(): string {
+    return this.xterm.getSelection();
+  }
+
   /**
    * Get terminal information
    */

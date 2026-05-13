@@ -8,9 +8,8 @@
   import RawNoteCodeEditor from '$lib/components/workspace/RawNoteCodeEditor.svelte';
   import SuggestionTooltip from '$lib/components/tiptap/SuggestionTooltip.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import Fa from 'svelte-fa';
-  import { faSearch, faTimes, faChevronUp, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
+  import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { untrack } from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
@@ -443,20 +442,28 @@
     CSS.highlights?.delete('note-current-search-result');
   }
 
-  // Handle search keyboard shortcuts
-  function handleSearchKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      showSearch = false;
-      searchQuery = '';
-      searchMatchCount = 0;
-      clearSearchHighlights();
-    } else if (e.key === 'Enter') {
-      if (e.shiftKey) {
-        scrollToMatch(currentSearchIndex - 1);
-      } else {
-        scrollToMatch(currentSearchIndex + 1);
-      }
+  function closeSearch() {
+    showSearch = false;
+    searchQuery = '';
+    searchMatchCount = 0;
+    clearSearchHighlights();
+  }
+
+  function openSearchFromSelection() {
+    const selectedText = getSelectedTextWithinSurface(editor?.view?.dom ?? element);
+
+    if (selectedText) {
+      searchQuery = selectedText;
+      currentSearchIndex = 0;
     }
+
+    showSearch = true;
+    // Focus the search input after it renders
+    setTimeout(() => {
+      searchInputRef?.focus();
+      searchInputRef?.select();
+      if (selectedText) handleSearchInput();
+    }, 0);
   }
 
   // Handle Cmd+F only when this panel is focused
@@ -465,9 +472,7 @@
       // Only open search if this panel is focused
       if (isPanelFocused) {
         e.preventDefault();
-        showSearch = true;
-        // Focus the search input after it renders
-        setTimeout(() => searchInputRef?.focus(), 0);
+        openSearchFromSelection();
       }
     }
   }
@@ -1880,56 +1885,19 @@
 >
   <!-- Search Bar -->
   {#if showSearch}
-    <div
-      class="absolute top-2 right-4 z-50 flex items-center gap-2 bg-background border border-border rounded-lg shadow-lg px-3 py-2"
-      transition:fade={{ duration: 150 }}
-    >
-      <Fa icon={faSearch} class="w-3 h-3 text-ghost" />
-      <input
-        bind:this={searchInputRef}
-        bind:value={searchQuery}
-        type="text"
-        placeholder="Find in note..."
-        class="w-48 bg-transparent border-0 text-sm focus:outline-none placeholder:text-muted-foreground/50"
-        onkeydown={handleSearchKeydown}
-        oninput={handleSearchInput}
-      />
-      {#if searchQuery}
-        <span class="text-xs text-subtle whitespace-nowrap">
-          {searchMatchCount > 0 ? `${currentSearchIndex + 1} / ${searchMatchCount}` : 'No matches'}
-        </span>
-        <button
-          type="button"
-          class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onclick={() => scrollToMatch(currentSearchIndex - 1)}
-          disabled={searchMatchCount === 0}
-          title="Previous match (Shift+Enter)"
-        >
-          <Fa icon={faChevronUp} class="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onclick={() => scrollToMatch(currentSearchIndex + 1)}
-          disabled={searchMatchCount === 0}
-          title="Next match (Enter)"
-        >
-          <Fa icon={faChevronDown} class="w-3 h-3" />
-        </button>
-      {/if}
-      <button
-        type="button"
-        class="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        onclick={() => {
-          showSearch = false;
-          searchQuery = '';
-          searchMatchCount = 0;
-          clearSearchHighlights();
-        }}
-      >
-        <Fa icon={faTimes} class="w-3 h-3" />
-      </button>
-    </div>
+    <PanelFindBar
+      bind:query={searchQuery}
+      bind:inputRef={searchInputRef}
+      placeholder="Find in note..."
+      currentMatchIndex={currentSearchIndex}
+      totalMatches={searchMatchCount}
+      resultVariant="muted"
+      inputClass="w-48"
+      onInput={handleSearchInput}
+      onPrevious={() => scrollToMatch(currentSearchIndex - 1)}
+      onNext={() => scrollToMatch(currentSearchIndex + 1)}
+      onClose={closeSearch}
+    />
   {/if}
 
   <!-- Editor Container -->
