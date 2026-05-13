@@ -4,19 +4,20 @@ import * as fs from 'fs';
 
 import * as net from 'net';
 import * as crypto from 'crypto';
+import { createRequire } from 'module';
 import { promisify } from 'util';
-// Import ws — the package is CommonJS (`module.exports = WebSocket`) so named
-// ESM imports don't work at runtime.  We import the default and extract the
-// createWebSocketStream helper from it manually.
-import WebSocket from 'ws';
+import type { WebSocket as WebSocketType } from 'ws';
 import type { Duplex, DuplexOptions } from 'stream';
 import { Logger } from '../logger';
 import { featureCodesService } from '../../features/feature-codes/main/feature-codes.service';
 
-// ws attaches createWebSocketStream as a property on the default export at
-// runtime (see node_modules/ws/index.js).  We cast through `any` to access it.
-const createWebSocketStream = (WebSocket as any).createWebSocketStream as
-  (websocket: WebSocket, options?: DuplexOptions) => Duplex;
+// Use createRequire for ws — the package is CommonJS and Node 24 tightened
+// CJS-to-ESM interop, causing ESM imports to fail inside the packaged ASAR.
+const require = createRequire(import.meta.url);
+const { WebSocket, createWebSocketStream } = require('ws') as {
+  WebSocket: typeof import('ws').WebSocket;
+  createWebSocketStream: (websocket: WebSocketType, options?: DuplexOptions) => Duplex;
+};
 
 export interface SSHConnectionConfig {
   host: string;
@@ -191,7 +192,7 @@ export class SSHManager extends EventEmitter {
     };
 
     // Track WebSocket instance for cleanup on close
-    let wsInstance: WebSocket | undefined;
+    let wsInstance: WebSocketType | undefined;
 
     return new Promise((resolve, reject) => {
       client.on('ready', async () => {
