@@ -7,6 +7,7 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { getAvailableIdsFromResult } from '$shared/config/provider-config';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 
 const logger = createLogger('ProviderAvailabilityClient');
@@ -87,21 +88,22 @@ export async function getProviderAvailability(
     cachedResult = result.data || getDefaultResult();
     cacheTimestamp = now;
 
-    // Auto-fix active provider if it's hidden (env var gate)
-    if (cachedResult.hiddenProviders && cachedResult.hiddenProviders.length > 0) {
-      try {
-        const { ACP_PROVIDERS } = await import('$shared/config/provider-config');
-        const visibleIds = Object.keys(ACP_PROVIDERS).filter(
-          (id) => !cachedResult!.hiddenProviders!.includes(id),
-        );
-        const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
-        const { validateActiveProvider } =
-          await import('$lib/store/slices/provider-settings/provider-settings-slice');
-        getReduxDispatch()(validateActiveProvider(visibleIds));
-      } catch (e) {
-        // Non-critical — store validation is best-effort
-        logger.debug('Failed to validate active provider against hidden providers', { error: e });
-      }
+    // Validate the active provider against the set of available + visible providers.
+    // Hidden providers (env var gate) are excluded so they cannot be selected as active.
+    try {
+      const availableIds = getAvailableIdsFromResult(
+        cachedResult.providers,
+        cachedResult.hiddenProviders ?? [],
+      );
+
+      const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
+      const { validateActiveProvider } = await import(
+        '$lib/store/slices/provider-settings/provider-settings-slice'
+      );
+      getReduxDispatch()(validateActiveProvider(availableIds));
+    } catch (e) {
+      // Non-critical — store validation is best-effort
+      logger.debug('Failed to validate active provider against availability', { error: e });
     }
 
     logger.debug('Provider availability fetched', {
@@ -126,28 +128,7 @@ export async function getProviderAvailability(
  */
 export async function getAvailableProviderIds(forceRefresh = false): Promise<string[]> {
   const result = await getProviderAvailability(forceRefresh);
-  const available: string[] = [];
-
-  if (result.providers.auggie.available) {
-    available.push('auggie');
-  }
-  if (result.providers.claudeCode.available) {
-    available.push('claude-code');
-  }
-  if (result.providers.codex.available) {
-    available.push('codex');
-  }
-  if (result.providers.mock.available) {
-    available.push('mock');
-  }
-  if (result.providers.opencode.available) {
-    available.push('opencode');
-  }
-  if (result.providers.cortex.available) {
-    available.push('cortex');
-  }
-
-  return available;
+  return getAvailableIdsFromResult(result.providers);
 }
 
 /**

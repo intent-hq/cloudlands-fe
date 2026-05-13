@@ -237,6 +237,41 @@ export function getAllProviderIds(): string[] {
 }
 
 /**
+ * Maps ProviderAvailabilityResult property keys (camelCase) to their
+ * corresponding provider IDs used everywhere else in the app.
+ *
+ * Single source of truth — import this instead of hard-coding
+ * the camelCase↔kebab-case translation in each call site.
+ */
+export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
+  auggie: 'auggie',
+  claudeCode: 'claude-code',
+  codex: 'codex',
+  mock: 'mock',
+  opencode: 'opencode',
+  cortex: 'cortex',
+};
+
+/**
+ * Given a ProviderAvailabilityResult-shaped providers map and an optional set
+ * of hidden provider IDs, return the list of provider IDs that are both
+ * available and not hidden.
+ */
+export function getAvailableIdsFromResult(
+  providers: Record<string, { available: boolean }>,
+  hiddenProviders: string[] = [],
+): string[] {
+  const hidden = new Set(hiddenProviders);
+  const ids: string[] = [];
+  for (const [key, providerId] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
+    if (providers[key]?.available && !hidden.has(providerId)) {
+      ids.push(providerId);
+    }
+  }
+  return ids;
+}
+
+/**
  * Parse a compound model ID into provider and model parts
  * Format: {providerId}:{modelId} (e.g., 'opencode:claude-sonnet-4')
  * Falls back to the default provider if no provider prefix
