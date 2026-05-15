@@ -6,7 +6,10 @@
 import { TerminalAdapter } from './TerminalAdapter';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { Logger } from '../../shared/logger';
-import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  dispatch,
+  getReduxStore,
+} from '$lib/store/redux-dispatch-bridge';
 import {
   removeTerminal,
   saveTerminalMetadata as saveTerminalMetadataAction,

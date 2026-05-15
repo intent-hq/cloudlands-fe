@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { getItem } from "../../utils/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
@@ -17,7 +21,11 @@ import {
   saveFileContentSucceeded,
   updateFileContent,
 } from "./files-slice";
-import { selectFileContent, selectFileIsDirty, selectOriginalFileContent } from "./files-selectors";
+import {
+  selectFileContent,
+  selectFileIsDirty,
+  selectOriginalFileContent,
+} from "./files-selectors";
 
 const WS_ID = "ws-1";
 const PATH = "src/app.ts";

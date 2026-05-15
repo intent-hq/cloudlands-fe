@@ -9,11 +9,11 @@
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
   import {
-    faXmark,
-    faFileAlt,
-    faExclamationCircle,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faXmark,
+  faFileAlt,
+  faExclamationCircle,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('FileExplorerLayout');

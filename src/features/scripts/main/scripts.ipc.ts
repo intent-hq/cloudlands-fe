@@ -15,9 +15,18 @@ import { Logger } from '../../../shared/logger';
 import { SCRIPTS_CHANNELS } from '$shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { scriptStarted, scriptStopped, scriptError, scriptUrlDetected, scriptOutput } from '../../../store/main/slices/script-events/script-events-slice';
+import {
+  scriptStarted,
+  scriptStopped,
+  scriptError,
+  scriptUrlDetected,
+  scriptOutput,
+} from '../../../store/main/slices/script-events/script-events-slice';
 import { workspaceService } from '../../workspace/main/workspace.service';
-import { readRepoConfig, writeRepoConfig } from '../../workspace/main/repo-config.service';
+import {
+  readRepoConfig,
+  writeRepoConfig,
+} from '../../workspace/main/repo-config.service';
 import { createWorkspaceId } from '$shared/types/branded-ids';
 import type { WorkspaceId } from '$shared/types';
 import {
@@ -31,9 +40,15 @@ import {
   getScriptProcessManager,
   disposeScriptProcessManager,
 } from './script-process-manager';
-import { scanScripts, mergeDetectedScripts } from './script-scanner';
+import {
+  scanScripts,
+  mergeDetectedScripts,
+} from './script-scanner';
 import { WorkspaceConfig } from '$shared/main/config';
-import { CreateScriptSchema, UpdateScriptSchema } from '../schemas';
+import {
+  CreateScriptSchema,
+  UpdateScriptSchema,
+} from '../schemas';
 import type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '../types';
 import { createDefaultRuntimeState } from '../types';
 import type { OutputLine } from './script-output-buffer';

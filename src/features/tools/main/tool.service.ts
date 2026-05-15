@@ -1,5 +1,8 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import { WorkspaceId as WorkspaceIdBrand, NoteId as NoteIdBrand } from '$shared/types/branded-ids';
+import {
+  WorkspaceId as WorkspaceIdBrand,
+  NoteId as NoteIdBrand,
+} from '$shared/types/branded-ids';
 /**
  * Tool Service
  *
@@ -19,7 +22,11 @@ import type {
   WorkspaceInfo,
   ExecuteOptions,
 } from './types';
-import { ToolCategory, ToolError, Tool } from './types';
+import {
+  ToolCategory,
+  ToolError,
+  Tool,
+} from './types';
 import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { NotesService } from '../../notes/main/notes.service';
@@ -423,7 +430,7 @@ export class ToolService implements IToolService {
     });
 
     // Filter out id from updates to avoid type conflicts
-     
+
     const { id: _, ...updateFields } = updates;
 
     const updateRequest = {

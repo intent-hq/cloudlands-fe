@@ -4,7 +4,13 @@ import {
   setLocalStorageItem,
   setLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
-import { call, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   selectBottomDockActiveTerminalId,
   selectBottomDockHeight,

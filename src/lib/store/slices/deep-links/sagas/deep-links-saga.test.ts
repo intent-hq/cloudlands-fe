@@ -1,5 +1,14 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
-import { expectSaga, testSaga } from "redux-saga-test-plan";
+import {
+  describe,
+  expect,
+  it,
+  beforeEach,
+  vi,
+} from "vitest";
+import {
+  expectSaga,
+  testSaga,
+} from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
@@ -38,8 +47,9 @@ import { clearActiveWorkspace } from "$lib/store/slices/workspace/workspace-slic
 import {
   clearPendingDeepLinkAction,
   requestHomePageInitializer,
+  initialState,
 } from "../deep-links-slice";
-import { initialState } from "../deep-links-slice";
+
 import {
   deepLinksSaga,
   handleDeepLinkCreate,

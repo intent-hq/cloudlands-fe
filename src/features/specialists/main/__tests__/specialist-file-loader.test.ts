@@ -12,7 +12,16 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from 'vitest';
 import {
   parseSpecialistFile,
   writeSpecialistFile,
@@ -24,7 +33,10 @@ import {
   getProjectSpecialistsDirectory,
   getSpecialistsDirectory,
 } from '../specialist-file-loader';
-import { generateUniqueSpecialistId, sanitizeSpecialistId } from '../../../../shared/specialist-file-types';
+import {
+  generateUniqueSpecialistId,
+  sanitizeSpecialistId,
+} from '../../../../shared/specialist-file-types';
 
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,

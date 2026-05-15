@@ -6,7 +6,7 @@
 
 State should be kept out of Svelte components as much as possible. The canonical home for shared or durable application state in this codebase is Redux under `src/lib/store/`.
 
-Components should primarily render UI, read selector-backed state, and dispatch actions. Business logic, shared state, derived state, persistence, async workflows, and cross-component coordination should live in Redux slices, selectors, and sagas.
+Components should primarily render UI, read selector-backed state, and dispatch actions. Business logic, shared state, derived state, persistence, async workflows, and cross-component coordination should live in Redux slices, selectors, and sagas. Service and lifecycle files should also stay as thin as possible: translate external events into typed actions, but move shared/domain state decisions and side-effect orchestration to Redux and Redux sagas.
 
 ## Core Policy
 
@@ -57,7 +57,22 @@ Acceptable `$effect` usage is narrow:
 
 Do **not** use component `$effect` for application workflows, persistence, shared-state coordination, or async business logic when saga-based handling is possible.
 
-### 4. Svelte stores are DEPRECATED — migrate to Redux
+### 4. Keep service and lifecycle files thin
+
+Service files, stream lifecycle modules, IPC adapters, and other non-component integration code should be thin adapters whenever they touch shared/domain behavior.
+
+They may:
+
+- subscribe to external events or IPC channels,
+- construct raw serializable payloads,
+- dispatch typed Redux actions, and
+- bridge temporary legacy events while consumers migrate.
+
+They should not own Redux-state-dependent domain decisions, target lookup policy, refresh/reconcile flows, retries, debouncing, rate limiting, persistence orchestration, or duplicate merge policy. Those responsibilities belong in Redux selectors, reducers, pure utilities, and sagas.
+
+For an agent-stream example, see [Agent Message Deduplication and Stream Saga Architecture](./agent-message-dedup-and-stream-sagas.md).
+
+### 5. Svelte stores are DEPRECATED — migrate to Redux
 
 Svelte store classes (`*.store.svelte.ts`) are **DEPRECATED** and MUST NOT be used for new code. No new `$state`-based store classes may be created under any circumstances.
 

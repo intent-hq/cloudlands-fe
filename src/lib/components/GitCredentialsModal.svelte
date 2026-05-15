@@ -3,7 +3,11 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faExternalLink, faKey, faTerminal } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faExternalLink,
+  faKey,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {

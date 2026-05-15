@@ -12,7 +12,11 @@
  * TypeScript compiler API and walk just the relevant function bodies.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';

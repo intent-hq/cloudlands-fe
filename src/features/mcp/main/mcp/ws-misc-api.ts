@@ -1,7 +1,10 @@
 import * as fs from 'fs/promises';
 import * as Diff from 'diff';
 
-import { executeBrowserActions, type ExecutionResult } from '../../../browser/main/browser.ipc';
+import {
+  executeBrowserActions,
+  type ExecutionResult,
+} from '../../../browser/main/browser.ipc';
 import { assetsService } from '../../../notes/main/assets.service';
 import { terminalManager } from '../../../terminal/main/terminal.ipc';
 import {
@@ -18,8 +21,14 @@ import type { Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ToolCall, ToolResult } from './protocol';
 import { BrowserDocsTool } from './browser-tools';
-import { type IFileSystemAdapter, LocalFileSystemAdapter } from './file-system-adapter';
-import { emitAgentFileChange, trackFileOperation } from './workspace-file-tools';
+import {
+  type IFileSystemAdapter,
+  LocalFileSystemAdapter,
+} from './file-system-adapter';
+import {
+  emitAgentFileChange,
+  trackFileOperation,
+} from './workspace-file-tools';
 
 const logger = new Logger('WorkspaceMiscApi');
 const browserDocsTool = new BrowserDocsTool();

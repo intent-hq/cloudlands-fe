@@ -9,7 +9,11 @@
 
   import { page } from '$app/state';
 
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+  untrack,
+} from 'svelte';
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -17,69 +21,75 @@
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
   import {
-    useCloseHandlers,
-    usePanelActions,
-    usePanelShortcuts,
-    useSidebarState,
-    useTabManagement,
-    useWorkspaceLoader,
-  } from './composables';
+  useCloseHandlers,
+  usePanelActions,
+  usePanelShortcuts,
+  useSidebarState,
+  useTabManagement,
+  useWorkspaceLoader,
+} from './composables';
   import {
-    dispatchCreateFileRequest,
-    handleCommandPaletteCreateFile,
-  } from './composables/create-file-command';
+  dispatchCreateFileRequest,
+  handleCommandPaletteCreateFile,
+} from './composables/create-file-command';
   import { hydrateInitialAgentConfig } from './composables/initial-agent-config';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-    commandPaletteActionConsumed,
-    showAgentRequested,
-  } from '$lib/store/slices/app-layout/app-layout-slice';
+  commandPaletteActionConsumed,
+  showAgentRequested,
+} from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$lib/store/slices/app-layout/app-layout-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
 
-  import { agentService } from '$features/agent/agent-ipc-bridge'; // Keep for backward compat
   import {
-    selectGitBranch,
-    selectGitAhead,
-  } from '$lib/store/slices/git/git-selectors';
+  selectGitBranch,
+  selectGitAhead,
+} from '$lib/store/slices/git/git-selectors';
   import {
-    selectMainPanelView,
-    selectCurrentIsInitialized,
-    selectCurrentLoading,
-    selectSidebarCommits,
-  } from '$lib/store/slices/changes/changes-selectors';
+  selectMainPanelView,
+  selectCurrentIsInitialized,
+  selectCurrentLoading,
+  selectSidebarCommits,
+} from '$lib/store/slices/changes/changes-selectors';
   import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/changes/changes-slice';
   import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-    selectWorkspaceIsEmpty,
-    selectWorkspaceActivePullRequest,
-    selectIsNewWorkspaceSession,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectPanelVisibilityFlag } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectActiveWorkspaceId,
+  selectWorkspaceById,
+  selectWorkspaceIsEmpty,
+  selectWorkspaceActivePullRequest,
+  selectIsNewWorkspaceSession,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    clearActiveWorkspace,
-    loadWorkspacesRequested,
-    setActiveWorkspaceId,
-    setWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  selectPanelVisibilityFlag,
+  selectSidebarSide,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    setPanelVisibility,
-    type PanelVisibilityState,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  clearActiveWorkspace,
+  loadWorkspacesRequested,
+  setActiveWorkspaceId,
+  setWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
+  import {
+  setPanelVisibility,
+  type PanelVisibilityState,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
 
   import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
 
   import {
-    markNoteRead,
-    createNoteRequested,
-  } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  markNoteRead,
+  createNoteRequested,
+} from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
-  import { track, setAnalyticsContextProvider, getFileExtension } from '$lib/services/analytics';
-  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+  track,
+  setAnalyticsContextProvider,
+  getFileExtension,
+} from '$lib/services/analytics';
+
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { setOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
@@ -104,20 +114,21 @@
   import { selectSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { setSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
-    createAgentRequested,
-    createAgentWithSpecialistRequested,
-    markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
-    setAgents,
-    setAgentsLoaded,
-    clearInitialAgentConfig,
-    setInitialAgentConfigProcessed,
-    setInitialAgentId,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  createAgentRequested,
+  createAgentWithSpecialistRequested,
+  markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
+  setAgents,
+  setAgentsLoaded,
+  clearInitialAgentConfig,
+  flushPendingAgentDeletionsRequested,
+  setInitialAgentConfigProcessed,
+  setInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import {
-    selectInitialAgentConfig,
-    selectInitialAgentConfigProcessed,
-    selectInitialAgentId,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  selectInitialAgentConfig,
+  selectInitialAgentConfigProcessed,
+  selectInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
 
@@ -1117,7 +1128,9 @@
     workspaceLoader.clearLoadingState();
 
     // Flush any pending undo-able agent deletions (permanently delete them now)
-    await agentService.flushPendingDeletions(workspaceId);
+    const flushDeletionsAction = flushPendingAgentDeletionsRequested(workspaceId);
+    dispatch(flushDeletionsAction);
+    await flushDeletionsAction.promise;
 
     // Clear workspace state reference
     workspaceState = null;

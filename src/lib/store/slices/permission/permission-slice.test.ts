@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { createCollection, getItems } from "../../utils/collection-utils";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
+import {
+  createCollection,
+  getItems,
+} from "../../utils/collection-utils";
 import {
   permissionReducer,
   permissionRequestReceived,

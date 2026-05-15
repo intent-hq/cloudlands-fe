@@ -7,6 +7,10 @@
  */
 
 import { getContext } from "svelte";
+import {
+  toStore,
+  type Readable,
+} from "svelte/store";
 import type { ReduxStoreContext, ReduxStore } from "../types";
 import { STORE_CONTEXT } from "../constants";
 
@@ -65,4 +69,12 @@ export function getDispatch(): ReduxStore["dispatch"] {
     throw new Error("Missing redux store context. Wrap root component into <Store/>");
   }
   return context.store.dispatch;
+}
+
+/**
+ * Converts a reactive Svelte prop getter into a readable store for selector arguments.
+ * Call during component initialization, just like selector() and getDispatch().
+ */
+export function readableProp<T>(getValue: () => T): Readable<T> {
+  return toStore(getValue);
 }

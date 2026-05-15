@@ -5,11 +5,17 @@
    * Shows list of Linear issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import { linearAuthClient, type LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+  import {
+  linearAuthClient,
+  type LinearIssueResult,
+} from '$features/linear-auth/renderer/linear-auth.client';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faSpinner,
+  faSearch,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';

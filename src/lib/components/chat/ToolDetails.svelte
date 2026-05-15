@@ -1,24 +1,31 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import type { ParsedToolResult } from './tool-result-parser';
   import Fa from 'svelte-fa';
   import {
-    faCopy,
-    faCheck,
-    faExclamationTriangle,
-    faFolder,
-    faFile,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCopy,
+  faCheck,
+  faExclamationTriangle,
+  faFolder,
+  faFile,
+} from '@fortawesome/free-solid-svg-icons';
   import { DiffViewer } from '$lib/components/ui/diff';
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { focusBrowserTabRequested, openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+  focusBrowserTabRequested,
+  openAgentTabRequested,
+} from '$lib/store/slices/app-layout/app-layout-slice';
+  import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   interface Props {
     input: Record<string, any>;
@@ -565,7 +572,7 @@
             {@const agentId = parsedResult.toAgentId}
             {@const toolState = getReduxStore().getState()}
             {@const toolWsId = selectActiveWorkspaceId.select(toolState)}
-            {@const session = agentId && toolWsId ? selectAgentById.select(toolState, agentId) : null}
+            {@const session = agentId && toolWsId ? selectAgentSession.select(toolState, agentId) : null}
             {@const agentName =
               session?.name && !isGenericAgentName(session.name)
                 ? session.name

@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 
@@ -57,7 +62,10 @@ import {
 } from "./delivery-saga";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
-import { handleMatchEvent, handleNewSubscriptionCatchUp } from "./matching-saga";
+import {
+  handleMatchEvent,
+  handleNewSubscriptionCatchUp,
+} from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";

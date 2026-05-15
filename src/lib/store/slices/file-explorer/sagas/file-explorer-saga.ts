@@ -8,22 +8,40 @@
  * - Agent file edits loading
  * - Tree expansion / collapse
  */
-import { call, delay, fork, put, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import type { FileNode, FileGitStatus } from "$shared/types";
 import { GitFileStatus } from "$shared/types";
-import { WorkspaceId as WorkspaceIdFn, isValidWorkspaceId } from "$shared/types/branded-ids";
+import {
+  WorkspaceId as WorkspaceIdFn,
+  isValidWorkspaceId,
+} from "$shared/types/branded-ids";
 import { invoke } from "$lib/electron-bridge";
 import { Logger } from "$shared/logger";
 import { gitClient } from "$features/git/git.client";
-import { getAgentFileEdits, propagateAgentEditsToParents } from "$lib/utils/agent-file-edits";
+import {
+  getAgentFileEdits,
+  propagateAgentEditsToParents,
+} from "$lib/utils/agent-file-edits";
 import {
   selectCurrentStagedWorkingChanges as selectFtCurrentStagedChanges,
   selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
+  selectWorkspaceFileChanges,
 } from "../../changes/changes-selectors";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
-import { setGitStatus, setGitDiffs } from "../../git/git-slice";
+import {
+  setGitStatus,
+  setGitDiffs,
+} from "../../git/git-slice";
 import { selectGitStatus } from "../../git/git-selectors";
-import { selectWorkspaceFileChanges } from "../../changes/changes-selectors";
+
 import {
   initializeFileExplorer,
   setWorkspacePathRequested,
@@ -74,7 +92,10 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
+import {
+  takeEveryFromElectronChannel,
+  takeEveryFromWindowEvent,
+} from "$lib/store/utils/ipc-channel";
 import { debounceSaga } from "$lib/store/utils/debounce-saga";
 
 const logger = new Logger("FileExplorerSaga");

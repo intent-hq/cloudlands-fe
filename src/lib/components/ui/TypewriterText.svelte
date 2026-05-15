@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
 
   interface Props {
     texts: string[];

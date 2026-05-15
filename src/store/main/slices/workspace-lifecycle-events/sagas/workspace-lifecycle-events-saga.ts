@@ -4,7 +4,11 @@
  * Broadcast + listener sagas for workspace lifecycle domain events.
  */
 
-import { call, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import type { DomainEvent } from "../../../../../features/events/types";
 import type { MainStoreAction } from "../../../utils/create-action";
 import {
@@ -17,13 +21,14 @@ import {
   workspaceArchived,
   WORKSPACE_LIFECYCLE_EVENT_TYPES,
   WORKSPACE_LIFECYCLE_GLOBAL_BROADCAST_EVENTS,
+  WORKSPACE_LIFECYCLE_EVENT_ACTION_MAP,
 } from "../workspace-lifecycle-events-slice";
 
 // ---------------------------------------------------------------------------
 // Reverse map: action type → IPC channel
 // ---------------------------------------------------------------------------
 
-import { WORKSPACE_LIFECYCLE_EVENT_ACTION_MAP } from "../workspace-lifecycle-events-slice";
+
 
 const ACTION_TYPE_TO_IPC: Record<string, DomainEvent> = {};
 for (const [domainEvent, entry] of Object.entries(WORKSPACE_LIFECYCLE_EVENT_ACTION_MAP)) {

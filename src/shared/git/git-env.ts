@@ -175,7 +175,13 @@ export interface GitEnvPolicy {
  *
  * @example
  * ```typescript
- * import { gitEnv } from '@/shared/git/git-env';
+ * import {
+  gitEnv,
+  execAsync,
+  execFileAsync,
+  execAsyncWithRetry,
+  execFileAsyncWithRetry,
+} from '@/shared/git/git-env';
  *
  * spawn('git', ['status'], { env: gitEnv });
  * exec('git status', { env: gitEnv });
@@ -219,7 +225,11 @@ export function createShellEnv(additionalEnv?: NodeJS.ProcessEnv): NodeJS.Proces
 // Centralized exec utilities with git environment
 // ============================================================================
 
-import { exec, execFile } from 'child_process';
+import {
+  exec,
+  execFile,
+  spawn,
+} from 'child_process';
 import { promisify } from 'util';
 import { killChildProcessTree } from '../main/process-tree-kill';
 
@@ -344,7 +354,7 @@ function buildGitEnv(additionalEnv?: NodeJS.ProcessEnv, policy?: GitEnvPolicy): 
  *
  * @example
  * ```typescript
- * import { execAsync } from '@/shared/git/git-env';
+ *
  *
  * const { stdout } = await execAsync('git status', { cwd: '/path/to/repo' });
  * ```
@@ -370,7 +380,7 @@ export async function execAsync(command: string, options?: ExecOptions): Promise
  *
  * @example
  * ```typescript
- * import { execFileAsync } from '@/shared/git/git-env';
+ *
  *
  * const { stdout } = await execFileAsync('git', ['status'], { cwd: '/path/to/repo' });
  * ```
@@ -398,7 +408,7 @@ export async function execFileAsync(
 // Robust exec with retry logic for transient errors
 // ============================================================================
 
-import { spawn } from 'child_process';
+
 
 // Default timeout for exec commands (2 minutes) to prevent UI freezes
 const DEFAULT_EXEC_TIMEOUT_MS = 120_000;
@@ -480,7 +490,7 @@ export interface RetryOptions {
  *
  * @example
  * ```typescript
- * import { execAsyncWithRetry } from '@/shared/git/git-env';
+ *
  *
  * const { stdout } = await execAsyncWithRetry('git status', { cwd: '/path/to/repo' });
  * // Or with custom retry options:
@@ -599,7 +609,7 @@ function execWithSpawnFallback(command: string, options?: ExecOptions): Promise<
  *
  * @example
  * ```typescript
- * import { execFileAsyncWithRetry } from '@/shared/git/git-env';
+ *
  *
  * const { stdout } = await execFileAsyncWithRetry('/usr/local/bin/auggie', ['--version']);
  * ```

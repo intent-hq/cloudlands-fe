@@ -9,17 +9,17 @@
    */
 
   import {
-    faChevronDown,
-    faRobot,
-    faFileLines,
-    faCodeBranch,
-    faColumns,
-    faGripLines,
-    faTableColumns,
-    faCheck,
-    faWandMagicSparkles,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faRobot,
+  faFileLines,
+  faCodeBranch,
+  faColumns,
+  faGripLines,
+  faTableColumns,
+  faCheck,
+  faWandMagicSparkles,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -58,7 +58,7 @@
   }
 
   let {
-     
+
     workspaceId: _workspaceId,
     currentPreset,
     onApplyPreset,

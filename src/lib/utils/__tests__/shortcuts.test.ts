@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { SHORTCUTS, SHORTCUT_CATEGORIES, getShortcutsForContext } from '../shortcuts';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  SHORTCUTS,
+  SHORTCUT_CATEGORIES,
+  getShortcutsForContext,
+} from '../shortcuts';
 
 describe('shortcut registry', () => {
   it('lists the task list shortcut in the editor cheat sheet', () => {

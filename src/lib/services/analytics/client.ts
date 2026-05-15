@@ -10,7 +10,10 @@
  * - Title Case, Past Tense for event names
  */
 
-import { AnalyticsBrowser, type Analytics } from '@segment/analytics-next';
+import {
+  AnalyticsBrowser,
+  type Analytics,
+} from '@segment/analytics-next';
 import { createLogger } from '$lib/utils/client-logger';
 import type {
   AnalyticsConfig,

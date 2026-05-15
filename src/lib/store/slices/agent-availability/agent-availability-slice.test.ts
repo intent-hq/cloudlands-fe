@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type { StoreState } from '../../types';
 import { selectManagedInstallStatusByProvider } from './agent-availability-selectors';
 import {

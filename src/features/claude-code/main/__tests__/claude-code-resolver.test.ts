@@ -5,7 +5,13 @@
  * and guards against regression.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: vi.fn(),

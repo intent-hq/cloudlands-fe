@@ -3,7 +3,13 @@
  * Ported from the deleted update-note-tool.test.ts and workspace-note-edit-tools.test.ts.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 
 // Mock electron before any imports
 vi.mock('electron', () => ({

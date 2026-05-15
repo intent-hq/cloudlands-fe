@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { fly, fade } from 'svelte/transition';
+  import {
+  fly,
+  fade,
+} from 'svelte/transition';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';

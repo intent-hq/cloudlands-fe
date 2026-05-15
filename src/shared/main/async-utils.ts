@@ -7,7 +7,10 @@
  * All functions in this file are designed to be non-blocking.
  */
 
-import { exec, execFile } from 'child_process';
+import {
+  exec,
+  execFile,
+} from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';

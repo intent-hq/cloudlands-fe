@@ -3,7 +3,14 @@
  * Verifies agent-to-agent communication via MCP tools
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 import type { ToolCall } from '../protocol';
 
 // Mock instances - need to be hoisted
@@ -68,7 +75,7 @@ vi.mock('$features/events/main/agent-subscription-ops', () => ({
 
 // Also mock the selectors/store bridge for direct Redux access in list_agents/get_agent_status
 vi.mock('../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors', () => ({
-   
+
   selectAgentStatus: { select: (_state: any, _wsId: string, _agentId: string) => 'idle' },
 }));
 

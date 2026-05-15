@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -18,9 +21,9 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    openWorkspaceFile,
-    openWorkspaceNote,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 

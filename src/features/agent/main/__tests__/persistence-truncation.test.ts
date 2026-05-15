@@ -2,7 +2,11 @@
  * Tests for persistence truncation utility
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { truncateLargeFields } from '../persistence-truncation';
 import type { AgentMessage } from '$shared/types/agent-message';
 

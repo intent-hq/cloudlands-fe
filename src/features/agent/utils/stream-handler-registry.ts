@@ -3,7 +3,7 @@
  *
  * Module-level runtime bridge for non-serializable stream handler state.
  * Moved out of AgentService class fields so that stream lifecycle is
- * managed by sagas (agent-stream-saga.ts) rather than the service singleton.
+ * managed by sagas (agent-session/sagas/agent-stream-saga.ts) rather than the service singleton.
  *
  * These Maps/Sets hold function references, timer IDs, and listener IDs
  * that cannot live in Redux state (non-serializable).

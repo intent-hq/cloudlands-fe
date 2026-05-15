@@ -218,7 +218,7 @@ class ApiClient {
     return response.data || null;
   }
 
-  // Agent operations removed - use agentService directly
+  // Agent operations removed - use direct renderer agent APIs
 
   // Diff operations
   async createDiff(workspaceId: string, diff: DiffChunk): Promise<void> {

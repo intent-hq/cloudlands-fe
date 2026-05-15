@@ -11,12 +11,16 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
-    faChevronRight,
-    faEllipsisH,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faChevronRight,
+  faEllipsisH,
+} from '@fortawesome/free-solid-svg-icons';
   import hljs from 'highlight.js';
-  import { parsePatch, type DiffLine, type Hunk } from '$lib/components/code-walkthrough/patch-utils';
+  import {
+  parsePatch,
+  type DiffLine,
+  type Hunk,
+} from '$lib/components/code-walkthrough/patch-utils';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughInlineComment from './WalkthroughInlineComment.svelte';

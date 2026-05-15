@@ -2,7 +2,12 @@
  * Tests for markAsTask functionality (Phase 1A Increment 2)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { NotesService } from '../notes.service';
 import type { Note, WorkspaceId, TaskStatus } from '../../../shared/types';
 import { randomUUID } from 'crypto';

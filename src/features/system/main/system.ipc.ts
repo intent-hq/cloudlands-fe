@@ -4,7 +4,15 @@
  * Handles app-level and system operations.
  */
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  shell,
+} from 'electron';
 import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,

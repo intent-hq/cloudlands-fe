@@ -1,24 +1,26 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   /**
    * FileChangesSection - Unstaged/Staged file changes with agent grouping
-   * Handles file staging, unstaging, reverting, selection, and group commits.
+   * Handles file staging,
+  unstaging,
+  reverting,
+  selection,
+  and group commits.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import {
-    selectAgentById,
-    selectAllWorkspaceAgents,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectLockedAgentIds } from '$lib/store/slices/agent-lock/agent-lock-selectors';
   import {
-    selectStagedWorkingChanges as selectFtStagedChanges,
-    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-  } from '$lib/store/slices/changes/changes-selectors';
+  selectStagedWorkingChanges as selectFtStagedChanges,
+  selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+} from '$lib/store/slices/changes/changes-selectors';
   import {
-    stageByPathRequested,
-    unstageByPathRequested,
-    revertByPathRequested,
-    refreshRequested,
-  } from '$lib/store/slices/changes/changes-slice';
+  stageByPathRequested,
+  unstageByPathRequested,
+  revertByPathRequested,
+  refreshRequested,
+} from '$lib/store/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
@@ -28,26 +30,30 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
-    type AgentChangeGroup,
-    groupFilesByAgent,
-  } from '$lib/components/file-tracking/accept-changes/types';
+  type AgentChangeGroup,
+  groupFilesByAgent,
+} from '$lib/components/file-tracking/accept-changes/types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { toast } from '$lib/components/ui/toast';
   import { faNote } from '$lib/icons/faNote';
-  import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
+  import {
+  track,
+  trackGitOp,
+  getFileExtension,
+} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-    faCodeCommit,
-    faLock,
-    faMinus,
-    faPlus,
-    faSpinner,
-    faUser,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCodeCommit,
+  faLock,
+  faMinus,
+  faPlus,
+  faSpinner,
+  faUser,
+} from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -56,13 +62,13 @@
   import { slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import {
-    getGroupKey,
-    isFileActive as isFileActiveUtil,
-    isFileSelected as isFileSelectedUtil,
-    isFileFocused as isFileFocusedUtil,
-    isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
-    toUIFileChange,
-  } from './sidebar-changes-utils';
+  getGroupKey,
+  isFileActive as isFileActiveUtil,
+  isFileSelected as isFileSelectedUtil,
+  isFileFocused as isFileFocusedUtil,
+  isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
+  toUIFileChange,
+} from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
@@ -124,7 +130,6 @@
   const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceIdStore);
   const lockedAgentIds$ = selectLockedAgentIds(workspaceIdStore);
-  const lockedAgentIds = $derived($lockedAgentIds$);
 
   // Derived change lists
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
@@ -210,13 +215,13 @@
 
   function getLinkedNoteId(agentId: string | null): string | undefined {
     if (!agentId) return undefined;
-    const session = selectAgentById.select(getReduxStore().getState(), agentId);
+    const session = selectAgentSession.select(getReduxStore().getState(), agentId);
     return session?.metadata?.taskNoteId as string | undefined;
   }
 
   function isAgentGroupLocked(agentId: string | null): boolean {
     if (!agentId) return false;
-    return agentId in lockedAgentIds;
+    return agentId in $lockedAgentIds$;
   }
 
   function toggleAgentGroup(agentId: string | null) {
@@ -273,7 +278,7 @@
     const change = changes.find((c) => c.relativePath === filePath || c.file === filePath);
     if (!change) return false;
     const agentId = change.attribution?.agent?.agentId;
-    return agentId ? agentId in lockedAgentIds : false;
+    return agentId ? agentId in $lockedAgentIds$ : false;
   }
 
   function trackLastClicked(path: string, staged: boolean) {
@@ -335,7 +340,7 @@
     try {
       const unlockedChanges = unstagedChanges.filter((c) => {
         const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !(agentId in lockedAgentIds);
+        return !agentId || !(agentId in $lockedAgentIds$);
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
@@ -351,7 +356,7 @@
     try {
       const unlockedChanges = stagedChanges.filter((c) => {
         const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !(agentId in lockedAgentIds);
+        return !agentId || !(agentId in $lockedAgentIds$);
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
@@ -434,7 +439,7 @@
   }
 
   async function handleStageGroup(group: AgentChangeGroup) {
-    if (group.agentId && group.agentId in lockedAgentIds) {
+    if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot stage locked agent group', { agentId: group.agentId });
       return;
     }
@@ -443,7 +448,7 @@
   }
 
   async function handleUnstageGroup(group: AgentChangeGroup) {
-    if (group.agentId && group.agentId in lockedAgentIds) {
+    if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot unstage locked agent group', { agentId: group.agentId });
       return;
     }
@@ -453,7 +458,7 @@
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleCommitGroup(group: AgentChangeGroup) {
-    if (group.agentId && group.agentId in lockedAgentIds) {
+    if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot commit locked agent group', { agentId: group.agentId });
       return;
     }
@@ -490,7 +495,7 @@
   function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const key = getGroupKey(group, section);
     if (groupCommit.active === key || groupCommit.queue.some((e) => e.groupKey === key)) return;
-    if (group.agentId && group.agentId in lockedAgentIds) return;
+    if (group.agentId && group.agentId in $lockedAgentIds$) return;
     groupCommit.queue = [...groupCommit.queue, { groupKey: key, section, group }];
     if (!groupCommit.active) {
       processGroupCommitQueue();

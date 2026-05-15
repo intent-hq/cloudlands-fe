@@ -25,24 +25,28 @@
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import {
-    loadGithubRepos,
-    type GithubRepoItem,
-  } from '$lib/store/slices/github-repos/github-repos-slice';
+  loadGithubRepos,
+  type GithubRepoItem,
+} from '$lib/store/slices/github-repos/github-repos-slice';
   import {
-    selectGithubRepos,
-    selectGithubReposError,
-    selectGithubReposLoaded,
-    selectGithubReposLoading,
-  } from '$lib/store/slices/github-repos/github-repos-selectors';
+  selectGithubRepos,
+  selectGithubReposError,
+  selectGithubReposLoaded,
+  selectGithubReposLoading,
+} from '$lib/store/slices/github-repos/github-repos-selectors';
   import { searchGithubRepos } from '$lib/store/slices/github-repo-search/github-repo-search-slice';
   import {
-    selectGithubRepoSearchLastQuery,
-    selectGithubRepoSearchLoading,
-    selectGithubRepoSearchResults,
-  } from '$lib/store/slices/github-repo-search/github-repo-search-selectors';
+  selectGithubRepoSearchLastQuery,
+  selectGithubRepoSearchLoading,
+  selectGithubRepoSearchResults,
+} from '$lib/store/slices/github-repo-search/github-repo-search-selectors';
   import { selectWorkspaceInitializerDefaultParentPath } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faArrowUpRightFromSquare, faFolder, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowUpRightFromSquare,
+  faFolder,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('GitHubRepoTab');

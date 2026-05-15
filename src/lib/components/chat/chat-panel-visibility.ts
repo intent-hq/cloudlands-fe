@@ -1,5 +1,5 @@
 import { AgentStatus } from '$shared/types';
-import type { ChatState } from '$features/agent/services/chat.service';
+import type { ChatState } from '$lib/store/slices/chat-state/chat-state-types';
 
 type PendingAssistantStatusState = Pick<
   ChatState,
@@ -11,6 +11,8 @@ type EndOfListStreamingStatusState = PendingAssistantStatusState & {
   lastTurnHasAssistantMessages: boolean;
   lastAssistantMessageIsStreaming: boolean;
 };
+
+type StopChatBeforeSendState = Pick<ChatState, 'isStreaming' | 'isProcessing'>;
 
 /**
  * Agent sessions can be actively responding before text chunks produce an
@@ -61,4 +63,8 @@ export function shouldShowEndOfListStreamingStatus(
   );
 
   return !normalPendingRowRenders && !normalAssistantRowRenders;
+}
+
+export function shouldStopChatBeforeSending(state: StopChatBeforeSendState): boolean {
+  return Boolean(state.isStreaming || state.isProcessing);
 }

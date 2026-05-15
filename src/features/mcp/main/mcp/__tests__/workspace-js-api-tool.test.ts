@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { createWorkspaceMCPServer } from '../index';
 import { WorkspaceJsApiTool } from '../workspace-js-api-tool';

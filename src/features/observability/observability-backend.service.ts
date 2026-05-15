@@ -1,10 +1,13 @@
-import { eventCollector, AgentEventType } from './event-collector'; // Use server-side collector
+import {
+  eventCollector,
+  AgentEventType,
+} from './event-collector'; // Use server-side collector
 import { Logger } from '../../shared/logger';
 
 export class ObservabilityBackendService {
   private logger = new Logger('ObservabilityBackendService');
 
-   
+
   async ensureWorkspaceInitialized(_workspaceId: string): Promise<void> {
     // No-op: Redux handles event initialization now
   }

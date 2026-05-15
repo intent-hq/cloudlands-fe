@@ -2,7 +2,11 @@
  * Tests for workspace utilities
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   getWorkspaceStage,
   getStageLabel,

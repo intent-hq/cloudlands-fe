@@ -12,7 +12,10 @@
    * - Simplified shader with fewer blobs (5 instead of 10)
    * - Respects prefers-reduced-motion
    */
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { browser } from '$app/environment';
   import { colors } from '$lib/components/ui/auggie-avatar/avatar-constants';
   import { stringToSeededRandom } from '$lib/utils/hash';

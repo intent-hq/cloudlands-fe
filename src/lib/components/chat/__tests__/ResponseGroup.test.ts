@@ -15,7 +15,13 @@
  *
  * This test should FAIL before the fix and PASS after.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  afterEach,
+} from 'vitest';
 import { cubicOut } from 'svelte/easing';
 
 /**

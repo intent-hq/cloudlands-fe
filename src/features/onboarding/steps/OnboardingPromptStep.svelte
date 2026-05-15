@@ -6,16 +6,19 @@
    * setup script disclosure, PR branch suggestion, error state, and the
    * "Create workspace" button.
    */
-  import { fly, slide } from 'svelte/transition';
+  import {
+  fly,
+  slide,
+} from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-    faArrowRight,
-    faPaperclip,
-    faMagicWandSparkles,
-    faArrowsRotate,
-    faCodeBranch,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowRight,
+  faPaperclip,
+  faMagicWandSparkles,
+  faArrowsRotate,
+  faCodeBranch,
+} from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
@@ -27,14 +30,14 @@
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    checkClonePreflight,
-    clearClonePreflight,
-  } from '$lib/store/slices/clone-preflight/clone-preflight-slice';
+  checkClonePreflight,
+  clearClonePreflight,
+} from '$lib/store/slices/clone-preflight/clone-preflight-slice';
   import {
-    selectClonePreflightStatus,
-    selectClonePreflightError,
-    selectClonePreflightUrl,
-  } from '$lib/store/slices/clone-preflight/clone-preflight-selectors';
+  selectClonePreflightStatus,
+  selectClonePreflightError,
+  selectClonePreflightUrl,
+} from '$lib/store/slices/clone-preflight/clone-preflight-selectors';
 
   interface Props {
     // Input state

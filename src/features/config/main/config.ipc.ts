@@ -10,7 +10,11 @@ import { ConfigManager } from '../../../shared/services/config-manager';
 import { Logger } from '../../../shared/logger';
 import { CONFIG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { ConfigGetSchema, ConfigSetSchema, ConfigGetAllSchema } from '../../../main/ipc-schemas';
+import {
+  ConfigGetSchema,
+  ConfigSetSchema,
+  ConfigGetAllSchema,
+} from '../../../main/ipc-schemas';
 
 const logger = new Logger('ConfigIPC');
 

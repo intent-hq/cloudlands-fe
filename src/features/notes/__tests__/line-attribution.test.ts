@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { NoteVersion } from '../../../shared/types.js';
 import { AuthorType } from '../../../shared/types.js';
 import { attributeLines } from '../line-attribution.js';

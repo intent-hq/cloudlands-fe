@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
-import { AgentStatus, type AgentSession } from '$shared/types';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  AgentStatus,
+  type AgentSession,
+} from '$shared/types';
 
 import {
   isSessionActivelyResponding,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
+  shouldStopChatBeforeSending,
 } from '../chat-panel-visibility';
 
 const baseSession: AgentSession = {
@@ -23,9 +31,47 @@ describe('chat panel visibility helpers', () => {
     expect(isSessionActivelyResponding(baseSession)).toBe(false);
   });
 
+  it('keeps idle Active sessions out of ChatPanel processing affordances', () => {
+    const isProcessing = isSessionActivelyResponding(baseSession);
+
+    expect(
+      shouldShowPendingAssistantStatus({
+        isStreaming: false,
+        isProcessing,
+        error: null,
+        modelUnavailable: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowEndOfListStreamingStatus({
+        isStreaming: false,
+        isProcessing,
+        error: null,
+        modelUnavailable: null,
+        hasMessages: true,
+        lastTurnHasAssistantMessages: true,
+        lastAssistantMessageIsStreaming: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not stop chat before queued sends for idle Active sessions', () => {
+    expect(
+      shouldStopChatBeforeSending({
+        isStreaming: false,
+        isProcessing: isSessionActivelyResponding(baseSession),
+      }),
+    ).toBe(false);
+  });
+
   it('treats responding and legacy Processing sessions as active', () => {
     expect(isSessionActivelyResponding({ ...baseSession, isResponding: true })).toBe(true);
     expect(isSessionActivelyResponding({ ...baseSession, status: AgentStatus.Processing })).toBe(true);
+  });
+
+  it('stops chat before queued sends while streaming or actively processing', () => {
+    expect(shouldStopChatBeforeSending({ isStreaming: true, isProcessing: false })).toBe(true);
+    expect(shouldStopChatBeforeSending({ isStreaming: false, isProcessing: true })).toBe(true);
   });
 
   it('trusts explicit idle status over stale responding flags', () => {

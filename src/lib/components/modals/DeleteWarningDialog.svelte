@@ -1,7 +1,10 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faXmark, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faXmark,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
 
   interface Props {

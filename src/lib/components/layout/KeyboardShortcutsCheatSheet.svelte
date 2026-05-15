@@ -6,20 +6,23 @@
    * Triggered by Mod+/ or ? key
    */
 
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import {
-    getAllShortcutCategories,
-    formatShortcut,
-    type ShortcutCategory,
-  } from '$lib/utils/shortcuts';
+  getAllShortcutCategories,
+  formatShortcut,
+  type ShortcutCategory,
+} from '$lib/utils/shortcuts';
   import Button from '../ui/button/button.svelte';
   import Header from '../ui/Header.svelte';
   import {
-    selectIsCheatSheetOpen,
-    selectCheatSheetContext,
-  } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+  selectIsCheatSheetOpen,
+  selectCheatSheetContext,
+} from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
   import { closeCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

@@ -41,12 +41,13 @@ export const mockLogger = createMockLogger();
  * Drop-in replacement for the real `createLogger`.
  * Returns the shared `mockLogger` so all callers share the same spies.
  */
- 
+
 export function createLogger(_name?: string) {
   return mockLogger;
 }
 
-/** Alias so `import { logger } from '$lib/utils/client-logger'` resolves. */
+/** Alias so `import {
+  logger } from '$lib/utils/client-logger'` resolves. */
 export const logger = mockLogger;
 
 /**
@@ -63,5 +64,7 @@ export class ClientLogger {
 }
 
 // Re-export types so `import type { LogLevel }` resolves without hitting the real module.
-export type { LogLevel, LoggerOptions } from '$lib/utils/client-logger';
+export type { LogLevel,
+  LoggerOptions,
+} from '$lib/utils/client-logger';
 

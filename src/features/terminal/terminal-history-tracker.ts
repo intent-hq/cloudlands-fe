@@ -4,7 +4,10 @@
  * Tracks command history and output for terminals to display in hover cards
  */
 
-import { writable, type Writable } from 'svelte/store';
+import {
+  writable,
+  type Writable,
+} from 'svelte/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 

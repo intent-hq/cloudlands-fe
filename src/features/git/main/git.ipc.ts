@@ -12,12 +12,25 @@ import { Logger } from '../../../shared/logger.js';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry.js';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware.js';
 import { z } from 'zod';
-import { restoreWorkspaceId, type WorkspaceId } from '../../../shared/types/index.js';
+import {
+  restoreWorkspaceId,
+  type WorkspaceId,
+} from '../../../shared/types/index.js';
 import { LineType } from '../../../shared/types';
 import type { DiffChunk } from '../../../shared/types';
-import { GitGetBranchesSchema, GitRenameBranchSchema } from '../../../main/ipc-schemas.js';
-import { getWorkspaceGitInfo, getRemoteGitManager, validatePathsInScope } from './git-router.js';
-import { execAsync, execFileAsync } from '../../../shared/git/git-env';
+import {
+  GitGetBranchesSchema,
+  GitRenameBranchSchema,
+} from '../../../main/ipc-schemas.js';
+import {
+  getWorkspaceGitInfo,
+  getRemoteGitManager,
+  validatePathsInScope,
+} from './git-router.js';
+import {
+  execAsync,
+  execFileAsync,
+} from '../../../shared/git/git-env';
 import { getAutoCommitStatuses } from '../../agent/main/auto-commit.service';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { trackMain } from '$lib/services/analytics/main';

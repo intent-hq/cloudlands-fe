@@ -5,7 +5,12 @@
  * Each action is validated against a known schema before execution.
  */
 
-import { BaseMCPTool, createInputSchema, stringProperty, arrayProperty } from './tool';
+import {
+  BaseMCPTool,
+  createInputSchema,
+  stringProperty,
+  arrayProperty,
+} from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import { executeBrowserActions } from '../../../browser/main/browser.ipc';
 import { assetsService } from '../../../notes/main/assets.service';

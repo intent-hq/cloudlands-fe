@@ -1,4 +1,9 @@
-import { beforeEach, describe, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  it,
+  vi,
+} from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
 
 vi.mock(
@@ -17,7 +22,10 @@ import {
   hydrateActivityLogPresets,
   hydratePromoBannerInteractions,
 } from '../user-preferences-slice';
-import { ACTIVITY_LOG_PRESETS_STORAGE_KEY, PROMO_BANNER_STORAGE_KEY } from './persistence-saga';
+import {
+  ACTIVITY_LOG_PRESETS_STORAGE_KEY,
+  PROMO_BANNER_STORAGE_KEY,
+} from './persistence-saga';
 import { applyChannel } from './apply-channel';
 import { initUserPreferencesSaga } from './init-saga';
 

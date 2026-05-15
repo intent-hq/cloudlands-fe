@@ -37,8 +37,14 @@ import { createRequire } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 import express, { Request, Response } from 'express';
-import { app, BrowserWindow } from 'electron';
-import { createServer, type IncomingMessage } from 'http';
+import {
+  app,
+  BrowserWindow,
+} from 'electron';
+import {
+  createServer,
+  type IncomingMessage,
+} from 'http';
 
 import { Logger } from '../shared/logger';
 import type { EnvironmentConfig } from '$shared/types';

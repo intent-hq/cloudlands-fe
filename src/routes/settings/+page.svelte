@@ -3,10 +3,13 @@
 
   import { page } from '$app/state';
   import {
-    selectIsReadyToInstall,
-    selectAutoUpdateStatus,
-  } from '$lib/store/slices/auto-update/auto-update-selectors';
-  import { installUpdate, simulateSetState } from '$lib/store/slices/auto-update/auto-update-slice';
+  selectIsReadyToInstall,
+  selectAutoUpdateStatus,
+} from '$lib/store/slices/auto-update/auto-update-selectors';
+  import {
+  installUpdate,
+  simulateSetState,
+} from '$lib/store/slices/auto-update/auto-update-slice';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -30,21 +33,21 @@
   const workspaces = selectWorkspaceItems();
 
   import {
-    resetNotificationSettings,
-    setAgentFontStyle,
-    setCodeFontFamily,
-    setNoteFontStyle,
-    type AgentFontStyle,
-  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  resetNotificationSettings,
+  setAgentFontStyle,
+  setCodeFontFamily,
+  setNoteFontStyle,
+  type AgentFontStyle,
+} from '$lib/store/slices/user-preferences/user-preferences-slice';
   import {
-    selectAgentFontStyle,
-    selectCodeFontFamily,
-    selectCodeFontFamilyCSS,
-    selectCodeFontFamilyLabel,
-    selectCodeFontOptions,
-    selectIsNoteMonospace,
-    selectNoteFontStyle,
-  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  selectAgentFontStyle,
+  selectCodeFontFamily,
+  selectCodeFontFamilyCSS,
+  selectCodeFontFamilyLabel,
+  selectCodeFontOptions,
+  selectIsNoteMonospace,
+  selectNoteFontStyle,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Select } from '$lib/components/ui/select';
 
@@ -52,9 +55,9 @@
   import { track } from '$lib/services/analytics';
   import { flashCopied } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
   import {
-    getSettingsPreviousPath,
-    navigateBackFromSettings,
-  } from '$lib/utils/workspace-navigation';
+  getSettingsPreviousPath,
+  navigateBackFromSettings,
+} from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';

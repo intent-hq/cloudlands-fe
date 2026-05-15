@@ -1,5 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
 vi.mock('svelte-fa', async () => {
@@ -140,9 +153,20 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   }),
 }));
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAgentById: {
+  selectAgentSession: {
     select: (_state: any, agentId: string) => {
       // Search across all workspaces since wsId was removed
+      for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
+        const agent = ws?.agents?.map?.[agentId];
+        if (agent) return agent;
+      }
+      return null;
+    },
+  },
+}));
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: {
+    select: (_state: any, agentId: string) => {
       for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
         const agent = ws?.agents?.map?.[agentId];
         if (agent) return agent;

@@ -25,7 +25,14 @@
  * in-memory copy during shutdown is never correct.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 vi.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 vi.mock('$shared/services/unified-id.service', () => ({

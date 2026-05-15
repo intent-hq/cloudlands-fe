@@ -1,5 +1,9 @@
 <script lang="ts" module>
-  import { setContext } from 'svelte';
+  import {
+  setContext,
+  onDestroy,
+  type Snippet,
+} from 'svelte';
   import { init } from '../init';
   import { type PreloadedStoreState } from '../types';
   import { STORE_CONTEXT } from '../constants';
@@ -31,7 +35,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, type Snippet } from 'svelte';
+
 
   const {
     initialState,

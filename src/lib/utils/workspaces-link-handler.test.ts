@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { parseIntentLink, generateNoteLink } from './workspaces-link-handler';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  parseIntentLink,
+  generateNoteLink,
+} from './workspaces-link-handler';
 
 describe('parseIntentLink', () => {
   describe('valid note links', () => {

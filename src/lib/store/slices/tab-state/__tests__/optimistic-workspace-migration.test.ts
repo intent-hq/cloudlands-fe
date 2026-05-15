@@ -8,7 +8,11 @@
  * 3. Edge cases: multiple optimistic tabs, concurrent transitions
  */
 
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   cleanupInvalidWorkspaceTabs,
   handleOptimisticWorkspaceTabTransition,

@@ -10,7 +10,11 @@
 </script>
 
 <script lang="ts">
-  import { setContext, onMount, onDestroy } from 'svelte';
+  import {
+  setContext,
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { scale } from 'svelte/transition';
   import Portal from './Portal.svelte';
 

@@ -1,22 +1,74 @@
 import { goto } from "$app/navigation";
 import type { PanelTab } from "$lib/store/slices/panel-layout/panel-layout-types";
-import { selectFocusedPanelId, selectPanels, selectAllTabs, selectPanel, selectActiveTabInPanel } from "$lib/store/slices/panel-layout/panel-layout-selectors";
-import { openTab, openTabInAdjacentOrSplit, closeActiveTab, reopenClosedTab, setActiveTab, focusPanel, selectPreviousTab, selectNextTab, updateTabBrowserUrl } from "$lib/store/slices/panel-layout/panel-layout-slice";
+import {
+  selectFocusedPanelId,
+  selectPanels,
+  selectAllTabs,
+  selectPanel,
+  selectActiveTabInPanel,
+} from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import {
+  openTab,
+  openTabInAdjacentOrSplit,
+  closeActiveTab,
+  reopenClosedTab,
+  setActiveTab,
+  focusPanel,
+  selectPreviousTab,
+  selectNextTab,
+  updateTabBrowserUrl,
+} from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
-import { getFileExtension, track } from "$lib/services/analytics";
+import {
+  getFileExtension,
+  track,
+} from "$lib/services/analytics";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import { isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
 import { watchDockNavigationForWorkspaceSaga } from "./dock-navigation-saga";
 import { specPanelSaga } from "./spec-panel-saga";
-import { getSettingsPreviousPath, navigateToSettings } from "$lib/utils/workspace-navigation";
+import {
+  getSettingsPreviousPath,
+  navigateToSettings,
+} from "$lib/utils/workspace-navigation";
 import type { Task } from "redux-saga";
-import { cancel, call, delay, fork, put, select, takeEvery } from "typed-redux-saga";
-import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  cancel,
+  call,
+  delay,
+  fork,
+  put,
+  select,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import { createTerminalRequested } from "../../terminals/terminals-slice";
-import { createNoteRequested, markNoteRead, } from "../../note-read-tracking/note-read-tracking-slice";
-import { createFileRequested, createWorkspaceForRepoRequested, focusBrowserTabRequested, openAgentTabRequested, openNewSpaceModalRequested, openTerminalTabRequested, requestPanelFocus, showAgentRequested, } from "../app-layout-slice";
-import { openWorkspaceChatChanges, openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile, openWorkspaceLocalChanges, openWorkspaceNote, } from "../../workspace-navigation/workspace-navigation-slice";
+import {
+  createNoteRequested,
+  markNoteRead,
+} from "../../note-read-tracking/note-read-tracking-slice";
+import {
+  createFileRequested,
+  createWorkspaceForRepoRequested,
+  focusBrowserTabRequested,
+  openAgentTabRequested,
+  openNewSpaceModalRequested,
+  openTerminalTabRequested,
+  requestPanelFocus,
+  showAgentRequested,
+} from "../app-layout-slice";
+import {
+  openWorkspaceChatChanges,
+  openWorkspaceCommitChangeset,
+  openWorkspaceDiff,
+  openWorkspaceFile,
+  openWorkspaceLocalChanges,
+  openWorkspaceNote,
+} from "../../workspace-navigation/workspace-navigation-slice";
 import { notesIpc } from "../../workspace-notes/sagas/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { reloadNotes } from "../../workspace-notes/workspace-notes-slice";
@@ -25,11 +77,12 @@ import { WorkspaceId } from "$shared/types/branded-ids";
 import { invoke } from "$lib/electron-bridge";
 import { selectActiveWorkspace } from "../../workspace/workspace-selectors";
 import { selectNoteById } from "../../workspace-notes/workspace-notes-selectors";
-import { selectAgentById } from "../../workspace-agents/workspace-agents-selectors";
+
 import { setShowCreateModal } from "../../sidebar-nav/sidebar-nav-slice";
 import { browserTabZoomRequested } from "../../browser/browser-slice";
 import type { BrowserZoomAction } from "../../browser/browser-types";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 const dockNavigationTasks = new Map<string, Task>();
 type BrowserOpenTabEvent = {
     url: string;
@@ -110,7 +163,7 @@ function showAgentInLayout(workspaceId: string, agentId: string) {
         store.dispatch(setActiveTab(workspaceId, existingAgentTab.id, panelId));
         return;
     }
-    const agent = selectAgentById.select(store.getState(), agentId);
+    const agent = selectAgentSession.select(store.getState(), agentId);
     store.dispatch(openTab(workspaceId, {
         type: "agent",
         title: agent?.name || "Agent",
@@ -250,7 +303,7 @@ export function* watchOpenAgentSaga() {
         if (!wsId || !detail?.agentId) {
             return;
         }
-        const agent = yield* selectAgentById.effect(detail.agentId);
+        const agent = yield* selectAgentSession.effect(detail.agentId);
         yield* openWorkspaceTab(wsId, {
             type: "agent",
             title: agent?.name || "Agent",

@@ -1,10 +1,14 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
-import {
-  workspaceEventAccepted,
-} from "../workspace-events-slice";
+import { workspaceEventAccepted } from "../workspace-events-slice";
 import {
   handlePersistEvent,
   persistEvent,
@@ -13,7 +17,10 @@ import {
   handleBroadcastEvent,
   broadcastEvent,
 } from "./broadcast-saga";
-import { isDuplicateEvent, clearAllCaches } from "../dedup-cache";
+import {
+  isDuplicateEvent,
+  clearAllCaches,
+} from "../dedup-cache";
 
 // ---------------------------------------------------------------------------
 // Test helpers

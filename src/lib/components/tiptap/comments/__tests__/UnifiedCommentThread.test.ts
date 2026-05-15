@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  afterEach,
+} from 'vitest';
 
 vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => vi.fn(),
@@ -15,7 +21,10 @@ vi.mock('$lib/store/slices/comments/comments-selectors', () => ({
   selectCommentById: { select: vi.fn(() => null) },
 }));
 
-import { render, fireEvent } from '@testing-library/svelte';
+import {
+  render,
+  fireEvent,
+} from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';
 

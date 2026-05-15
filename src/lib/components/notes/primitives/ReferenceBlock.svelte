@@ -7,10 +7,16 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import Fa from 'svelte-fa';
-  import { faCode, faArrowRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCode,
+  faArrowRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { invoke } from '$lib/electron-bridge';
-  import { parseSemanticId, getSemanticId } from '$shared/types/notes-primitives';
+  import {
+  parseSemanticId,
+  getSemanticId,
+} from '$shared/types/notes-primitives';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';

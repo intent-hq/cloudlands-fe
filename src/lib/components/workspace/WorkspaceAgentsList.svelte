@@ -6,10 +6,10 @@
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import {
-    faChevronDown,
-    faRobot,
-    faSitemap,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faRobot,
+  faSitemap,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
@@ -19,9 +19,9 @@
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import Header from '../ui/Header.svelte';
   import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
 

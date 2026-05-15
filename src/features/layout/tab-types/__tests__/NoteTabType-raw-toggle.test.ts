@@ -1,5 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -96,7 +109,10 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
   selectInitialAgentId: { select: () => null },
-  selectAgentById: { select: () => null },
+  selectAgentSession: { select: () => null },
+}));
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: { select: () => null },
 }));
 vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
   selectSpellcheckEnabled: () => mockState.spellcheckEnabled,

@@ -17,7 +17,13 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const mockGetAllWindows = vi.fn();
 const mockGetPath = vi.fn();

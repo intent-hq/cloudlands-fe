@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import {
+  test,
+  expect,
+} from '@playwright/experimental-ct-svelte';
 import TaskItemNodeView from '../TaskItemNodeView.svelte';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';

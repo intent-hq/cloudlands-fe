@@ -6,7 +6,10 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { selectIsFollowing, selectAgentColor } from '$lib/store/slices/agent-follow/agent-follow-selectors';
+  import {
+  selectIsFollowing,
+  selectAgentColor,
+} from '$lib/store/slices/agent-follow/agent-follow-selectors';
 
   const isFollowing$ = selectIsFollowing();
   const agentColor$ = selectAgentColor();

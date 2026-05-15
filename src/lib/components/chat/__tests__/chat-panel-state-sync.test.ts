@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
-import type { ChatState } from '$features/agent/services/chat.service';
+import type { ChatState } from '$lib/store/slices/chat-state/chat-state-types';
 
 import {
   hasChatServiceStateChanged,
@@ -14,7 +18,6 @@ function createChatState(overrides: Partial<ChatState> = {}): ChatState {
     isStreaming: false,
     isProcessing: false,
     isInterrupting: false,
-    streamingContent: '',
     error: null,
     streamingStartTime: null,
     lastAttemptedMessage: null,
@@ -27,12 +30,11 @@ function createChatState(overrides: Partial<ChatState> = {}): ChatState {
 }
 
 describe('chat panel state sync helpers', () => {
-  it('copies streaming metadata and retry state from ChatService updates', () => {
+  it('copies streaming metadata and retry state from chat state updates', () => {
     const incomingState = createChatState({
       isStreaming: true,
       isProcessing: true,
       isInterrupting: true,
-      streamingContent: 'partial',
       streamingStartTime: 100,
       lastChunkTime: 150,
       isStalled: true,

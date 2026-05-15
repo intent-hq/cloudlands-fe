@@ -4,9 +4,18 @@
  * Tests the JSONL file format, append-only writes, migration, and error handling.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { EventStore } from '../main/event-store';
-import { WorkspaceEvent, WorkspaceEventType } from '../types';
+import {
+  WorkspaceEvent,
+  WorkspaceEventType,
+} from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { existsSync } from 'fs';

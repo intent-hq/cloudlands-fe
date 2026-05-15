@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
-import { isAuthUrl, isCmdClickModifier, isGitHubUrl } from '../link-helpers';
+import {
+  isAuthUrl,
+  isCmdClickModifier,
+  isGitHubUrl,
+} from '../link-helpers';
 
 describe('link-helpers', () => {
   it('detects auth URLs by pathname', () => {

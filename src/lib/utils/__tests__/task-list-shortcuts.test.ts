@@ -1,8 +1,18 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Editor, type JSONContent } from '@tiptap/core';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  Editor,
+  type JSONContent,
+} from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import { CustomTaskItem } from '$lib/components/tiptap/CustomTaskItem';

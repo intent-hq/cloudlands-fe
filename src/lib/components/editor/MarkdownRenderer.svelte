@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { marked, type Tokens } from 'marked';
+  import {
+  marked,
+  type Tokens,
+} from 'marked';
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
   import { createLogger } from '$lib/utils/client-logger';

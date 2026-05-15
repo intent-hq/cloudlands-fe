@@ -39,7 +39,10 @@ import type {
   DelegationGroupTrackerRecord,
   AgentSubscriptionsState,
 } from "./types";
-import { emptyWorkspaceSubscriptionState, initialState } from "./types";
+import {
+  emptyWorkspaceSubscriptionState,
+  initialState,
+} from "./types";
 
 
 // ============================================================================
@@ -274,7 +277,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(removeSubscription, (state, { payload: [wsId, subscriptionId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!ws.subscriptions[subscriptionId]) return state;
-     
+
     const { [subscriptionId]: _removed, ...rest } = ws.subscriptions;
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -293,9 +296,9 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     for (const [gId, g] of Object.entries(ws.delegationGroups)) {
       if (g.parentAgentId !== agentId) groups[gId] = g;
     }
-     
+
     const { [agentId]: _q, ...queues } = ws.agentQueues;
-     
+
     const { [agentId]: _s, ...statuses } = ws.agentStatuses;
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -342,7 +345,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(removeDelegationGroup, (state, { payload: [wsId, groupId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!ws.delegationGroups[groupId]) return state;
-     
+
     const { [groupId]: _removed, ...rest } = ws.delegationGroups;
     return setWorkspaceState(state, wsId, { ...ws, delegationGroups: rest });
   })
@@ -474,7 +477,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
   .with(evictDeletedAgent, (state, { payload: [wsId, agentId] }) => {
     const ws = getWorkspaceState(state, wsId);
     if (!(agentId in ws.deletedAgents)) return state;
-     
+
     const { [agentId]: _removed, ...rest } = ws.deletedAgents;
     return setWorkspaceState(state, wsId, { ...ws, deletedAgents: rest });
   })

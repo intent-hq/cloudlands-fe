@@ -1,4 +1,4 @@
-import type { ChatState } from '$features/agent/services/chat.service';
+import type { ChatState } from '$lib/store/slices/chat-state/chat-state-types';
 
 interface ChatStateSyncOptions {
   isStreaming?: boolean;
@@ -36,7 +36,6 @@ export function hasChatServiceStateChanged(
     incomingState.isStreaming !== currentState.isStreaming ||
     incomingState.isProcessing !== currentState.isProcessing ||
     incomingState.isInterrupting !== currentState.isInterrupting ||
-    incomingState.streamingContent !== currentState.streamingContent ||
     incomingState.streamingStartTime !== currentState.streamingStartTime ||
     incomingState.lastChunkTime !== currentState.lastChunkTime ||
     incomingState.isStalled !== currentState.isStalled;

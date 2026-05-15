@@ -15,14 +15,20 @@
 
   import type { Editor } from '@tiptap/core';
   import {
-    mapLineAttributionsToBlocks,
-    type LineAttributions,
-    type AttributionInfo,
-    type LineAuthor,
-  } from './line-to-block-mapper';
-  import { resolveBlockPosition, resolveCodeBlockLinePositions } from './block-position-resolver';
+  mapLineAttributionsToBlocks,
+  type LineAttributions,
+  type AttributionInfo,
+  type LineAuthor,
+} from './line-to-block-mapper';
+  import {
+  resolveBlockPosition,
+  resolveCodeBlockLinePositions,
+} from './block-position-resolver';
   import { getAttributionOpacity } from './attribution-color-scale';
-  import { invoke, listenSync } from '$lib/electron-bridge';
+  import {
+  invoke,
+  listenSync,
+} from '$lib/electron-bridge';
   import type { WorkspaceId, NoteId } from '$shared/types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

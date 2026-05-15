@@ -2,12 +2,29 @@
  * Tests for Unified Persistence Service
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { UnifiedPersistence } from '../agent-persistence';
-import type { AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
+
+function expectNoDuplicateNonEmptyAppMessageIds(messages: AgentMessage[] | undefined): void {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const message of messages ?? []) {
+    if (!message.appMessageId) continue;
+    if (seen.has(message.appMessageId)) duplicates.add(message.appMessageId);
+    seen.add(message.appMessageId);
+  }
+  expect([...duplicates]).toEqual([]);
+}
 
 describe('UnifiedPersistence', () => {
   let persistence: UnifiedPersistence;
@@ -81,6 +98,49 @@ describe('UnifiedPersistence', () => {
       expect(r1.success).toBe(true);
       expect(r2.success).toBe(true);
     });
+
+    it('should remove logical duplicate messages before writing to disk', async () => {
+      const agent: AgentSession = {
+        id: 'agent-save-logical-dedup' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: '550e8400-e29b-41d4-a716-446655440001',
+            appMessageId: 'app-msg-save',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Draft' }],
+            timestamp: new Date('2026-05-04T10:00:00.000Z'),
+          },
+          {
+            id: 'msg_backend_save',
+            appMessageId: 'app-msg-save',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Final' }],
+            timestamp: '2026-05-04T10:00:01.000Z',
+          },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      const result = await persistence.saveAgent(agent, testDir);
+
+      expect(result.success).toBe(true);
+      const raw = await fs.readFile(
+        path.join(testDir, '.workspace/agents', `${agent.id}.json`),
+        'utf-8',
+      );
+      const saved = JSON.parse(raw);
+      expect(saved.messages).toHaveLength(1);
+      expect(saved.messages[0]).toMatchObject({
+        id: 'msg_backend_save',
+        appMessageId: 'app-msg-save',
+      });
+      expect(saved.messages[0].timestamp).toBe('2026-05-04T10:00:01.000Z');
+    });
   });
 
   describe('user message preservation on save', () => {
@@ -95,8 +155,18 @@ describe('UnifiedPersistence', () => {
         name: 'Test Agent',
         status: AgentStatus.Active,
         messages: [
-          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: new Date().toISOString() },
-          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: new Date().toISOString() },
+          {
+            id: 'msg_user_1',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Hello' }],
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: 'msg_asst_1',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Hi' }],
+            timestamp: new Date().toISOString(),
+          },
         ] as any[],
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -110,7 +180,12 @@ describe('UnifiedPersistence', () => {
       const staleBackendSave: AgentSession = {
         ...agent,
         messages: [
-          { id: 'msg_asst_new', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Streaming response' }], timestamp: new Date().toISOString() },
+          {
+            id: 'msg_asst_new',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Streaming response' }],
+            timestamp: new Date().toISOString(),
+          },
         ] as any[],
       };
 
@@ -141,9 +216,24 @@ describe('UnifiedPersistence', () => {
         name: 'Test Agent',
         status: AgentStatus.Active,
         messages: [
-          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-05-04T10:00:00.000Z' },
-          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: '2026-05-04T10:01:00.000Z' },
-          { id: 'msg_user_2', role: 'user', contentBlocks: [{ type: 'text', text: 'Newest question' }], timestamp: '2026-05-04T10:02:00.000Z' },
+          {
+            id: 'msg_user_1',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Hello' }],
+            timestamp: '2026-05-04T10:00:00.000Z',
+          },
+          {
+            id: 'msg_asst_1',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Hi' }],
+            timestamp: '2026-05-04T10:01:00.000Z',
+          },
+          {
+            id: 'msg_user_2',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Newest question' }],
+            timestamp: '2026-05-04T10:02:00.000Z',
+          },
         ] as any[],
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -157,7 +247,12 @@ describe('UnifiedPersistence', () => {
         messages: [
           agent.messages[0],
           agent.messages[1],
-          { id: 'msg_asst_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'New answer' }], timestamp: '2026-05-04T10:03:00.000Z' },
+          {
+            id: 'msg_asst_2',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'New answer' }],
+            timestamp: '2026-05-04T10:03:00.000Z',
+          },
         ] as any[],
       };
 
@@ -190,8 +285,18 @@ describe('UnifiedPersistence', () => {
         name: 'Test Agent',
         status: AgentStatus.Active,
         messages: [
-          { id: 'msg_user_1', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: new Date().toISOString() },
-          { id: 'msg_asst_1', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Hi' }], timestamp: new Date().toISOString() },
+          {
+            id: 'msg_user_1',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Hello' }],
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: 'msg_asst_1',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Hi' }],
+            timestamp: new Date().toISOString(),
+          },
         ] as any[],
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -204,8 +309,18 @@ describe('UnifiedPersistence', () => {
       const normalSave: AgentSession = {
         ...agent,
         messages: [
-          { id: 'msg_user_2', role: 'user', contentBlocks: [{ type: 'text', text: 'New question' }], timestamp: new Date().toISOString() },
-          { id: 'msg_asst_2', role: 'assistant', contentBlocks: [{ type: 'text', text: 'New answer' }], timestamp: new Date().toISOString() },
+          {
+            id: 'msg_user_2',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'New question' }],
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: 'msg_asst_2',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'New answer' }],
+            timestamp: new Date().toISOString(),
+          },
         ] as any[],
       };
 
@@ -263,6 +378,115 @@ describe('UnifiedPersistence', () => {
       expect(result.success).toBe(false);
       expect(result.data).toBeUndefined();
       expect(result.error).toBeDefined();
+    });
+
+    it('should remove logical duplicate messages loaded from disk', async () => {
+      const agent: AgentSession = {
+        id: 'agent-load-logical-dedup' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: '550e8400-e29b-41d4-a716-446655440002',
+            appMessageId: 'app-msg-load',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Draft' }],
+            timestamp: '2026-05-04T10:00:00.000Z',
+          },
+          {
+            id: 'msg_backend_load',
+            appMessageId: 'app-msg-load',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Final' }],
+            timestamp: '2026-05-04T10:00:01.000Z',
+          },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+      const agentFilePath = path.join(testDir, '.workspace/agents', `${agent.id}.json`);
+      await fs.mkdir(path.dirname(agentFilePath), { recursive: true });
+      await fs.writeFile(agentFilePath, JSON.stringify(agent), 'utf-8');
+
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.messages).toHaveLength(1);
+      expect(result.data?.messages[0]).toMatchObject({
+        id: 'msg_backend_load',
+        appMessageId: 'app-msg-load',
+      });
+      expect(result.data?.messages[0].timestamp).toBe('2026-05-04T10:00:01.000Z');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    it('hydrates observed same-appMessageId assistant duplicates as one logical message', async () => {
+      const appMessageId = 'app-observed-hydrate';
+      const agent: AgentSession = {
+        id: 'agent-load-observed-duplicate' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Observed Duplicate Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: 'msg_user_observed',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Please inspect' }],
+            timestamp: '2026-05-04T10:00:00.000Z',
+          },
+          {
+            id: '550e8400-e29b-41d4-a716-446655440002',
+            appMessageId,
+            role: 'assistant',
+            contentBlocks: [
+              { type: 'text', text: 'I inspected the file.' },
+              { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'src/foo.ts' } },
+            ],
+            timestamp: '2026-05-04T10:00:01.000Z',
+            isStreaming: true,
+          },
+          {
+            id: 'msg_backend_hydrated_final',
+            appMessageId,
+            role: 'assistant',
+            contentBlocks: [
+              { type: 'text', text: 'I inspected the file.' },
+              { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'src/foo.ts' } },
+              { type: 'tool_result', tool_use_id: 'toolu_1', output: { content: 'file contents' } },
+            ],
+            timestamp: '2026-05-04T10:00:02.000Z',
+            isStreaming: false,
+          },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+      const agentFilePath = path.join(testDir, '.workspace/agents', `${agent.id}.json`);
+      await fs.mkdir(path.dirname(agentFilePath), { recursive: true });
+      await fs.writeFile(agentFilePath, JSON.stringify(agent), 'utf-8');
+
+      const result = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+
+      expect(result.success).toBe(true);
+      const loadedMessages = result.data?.messages ?? [];
+      expect(loadedMessages.map((message) => message.id)).toEqual([
+        'msg_user_observed',
+        'msg_backend_hydrated_final',
+      ]);
+      expect(loadedMessages[1]).toMatchObject({ appMessageId, isStreaming: false });
+      expectNoDuplicateNonEmptyAppMessageIds(loadedMessages);
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
   });
 

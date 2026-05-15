@@ -2,7 +2,10 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import type { PullRequestInfo, Workspace, WorkspaceAgentInfo, WorkspaceTaskInfo } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import {
+  PullRequestStatus,
+  WorkspaceStatusEnum,
+} from '$shared/types';
 
   type HoverVariation = {
     label: string;

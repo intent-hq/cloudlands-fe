@@ -7,21 +7,24 @@
    * to find files, notes, folders and other primitives.
    */
 
-  import { onMount, tick } from 'svelte';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import {
-    faAt,
-    faFileLines,
-    faCodeBranch,
-    faClipboard,
-    faGlobe,
-    faFolder,
-    faSearch,
-    faSpinner,
-    faRobot,
-    faQuoteLeft,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  faAt,
+  faFileLines,
+  faCodeBranch,
+  faClipboard,
+  faGlobe,
+  faFolder,
+  faSearch,
+  faSpinner,
+  faRobot,
+  faQuoteLeft,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { cn } from '$lib/utils';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -29,16 +32,16 @@
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import {
-    addSearchedItem,
-    type PanelContextItem,
-    type SelectionContextItem,
-  } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  addSearchedItem,
+  type PanelContextItem,
+  type SelectionContextItem,
+} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    getMentionSystem,
-    type MentionCandidate,
-    type SearchContext,
-  } from '$lib/services/mentions';
+  getMentionSystem,
+  type MentionCandidate,
+  type SearchContext,
+} from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import Input from '$lib/components/ui/input/input.svelte';
 

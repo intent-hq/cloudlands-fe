@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChangeStage, type TrackedChange } from "$features/file-tracking/types";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  ChangeStage,
+  type TrackedChange,
+} from "$features/file-tracking/types";
 import {
   markWorkspaceNavigationInitialized,
   openWorkspaceDiff,

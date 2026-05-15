@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   SCRIPT_EVENT_ACTION_MAP,
   SCRIPT_EVENT_TYPES,

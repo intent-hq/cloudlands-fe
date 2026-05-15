@@ -8,20 +8,23 @@
    * - Expandable "Suggested changes" section if needed
    * - Text input for asking questions
    */
-  import { slide, fly } from 'svelte/transition';
+  import {
+  slide,
+  fly,
+} from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faPaperPlane,
-    faSpinner,
-    faComment,
-    faUser,
-    faChevronDown,
-    faChevronUp,
-    faLightbulb,
-    faInfoCircle,
-    faExclamationCircle,
-    faTimes,
-  } from '@fortawesome/free-solid-svg-icons';
+  faPaperPlane,
+  faSpinner,
+  faComment,
+  faUser,
+  faChevronDown,
+  faChevronUp,
+  faLightbulb,
+  faInfoCircle,
+  faExclamationCircle,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import type { WalkthroughAnnotation } from './types';
 

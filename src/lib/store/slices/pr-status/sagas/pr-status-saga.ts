@@ -5,10 +5,24 @@
  * Replaces the imperative pr-status.service.ts with saga-based side effects.
  */
 
-import { call, put, fork, delay, takeLatest, take, cancel, cancelled, select } from "typed-redux-saga";
+import {
+  call,
+  put,
+  fork,
+  delay,
+  takeLatest,
+  take,
+  cancel,
+  cancelled,
+  select,
+} from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
 import type { Task } from "redux-saga";
-import { eventChannel, type EventChannel, END } from "redux-saga";
+import {
+  eventChannel,
+  type EventChannel,
+  END,
+} from "redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { logger } from "$lib/utils/client-logger";
 import {
@@ -18,7 +32,11 @@ import {
 } from "$lib/store/slices/workspace/workspace-selectors";
 import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
 import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
-import { PullRequestStatus, type PullRequestInfo, type Workspace } from "$shared/types";
+import {
+  PullRequestStatus,
+  type PullRequestInfo,
+  type Workspace,
+} from "$shared/types";
 import {
   matchesBaseRef,
   getBaseRefMatchCandidates,

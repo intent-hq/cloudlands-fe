@@ -1,7 +1,11 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { invoke } from '$lib/electron-bridge';
 import { getLocalStorageJSON } from '$lib/store/utils/safe-local-storage-saga';
-import { call, put, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  put,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import {
   loadBetaUpdatesSettings,
   hydrateActivityLogPresets,

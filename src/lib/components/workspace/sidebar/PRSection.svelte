@@ -7,47 +7,48 @@
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    executeBackgroundAgent,
-    cancelExecution,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  executeBackgroundAgent,
+  cancelExecution,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import {
-    refreshRequested,
-  } from '$lib/store/slices/changes/changes-slice';
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
   import {
-    refreshPRStatusRequested,
-  } from '$lib/store/slices/pr-status/pr-status-slice';
+  refreshRequested,
+  setSidebarCreatePRWhenReady,
+  refreshAcceptChangesStatus,
+  clearOlderCommits as ftClearOlderCommits,
+} from '$lib/store/slices/changes/changes-slice';
+  import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import {
-    selectGitAhead,
-    selectGitBehind,
-  } from '$lib/store/slices/git/git-selectors';
+  loadGitStatus,
+  setGitOperationFlag,
+} from '$lib/store/slices/git/git-slice';
+  import {
+  selectGitAhead,
+  selectGitBehind,
+  selectPostMergeState,
+  selectGitOperationFlags,
+} from '$lib/store/slices/git/git-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { setSidebarCreatePRWhenReady } from '$lib/store/slices/changes/changes-slice';
-  import { setGitOperationFlag } from '$lib/store/slices/git/git-slice';
-  import { selectSidebarCreatePRWhenReady } from '$lib/store/slices/changes/changes-selectors';
+
+
   import {
-    selectPostMergeState,
-    selectGitOperationFlags,
-  } from '$lib/store/slices/git/git-selectors';
-  import {
-    refreshAcceptChangesStatus,
-  } from '$lib/store/slices/changes/changes-slice';
-  import {
-    selectAcceptChangesState,
-  } from '$lib/store/slices/changes/changes-selectors';
-  import {
-    selectWorkspaceById,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import {
-    clearOlderCommits as ftClearOlderCommits,
-  } from '$lib/store/slices/changes/changes-slice';
+  selectSidebarCreatePRWhenReady,
+  selectAcceptChangesState,
+} from '$lib/store/slices/changes/changes-selectors';
+
+
+
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -58,37 +59,40 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
-  import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
+  import {
+  track,
+  trackGitOp,
+  getFileExtension,
+} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-    faArrowDown,
-    faArrowsRotate,
-    faArrowUpRightFromSquare,
-    faCheck,
-    faChevronDown,
-    faCodeMerge,
-    faCodePullRequest,
-    faEye,
-    faLink,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowDown,
+  faArrowsRotate,
+  faArrowUpRightFromSquare,
+  faCheck,
+  faChevronDown,
+  faCodeMerge,
+  faCodePullRequest,
+  faEye,
+  faLink,
+  faRobot,
+  faSpinner,
+  faStop,
+} from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
-  import { readable, writable } from 'svelte/store';
+  import {
+  readable,
+  writable,
+} from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
-  import {
-    aggregatePRFiles,
-  } from './sidebar-changes-utils';
+  import { aggregatePRFiles } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
-  import {
-    openAgentTabRequested,
-  } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const dispatch = getDispatch();
@@ -197,7 +201,6 @@
   // PR generation state
   const isGeneratingPR = $derived($prExecState$.status === 'running');
   const prAgentId = $derived($prExecState$.agentId);
-  const createPRWhenReady = $derived($createPRWhenReady$);
 
   // Post-merge state
   const aheadOfTrunk = $derived($postMergeState$.aheadOfTrunk);
@@ -392,7 +395,7 @@
   }
 
   function toggleCreatePRWhenReady() {
-    dispatch(setSidebarCreatePRWhenReady(workspaceId, !createPRWhenReady));
+    dispatch(setSidebarCreatePRWhenReady(workspaceId, !$createPRWhenReady$));
   }
 
   function viewPRThoughtProcess(e?: MouseEvent) {
@@ -723,9 +726,9 @@
               onclick={() => handleCreatePR()}
               disabled={!prTitle.trim() ||
                 isCreatingPR ||
-                (isGeneratingPR && createPRWhenReady)}
+                (isGeneratingPR && $createPRWhenReady$)}
             >
-              {#if isCreatingPR || (isGeneratingPR && createPRWhenReady)}
+              {#if isCreatingPR || (isGeneratingPR && $createPRWhenReady$)}
                 <Fa icon={faSpinner} size="xs" class="animate-spin" />
                 <span>{isCreatingPR ? 'Creating PR...' : 'Preparing...'}</span>
               {:else}
@@ -759,12 +762,12 @@
                   </Button>
                 {/if}
                 <Button
-                  variant={createPRWhenReady ? 'default' : 'outline'}
+                  variant={$createPRWhenReady$ ? 'default' : 'outline'}
                   size="xs"
                   class="rounded-l-none border-l-0"
                   onclick={toggleCreatePRWhenReady}
                 >
-                  {#if createPRWhenReady}
+                  {#if $createPRWhenReady$}
                     <Fa icon={faCheck} size="xs" />
                   {/if}
                   Create PR when done

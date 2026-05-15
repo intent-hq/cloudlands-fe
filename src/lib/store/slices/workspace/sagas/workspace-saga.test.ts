@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
@@ -39,7 +45,6 @@ const {
   takeEveryFromElectronChannelMock,
   takeEveryFromListenSyncMock,
   mockArchive,
-  mockClearDeferredResults,
   mockClearWorkspaceTransientUi,
   mockCreate,
   mockDelete,
@@ -58,7 +63,6 @@ const {
   takeEveryFromElectronChannelMock: vi.fn(function* () {}),
   takeEveryFromListenSyncMock: vi.fn(function* () {}),
   mockArchive: vi.fn(),
-  mockClearDeferredResults: vi.fn(),
   mockClearWorkspaceTransientUi: vi.fn((workspaceId: string) => ({
     type: "transientUi/clearWorkspaceTransientUi",
     payload: [workspaceId],
@@ -103,10 +107,6 @@ vi.mock("$lib/services/analytics", () => ({
   track: mockTrack,
 }));
 
-vi.mock("$features/agent/deferred-results-cache", () => ({
-  clearDeferredResults: mockClearDeferredResults,
-}));
-
 vi.mock("$lib/store/slices/pr-status/pr-status-slice", () => ({
   cleanupPRStatusWorkspace: (wsId: string) => ({ type: "prStatus/cleanupWorkspace", payload: [wsId] }),
 }));
@@ -133,7 +133,10 @@ vi.mock("$lib/store/slices/workspace/utils/workspace-storage-manager", () => ({
 
 import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceAgentState } from "../../workspace-agents/workspace-agents-slice";
-import { getLocalStorageJSON, setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
 import {
   applyOptimisticTaskStatusUpdate,
   createWorkspaceRequested,
@@ -159,9 +162,7 @@ import {
   updateWorkspaceEntity,
   updateWorkspaceRequested,
 } from "../workspace-slice";
-import {
-  selectWorkspaceRecency,
-} from "../workspace-selectors";
+import { selectWorkspaceRecency } from "../workspace-selectors";
 import { clearWorkspaceTransientUi } from "$lib/store/slices/transient-ui/transient-ui-slice";
 import {
   handleLoadWorkspaces,
@@ -488,8 +489,7 @@ describe("workspace request sagas", () => {
     expect(iterator.next().value).toEqual(
       sagaEffects.call([workspaceClient, workspaceClient.delete], WorkspaceId("ws-1")),
     );
-    expect(iterator.next({ ok: true }).value).toEqual(sagaEffects.call(mockClearDeferredResults, "ws-1"));
-    expect(iterator.next().value).toEqual(
+    expect(iterator.next({ ok: true }).value).toEqual(
       sagaEffects.put({ type: "prStatus/cleanupWorkspace", payload: ["ws-1"] }),
     );
     expect(iterator.next().value).toEqual(sagaEffects.call(mockInvalidateAgentCache, "ws-1"));

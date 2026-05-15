@@ -11,21 +11,21 @@
   import { isPendingAgentSession } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-    faRobot,
-    faTrash,
-    faSearch,
-    faChevronDown,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRobot,
+  faTrash,
+  faSearch,
+  faChevronDown,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectSpecialists,
-    selectUserOverrides,
-    selectSpecialistById,
-    selectEffectiveModel,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  selectSpecialists,
+  selectUserOverrides,
+  selectSpecialistById,
+  selectEffectiveModel,
+} from '$lib/store/slices/specialists/specialists-selectors';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;

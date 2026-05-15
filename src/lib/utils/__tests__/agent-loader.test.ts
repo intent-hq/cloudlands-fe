@@ -4,7 +4,13 @@
  * and properly filters/transforms the response data.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 // Mock must be defined before any imports that use it
 vi.mock('$lib/electron-bridge', () => ({

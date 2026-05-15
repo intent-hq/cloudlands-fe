@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { GitOperationsSafe } from '../git-operations-safe-wrapper';
 
 const mockGitStatus = vi.hoisted(() => vi.fn());

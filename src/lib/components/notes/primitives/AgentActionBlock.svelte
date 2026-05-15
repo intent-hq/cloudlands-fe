@@ -5,24 +5,26 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faRobot,
-    faPlay,
-    faSpinner,
-    faArrowUpRightFromSquare,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRobot,
+  faPlay,
+  faSpinner,
+  faArrowUpRightFromSquare,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
-  import { agentFactory } from '$features/agent/services/agent-factory';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { unifiedIdService } from '$shared/services/unified-id.service';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const logger = createLogger('AgentActionBlock');
+  const dispatch = getDispatch();
 
   // TipTap NodeViewProps
   let { node, updateAttributes, extension }: NodeViewProps = $props();
@@ -37,10 +39,11 @@
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
 
-  // Get workspace for agentFactory from Redux
-  let workspace = $derived(
-    workspaceId ? selectWorkspaceById.select(getReduxStore().getState(), workspaceId) ?? null : null,
-  );
+  function getErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return 'Unknown error';
+  }
 
   // Get button state
   let buttonState = $derived.by(() => {
@@ -63,11 +66,6 @@
       toast.error('No space context available');
       return;
     }
-    if (!workspace) {
-      toast.error('Space not found');
-      return;
-    }
-
     running = true;
 
     try {
@@ -79,13 +77,13 @@
           content: input.content,
         })) || [];
 
-      // Use agentFactory.createAgent like task delegation does
-      // This properly handles sending the initial message
-      // Use workspace's default model if set, otherwise fall back to global
-      const result = await agentFactory.createAgent(workspace, {
+      const newAgentId = unifiedIdService.generateAgentId();
+      const state = getReduxStore().getState();
+      const action = createAgentFromConfigRequested(workspaceId, {
+        id: newAgentId,
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
         workspaceId: WorkspaceId(workspaceId),
-        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspaceId),
+        model: selectWorkspaceDefaultModel.select(state, workspaceId),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,
@@ -95,55 +93,55 @@
           primitiveId: primitive.id,
         },
       });
+      dispatch(action);
 
-      if (result.success && result.agent) {
-        agentId = result.agent.id;
+      const createdAgent = await action.promise;
+      agentId = createdAgent.id || newAgentId;
+      running = false;
 
-        // Update primitive with running status and agent link
-        const now = new Date().toISOString();
-        if (updateAttributes) {
-          updateAttributes({
-            data: {
-              ...primitive,
-              createdByAgentId: agentId,
-              lastRun: {
-                status: 'running',
-                startedAt: now,
-              },
+      // Update primitive with running status and agent link
+      const now = new Date().toISOString();
+      if (updateAttributes) {
+        updateAttributes({
+          data: {
+            ...primitive,
+            createdByAgentId: agentId,
+            lastRun: {
+              status: 'running',
+              startedAt: now,
             },
-          });
-        }
-
-        // Navigate to agent (no sourcePanelId available here since it's async)
-
-        toast.success('Agent action started');
-      } else {
-        throw new Error(result.error || 'Failed to create agent');
+          },
+        });
       }
+
+      toast.success('Agent action started');
     } catch (err) {
+      const errorMessage = getErrorMessage(err);
       logger.error('[runAction] Error running agent action', {
         error: err,
         workspaceId,
         agentId: primitive?.agentId,
       });
       running = false;
+      agentId = null;
 
       // Update with error status
       if (updateAttributes && primitive) {
+        const now = new Date().toISOString();
         updateAttributes({
           data: {
             ...primitive,
             lastRun: {
               status: 'error',
-              startedAt: new Date().toISOString(),
-              finishedAt: new Date().toISOString(),
-              errorMessage: err instanceof Error ? err.message : 'Unknown error',
+              startedAt: now,
+              finishedAt: now,
+              errorMessage,
             },
           },
         });
       }
 
-      toast.error(err instanceof Error ? err.message : 'Failed to run agent action');
+      toast.error(errorMessage);
     }
   }
 
@@ -153,7 +151,7 @@
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       if (workspaceId) {
-        getReduxStore().dispatch(
+        dispatch(
           openAgentTabRequested(workspaceId, { agentId, sourcePanelId }),
         );
       }
@@ -168,7 +166,7 @@
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
     if (workspaceId) {
-      getReduxStore().dispatch(
+      dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: targetAgentId,
           sourcePanelId,

@@ -11,7 +11,10 @@
  * through the Augment API and will return empty arrays.
  */
 
-import { augmentApiClient, type GithubUser } from '../../../shared/augment-api/augment-api.client';
+import {
+  augmentApiClient,
+  type GithubUser,
+} from '../../../shared/augment-api/augment-api.client';
 import { Logger } from '../../../shared/logger';
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
 import type { PullRequest, GitHubIssue } from '../types';
@@ -45,7 +48,7 @@ export class GitHubService {
   async getBranches(
     owner: string,
     repo: string,
-     
+
     _options?: { per_page?: number },
   ): Promise<{ branches: string[]; defaultBranch: string } | null> {
     const isAuth = await this.isAuthenticated();

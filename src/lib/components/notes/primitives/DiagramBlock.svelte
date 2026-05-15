@@ -4,28 +4,31 @@
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
-    faImage,
-    faCode,
-    faCopy,
-    faFloppyDisk,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faImage,
+  faCode,
+  faCopy,
+  faFloppyDisk,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
-  import { dialog, invoke } from '$lib/electron-bridge';
+  import {
+  dialog,
+  invoke,
+} from '$lib/electron-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import {
-    openWorkspaceFile,
-    openWorkspaceNote,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const activeWorkspace = selectActiveWorkspace();
 

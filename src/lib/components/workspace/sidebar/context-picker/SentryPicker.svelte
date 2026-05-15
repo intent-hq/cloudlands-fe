@@ -7,21 +7,24 @@
    */
   import type { SentryIssueResult } from '$lib/store/slices/sentry-auth/sentry-auth-types';
   import {
-    selectSentryIsAuthenticated,
-    selectSentryIssues,
-    selectSentryIsLoadingIssues,
-    selectSentryIsConnecting,
-  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+  selectSentryIsAuthenticated,
+  selectSentryIssues,
+  selectSentryIsLoadingIssues,
+  selectSentryIsConnecting,
+} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
   import {
-    initializeSentryAuth,
-    connectSentry,
-    fetchSentryIssues,
-  } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  initializeSentryAuth,
+  connectSentry,
+  fetchSentryIssues,
+} from '$lib/store/slices/sentry-auth/sentry-auth-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faSpinner,
+  faSearch,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
 

@@ -2,7 +2,11 @@
  * Tests for Branded IDs Migration Helpers
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import * as Migration from '../branded-ids.migration';
 import * as BrandedIds from '../branded-ids';
 import { v4 as uuidv4 } from 'uuid';

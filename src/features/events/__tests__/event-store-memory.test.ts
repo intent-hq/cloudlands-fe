@@ -2,9 +2,19 @@
  * Event Store Memory Management Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { EventStore } from '../main/event-store';
-import { WorkspaceEvent, WorkspaceEventType } from '../types';
+import {
+  WorkspaceEvent,
+  WorkspaceEventType,
+} from '../types';
 
 describe('EventStore Memory Management', () => {
   let store: EventStore;

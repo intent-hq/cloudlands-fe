@@ -19,8 +19,20 @@
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectActiveCard, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeHoverCards, setHoveredItem, setExpandedItem, toggleCardPinned, setDeferredLeave, clearDeferredLeave } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+  selectActiveCard,
+  selectExpandedItem,
+  selectIsCardPinned,
+  selectContextMenuOpen,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+  closeHoverCards,
+  setHoveredItem,
+  setExpandedItem,
+  toggleCardPinned,
+  setDeferredLeave,
+  clearDeferredLeave,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   const dispatch = getDispatch();
   const activeCard$ = selectActiveCard();
@@ -40,17 +52,15 @@
 
   let { iconRefs }: Props = $props();
 
-  const activeCard = $derived($activeCard$);
   const isExpanded = $derived($expandedItem$ !== null);
-  const isCardPinned = $derived($isCardPinned$);
-  const meta = $derived(activeCard ? cardMeta[activeCard] : null);
+  const meta = $derived($activeCard$ ? cardMeta[$activeCard$] : null);
 
   // Focus management: save/restore focus when card opens/closes
   let previouslyFocused: HTMLElement | null = null;
   let contentEl: HTMLDivElement | null = $state(null);
 
   $effect(() => {
-    if (activeCard) {
+    if ($activeCard$) {
       // Card is opening — save current focus and move it into the card
       previouslyFocused = document.activeElement as HTMLElement | null;
       tick().then(() => {
@@ -106,8 +116,8 @@
 
   // Calculate card position based on the hovered icon
   const cardStyle = $derived.by(() => {
-    if (!activeCard) return '';
-    const ref = iconRefs[activeCard];
+    if (!$activeCard$) return '';
+    const ref = iconRefs[$activeCard$];
     if (!ref) return 'top: 48px; left: 60px;';
 
     const rect = ref.getBoundingClientRect();
@@ -125,7 +135,7 @@
   });
 </script>
 
-{#if activeCard}
+{#if $activeCard$}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="sidebar-hover-card fixed z-100"
@@ -156,12 +166,12 @@
             {/if}
           </div>
           {#if isExpanded}
-            <Tooltip content={isCardPinned ? 'Unpin sidebar' : 'Pin sidebar open'} side="bottom" sideOffset={4}>
+            <Tooltip content={$isCardPinned$ ? 'Unpin sidebar' : 'Pin sidebar open'} side="bottom" sideOffset={4}>
               <button
                 class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50
-                  {isCardPinned ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
+                  {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
                 onclick={() => dispatch(toggleCardPinned())}
-                aria-label={isCardPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+                aria-label={$isCardPinned$ ? 'Unpin sidebar' : 'Pin sidebar open'}
               >
                 <Fa icon={faThumbtack} size="xs" />
               </button>
@@ -172,11 +182,11 @@
 
       <!-- Content -->
       <div class="flex-1 min-h-0 overflow-y-auto" bind:this={contentEl}>
-        {#if activeCard === 'new-workspace'}
+        {#if $activeCard$ === 'new-workspace'}
           <NewWorkspaceCard expanded={isExpanded} />
-        {:else if activeCard === 'active'}
+        {:else if $activeCard$ === 'active'}
           <ActiveWorkspacesCard expanded={isExpanded} />
-        {:else if activeCard === 'all-workspaces'}
+        {:else if $activeCard$ === 'all-workspaces'}
           <AllWorkspacesCard expanded={isExpanded} />
         {/if}
       </div>

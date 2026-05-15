@@ -6,7 +6,11 @@
 
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
-import { getInstructionById, getInstructionWithCommon, common } from '../../agent/instructions';
+import {
+  getInstructionById,
+  getInstructionWithCommon,
+  common,
+} from '../../agent/instructions';
 import { getBaseInstruction } from '../../agent/instructions/base-system-prompt';
 
 const logger = new Logger('SandboxIPC');

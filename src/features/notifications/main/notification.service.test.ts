@@ -1,12 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app, BrowserWindow } from 'electron';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  app,
+  BrowserWindow,
+} from 'electron';
 import { NotificationService } from './notification.service';
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
-     
+
     constructor(_category?: string) {}
     debug = vi.fn();
     info = vi.fn();
@@ -17,7 +27,7 @@ vi.mock('../../../shared/logger', () => ({
 
 vi.mock('electron-store', () => ({
   default: class {
-     
+
     constructor(_options?: unknown) {}
     get = vi.fn(() => ({ enabled: true, showWhenFocused: false }));
   },
@@ -57,7 +67,7 @@ vi.mock('electron', () => ({
       }
     });
 
-     
+
     constructor(_opts?: unknown) {
       mockNotificationInstances.push(this as any);
     }

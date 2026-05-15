@@ -13,39 +13,51 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faCheckCircle,
-    faTimesCircle,
-    faExternalLinkAlt,
-    faPencil,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheckCircle,
+  faTimesCircle,
+  faExternalLinkAlt,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import {
-    selectStagedWorkingChanges as selectFtStagedChanges,
-    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-    selectFileTrackingIsInitialized as selectFtIsInitialized,
-  } from '$lib/store/slices/changes/changes-selectors';
+  selectStagedWorkingChanges as selectFtStagedChanges,
+  selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+  selectFileTrackingIsInitialized as selectFtIsInitialized,
+  selectAcceptChangesState,
+} from '$lib/store/slices/changes/changes-selectors';
   import {
-    clearMainPanelView as ftClearMainPanelView,
-  } from '$lib/store/slices/changes/changes-slice';
-  import {
-    stageByPathRequested,
-    unstageByPathRequested,
-    revertByPathRequested,
-    refreshRequested,
-  } from '$lib/store/slices/changes/changes-slice';
+  clearMainPanelView as ftClearMainPanelView,
+  stageByPathRequested,
+  unstageByPathRequested,
+  revertByPathRequested,
+  refreshRequested,
+  clearAcceptChangesForm,
+  clearBackgroundOperation,
+  resetAcceptChangesOperations,
+  setCachedGitStatus,
+  setCommitMessage,
+  setIsAutofillAndCommitting,
+  setIsAutofillAndCreatingPR,
+  setPendingCommitAction,
+  setPendingPRContext,
+  setPRDescription,
+  setPRTitle,
+  setTargetBranch,
+  startBackgroundOperation,
+  updateBackgroundOperationPhase,
+} from '$lib/store/slices/changes/changes-slice';
+
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    selectExecutorState,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
-  import {
-    executeBackgroundAgent,
-    cancelExecution,
-    reconnectAgent,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  executeBackgroundAgent,
+  cancelExecution,
+  reconnectAgent,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
   import type {
     WorkspaceGitStatus,
@@ -64,51 +76,42 @@
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import {
-    parseAllReviewComments,
-    getReviewStats,
-    type ReviewStatus,
-  } from '$lib/components/code-review/types';
+  parseAllReviewComments,
+  getReviewStats,
+  type ReviewStatus,
+} from '$lib/components/code-review/types';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { handleLink } from '$features/navigation/link-handler';
   import {
-    openWorkspaceCodeReview,
-    openWorkspaceDiff,
-    openWorkspaceLocalChanges,
-    updateWorkspaceCodeReview,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceCodeReview,
+  openWorkspaceDiff,
+  openWorkspaceLocalChanges,
+  updateWorkspaceCodeReview,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import {
-    createWorkspaceForRepoRequested,
-    openAgentTabRequested,
-    openNewSpaceModalRequested,
-  } from '$lib/store/slices/app-layout/app-layout-slice';
+  createWorkspaceForRepoRequested,
+  openAgentTabRequested,
+  openNewSpaceModalRequested,
+} from '$lib/store/slices/app-layout/app-layout-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { track, trackGitOp } from '$lib/services/analytics';
   import {
-    addTerminal,
-    openTerminalOverlay,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  track,
+  trackGitOp,
+} from '$lib/services/analytics';
+  import {
+  addTerminal,
+  openTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { loadWorkspacesRequested, setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { selectAcceptChangesState } from '$lib/store/slices/changes/changes-selectors';
   import {
-    clearAcceptChangesForm,
-    clearBackgroundOperation,
-    resetAcceptChangesOperations,
-    setCachedGitStatus,
-    setCommitMessage,
-    setIsAutofillAndCommitting,
-    setIsAutofillAndCreatingPR,
-    setPendingCommitAction,
-    setPendingPRContext,
-    setPRDescription,
-    setPRTitle,
-    setTargetBranch,
-    startBackgroundOperation,
-    updateBackgroundOperationPhase,
-  } from '$lib/store/slices/changes/changes-slice';
+  loadWorkspacesRequested,
+  setWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
+
+
 
   const dispatch = getDispatch();
   const selectedModel$ = selectSelectedModel();
@@ -614,7 +617,6 @@
   );
 
   // Check if file tracking state is still initializing
-  const isFileTrackingInitialized = $derived($ftIsInitialized$);
 
   // Track if we've already started loading to prevent the $effect from triggering multiple loads
   // IMPORTANT: We track both the flag AND the workspace ID so we reset when switching workspaces
@@ -639,7 +641,7 @@
       loadedForWorkspaceId = workspaceId;
 
       // If file tracking store is not yet initialized, wait for it and show skeleton
-      if (!isFileTrackingInitialized) {
+      if (!$ftIsInitialized$) {
         isLoading = true;
         return;
       }

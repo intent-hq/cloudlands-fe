@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import { createCollection } from "../../utils/collection-utils";
 import type { TerminalOverlayState, TerminalTab } from "./terminals-slice";
-import { selectWorkspaceHasSetupTerminal } from "./terminals-selectors";
+import {
+  selectWorkspaceHasSetupTerminal,
+  selectWorkspaceSetupTerminal,
+} from "./terminals-selectors";
 
 const WS = "ws-1";
 
@@ -47,6 +54,18 @@ describe("terminals selectors", () => {
       const state = stateWith([{ id: "term-1", name: "Terminal" }]);
 
       expect(selectWorkspaceHasSetupTerminal.select(state, WS)).toBe(false);
+    });
+  });
+
+  describe("selectWorkspaceSetupTerminal", () => {
+    it("returns the setup terminal item for component event handlers", () => {
+      const setupTerminal = { id: "term-setup", name: "Terminal", customName: "Setup" };
+      const state = stateWith([
+        { id: "term-1", name: "Terminal" },
+        setupTerminal,
+      ]);
+
+      expect(selectWorkspaceSetupTerminal.select(state, WS)).toBe(setupTerminal);
     });
   });
 });

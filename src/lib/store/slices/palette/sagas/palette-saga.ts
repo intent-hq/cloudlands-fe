@@ -1,13 +1,27 @@
-import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
-import { getLocalStorageJSON, setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  call,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
 import {
   hydratePaletteFileMru,
   hydratePaletteMruEntries,
   recordPaletteFileMru,
   recordPaletteMruItem,
 } from "../palette-slice";
-import { selectPaletteFileMru, selectPaletteMruEntries } from "../palette-selectors";
-import { normalizePaletteFileMru, normalizePaletteMruEntryList } from "../palette-normalization";
+import {
+  selectPaletteFileMru,
+  selectPaletteMruEntries,
+} from "../palette-selectors";
+import {
+  normalizePaletteFileMru,
+  normalizePaletteMruEntryList,
+} from "../palette-normalization";
 
 export const PALETTE_MRU_STORAGE_KEY = "palette-mru-all";
 export const PALETTE_FILE_MRU_STORAGE_KEY = "palette-mru-files";

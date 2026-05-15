@@ -1,9 +1,19 @@
-import { describe, it, expect } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { delay, put } from "typed-redux-saga";
+import {
+  delay,
+  put,
+} from "typed-redux-saga";
 import { createSelector } from "./create-selector";
-import { init, rootReducer } from "../init";
+import {
+  init,
+  rootReducer,
+} from "../init";
 import type { StoreState } from "../types";
 import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
 import {

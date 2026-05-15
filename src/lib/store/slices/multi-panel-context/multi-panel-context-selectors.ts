@@ -1,4 +1,7 @@
-import { getItems, type Collection } from "../../utils/collection-utils";
+import {
+  getItems,
+  type Collection,
+} from "../../utils/collection-utils";
 import { createSelector } from "../../utils/create-selector";
 import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
 

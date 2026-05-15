@@ -1,5 +1,13 @@
-import { Extension, InputRule, wrappingInputRule, type ExtendedRegExpMatchArray } from '@tiptap/core';
-import { Fragment, type Node as ProseMirrorNode } from '@tiptap/pm/model';
+import {
+  Extension,
+  InputRule,
+  wrappingInputRule,
+  type ExtendedRegExpMatchArray,
+} from '@tiptap/core';
+import {
+  Fragment,
+  type Node as ProseMirrorNode,
+} from '@tiptap/pm/model';
 import type { NodeType } from '@tiptap/pm/model';
 import { Selection } from '@tiptap/pm/state';
 

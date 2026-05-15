@@ -1,25 +1,32 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
+  import {
+  formatDistanceToNow,
+  format,
+  differenceInDays,
+} from 'date-fns';
   import { Button } from '$lib/components/ui/button';
   import type { Workspace } from '$shared/types';
-  import { slide, fade } from 'svelte/transition';
+  import {
+  slide,
+  fade,
+} from 'svelte/transition';
   import { spring } from 'svelte/motion';
   import InitialsAvatar from './InitialsAvatar.svelte';
   import UnifiedCommentThread from './UnifiedCommentThread.svelte';
   import {
-    faComment,
-    faCheck,
-    faEdit,
-    faTimes,
-    faReply,
-    faEllipsisV,
-    faLightbulb,
-    faExclamationTriangle,
-    faCircleQuestion,
-    faPaperPlane,
-  } from '@fortawesome/free-solid-svg-icons';
-  
+  faComment,
+  faCheck,
+  faEdit,
+  faTimes,
+  faReply,
+  faEllipsisV,
+  faLightbulb,
+  faExclamationTriangle,
+  faCircleQuestion,
+  faPaperPlane,
+} from '@fortawesome/free-solid-svg-icons';
+
 // Type definitions
   interface CommentLike {
     id: string;

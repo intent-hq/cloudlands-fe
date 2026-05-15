@@ -9,7 +9,10 @@
   - pr_merged: Filled circle with merge icon (purple, darker)
 -->
 <script lang="ts">
-  import { draw, scale } from 'svelte/transition';
+  import {
+  draw,
+  scale,
+} from 'svelte/transition';
 
   export type WorkspaceDisplayStatus =
     | 'not_started'

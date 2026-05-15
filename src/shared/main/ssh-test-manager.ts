@@ -4,7 +4,10 @@
  * Provides utilities for testing SSH connections and remote machine setup.
  */
 
-import { SSHManager, SSHConnectionConfig } from '../main/ssh-manager';
+import {
+  SSHManager,
+  SSHConnectionConfig,
+} from '../main/ssh-manager';
 import { Logger } from '../../lib/utils/logger';
 import * as path from 'path';
 

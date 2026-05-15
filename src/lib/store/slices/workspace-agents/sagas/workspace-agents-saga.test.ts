@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
@@ -54,13 +60,7 @@ const {
   initEventListenerMock,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   loadStatusMock,
-  getSessionMock,
-  hasAgentMock,
   setWorkspaceMock,
-  getSessionsForWorkspaceMock,
-  activateInitialAgentMock,
-  resumeSessionMock,
-  reconnectStreamHandlersMock,
   getStoredAgentsFromDiskMock,
   getReduxStateMock,
 } = vi.hoisted(() => ({
@@ -69,17 +69,8 @@ const {
   disposeEventListenerMock: vi.fn(),
   initEventListenerMock: vi.fn(),
   loadStatusMock: vi.fn(),
-   
-  getSessionMock: vi.fn((_agentId: string) => null),
-   
-  hasAgentMock: vi.fn((_agentId: string) => false),
   setWorkspaceMock: vi.fn(),
-   
-  getSessionsForWorkspaceMock: vi.fn((_wsId: string) => []),
-  activateInitialAgentMock: vi.fn(async () => null),
-  resumeSessionMock: vi.fn(async () => null),
-  reconnectStreamHandlersMock: vi.fn(async () => {}),
-   
+
   getStoredAgentsFromDiskMock: vi.fn(async (_wsId: string) => []),
   getReduxStateMock: vi.fn(() => ({})),
 }));
@@ -92,17 +83,6 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 // fileTrackingStore mock removed — now uses Redux (file-tracking slice + saga)
 
 // gitStore has been migrated to Redux (git slice + saga)
-
-vi.mock("$features/agent/agent.service", () => ({
-  agentService: {
-    getSession: getSessionMock,
-    hasAgent: hasAgentMock,
-    getSessionsForWorkspace: getSessionsForWorkspaceMock,
-    activateInitialAgent: activateInitialAgentMock,
-    resumeSession: resumeSessionMock,
-    reconnectStreamHandlersForWorkspace: reconnectStreamHandlersMock,
-  },
-}));
 
 vi.mock("$lib/utils/agent-loader", () => ({
   getStoredAgentsFromDisk: getStoredAgentsFromDiskMock,
@@ -148,17 +128,19 @@ import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slic
 import {
   addAgent,
   removeAgent,
-  renameAgent,
+  reconnectStreamHandlersForWorkspaceRequested,
   setAgentsLoaded,
   setInitialAgentConfig,
   setInitialAgentId,
   setIsLoadingAgents,
   setWaitingForFirstMessage,
+  triggerBackendStreamReconnect,
 } from "../workspace-agents-slice";
 import {
   removeSession as removeAgentSession,
+  renameAgent,
   renameSession as renameAgentSession,
-  upsertSession as upsertAgentSession,
+  upsertSession,
 } from "../../agent-session/agent-session-slice";
 import {
   ensureFallbackLayout,
@@ -347,7 +329,10 @@ describe("workspaceAgentsSaga", () => {
     // Dual-dispatch mirrors the agent:deleted path in reverse: repopulate
     // the full session, then re-register the agent in the workspace list.
     expect(handler.next()).toEqual({
-      value: sagaEffects.put(upsertAgentSession(restoredSession)),
+      value: sagaEffects.put(upsertSession({
+        ...restoredSession,
+        workspaceId: "ws-1" as AgentSession['workspaceId'],
+      })),
       done: false,
     });
     expect(handler.next()).toEqual({
@@ -551,28 +536,6 @@ describe("restoreInitialAgent — workspace-scoped session access", () => {
     expect(firstEffect.type).toBe("SELECT");
   });
 
-  it("does not call agentService.getSession or hasAgent (global-scoped)", () => {
-    const wsId = "ws-scoped-test-2";
-    const initialAgentId = "agent-initial-2";
-    const diskAgents = [
-      { id: initialAgentId, name: "Initial Agent", workspaceId: wsId },
-    ] as any[];
-    const existingAgentIds = new Set<string>();
-
-    // Walk the generator to completion, providing mock values
-    const gen = restoreInitialAgent(wsId, initialAgentId, diskAgents, existingAgentIds);
-    let result = gen.next();
-    // Feed undefined (no existing session) to the select call
-    result = gen.next(undefined);
-    // Continue stepping until done, feeding null for remaining calls
-    while (!result.done) {
-      result = gen.next(null);
-    }
-
-    // Neither global-scoped method should have been called
-    expect(getSessionMock).not.toHaveBeenCalled();
-    expect(hasAgentMock).not.toHaveBeenCalled();
-  });
 });
 
 describe("late initial-agent hydration recovery", () => {
@@ -773,8 +736,6 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     vi.useFakeTimers();
 
     try {
-      const agents = [mockAgent("agent-load-1", "ws-atomic")];
-      getSessionsForWorkspaceMock.mockResolvedValue(agents);
       getStoredAgentsFromDiskMock.mockResolvedValue([]);
 
       const dispatched: unknown[] = [];
@@ -846,6 +807,47 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       value: sagaEffects.call(waitForPanelLayoutRestore, "ws-restore-sync"),
       done: false,
     });
+
+    expect(gen.next()).toEqual({
+      value: sagaEffects.put(reconnectStreamHandlersForWorkspaceRequested("ws-restore-sync")),
+      done: false,
+    });
+  });
+
+  it("dispatches a backend stream reconnect request while loading workspace agents", async () => {
+    vi.useFakeTimers();
+
+    try {
+      getStoredAgentsFromDiskMock.mockResolvedValue([]);
+      const dispatched: any[] = [];
+      const task = runSaga(
+        {
+          dispatch: (action) => dispatched.push(action),
+          getState: () => ({
+            agentSessions: { byAgentId: {} },
+            workspaceAgents: { byWorkspaceId: {} },
+            panelLayout: {
+              byWorkspaceId: {
+                "ws-reconnect-request": {
+                  panels: { default: { id: "default", tabs: [], activeTabId: null } },
+                  restoreStatus: "restored",
+                },
+              },
+            },
+          }),
+        },
+        loadAgentsFromDiskSaga,
+        "ws-reconnect-request",
+      );
+
+      await vi.runAllTimersAsync();
+      await task.toPromise().catch(() => {});
+
+      expect(dispatched).toContainEqual(reconnectStreamHandlersForWorkspaceRequested("ws-reconnect-request"));
+      expect(dispatched).toContainEqual(triggerBackendStreamReconnect());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

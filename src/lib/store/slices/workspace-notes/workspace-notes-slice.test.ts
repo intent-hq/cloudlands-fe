@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
-import { ContentType, NoteVisibility, type Note } from "$shared/types";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  ContentType,
+  NoteVisibility,
+  type Note,
+} from "$shared/types";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import {
   applyNoteCreated,
   applyNoteDeleted,

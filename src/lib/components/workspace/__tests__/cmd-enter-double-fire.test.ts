@@ -29,7 +29,14 @@
  *     double-fire entirely (the recommended fix if we ever drop the
  *     synchronous guard or introduce an `await` before the flag).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 interface Harness {
   formContainer: HTMLDivElement;

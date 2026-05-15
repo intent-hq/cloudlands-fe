@@ -9,7 +9,13 @@
  * - Action sequence validation
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 
 // Mock the CDP service before importing the executor

@@ -11,10 +11,27 @@
  * 4. Measure performance with real data
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  vi,
+} from 'vitest';
 import { CommentManagerV2 } from '../comment-manager-v2';
-import { getReduxStore, dispatch as reduxDispatch, initReduxDispatchBridge, initReduxStoreBridge } from '$lib/store/redux-dispatch-bridge';
-import { loadCommentsAction, commentsReducer, initialState as commentsInitialState } from '$lib/store/slices/comments/comments-slice';
+import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+  initReduxDispatchBridge,
+  initReduxStoreBridge,
+} from '$lib/store/redux-dispatch-bridge';
+import {
+  loadCommentsAction,
+  commentsReducer,
+  initialState as commentsInitialState,
+} from '$lib/store/slices/comments/comments-slice';
 import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
 import { createStore } from 'redux';
 import { NotesService } from '../../notes/main/notes.service';

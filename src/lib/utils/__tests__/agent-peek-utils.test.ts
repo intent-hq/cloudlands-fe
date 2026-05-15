@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import * as BrandedIds from '$shared/types/branded-ids';

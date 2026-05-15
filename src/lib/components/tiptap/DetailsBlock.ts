@@ -5,7 +5,10 @@
  * Renders markdown-style details sections with collapsible content.
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 
 /**
  * Details Summary Node - the clickable header part

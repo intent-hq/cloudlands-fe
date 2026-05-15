@@ -176,56 +176,67 @@
 
   const logger = createLogger('ChatChangesPanel');
   import {
-    faChevronDown,
-    faChevronRight,
-    faCodeCompare,
-    faArrowUpRightFromSquare,
-    faPlus,
-    faMinus,
-    faRotateLeft,
-    faSpinner,
-    faCopy,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faChevronRight,
+  faCodeCompare,
+  faArrowUpRightFromSquare,
+  faPlus,
+  faMinus,
+  faRotateLeft,
+  faSpinner,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import InlineDiffItem from './InlineDiffItem.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import {
+  onDestroy,
+  tick,
+  untrack,
+} from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
-  import { selectFoldUnchanged, selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-  } from '$lib/components/file-tracking/change-set-visualization';
+  selectFoldUnchanged,
+  selectLineWrapping,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+
   import {
-    selectActiveWorkspace,
-    selectActiveWorkspaceId,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspace,
+  selectActiveWorkspaceId,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectCurrentCommits } from '$lib/store/slices/changes/changes-selectors';
   import {
-    batchedGitBranchBaseDiff,
-    batchedGitDiff,
-    dedupedGitNumstat,
-    dedupedShowFile,
-  } from '$lib/components/ui/diff/diff-ipc-batcher';
+  batchedGitBranchBaseDiff,
+  batchedGitDiff,
+  dedupedGitNumstat,
+  dedupedShowFile,
+} from '$lib/components/ui/diff/diff-ipc-batcher';
   import { toast } from '$lib/components/ui/toast';
   import { type WorkspaceId } from '$shared/types/branded-ids';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { openWorkspaceCommitChangeset, openWorkspaceDiff, openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+  openWorkspaceCommitChangeset,
+  openWorkspaceDiff,
+  openWorkspaceFile,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  
+
 
 import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-slice';
 
   const foldUnchanged = selectFoldUnchanged();
@@ -235,11 +246,20 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
   const agentFileRefreshes = selectAgentFileRefreshes(activeWorkspaceId);
 
   // Re-export types from types.ts for backward compatibility
-  export type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
-  import type { ChangeCategory, LocalFileChange, DiffHunk } from './types';
-  import { getDirectoryPath, getFileName, stripWorkspacePrefix, pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
+  export type { ChangeCategory,
+  LocalFileChange,
+  DiffHunk } from './types';
+  import type { ChangeCategory,
+  LocalFileChange,
+  DiffHunk } from './types';
+  import {
+  getDirectoryPath,
+  getFileName,
+  stripWorkspacePrefix,
+  pathsMatch as filePathsMatch,
+} from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import { selectAgentFileRefreshes } from '$lib/store/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
 
@@ -2692,7 +2712,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
               {@const ccpState = getReduxStore().getState()}
               {@const currentWsId = selectActiveWorkspaceId.select(ccpState)}
               {@const agentSession = displayAgentId && currentWsId
-                ? selectAgentById.select(ccpState, displayAgentId)
+                ? selectAgentSession.select(ccpState, displayAgentId)
                 : undefined}
               {@const agentName =
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'
@@ -2946,7 +2966,7 @@ import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-s
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}
               scrollToLine={scrollTarget?.filePath === change.filePath
-                ? scrollTarget.lineNumber
+                ? scrollTarget?.lineNumber
                 : undefined}
               {isAggregate}
               onStageHunk={showStagingControls && category === 'unstaged'

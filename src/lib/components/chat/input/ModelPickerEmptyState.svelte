@@ -1,6 +1,9 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import { faArrowsRotate, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowsRotate,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   import { cn } from '$lib/utils';

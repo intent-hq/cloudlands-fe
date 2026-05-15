@@ -4,7 +4,14 @@
  * Tests for the third-party sources functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { ThirdPartySourcesService } from '../main/third-party-sources.service';
 import { ThirdPartySourcesRepository } from '../main/third-party-sources.repository';
 import { MetadataExtractor } from '../metadata-extractor';

@@ -1,4 +1,10 @@
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 

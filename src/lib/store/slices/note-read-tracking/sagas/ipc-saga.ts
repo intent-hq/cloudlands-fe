@@ -1,4 +1,8 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { USER_ACTIVITY_CHANNELS } from "$shared/ipc/channels";
 import type { NoteReadRecord } from "$shared/types/user-activity.types";

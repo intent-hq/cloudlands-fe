@@ -1,6 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
-import { runSaga, stdChannel } from "redux-saga";
+import {
+  runSaga,
+  stdChannel,
+} from "redux-saga";
 
 // Must mock typed-redux-saga BEFORE importing saga modules
 vi.mock("typed-redux-saga", () => ({
@@ -61,7 +71,7 @@ vi.mock("$shared/errors/messages", () => ({
   cleanErrorMessage: (msg: string) => msg,
 }));
 
-// Mock chat service — MessageGuardError must be a real class so instanceof works
+// Mock send trigger — MessageGuardError must be a real class so name-based guard works
 class MockMessageGuardError extends Error {
   constructor(message: string) {
     super(message);
@@ -69,18 +79,53 @@ class MockMessageGuardError extends Error {
   }
 }
 const mockSendMessage = vi.fn().mockResolvedValue(undefined);
-vi.mock("$features/agent/services/chat.service", () => ({
-  getChatService: vi.fn(() => ({
-    sendMessage: mockSendMessage,
-  })),
-  MessageGuardError: MockMessageGuardError,
-}));
+const mockStopChat = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("$lib/store/slices/agent-session/agent-session-slice", () => {
+  const agentSessionSendMessageRequested = vi.fn(
+    (agentId: string, wsId: string, text: string, options: unknown) => ({
+      type: "agentSessions/sendMessageRequested",
+      asyncActionType: "agentSessions/sendMessage",
+      payload: [agentId, wsId, text, options],
+      promise: Promise.resolve().then(() => mockSendMessage(agentId, wsId, text, options)),
+      success: vi.fn((response: unknown) => ({
+        type: "agentSessions/sendMessageRequested_SUCCESS",
+        payload: { request: [agentId, wsId, text, options], response },
+      })),
+      failure: vi.fn((error: string) => ({
+        type: "agentSessions/sendMessageRequested_FAILURE",
+        payload: { request: [agentId, wsId, text, options], error },
+      })),
+    }),
+  );
+  const agentSessionStopChatRequested = vi.fn((agentId: string) => ({
+    type: "agentSessions/stopChatRequested",
+    asyncActionType: "agentSessions/stopChat",
+    payload: [agentId],
+    promise: Promise.resolve().then(() => mockStopChat(agentId)),
+    success: vi.fn((response: unknown) => ({
+      type: "agentSessions/stopChatRequested_SUCCESS",
+      payload: { request: [agentId], response },
+    })),
+    failure: vi.fn((error: string) => ({
+      type: "agentSessions/stopChatRequested_FAILURE",
+      payload: { request: [agentId], error },
+    })),
+  }));
+  agentSessionSendMessageRequested.type = "agentSessions/sendMessageRequested";
+  agentSessionSendMessageRequested.toString = () => "agentSessions/sendMessageRequested";
+  agentSessionStopChatRequested.type = "agentSessions/stopChatRequested";
+  agentSessionStopChatRequested.toString = () => "agentSessions/stopChatRequested";
+  return { agentSessionSendMessageRequested, agentSessionStopChatRequested };
+});
 
 // Mock consolidated backend service
 const mockQueueMessage = vi.fn().mockResolvedValue({ success: true });
+const mockRemoveQueuedMessage = vi.fn().mockResolvedValue({ success: true });
 vi.mock("$features/agent/services/consolidated-backend.service", () => ({
   unifiedOrchestrator: {
     queueMessage: mockQueueMessage,
+    removeQueuedMessage: mockRemoveQueuedMessage,
   },
 }));
 
@@ -103,6 +148,7 @@ const {
   mockSelectAgentIsResponding,
   mockSelectWorkspaceById,
   mockSelectChatIsRebinding,
+  mockSelectChatLastMessageTime,
   mockSelectChatTrackedWorkspaceId,
   mockSelectPendingCount,
 } = vi.hoisted(() => ({
@@ -110,19 +156,20 @@ const {
   mockSelectAgentIsResponding: vi.fn().mockReturnValue(false),
   mockSelectWorkspaceById: vi.fn(),
   mockSelectChatIsRebinding: vi.fn().mockReturnValue(false),
+  mockSelectChatLastMessageTime: vi.fn().mockReturnValue(0),
   mockSelectChatTrackedWorkspaceId: vi.fn().mockReturnValue(null),
   mockSelectPendingCount: vi.fn().mockReturnValue(0),
 }));
 
 // Import hoisted so it's available in vi.mock factories
 const { hoistedSagaEffects } = vi.hoisted(() => {
-   
+
   const effects = require("redux-saga/effects") as typeof sagaEffects;
   return { hoistedSagaEffects: effects };
 });
 
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
-  selectAgentById: {
+  selectAgentSession: {
     select: (...args: any[]) => mockSelectAgentById(...args),
     effect: function* (...args: any[]) {
       return yield hoistedSagaEffects.select(mockSelectAgentById, ...args);
@@ -131,6 +178,12 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
 }));
 
 vi.mock("../../agent-session/agent-session-selectors", () => ({
+  selectAgentSession: {
+    select: (...args: any[]) => mockSelectAgentById(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectAgentById, ...args);
+    },
+  },
   selectAgentIsResponding: {
     select: (_state: unknown, agentId: string) => mockSelectAgentIsResponding(agentId),
     effect: function* (agentId: string) {
@@ -156,6 +209,12 @@ vi.mock("../chat-state-selectors", () => ({
     select: (...args: any[]) => mockSelectChatIsRebinding(...args),
     effect: function* (...args: any[]) {
       return yield hoistedSagaEffects.select(mockSelectChatIsRebinding, ...args);
+    },
+  },
+  selectChatLastMessageTime: {
+    select: (...args: any[]) => mockSelectChatLastMessageTime(...args),
+    effect: function* (...args: any[]) {
+      return yield hoistedSagaEffects.select(mockSelectChatLastMessageTime, ...args);
     },
   },
   selectChatTrackedWorkspaceId: {
@@ -239,6 +298,8 @@ describe("send-message-saga", () => {
     mockSelectWorkspaceById.mockReturnValue(MOCK_WORKSPACE);
     // Default: not rebinding
     mockSelectChatIsRebinding.mockReturnValue(false);
+    // Default: no previous accepted send for rate limiting
+    mockSelectChatLastMessageTime.mockReturnValue(0);
     // Default: no tracked workspace (no workspace change)
     mockSelectChatTrackedWorkspaceId.mockReturnValue(null);
     // Default: no pending permission/user-action wait
@@ -247,8 +308,12 @@ describe("send-message-saga", () => {
     mockWaitForResult.mockReturnValue(true);
     // Default: sendMessage succeeds
     mockSendMessage.mockResolvedValue(undefined);
+    // Default: stopChat succeeds
+    mockStopChat.mockResolvedValue(undefined);
     // Default: queueMessage succeeds
     mockQueueMessage.mockResolvedValue({ success: true });
+    // Default: removeQueuedMessage succeeds
+    mockRemoveQueuedMessage.mockResolvedValue({ success: true });
   });
 
   afterEach(async () => {
@@ -287,24 +352,17 @@ describe("send-message-saga", () => {
   // Test 1: Immediate loading state (the regression)
   // ========================================================================
   describe("immediate loading state (regression)", () => {
-    it("dispatches chatSendStarted before chatService.sendMessage is called", async () => {
-      let sendStartedDispatched = false;
-      mockSendMessage.mockImplementation(() => {
-        // At the time sendMessage is called, chatSendStarted should already be dispatched
-        expect(sendStartedDispatched).toBe(true);
-        return Promise.resolve();
-      });
-
+    it("dispatches chatSendStarted before the agent-session send trigger", async () => {
       const { dispatched } = await runSendMessageSaga();
 
-      // Verify chatSendStarted was dispatched
       const sendStartedIdx = dispatched.findIndex(
         (a) => a.type === chatSendStarted.type,
       );
+      const sendRequestedIdx = dispatched.findIndex(
+        (a) => a.type === "agentSessions/sendMessageRequested",
+      );
       expect(sendStartedIdx).toBeGreaterThanOrEqual(0);
-      sendStartedDispatched = dispatched
-        .slice(0, dispatched.length)
-        .some((a) => a.type === chatSendStarted.type);
+      expect(sendRequestedIdx).toBeGreaterThan(sendStartedIdx);
     });
 
     it("dispatches chatSendStarted before clearChatDraft and uncheckAllSelections", async () => {
@@ -354,13 +412,15 @@ describe("send-message-saga", () => {
   });
 
   // ========================================================================
-  // Test 3: Error path — workspace not found resets loading state
+  // Test 3: Error path — core send handler owns send failure state
   // ========================================================================
-  describe("workspace not found resets loading state", () => {
-    it("dispatches chatSendFailed when workspace is null", async () => {
+  describe("agent-session failure side effects are not duplicated", () => {
+    it("does not dispatch chatSendFailed locally when the core send action rejects", async () => {
       mockSelectWorkspaceById.mockReturnValue(null);
+      mockSendMessage.mockRejectedValue(new Error("Workspace not found. Please try again."));
 
       const { dispatched } = await runSendMessageSaga();
+      await vi.advanceTimersByTimeAsync(0);
 
       const sendStartedAction = dispatched.find(
         (a) => a.type === chatSendStarted.type,
@@ -370,15 +430,15 @@ describe("send-message-saga", () => {
       );
 
       expect(sendStartedAction).toBeDefined();
-      expect(sendFailedAction).toBeDefined();
+      expect(sendFailedAction).toBeUndefined();
     });
   });
 
   // ========================================================================
-  // Test 4: Error path — chatService.sendMessage throws
+  // Test 4: Error path — agent-session send trigger failures are centralized
   // ========================================================================
-  describe("chatService.sendMessage throws resets loading state", () => {
-    it("dispatches chatSendFailed when sendMessage throws", async () => {
+  describe("agent-session send trigger throws", () => {
+    it("does not duplicate chatSendFailed when sendMessage throws", async () => {
       mockSendMessage.mockRejectedValue(new Error("Network failure"));
 
       const { dispatched } = await runSendMessageSaga();
@@ -388,7 +448,7 @@ describe("send-message-saga", () => {
       const sendFailedAction = dispatched.find(
         (a) => a.type === chatSendFailed.type,
       );
-      expect(sendFailedAction).toBeDefined();
+      expect(sendFailedAction).toBeUndefined();
     });
 
     it("does NOT dispatch chatSendFailed for 'Agent interrupted' errors", async () => {
@@ -630,7 +690,7 @@ describe("send-message-saga", () => {
       );
       expect(sendStartedActions).toHaveLength(1);
 
-      // chatService.sendMessage should have been called exactly once (queued path uses queueMessage)
+      // Agent-session send trigger should have been called exactly once (queued path uses queueMessage)
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
 
       // The queueing info log should have been emitted
@@ -823,7 +883,7 @@ describe("send-message-saga", () => {
   // Test 8: Happy path dispatches chatSendStarted then completes
   // ========================================================================
   describe("happy path", () => {
-    it("dispatches chatSendStarted, calls chatService.sendMessage, dispatches clearChatDraft", async () => {
+    it("dispatches chatSendStarted, calls agent-session send trigger, dispatches clearChatDraft", async () => {
       const { dispatched } = await runSendMessageSaga();
 
       // chatSendStarted dispatched
@@ -832,7 +892,7 @@ describe("send-message-saga", () => {
       );
       expect(sendStartedAction).toBeDefined();
 
-      // chatService.sendMessage was called
+      // Agent-session send trigger was called
       expect(mockSendMessage).toHaveBeenCalled();
 
       // clearChatDraft dispatched
@@ -847,16 +907,46 @@ describe("send-message-saga", () => {
       );
       expect(sendFailedAction).toBeUndefined();
     });
+
   });
 
   // ========================================================================
-  // Test 9: MessageGuardError (rate limiter / idempotency) clears state silently
+  // Test 9: Redux-owned rate limiting
   // ========================================================================
-  describe("MessageGuardError handling (rate limiter / idempotency fix)", () => {
-    it("dispatches chatSendFailed without error toast when sendMessage throws MessageGuardError", async () => {
-      // Simulate the rate limiter or idempotency guard throwing
+  describe("Redux-owned rate limiting", () => {
+    it("blocks rapid duplicate sends using lastMessageTime from chat-state", async () => {
+      vi.setSystemTime(new Date(1_000));
+      mockSelectChatLastMessageTime.mockReturnValue(950);
+
+      const { dispatched } = await runSendMessageSaga();
+
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeUndefined();
+      const sendFailed = dispatched.find((a) => a.type === chatSendFailed.type);
+      expect(sendFailed).toBeDefined();
+      expect(sendFailed.payload[1]).toBe('');
+    });
+
+    it("allows sends once the minimum interval has elapsed", async () => {
+      vi.setSystemTime(new Date(1_101));
+      mockSelectChatLastMessageTime.mockReturnValue(1_000);
+
+      const { dispatched } = await runSendMessageSaga();
+
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeDefined();
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(dispatched.find((a) => a.type === chatSendFailed.type)).toBeUndefined();
+    });
+  });
+
+  // ========================================================================
+  // Test 10: MessageGuardError side effects live in the core send handler
+  // ========================================================================
+  describe("MessageGuardError handling (idempotency fix)", () => {
+    it("does not duplicate chatSendFailed when sendMessage throws MessageGuardError", async () => {
+      // Simulate the idempotency guard throwing
       mockSendMessage.mockRejectedValue(
-        new MockMessageGuardError("Message sent too quickly, please wait a moment"),
+        new MockMessageGuardError("Duplicate message detected"),
       );
 
       const { dispatched } = await runSendMessageSaga();
@@ -868,23 +958,18 @@ describe("send-message-saga", () => {
       );
       expect(sendStarted).toBeDefined();
 
-      // chatSendFailed should be dispatched to clear the streaming state
       const sendFailed = dispatched.find(
         (a) => a.type === chatSendFailed.type,
       );
-      expect(sendFailed).toBeDefined();
-      // The error string should be empty (no error banner shown)
-      expect(sendFailed.payload[1]).toBe('');
+      expect(sendFailed).toBeUndefined();
     });
 
-    it("does NOT show error toast for MessageGuardError (unlike real errors)", async () => {
-      // Real error shows toast
+    it("leaves real and guard send failures to the core send handler", async () => {
       mockSendMessage.mockRejectedValue(new Error("Network failure"));
       const { dispatched: d1 } = await runSendMessageSaga();
       await vi.advanceTimersByTimeAsync(0);
       const realFailed = d1.find((a) => a.type === chatSendFailed.type);
-      expect(realFailed).toBeDefined();
-      expect(realFailed.payload[1]).toBe("Network failure"); // non-empty error
+      expect(realFailed).toBeUndefined();
 
       vi.clearAllMocks();
       mockSelectWorkspaceById.mockReturnValue(MOCK_WORKSPACE);
@@ -898,8 +983,7 @@ describe("send-message-saga", () => {
       const { dispatched: d2 } = await runSendMessageSaga();
       await vi.advanceTimersByTimeAsync(0);
       const guardFailed = d2.find((a) => a.type === chatSendFailed.type);
-      expect(guardFailed).toBeDefined();
-      expect(guardFailed.payload[1]).toBe(''); // empty = no error banner
+      expect(guardFailed).toBeUndefined();
     });
   });
 
@@ -980,12 +1064,90 @@ describe("send-message-saga", () => {
       // Should NOT have queued the message
       expect(mockQueueMessage).not.toHaveBeenCalled();
 
-      // chatService.sendMessage should have been called (send path)
+      // Agent-session send trigger should have been called (send path)
+      expect(mockSendMessage).toHaveBeenCalled();
+    });
+
+    it("forceSubmit stops the active response before sending", async () => {
+      mockSelectAgentIsResponding.mockReturnValue(true);
+
+      const { dispatched } = await runSendMessageSaga({
+        skipQueueCheck: true,
+        forceSubmit: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const stopIdx = dispatched.findIndex((a) => a.type === "agentSessions/stopChatRequested");
+      const sendStartedIdx = dispatched.findIndex((a) => a.type === chatSendStarted.type);
+      expect(stopIdx).toBeGreaterThanOrEqual(0);
+      expect(sendStartedIdx).toBeGreaterThan(stopIdx);
+      expect(mockStopChat).toHaveBeenCalledWith(AGENT_ID);
       expect(mockSendMessage).toHaveBeenCalled();
     });
   });
 
   describe("send now with image blocks (regression)", () => {
+    it("serializes raw context item files before dispatching agent-session send", async () => {
+      const OriginalFileReader = globalThis.FileReader;
+      (globalThis as any).FileReader = class {
+        result = "data:image/png;base64,abc123";
+        onload: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        readAsDataURL() {
+          this.onload?.();
+        }
+      };
+
+      try {
+        await runSendMessageSaga({
+          serializedContextItems: undefined,
+          contextItems: [
+            {
+              id: "upload-1",
+              type: "file",
+              label: "upload.png",
+              file: { type: "image/png" } as File,
+            },
+          ],
+        });
+
+        const options = mockSendMessage.mock.calls[0][3];
+        expect(options.contextItems).toEqual([
+          {
+            id: "upload-1",
+            type: "file",
+            label: "upload.png",
+            imageData: "abc123",
+            imageMimeType: "image/png",
+          },
+        ]);
+      } finally {
+        (globalThis as any).FileReader = OriginalFileReader;
+      }
+    });
+
+    it("removes a queued message in the saga before replaying it", async () => {
+      await runSendMessageSaga({
+        queuedMessageId: "queued-1",
+        skipQueueCheck: true,
+      });
+
+      expect(mockRemoveQueuedMessage).toHaveBeenCalledWith(AGENT_ID, "queued-1");
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not replay a queued message when saga-owned queue removal fails", async () => {
+      mockRemoveQueuedMessage.mockResolvedValueOnce({ success: false, error: "remove failed" });
+
+      await runSendMessageSaga({
+        queuedMessageId: "queued-1",
+        skipQueueCheck: true,
+      });
+
+      expect(mockRemoveQueuedMessage).toHaveBeenCalledWith(AGENT_ID, "queued-1");
+      expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
     it("forwards imageBlocks as contextItems when sending a queued message via skipQueueCheck", async () => {
       const imageBlocks = [
         { type: "image" as const, data: "base64data1", mimeType: "image/png" },
@@ -997,7 +1159,7 @@ describe("send-message-saga", () => {
         imageBlocks,
       });
 
-      // chatService.sendMessage should have been called with image data in contextItems
+      // Agent-session send trigger should have been called with image data in contextItems
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
       const options = mockSendMessage.mock.calls[0][3];
       expect(options.contextItems).toBeDefined();
@@ -1045,11 +1207,11 @@ describe("send-message-saga", () => {
       });
     });
 
-    it("image-only send: inline image context items never carry file/fileData to chatService (no stray file pill)", async () => {
+    it("image-only send: inline image context items never carry file/fileData to the core send effect (no stray file pill)", async () => {
       // Repro for the "stray File pill on image-only send" bug. An inline image
       // extracted from the TipTap editor is represented as a context item with
       // { type: 'file', imageData, imageMimeType } and MUST NOT carry a File
-      // object or fileData — otherwise chat.service.ts would classify it as a
+      // object or fileData — otherwise the core send effect would classify it as a
       // non-image file and emit a type:'file' content block that renders as a
       // "File" pill in the collapsed user message.
       const inlineImageItem = {
@@ -1076,7 +1238,7 @@ describe("send-message-saga", () => {
       // Must have image data
       expect(forwarded.imageData).toBe("base64data1");
       expect(forwarded.imageMimeType).toBe("image/png");
-      // Must NOT have any of the fields that would cause chat.service.ts to
+      // Must NOT have any of the fields that would cause the core send effect to
       // emit a type:'file' content block for this image.
       expect(forwarded.file).toBeUndefined();
       expect(forwarded.fileData).toBeUndefined();

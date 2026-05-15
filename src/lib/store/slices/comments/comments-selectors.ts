@@ -2,8 +2,14 @@
  * Comments V2 selectors.
  */
 
-import { createSelector, createCollectionItemSelector } from "../../utils/create-selector";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  createSelector,
+  createCollectionItemSelector,
+} from "../../utils/create-selector";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { CommentThread } from "./comments-types";
 

@@ -7,7 +7,10 @@
  */
 
 import { Logger } from '$shared/logger';
-import { readFileSync, existsSync } from 'fs';
+import {
+  readFileSync,
+  existsSync,
+} from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { EventEmitter } from '$shared/utils/event-emitter';

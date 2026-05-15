@@ -2,7 +2,11 @@
  * Validation Utilities Tests
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   sanitizeInput,
   sanitizeMessage,

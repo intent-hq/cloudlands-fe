@@ -2,7 +2,11 @@
  * Tests for notes primitives serializer
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { NotesPrimitivesSerializer } from '../notes-primitives-serializer';
 import type {
   ReferencePrimitive,

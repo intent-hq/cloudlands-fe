@@ -35,7 +35,10 @@ import type {
   Result,
   WorkspaceId,
 } from '../../../shared/types';
-import { GitFileStatus, LineType } from '../../../shared/types';
+import {
+  GitFileStatus,
+  LineType,
+} from '../../../shared/types';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitAuthRequired } from '../../../store/main/slices/git-events/git-events-slice';
 import { filterDiffableFiles } from '../../workspace/main/change-detection/diffable-file-filter';

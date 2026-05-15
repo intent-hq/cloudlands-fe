@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -7,7 +10,11 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
-  import { faStop, faTimes, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faStop,
+  faTimes,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { ContentBlock } from '$shared/types';
 

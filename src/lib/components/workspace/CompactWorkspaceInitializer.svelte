@@ -1,85 +1,96 @@
 <script lang="ts">
 /* eslint-disable max-lines */
-  import { untrack } from 'svelte';
   import {
-    type InitialRepoInfo,
-    getLastSelectedRepoHydrationAction,
-    getInitialRepoKey,
-    mapInitialRepoToFormState,
-  } from './initializer/initial-repo-utils';
+  untrack,
+  onMount,
+  onDestroy,
+} from 'svelte';
+  import {
+  type InitialRepoInfo,
+  getLastSelectedRepoHydrationAction,
+  getInitialRepoKey,
+  mapInitialRepoToFormState,
+} from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { track } from '$lib/services/analytics';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
-  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
+  import { WorkspaceId } from '$shared/types/branded-ids';
+  import {
+  SETUP_SCRIPT_TEMPLATES,
+  getTemplateContent,
+} from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
   import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
   import {
-    setCompactWorkspaceInitializerFormState,
-    setWorkspaceInitializerBranchForRepo,
-    setWorkspaceInitializerLastSubmittedAgent,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerBranchForRepo,
+  setWorkspaceInitializerLastSubmittedAgent,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
   import {
-    selectCompactWorkspaceInitializerFormState,
-    selectWorkspaceInitializerHydrated,
-    selectWorkspaceInitializerLastSelectedRepo,
-    selectWorkspaceInitializerLastSubmittedAgent,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  selectCompactWorkspaceInitializerFormState,
+  selectWorkspaceInitializerHydrated,
+  selectWorkspaceInitializerLastSelectedRepo,
+  selectWorkspaceInitializerLastSubmittedAgent,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
     WorkspaceInitializerRepoSelection,
   } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
   import {
-    hydrateWorkspaceNavigation,
-    type WorkspaceNavigationWorkspaceState,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  hydrateWorkspaceNavigation,
+  type WorkspaceNavigationWorkspaceState,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
   import {
-    selectSelectedModel,
-    selectAvailableModels,
-  } from '$lib/store/slices/model/model-selectors';
+  selectSelectedModel,
+  selectAvailableModels,
+} from '$lib/store/slices/model/model-selectors';
   import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
   import {
-    setInitialAgentConfig,
-    setInitialAgentId,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  activateInitialAgentRequested,
+  setInitialAgentConfig,
+  setInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import {
-    setWorkspaceEntity,
-    updateWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectSpecialists,
-    selectEffectiveBehaviorPrompt,
-    selectUserOverrides,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  selectSpecialists,
+  selectEffectiveBehaviorPrompt,
+  selectUserOverrides,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
-    getGitErrorMessage,
-    validateBranchName,
-    validateInitialPrompt,
-    validateRepoPath,
-  } from '$lib/utils/workspace-validation';
+  getGitErrorMessage,
+  validateBranchName,
+  validateInitialPrompt,
+  validateRepoPath,
+} from '$lib/utils/workspace-validation';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
-    faMagicWandSparkles,
-    faPaperclip,
-    faSpinner,
-    faStop,
-    faExclamationTriangle,
-    faCodeBranch,
-  } from '@fortawesome/free-solid-svg-icons';
+  faMagicWandSparkles,
+  faPaperclip,
+  faSpinner,
+  faStop,
+  faExclamationTriangle,
+  faCodeBranch,
+} from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
-  import { onMount, onDestroy } from 'svelte';
+
   import { toast } from 'svelte-sonner';
-  import { fade, slide } from 'svelte/transition';
+  import {
+  fade,
+  slide,
+} from 'svelte/transition';
   import Button from '../ui/button/button.svelte';
   import { Checkbox } from '../ui/checkbox';
   import Tooltip from '../ui/tooltip/Tooltip.svelte';
@@ -93,11 +104,11 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import {
-    getDefaultModelForProvider,
-    getDefaultProviderId,
-    PROVIDER_MODEL_TIERS,
-    parseCompoundModelId,
-  } from '$shared/config/provider-config';
+  getDefaultModelForProvider,
+  getDefaultProviderId,
+  PROVIDER_MODEL_TIERS,
+  parseCompoundModelId,
+} from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
 
   const dispatch = getDispatch();
@@ -1914,71 +1925,33 @@
           }),
         );
 
-        // Create the agent session and send the initial message
-        // When staying on home page, the workspace page flow that normally does this is bypassed
-        try {
-          logger.info('[CompactWorkspaceInitializer] Creating agent session for home page', {
-            workspaceId: workspace.id,
-            agentId: initialAgent.agentId,
-            hasPrompt: !!initialAgent.prompt,
-            specialist: specialistId,
-            hasBehaviorPrompt: !!resolvedBehaviorPrompt,
-            behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
-          });
-
-          await agentService.activateInitialAgent(initialAgent.agentId, workspace, () =>
-            agentService.createSession(workspace, {
-              agentId: initialAgent.agentId,
-              name: agentName,
-              model: initialAgent.model,
-              provider: selectedProvider, // ACP provider ID (auggie, claude-code, codex)
-              agentType: initialAgent.agentType,
-              initialMessage: initialAgent.prompt, // This sends the initial message
-              contextReferences: initialAgent.contextReferences, // Pass file/issue context references for stdinContext
-              behaviorPrompt: resolvedBehaviorPrompt, // Pass team coordinator or specialist behavior instructions for system prompt
-              metadata: {
-                ...initialAgent.metadata,
-                isInitialAgent: true,
-                isFirstWorkspaceAgent: true,
-              },
-              isPending: false,
-            }),
-          );
-
-          // Mark the message as already sent in sessionStorage to prevent ChatPanel from sending it again
-          // We keep the prompt for optimistic UI display, but set messageSent=true so ChatPanel knows not to send
-          const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-          const storedConfig = sessionStorage.getItem(agentConfigKey);
-          if (storedConfig) {
-            try {
-              const config = JSON.parse(storedConfig);
-              config.messageSent = true; // Flag to prevent ChatPanel from sending again
-              sessionStorage.setItem(agentConfigKey, JSON.stringify(config));
-              logger.info(
-                '[CompactWorkspaceInitializer] Marked message as sent in sessionStorage',
-                {
-                  workspaceId: workspace.id,
-                  agentId: initialAgent.agentId,
-                },
-              );
-            } catch {
-              // Ignore parse errors
-            }
-          }
-
-          logger.info('[CompactWorkspaceInitializer] Agent session created and message sent', {
-            workspaceId: workspace.id,
-            agentId: initialAgent.agentId,
-          });
-        } catch (agentErr) {
-          // Don't fail workspace creation if agent session creation fails
-          // The user can still navigate to the workspace and interact with the agent there
-          logger.error('[CompactWorkspaceInitializer] Failed to create agent session', {
-            workspaceId: workspace.id,
-            agentId: initialAgent.agentId,
-            error: agentErr instanceof Error ? agentErr.message : 'Unknown error',
-          });
-        }
+        // Request initial agent activation through the workspace-agent saga.
+        // When staying on home page, the workspace page flow that normally does this is bypassed.
+        logger.info('[CompactWorkspaceInitializer] Requesting agent session for home page', {
+          workspaceId: workspace.id,
+          agentId: initialAgent.agentId,
+          hasPrompt: !!initialAgent.prompt,
+          specialist: specialistId,
+          hasBehaviorPrompt: !!resolvedBehaviorPrompt,
+          behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
+        });
+        dispatch(activateInitialAgentRequested(workspace.id, initialAgent.agentId, {
+          id: initialAgent.agentId,
+          name: agentName,
+          workspaceId: WorkspaceId(workspace.id),
+          model: initialAgent.model,
+          provider: selectedProvider,
+          agentType: initialAgent.agentType,
+          initialMessage: initialAgent.prompt,
+          contextReferences: initialAgent.contextReferences,
+          imageBlocks: initialAgent.imageBlocks,
+          behaviorPrompt: resolvedBehaviorPrompt,
+          metadata: {
+            ...initialAgent.metadata,
+            isInitialAgent: true,
+            isFirstWorkspaceAgent: true,
+          },
+        }));
       } else {
         await goto(`/workspace/${workspace.id}`);
       }

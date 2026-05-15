@@ -5,7 +5,13 @@
    * Uses Simple Icons CDN for brand logos with fallback to initials.
    * Icons are displayed at full opacity.
    */
-  import { faServer, faBrain, faDatabase, faCloud, faCog } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faServer,
+  faBrain,
+  faDatabase,
+  faCloud,
+  faCog,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {

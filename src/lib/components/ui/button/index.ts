@@ -1,5 +1,8 @@
 import Root from './button.svelte';
-import { type VariantProps, tv } from 'tailwind-variants';
+import {
+  type VariantProps,
+  tv,
+} from 'tailwind-variants';
 import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
 import type { WithElementRef } from '$lib/utils.js';
 

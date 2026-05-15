@@ -11,9 +11,9 @@
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import {
-    selectIsDownloading,
-    selectAutoUpdateProgress,
-  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  selectIsDownloading,
+  selectAutoUpdateProgress,
+} from '$lib/store/slices/auto-update/auto-update-selectors';
 
   interface Props {
     class?: string;
@@ -25,12 +25,10 @@
   const progress$ = selectAutoUpdateProgress();
 
   // Show when downloading
-  let isDownloading = $derived($isDownloading$);
-  let progress = $derived($progress$);
-  let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
+  let progressPercent = $derived($progress$ ? Math.round($progress$.percent) : 0);
 </script>
 
-{#if isDownloading}
+{#if $isDownloading$}
   <Tooltip content="Downloading update... {progressPercent}%" side="bottom" delayDuration={100}>
     <div
       class={cn(

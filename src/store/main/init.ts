@@ -15,8 +15,14 @@ import type { Saga, Task } from "redux-saga";
 import { Logger } from "../../shared/logger";
 import type { MainReduxStore, MainStoreState } from "./types";
 import { reducers } from "./reducer";
-import { middleware, runSaga } from "./middleware";
-import { mainSagaEntries, mainSagaNames } from "./sagas";
+import {
+  middleware,
+  runSaga,
+} from "./middleware";
+import {
+  mainSagaEntries,
+  mainSagaNames,
+} from "./sagas";
 import { initMainStoreBridge } from "./redux-store-bridge";
 
 const logger = new Logger("MainStore");

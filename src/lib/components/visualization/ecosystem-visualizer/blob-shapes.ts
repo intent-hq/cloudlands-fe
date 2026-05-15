@@ -4,7 +4,12 @@
  * Uses Voronoi-based clipping to prevent sibling folder overlap
  */
 
-import { polygonHull, line, curveCardinalClosed, Delaunay } from 'd3';
+import {
+  polygonHull,
+  line,
+  curveCardinalClosed,
+  Delaunay,
+} from 'd3';
 import type { ProcessedNode, BlobShape } from './types';
 import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';
 
@@ -489,7 +494,7 @@ export function computeBlobShapes(
 
   // Compute Voronoi cells for each sibling group
   const voronoiCells = new Map<string, [number, number][]>();
-   
+
   for (const [_parentPath, siblings] of foldersByParent) {
     if (siblings.length <= 1) continue; // No clipping needed for single child
 

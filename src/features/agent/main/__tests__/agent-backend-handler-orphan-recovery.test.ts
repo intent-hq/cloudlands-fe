@@ -1,4 +1,11 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const mockPersistence = {
   loadAgent: vi.fn(),
@@ -49,6 +56,7 @@ vi.mock('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-s
 const mockGetPartialContent = vi.fn(() => ({ contentBlocks: [] as any[] }));
 vi.mock('../../../../store/main/slices/message-accumulator/message-accumulator-api', () => ({
   getPartialContent: mockGetPartialContent,
+  clear: vi.fn(),
 }));
 
 // Minimal stubs for the dependencies `handleSendMessage` pulls in when
@@ -58,6 +66,9 @@ vi.mock('../../../../store/main/slices/message-accumulator/message-accumulator-a
 vi.mock('$shared/main/memory-event-logger', () => ({
   memEvents: {
     agentTurnStart: vi.fn(),
+    agentTurnComplete: vi.fn(),
+    cleanupStart: vi.fn(),
+    cleanupComplete: vi.fn(),
     custom: vi.fn(),
   },
 }));
@@ -78,6 +89,8 @@ function makeHandler() {
   handler.streamStartTimes = new Map();
   handler.streamSessionIds = new Map();
   handler.streamWorkspaceIds = new Map();
+  handler.streamAssistantMessageIds = new Map();
+  handler.streamAssistantAppMessageIds = new Map();
   handler.streamWindowIds = new Map();
   handler.streamGenerations = new Map();
   handler.streamHealthChecks = new Map();
@@ -715,6 +728,232 @@ describe('AgentBackendHandler orphan recovery', () => {
       `agent:stream:${agentId}`,
       expect.objectContaining({ type: 'complete', streamId: 'stream-interrupted' }),
     );
+  });
+
+  it('final persistence replaces a stale same-app assistant placeholder instead of appending', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-final-dedup';
+    const workspaceId = 'ws-final-dedup';
+    const assistantMessageId = 'assistant-active-final';
+    const assistantAppMessageId = 'app-assistant-active-final';
+    const finalBlocks = [{ type: 'text', text: 'final answer' }];
+
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] },
+        {
+          id: 'assistant-stale-placeholder',
+          appMessageId: assistantAppMessageId,
+          role: 'assistant',
+          isStreaming: false,
+          contentBlocks: [{ type: 'text', text: 'placeholder' }],
+        },
+      ],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+    handler.emitAgentStartedEvent = vi.fn();
+    handler.startStreamHealthCheck = vi.fn();
+    handler.sendToRenderer = vi.fn();
+    handler.finalizeStream = vi.fn();
+    handler.emitAgentIdleEvent = vi.fn();
+    handler.estimateSessionSizeKB = vi.fn(() => 0);
+    handler.estimateContentSizeKB = vi.fn(() => 0);
+
+    const mockProvider: any = {
+      isHealthy: vi.fn(() => true),
+      getConfig: vi.fn(() => ({ model: 'test-model' })),
+      streamMessage: vi.fn(async (_messages: any, options: any) => {
+        await options.onComplete({
+          id: 'provider-final-id',
+          contentBlocks: finalBlocks,
+          metadata: { stopReason: 'provider_stopped' },
+        });
+      }),
+    };
+    handler.providers.set(agentId, mockProvider);
+    handler.providerLastUsed.set(agentId, Date.now());
+
+    await handler.handleSendMessage(null, {
+      agentId,
+      sessionId: agentId,
+      streamId: 'stream-final-dedup',
+      workspaceId,
+      assistantMessageId,
+      assistantAppMessageId,
+      messages: [{ id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] }],
+    });
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.messages).toHaveLength(2);
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.id).toBe(assistantMessageId);
+    expect(savedAssistant.appMessageId).toBe(assistantAppMessageId);
+    expect(savedAssistant.contentBlocks).toEqual(finalBlocks);
+    expect(saved.messages.filter((m: any) => m.appMessageId === assistantAppMessageId)).toHaveLength(1);
+  });
+
+  it('streaming persistence adopts the active request app ID from a stale streaming placeholder', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-streaming-adopts-id';
+    const workspaceId = 'ws-streaming-adopts-id';
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] },
+        {
+          id: 'assistant-stale-stream',
+          appMessageId: 'app-stale-stream',
+          role: 'assistant',
+          isStreaming: true,
+          contentBlocks: [{ type: 'text', text: 'old partial' }],
+        },
+      ],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+    mockGetPartialContent.mockReturnValue({
+      contentBlocks: [{ type: 'text', text: 'new partial' }],
+    });
+
+    await handler.persistStreamingSessionState(
+      agentId,
+      'content-block',
+      'assistant-active-stream',
+      'app-active-stream',
+    );
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.messages).toHaveLength(2);
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.id).toBe('assistant-active-stream');
+    expect(savedAssistant.appMessageId).toBe('app-active-stream');
+    expect(savedAssistant.isStreaming).toBe(true);
+    expect(savedAssistant.contentBlocks).toEqual([{ type: 'text', text: 'new partial' }]);
+  });
+
+  it('interrupted persistence replaces a same-app non-streaming placeholder instead of appending', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-interrupted-dedup';
+    const workspaceId = 'ws-interrupted-dedup';
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] },
+        {
+          id: 'assistant-placeholder',
+          appMessageId: 'app-interrupted-active',
+          role: 'assistant',
+          isStreaming: false,
+          contentBlocks: [{ type: 'text', text: 'placeholder' }],
+        },
+      ],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+    mockGetPartialContent.mockReturnValue({
+      contentBlocks: [{ type: 'text', text: 'interrupted partial' }],
+    });
+
+    await handler.persistInterruptedStreamingSessionState(
+      agentId,
+      'interruption',
+      'assistant-interrupted-active',
+      'app-interrupted-active',
+    );
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.messages).toHaveLength(2);
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.id).toBe('assistant-interrupted-active');
+    expect(savedAssistant.appMessageId).toBe('app-interrupted-active');
+    expect(savedAssistant.isStreaming).toBe(false);
+    expect(savedAssistant.streamingComplete).toBe(true);
+    expect(savedAssistant.metadata).toEqual(
+      expect.objectContaining({ interrupted: true, stopReason: 'cancelled' }),
+    );
+  });
+
+  it('timeout persistence finalizes the current streaming assistant without adding a duplicate', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-timeout-dedup';
+    const workspaceId = 'ws-timeout-dedup';
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] },
+        {
+          id: 'assistant-timeout-stream',
+          appMessageId: 'app-timeout-stream',
+          role: 'assistant',
+          isStreaming: true,
+          contentBlocks: [{ type: 'text', text: 'old partial' }],
+        },
+      ],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+
+    const timeoutMessage = await handler.persistTimedOutStreamingSessionState(
+      agentId,
+      [{ type: 'text', text: 'timeout partial' }],
+      1234,
+    );
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.messages).toHaveLength(2);
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.id).toBe('assistant-timeout-stream');
+    expect(savedAssistant.appMessageId).toBe('app-timeout-stream');
+    expect(savedAssistant.isStreaming).toBe(false);
+    expect(savedAssistant.streamingComplete).toBe(true);
+    expect(savedAssistant.metadata).toEqual(expect.objectContaining({ timedOut: true, duration: 1234 }));
+    expect(timeoutMessage.id).toBe(savedAssistant.id);
+  });
+
+  it('timeout persistence uses active request logical IDs when no streaming placeholder exists', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-timeout-active-id';
+    const workspaceId = 'ws-timeout-active-id';
+    const assistantMessageId = 'assistant-timeout-active';
+    const assistantAppMessageId = 'app-timeout-active';
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [{ id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'hello' }] }],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+
+    const timeoutMessage = await handler.persistTimedOutStreamingSessionState(
+      agentId,
+      [{ type: 'text', text: 'timeout partial without placeholder' }],
+      4321,
+      assistantMessageId,
+      assistantAppMessageId,
+    );
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    expect(saved.messages).toHaveLength(2);
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.id).toBe(assistantMessageId);
+    expect(savedAssistant.appMessageId).toBe(assistantAppMessageId);
+    expect(savedAssistant.isStreaming).toBe(false);
+    expect(savedAssistant.streamingComplete).toBe(true);
+    expect(savedAssistant.metadata).toEqual(expect.objectContaining({ timedOut: true, duration: 4321 }));
+    expect(saved.messages.filter((m: any) => m.appMessageId === assistantAppMessageId)).toHaveLength(1);
+    expect(timeoutMessage.id).toBe(assistantMessageId);
+    expect(timeoutMessage.appMessageId).toBe(assistantAppMessageId);
   });
 
   // T8 completion second guard (P1): the extracted method must re-check the

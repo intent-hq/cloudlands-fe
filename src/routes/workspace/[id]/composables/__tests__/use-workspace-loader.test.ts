@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  render,
+  waitFor,
+} from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {

@@ -6,7 +6,14 @@
  * guard so the renderer can re-add the agent. Both must happen even though
  * handleDeleteAgent itself returns `{success: false}` to the caller.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const {
   mockPersistence,
@@ -126,6 +133,8 @@ function makeHandler() {
   handler.streamStartTimes = new Map();
   handler.streamSessionIds = new Map();
   handler.streamWorkspaceIds = new Map();
+  handler.streamAssistantMessageIds = new Map();
+  handler.streamAssistantAppMessageIds = new Map();
   handler.streamWindowIds = new Map();
   handler.streamGenerations = new Map();
   handler.streamHealthChecks = new Map();

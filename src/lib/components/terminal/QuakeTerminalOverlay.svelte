@@ -17,21 +17,21 @@
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-    selectIsTerminalOverlayOpen,
-    selectTerminalOverlayHeight,
-    selectActiveTerminalId,
-    selectTerminals,
-  } from '$lib/store/slices/terminals/terminals-selectors';
+  selectIsTerminalOverlayOpen,
+  selectTerminalOverlayHeight,
+  selectActiveTerminalId,
+  selectTerminals,
+} from '$lib/store/slices/terminals/terminals-selectors';
   import {
-    openTerminalOverlay,
-    closeTerminalOverlay,
-    selectTerminal,
-    addTerminal,
-    removeTerminal,
-    setTerminalOverlayHeight,
-    renameTerminal,
-    type TerminalTab,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  openTerminalOverlay,
+  closeTerminalOverlay,
+  selectTerminal,
+  addTerminal,
+  removeTerminal,
+  setTerminalOverlayHeight,
+  renameTerminal,
+  type TerminalTab,
+} from '$lib/store/slices/terminals/terminals-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
@@ -40,28 +40,43 @@
   import TerminalSidebar from './TerminalSidebar.svelte';
   import Fa from 'svelte-fa';
   import {
-    faPlus,
-    faXmark,
-    faChevronDown,
-    faChevronUp,
-    faTerminal,
-    faBan,
-    faPlay,
-    faStop,
-    faRotateRight,
-    faSpinner,
-    faArrowUpRightFromSquare,
-    faCircle,
-    faPencil,
-  } from '@fortawesome/free-solid-svg-icons';
+  faPlus,
+  faXmark,
+  faChevronDown,
+  faChevronUp,
+  faTerminal,
+  faBan,
+  faPlay,
+  faStop,
+  faRotateRight,
+  faSpinner,
+  faArrowUpRightFromSquare,
+  faCircle,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectScriptEntries, selectScriptById, selectScriptRuntime } from '$lib/store/slices/scripts/scripts-selectors';
-  import { refreshScripts, initializeScripts, disposeScripts, removeScript } from '$lib/store/slices/scripts/scripts-slice';
+  import {
+  selectScriptEntries,
+  selectScriptById,
+  selectScriptRuntime,
+} from '$lib/store/slices/scripts/scripts-selectors';
+  import {
+  refreshScripts,
+  initializeScripts,
+  disposeScripts,
+  removeScript,
+} from '$lib/store/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
-  import { ListContainer, ListItem } from '$lib/components/ui/list';
-  import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
+  import {
+  ListContainer,
+  ListItem,
+} from '$lib/components/ui/list';
+  import {
+  Tooltip,
+  TooltipRich,
+} from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { track } from '$lib/services/analytics';

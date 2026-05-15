@@ -1,6 +1,21 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
 import TrackedChangeDiffViewer from './TrackedChangeDiffViewer.svelte';
 
 const testState = vi.hoisted(() => {

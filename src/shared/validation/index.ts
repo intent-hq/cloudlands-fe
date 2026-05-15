@@ -5,7 +5,10 @@
  * Provides security-focused validation for user inputs, file paths, and configuration.
  */
 
-import { LIMITS, PATTERNS } from '../constants';
+import {
+  LIMITS,
+  PATTERNS,
+} from '../constants';
 
 // ============================================================================
 // Input Sanitization
@@ -42,7 +45,7 @@ export function sanitizeSurrogates(input: string): string {
   }
   // Match a high surrogate not followed by a low surrogate,
   // or a low surrogate not preceded by a high surrogate.
-   
+
   return input.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
 }
 

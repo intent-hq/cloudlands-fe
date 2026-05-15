@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { AgentSession, PullRequestInfo, Workspace, WorkspaceAgentInfo } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+  import {
+  PullRequestStatus,
+  WorkspaceStatusEnum,
+} from '$shared/types';
   import { formatDistanceToNow } from 'date-fns';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -10,11 +13,14 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import {
-    selectUnreadAgentIds,
-    selectUnreadAgentIdsForWorkspace,
-  } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  faCodeMerge,
+  faCodePullRequest,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

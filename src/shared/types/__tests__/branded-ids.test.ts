@@ -2,7 +2,11 @@
  * Tests for Branded ID Types
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import * as BrandedIds from '../branded-ids';
 import { v4 as uuidv4 } from 'uuid';
 

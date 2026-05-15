@@ -5,12 +5,19 @@
  * Subscribes to workspace event bus for agent:idle events and displays native OS notifications.
  */
 
-import { app, BrowserWindow, Notification } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Notification,
+} from 'electron';
 import ElectronStore from 'electron-store';
 import { Logger } from '../../../shared/logger';
 import type { AgentIdleEvent } from '../../events/types';
 import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
-import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import {
+  getWindowIdsForWorkspace,
+  sendToWorkspaceWindows,
+} from '../../system/main/system.ipc';
 
 const logger = new Logger('NotificationService');
 
@@ -46,7 +53,7 @@ interface NotificationContent {
 
 export class NotificationService {
   private workspaceId: string;
-   
+
   private settingsStore: any;
   private unsubscribe?: () => void;
   private activeNotifications = new Set<Notification>();

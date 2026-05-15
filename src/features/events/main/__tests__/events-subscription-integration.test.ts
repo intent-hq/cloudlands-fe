@@ -10,7 +10,12 @@
  * 3. All accepted events (post-dedup) are delivered to subscribers
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from "vitest";
 import type { WorkspaceEvent } from "../../types";
 import {
   workspaceEventsReducer,

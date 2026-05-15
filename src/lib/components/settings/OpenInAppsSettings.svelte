@@ -8,16 +8,20 @@
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import {
-    selectHiddenEditorIds,
-    selectInstalledEditors,
-  } from '$lib/store/slices/external-editors/external-editors-selectors';
+  selectHiddenEditorIds,
+  selectInstalledEditors,
+} from '$lib/store/slices/external-editors/external-editors-selectors';
   import {
-    fetchEditors,
-    toggleHiddenEditor,
-    type InstalledEditor,
-  } from '$lib/store/slices/external-editors/external-editors-slice';
+  fetchEditors,
+  toggleHiddenEditor,
+  type InstalledEditor,
+} from '$lib/store/slices/external-editors/external-editors-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { faCode, faFolder, faTerminal } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCode,
+  faFolder,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   const dispatch = getDispatch();

@@ -1,6 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
-import { runSaga, stdChannel } from "redux-saga";
+import {
+  runSaga,
+  stdChannel,
+} from "redux-saga";
 
 vi.mock("typed-redux-saga", () => ({
   call: function* (fnOrDescriptor: any, ...args: any[]) {
@@ -55,21 +65,6 @@ vi.mock("$lib/utils/client-logger", () => ({
   }),
 }));
 
-// Mock chat service
-vi.mock("$features/agent/services/chat.service", () => ({
-  getChatService: vi.fn(() => ({
-    flushPendingStreamingContent: vi.fn(),
-  })),
-}));
-
-// Mock agent-ipc-bridge
-vi.mock("$features/agent/agent-ipc-bridge", () => ({
-  agentService: {
-    getSession: vi.fn(),
-    restoreSession: vi.fn(),
-  },
-}));
-
 // Mock initialize-chat-saga
 vi.mock("./initialize-chat-saga", () => ({
   initializeChatSaga: function* () { yield; },
@@ -86,36 +81,40 @@ vi.mock("./chat-lifecycle-saga", () => ({
 }));
 
 // Mock workspace-agents imports used by cleanup watchers
-const mockRemoveAgent = Object.assign(
-  (...args: any[]) => ({ type: "workspaceAgents/removeAgent", payload: args }),
-  { type: "workspaceAgents/removeAgent", toString: () => "workspaceAgents/removeAgent" },
-);
-const mockRemoveWorkspaceAgentState = Object.assign(
-  (...args: any[]) => ({ type: "workspaceAgents/removeWorkspaceAgentState", payload: args }),
-  {
-    type: "workspaceAgents/removeWorkspaceAgentState",
-    toString: () => "workspaceAgents/removeWorkspaceAgentState",
-  },
-);
+const {
+  mockRemoveAgent,
+  mockRemoveWorkspaceAgentState,
+  mockAgentStreamUpdateReceived,
+  mockWorkspaceUnmounted,
+} = vi.hoisted(() => {
+  const createMockAction = (type: string) => Object.assign(
+    (...args: any[]) => ({ type, payload: args }),
+    { type, toString: () => type },
+  );
+
+  return {
+    mockRemoveAgent: createMockAction("workspaceAgents/removeAgent"),
+    mockRemoveWorkspaceAgentState: createMockAction("workspaceAgents/removeWorkspaceAgentState"),
+    mockAgentStreamUpdateReceived: createMockAction("workspaceAgents/agentStreamUpdateReceived"),
+    mockWorkspaceUnmounted: createMockAction("workspace-lifecycle/workspaceUnmounted"),
+  };
+});
 vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
   removeAgent: mockRemoveAgent,
   removeWorkspaceAgentState: mockRemoveWorkspaceAgentState,
+  agentStreamUpdateReceived: mockAgentStreamUpdateReceived,
 }));
 
-const mockWorkspaceUnmounted = Object.assign(
-  (...args: any[]) => ({ type: "workspace-lifecycle/workspaceUnmounted", payload: args }),
-  { type: "workspace-lifecycle/workspaceUnmounted", toString: () => "workspace-lifecycle/workspaceUnmounted" },
-);
 vi.mock("../../workspace-lifecycle/workspace-lifecycle-slice", () => ({
   workspaceUnmounted: mockWorkspaceUnmounted,
 }));
 
-const selectAgentByIdMock = vi.fn();
+const selectAgentSessionMock = vi.fn();
 const selectAllWorkspaceAgentsMock = vi.fn(() => [] as any[]);
 vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
-  selectAgentById: {
-    select: (state: any, agentId: string) => selectAgentByIdMock(state, agentId),
-    effect: function* (agentId: string) { return yield sagaEffects.select(selectAgentByIdMock, agentId); },
+  selectAgentSession: {
+    select: (state: any, agentId: string) => selectAgentSessionMock(state, agentId),
+    effect: function* (agentId: string) { return yield sagaEffects.select(selectAgentSessionMock, agentId); },
   },
   selectAllWorkspaceAgents: {
     select: (state: any, wsId: string) => selectAllWorkspaceAgentsMock(state, wsId),
@@ -128,7 +127,7 @@ vi.mock("../../agent-session/agent-session-selectors", async (importOriginal) =>
   const selectSessionIsProcessing = (state: any, agentId: string) =>
     state.agentSessions?.byAgentId?.[agentId]?.isProcessing === true;
   const selectIsResponding = (state: any, agentId: string) => {
-    const agent = selectAgentByIdMock(state, agentId) ?? state.agentSessions?.byAgentId?.[agentId];
+    const agent = selectAgentSessionMock(state, agentId) ?? state.agentSessions?.byAgentId?.[agentId];
     return !!(agent?.isStreaming || agent?.isProcessing || agent?.isResponding);
   };
 
@@ -150,15 +149,78 @@ vi.mock("../../agent-session/agent-session-selectors", async (importOriginal) =>
 });
 
 import {
+  chatStatusEventsHydrated,
+  initializeChatRequested,
   chatSendStarted,
   chatStuckStateCleared,
   streamCompleted,
   streamStatusReceived,
 } from "../chat-state-slice";
-import { STATE_RECONCILIATION_INTERVAL_MS } from "../chat-state-types";
-import { setLocalStorageJSON } from "../../../utils/safe-local-storage-saga";
+import {
+  STATE_RECONCILIATION_INTERVAL_MS,
+  type StatusEvent,
+} from "../chat-state-types";
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "../../../utils/safe-local-storage-saga";
 
 const setLocalStorageJSONMock = setLocalStorageJSON as unknown as ReturnType<typeof vi.fn>;
+
+
+describe("chat-state-saga: status event hydration", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function runHydration(persistedValue: unknown): Promise<any[]> {
+    (getLocalStorageJSON as any).mockReturnValue(persistedValue);
+    const { chatStateSaga } = await import("./chat-state-saga");
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({
+          chatState: { byAgentId: {} },
+          agentSessions: { byAgentId: {} },
+          workspaceAgents: { byWorkspaceId: {} },
+        }),
+      },
+      chatStateSaga,
+    );
+
+    channel.put(initializeChatRequested("agent-1", { wsId: "ws-1" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    task.cancel();
+    await task.toPromise().catch(() => undefined);
+    return dispatched;
+  }
+
+  it("hydrates valid persisted status events for the initializing agent", async () => {
+    const statusEvents: StatusEvent[] = [
+      { phase: "tool-call", message: "Calling tool", level: "info", timestamp: 123 },
+    ];
+
+    const dispatched = await runHydration(statusEvents);
+
+    expect(getLocalStorageJSON).toHaveBeenCalledWith("chat-status-events:agent-1");
+    expect(dispatched).toContainEqual(chatStatusEventsHydrated("agent-1", statusEvents));
+  });
+
+  it("ignores malformed persisted status events without hydrating state", async () => {
+    const dispatched = await runHydration({ events: [
+      { phase: "tool-call", message: "Calling tool", level: "info", timestamp: 123 },
+    ] });
+
+    expect(getLocalStorageJSON).toHaveBeenCalledWith("chat-status-events:agent-1");
+    expect(dispatched.some((action) => action.type === chatStatusEventsHydrated.type)).toBe(false);
+  });
+});
 
 
 
@@ -360,7 +422,7 @@ describe("chat-state-saga: clone-safe status event persistence", () => {
 describe("chat-state-saga: preserve per-agent tasks across workspace unmount (Task C)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    selectAgentByIdMock.mockReset();
+    selectAgentSessionMock.mockReset();
     selectAllWorkspaceAgentsMock.mockReset();
     selectAllWorkspaceAgentsMock.mockImplementation(() => []);
   });
@@ -388,7 +450,7 @@ describe("chat-state-saga: preserve per-agent tasks across workspace unmount (Ta
     selectAllWorkspaceAgentsMock.mockImplementation((_state: any, wsId: string) =>
       wsId === "ws-A" ? [sessionA] : [],
     );
-    selectAgentByIdMock.mockImplementation((_state: any, agentId: string) =>
+    selectAgentSessionMock.mockImplementation((_state: any, agentId: string) =>
       agentId === "agent-X" ? sessionA : undefined,
     );
 

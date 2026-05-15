@@ -7,10 +7,20 @@
    */
   import type { FileNode, ProcessedNode, BlobShape, EcosystemSettings } from './types';
   import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';
-  import { processTree, getLeafNodes, findNodeAtPosition } from './tree-processor';
+  import {
+  processTree,
+  getLeafNodes,
+  findNodeAtPosition,
+} from './tree-processor';
   import { runForceSimulation } from './force-simulation';
-  import { computeBlobShapes, drawBlobToCanvas } from './blob-shapes';
-  import { tick, untrack } from 'svelte';
+  import {
+  computeBlobShapes,
+  drawBlobToCanvas,
+} from './blob-shapes';
+  import {
+  tick,
+  untrack,
+} from 'svelte';
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
 

@@ -1,5 +1,16 @@
-import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  render,
+  fireEvent,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const { mockDetect, mockExecute, mockDispatch, scriptEntries, activeWorkspaceState, toast } = vi.hoisted(() => {
   const mockDetect = vi.fn();
@@ -59,7 +70,6 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
         byWorkspaceId: {
           'ws-1': {
             scripts: {},
-            runtimeStates: {},
             outputBuffers: {},
             initialized: true,
             loading: false,

@@ -1,21 +1,34 @@
 <script lang="ts">
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { selectActiveWorkspaceId, selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { updateDigest as updateAgentDigestAction } from '$lib/store/slices/agent-session/agent-session-slice';
+
+  import {
+  selectAgentIsResponding,
+  selectAgentSessionStreamingContent,
+  selectAgentSession,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
+  import {
+  selectActiveWorkspaceId,
+  selectWorkspaceById,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import { AgentStatus, type ContentBlock, type ToolUseBlock } from '$shared/types';
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  AgentStatus,
+  type ContentBlock,
+  type ToolUseBlock,
+} from '$shared/types';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  
-const logger = createLogger('TaskAgentStatus');
+
+  const logger = createLogger('TaskAgentStatus');
 
   // Polling configuration constants
   // Polling is now handled by the shared taskAgentPollingManager (500ms interval)
@@ -41,13 +54,12 @@ const logger = createLogger('TaskAgentStatus');
   } = $props();
 
   const activeWorkspaceId$ = selectActiveWorkspaceId();
-  const serviceAgent$ = selectAgentById(agentId);
+  const serviceAgent$ = selectAgentSession(agentId);
   const agentIsResponding$ = selectAgentIsResponding(agentId);
 
   // Force reactivity with a version counter that updates when we detect changes
   let version = $state(0);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  let streamListenerCleanup: (() => void) | undefined;
   let prevAgentRef: import('$shared/types').AgentSession | undefined;
   let prevAgentResponding = false;
   let pollCount = 0;
@@ -70,14 +82,10 @@ const logger = createLogger('TaskAgentStatus');
 
   // Track final state when agent completes - keeps UI showing after completion
   let finalStatus = $state<'complete' | 'error' | null>(null);
-  let finalContent = $state<string | null>(null);
-
-  // Streaming state tracked via events
-  let streamingBuffer = $state('');
   let isStreamActive = $state(false);
 
-  // Digest state - short summary or question from agent for task status display
-  let extractedDigest = $state<string | null>(null);
+  // Streaming text is derived from Redux-owned agent-session messages.
+  const streamingContent$ = selectAgentSessionStreamingContent(agentId);
 
   async function tryLoadAgent() {
     if (triedLoading) return;
@@ -92,10 +100,9 @@ const logger = createLogger('TaskAgentStatus');
           agentId,
           workspaceId: currentWorkspace.id,
         });
-        const loadedSession = await agentService.restoreSessionWithoutBackend(
-          agentId,
-          currentWorkspace,
-        );
+        const restoreAction = restoreAgentSessionRequested(currentWorkspace.id, agentId);
+        getReduxStore().dispatch(restoreAction);
+        const loadedSession = await restoreAction.promise;
         if (loadedSession) {
           agentFound = true;
           // Clear from failed cache if it was there
@@ -124,105 +131,8 @@ const logger = createLogger('TaskAgentStatus');
     }
   }
 
-  // Helper to persist digest to the store
-  function persistDigest(digest: string) {
-    const reduxState = getReduxStore().getState();
-    const wsId = selectActiveWorkspaceId.select(reduxState);
-    if (wsId) {
-      getReduxStore().dispatch(updateAgentDigestAction(agentId, digest));
-    }
-  }
-
-  // Event handlers for streaming - defined outside of onMount to avoid recreating
-  function handleStreamChunk(event: CustomEvent) {
-    const { content } = event.detail;
-    // Only log at debug level to reduce log spam during streaming
-    logger.debug('[TaskAgentStatus] handleStreamChunk', {
-      agentId,
-      contentLength: content?.length,
-    });
-    if (content) {
-      streamingBuffer += content;
-      isStreamActive = true;
-      version++;
-
-      // Try to extract digest from the accumulated buffer
-      // The agent might send <agent_digest>...</agent_digest> at any point
-      const { digest, cleanedText } = AuggieTextParser.extractDigest(streamingBuffer);
-      if (digest) {
-        extractedDigest = digest;
-        streamingBuffer = cleanedText; // Remove digest from buffer
-        persistDigest(digest); // Persist to store for saving
-        logger.debug('[TaskAgentStatus] Extracted digest from stream', { agentId, digest });
-      }
-    }
-  }
-
-   
-  function handleStreamEnd(_event: CustomEvent) {
-    isStreamActive = false;
-
-    // Try to extract any digest from the final buffer before clearing
-    if (streamingBuffer) {
-      const { digest, cleanedText } = AuggieTextParser.extractDigest(streamingBuffer);
-      if (digest) {
-        extractedDigest = digest;
-        streamingBuffer = cleanedText;
-        persistDigest(digest); // Persist to store for saving
-        logger.debug('[TaskAgentStatus] Extracted digest at stream end', { agentId, digest });
-      }
-      finalContent = getLastMeaningfulLine(streamingBuffer);
-    }
-    streamingBuffer = '';
-
-    // The 'end' event means the stream completed successfully
-    // Set finalStatus directly - don't rely on session status which may not be updated yet
-    finalStatus = 'complete';
-    version++;
-
-    logger.debug('[TaskAgentStatus] Stream ended - marking complete', {
-      agentId,
-      finalStatus,
-    });
-  }
-
-  function handleStreamError() {
-    isStreamActive = false;
-    streamingBuffer = '';
-    finalStatus = 'error';
-    version++;
-  }
-
   onMount(() => {
     logger.debug('[TaskAgentStatus] Mounted', { agentId });
-
-    // Listen for streaming events for this specific agent
-    // The events are dispatched with pattern `agent:stream:${sessionId}` where sessionId === agentId
-    const streamEventName = `agent:stream:${agentId}`;
-
-    const streamListener = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { type } = customEvent.detail || {};
-
-      // Only log at debug level to reduce log spam
-      logger.debug('[TaskAgentStatus] Stream event', { agentId, eventType: type });
-
-      if (type === 'chunk') {
-        handleStreamChunk(customEvent);
-      } else if (type === 'end' || type === 'complete') {
-        handleStreamEnd(customEvent);
-      } else if (type === 'error') {
-        handleStreamError();
-      }
-    };
-
-    logger.debug('[TaskAgentStatus] Setting up stream listener', { agentId });
-    window.addEventListener(streamEventName, streamListener);
-
-    // Store cleanup function
-    streamListenerCleanup = () => {
-      window.removeEventListener(streamEventName, streamListener);
-    };
 
     // Poll callback - called by the shared polling manager
     // This is more efficient than each component having its own interval
@@ -230,8 +140,8 @@ const logger = createLogger('TaskAgentStatus');
       pollCount++;
       const pollState = getReduxStore().getState();
       const pollWsId = selectActiveWorkspaceId.select(pollState);
-      const session = selectAgentById.select(pollState, agentId);
-      const reduxAgent = pollWsId ? selectAgentById.select(pollState, agentId) : undefined;
+      const session = selectAgentSession.select(pollState, agentId);
+      const reduxAgent = pollWsId ? selectAgentSession.select(pollState, agentId) : undefined;
 
       if (session || reduxAgent) {
         let needsUpdate = false;
@@ -247,18 +157,15 @@ const logger = createLogger('TaskAgentStatus');
           needsUpdate = true;
         }
 
-        // Check responding state from Redux (backup for events)
+        // Check responding state from Redux while polling for initial discovery.
         const currentResponding = selectAgentIsResponding.select(pollState, agentId);
 
         if (currentResponding && !isStreamActive) {
-          // Store says the agent is responding - only trust "start" signals from polling
-          // Don't trust "stop" signals as they may be stale
+          // Store says the agent is responding; the readable selector effect below
+          // owns stopping when Redux transitions out of responding.
           isStreamActive = true;
           needsUpdate = true;
         }
-        // Note: We deliberately don't set isStreamActive = false from polling
-        // because the store state can be stale. We rely on handleStreamEnd event
-        // to correctly set isStreamActive = false.
 
         // Check if agent completed (only set once)
         const status = reduxAgent?.status || session?.status;
@@ -304,7 +211,7 @@ const logger = createLogger('TaskAgentStatus');
 
     // Register with the shared polling manager instead of creating our own interval
     // This consolidates all TaskAgentStatus polling into a single interval
-    // Polling is now mainly for discovery - once agent is found, event-driven updates take over
+    // Polling is now mainly for discovery - once agent is found, Redux updates take over
     taskAgentPollingManager.register(agentId, pollCallback);
     isPollingActive = true;
 
@@ -331,7 +238,8 @@ const logger = createLogger('TaskAgentStatus');
       !activeWorkspaceId ||
       !currentAgent ||
       (currentAgent === prevAgentRef && currentResponding === prevAgentResponding)
-    ) return;
+    )
+      return;
 
     let needsUpdate = false;
 
@@ -383,9 +291,6 @@ const logger = createLogger('TaskAgentStatus');
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
-    if (streamListenerCleanup) {
-      streamListenerCleanup();
-    }
   });
 
   // Reactive Redux subscription — replaces the previous non-reactive
@@ -404,12 +309,13 @@ const logger = createLogger('TaskAgentStatus');
   // Only hide if loading explicitly failed (agent doesn't exist and we tried loading)
   const shouldShow = $derived(!loadFailed);
 
-  // Get digest from either extracted state or agent session
-  // Extracted digest takes precedence (more recent from streaming)
+  // Get digest from either live Redux streaming content or agent session.
+  // Live streaming content takes precedence when present.
   const agentDigest = $derived.by(() => {
-    // First check locally extracted digest from streaming
-    if (extractedDigest) {
-      return extractedDigest;
+    // First check currently streaming Redux content.
+    const streamingDigest = AuggieTextParser.extractDigest($streamingContent$).digest;
+    if (streamingDigest) {
+      return streamingDigest;
     }
     // Fall back to session-stored digest
     const sessionDigest = storeAgent?.digest || serviceAgent?.digest;
@@ -470,7 +376,7 @@ const logger = createLogger('TaskAgentStatus');
     if (finalStatus === 'complete') return 'complete';
     if (finalStatus === 'error') return 'error';
 
-    // Use local streaming state for real-time updates
+    // Use Redux-derived streaming state for real-time updates.
     if (isStreamActive) return 'streaming';
 
     if (!storeAgent && !serviceAgent) return 'unknown';
@@ -487,20 +393,13 @@ const logger = createLogger('TaskAgentStatus');
 
   // Get the latest message or streaming content
   const latestContent = $derived.by(() => {
-    // First check local streaming state (updated via events for real-time updates)
-    if (isStreamActive && streamingBuffer) {
-      const lastLine = getLastMeaningfulLine(AuggieTextParser.stripDigestTagsForDisplay(streamingBuffer));
+    // First check Redux-owned streaming content for real-time updates.
+    const streamingContent = AuggieTextParser.stripDigestTagsForDisplay($streamingContent$);
+    if (isStreamActive && streamingContent) {
+      const lastLine = getLastMeaningfulLine(streamingContent);
       return {
         text: lastLine || 'Working...',
         isStreaming: true,
-      };
-    }
-
-    // If we have captured final content from a completed stream, show that
-    if (finalContent && finalStatus) {
-      return {
-        text: finalContent,
-        isStreaming: false,
       };
     }
 

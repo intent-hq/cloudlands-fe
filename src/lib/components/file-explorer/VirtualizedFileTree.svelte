@@ -1,17 +1,21 @@
 <script lang="ts">
 /* eslint-disable max-lines */
-  import { onMount, tick, untrack } from 'svelte';
+  import {
+  onMount,
+  tick,
+  untrack,
+} from 'svelte';
   import type { FileNode } from '$shared/types';
   import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
   import {
-    faChevronDown,
-    faPlus,
-    faArrowUpRightFromSquare,
-    faPencil,
-    faFolderOpen,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faPlus,
+  faArrowUpRightFromSquare,
+  faPencil,
+  faFolderOpen,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -21,8 +25,14 @@
   import { invoke } from '$lib/electron-bridge';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
-  import { track, getFileExtension } from '$lib/services/analytics';
-  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import {
+  track,
+  getFileExtension,
+} from '$lib/services/analytics';
+  import {
+  getPanelLayoutManager,
+  hasPanelLayoutManager,
+} from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   // Sentinel path for inline creation node

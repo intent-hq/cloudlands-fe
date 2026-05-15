@@ -12,7 +12,10 @@
  *    snapshot fresh for the workspace list / hover card)
  */
 
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import { workspaceService } from "../../../../../features/workspace/main/workspace.service";
 import { Logger } from "../../../../../shared/logger";
 import { restoreWorkspaceId } from "../../../../../shared/types/type-guards";

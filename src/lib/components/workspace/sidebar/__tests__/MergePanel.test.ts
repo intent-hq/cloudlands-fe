@@ -1,5 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+} from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 

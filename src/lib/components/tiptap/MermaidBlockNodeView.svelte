@@ -4,9 +4,16 @@
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import Fa from 'svelte-fa';
-  import { faPencil, faExpand, faTimes } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPencil,
+  faExpand,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
-  import { tick, onMount } from 'svelte';
+  import {
+  tick,
+  onMount,
+} from 'svelte';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
 
   // Dynamically import MermaidRenderer to reduce bundle size

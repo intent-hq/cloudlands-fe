@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import {
   initialState,
@@ -9,7 +13,10 @@ import {
   transientUiReducer,
 } from "./transient-ui-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { selectIsRawNoteViewEnabled, selectSidebarActiveTab } from "./transient-ui-selectors";
+import {
+  selectIsRawNoteViewEnabled,
+  selectSidebarActiveTab,
+} from "./transient-ui-selectors";
 
 const WS_1 = "ws-1";
 const WS_2 = "ws-2";

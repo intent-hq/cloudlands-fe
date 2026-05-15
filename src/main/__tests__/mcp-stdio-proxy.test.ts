@@ -5,8 +5,18 @@
  * These are integration tests that spawn the actual STDIO proxy process
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { spawn, ChildProcess } from 'node:child_process';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  vi,
+} from 'vitest';
+import {
+  spawn,
+  ChildProcess,
+} from 'node:child_process';
 import { HttpMcpBridge } from '../http-mcp-bridge';
 import path from 'path';
 import fs from 'fs/promises';

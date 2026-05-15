@@ -10,21 +10,24 @@
    * - Error reporting to backend
    */
 
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { slide } from 'svelte/transition';
   import { createLogger } from '$lib/utils/client-logger';
   import { ErrorHandler } from '$features/agent/services/error-handler';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faTriangleExclamation,
-    faRotateRight,
-    faArrowsRotate,
-    faHouse,
-    faSpinner,
-    faCopy,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faTriangleExclamation,
+  faRotateRight,
+  faArrowsRotate,
+  faHouse,
+  faSpinner,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { goto } from '$app/navigation';
 
   const logger = createLogger('EnhancedErrorBoundary');

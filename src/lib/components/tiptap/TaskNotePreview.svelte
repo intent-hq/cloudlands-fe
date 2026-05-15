@@ -8,7 +8,10 @@
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import type { NoteId } from '$shared/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+  selectNoteById,
+  selectNotesVersion,
+} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   interface Props {

@@ -4,7 +4,13 @@
  * Verifies that specialist metadata is properly stored and accessible.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 
 // Mock IPC and Redux dependencies
 vi.mock('$shared/ipc/typed-invoke', () => ({
@@ -24,7 +30,10 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 
 
 
-import { UnifiedAgentFactory, agentFactory } from '../agent-factory';
+import {
+  UnifiedAgentFactory,
+  agentFactory,
+} from '../agent-factory';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 

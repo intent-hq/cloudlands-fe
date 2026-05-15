@@ -3,7 +3,10 @@
  * Mocks Electron and other dependencies for testing
  */
 
-import { vi, afterEach } from 'vitest';
+import {
+  vi,
+  afterEach,
+} from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 

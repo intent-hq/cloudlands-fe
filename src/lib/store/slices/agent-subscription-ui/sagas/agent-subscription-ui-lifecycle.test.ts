@@ -5,8 +5,18 @@
  * cross-workspace isolation, auto-dismiss timing, and cleanup.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  runSaga,
+  stdChannel,
+} from 'redux-saga';
 import * as sagaEffects from 'redux-saga/effects';
 
 // Must mock typed-redux-saga before importing saga modules
@@ -97,9 +107,7 @@ vi.mock('../../workspace-lifecycle/workspace-lifecycle-slice', () => ({
   }), { type: 'workspace-lifecycle/workspaceUnmounted', toString: () => 'workspace-lifecycle/workspaceUnmounted' }),
 }));
 
-import {
-  agentSubscriptionUISaga,
-} from './agent-subscription-ui-saga';
+import { agentSubscriptionUISaga } from './agent-subscription-ui-saga';
 import {
   workspaceMounted,
   workspaceUnmounted,

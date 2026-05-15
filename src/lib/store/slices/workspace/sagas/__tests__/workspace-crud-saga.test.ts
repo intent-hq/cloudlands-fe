@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 // Must mock typed-redux-saga BEFORE importing saga modules
@@ -32,7 +38,6 @@ const {
   mockOpen,
   mockUpdate,
   mockTrack,
-  mockClearDeferredResults,
   mockInvalidateAgentCache,
   mockWorkspaceStorageClearState,
 } = vi.hoisted(() => ({
@@ -42,7 +47,6 @@ const {
   mockOpen: vi.fn(),
   mockUpdate: vi.fn(),
   mockTrack: vi.fn(),
-  mockClearDeferredResults: vi.fn(),
   mockInvalidateAgentCache: vi.fn(),
   mockWorkspaceStorageClearState: vi.fn(),
 }));
@@ -58,7 +62,6 @@ vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
 }));
 
 vi.mock("$lib/services/analytics", () => ({ track: mockTrack }));
-vi.mock("$features/agent/deferred-results-cache", () => ({ clearDeferredResults: mockClearDeferredResults }));
 vi.mock("$lib/utils/agent-loader", () => ({ invalidateAgentCache: mockInvalidateAgentCache }));
 vi.mock("$lib/store/slices/pr-status/pr-status-slice", () => ({
   cleanupPRStatusWorkspace: (wsId: string) => ({ type: "prStatus/cleanupWorkspace", payload: [wsId] }),
@@ -286,9 +289,6 @@ describe("workspace-crud-saga", () => {
       );
       // cleanup chain
       expect(iterator.next({ ok: true }).value).toEqual(
-        sagaEffects.call(mockClearDeferredResults, "ws-1"),
-      );
-      expect(iterator.next().value).toEqual(
         sagaEffects.put({ type: "prStatus/cleanupWorkspace", payload: ["ws-1"] }),
       );
       expect(iterator.next().value).toEqual(sagaEffects.call(mockInvalidateAgentCache, "ws-1"));

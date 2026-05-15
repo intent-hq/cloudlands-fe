@@ -1,4 +1,7 @@
-import { call, put } from "typed-redux-saga";
+import {
+  call,
+  put,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import { IPC_CHANNELS } from "$shared/ipc-registry";

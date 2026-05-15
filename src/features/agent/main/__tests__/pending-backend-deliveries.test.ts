@@ -6,7 +6,14 @@
  * 2. The safety timeout force-clears pendingBackendDeliveries after 5 minutes
  */
 
-import { beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
 
 const { getWindowIdsForWorkspaceMock } = vi.hoisted(() => ({
   getWindowIdsForWorkspaceMock: vi.fn(),
@@ -64,6 +71,8 @@ describe('pendingBackendDeliveries safety timeout', () => {
     handler.streamStartTimes = new Map();
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
+    handler.streamAssistantMessageIds = new Map();
+    handler.streamAssistantAppMessageIds = new Map();
     handler.streamWindowIds = new Map();
     handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();

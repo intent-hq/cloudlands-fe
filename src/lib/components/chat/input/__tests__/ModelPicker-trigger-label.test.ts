@@ -1,7 +1,18 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  render,
+  screen,
+} from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 
@@ -111,12 +122,21 @@ vi.mock('$lib/store/utils/svelte-context', () => ({
 }));
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => {
-  const selectAgentById = Object.assign(
+  const selectAgentSession = Object.assign(
     (agentIdOrStore: Parameters<typeof selectorForSession>[0]) =>
       selectorForSession(agentIdOrStore),
     { select: (_state: unknown, agentId: string) => sessions.get(agentId) },
   );
-  return { selectAgentById };
+  return { selectAgentSession };
+});
+
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => {
+  const selectAgentSession = Object.assign(
+    (agentIdOrStore: Parameters<typeof selectorForSession>[0]) =>
+      selectorForSession(agentIdOrStore),
+    { select: (_state: unknown, agentId: string) => sessions.get(agentId) },
+  );
+  return { selectAgentSession };
 });
 
 vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
@@ -186,6 +206,9 @@ vi.mock('$shared/config/provider-config', () => ({
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: (session: Session) =>
     session.provider ?? (session.metadata?.provider as string | undefined),
+  isAgentSession: (session: Session | undefined) => !!session && !('isPending' in session),
+  isPendingAgentSession: (session: (Session & { isPending?: boolean }) | undefined) =>
+    session?.isPending === true,
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));

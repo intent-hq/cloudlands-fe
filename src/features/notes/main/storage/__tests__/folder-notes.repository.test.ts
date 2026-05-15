@@ -8,7 +8,15 @@
  * - Session-only CRDT support via Yjs (not persisted)
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { FolderBasedNotesRepository } from '../folder-notes.repository';
@@ -16,7 +24,11 @@ import { crdtDocumentManager } from '../crdt-document-manager';
 import { getNoteStoragePaths } from '../note-storage-paths';
 import { setGitEnabled } from '../git-version.service';
 import { parseFrontmatter } from '../frontmatter';
-import { ContentType, NoteVisibility, AuthorType } from '../../../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+  AuthorType,
+} from '../../../../../shared/types';
 import type { Note, NoteId, WorkspaceId } from '../../../../../shared/types';
 
 // Test workspace and note IDs

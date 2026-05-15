@@ -2,8 +2,16 @@
  * Tests for Unified ID Service
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { idService, UnifiedIdService } from '../unified-id.service';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
+import {
+  idService,
+  UnifiedIdService,
+} from '../unified-id.service';
 
 describe('UnifiedIdService', () => {
   beforeEach(() => {

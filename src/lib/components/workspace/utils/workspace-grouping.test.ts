@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
-import { buildRepoPathLookup, getGroupKey, type RepoGithubInfo } from './workspace-grouping';
+import {
+  buildRepoPathLookup,
+  getGroupKey,
+  type RepoGithubInfo,
+} from './workspace-grouping';
 
 /** Minimal workspace factory — only the fields the grouping utils inspect. */
 function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {

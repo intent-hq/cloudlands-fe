@@ -2,14 +2,17 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faWandMagicSparkles,
-    faSpinner,
-    faRotateRight,
-    faChevronDown,
-    faChevronRight,
-    faFolderOpen,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { fly, slide } from 'svelte/transition';
+  faWandMagicSparkles,
+  faSpinner,
+  faRotateRight,
+  faChevronDown,
+  faChevronRight,
+  faFolderOpen,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  fly,
+  slide,
+} from 'svelte/transition';
   import { invoke } from '$lib/electron-bridge';
   import WalkthroughFileDiff from './WalkthroughFileDiff.svelte';
   import WalkthroughCategoriesGrid from './WalkthroughCategoriesGrid.svelte';

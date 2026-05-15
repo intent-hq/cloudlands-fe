@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';

@@ -4,7 +4,7 @@
  * Minimal client-side wrapper for agent IPC communication.
  * Used by renderer process to communicate with main process.
  *
- * NOTE: Agent creation should go through UnifiedAgentFactory (agentFactory.createAgent()),
+ * NOTE: Renderer agent creation should go through workspace-agent Redux actions/sagas,
  * not through this client. This client is only for runtime operations like setModel.
  */
 

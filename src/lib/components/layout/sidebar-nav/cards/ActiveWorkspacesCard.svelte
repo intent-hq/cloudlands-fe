@@ -18,17 +18,23 @@
   import Header from '$lib/components/ui/Header.svelte';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    selectActiveStreamsVersion,
-    selectPinnedWorkspaceIds,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeAll, togglePinWorkspace } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  selectActiveStreamsVersion,
+  selectPinnedWorkspaceIds,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+  closeAll,
+  togglePinWorkspace,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import {
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
   import {
-    compareWorkspaceActivityDisplayTimeDesc,
-    isWorkspaceActivityWithin,
-  } from '$shared/utils/workspace-activity-time';
+  compareWorkspaceActivityDisplayTimeDesc,
+  isWorkspaceActivityWithin,
+} from '$shared/utils/workspace-activity-time';
 
   const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();

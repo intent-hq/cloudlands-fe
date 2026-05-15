@@ -6,7 +6,16 @@
  * from the old `AgentEventSubscriptionService.createEventDeliveryCallback()`.
  */
 
-import { cancel, cancelled, delay, fork, put, select, take, takeEvery } from "typed-redux-saga";
+import {
+  cancel,
+  cancelled,
+  delay,
+  fork,
+  put,
+  select,
+  take,
+  takeEvery,
+} from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
@@ -30,7 +39,11 @@ import {
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import { requestDeliverQueuedEvents } from "./saga-actions";
-import { buildSweepCatchUpEventId, recordDeliveredEventIds, sweepCatchUpSeen } from "./delivery-saga";
+import {
+  buildSweepCatchUpEventId,
+  recordDeliveredEventIds,
+  sweepCatchUpSeen,
+} from "./delivery-saga";
 import { Logger } from "../../../../../shared/logger";
 const logger = new Logger("MatchingSaga");
 import type {

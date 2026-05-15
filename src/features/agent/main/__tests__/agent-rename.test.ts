@@ -9,7 +9,13 @@
  * `unified-persistence-rename.test.ts`.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 vi.mock('$features/system/main/system.ipc', () => ({
   sendToWorkspaceWindows: vi.fn(),

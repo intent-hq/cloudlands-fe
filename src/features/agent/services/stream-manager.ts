@@ -16,30 +16,34 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from '../../../lib/utils/browser-event-emitter';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { Logger } from '../../../shared/logger';
-import type { AgentMessage, ContentBlock, Workspace } from '../../../shared/types';
+import type { AgentMessage,
+  ContentBlock,
+  Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
-import { createMessageId, WorkspaceId } from '../../../shared/types/branded-ids';
+import {
+  createMessageId,
+  WorkspaceId,
+} from '../../../shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { newAssistantMessage } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+import { removeWorkspaceAgentState } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import {
+  addMessage as addAgentSessionMessage,
   setAgentStreaming,
   updateAgentDigest,
-  addAgentMessage,
-  removeWorkspaceAgentState,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-import {
-  selectAgentById,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+} from '$lib/store/slices/agent-session/agent-session-slice';
+
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 import {
   setWorkspaceEntity,
   removeWorkspaceEntity,
 } from '$lib/store/slices/workspace/workspace-slice';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 
 const logger = new Logger('DirectStreamManager');
 
@@ -71,6 +75,7 @@ export interface StreamConfig {
   sessionId: string;
   workspaceId: WorkspaceId;
   messageId?: string;
+  assistantAppMessageId?: string;
   frontendSessionId?: string;
   backendSessionId?: string;
   onComplete?: () => void;
@@ -280,7 +285,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
       this.metrics.errors++;
       return config.agentId;
     }
-    getReduxStore().dispatch(setAgentStreaming(wsId, config.agentId, true));
+    getReduxStore().dispatch(setAgentStreaming(config.agentId, true));
 
     // Emit start event (include streamId for backward compatibility in events)
     this.emit('stream:start', { streamId, config });
@@ -452,7 +457,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.lastActivity = Date.now();
 
     // Content blocks are tracked in the local StreamSession and forwarded via events.
-    // No need to update Redux here — ChatService handles content block state.
+    // No need to update Redux here — stream sagas handle content block state.
 
     // Emit events
     this.emit('stream:content_block', { streamId, block });
@@ -689,7 +694,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Create assistant message
     const message: AgentMessage & { content?: string } = {
       id: session.config.messageId || createMessageId(uuidv4()),
-      appMessageId: createAppMessageId(),
+      appMessageId: session.config.assistantAppMessageId || createAppMessageId(),
       role: 'assistant',
       contentBlocks:
         session.contentBlocks.length > 0
@@ -721,8 +726,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     }
 
     // Update agent state
-    const wsId = session.config.workspaceId as string;
-    getReduxStore().dispatch(setAgentStreaming(wsId, session.config.agentId, false));
+    getReduxStore().dispatch(setAgentStreaming(session.config.agentId, false));
 
     // Call completion callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -745,7 +749,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // NOTE: We do NOT save the message here via PERSISTENCE_SAVE_MESSAGE
     // The streaming message already exists in the session (created when streaming started)
-    // and agent.service.ts or agent-factory.ts will update it and save the full session
+    // and agent stream lifecycle or agent-factory.ts will update it and save the full session
     // when handling the 'complete' event. Calling PERSISTENCE_SAVE_MESSAGE here would
     // APPEND a duplicate message to the session file.
 
@@ -755,7 +759,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Mark agent as having unread messages (if user isn't currently viewing it)
     // Pass isBackground to skip unread tracking for background agents
-    const agentSession = selectAgentById.select(
+    const agentSession = selectAgentSession.select(
       getReduxStore().getState(), session.config.agentId
     );
     const isBackgroundAgent =
@@ -831,8 +835,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.healthStatus = 'error';
 
     // Update agent state
-    const wsId = session.config.workspaceId as string;
-    getReduxStore().dispatch(setAgentStreaming(wsId, session.config.agentId, false));
+    getReduxStore().dispatch(setAgentStreaming(session.config.agentId, false));
 
     // Call error callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -1439,13 +1442,12 @@ export class StreamManager extends EventEmitter implements IDisposable {
         this.sessions.set(state.config.agentId, session);
 
         // Update agent state via Redux
-        const wsId = state.config.workspaceId as string;
         const store = getReduxStore();
-        store.dispatch(setAgentStreaming(wsId, state.config.agentId, true));
+        store.dispatch(setAgentStreaming(state.config.agentId, true));
 
         // Restore content blocks to agent state
         if (state.contentBlocks.length > 0) {
-          const agentData = selectAgentById.select(store.getState(), state.config.agentId);
+          const agentData = selectAgentSession.select(store.getState(), state.config.agentId);
           if (agentData) {
             const lastMessage = agentData.messages?.[agentData.messages.length - 1];
             if (lastMessage && lastMessage.role === 'assistant') {
@@ -1453,7 +1455,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
               // No direct mutation needed in Redux here.
             } else {
               // Create a new assistant message with the content blocks
-              store.dispatch(addAgentMessage(wsId, state.config.agentId, {
+              store.dispatch(addAgentSessionMessage(state.config.agentId, {
                 id: createMessageId(`msg_${Date.now()}`),
                 appMessageId: createAppMessageId(),
                 role: 'assistant',

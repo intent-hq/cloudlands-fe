@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import EventEmitter from 'events';
 
 // Mock auggie-path before importing the module under test
@@ -43,8 +50,11 @@ import {
   shouldUseWindowsShell,
   executeAuggieCommand,
 } from '../main/execute-auggie-command';
-import { getEnhancedPath } from '../main/auggie-path';
-import { findAuggiePathAsync } from '../main/auggie-path';
+import {
+  getEnhancedPath,
+  findAuggiePathAsync,
+} from '../main/auggie-path';
+
 
 describe('getAuggieExecPATH', () => {
   const MOCK_ENHANCED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';

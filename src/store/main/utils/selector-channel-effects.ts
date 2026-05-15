@@ -18,8 +18,16 @@
  * yield* takeEveryFromSelector(mySelector, [arg], function*({ payload }) { ... });
  * ```
  */
-import { take, cancel, fork } from "typed-redux-saga";
-import { eventChannel, type EventChannel, type Task } from "redux-saga";
+import {
+  take,
+  cancel,
+  fork,
+} from "typed-redux-saga";
+import {
+  eventChannel,
+  type EventChannel,
+  type Task,
+} from "redux-saga";
 import { shallowEqual } from "fast-equals";
 
 import { createCachedSelector } from "../../utils/create-cached-selector";

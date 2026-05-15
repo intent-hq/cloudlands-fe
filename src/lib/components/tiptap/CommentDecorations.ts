@@ -5,10 +5,19 @@
  * This keeps the visual representation separate from the document structure.
  */
 
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import {
+  Plugin,
+  PluginKey,
+} from '@tiptap/pm/state';
+import {
+  Decoration,
+  DecorationSet,
+} from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { findCommentAnchors, getAllAnchoredCommentIds } from './CommentAnchor';
+import {
+  findCommentAnchors,
+  getAllAnchoredCommentIds,
+} from './CommentAnchor';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 
 export const commentDecorationsKey = new PluginKey('commentDecorations');

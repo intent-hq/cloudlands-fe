@@ -8,10 +8,10 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import {
-    deleteActivityLogPreset,
-    saveActivityLogPreset,
-    type ActivityLogPresetPreference,
-  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  deleteActivityLogPreset,
+  saveActivityLogPreset,
+  type ActivityLogPresetPreference,
+} from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectActivityLogPresets } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

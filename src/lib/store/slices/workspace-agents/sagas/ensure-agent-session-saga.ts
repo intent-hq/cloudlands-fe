@@ -1,12 +1,17 @@
-import { agentService } from "$features/agent/agent-ipc-bridge";
-import type { Workspace } from "$shared/types";
-import { call, takeEvery } from "typed-redux-saga";
+import type { AgentSession, Workspace } from "$shared/types";
 import {
-  selectCurrentWorkspace,
-  selectWorkspaceById,
-} from "../../workspace/workspace-selectors";
-import { ensureAgentSessionLoaded } from "../workspace-agents-slice";
-import { selectAgentById } from "../workspace-agents-selectors";
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import { selectWorkspaceById } from "../../workspace/workspace-selectors";
+import {
+  ensureAgentSessionLoaded,
+  restoreAgentSessionRequested,
+} from "../workspace-agents-slice";
+
+import { restoreSessionFromDiskWithoutBackend } from "./agent-session-restore-utils";
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 /**
  * Saga-local in-flight guard. Debounces rapid re-dispatches per `(wsId, agentId)`
@@ -31,14 +36,12 @@ function makeKey(wsId: string, agentId: string): string {
  * Loads a single agent session into Redux if it is not already present.
  *
  * Flow:
- * 1. If `selectAgentById(agentId)` returns a session, no-op.
- * 2. Otherwise resolve the workspace via `selectWorkspaceById(wsId)` with a
- *    fallback to `selectCurrentWorkspace` (matches the legacy subscription
- *    behaviour that would use the active workspace when a caller did not
- *    have a full Workspace object handy).
- * 3. Call `agentService.restoreSessionWithoutBackend(agentId, workspace)`.
- *    The IPC bridge dispatches `upsertAgentSession` on success, so no extra
- *    dispatch is required here.
+ * 1. If `selectAgentSession(agentId)` returns a session, no-op.
+ * 2. Otherwise resolve the workspace via the explicit `selectWorkspaceById(wsId)`.
+ *    If that workspace cannot be resolved, no-op rather than falling back to
+ *    the current workspace.
+ * 3. Load persisted session/config through the thin persistence boundary and
+ *    publish the restored session via Redux actions.
  *
  * Any errors from the IPC call are swallowed to match the previous
  * component-side behaviour; the dispatch originated from a UI mount and
@@ -48,24 +51,45 @@ export function* handleEnsureAgentSessionLoaded(
   wsId: string,
   agentId: string,
 ) {
-  const existing = yield* selectAgentById.effect(agentId);
+  const existing = yield* selectAgentSession.effect(agentId);
   if (existing) return;
 
   const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(wsId);
-  const resolvedWorkspace: Workspace | undefined =
-    workspace ?? (yield* selectCurrentWorkspace.effect());
-
-  if (!resolvedWorkspace) return;
+  if (!workspace) return;
 
   try {
-    yield* call(
-      [agentService, agentService.restoreSessionWithoutBackend],
-      agentId,
-      resolvedWorkspace,
-    );
+    yield* call(restoreSessionFromDiskWithoutBackend, agentId, workspace);
   } catch {
     // Intentional: the legacy component path also swallowed these errors;
     // the agent service logs via its own error boundary.
+  }
+}
+
+export function* handleRestoreAgentSessionRequested(
+  action: ReturnType<typeof restoreAgentSessionRequested>,
+) {
+  const [wsId, agentId] = action.payload;
+  try {
+    const existing = yield* selectAgentSession.effect(agentId);
+    if (existing) {
+      yield* put(action.success(existing));
+      return;
+    }
+
+    const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(wsId);
+    if (!workspace) {
+      yield* put(action.success(null));
+      return;
+    }
+
+    const session: AgentSession | null = yield* call(
+      restoreSessionFromDiskWithoutBackend,
+      agentId,
+      workspace,
+    );
+    yield* put(action.success(session));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -96,6 +120,8 @@ export function* watchEnsureAgentSessionLoadedSaga() {
       }
     },
   );
+
+  yield* takeEvery(restoreAgentSessionRequested, handleRestoreAgentSessionRequested);
 }
 
 

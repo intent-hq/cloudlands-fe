@@ -10,6 +10,10 @@ import { unifiedPersistence } from './agent-persistence';
 import type { CommandResponse } from '../../../shared/types';
 import { Logger } from '../../../shared/logger';
 import { PERSISTENCE_CHANNELS } from '../../../shared/ipc/channels';
+import {
+  deduplicateAgentMessages,
+  normalizeAgentMessage,
+} from '$shared/utils/message-dedup';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   PersistenceLoadSchema,
@@ -340,12 +344,23 @@ export function setupPersistenceIPC(): void {
               }
             }
 
+            const deduplicatedMergedMessages = deduplicateAgentMessages(
+              mergedMessages.map((message: any) => normalizeAgentMessage(message)),
+            );
+            if (deduplicatedMergedMessages.length !== mergedMessages.length) {
+              logger.warn('Frontend/disk merge removed logical duplicate messages before saving', {
+                agentId: validated.session.id,
+                originalMessageCount: mergedMessages.length,
+                deduplicatedMessageCount: deduplicatedMergedMessages.length,
+              });
+            }
+
             // Merge with existing data, preserving systemPrompt and other backend-only fields
             agentToSave = {
               ...existingAgent.data,
               ...validated.session,
               // Use merged messages to prevent data loss
-              messages: mergedMessages,
+              messages: deduplicatedMergedMessages,
               // Explicitly preserve systemPrompt from existing data if not provided
               systemPrompt: validated.session.systemPrompt || existingAgent.data.systemPrompt,
             };

@@ -3,7 +3,10 @@
 
   const logger = createLogger('DebugPanel');
 
-  import { debugConfig, type DebugFlags } from '$lib/config/debug';
+  import {
+  debugConfig,
+  type DebugFlags,
+} from '$lib/config/debug';
   import { onMount } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { Switch } from '$lib/components/ui/switch';
@@ -11,15 +14,15 @@
   import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import {
-    faBug,
-    faTimes,
-    faRotate,
-    faPlay,
-    faStop,
-    faChevronUp,
-    faChevronDown,
-    faWaveSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faBug,
+  faTimes,
+  faRotate,
+  faPlay,
+  faStop,
+  faChevronUp,
+  faChevronDown,
+  faWaveSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

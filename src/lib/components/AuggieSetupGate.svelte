@@ -3,24 +3,33 @@
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
-  import { invoke, shell } from '$lib/electron-bridge';
+  import {
+  invoke,
+  shell,
+} from '$lib/electron-bridge';
   import { identifyUser } from '$lib/services/analytics';
   import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
-  import { MINIMUM_AUGGIE_VERSION, type InstallErrorType } from '$shared/constants/auggie';
-  import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+  import {
+  MINIMUM_AUGGIE_VERSION,
+  type InstallErrorType,
+} from '$shared/constants/auggie';
+  import {
+  AUGGIE_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from '$shared/ipc/channels';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
-    faArrowUpRightFromSquare,
-    faCircleCheck,
-    faCircleNotch,
-    faDownload,
-    faPaste,
-    faExternalLinkAlt,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowUpRightFromSquare,
+  faCircleCheck,
+  faCircleNotch,
+  faDownload,
+  faPaste,
+  faExternalLinkAlt,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fade } from 'svelte/transition';

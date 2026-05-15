@@ -1,28 +1,35 @@
 <script lang="ts">
-  import type { Note, AgentMessage, AgentSession } from '$shared/types';
-  import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import type { Note,
+  AgentMessage,
+  AgentSession } from '$shared/types';
+  import type { WorkspaceId,
+  AgentId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { writable } from 'svelte/store';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import {
-    getFileChangesFromMessages,
-    type ChatFileChange,
-  } from '$lib/utils/get-file-changes-from-messages';
+  getFileChangesFromMessages,
+  type ChatFileChange,
+} from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import {
-    selectAgentById,
-    selectAllWorkspaceAgents,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceChatChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { runAgentForNoteRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import {
+  ensureAgentSessionLoaded,
+  restoreAgentSessionRequested,
+  runAgentForNoteRequested,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import {
+  getDispatch,
+  readableProp,
+} from '$lib/store/utils/svelte-context';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -35,15 +42,12 @@
     note: Note;
   } = $props();
 
-  // Mirror workspaceId into a writable so selectors react to prop changes.
-  const workspaceIdStore = writable(workspaceId as string);
-  $effect(() => {
-    workspaceIdStore.set(workspaceId as string);
-  });
+  const dispatch = getDispatch();
+  const workspaceId$ = readableProp(() => workspaceId as string);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
   // scopes to the current workspace, so no manual filtering is needed.
-  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceId$);
 
   // Derived state
   const isTask = $derived(!!note.metadata?.task);
@@ -53,21 +57,24 @@
   const activeWorkspace = selectActiveWorkspace();
 
   // Get child tasks (notes that have this note as parent)
-  const allNotes$ = selectAllNotes(workspaceId as string);
+  const allNotes$ = selectAllNotes(workspaceId$);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const childTasks = $derived.by(() => {
     const allNotes = $allNotes$;
     return allNotes.filter((n) => n.parentId === note.id && n.metadata?.task);
   });
 
-  const allAgents = $derived($workspaceAgents$);
 
   // Sort assigned agents by creation date (oldest first)
   const assignedAgents = $derived.by(() => {
+    // Keep this derived value reactive to agent session loads while resolving
+    // agent details through selector-backed Redux reads below.
+    const _workspaceAgents = $workspaceAgents$;
+    const state = getReduxStore().getState();
     const uniqueAgentIds = [...new Set(assignedAgentIds)];
     return uniqueAgentIds.sort((a, b) => {
-      const agentA = allAgents.find((agent) => agent.id === a);
-      const agentB = allAgents.find((agent) => agent.id === b);
+      const agentA = selectAgentSession.select(state, a);
+      const agentB = selectAgentSession.select(state, b);
       const dateA = agentA?.createdAt ? new Date(agentA.createdAt).getTime() : Infinity;
       const dateB = agentB?.createdAt ? new Date(agentB.createdAt).getTime() : Infinity;
       return dateA - dateB;
@@ -75,7 +82,10 @@
   });
 
   function getAgentName(agentId: AgentId): string {
-    const session = allAgents.find((agent) => agent.id === agentId);
+    // Keep assigned-agent display reactive to agent loads without scanning the
+    // workspace agent list for an ID lookup.
+    const _workspaceAgents = $workspaceAgents$;
+    const session = selectAgentSession.select(getReduxStore().getState(), agentId);
     return session?.name || 'Agent';
   }
 
@@ -89,7 +99,7 @@
 
     const missingAgentIds = assignedAgentIds.filter(
       (agentId) =>
-        !allAgents.some((agent) => agent.id === agentId) && !loadAttemptedAgents.has(agentId),
+        !$workspaceAgents$.some((agent) => agent.id === agentId) && !loadAttemptedAgents.has(agentId),
     );
 
     if (missingAgentIds.length > 0) {
@@ -97,9 +107,7 @@
         loadAttemptedAgents.add(agentId);
       }
       for (const agentId of missingAgentIds) {
-        agentService.restoreSessionWithoutBackend(agentId, workspace).catch((error) => {
-          logger.warn('Failed to load assigned agent from disk', { agentId, error });
-        });
+        dispatch(ensureAgentSessionLoaded(workspace.id, agentId));
       }
     }
   });
@@ -108,7 +116,7 @@
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-    getReduxStore().dispatch(
+    dispatch(
       openAgentTabRequested(workspaceId, {
         agentId,
         sourcePanelId,
@@ -119,9 +127,7 @@
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
-    getReduxStore().dispatch(
-      runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'),
-    );
+    dispatch(runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'));
   }
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
@@ -130,12 +136,14 @@
 
     for (const agentId of assignedAgents) {
       try {
-        let agent: AgentSession | null | undefined = selectAgentById.select(
+        let agent: AgentSession | null | undefined = selectAgentSession.select(
           getReduxStore().getState(),
           agentId,
         );
         if (!agent && workspace) {
-          agent = await agentService.restoreSession(agentId, workspace);
+          const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
+          dispatch(restoreAction);
+          agent = await restoreAction.promise;
         }
         if (agent?.messages) {
           allMessages.push(...agent.messages);
@@ -155,7 +163,7 @@
       const changes = await getAggregateChanges();
       if (changes.length === 0) return;
 
-      getReduxStore().dispatch(
+      dispatch(
         openWorkspaceChatChanges(
           workspaceId as string,
           changes as never,

@@ -19,8 +19,14 @@ import { WorkspaceConfig } from '../../../../shared/main/config';
 import { Logger } from '../../../../shared/logger';
 import { FolderBasedNotesRepository } from './folder-notes.repository';
 import { getNoteStoragePaths } from './note-storage-paths';
-import { STORAGE_FILES, type NoteFrontmatter } from './note-storage.types';
-import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
+import {
+  STORAGE_FILES,
+  type NoteFrontmatter,
+} from './note-storage.types';
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+} from './frontmatter';
 
 const logger = new Logger('NoteMigration');
 

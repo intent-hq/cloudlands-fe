@@ -1,5 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import * as sagaEffects from 'redux-saga/effects';
+import {
+  AgentStatus,
+  type AgentSession,
+} from '$shared/types';
+import { AgentActivationState } from '$shared/types/agent-session';
 
 vi.mock('typed-redux-saga', () => ({
   call: function* (fnOrDescriptor: any, ...args: any[]) {
@@ -9,6 +19,12 @@ vi.mock('typed-redux-saga', () => ({
   },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
+  },
+  delay: function* (ms: number) {
+    return yield sagaEffects.delay(ms);
+  },
+  race: function* (effects: any) {
+    return yield sagaEffects.race(effects);
   },
   select: function* (selector: any) {
     return yield sagaEffects.select(selector);
@@ -34,9 +50,17 @@ vi.mock('$lib/utils/agent-name-generator', () => ({
 }));
 
 import {
+  handleActivateAgentRequestedSaga,
+  handleActivateInitialAgentRequestedSaga,
+  handleCreateAgentFromConfigRequestedSaga,
   handleCreateAgentRequestedSaga,
   handleCreateAgentWithSpecialistRequestedSaga,
+  handleForkAgentRequestedSaga,
 } from './agent-creation-saga';
+import {
+  activateAgentRequested,
+  createAgentFromConfigRequested,
+} from '../workspace-agents-slice';
 
 function makeWorkspace(wsId: string) {
   return {
@@ -275,10 +299,60 @@ describe('handleCreateAgentWithSpecialistRequestedSaga — specialist lookup bra
   });
 });
 
+describe('handleActivateAgentRequestedSaga', () => {
+  it('upserts the final activated session before resolving activation waiters', async () => {
+    const action = activateAgentRequested('ws-activate', 'agent-activate');
+    const currentSession = {
+      id: 'agent-activate',
+      name: 'Pending Agent',
+      workspaceId: 'ws-activate',
+      status: AgentStatus.Pending,
+      messages: [],
+    } as AgentSession;
+    const activatedSession = {
+      ...currentSession,
+      backendSessionId: 'backend-activated',
+      status: AgentStatus.Active,
+    } as AgentSession;
+    const gen = handleActivateAgentRequestedSaga(action);
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(currentSession);
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: 'agent-activate',
+      activationState: AgentActivationState.ACTIVATING,
+      activationAttempts: 1,
+    });
+    step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-activate'));
+    expect((step.value as any).type).toBe('CALL');
+    step = gen.next(activatedSession);
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: 'agent-activate',
+      backendSessionId: 'backend-activated',
+      activationState: AgentActivationState.ACTIVE,
+      activationAttempts: 1,
+      workspaceId: 'ws-activate',
+    });
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe(action.success.type);
+    expect((step.value as any).payload.action.payload.response).toMatchObject({
+      id: 'agent-activate',
+      backendSessionId: 'backend-activated',
+    });
+    expect(gen.next().done).toBe(true);
+    await expect(action.promise).resolves.toMatchObject({ backendSessionId: 'backend-activated' });
+  });
+});
+
 describe('handleCreateAgentRequestedSaga — opens agent tab via Redux (no setTimeout)', () => {
   /**
    * After createAgent resolves, the saga must:
-   *   - PUT(upsertSession), PUT(addAgent), PUT(markAgentRecentlyCreated)  // registerCreatedAgent
+   *   - PUT(upsertSession), PUT(markAgentRecentlyCreated)                 // registerCreatedAgent
    *   - SELECT(selectPanels.effect) inside openAgentInLayoutSaga
    *   - PUT(openTab)                                                      // no existing tab
    *
@@ -295,22 +369,18 @@ describe('handleCreateAgentRequestedSaga — opens agent tab via Redux (no setTi
     let step = gen.next({ success: true, agent: { id: 'agent-new', name: 'Agent' } });
     expect((step.value as any).type).toBe('PUT');
     expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0].workspaceId).toBe('ws-open');
 
-    // 9. PUT(addAgent)
-    step = gen.next();
-    expect((step.value as any).type).toBe('PUT');
-    expect((step.value as any).payload.action.type).toBe('workspaceAgents/addAgent');
-
-    // 10. PUT(markAgentRecentlyCreated)
+    // 9. PUT(markAgentRecentlyCreated)
     step = gen.next();
     expect((step.value as any).type).toBe('PUT');
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
 
-    // 11. SELECT(selectPanels) inside openAgentInLayoutSaga
+    // 10. SELECT(selectPanels) inside openAgentInLayoutSaga
     step = gen.next();
     expect((step.value as any).type).toBe('SELECT');
 
-    // Provide empty panels → no existing tab branch → 12. PUT(openTab)
+    // Provide empty panels → no existing tab branch → 11. PUT(openTab)
     step = gen.next({});
     expect((step.value as any).type).toBe('PUT');
     const openTabAction = (step.value as any).payload.action;
@@ -334,11 +404,10 @@ describe('handleCreateAgentRequestedSaga — opens agent tab via Redux (no setTi
       globalProvider: 'auggie',
     });
 
-    // createAgent → registerCreatedAgent (3 PUTs)
+    // createAgent → registerCreatedAgent (2 PUTs)
     let step = gen.next({ success: true, agent: { id: 'agent-existing', name: 'Agent' } });
     expect((step.value as any).type).toBe('PUT'); // upsertSession
-    step = gen.next();
-    expect((step.value as any).type).toBe('PUT'); // addAgent
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
     step = gen.next();
     expect((step.value as any).type).toBe('PUT'); // markAgentRecentlyCreated
 
@@ -368,5 +437,161 @@ describe('handleCreateAgentRequestedSaga — opens agent tab via Redux (no setTi
 
     // Saga completes
     expect(gen.next().done).toBe(true);
+  });
+});
+
+describe('new saga-owned agent creation request handlers', () => {
+  it('creates an agent from explicit config and registers the created session', () => {
+    const gen = handleCreateAgentFromConfigRequestedSaga('ws-config', {
+      id: 'agent-config',
+      workspaceId: 'stale-ws' as any,
+      name: 'Config Agent',
+      model: 'selector-model',
+      source: 'unit-test',
+    });
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+
+    step = gen.next(makeWorkspace('ws-config'));
+    expect((step.value as any).type).toBe('SELECT');
+
+    step = gen.next([]);
+    expect((step.value as any).type).toBe('CALL');
+    const config = (step.value as any).payload.args[1];
+    expect(config).toMatchObject({
+      id: 'agent-config',
+      workspaceId: 'ws-config',
+      name: 'Config Agent',
+    });
+
+    step = gen.next({ success: true, agent: { id: 'agent-config', name: 'Config Agent' } });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0].workspaceId).toBe('ws-config');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
+    expect(gen.next().done).toBe(true);
+  });
+
+  it('confirms async config creation only after the created session is registered', async () => {
+    const request = createAgentFromConfigRequested('ws-config', {
+      id: 'agent-config',
+      workspaceId: 'stale-ws' as any,
+      name: 'Config Agent',
+      model: 'selector-model',
+      source: 'unit-test',
+    });
+    const createdAgent = { id: 'agent-config', name: 'Config Agent' } as any;
+    const resolution = expect(request.promise).resolves.toBe(createdAgent);
+    const gen = handleCreateAgentFromConfigRequestedSaga(
+      'ws-config',
+      request.payload[1],
+      request.payload[2],
+      request,
+    );
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-config'));
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next([]);
+    expect((step.value as any).type).toBe('CALL');
+    step = gen.next({ success: true, agent: createdAgent });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/createAgentFromConfigRequested_SUCCESS');
+    expect(gen.next().done).toBe(true);
+    await resolution;
+  });
+
+  it('rejects async config creation without registering a failed session', async () => {
+    const request = createAgentFromConfigRequested('ws-config', {
+      id: 'agent-config',
+      workspaceId: 'stale-ws' as any,
+      name: 'Config Agent',
+      model: 'selector-model',
+      source: 'unit-test',
+    });
+    const rejection = expect(request.promise).rejects.toBe('creation failed');
+    const gen = handleCreateAgentFromConfigRequestedSaga(
+      'ws-config',
+      request.payload[1],
+      request.payload[2],
+      request,
+    );
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-config'));
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next([]);
+    expect((step.value as any).type).toBe('CALL');
+    step = gen.next({ success: false, error: 'creation failed' });
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/createAgentFromConfigRequested_FAILURE');
+    expect(gen.next().done).toBe(true);
+    await rejection;
+  });
+
+  it('routes initial-agent activation through the saga-owned factory call', () => {
+    const gen = handleActivateInitialAgentRequestedSaga('ws-init', 'agent-init', {
+      id: 'agent-init',
+      workspaceId: 'ws-init' as any,
+      name: 'Initial Agent',
+      model: 'sonnet',
+      initialMessage: 'hello',
+    });
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-init'));
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next([]);
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(undefined);
+    expect((step.value as any).type).toBe('RACE');
+    expect((step.value as any).payload).toHaveProperty('result');
+    expect((step.value as any).payload).toHaveProperty('timeout');
+  });
+
+  it('creates forked agents in the saga with cloned history metadata', () => {
+    const gen = handleForkAgentRequestedSaga('ws-fork', {
+      forkedAgentId: 'agent-fork',
+      sourceAgentId: 'agent-parent',
+      name: 'Forked Agent',
+      model: 'opus',
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello' } as any],
+      forkPoint: 1,
+      selectedText: 'hello',
+    });
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-fork'));
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next({ id: 'agent-parent', workspaceId: 'ws-fork', name: 'Parent' });
+    expect((step.value as any).type).toBe('CALL');
+    const config = (step.value as any).payload.args[1];
+    expect(config).toMatchObject({
+      id: 'agent-fork',
+      workspaceId: 'ws-fork',
+      name: 'Forked Agent',
+      source: 'chat-panel',
+      metadata: expect.objectContaining({ parentSessionId: 'agent-parent', forkPoint: 1 }),
+    });
+
+    step = gen.next({ success: true, agent: { id: 'agent-fork', name: 'Forked Agent' } });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0].workspaceId).toBe('ws-fork');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0].workspaceId).toBe('ws-fork');
+    step = gen.next();
+    expect((step.value as any).type).toBe('CALL');
   });
 });

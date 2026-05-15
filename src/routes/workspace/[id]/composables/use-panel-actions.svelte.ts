@@ -5,13 +5,10 @@
  * Extracted from +page.svelte to reduce file size and improve maintainability.
  */
 
-import { agentFactory } from '$features/agent/services/agent-factory';
-import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { createAgentTypeId } from '$shared/types/agent.types';
-import { WorkspaceId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
+import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
 import { getDispatch } from '$lib/store/utils/svelte-context';
 import type { Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
@@ -137,35 +134,25 @@ export function usePanelActions(options: UsePanelActionsOptions) {
       });
 
       // Create agent WITHOUT initial message - we'll pre-fill the input instead
-      const result = await agentFactory.createAgent(workspace, {
+      const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
         name,
-        workspaceId: WorkspaceId(workspace.id),
-        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
         agentType: createAgentTypeId('chat'),
         source: 'progress-card-action',
         metadata: {
           source: 'progress-card-action',
         },
       });
-
-      if (!result.success || !result.agent) {
-        logger.error(
-          '[handleCreateAgentWithPrompt] Failed to create agent with draft prompt',
-          result.error,
-        );
-        return;
-      }
-
-      const session = result.agent;
+      dispatch(launchAction);
+      const agent = await launchAction.promise;
 
       // Add to recently created agents to prevent drawer from auto-closing
-      markAgentRecentlyCreated(session.id);
+      markAgentRecentlyCreated(agent.id);
 
       // Set the draft prompt BEFORE opening the drawer so it's available when ChatPanel mounts
       onDraftPromptSet(prompt);
 
       // Open the agent drawer
-      openAgent(session.id);
+      openAgent(agent.id);
 
       // Clear draft prompt after a delay to allow ChatPanel to read it
       setTimeout(() => {
@@ -173,8 +160,8 @@ export function usePanelActions(options: UsePanelActionsOptions) {
       }, 500);
 
       logger.info('[handleCreateAgentWithPrompt] Agent created with draft prompt successfully', {
-        agentId: session.id,
-        name: session.name,
+        agentId: agent.id,
+        name,
         draftPromptLength: prompt.length,
       });
     } catch (error) {

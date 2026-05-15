@@ -1,4 +1,7 @@
-import { describe, it } from "vitest";
+import {
+  describe,
+  it,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 
@@ -30,15 +33,16 @@ import {
   selectIsOneShotFired,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
-import {
-  requestDeliverQueuedEvents,
-} from "./saga-actions";
+import { requestDeliverQueuedEvents } from "./saga-actions";
 import {
   watchAgentIdleForDelivery,
   periodicQueueSweep,
 } from "./delivery-saga";
 
-import { handleMatchEvent, handleNewSubscriptionCatchUp } from "./matching-saga";
+import {
+  handleMatchEvent,
+  handleNewSubscriptionCatchUp,
+} from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";

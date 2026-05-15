@@ -4,7 +4,13 @@
  * TDD tests for the user activity file-based repository.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -17,7 +23,10 @@ import {
   LOCAL_USER_ID,
   USER_ACTIVITY_VERSION,
 } from '$shared/types/user-activity.types';
-import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import {
+  NoteId,
+  WorkspaceId,
+} from '$shared/types/branded-ids';
 
 describe('InMemoryUserActivityRepository', () => {
   let repo: InMemoryUserActivityRepository;

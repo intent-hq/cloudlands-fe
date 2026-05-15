@@ -4,7 +4,10 @@
  * Custom TipTap node for diagram primitives
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { DiagramPrimitive } from '../../../shared/types/notes-primitives';
 import DiagramBlock from '../../components/notes/primitives/DiagramBlock.svelte';

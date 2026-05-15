@@ -11,7 +11,10 @@ import type {
 } from '../types';
 import { invoke } from '$lib/electron-bridge';
 import { logger } from '$lib/utils/client-logger';
-import { fuzzyMatch, pathFuzzyMatch } from '../fuzzy-matcher';
+import {
+  fuzzyMatch,
+  pathFuzzyMatch,
+} from '../fuzzy-matcher';
 
 // Cache for workspace repo paths to avoid repeated IPC calls
 const workspaceRepoPathCache = new Map<string, string>();

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '../../utils/collection-utils';
 import { getDefaultProviderId } from '$shared/config/provider-config';
@@ -21,7 +25,10 @@ import {
   setSelectedModel,
   setWorkspaceModel,
 } from './model-slice';
-import { selectAllProviderWarnings, selectProviderWarning } from './model-selectors';
+import {
+  selectAllProviderWarnings,
+  selectProviderWarning,
+} from './model-selectors';
 import type { ModelState } from './model-types';
 
 const defaultProviderId = getDefaultProviderId();

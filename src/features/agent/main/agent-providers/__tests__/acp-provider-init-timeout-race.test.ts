@@ -17,7 +17,14 @@
  * timeout and orphaned response handling, without needing to instantiate the full ACPProvider.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 describe('ACP Provider Init Timeout Race Condition', () => {
   describe('Fix 1: Process-aware interval timeout', () => {

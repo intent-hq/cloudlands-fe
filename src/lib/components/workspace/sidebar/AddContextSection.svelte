@@ -7,10 +7,16 @@
    * - Integrations (Linear, GitHub, Sentry - shows inline picker)
    * - Browser (opens browser panel)
    */
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faPlus, faGlobe } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faGlobe,
+} from '@fortawesome/free-solid-svg-icons';
   import { scale } from 'svelte/transition';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import IssueSuggestions, {

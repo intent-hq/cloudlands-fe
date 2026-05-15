@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { sanitizeCommandForDisplay } from '../sanitize-credentials';
 
 describe('sanitizeCommandForDisplay - Adversarial Tests', () => {
 	// ===== REGEX BYPASS ATTEMPTS =====
-	
+
 	describe('Whitespace and formatting bypasses', () => {
 		it('BYPASS: tab between flag and value', () => {
 			expect(sanitizeCommandForDisplay('curl --token\tghp_secret123')).toBe(
@@ -89,7 +93,7 @@ describe('sanitizeCommandForDisplay - Adversarial Tests', () => {
 	});
 
 	// ===== MISSED PATTERNS =====
-	
+
 	describe('Docker and container patterns', () => {
 		it('MISSED: docker run -e with secret', () => {
 			expect(sanitizeCommandForDisplay('docker run -e API_KEY=secret123 myapp')).toBe(
@@ -135,7 +139,7 @@ describe('sanitizeCommandForDisplay - Adversarial Tests', () => {
 	});
 
 	// ===== FALSE POSITIVES =====
-	
+
 	describe('False positive checks', () => {
 		it('should NOT redact file paths with "password"', () => {
 			const cmd = 'cat /etc/password-policy.txt';
@@ -159,7 +163,7 @@ describe('sanitizeCommandForDisplay - Adversarial Tests', () => {
 	});
 
 	// ===== IDEMPOTENCY =====
-	
+
 	describe('Double sanitization safety', () => {
 		it('should be idempotent - sanitizing twice produces same result', () => {
 			const original = 'export API_KEY=secret123';
@@ -176,7 +180,7 @@ describe('sanitizeCommandForDisplay - Adversarial Tests', () => {
 	});
 
 	// ===== PERFORMANCE / CATASTROPHIC BACKTRACKING =====
-	
+
 	describe('Performance and backtracking', () => {
 		it('should handle very long passwords without hanging', () => {
 			const longPassword = 'a'.repeat(10000);

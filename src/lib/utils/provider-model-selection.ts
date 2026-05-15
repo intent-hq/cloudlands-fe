@@ -1,4 +1,8 @@
-import { getProviderConfig, isModelValidForProvider, resolvePreferredModel } from '$shared/config/provider-config';
+import {
+  getProviderConfig,
+  isModelValidForProvider,
+  resolvePreferredModel,
+} from '$shared/config/provider-config';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
 

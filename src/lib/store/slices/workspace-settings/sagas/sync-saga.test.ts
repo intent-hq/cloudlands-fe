@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
@@ -10,7 +15,10 @@ import {
   loadAutoCommitSettings,
 } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
-import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
+import {
+  initSaga,
+  getGlobalAutoCommitDefault,
+} from "./init-saga";
 import { syncSaga } from "./sync-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 

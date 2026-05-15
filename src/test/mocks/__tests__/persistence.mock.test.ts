@@ -2,7 +2,12 @@
  * Tests for MockPersistenceService
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { MockPersistenceService } from '../persistence.mock';
 import type { AgentSession, AgentMessage } from '$shared/types';
 import { AgentStatus } from '$shared/types';

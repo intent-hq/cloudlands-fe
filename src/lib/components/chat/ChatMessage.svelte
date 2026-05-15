@@ -1,22 +1,25 @@
 <script lang="ts">
   import {
-    faFile,
-    faCodeCompare,
-    faNoteSticky,
-    faClipboard,
-    faSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faCodeCompare,
+  faNoteSticky,
+  faClipboard,
+  faSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
-  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
-  import type { Workspace } from '$shared/types';
+  import type { AgentMessage, Workspace } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
-  import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
+  import {
+  navigateToFile,
+  navigateToNote,
+  navigateToSpec,
+} from '$lib/utils/workspace-navigation';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
@@ -136,9 +139,9 @@
     agentId,
     messageId,
     isStreaming = false,
-     
+
     showTimestamp: _showTimestamp = true,
-     
+
     animationDelay: _animationDelay = 0,
     hideToolCalls = false,
     sessionMetadata,
@@ -440,7 +443,7 @@
   }
 
   // Convert context references from message metadata to pills
-   
+
   function contextReferencesToPills(contextRefs: any[]): ContextPill[] {
     const pills: ContextPill[] = [];
     for (const ref of contextRefs) {

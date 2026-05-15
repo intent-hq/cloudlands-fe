@@ -2,7 +2,7 @@
  * Scripts slice types — safe to import from any process.
  */
 
-import type { WorkspaceScript, ScriptRuntimeState } from '$features/scripts/types';
+import type { ScriptWithState } from '$features/scripts/types';
 
 // Re-export types that consumers need
 export type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
@@ -20,10 +20,8 @@ export type ScriptOutputLine = {
  * Per-workspace scripts state.
  */
 export type ScriptsWorkspaceState = {
-  /** Script definitions keyed by script ID */
-  scripts: Record<string, WorkspaceScript>;
-  /** Runtime state keyed by script ID */
-  runtimeStates: Record<string, ScriptRuntimeState>;
+  /** Script definitions with runtime state keyed by script ID */
+  scripts: Record<string, ScriptWithState>;
   /** Output buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputLine[]>;
   /** Whether the workspace scripts have been initialized */
@@ -72,4 +70,3 @@ export type ScriptUrlDetectedEvent = {
   scriptId: string;
   url: string;
 };
-

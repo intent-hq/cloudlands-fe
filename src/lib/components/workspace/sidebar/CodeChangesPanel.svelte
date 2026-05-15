@@ -9,11 +9,11 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import Fa from 'svelte-fa';
   import {
-    faCodeCommit,
-    faCodePullRequest,
-    faExternalLink,
-    faArrowRight,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCodeCommit,
+  faCodePullRequest,
+  faExternalLink,
+  faArrowRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
 
   interface Props {
@@ -87,7 +87,7 @@
   }
 
   function makeCommitFileClickHandler(commitHash: string) {
-     
+
     return (_filePath: string, _commitHash?: string, _staged?: boolean) => {
       onOpenCommit?.(commitHash);
     };

@@ -8,7 +8,10 @@
 import { Logger } from '../logger';
 import { AgentErrorTracker } from '../main/agent-error-tracker';
 import { type IpcContractKey } from './contracts';
-import { validateIpcRequest, validateIpcResponse } from './validation';
+import {
+  validateIpcRequest,
+  validateIpcResponse,
+} from './validation';
 import { TypeMismatchError } from './errors';
 import type { ValidationError } from './validation';
 

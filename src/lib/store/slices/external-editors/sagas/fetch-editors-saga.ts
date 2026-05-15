@@ -1,11 +1,23 @@
 import { invoke } from "$lib/electron-bridge";
-import { getItems, isCollection } from "$lib/store/utils/collection-utils";
+import {
+  getItems,
+  isCollection,
+} from "$lib/store/utils/collection-utils";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
-import { call, delay, put, takeLatest } from "typed-redux-saga";
-import { selectInstalledEditors, selectInstalledEditorsLoading, selectLastFetched } from "../external-editors-selectors";
+import {
+  call,
+  delay,
+  put,
+  takeLatest,
+} from "typed-redux-saga";
+import {
+  selectInstalledEditors,
+  selectInstalledEditorsLoading,
+  selectLastFetched,
+} from "../external-editors-selectors";
 import {
   CACHE_TTL_MS,
   STORAGE_KEY,
@@ -79,7 +91,7 @@ export function* handleFetchEditors(action: ReturnType<typeof fetchEditors>) {
       return;
     }
   }
-  
+
   yield* put(clearError());
   yield* put(setLoading(true));
 

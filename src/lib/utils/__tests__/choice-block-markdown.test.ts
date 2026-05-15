@@ -1,8 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from 'vitest';
-import { processMarkdownToHTML, processHTMLToMarkdown } from '../markdown-processor';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+} from '../markdown-processor';
 
 describe('Choice Block - Markdown Processing', () => {
   // NOTE: The "Parsing (Markdown → HTML)" tests are skipped because choice block parsing

@@ -2,7 +2,14 @@
  * Tests for ThemeManager custom theme support
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 import { ThemeManager } from '../theme';
 
 // ── Test fixtures ───────────────────────────────────────────────────────────

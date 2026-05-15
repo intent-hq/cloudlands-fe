@@ -7,7 +7,10 @@
  */
 
 import { getContext } from 'svelte';
-import { NODE_VIEW_CONTEXT_KEY, type NodeViewContext } from './context';
+import {
+  NODE_VIEW_CONTEXT_KEY,
+  type NodeViewContext,
+} from './context';
 
 /**
  * Get the node view context

@@ -1,6 +1,14 @@
-import { describe, expect, expectTypeOf, test } from "vitest";
+import {
+  describe,
+  expect,
+  expectTypeOf,
+  test,
+} from "vitest";
 import type { PayloadModifier } from "$lib/store/types";
-import { createAction, type MainStoreAction } from "./create-action";
+import {
+  createAction,
+  type MainStoreAction,
+} from "./create-action";
 
 type ChatItem = {
   id: string;

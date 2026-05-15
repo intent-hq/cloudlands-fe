@@ -121,7 +121,7 @@ export function registerMissingAgentHandlers(): void {
     ),
   );
 
-  // Agent enhance prompt (used by PanelLayoutHeader, SimpleRichInput, agent.service)
+  // Agent enhance prompt (used by PanelLayoutHeader, SimpleRichInput, and agent stream lifecycle)
   ipcMain.handle(
     'agent:enhance-prompt',
     createSafeValidatedHandler(

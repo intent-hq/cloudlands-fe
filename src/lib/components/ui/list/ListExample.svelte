@@ -2,14 +2,19 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { ListContainer, ListItem, ListSection, ListEmpty } from './index';
   import {
-    faStickyNote,
-    faFile,
-    faTerminal,
-    faPlus,
-    faStar,
-  } from '@fortawesome/free-solid-svg-icons';
+  ListContainer,
+  ListItem,
+  ListSection,
+  ListEmpty,
+} from './index';
+  import {
+  faStickyNote,
+  faFile,
+  faTerminal,
+  faPlus,
+  faStar,
+} from '@fortawesome/free-solid-svg-icons';
   import AuggieAvatar from '../auggie-avatar/AuggieAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
 

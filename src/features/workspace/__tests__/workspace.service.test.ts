@@ -2,7 +2,14 @@
  * Tests for Workspace Service
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';

@@ -1,19 +1,23 @@
-import { call, put, select } from "typed-redux-saga";
+import {
+  call,
+  put,
+  select,
+} from "typed-redux-saga";
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import type { Specialist } from "$lib/constants/specialists";
 import { selectActiveWorkspace } from "$lib/store/slices/workspace/workspace-selectors";
 import {
-    setBundledSpecialists,
-    setBundledSpecialistsLoaded,
-    setCustomSpecialistsLoaded,
-    setFileSpecialists,
-    setFileSpecialistsLoaded,
-    setOverridesLoaded,
-    setSpecialistsFolderPath,
-    setProviderModelOverrides,
-    PROVIDER_MODEL_OVERRIDES_KEY,
-    type FileSpecialist,
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+  setCustomSpecialistsLoaded,
+  setFileSpecialists,
+  setFileSpecialistsLoaded,
+  setOverridesLoaded,
+  setSpecialistsFolderPath,
+  setProviderModelOverrides,
+  PROVIDER_MODEL_OVERRIDES_KEY,
+  type FileSpecialist,
 } from "../specialists-slice";
 
 function getActiveWorkspacePath(state: any): string | undefined {

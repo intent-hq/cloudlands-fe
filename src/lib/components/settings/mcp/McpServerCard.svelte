@@ -6,7 +6,14 @@
   import McpIcon from './McpIcon.svelte';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Dropdown from '$lib/components/ui/dropdown/Dropdown.svelte';
-  import { faEllipsisV, faChevronDown, faPen, faCopy, faKey, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faEllipsisV,
+  faChevronDown,
+  faPen,
+  faCopy,
+  faKey,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {

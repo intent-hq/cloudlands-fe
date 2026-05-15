@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import {
-    selectIsNoteMonospace,
-    selectNoteFontStyleLabel,
-  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  selectIsNoteMonospace,
+  selectNoteFontStyleLabel,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { cycleNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

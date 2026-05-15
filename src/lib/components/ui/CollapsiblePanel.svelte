@@ -4,9 +4,9 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    requestCollapsiblePanelCollapsed,
-    setCollapsiblePanelCollapsed,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  requestCollapsiblePanelCollapsed,
+  setCollapsiblePanelCollapsed,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

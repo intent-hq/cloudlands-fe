@@ -13,7 +13,10 @@ import { Logger } from '../../../shared/logger';
 import { WorkspaceId as WorkspaceIdFn } from '../../../shared/types/branded-ids';
 import { PANEL_LAYOUT_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { PanelLayoutLoadSchema, PanelLayoutSaveSchema } from '../../../main/ipc-schemas';
+import {
+  PanelLayoutLoadSchema,
+  PanelLayoutSaveSchema,
+} from '../../../main/ipc-schemas';
 
 const logger = new Logger('PanelLayoutHistoryIPC');
 

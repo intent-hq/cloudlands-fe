@@ -2,16 +2,16 @@
   import type { TrackedChange } from '$features/file-tracking/types';
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
-    faChevronRight,
-    faFolder,
-    faFolderOpen,
-    faFileCode,
-    faExpand,
-    faPlus,
-    faMinus,
-    faRotateLeft,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faChevronRight,
+  faFolder,
+  faFolderOpen,
+  faFileCode,
+  faExpand,
+  faPlus,
+  faMinus,
+  faRotateLeft,
+} from '@fortawesome/free-solid-svg-icons';
   import { ListItem } from '$lib/components/ui/list';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import TreeNode from './TreeNode.svelte';

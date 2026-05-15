@@ -9,24 +9,24 @@
   import type { McpServerConfig } from '$lib/store/slices/mcp-settings/mcp-settings-types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    loadServers,
-    toggleWorkspaceMcpServer,
-  } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
+  loadServers,
+  toggleWorkspaceMcpServer,
+} from '$lib/store/slices/mcp-settings/mcp-settings-slice';
   import {
-    selectMcpServers,
-    selectMcpErrorMessages,
-    selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
-  } from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
+  selectMcpServers,
+  selectMcpErrorMessages,
+  selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+} from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from 'svelte/transition';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
-    faChevronDown,
-    faExclamationTriangle,
-    faGear,
-    faPlug,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faExclamationTriangle,
+  faGear,
+  faPlug,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 

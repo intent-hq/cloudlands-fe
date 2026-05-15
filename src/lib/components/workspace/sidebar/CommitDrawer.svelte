@@ -6,15 +6,11 @@
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    executeBackgroundAgent,
-    cancelExecution,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-  import {
-    setSidebarCommitWhenReady,
-  } from '$lib/store/slices/changes/changes-slice';
-  import {
-    selectSidebarCommitWhenReady,
-  } from '$lib/store/slices/changes/changes-selectors';
+  executeBackgroundAgent,
+  cancelExecution,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  import { setSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-slice';
+  import { selectSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -25,16 +21,19 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
-    faCheck,
-    faCodeCommit,
-    faEye,
-    faFolderOpen,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faCodeCommit,
+  faEye,
+  faFolderOpen,
+  faRobot,
+  faSpinner,
+  faStop,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { readable, writable } from 'svelte/store';
+  import {
+  readable,
+  writable,
+} from 'svelte/store';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import TimelineDivider from './TimelineDivider.svelte';
@@ -83,7 +82,6 @@
 
   const isGenerating = $derived($commitExecState$.status === 'running');
   const commitAgentId = $derived($commitExecState$.agentId);
-  const commitWhenReady = $derived($commitWhenReady$);
 
   // Export state
   let exportPath = $state('');
@@ -113,7 +111,7 @@
   }
 
   function toggleCommitWhenReady() {
-    dispatch(setSidebarCommitWhenReady(workspaceId, !commitWhenReady));
+    dispatch(setSidebarCommitWhenReady(workspaceId, !$commitWhenReady$));
   }
 
   function viewCommitThoughtProcess(e?: MouseEvent) {
@@ -267,9 +265,9 @@
         onclick={() => onCommit()}
         disabled={!commitMessage.trim() ||
           isCommitting ||
-          (isGenerating && commitWhenReady)}
+          (isGenerating && $commitWhenReady$)}
       >
-        {#if isCommitting || (isGenerating && commitWhenReady)}
+        {#if isCommitting || (isGenerating && $commitWhenReady$)}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
           <span>{isCommitting ? 'Committing...' : 'Will commit when done...'}</span>
         {:else}
@@ -305,12 +303,12 @@
           {/if}
 
           <Button
-            variant={commitWhenReady ? 'default' : 'outline'}
+            variant={$commitWhenReady$ ? 'default' : 'outline'}
             size="xs"
             class="rounded-l-none border-l-0"
             onclick={toggleCommitWhenReady}
           >
-            {#if commitWhenReady}
+            {#if $commitWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
             Auto-commit when done

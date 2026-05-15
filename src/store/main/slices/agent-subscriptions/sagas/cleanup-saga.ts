@@ -5,16 +5,19 @@
  * `validateRestoredSubscriptions()` from AgentEventSubscriptionService.
  */
 
-import { call, put, takeEvery, delay } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+  delay,
+} from "typed-redux-saga";
 import {
   markAgentDeleted,
   evictDeletedAgent,
   removeAllSubscriptions,
   clearAgentQueue,
 } from "../agent-subscriptions-slice";
-import {
-  selectWorkspaceSubscriptionState,
-} from "../agent-subscriptions-selectors";
+import { selectWorkspaceSubscriptionState } from "../agent-subscriptions-selectors";
 import {
   requestEvictStaleAgents,
   requestValidateSubscriptions,

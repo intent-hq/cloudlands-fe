@@ -11,7 +11,11 @@
 import { Logger } from '../../../../shared/logger';
 import type { VersionAuthor } from './note-storage.types';
 import { VERSION_CONFIG } from './note-storage.types';
-import { appendVersion, readVersions, hasSignificantChanges } from './version.service';
+import {
+  appendVersion,
+  readVersions,
+  hasSignificantChanges,
+} from './version.service';
 import type { NoteId, WorkspaceId } from '../../../../shared/types';
 
 const logger = new Logger('VersionManager');

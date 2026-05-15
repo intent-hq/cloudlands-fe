@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { createCollection } from "../../utils/collection-utils";
 import type { FileContentEntry, FilesState } from "./files-types";
-import { filesReducer, loadFileContentSucceeded, updateFileContent } from "./files-slice";
+import {
+  filesReducer,
+  loadFileContentSucceeded,
+  updateFileContent,
+} from "./files-slice";
 import {
   selectAllFileContentEntries,
   selectFileContent,

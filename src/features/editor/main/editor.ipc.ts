@@ -4,7 +4,10 @@
  * IPC layer for editor operations.
  */
 
-import { ipcMain, shell } from 'electron';
+import {
+  ipcMain,
+  shell,
+} from 'electron';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import * as fs from 'fs/promises';

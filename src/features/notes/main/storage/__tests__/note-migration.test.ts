@@ -2,15 +2,33 @@
  * Tests for note migration from legacy JSON format to frontmatter format
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 import { promises as fs } from 'fs';
-import { migrateWorkspaceNotes, workspaceNeedsMigration } from '../note-migration';
-import { getNoteStoragePaths, getLegacyNotePath } from '../note-storage-paths';
+import {
+  migrateWorkspaceNotes,
+  workspaceNeedsMigration,
+} from '../note-migration';
+import {
+  getNoteStoragePaths,
+  getLegacyNotePath,
+} from '../note-storage-paths';
 import { FolderBasedNotesRepository } from '../folder-notes.repository';
 import { crdtDocumentManager } from '../crdt-document-manager';
 import { setGitEnabled } from '../git-version.service';
 import { parseFrontmatter } from '../frontmatter';
-import { ContentType, NoteVisibility, AuthorType } from '../../../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+  AuthorType,
+} from '../../../../../shared/types';
 import type { Note, NoteId, WorkspaceId } from '../../../../../shared/types';
 import { WorkspaceConfig } from '../../../../../shared/main/config';
 

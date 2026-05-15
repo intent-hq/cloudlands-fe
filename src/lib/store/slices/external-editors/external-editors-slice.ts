@@ -1,7 +1,10 @@
 import type { EditorCategory } from "$shared/editors/editor-registry";
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
-import { createCollection, type Collection } from "../../utils/collection-utils";
+import {
+  createCollection,
+  type Collection,
+} from "../../utils/collection-utils";
 
 // ============================================================================
 // Types

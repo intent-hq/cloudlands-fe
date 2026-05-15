@@ -10,7 +10,11 @@
  * by Sentry in the renderer process initialization.
  */
 
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  contextBridge,
+  ipcRenderer,
+  webUtils,
+} from 'electron';
 
 // ============================================
 // GENERATED IPC CHANNELS - DO NOT EDIT MANUALLY
@@ -944,7 +948,7 @@ const electronAPI = {
     }
 
     // Listener not found - this is normal if removeAllListeners() was called first
-    // (e.g., agent.service.ts cleans up stream channels with removeAllListeners,
+    // (e.g., renderer stream lifecycle cleans up stream channels with removeAllListeners,
     // then component cleanup calls offById). No warning needed.
   },
 

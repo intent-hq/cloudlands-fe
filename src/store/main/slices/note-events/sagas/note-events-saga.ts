@@ -4,7 +4,10 @@
  * Broadcast + listener sagas for note/comment domain events.
  */
 
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import type { DomainEvent } from "../../../../../features/events/types";
 import type { MainStoreAction } from "../../../utils/create-action";
 import {

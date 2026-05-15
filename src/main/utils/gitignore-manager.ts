@@ -1,6 +1,9 @@
 import { createRequire } from 'module';
 import { readFile } from 'fs/promises';
-import { join, relative } from 'path';
+import {
+  join,
+  relative,
+} from 'path';
 import ignore from 'ignore';
 import { existsSync } from 'fs';
 import { Logger } from '$shared/logger';

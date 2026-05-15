@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { isValidTaskNoteId, findInvalidTaskLinks } from './task-link-validator';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  isValidTaskNoteId,
+  findInvalidTaskLinks,
+} from './task-link-validator';
 
 describe('task-link-validator', () => {
   describe('isValidTaskNoteId', () => {

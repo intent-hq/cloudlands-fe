@@ -5,7 +5,10 @@
  */
 
 import { BaseMcpServer } from '../base-server';
-import { McpBridge, type BridgeCallContext } from '../../main/bridge/mcp-bridge';
+import {
+  McpBridge,
+  type BridgeCallContext,
+} from '../../main/bridge/mcp-bridge';
 import {
   GitStatusSchema,
   GitDiffSchema,

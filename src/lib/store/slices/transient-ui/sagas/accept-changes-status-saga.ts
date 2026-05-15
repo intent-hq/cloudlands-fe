@@ -8,7 +8,12 @@
  * same async call reactively.
  */
 
-import { call, put, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeLatest,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
 import { AcceptChangesClient } from "$features/accept-changes/accept-changes.client";
 import type { WorkspaceId } from "$shared/types/branded-ids";

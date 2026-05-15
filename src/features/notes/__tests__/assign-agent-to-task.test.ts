@@ -3,11 +3,19 @@
  * Phase 1C - Increment 2: Assign Agent to Task
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { NotesService } from '../notes.service';
 import { InMemoryNotesRepository } from '../notes.repository';
-import { WorkspaceId, createAgentId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId,
+  createAgentId,
+} from '$shared/types/branded-ids';
 import type { Note } from '$shared/types';
 
 describe('assignAgentToTask', () => {

@@ -5,7 +5,13 @@
  * Behavior 2: If cursor is anywhere else, insert a new first option with text after cursor
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { ChoiceBlock } from '../ChoiceBlock';

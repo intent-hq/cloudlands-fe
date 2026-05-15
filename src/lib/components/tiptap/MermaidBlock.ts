@@ -5,7 +5,10 @@
  * Converts ```mermaid code blocks into interactive rendered diagrams.
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import MermaidBlockNodeView from './MermaidBlockNodeView.svelte';
 

@@ -23,20 +23,28 @@
    * - Search within diff (Cmd+F)
    * - Sticky line numbers and change gutter for horizontal scrolling
    */
-  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import {
-    FileDiff,
-    VirtualizedFileDiff,
-    parsePatchFiles,
-    parseDiffFromFile,
-    type FileContents,
-    type HunkData,
-    type ExpansionDirections,
-    type ThemeTypes,
-  } from '@pierre/diffs';
+  onDestroy,
+  onMount,
+  tick,
+  untrack,
+} from 'svelte';
+  import {
+  FileDiff,
+  VirtualizedFileDiff,
+  parsePatchFiles,
+  parseDiffFromFile,
+  type FileContents,
+  type HunkData,
+  type ExpansionDirections,
+  type ThemeTypes,
+} from '@pierre/diffs';
   import type { PureDiffProps } from './types.js';
   import DiffHeader from './DiffHeader.svelte';
-  import { getDiffWorkerPool, getSafeDiffLanguage } from '$lib/utils/diff-highlighter-preloader';
+  import {
+  getDiffWorkerPool,
+  getSafeDiffLanguage,
+} from '$lib/utils/diff-highlighter-preloader';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';

@@ -16,7 +16,12 @@
  *      then runs it through `diagnoseCloneError` for structured guidance.
  */
 import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-import { call, debounce, put, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  debounce,
+  put,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { StoreAction } from '../../../types';
 import {
   checkClonePreflight,

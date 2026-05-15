@@ -7,11 +7,22 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faEye, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faEye,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from './dropdown-menu.svelte';
   import { Button } from './button';
-  import { selectFoldUnchanged, selectLineWrapping, selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleFoldUnchanged, toggleLineWrapping, toggleDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import {
+  selectFoldUnchanged,
+  selectLineWrapping,
+  selectDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+  toggleFoldUnchanged,
+  toggleLineWrapping,
+  toggleDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { dispatch } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {

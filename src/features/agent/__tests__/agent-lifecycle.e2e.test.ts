@@ -9,7 +9,14 @@
  * - Error handling and recovery
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { UnifiedAgentFactory } from '../services/agent-factory';
 import { ConsolidatedBackendService } from '../main/consolidated-backend.service';
 import { agentPersistence } from '../main/agent-persistence';

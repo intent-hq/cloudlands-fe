@@ -9,7 +9,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { Logger } from '../../../shared/logger';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import {
+  findBinary,
+  getCommonNpmPaths,
+} from '../../../shared/main/find-binary';
 
 const logger = new Logger('CortexResolver');
 

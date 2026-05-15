@@ -8,7 +8,6 @@
 
 import { MockStreamManager } from './streaming.mock';
 import { MockPersistenceService } from './persistence.mock';
-import { MockAgentService } from './agent-service.mock';
 import { MockSessionRegistry } from './session-registry.mock';
 
 // Streaming Mock
@@ -18,10 +17,6 @@ export type { MockStreamChunk, MockStreamSession } from './streaming.mock';
 // Persistence Mock
 export { MockPersistenceService } from './persistence.mock';
 export type { MockStorageData } from './persistence.mock';
-
-// Agent Service Mock
-export { MockAgentService } from './agent-service.mock';
-export type { MockAgentOptions } from './agent-service.mock';
 
 // Session Registry Mock
 export { MockSessionRegistry } from './session-registry.mock';
@@ -33,7 +28,6 @@ export function createMockEnvironment() {
   return {
     streaming: new MockStreamManager(),
     persistence: new MockPersistenceService(),
-    agentService: new MockAgentService(),
     sessionRegistry: new MockSessionRegistry(),
   };
 }
@@ -44,6 +38,5 @@ export function createMockEnvironment() {
 export function cleanupMockEnvironment(env: ReturnType<typeof createMockEnvironment>) {
   env.streaming.clear();
   env.persistence.clear();
-  env.agentService.clear();
   env.sessionRegistry.clear();
 }

@@ -7,8 +7,14 @@
 
 import { ipcMain } from 'electron';
 import { z } from 'zod';
-import { IpcContracts, type IpcContractKey } from '../type-system/contracts';
-import { validateIpcRequest, validateIpcResponse } from '../type-system/validation';
+import {
+  IpcContracts,
+  type IpcContractKey,
+} from '../type-system/contracts';
+import {
+  validateIpcRequest,
+  validateIpcResponse,
+} from '../type-system/validation';
 import { handlerRegistry } from '../type-system/registry';
 import { TypeValidationError } from '../type-system/errors';
 import { Logger } from '../logger';

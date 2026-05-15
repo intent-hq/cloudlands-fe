@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { exportChatToHtml } from './chat-html-exporter';
 import type { AgentMessage } from '$shared/types';
 

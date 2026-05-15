@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { buildTaskAgentInitialMessage } from '../task-agent-message-builder';
 import type { Note } from '$shared/types';
-import { createNoteId, createWorkspaceId } from '$shared/types/branded-ids';
+import {
+  createNoteId,
+  createWorkspaceId,
+} from '$shared/types/branded-ids';
 
 describe('buildTaskAgentInitialMessage', () => {
   const workspaceId = createWorkspaceId('test-workspace');

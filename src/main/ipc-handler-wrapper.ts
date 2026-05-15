@@ -6,7 +6,10 @@
  */
 
 import path from 'path';
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  IpcMainInvokeEvent,
+} from 'electron';
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
 import { Logger } from '../shared/logger';
 import { writeJsonAsync } from '../shared/main/async-utils';

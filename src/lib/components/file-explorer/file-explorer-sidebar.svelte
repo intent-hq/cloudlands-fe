@@ -7,35 +7,35 @@
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import {
-    faArrowsRotate,
-    faFolder,
-    faFolderOpen,
-    faFileAlt,
-    faFileCode,
-    faImage,
-    faArchive,
-    faCog,
-    faChevronRight,
-    faChevronDown,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowsRotate,
+  faFolder,
+  faFolderOpen,
+  faFileAlt,
+  faFileCode,
+  faImage,
+  faArchive,
+  faCog,
+  faChevronRight,
+  faChevronDown,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import type { FileNode } from '$shared/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    initializeFileExplorer,
-    setWorkspacePathRequested,
-    toggleDirectoryRequested,
-    refreshFileExplorer,
-  } from '$lib/store/slices/file-explorer/file-explorer-slice';
+  initializeFileExplorer,
+  setWorkspacePathRequested,
+  toggleDirectoryRequested,
+  refreshFileExplorer,
+} from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
-    selectFileExplorerRootNode,
-    selectFileExplorerIsLoading,
-    selectFileExplorerError,
-    selectFileExplorerFileCount,
-    selectIsPathExpanded,
-    selectIsPathLoading,
-  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  selectFileExplorerRootNode,
+  selectFileExplorerIsLoading,
+  selectFileExplorerError,
+  selectFileExplorerFileCount,
+  selectIsPathExpanded,
+  selectIsPathLoading,
+} from '$lib/store/slices/file-explorer/file-explorer-selectors';
 
   interface Props {
     workspacePath: string;

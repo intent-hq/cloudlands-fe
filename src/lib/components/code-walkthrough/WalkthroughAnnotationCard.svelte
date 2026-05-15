@@ -7,12 +7,12 @@
    */
   import Fa from 'svelte-fa';
   import {
-    faLightbulb,
-    faInfoCircle,
-    faQuestionCircle,
-    faExclamationTriangle,
-    faStar,
-  } from '@fortawesome/free-solid-svg-icons';
+  faLightbulb,
+  faInfoCircle,
+  faQuestionCircle,
+  faExclamationTriangle,
+  faStar,
+} from '@fortawesome/free-solid-svg-icons';
   import type { AnnotationCategory, AnnotationImportance } from './types';
 
   interface Props {

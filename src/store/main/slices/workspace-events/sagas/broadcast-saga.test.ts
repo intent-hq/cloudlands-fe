@@ -1,4 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+} from "vitest";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 
 // ---------------------------------------------------------------------------

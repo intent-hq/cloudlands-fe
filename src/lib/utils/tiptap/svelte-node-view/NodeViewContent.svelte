@@ -11,9 +11,16 @@
   Matches the svelte-tiptap library API.
 -->
 <script lang="ts" generics="T extends keyof SvelteHTMLElements = 'div'">
-  import { onMount, tick, getContext } from 'svelte';
+  import {
+  onMount,
+  tick,
+  getContext,
+} from 'svelte';
   import type { SvelteHTMLElements } from 'svelte/elements';
-  import { NODE_VIEW_CONTEXT_KEY, type NodeViewContext } from './context';
+  import {
+  NODE_VIEW_CONTEXT_KEY,
+  type NodeViewContext,
+} from './context';
 
   type Props = SvelteHTMLElements[T] & {
     as?: T;

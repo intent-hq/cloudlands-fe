@@ -1,6 +1,11 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronUp, faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronDown,
+  faChevronUp,
+  faSearch,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { cn } from '$lib/utils';

@@ -13,7 +13,10 @@ import { FileProvider } from './file-provider';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { selectSpecialists, selectSpecialistById } from '$lib/store/slices/specialists/specialists-selectors';
+import {
+  selectSpecialists,
+  selectSpecialistById,
+} from '$lib/store/slices/specialists/specialists-selectors';
 import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
 

@@ -10,7 +10,10 @@
  * (post-dedup), making performance proportional to unique event rate.
  */
 
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import { workspaceEventAccepted } from "../workspace-events-slice";
 
 // ---------------------------------------------------------------------------

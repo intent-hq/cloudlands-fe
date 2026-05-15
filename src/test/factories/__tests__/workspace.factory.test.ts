@@ -4,7 +4,11 @@
  * Tests for workspace factory functions.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   createTestWorkspaceId,
   createTestAgentId,

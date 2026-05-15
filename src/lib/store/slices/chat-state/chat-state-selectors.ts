@@ -1,7 +1,12 @@
 import type { StoreState } from '../../types';
 import { createSelector } from '../../utils/create-selector';
 import { emptyChatAgentState } from './chat-state-slice';
-import type { ChatAgentState, StatusEvent, LastAttemptedMessage, ModelUnavailableInfo } from './chat-state-types';
+import type {
+  ChatAgentState,
+  StatusEvent,
+  LastAttemptedMessage,
+  ModelUnavailableInfo,
+} from './chat-state-types';
 
 // ============================================================================
 // Helpers
@@ -25,12 +30,6 @@ export const selectChatAgentState = createSelector(
 export const selectChatIsInterrupting = createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).isInterrupting,
-);
-
-/** Select streaming content */
-export const selectChatStreamingContent = createSelector(
-  (state, agentId: string): string =>
-    getAgentChatState(state, agentId).streamingContent,
 );
 
 /** Select error */
@@ -99,8 +98,6 @@ export const selectChatLastMessageTime = createSelector(
     getAgentChatState(state, agentId).lastMessageTime,
 );
 
-
-
 /** Select last chunk received at timestamp (for reconciliation skip logic) */
 export const selectChatLastChunkReceivedAt = createSelector(
   (state, agentId: string): number =>
@@ -110,7 +107,7 @@ export const selectChatLastChunkReceivedAt = createSelector(
 /**
  * Select chat state for the given agent, falling back to an empty default state.
  * Equivalent to selectChatAgentState (which already defaults via emptyChatAgentState),
- * but explicitly named for use in ChatService and other consumers that need
+ * but explicitly named for consumers that need
  * a guaranteed non-null ChatAgentState without wrapper methods.
  */
 export const selectChatStateOrDefault = createSelector(

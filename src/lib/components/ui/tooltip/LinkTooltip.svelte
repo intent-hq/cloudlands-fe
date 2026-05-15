@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { state, formatUrlForDisplay } from './link-tooltip-state.svelte';
+  import {
+  state,
+  formatUrlForDisplay,
+} from './link-tooltip-state.svelte';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import Portal from '$lib/components/ui/Portal.svelte';
 

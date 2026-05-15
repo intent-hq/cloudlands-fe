@@ -7,7 +7,13 @@
  * - Active streams / unread tracking subscriptions
  */
 
-import { call, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   getLocalStorageItem,
   getLocalStorageJSON,

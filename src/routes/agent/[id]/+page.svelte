@@ -1,14 +1,19 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { logger } from '$shared/logger';
 
   import { page } from '$app/state';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { sendMessage as sendAgentMessage } from '$features/agent/agent-stream-lifecycle';
   import { subscribeToAgent } from '$features/agent/browser';
-  import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
+  import {
+  followBottom,
+  scrollToBottom,
+} from '$lib/utils/smartScroll';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
+  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { AgentSession } from '$shared/types';
 
@@ -77,7 +82,7 @@
     try {
       // First try to get the session from the Redux store (in memory)
       let session: import('$shared/types').AgentSession | null | undefined =
-        selectAgentById.select(getReduxStore().getState(), requestedAgentId);
+        selectAgentSession.select(getReduxStore().getState(), requestedAgentId);
 
       // If not in memory, try to restore from disk
       if (!session) {
@@ -87,7 +92,9 @@
             agentId: requestedAgentId,
             workspaceId: workspace.id,
           });
-          session = await agentService.restoreSession(requestedAgentId, workspace);
+          const restoreAction = restoreAgentSessionRequested(workspace.id, requestedAgentId);
+          getReduxStore().dispatch(restoreAction);
+          session = await restoreAction.promise;
         }
       }
 
@@ -139,7 +146,7 @@
       const workspace = $activeWorkspace;
       if (!workspace) throw new Error('No active workspace');
 
-      await agentService.sendMessage(targetAgentId, trimmedMessage, workspace);
+      await sendAgentMessage(targetAgentId, trimmedMessage, workspace);
     } catch (err) {
       logger.error('Failed to send message:', err);
       if (agentId !== targetAgentId) return;

@@ -1,9 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { readRepoConfig, writeRepoConfig, clearRepoConfigCache } from '../../workspace/main/repo-config.service';
+import {
+  readRepoConfig,
+  writeRepoConfig,
+  clearRepoConfigCache,
+} from '../../workspace/main/repo-config.service';
 import { readRepoScripts } from './scripts-persistence';
 import type { RepoScript, RepoConfig } from '../../../shared/types/repo-config.types';
 import type { WorkspaceScript } from '../types';

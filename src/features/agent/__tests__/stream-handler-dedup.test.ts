@@ -14,7 +14,12 @@
  * dispatch DOM events for the same stream chunks.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 
 describe('Stream Handler Deduplication (sendMessageStreamSetup guard)', () => {
   // Simulate the core data structures from RefactoredAgentService

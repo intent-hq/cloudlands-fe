@@ -2,7 +2,14 @@
  * Tests for WorkspaceMetricsTracker
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // We need to test the class directly, not the singleton
 // Create a mock logger first

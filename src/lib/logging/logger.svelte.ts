@@ -5,7 +5,10 @@
  * Provides category-based logging for better organization.
  */
 
-import { Logger as BaseLogger, type LogEntry as BaseLogEntry } from '$shared/logger';
+import {
+  Logger as BaseLogger,
+  type LogEntry as BaseLogEntry,
+} from '$shared/logger';
 import { LOG_CHANNELS } from '$shared/ipc';
 
 // Configure log levels

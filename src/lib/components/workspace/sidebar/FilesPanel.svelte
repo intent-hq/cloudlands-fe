@@ -1,7 +1,10 @@
 <script lang="ts">
   import FileTreeView from '$lib/components/file-explorer/file-tree-view.svelte';
   import { cn } from '$lib/utils';
-  import { invoke, dialog } from '$lib/electron-bridge';
+  import {
+  invoke,
+  dialog,
+} from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import { gitCache } from '$features/git/git-cache';

@@ -11,22 +11,22 @@
 
   import { fly } from "svelte/transition";
   import {
-    faArrowsRotate,
-    faCakeCandles,
-    faDownload,
-    faRotateRight,
-    faTriangleExclamation,
-    faXmark,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowsRotate,
+  faCakeCandles,
+  faDownload,
+  faRotateRight,
+  faTriangleExclamation,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    selectAutoUpdateStatus,
-    selectAutoUpdateProgress,
-    selectAutoUpdateInfo,
-    selectAutoUpdateCurrentVersion,
-    selectAutoUpdateError,
-  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  selectAutoUpdateStatus,
+  selectAutoUpdateProgress,
+  selectAutoUpdateInfo,
+  selectAutoUpdateCurrentVersion,
+  selectAutoUpdateError,
+} from '$lib/store/slices/auto-update/auto-update-selectors';
   import { installUpdate } from '$lib/store/slices/auto-update/auto-update-slice';
 
   interface Props {
@@ -51,10 +51,7 @@
   const error$ = selectAutoUpdateError();
 
   // Derived state from selectors
-  let status = $derived($status$);
-  let progress = $derived($progress$);
-  let updateInfo = $derived($updateInfo$);
-  let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
+  let progressPercent = $derived($progress$ ? Math.round($progress$.percent) : 0);
 
   // Format bytes per second
   function formatSpeed(bytesPerSecond: number): string {
@@ -73,8 +70,8 @@
 
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
-    if ((status === 'not-available' || status === 'error') && onDismiss) {
-      const delay = status === 'error' ? 5000 : 3000; // Longer for errors so user can read
+    if (($status$ === 'not-available' || $status$ === 'error') && onDismiss) {
+      const delay = $status$ === 'error' ? 5000 : 3000; // Longer for errors so user can read
       const timeout = setTimeout(() => {
         onDismiss();
       }, delay);
@@ -84,12 +81,12 @@
 </script>
 
 <div class="update-toast">
-  {#if status === 'downloaded' || status === 'downloading' || status === 'error'}
+  {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
     <button class="close-btn" onclick={handleClose} aria-label="Close">
       <Fa icon={faXmark} size="xs" />
     </button>
   {/if}
-  {#if status === 'checking'}
+  {#if $status$ === 'checking'}
     <div class="flex items-center gap-3">
       <div class="icon checking">
         <Fa icon={faArrowsRotate} class="animate-spin" />
@@ -98,26 +95,26 @@
         <div class="title">Checking for updates...</div>
       </div>
     </div>
-  {:else if status === 'available'}
+  {:else if $status$ === 'available'}
     <div class="flex items-center gap-3">
       <div class="icon downloading">
         <Fa icon={faDownload} class="animate-pulse" />
       </div>
       <div class="text">
-        <div class="title">Update {updateInfo?.version || ''} available</div>
+        <div class="title">Update {$updateInfo$?.version || ''} available</div>
         <div class="description">Preparing download...</div>
       </div>
     </div>
-  {:else if status === 'downloading'}
+  {:else if $status$ === 'downloading'}
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-3">
         <div class="icon downloading">
           <Fa icon={faDownload} />
         </div>
         <div class="text flex-1">
-          <div class="title">Downloading update {updateInfo?.version || ''}</div>
+          <div class="title">Downloading update {$updateInfo$?.version || ''}</div>
           <div class="description">
-            {progressPercent}%{progress ? ` · ${formatSpeed(progress.bytesPerSecond)}` : ''}
+            {progressPercent}%{$progress$ ? ` · ${formatSpeed($progress$.bytesPerSecond)}` : ''}
           </div>
         </div>
       </div>
@@ -125,7 +122,7 @@
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
     </div>
-  {:else if status === 'downloaded'}
+  {:else if $status$ === 'downloaded'}
     <div class="flex items-center gap-3">
       <div class="icon-celebrate" transition:fly={{y: 30, duration: 300}}>
         <Fa icon={faCakeCandles} size="2x" />
@@ -133,7 +130,7 @@
       <div class="text flex-1">
         <div class="title">Update Ready</div>
         <div class="description">
-          Version {updateInfo?.version} is ready to install
+          Version {$updateInfo$?.version} is ready to install
         </div>
       </div>
       <button class="action-btn success" onclick={handleInstall}>
@@ -141,7 +138,7 @@
         Install
       </button>
     </div>
-  {:else if status === 'not-available'}
+  {:else if $status$ === 'not-available'}
     <div class="flex items-center gap-3">
       <div class="icon-celebrate">
         <Fa icon={faCakeCandles} size="2x" />
@@ -153,7 +150,7 @@
         </div>
       </div>
     </div>
-  {:else if status === 'error'}
+  {:else if $status$ === 'error'}
     <div class="flex items-center gap-3">
       <div class="icon error">
         <Fa icon={faTriangleExclamation} />

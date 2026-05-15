@@ -1,4 +1,7 @@
-import { describe, it } from "vitest";
+import {
+  describe,
+  it,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import {
   getLocalStorageItem,
@@ -10,7 +13,10 @@ import {
   SETUP_SCRIPT_BANNER_DISMISSED_KEY,
 } from "../setup-scripts-slice";
 import { selectSetupScriptBannerDismissalRecord } from "../setup-scripts-selectors";
-import { initSetupScripts, persistSetupScriptBannerDismissals } from "./setup-scripts-saga";
+import {
+  initSetupScripts,
+  persistSetupScriptBannerDismissals,
+} from "./setup-scripts-saga";
 
 describe("setupScripts persistence sagas", () => {
   it("hydrates setup-script banner dismissal through safe storage helpers", () => {

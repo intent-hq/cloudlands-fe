@@ -1,6 +1,9 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faMinus } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faMinus,
+} from '@fortawesome/free-solid-svg-icons';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
 
   interface Props {

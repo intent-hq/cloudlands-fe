@@ -13,10 +13,19 @@ import { ipcMain } from '../../../main/tracked-ipc';
 import { BrowserWindow } from 'electron';
 import { Logger } from '$shared/logger';
 import { WorkspaceConfig } from '$shared/main/config';
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import {
+  AGENT_CHANNELS,
+  AGENT_BACKEND_CHANNELS,
+} from '$shared/ipc/channels';
 import type { AgentIpc } from '$shared/ipc/contracts';
-import { formatIpcError, formatIpcSuccess } from './ipc-response-formatter';
-import { restoreAgentId, restoreWorkspaceId } from '$shared/types/type-guards';
+import {
+  formatIpcError,
+  formatIpcSuccess,
+} from './ipc-response-formatter';
+import {
+  restoreAgentId,
+  restoreWorkspaceId,
+} from '$shared/types/type-guards';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   AgentBackendStopSchema,

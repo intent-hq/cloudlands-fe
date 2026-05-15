@@ -8,7 +8,10 @@
    * - Hunk staging/unstaging with hover actions in the gutter
    * - Real-time updates when file content changes
    */
-  import { onMount, untrack } from 'svelte';
+  import {
+  onMount,
+  untrack,
+} from 'svelte';
   import { writable } from 'svelte/store';
   import { invoke } from '$lib/electron-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -16,14 +19,18 @@
   import { loadFileContentRequested } from '$lib/store/slices/files/files-slice';
   import type { FileReadResponse } from '$lib/store/slices/files/files-types';
   import {
-    selectActiveWorkspace,
-    selectActiveWorkspaceId,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspace,
+  selectActiveWorkspaceId,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
-  import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
+  import {
+  batchedGitBranchBaseDiff,
+  batchedGitDiff,
+  dedupedShowFile,
+} from './diff-ipc-batcher';
   import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
   import { getChangedLineNumbersFromContent } from './line-staging';
@@ -1159,7 +1166,7 @@
       </span>
     </div>
   {:else}
-    
+
     <div class="diff-wrapper">
       <!-- Selection action bar -->
       {#if selectedLines}

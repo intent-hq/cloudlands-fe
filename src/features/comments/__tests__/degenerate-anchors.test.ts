@@ -2,8 +2,15 @@
  * Tests for degenerate anchor detection and removal
  */
 
-import { describe, it, expect } from 'vitest';
-import { scanForProblematicAnchors, removeDegenerateAnchors } from '../markdown-anchor-recovery';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  scanForProblematicAnchors,
+  removeDegenerateAnchors,
+} from '../markdown-anchor-recovery';
 
 describe('Degenerate Anchor Detection', () => {
   describe('scanForProblematicAnchors - DEGENERATE state', () => {

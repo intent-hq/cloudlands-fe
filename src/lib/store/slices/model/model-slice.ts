@@ -2,7 +2,10 @@ import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
 import { createCollection } from '../../utils/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { normalizeModelForProvider, normalizeProviderModels } from './model-selection-utils';
+import {
+  normalizeModelForProvider,
+  normalizeProviderModels,
+} from './model-selection-utils';
 import type {
   ModelFallbackInfo,
   ModelLoadingState,

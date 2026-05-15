@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import {
   formatDuration,
@@ -204,90 +208,6 @@ describe('StreamingStatus utilities', () => {
       ];
       // receivedFirstChunk stays true for non-tool phases
       expect(shouldAppendStreamingEvent(true, events)).toBe(false);
-    });
-  });
-
-  describe('Cross-session status event isolation', () => {
-    const listeners: Array<{ event: string; handler: EventListener }> = [];
-
-    function addTrackedListener(eventName: string, handler: EventListener) {
-      window.addEventListener(eventName, handler);
-      listeners.push({ event: eventName, handler });
-    }
-
-    afterEach(() => {
-      for (const { event, handler } of listeners) {
-        window.removeEventListener(event, handler);
-      }
-      listeners.length = 0;
-    });
-
-    function makeStatusDetail() {
-      return {
-        type: 'status',
-        statusData: {
-          phase: 'tool-call',
-          message: 'Calling tool',
-          level: 'info',
-          timestamp: Date.now(),
-        },
-      };
-    }
-
-    it('status events for a different session ID are not added to statusEvents', () => {
-      // Simulate the ChatService pattern: a Map of stream handlers keyed by sessionId
-      const streamHandlers = new Map<string, (data: unknown) => void>();
-      const statusEventsA: unknown[] = [];
-
-      // Register handler only for session-A
-      streamHandlers.set('session-A', (data) => {
-        statusEventsA.push(data);
-      });
-
-      // Simulate handleStreamEvent for session-B (no handler registered)
-      const incomingSessionId = 'session-B';
-      if (streamHandlers.has(incomingSessionId)) {
-        streamHandlers.get(incomingSessionId)!(makeStatusDetail());
-      }
-
-      // session-A's statusEvents should remain empty
-      expect(statusEventsA).toHaveLength(0);
-    });
-
-    it('DOM events dispatched on a different session channel are not received', () => {
-      const handlerA = vi.fn();
-
-      // Listen on session-A's channel
-      addTrackedListener('agent:stream:session-A', handlerA);
-
-      // Dispatch event on session-B's channel
-      window.dispatchEvent(
-        new CustomEvent('agent:stream:session-B', { detail: makeStatusDetail() }),
-      );
-
-      // session-A's listener should NOT have been called
-      expect(handlerA).not.toHaveBeenCalled();
-    });
-
-    it('only the matching session receives status events when multiple sessions exist', () => {
-      const handlerA = vi.fn();
-      const handlerB = vi.fn();
-
-      // Listen on both session channels
-      addTrackedListener('agent:stream:session-A', handlerA);
-      addTrackedListener('agent:stream:session-B', handlerB);
-
-      // Dispatch event only for session-A
-      const detail = makeStatusDetail();
-      window.dispatchEvent(new CustomEvent('agent:stream:session-A', { detail }));
-
-      // Only session-A's listener should have been called
-      expect(handlerA).toHaveBeenCalledTimes(1);
-      expect(handlerB).not.toHaveBeenCalled();
-
-      // Verify the received detail matches
-      const receivedDetail = handlerA.mock.calls[0][0] as CustomEvent;
-      expect(receivedDetail.detail).toEqual(detail);
     });
   });
 });

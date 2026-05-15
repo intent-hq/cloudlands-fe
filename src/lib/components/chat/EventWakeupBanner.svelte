@@ -76,7 +76,11 @@
    * Displays the event types in a compact, centered divider format (similar to DateSeparator).
    * Can optionally show full event details in an expandable format.
    */
-  import { faBell, faRotate, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faBell,
+  faRotate,
+  faArrowUp,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import * as Tooltip from '$lib/components/ui/tooltip';

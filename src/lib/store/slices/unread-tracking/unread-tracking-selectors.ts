@@ -3,21 +3,7 @@
  */
 
 import { createSelector } from "../../utils/create-selector";
-import type { StoreState } from "../../types";
-
-function getWorkspaceAgentIds(state: StoreState, workspaceId: string): string[] {
-  return state.workspaceAgents.byWorkspaceId[workspaceId]?.agentIds ?? [];
-}
-
-function getWorkspaceIdByAgentId(state: StoreState): Record<string, string> {
-  const workspaceIdByAgentId: Record<string, string> = {};
-  for (const [workspaceId, workspaceAgents] of Object.entries(state.workspaceAgents.byWorkspaceId)) {
-    for (const agentId of workspaceAgents.agentIds) {
-      workspaceIdByAgentId[agentId] ??= workspaceId;
-    }
-  }
-  return workspaceIdByAgentId;
-}
+import { selectAgentSessionWorkspaceId } from "../agent-session/agent-session-selectors";
 
 /** Whether a specific agent has unread messages. */
 export const selectAgentHasUnread = createSelector(
@@ -37,8 +23,9 @@ export const selectUnreadAgentIds = createSelector(
 /** Unread agent IDs for a specific workspace. */
 export const selectUnreadAgentIdsForWorkspace = createSelector(
   (state, workspaceId: string) => {
-    const workspaceAgentIds = new Set(getWorkspaceAgentIds(state, workspaceId));
-    return state.unreadTracking.unreadAgentIds.filter((id) => workspaceAgentIds.has(id));
+    return state.unreadTracking.unreadAgentIds.filter(
+      (id) => selectAgentSessionWorkspaceId.select(state, id) === workspaceId
+    );
   }
 );
 
@@ -46,11 +33,10 @@ export const selectUnreadAgentIdsForWorkspace = createSelector(
 export const selectUnreadAgentIdsByWorkspace = createSelector(
   (state): Record<string, string[]> => {
     const { unreadAgentIds } = state.unreadTracking;
-    const workspaceIdByAgentId = getWorkspaceIdByAgentId(state);
     const result: Record<string, string[]> = {};
 
     for (const id of unreadAgentIds) {
-      const workspaceId = workspaceIdByAgentId[id];
+      const workspaceId = selectAgentSessionWorkspaceId.select(state, id);
       if (!workspaceId) continue;
       result[workspaceId] ??= [];
       result[workspaceId].push(id);
@@ -58,11 +44,6 @@ export const selectUnreadAgentIdsByWorkspace = createSelector(
 
     return result;
   }
-);
-
-/** Get the workspace ID for a specific agent (if known). */
-export const selectWorkspaceForAgent = createSelector(
-  (state, agentId: string) => getWorkspaceIdByAgentId(state)[agentId]
 );
 
 /** The currently viewed agent ID. */

@@ -1,7 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { call, take, delay } from "typed-redux-saga";
+import {
+  call,
+  take,
+  delay,
+} from "typed-redux-saga";
 
 /**
  * Helper to detect redux-saga `delay()` effects inside expectSaga call providers.
@@ -80,10 +90,27 @@ import {
   buildSweepCatchUpEventId,
   filterAlreadyDelivered,
 } from "./delivery-saga";
-import { dispatchWorkspaceEvent, handleSubscribeToDelegationGroup } from "./ipc-bridge-saga";
-import { handleDelegationGroupDelivery, delegationGroupSaga, subsetInvariantWarningEmitted } from "./delegation-group-saga";
-import { handleEvictStaleAgents, handleValidateSubscriptions, isAgentSessionActive } from "./cleanup-saga";
-import { handleMatchEvent, activeBatchTimers, batchFlushWorker, processingOneShots, matchingSaga } from "./matching-saga";
+import {
+  dispatchWorkspaceEvent,
+  handleSubscribeToDelegationGroup,
+} from "./ipc-bridge-saga";
+import {
+  handleDelegationGroupDelivery,
+  delegationGroupSaga,
+  subsetInvariantWarningEmitted,
+} from "./delegation-group-saga";
+import {
+  handleEvictStaleAgents,
+  handleValidateSubscriptions,
+  isAgentSessionActive,
+} from "./cleanup-saga";
+import {
+  handleMatchEvent,
+  activeBatchTimers,
+  batchFlushWorker,
+  processingOneShots,
+  matchingSaga,
+} from "./matching-saga";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";
@@ -266,7 +293,7 @@ describe("handleDeliverEvents", () => {
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
-         
+
         race(_effect, _next) {
           // Simulate the timeout branch winning the race
           return { result: undefined, timeout: true };
@@ -307,7 +334,7 @@ describe("handleDeliverEvents", () => {
           if (isDelayEffect(effect)) return undefined;
           return next();
         },
-         
+
         race(_effect, _next) {
           return { result: undefined, timeout: true };
         },
@@ -392,7 +419,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-         
+
         race(_effect, _next) {
           return { result: { success: false, error: "Agent is already streaming", errorCode: "ALREADY_STREAMING" }, timeout: undefined };
         },
@@ -417,7 +444,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-         
+
         race(_effect, _next) {
           return { result: { success: false, error: "Delivery in flight", errorCode: "DELIVERY_IN_FLIGHT" }, timeout: undefined };
         },
@@ -442,7 +469,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-         
+
         race(_effect, _next) {
           return { result: { success: false, error: "Queued messages pending", errorCode: "QUEUE_PENDING" }, timeout: undefined };
         },
@@ -467,7 +494,7 @@ describe("handleDeliverEvents", () => {
           if (effect.fn === formatNotification) return "Event notification";
           return next();
         },
-         
+
         race(_effect, _next) {
           return { result: { success: false, error: "Agent is already streaming", errorCode: "ALREADY_STREAMING" }, timeout: undefined };
         },

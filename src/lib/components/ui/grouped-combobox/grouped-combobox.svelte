@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { onMount, tick, type Snippet } from 'svelte';
+  import {
+  onMount,
+  tick,
+  type Snippet,
+} from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faChevronLeft } from '@fortawesome/free-solid-svg-icons';

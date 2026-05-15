@@ -5,27 +5,30 @@
   import type { Workspace } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-    faBold,
-    faItalic,
-    faUnderline,
-    faCode,
-    faCommentDots,
-    faStrikethrough,
-    faPaperPlane,
-    faCheck,
-    faLink,
-    faTimes,
-  } from '@fortawesome/free-solid-svg-icons';
+  faBold,
+  faItalic,
+  faUnderline,
+  faCode,
+  faCommentDots,
+  faStrikethrough,
+  faPaperPlane,
+  faCheck,
+  faLink,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
-  import { type ContextReference, convertContextReferences } from '$features/agent/agent-context';
+  import {
+  type ContextReference,
+  convertContextReferences,
+} from '$features/agent/agent-context';
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+
+  const dispatch = getDispatch();
 
   interface Props {
     editor: Editor | null;
@@ -44,7 +47,7 @@
     noteId,
     onAddComment,
     onAgentLaunched,
-     
+
     onCreateSessionComment: _onCreateSessionComment,
     showNoteActions = true,
   }: Props = $props();
@@ -215,7 +218,7 @@
         userMessage.trim() || 'Handle this selection from the current context';
 
       logger.info('[BubbleMenu] Creating agent with unified creator', {
-        workspaceId: WorkspaceId(workspace.id),
+        workspaceId: workspace.id,
         agentType: 'workspace',
         hasSelection: !!launchDialogSelection,
         userMessage: finalUserMessage,
@@ -227,59 +230,32 @@
         })),
       });
 
-      // Create the agent using agentFactory (consistent with other creation paths)
-      // Backend will load instructions based on agentType
-      // Note: contextReferences with content (selection) will be automatically
-      // extracted to runtime context by AgentFactory
-      // Use workspace's default model if set, otherwise fall back to global
-      const { agentFactory } = await import('$features/agent/services/agent-factory');
-      const result = await agentFactory.createAgent(workspace, {
-        name: 'Handle Selection Agent',
-        workspaceId: WorkspaceId(workspace.id),
-        initialMessage: finalUserMessage, // User message (sent as initial message)
-        agentType: createAgentTypeId('workspace'), // Backend loads instructions based on this
-        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
-        contextReferences: context,
-        source: 'bubble-menu',
-        metadata: {
+      const launchAction = agentSessionLaunchAgentRequested(
+        workspace.id,
+        {
+          name: 'Handle Selection Agent',
+          initialMessage: finalUserMessage, // User message (sent as initial message)
+          agentType: createAgentTypeId('workspace'), // Backend loads instructions based on this
+          contextReferences: context,
           source: 'bubble-menu',
-          agentType: 'workspace',
-          contextReferences: context, // Contains selection - will be auto-extracted to runtime context
+          metadata: {
+            source: 'bubble-menu',
+            agentType: 'workspace',
+            contextReferences: context, // Contains selection - will be auto-extracted to runtime context
+          },
         },
-      });
+        { openAgent: true },
+      );
+      dispatch(launchAction);
+      const agentData = await launchAction.promise;
 
-      if (!result.success || !result.agent) {
-        throw new Error(result.error || 'Failed to create agent');
-      }
-
-      const session = result.agent;
       logger.info('[BubbleMenu] Agent created successfully', {
-        agentId: session?.id,
-        hasSession: !!session,
+        agentId: agentData.id,
       });
-
-      // Extract the agent data with the correct structure
-      const agentData = {
-        id: session?.id,
-        name: session?.name || 'Agent',
-        workspaceId: session?.workspaceId,
-      };
 
       // Close dialog and CLEAR the message on successful launch
       showLaunchDialog = false;
       launchDialogMessage = '';
-
-      // Open the agent tab in the panel layout
-      if (agentData.id && workspace?.id) {
-        const layoutManager = getPanelLayoutManager(workspace.id);
-        layoutManager.openTab({
-          type: 'agent',
-          title: agentData.name || 'Agent',
-          agentId: agentData.id,
-          closable: true,
-        });
-        logger.info('[BubbleMenu] Opened agent tab', { agentId: agentData.id });
-      }
 
       // Bubble up result
       if (agentData.id && onAgentLaunched) {

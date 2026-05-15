@@ -2,7 +2,13 @@
  * Tests for comment ID validation in NotesService
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { NotesService } from '../notes.service';
 import type { NotesRepository } from '../notes.repository';
 import type { CommentsRepository } from '../../comments/comments.repository';

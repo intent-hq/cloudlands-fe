@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import * as sagaEffects from "redux-saga/effects";
@@ -81,9 +88,7 @@ import {
   prStatusRefreshCompleted,
 } from "../pr-status-slice";
 import { selectPRStatusLastRefreshTime } from "../pr-status-selectors";
-import {
-  selectWorkspaceById,
-} from "$lib/store/slices/workspace/workspace-selectors";
+import { selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
 import { init } from "$lib/store/init";
 import { invoke } from "$lib/electron-bridge";
 import { discoverPRsForBranch } from "./pr-status-saga";

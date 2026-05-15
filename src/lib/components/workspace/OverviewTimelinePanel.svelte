@@ -3,21 +3,27 @@
   import { cn } from '$lib/utils';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
-  import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
+  import {
+  getNoteIcon,
+  getNoteTitle,
+  getNoteIconClass,
+  getNoteDepth,
+} from './sidebar/utils';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-    faArrowRight,
-    faCheck,
-    faCodeBranch,
-    faCodeCommit,
-    faCodePullRequest,
-    faPencil,
-    faPlus,
-    faSitemap,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowRight,
+  faCheck,
+  faCodeBranch,
+  faCodeCommit,
+  faCodePullRequest,
+  faPencil,
+  faPlus,
+  faSitemap,
+  faFolder,
+} from '@fortawesome/free-solid-svg-icons';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import { ListItem } from '$lib/components/ui/list';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
@@ -25,7 +31,7 @@
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
-  import { faFolder } from '@fortawesome/free-solid-svg-icons';
+
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Header from '../ui/Header.svelte';
 

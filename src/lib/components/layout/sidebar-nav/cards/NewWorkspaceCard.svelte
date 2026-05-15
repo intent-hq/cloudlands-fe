@@ -5,14 +5,20 @@
    * Shows WIP state if there's draft content, recent repos for quick access,
    * and a button to open the full creation modal.
    */
-  import { faArrowRight, faFolder } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowRight,
+  faFolder,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectDraftPrompt } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeAll, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+  closeAll,
+  setShowCreateModal,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { Workspace } from '$shared/types';
@@ -28,7 +34,7 @@
     expanded?: boolean;
   }
 
-   
+
   let { expanded: _ = false }: Props = $props();
 
   const hasDraft = $derived($draftPrompt$.trim().length > 0);

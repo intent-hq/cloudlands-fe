@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import {
-    requestResizablePanelGroupLayout,
-    setResizablePanelGroupLayout,
-    type ResizablePanelGroupLayoutState,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  onMount,
+  onDestroy,
+} from 'svelte';
+  import {
+  requestResizablePanelGroupLayout,
+  setResizablePanelGroupLayout,
+  type ResizablePanelGroupLayoutState,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectResizablePanelGroupLayout } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

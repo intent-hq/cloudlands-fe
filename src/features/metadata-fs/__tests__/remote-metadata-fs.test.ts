@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 // Use vi.hoisted so mock objects are available inside the hoisted vi.mock factory
 const { mockRpcClient } = vi.hoisted(() => ({

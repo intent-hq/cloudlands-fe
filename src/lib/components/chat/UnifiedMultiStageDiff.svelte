@@ -9,10 +9,16 @@
    * in Monaco diff mode. The diff shows all changes merged together.
    */
 
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import type { ChangePart } from './types';
-  import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
+  import {
+  mergeChangeParts,
+  buildContentFromMergedHunks,
+} from './unified-diff-merger';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
 

@@ -1,7 +1,16 @@
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { PIP_CHANNELS } from "$shared/ipc/channels";
-import { openOrFocusPip, closePip, closeAllPipForWorkspace, closeAllPip, type PipWindowState, } from "../pip-slice";
+import {
+  openOrFocusPip,
+  closePip,
+  closeAllPipForWorkspace,
+  closeAllPip,
+  type PipWindowState,
+} from "../pip-slice";
 import { selectPipState } from "../pip-selectors";
 function* handleOpenOrFocusPip(action: ReturnType<typeof openOrFocusPip>) {
     const [workspaceId, tabId, tabType, panelId] = action.payload;

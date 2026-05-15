@@ -18,7 +18,7 @@
   // Set up context for drag handling (NodeViewWrapper uses this)
   setContext(NODE_VIEW_CONTEXT_KEY, {
     contentDOMElement: null,
-     
+
     onDragStart: (_event: DragEvent) => {
       // Mock implementation
     },

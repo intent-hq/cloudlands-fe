@@ -5,7 +5,10 @@
  * Tracks file states and detects changes between snapshots.
  */
 
-import { readFile, stat } from 'fs/promises';
+import {
+  readFile,
+  stat,
+} from 'fs/promises';
 import { join } from 'path';
 import { createHash } from 'crypto';
 import { Logger } from '../../../../shared/logger';

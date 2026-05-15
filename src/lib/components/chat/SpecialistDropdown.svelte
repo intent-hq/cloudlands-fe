@@ -8,7 +8,10 @@
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { selectSpecialists, filterSpecialistsByGitHubAuth } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+  selectSpecialists,
+  filterSpecialistsByGitHubAuth,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {

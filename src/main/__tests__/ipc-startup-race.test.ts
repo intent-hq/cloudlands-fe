@@ -23,7 +23,11 @@
  *    group. If this assertion fails, a race condition has been reintroduced.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 

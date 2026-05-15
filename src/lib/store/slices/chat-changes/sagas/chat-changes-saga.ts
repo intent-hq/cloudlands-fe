@@ -1,8 +1,18 @@
-import { cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  cancel,
+  delay,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { Task } from 'redux-saga';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { agentFileChangeReceived, agentFileRefreshTriggered } from '../chat-changes-slice';
+import {
+  agentFileChangeReceived,
+  agentFileRefreshTriggered,
+} from '../chat-changes-slice';
 import type { AgentFileChangedEvent } from '../../files/files-types';
 
 export const AGENT_FILE_REFRESH_DEBOUNCE_MS = 300;

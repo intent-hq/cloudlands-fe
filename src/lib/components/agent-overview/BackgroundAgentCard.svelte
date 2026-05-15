@@ -30,7 +30,6 @@
 
   const isActive = $derived(agent.status === 'responding');
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
-  const isWaitingForOtherAgents = $derived($agentIsWaitingForOtherAgents$);
 
   // Map agent status to avatar state
   function getAvatarState(status: AgentNode['status'], waitingForOtherAgents: boolean): AvatarState {
@@ -41,7 +40,7 @@
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status, isWaitingForOtherAgents));
+  const avatarState = $derived(getAvatarState(agent.status, $agentIsWaitingForOtherAgents$));
 </script>
 
 <button

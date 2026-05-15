@@ -18,7 +18,10 @@ import type {
   ComputedGroup,
   NodeStyleConfig,
 } from './types';
-import { GRAMMAR_CONFIGS, DEFAULT_NODE_STYLE } from './types';
+import {
+  GRAMMAR_CONFIGS,
+  DEFAULT_NODE_STYLE,
+} from './types';
 
 /**
  * Compute layout for a diagram

@@ -1,28 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import { dynamic } from "redux-saga-test-plan/providers";
 
-vi.mock("$lib/electron-bridge", () => ({
+vi.mock("$lib/electron-bridge",
+  () => ({
   invoke: vi.fn(),
   invokeWithTimeout: vi.fn(),
   IpcTimeoutError: class IpcTimeoutError extends Error {},
-}));
+  }));
 
-vi.mock("$features/line-changes/line-changes.client", () => ({
+vi.mock("$features/line-changes/line-changes.client",
+  () => ({
   lineChangesClient: {
     getAgentStats: vi.fn(),
   },
-}));
+  }));
 
-vi.mock("$lib/utils/client-logger", () => ({
+vi.mock("$lib/utils/client-logger",
+  () => ({
   createLogger: () => ({
     info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
   }),
-}));
+  }));
 
 // Import after mocks
 import { syncAgentStatsFromMain } from "./changes-saga";

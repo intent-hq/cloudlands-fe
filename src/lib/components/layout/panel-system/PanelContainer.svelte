@@ -334,7 +334,7 @@
     }
   }
 
-   
+
   function handleCornerResizeEnd(_handleIndex: number) {
     handleResizeEnd();
   }

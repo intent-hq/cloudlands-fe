@@ -6,25 +6,28 @@
    * This is the app-wide palette, not the inline slash-command suggester used
    * in text inputs.
    */
-  import { onMount, untrack } from 'svelte';
+  import {
+  onMount,
+  untrack,
+} from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { fly } from 'svelte/transition';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
-    faSearch,
-    faFile,
-    faCog,
-    faFolderOpen,
-    faTerminal,
-    faCommentDots,
-    faFileAlt,
-    faCodeBranch,
-    faPlus,
-    faGlobe,
-    faPlay,
-  } from '@fortawesome/free-solid-svg-icons';
+  faSearch,
+  faFile,
+  faCog,
+  faFolderOpen,
+  faTerminal,
+  faCommentDots,
+  faFileAlt,
+  faCodeBranch,
+  faPlus,
+  faGlobe,
+  faPlay,
+} from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
@@ -36,34 +39,34 @@
   import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-    openWorkspaceBrowser,
-    openWorkspaceNote,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceBrowser,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import {
-    commandPaletteNewFileRequested,
-    openAgentTabRequested,
-    openTerminalTabRequested,
-  } from '$lib/store/slices/app-layout/app-layout-slice';
+  commandPaletteNewFileRequested,
+  openAgentTabRequested,
+  openTerminalTabRequested,
+} from '$lib/store/slices/app-layout/app-layout-slice';
   import { resetOnboarding } from '$lib/store/slices/onboarding/onboarding-slice';
   import { setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    type WorkspaceObject,
-    type WorkspaceObjectType,
-    FILTER_PREFIXES,
-    fuzzyScore,
-    formatRelativeTime,
-    parseQueryFilter,
-    buildNoteBreadcrumbs,
-    buildRecentItems,
-  } from '$lib/store/slices/command-palette/command-palette-utils';
+  type WorkspaceObject,
+  type WorkspaceObjectType,
+  FILTER_PREFIXES,
+  fuzzyScore,
+  formatRelativeTime,
+  parseQueryFilter,
+  buildNoteBreadcrumbs,
+  buildRecentItems,
+} from '$lib/store/slices/command-palette/command-palette-utils';
   import {
-    recordPaletteFileMru,
-    recordPaletteMruItem,
-  } from '$lib/store/slices/palette/palette-slice';
+  recordPaletteFileMru,
+  recordPaletteMruItem,
+} from '$lib/store/slices/palette/palette-slice';
   import {
-    selectPaletteFileMru,
-    selectPaletteMruEntries,
-  } from '$lib/store/slices/palette/palette-selectors';
+  selectPaletteFileMru,
+  selectPaletteMruEntries,
+} from '$lib/store/slices/palette/palette-selectors';
   import { computeResults } from '$lib/store/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
@@ -75,9 +78,9 @@
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
   import { track } from '$lib/services/analytics';
   import {
-    compareWorkspaceActivityDisplayTimeDesc,
-    getWorkspaceActivityDisplayTime,
-  } from '$shared/utils/workspace-activity-time';
+  compareWorkspaceActivityDisplayTimeDesc,
+  getWorkspaceActivityDisplayTime,
+} from '$shared/utils/workspace-activity-time';
 
   const logger = createLogger('CommandPalette');
 
@@ -329,7 +332,7 @@
                 (b._score as number) - (a._score as number) ||
                 (b._mru as number) - (a._mru as number),
             )
-             
+
             .map(({ _score, _mru, ...rest }: any) => rest)
             .slice(0, 8)
         );

@@ -6,19 +6,19 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    initializeGitHubAuth,
-    startGitHubAuth,
-    logoutGitHub,
-    checkGitHubAuthStatus,
-  } from '$lib/store/slices/github-auth/github-auth-slice';
+  initializeGitHubAuth,
+  startGitHubAuth,
+  logoutGitHub,
+  checkGitHubAuthStatus,
+} from '$lib/store/slices/github-auth/github-auth-slice';
   import {
-    selectGitHubAuthIsAuthenticated,
-    selectGitHubAuthIsAuthenticating,
-    selectGitHubAuthOauthUrl,
-    selectGitHubAuthUser,
-    selectGitHubAuthError,
-    selectGitHubAuthRequiresAugmentAuth,
-  } from '$lib/store/slices/github-auth/github-auth-selectors';
+  selectGitHubAuthIsAuthenticated,
+  selectGitHubAuthIsAuthenticating,
+  selectGitHubAuthOauthUrl,
+  selectGitHubAuthUser,
+  selectGitHubAuthError,
+  selectGitHubAuthRequiresAugmentAuth,
+} from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */

@@ -12,7 +12,11 @@
  * 6. Promise resolves and GitService continues or cancels the operation
  */
 
-import { BrowserWindow, ipcMain, Notification } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+  Notification,
+} from 'electron';
 import type { KeychainAccessRisk } from '../../../shared/git/git-env';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';

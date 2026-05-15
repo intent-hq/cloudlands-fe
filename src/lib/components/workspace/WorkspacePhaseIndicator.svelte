@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { WorkspacePhase } from './workspace-phase';
-  
+
 interface Props {
     phase: WorkspacePhase;
     /** Progress 0–1 for the building phase pie-chart fill */

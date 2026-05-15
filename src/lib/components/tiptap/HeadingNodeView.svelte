@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { NodeViewProps } from '@tiptap/core';
-  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
+  import {
+  NodeViewWrapper,
+  NodeViewContent,
+} from '$lib/utils/tiptap/svelte-node-view';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
@@ -8,7 +11,10 @@
   import { onMount } from 'svelte';
   import { TASK_HREF_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectNoteById, selectNotesVersion } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+  selectNoteById,
+  selectNotesVersion,
+} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
   // Props from SvelteNodeViewRenderer

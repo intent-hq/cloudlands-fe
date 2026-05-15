@@ -8,7 +8,10 @@
 
 import { ipcMain } from 'electron';
 import { readFile } from 'fs/promises';
-import { join, isAbsolute } from 'path';
+import {
+  join,
+  isAbsolute,
+} from 'path';
 import { z } from 'zod';
 import { Logger } from '../../../../shared/logger';
 import { IPC_CHANNELS } from '../../../../shared/ipc-registry';

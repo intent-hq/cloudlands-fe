@@ -1,6 +1,16 @@
-import { call, put, takeEvery } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  put,
+  race,
+  takeEvery,
+} from 'typed-redux-saga';
+import { invoke } from '$lib/electron-bridge';
 import { agentFactory } from '$features/agent/services/agent-factory';
-import { agentService } from '$features/agent/agent-ipc-bridge';
+import {
+  agentIpcProxy,
+  persistenceService,
+} from '$features/agent/browser';
 import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import {
@@ -12,10 +22,14 @@ import {
   removeOptimisticNote,
   updateNoteContent,
   reloadNotes,
+  assignAgentToTask,
 } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId,
+  NoteId,
+} from '$shared/types/branded-ids';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
@@ -32,33 +46,50 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { SPECIALISTS } from '$lib/constants/specialists';
-import { getAgentProvider } from '$shared/types/agent-session';
-import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
-import { assignAgentToTask } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
+import {
+  getAgentProvider,
+  AgentActivationState,
+} from '$shared/types/agent-session';
+
+import {
+  buildTaskAgentInitialMessage,
+  buildTaskNoteContent,
+} from '$features/notes/utils/task-agent-message-builder';
+
+import {
+  createAgentTypeId,
+  parseAgentTypeId,
+} from '$shared/types/agent.types';
 import { AgentStatus } from '$shared/types';
-import type { AgentSession, Workspace } from '$shared/types';
+import type { AgentSession,
+  Workspace } from '$shared/types';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { taskNoteUrl } from '$shared/constants/intent-links';
-import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
+
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { track } from '$lib/services/analytics';
 import {
   focusPanel,
   openTab,
+  openTabInAdjacentOrSplit,
   setActiveTab,
 } from '$lib/store/slices/panel-layout/panel-layout-slice';
 import { selectPanels } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 import {
-  addAgent,
+  activateAgentRequested,
+  activateInitialAgentRequested,
   clearInitialAgentConfig,
+  createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   delegateExistingTaskRequested,
   delegateTaskRequested,
+  forkAgentRequested,
   markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
   runAgentForNoteRequested,
+  setActiveAgentId,
+  type AgentCreationRequestOptions,
 } from '../workspace-agents-slice';
 import { selectAllWorkspaceAgents } from '../workspace-agents-selectors';
 import { upsertSession } from '../../agent-session/agent-session-slice';
@@ -67,8 +98,50 @@ import {
   markTerminalRecentlyCreated,
   createTerminalRequested,
 } from '../../terminals/terminals-slice';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('agent-creation-saga');
+const INITIAL_AGENT_ACTIVATION_TIMEOUT_MS = 60_000;
+const AGENT_ACTIVATION_MAX_RETRIES = 3;
+const initialAgentActivationLocks = new Set<string>();
+const agentActivationWaiters = new Map<string, Array<ReturnType<typeof activateAgentRequested>>>();
+type CreateAgentFromConfigRequestAction = ReturnType<typeof createAgentFromConfigRequested>;
+
+function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
+  return !!session && ((session.messages?.length ?? 0) > 0 || session.status !== AgentStatus.Pending);
+}
+
+function getActivationError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getAgentCreationError(error: unknown): string {
+  if (!error) return 'Failed to create agent';
+  return error instanceof Error ? error.message : String(error);
+}
+
+function* resolveWorkspaceForActivation(wsId: string) {
+  const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(wsId);
+  if (workspace) return workspace;
+  const response = yield* call(invoke<any>, 'workspace:get', { id: wsId });
+  return response?.data as Workspace | undefined;
+}
+
+function* publishActivationResult(
+  key: string,
+  result: AgentSession | null,
+  error?: unknown,
+) {
+  const waiters = agentActivationWaiters.get(key) ?? [];
+  agentActivationWaiters.delete(key);
+  for (const waiter of waiters) {
+    if (error) {
+      yield* put(waiter.failure(getActivationError(error)));
+    } else {
+      yield* put(waiter.success(result));
+    }
+  }
+}
 
 /**
  * Resolve the workspace path used to validate that a workspace can host new
@@ -157,10 +230,350 @@ function* registerCreatedAgent(
   existingAgents: AgentSession[],
 ) {
   if (!existingAgents.some((a) => a.id === session.id)) {
-    yield* put(upsertSession(session));
-    yield* put(addAgent(wsId, session));
+    yield* put(upsertSession({
+      ...session,
+      workspaceId: wsId as AgentSession['workspaceId'],
+    }));
   }
   yield* put(markAgentRecentlyCreatedAction(wsId, session.id));
+}
+
+function markInitialMessageSentInSessionStorage(wsId: string): void {
+  const agentConfigKey = `workspace:${wsId}:agent-config`;
+  const storedConfig = sessionStorage.getItem(agentConfigKey);
+  if (!storedConfig) return;
+  const config = JSON.parse(storedConfig);
+  config.messageSent = true;
+  sessionStorage.setItem(agentConfigKey, JSON.stringify(config));
+}
+
+function* openCreatedAgent(
+  wsId: string,
+  session: AgentSession,
+  options?: AgentCreationRequestOptions,
+) {
+  if (!options?.openAgent) return;
+  const tab = {
+    type: 'agent' as const,
+    title: session.name || 'Agent',
+    agentId: session.id,
+    closable: true,
+  };
+  if (options.openInAdjacentPanel) {
+    yield* put(openTabInAdjacentOrSplit(wsId, tab, options.sourcePanelId));
+    return;
+  }
+  if (options.panelId) {
+    yield* put(openTab(wsId, tab, options.panelId));
+    return;
+  }
+  yield* openAgentInLayoutSaga(session.id, session.name || 'Agent', wsId);
+}
+
+export function* handleCreateAgentFromConfigRequestedSaga(
+  wsId: string,
+  config: Parameters<typeof createAgentFromConfigRequested>[1],
+  options?: AgentCreationRequestOptions,
+  requestAction?: CreateAgentFromConfigRequestAction,
+) {
+  const workspace = yield* validateWorkspace(wsId);
+  if (!workspace) {
+    const errorMessage = 'Workspace is not available for agent creation';
+    logger.error('Failed to create agent from Redux request', {
+      workspaceId: wsId,
+      source: config.source,
+      error: errorMessage,
+    });
+    if (requestAction) {
+      yield* put(requestAction.failure(errorMessage));
+    }
+    return;
+  }
+
+  try {
+    const agents: AgentSession[] = yield* selectAllWorkspaceAgents.effect(wsId);
+
+    const result: Awaited<ReturnType<typeof agentFactory.createAgent>> = yield* call(
+      [agentFactory, agentFactory.createAgent],
+      workspace,
+      {
+        ...config,
+        workspaceId: WorkspaceId(wsId),
+      },
+    );
+    if (!result.success || !result.agent) {
+      const errorMessage = getAgentCreationError(result.error);
+      logger.error('Failed to create agent from Redux request', {
+        workspaceId: wsId,
+        source: config.source,
+        error: errorMessage,
+      });
+      if (requestAction) {
+        yield* put(requestAction.failure(errorMessage));
+      }
+      return;
+    }
+
+    const session = result.agent;
+    yield* registerCreatedAgent(wsId, session, agents);
+    yield* put(setActiveAgentId(wsId, session.id));
+
+    if (options?.assignTaskNoteId) {
+      yield* put(assignAgentToTask(wsId, options.assignTaskNoteId, session.id));
+    }
+    if (options?.reloadNotes) {
+      yield* put(reloadNotes(wsId));
+    }
+    if (options?.markInitialMessageSent) {
+      yield* call(markInitialMessageSentInSessionStorage, wsId);
+    }
+
+    yield* openCreatedAgent(wsId, session, options);
+    if (requestAction) {
+      yield* put(requestAction.success(session));
+    }
+  } catch (error) {
+    const errorMessage = getAgentCreationError(error);
+    logger.error('Failed to create agent from Redux request', {
+      workspaceId: wsId,
+      source: config.source,
+      error: errorMessage,
+    });
+    if (requestAction) {
+      yield* put(requestAction.failure(errorMessage));
+    }
+  }
+}
+
+export function* handleActivateInitialAgentRequestedSaga(
+  wsId: string,
+  agentId: string,
+  config: Parameters<typeof activateInitialAgentRequested>[2],
+) {
+  const lockKey = `${wsId}:${agentId}`;
+  if (initialAgentActivationLocks.has(lockKey)) {
+    logger.debug('Suppressing duplicate initial agent activation request', { workspaceId: wsId, agentId });
+    return;
+  }
+
+  const workspace = yield* validateWorkspace(wsId);
+  if (!workspace) return;
+  const agents: AgentSession[] = yield* selectAllWorkspaceAgents.effect(wsId);
+
+  initialAgentActivationLocks.add(lockKey);
+  try {
+    const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
+    if (hasUsableInitialAgentSession(existing)) {
+      yield* registerCreatedAgent(wsId, existing, agents);
+      yield* put(setActiveAgentId(wsId, existing.id));
+      return;
+    }
+
+    const { result, timeout } = yield* race({
+      result: call([agentFactory, agentFactory.createAgent], workspace, {
+        ...config,
+        id: agentId,
+        workspaceId: WorkspaceId(wsId),
+        skipInitialPrompt: true,
+        metadata: {
+          ...config.metadata,
+          isInitialAgent: true,
+          isFirstWorkspaceAgent: config.metadata?.isFirstWorkspaceAgent,
+        },
+      }),
+      timeout: delay(INITIAL_AGENT_ACTIVATION_TIMEOUT_MS),
+    });
+    if (timeout) {
+      logger.warn('Timed out activating initial agent from Redux request', { workspaceId: wsId, agentId });
+      return;
+    }
+    if (!result?.success || !result.agent) {
+      logger.error('Failed to activate initial agent from Redux request', {
+        workspaceId: wsId,
+        agentId,
+        error: result?.error,
+      });
+      return;
+    }
+    const session = result.agent;
+    if (!session) return;
+    yield* registerCreatedAgent(wsId, session, agents);
+    yield* put(setActiveAgentId(wsId, session.id));
+    yield* call(markInitialMessageSentInSessionStorage, wsId);
+  } catch (error) {
+    logger.error('Failed to activate initial agent from Redux request', {
+      workspaceId: wsId,
+      agentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    initialAgentActivationLocks.delete(lockKey);
+  }
+}
+
+export function* handleActivateAgentRequestedSaga(
+  action: ReturnType<typeof activateAgentRequested>,
+) {
+  const [wsId, agentId] = action.payload;
+  const key = `${wsId}:${agentId}`;
+  const existingWaiters = agentActivationWaiters.get(key);
+  if (existingWaiters) {
+    existingWaiters.push(action);
+    return;
+  }
+
+  agentActivationWaiters.set(key, [action]);
+  let currentSession: AgentSession | undefined | null;
+
+  try {
+    currentSession = yield* selectAgentSession.effect(agentId);
+    if (currentSession?.backendSessionId && currentSession.status === AgentStatus.Active) {
+      yield* publishActivationResult(key, currentSession);
+      return;
+    }
+
+    if (currentSession) {
+      yield* put(upsertSession({
+        ...currentSession,
+        workspaceId: wsId as AgentSession['workspaceId'],
+        activationState: AgentActivationState.ACTIVATING,
+        activationAttempts: (currentSession.activationAttempts || 0) + 1,
+      }));
+    }
+
+    const workspace = yield* resolveWorkspaceForActivation(wsId);
+    if (!workspace) {
+      const error = new Error('Space not found');
+      if (currentSession) {
+        yield* put(upsertSession({
+          ...currentSession,
+          workspaceId: wsId as AgentSession['workspaceId'],
+          activationState: AgentActivationState.ERROR,
+          lastActivationError: error.message,
+        }));
+      }
+      yield* publishActivationResult(key, null, error);
+      return;
+    }
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < AGENT_ACTIVATION_MAX_RETRIES; attempt += 1) {
+      try {
+        const activatedSession: AgentSession | null = yield* call(
+          [agentIpcProxy, agentIpcProxy.activateAgent],
+          agentId,
+          workspace,
+        );
+        if (activatedSession) {
+          const finalSession: AgentSession = {
+            ...activatedSession,
+            workspaceId: activatedSession.workspaceId || WorkspaceId(wsId),
+            activationState: AgentActivationState.ACTIVE,
+            activationAttempts: (currentSession?.activationAttempts || 0) + 1,
+          };
+          yield* put(upsertSession({
+            ...finalSession,
+            workspaceId: wsId as AgentSession['workspaceId'],
+          }));
+          yield* publishActivationResult(key, finalSession);
+          return;
+        }
+        yield* publishActivationResult(key, null);
+        return;
+      } catch (error) {
+        lastError = error;
+        logger.warn(`Failed to activate agent (attempt ${attempt + 1}/${AGENT_ACTIVATION_MAX_RETRIES})`, {
+          agentId,
+          error: getActivationError(error),
+        });
+        if (attempt < AGENT_ACTIVATION_MAX_RETRIES - 1) {
+          yield* delay(Math.pow(2, attempt) * 1000);
+        }
+      }
+    }
+
+    if (currentSession) {
+      yield* put(upsertSession({
+        ...currentSession,
+        workspaceId: wsId as AgentSession['workspaceId'],
+        activationState: AgentActivationState.ERROR,
+        lastActivationError: getActivationError(lastError),
+      }));
+    }
+    yield* publishActivationResult(key, null, lastError);
+  } catch (error) {
+    yield* publishActivationResult(key, null, error);
+  }
+}
+
+export function* handleForkAgentRequestedSaga(
+  wsId: string,
+  request: Parameters<typeof forkAgentRequested>[1],
+) {
+  const workspace = yield* validateWorkspace(wsId);
+  if (!workspace) return;
+  const sourceSession: AgentSession | undefined | null = yield* selectAgentSession.effect(
+    request.sourceAgentId,
+  );
+  if (!sourceSession) return;
+
+  const result: Awaited<ReturnType<typeof agentFactory.createAgent>> = yield* call(
+    [agentFactory, agentFactory.createAgent],
+    workspace,
+    {
+      id: request.forkedAgentId,
+      workspaceId: WorkspaceId(wsId),
+      name: request.name,
+      model: request.model || sourceSession.model,
+      source: 'chat-panel',
+      metadata: {
+        parentSessionId: sourceSession.id,
+        forkedAt: new Date().toISOString(),
+        forkPoint: request.forkPoint,
+        forkMetadata: {
+          selectedText: request.selectedText,
+          selectedModel: request.model,
+        },
+      },
+    },
+  );
+  if (!result.success || !result.agent) return;
+
+  const now = new Date().toISOString();
+  const forkedSession: AgentSession = {
+    ...result.agent,
+    messages: request.messages,
+    parentSessionId: sourceSession.id,
+    forkedAt: now,
+    forkPoint: request.forkPoint,
+    forkMetadata: {
+      selectedText: request.selectedText,
+      selectedModel: request.model,
+    },
+  };
+  const updatedParentSession: AgentSession = {
+    ...sourceSession,
+    childSessionIds: [...(sourceSession.childSessionIds || []), forkedSession.id],
+  };
+
+  yield* put(upsertSession({
+    ...forkedSession,
+    workspaceId: wsId as AgentSession['workspaceId'],
+  }));
+  yield* put(upsertSession({
+    ...updatedParentSession,
+    workspaceId: wsId as AgentSession['workspaceId'],
+  }));
+  yield* call([persistenceService, persistenceService.saveSession], forkedSession, wsId, {
+    immediate: true,
+  });
+  yield* call([persistenceService, persistenceService.saveSession], updatedParentSession, wsId, {
+    immediate: true,
+  });
+
+  if (request.switchToForked !== false) {
+    yield* openCreatedAgent(wsId, forkedSession, { openAgent: true });
+  }
 }
 
 export function* handleCreateAgentRequestedSaga(wsId: string, agentType?: string) {
@@ -342,7 +755,6 @@ export function* handleDelegateTaskRequestedSaga(
           messages: [],
           updatedAt: new Date().toISOString(),
         } as AgentSession;
-        agentService.addSession(session);
         yield* registerCreatedAgent(wsId, session, agents);
       } else {
         yield* put(markAgentRecentlyCreatedAction(wsId, agentData.id));
@@ -575,6 +987,29 @@ export function* handleCreateTerminalRequestedSaga(wsId: string) {
 }
 
 export function* watchAgentCreationSaga() {
+  yield* takeEvery(activateAgentRequested, handleActivateAgentRequestedSaga);
+  yield* takeEvery(
+    createAgentFromConfigRequested,
+    function* (action: ReturnType<typeof createAgentFromConfigRequested>) {
+      const { payload } = action;
+      const [wsId, config, options] = payload;
+      yield* handleCreateAgentFromConfigRequestedSaga(wsId, config, options, action);
+    },
+  );
+  yield* takeEvery(
+    activateInitialAgentRequested,
+    function* ({ payload }: ReturnType<typeof activateInitialAgentRequested>) {
+      const [wsId, agentId, config] = payload;
+      yield* handleActivateInitialAgentRequestedSaga(wsId, agentId, config);
+    },
+  );
+  yield* takeEvery(
+    forkAgentRequested,
+    function* ({ payload }: ReturnType<typeof forkAgentRequested>) {
+      const [wsId, request] = payload;
+      yield* handleForkAgentRequestedSaga(wsId, request);
+    },
+  );
   yield* takeEvery(
     createAgentRequested,
     function* ({ payload }: ReturnType<typeof createAgentRequested>) {

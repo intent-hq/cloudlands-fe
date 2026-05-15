@@ -1,7 +1,10 @@
 import type { Editor } from '@tiptap/core';
 
 import { buildTaskNoteContent } from '$features/notes/utils/task-agent-message-builder';
-import { addOptimisticNote, removeOptimisticNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+import {
+  addOptimisticNote,
+  removeOptimisticNote,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
 import {
   addTaskAgentAssociation,
   removeTaskAgentAssociation,
@@ -9,7 +12,10 @@ import {
 import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import type { Workspace, Note, AgentSession } from '$shared/types';
-import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import {
+  NoteId,
+  WorkspaceId,
+} from '$shared/types/branded-ids';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { taskNoteUrl } from '$shared/constants/intent-links';
@@ -43,7 +49,6 @@ export async function runAssignAgentTaskMenuAction({
   model,
   debounceUpdate,
   storeDispatch,
-  dispatch,
   logger,
 }: {
   editor: Editor | null | undefined;
@@ -55,7 +60,6 @@ export async function runAssignAgentTaskMenuAction({
   model: string;
   debounceUpdate: () => void;
   storeDispatch: (action: AssignAgentStoreAction) => void;
-  dispatch: (type: 'agentLaunched', detail: any) => void;
   logger: LoggerLike;
 }): Promise<void> {
   const taskText = taskData.text || 'Unknown task';
@@ -202,7 +206,7 @@ export async function runAssignAgentTaskMenuAction({
       throw new Error(result.error || 'Failed to create Task Note');
     }
 
-    const { note: taskNote, agent: agentData } = result.data;
+    const { note: taskNote } = result.data;
 
     // Replace optimistic note with real note from server
     storeDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
@@ -210,7 +214,6 @@ export async function runAssignAgentTaskMenuAction({
 
     logger.info('Task Note created successfully', {
       taskNoteId: taskNote.id,
-      agentId: agentData?.id,
     });
 
     // Convert the checklist item to a linked task
@@ -370,11 +373,6 @@ export async function runAssignAgentTaskMenuAction({
       }
     }
 
-    // Dispatch agent launched event if agent was created
-    // Task agents run in the background - don't auto-open the drawer
-    if (agentData) {
-      dispatch('agentLaunched', { agent: agentData, autoOpenDrawer: false });
-    }
   } catch (error) {
     logger.error('Failed to graduate checklist item:', error);
     // Rollback: clear the optimistic agent ID and remove association

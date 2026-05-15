@@ -29,7 +29,7 @@
 
   let {
     workspacePath,
-     
+
     workspaceId: _workspaceId,
     repoName: repoNameProp,
     filesChanged = [],

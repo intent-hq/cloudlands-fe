@@ -1,18 +1,39 @@
 <script lang="ts">
   import '../app.css';
 
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import {
+  afterNavigate,
+  beforeNavigate,
+  goto,
+} from '$app/navigation';
   import { page } from '$app/stores';
-  import { track, setAnalyticsContextProvider } from '$lib/services/analytics';
+  import {
+  track,
+  setAnalyticsContextProvider,
+} from '$lib/services/analytics';
   import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
-  import { initializeReleaseNotes, closeReleaseNotesModal } from '$lib/store/slices/release-notes/release-notes-slice';
-  import { selectShowReleaseNotesModal, selectReleaseNotes } from '$lib/store/slices/release-notes/release-notes-selectors';
+  import {
+  initializeReleaseNotes,
+  closeReleaseNotesModal,
+} from '$lib/store/slices/release-notes/release-notes-slice';
+  import {
+  selectShowReleaseNotesModal,
+  selectReleaseNotes,
+} from '$lib/store/slices/release-notes/release-notes-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
-  import { openPalette, closePalette, togglePalette, openGoToLine } from '$lib/store/slices/palette/palette-slice';
-  import { selectIsPaletteOpen, selectPaletteQuery } from '$lib/store/slices/palette/palette-selectors';
+  import {
+  openPalette,
+  closePalette,
+  togglePalette,
+  openGoToLine,
+} from '$lib/store/slices/palette/palette-slice';
+  import {
+  selectIsPaletteOpen,
+  selectPaletteQuery,
+} from '$lib/store/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -32,60 +53,76 @@
   import { invoke } from '$lib/electron-bridge';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    closeGitCredentialsModal,
-    closeGitHubAuthModal,
-  } from '$lib/store/slices/global-modals/global-modals-slice';
+  closeGitCredentialsModal,
+  closeGitHubAuthModal,
+} from '$lib/store/slices/global-modals/global-modals-slice';
   import {
-    selectGitCredentialsError,
-    selectGlobalModals,
-    selectPendingGitHubAuth,
-  } from '$lib/store/slices/global-modals/global-modals-selectors';
+  selectGitCredentialsError,
+  selectGlobalModals,
+  selectPendingGitHubAuth,
+} from '$lib/store/slices/global-modals/global-modals-selectors';
   import { selectFeatureCodeDialogOpen } from '$lib/store/slices/feature-codes/feature-codes-selectors';
   import { toggleFeatureCodeDialog } from '$lib/store/slices/feature-codes/feature-codes-slice';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
-    cleanupInvalidWorkspaceTabs,
-    openWorkspaceTab,
-  } from '$lib/store/slices/tab-state/tab-state-slice';
+  cleanupInvalidWorkspaceTabs,
+  openWorkspaceTab,
+} from '$lib/store/slices/tab-state/tab-state-slice';
   import {
-    selectCurrentWorkspaceTabId,
-    selectWorkspaceTabOrder,
-  } from '$lib/store/slices/tab-state/tab-state-selectors';
+  selectCurrentWorkspaceTabId,
+  selectWorkspaceTabOrder,
+} from '$lib/store/slices/tab-state/tab-state-selectors';
   import {
-    toggleTerminalOverlay,
-    openTerminalOverlay,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  toggleTerminalOverlay,
+  openTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
   import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-    selectWorkspaceHasLoaded,
-    selectWorkspaceItems,
-    selectWorkspaceLoading,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspaceId,
+  selectWorkspaceById,
+  selectWorkspaceHasLoaded,
+  selectWorkspaceItems,
+  selectWorkspaceLoading,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { selectHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import {
-    clearActiveWorkspace,
-    loadWorkspacesRequested,
-    recordWorkspaceView,
-    setActiveWorkspaceId,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  clearActiveWorkspace,
+  loadWorkspacesRequested,
+  recordWorkspaceView,
+  setActiveWorkspaceId,
+} from '$lib/store/slices/workspace/workspace-slice';
   import { createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
-  import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import {
+  isFocusInEditableElement,
+  KeyboardShortcutManager,
+} from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import {
+  onDestroy,
+  onMount,
+  untrack,
+} from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
-  import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
+  import {
+  ROOT_WORKSPACE_ID,
+  isValidWorkspaceId,
+} from '$shared/types/branded-ids';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
-  import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import { togglePanel, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+  SidebarNav,
+  SidebarPanel,
+} from '$lib/components/layout/sidebar-nav';
+  import {
+  togglePanel,
+  setShowCreateModal,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import Store, { initStore } from '$lib/store/components/Store.svelte';

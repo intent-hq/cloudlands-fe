@@ -1,7 +1,10 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { onMount, tick } from 'svelte';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import { writable } from 'svelte/store';
 
   import { invoke } from '$lib/electron-bridge';
@@ -9,32 +12,38 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import type { EnvironmentConfig } from '$shared/types';
-  import { ListContainer, ListItem } from '$lib/components/ui/list';
-  import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
+  import {
+  ListContainer,
+  ListItem,
+} from '$lib/components/ui/list';
+  import {
+  selectCurrentStagedWorkingChanges,
+  selectCurrentUnstagedWorkingChanges,
+} from '$lib/store/slices/changes/changes-selectors';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    initializeFileExplorer,
-    setWorkspacePathRequested,
-    toggleDirectoryRequested,
-    expandToPathRequested,
-    expandAllRequested,
-    refreshFileExplorer,
-    clearExpandedPathsExceptRoot,
-    syncGitStatusFromStoresRequested,
-  } from '$lib/store/slices/file-explorer/file-explorer-slice';
+  initializeFileExplorer,
+  setWorkspacePathRequested,
+  toggleDirectoryRequested,
+  expandToPathRequested,
+  expandAllRequested,
+  refreshFileExplorer,
+  clearExpandedPathsExceptRoot,
+  syncGitStatusFromStoresRequested,
+} from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
-    selectFileExplorerRootNode,
-    selectFileExplorerIsLoading,
-    selectFileExplorerIsInitialized,
-    selectFileExplorerError,
-    selectFileExplorerGitStatus,
-    selectFlattenedNodes,
-    selectHasExpandedDirectories,
-    selectFileExplorerWorkspacePath,
-  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  selectFileExplorerRootNode,
+  selectFileExplorerIsLoading,
+  selectFileExplorerIsInitialized,
+  selectFileExplorerError,
+  selectFileExplorerGitStatus,
+  selectFlattenedNodes,
+  selectHasExpandedDirectories,
+  selectFileExplorerWorkspacePath,
+} from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
 
   // Search result type from workspace:list-files

@@ -6,8 +6,19 @@
  * so we can count emissions.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyMiddleware, combineReducers, legacy_createStore as createStore } from "redux";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  applyMiddleware,
+  combineReducers,
+  legacy_createStore as createStore,
+} from "redux";
 import createSagaMiddleware from "redux-saga";
 import type { Task } from "redux-saga";
 
@@ -21,8 +32,8 @@ vi.mock("./ipc-bridge-saga", async () => {
   };
 });
 
-import { agentSubscriptionsReducer } from "../agent-subscriptions-slice";
 import {
+  agentSubscriptionsReducer,
   addSubscription,
   appendDelegationGroupEvent,
   clearAgentQueue,
@@ -39,6 +50,7 @@ import {
   type DelegationGroupTrackerRecord,
   type QueuedEventRecord,
 } from "../agent-subscriptions-slice";
+
 import {
   _resetMainStoreBridge,
   initMainStoreBridge,

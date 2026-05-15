@@ -10,7 +10,12 @@
  * subscription contract that replaced the old eventBus system.
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  beforeEach,
+} from "vitest";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import {
   workspaceEventsReducer,

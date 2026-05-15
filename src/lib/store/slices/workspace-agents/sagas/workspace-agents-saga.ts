@@ -5,22 +5,38 @@ import type {
   WorkspaceEvent,
 } from "$features/events/types";
 import type { AgentSession } from "$shared/types";
-import { agentService } from "$features/agent/agent-ipc-bridge";
 import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
-import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
+import {
+  takeEveryFromElectronChannel,
+  takeEveryFromWindowEvent,
+} from "$lib/store/utils/ipc-channel";
 import { shallowEqual } from "fast-equals";
-import { buffers, eventChannel, type EventChannel, type Task } from "redux-saga";
-import { all, call, cancel, delay, fork, put, select, take, takeEvery } from "typed-redux-saga";
+import {
+  buffers,
+  eventChannel,
+  type EventChannel,
+  type Task,
+} from "redux-saga";
+import {
+  all,
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  select,
+  take,
+  takeEvery,
+} from "typed-redux-saga";
 import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import {
-  selectAgentById,
   selectAllWorkspaceAgents,
   selectAgentsLoaded,
   selectInitialAgentConfig,
@@ -32,9 +48,7 @@ import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   addAgent,
   removeAgent,
-  renameAgent,
   setAgentsLoaded,
-  setAgentStreaming,
   setInitialAgentConfig,
   setInitialAgentId,
   setInitialSpecWriteInProgress,
@@ -43,8 +57,10 @@ import {
 } from "../workspace-agents-slice";
 import {
   removeSession as removeAgentSession,
+  renameAgent,
   renameSession as renameAgentSession,
-  upsertSession as upsertAgentSession,
+  setAgentStreaming,
+  upsertSession,
 } from "../../agent-session/agent-session-slice";
 import { selectWorkspaceNavigationDrawer } from "../../workspace-navigation/workspace-navigation-selectors";
 import { closeWorkspaceDrawer } from "../../workspace-navigation/workspace-navigation-slice";
@@ -56,7 +72,7 @@ import {
 import { loadAgentsFromDiskSaga } from "./agent-loading-saga";
 import { watchAgentCreationSaga } from "./agent-creation-saga";
 import { watchEnsureAgentSessionLoadedSaga } from "./ensure-agent-session-saga";
-import { heartbeatSaga } from "./heartbeat-saga";
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 
 type MaybeWrappedPayload<T> = T | { payload: T };
@@ -158,7 +174,10 @@ export function* watchAgentRestoredSaga() {
 
       // Dual-dispatch mirrors watchAgentDeletedSaga: re-populate the full
       // session first, then re-index it in the workspace agent list.
-      yield* put(upsertAgentSession(session));
+      yield* put(upsertSession({
+        ...session,
+        workspaceId: data.workspaceId as AgentSession['workspaceId'],
+      }));
       yield* put(addAgent(data.workspaceId, session));
     },
   );
@@ -223,13 +242,7 @@ function* checkDrawerGuard(wsId: string) {
       return;
     }
 
-    let agent = agents.find((candidate) => String(candidate.id) === drawerItemId);
-
-    if (!agent) {
-      agent = agentService
-        .getAllSessions()
-        .find((candidate) => String(candidate.id) === drawerItemId);
-    }
+    const agent = agents.find((candidate) => String(candidate.id) === drawerItemId);
 
     if (!agent || String(agent.workspaceId) !== String(wsId)) {
       yield* put(closeWorkspaceDrawer(wsId));
@@ -462,15 +475,15 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
  */
 function* watchSpecWriteTrackingSaga() {
   yield* takeEvery(setAgentStreaming, function* (action: ReturnType<typeof setAgentStreaming>) {
-    const [wsId, agentId, isStreaming] = action.payload;
-    const agent = yield* selectAgentById.effect(agentId);
-    if (!agent) return;
+    const [agentId, isStreaming] = action.payload;
+    const agent = yield* selectAgentSession.effect(agentId);
+    if (!agent?.workspaceId) return;
 
     const isInitialAgent = agent.metadata?.isInitialAgent === true;
     const isSpecWriter = agent.metadata?.specialist === "spec-writer";
 
     if (isInitialAgent && isSpecWriter) {
-      yield* put(setInitialSpecWriteInProgress(wsId, isStreaming));
+      yield* put(setInitialSpecWriteInProgress(agent.workspaceId as string, isStreaming));
     }
   });
 }
@@ -489,7 +502,6 @@ export function* workspaceAgentsSaga() {
     fork(watchAgentRenamedSaga),
     fork(watchWaitingForFirstMessageSaga),
     fork(watchLateInitialAgentHydrationRecoverySaga),
-    fork(heartbeatSaga),
     fork(watchSpecWriteTrackingSaga),
     fork(watchEnsureAgentSessionLoadedSaga),
   ]);

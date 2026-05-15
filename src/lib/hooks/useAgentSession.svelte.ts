@@ -1,8 +1,12 @@
 import { untrack } from 'svelte';
-import { writable, type Readable } from 'svelte/store';
+import {
+  writable,
+  type Readable,
+} from 'svelte/store';
 
-import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
 import type { AgentSession } from '$shared/types';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 
 type AgentIdAccessor = () => string | null | undefined;
 
@@ -13,5 +17,5 @@ export function useAgentSession(agentId: AgentIdAccessor): Readable<AgentSession
     agentIdStore.set(agentId() ?? '');
   });
 
-  return selectAgentById(agentIdStore);
+  return selectAgentSession(agentIdStore);
 }

@@ -12,7 +12,10 @@
 -->
 <script lang="ts">
   import type { TaskStatus } from '$shared/types';
-  import { draw, scale } from 'svelte/transition';
+  import {
+  draw,
+  scale,
+} from 'svelte/transition';
 
   type NormalizedTaskStatus = TaskStatus | 'unknown';
 

@@ -5,7 +5,11 @@
  * to serialize git worktree operations per repository.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 
 /**
  * Standalone implementation of the lock mechanism for testing.

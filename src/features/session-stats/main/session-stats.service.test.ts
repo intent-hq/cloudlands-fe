@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 // Mock executeAuggieCommand before importing the service
 vi.mock('../../auggie/main/execute-auggie-command', () => ({
@@ -15,7 +21,10 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
-import { getSessionStats, getAggregatedSessionStats } from './session-stats.service';
+import {
+  getSessionStats,
+  getAggregatedSessionStats,
+} from './session-stats.service';
 import { executeAuggieCommand } from '../../auggie/main/execute-auggie-command';
 
 const mockExecute = vi.mocked(executeAuggieCommand);

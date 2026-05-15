@@ -14,7 +14,11 @@
  */
 
 import { Logger } from '$shared/logger';
-import { SPECIALISTS, getSpecialistById, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
+import {
+  SPECIALISTS,
+  getSpecialistById,
+  GITHUB_DEPENDENT_SPECIALIST_IDS,
+} from '$lib/constants/specialists';
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -29,7 +33,10 @@ import {
   migrateCustomSpecialistsFromStore,
   migrateOverridesFromStore,
 } from '../../specialists/main/specialist-file-loader';
-import { mergeSpecialistsByPriority, type SpecialistFile } from '../../../shared/specialist-file-types';
+import {
+  mergeSpecialistsByPriority,
+  type SpecialistFile,
+} from '../../../shared/specialist-file-types';
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
 
 const logger = new Logger('SpecialistsService');

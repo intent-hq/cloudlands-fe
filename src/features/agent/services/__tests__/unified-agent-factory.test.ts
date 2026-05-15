@@ -5,7 +5,14 @@
  * createAgent, createInitialAgent, and createContextualAgent into one unified interface.
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 import {
   UnifiedAgentFactory,
   type UnifiedAgentConfig,

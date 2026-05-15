@@ -1,10 +1,29 @@
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
-import { openTerminalOverlay, loadWorkspaceTerminals, getTerminalName, setTerminalsLoaded, setIsLoadingTerminals, type TerminalTab, type PersistedWorkspaceState, WORKSPACE_STATE_STORAGE_KEY, } from "../terminals-slice";
+import {
+  openTerminalOverlay,
+  loadWorkspaceTerminals,
+  getTerminalName,
+  setTerminalsLoaded,
+  setIsLoadingTerminals,
+  type TerminalTab,
+  type PersistedWorkspaceState,
+  WORKSPACE_STATE_STORAGE_KEY,
+} from "../terminals-slice";
 import { setActiveWorkspaceId } from "../../workspace/workspace-slice";
 import { selectWorkspaceTerminalState } from "../terminals-selectors";
-import { getStoredCustomName, loadTerminalMetadataFromStorage, removeTerminalMetadataFromStorage, saveTerminalMetadataToStorage } from "./persistence-saga";
+import {
+  getStoredCustomName,
+  loadTerminalMetadataFromStorage,
+  removeTerminalMetadataFromStorage,
+  saveTerminalMetadataToStorage,
+} from "./persistence-saga";
 // ============================================================================
 // Helpers
 // ============================================================================

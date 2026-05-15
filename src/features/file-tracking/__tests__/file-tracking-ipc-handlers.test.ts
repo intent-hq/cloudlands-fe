@@ -5,7 +5,11 @@
  * without requiring the full IPC infrastructure (which has promisify issues).
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { TrackedChange, CommitInfo } from '../types';
 import { ChangeStage } from '../types';
 

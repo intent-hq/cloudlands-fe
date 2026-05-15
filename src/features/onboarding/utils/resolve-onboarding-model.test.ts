@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { StoreState } from '$lib/store/types';
 import type { ProviderAvailabilityResult } from '$features/providers/provider-availability.client';
 

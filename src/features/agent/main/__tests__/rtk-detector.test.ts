@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const { mockExecAsync, mockFindBinary, mockGetSetting, loggerSpies } = vi.hoisted(() => ({
   mockExecAsync: vi.fn(),

@@ -4,7 +4,10 @@
  * IPC handlers for exporting chat conversations to HTML files.
  */
 
-import { ipcMain, dialog } from 'electron';
+import {
+  ipcMain,
+  dialog,
+} from 'electron';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';

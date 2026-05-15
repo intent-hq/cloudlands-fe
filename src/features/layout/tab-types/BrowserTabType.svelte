@@ -7,7 +7,11 @@
 
   import type { TabTypeComponentProps } from './registry';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
-  import { updateTabBrowserUrl, updateTabTitle, updateTabFavicon } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import {
+  updateTabBrowserUrl,
+  updateTabTitle,
+  updateTabFavicon,
+} from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { updateContextItem } from '$lib/store/slices/context/context-slice';

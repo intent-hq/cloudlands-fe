@@ -1,5 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -55,9 +67,6 @@ vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
 vi.mock('$lib/components/layout/panel-system/panel-header-context.svelte', () => ({
   getPanelHeaderContext: () => ({ registerActions: vi.fn(), registerState: vi.fn() }),
 }));
-vi.mock('$features/agent/agent-ipc-bridge', () => ({
-  agentService: { deleteSessionWithUndo: vi.fn() },
-}));
 vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: (agentId: string, run: (session: any) => void) => {
     run(mockState.agents.get()[agentId]);
@@ -82,7 +91,28 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
   }),
-  selectAgentById: (
+  selectAgentSession: (
+    agentIdStore: { subscribe: (run: (value: string) => void) => () => void } | string,
+  ) => ({
+    subscribe: (run: (value: any) => void) => {
+      let currentAgentId = typeof agentIdStore === 'string' ? agentIdStore : '';
+      const unsubs: Array<() => void> = [];
+      if (typeof agentIdStore !== 'string') {
+        unsubs.push(
+          agentIdStore.subscribe((agentId) => {
+            currentAgentId = agentId;
+            run(mockState.agents.get()[currentAgentId]);
+          }),
+        );
+      }
+      unsubs.push(mockState.agents.subscribe((agents) => run(agents[currentAgentId])));
+      if (typeof agentIdStore === 'string') run(mockState.agents.get()[currentAgentId]);
+      return () => unsubs.forEach((unsub) => unsub());
+    },
+  }),
+}));
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: (
     agentIdStore: { subscribe: (run: (value: string) => void) => () => void } | string,
   ) => ({
     subscribe: (run: (value: any) => void) => {

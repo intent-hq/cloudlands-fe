@@ -2,7 +2,13 @@
  * Unit tests for workspace navigation utilities
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import {
   navigateToAgent,
   navigateToNote,

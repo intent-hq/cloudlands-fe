@@ -5,7 +5,14 @@
  * Tests all agent operations to ensure the migration is complete and functional.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { registerAgentHandlers } from '../unified-agent-handlers';
 import { getAgentBackendAdapter } from '../agent-backend-adapter';
 import { AgentBackendHandler } from '../agent-backend-handler.service';

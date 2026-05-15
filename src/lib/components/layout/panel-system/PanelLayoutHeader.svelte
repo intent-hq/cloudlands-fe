@@ -51,27 +51,30 @@
    */
 
   import {
-    faArrowLeft,
-    faArrowRight,
-    faRobot,
-    faCode,
-    faFileAlt,
-    faColumns,
-    faTableColumns,
-    faGripLines,
-    faWandMagicSparkles,
-    faChevronDown,
-    faSpinner,
-    faMagic,
-    faGlobe,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowLeft,
+  faArrowRight,
+  faRobot,
+  faCode,
+  faFileAlt,
+  faColumns,
+  faTableColumns,
+  faGripLines,
+  faWandMagicSparkles,
+  faChevronDown,
+  faSpinner,
+  faMagic,
+  faGlobe,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { invoke } from '$lib/electron-bridge';
   import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
-  import { fade, slide } from 'svelte/transition';
+  import {
+  fade,
+  slide,
+} from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';

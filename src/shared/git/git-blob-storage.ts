@@ -7,7 +7,10 @@
  * All operations fail silently (return null) for graceful fallback.
  */
 
-import { exec, spawn } from 'child_process';
+import {
+  exec,
+  spawn,
+} from 'child_process';
 import { promisify } from 'util';
 import { createGitEnv } from './git-env';
 

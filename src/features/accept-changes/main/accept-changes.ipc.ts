@@ -4,7 +4,10 @@
  * IPC handlers for the accept changes workflow.
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  IpcMainInvokeEvent,
+} from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

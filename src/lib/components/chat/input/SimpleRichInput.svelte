@@ -1,14 +1,22 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 /* eslint-disable max-lines */
-  import { onMount, tick } from 'svelte';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
-  import { getDefaultProviderId, getProviderConfig, parseCompoundModelId } from '$shared/config/provider-config';
+  import {
+  getDefaultProviderId,
+  getProviderConfig,
+  parseCompoundModelId,
+} from '$shared/config/provider-config';
   import { invoke } from '$lib/electron-bridge';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { agentClient } from '$features/agent/agent.client';
@@ -16,13 +24,13 @@
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {
-    faMagicWandSparkles,
-    faPaperclip,
-    faPaperPlane,
-    faXmark,
-    faLayerGroup,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  faMagicWandSparkles,
+  faPaperclip,
+  faPaperPlane,
+  faXmark,
+  faLayerGroup,
+  faStop,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
@@ -32,8 +40,14 @@
   import ContextPickerButton from './ContextPickerButton.svelte';
 
 
-  import { togglePanel as togglePanelAction, toggleSelection as toggleSelectionAction } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
-  import { selectPanels, selectSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+  import {
+  togglePanel as togglePanelAction,
+  toggleSelection as toggleSelectionAction,
+} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  import {
+  selectPanels,
+  selectSelections,
+} from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { slide } from 'svelte/transition';
 
@@ -98,7 +112,7 @@
     workspace,
     isStreaming = false,
     contextItems = $bindable([]),
-     
+
     currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
     editorSelection = $bindable<string | null>(null),
     selectedModel: propSelectedModel,
@@ -108,9 +122,9 @@
     agentId,
     autoFocus = false,
     editMode = false,
-     
+
     panelFocused: _panelFocused = true, // Reserved for future use
-     
+
     compactMode: _compactMode = false, // Reserved for future use
     onsubmit,
     onforcesubmit,
@@ -382,7 +396,7 @@
     }
 
     const session = workspace?.id
-      ? selectAgentById.select(getReduxStore().getState(), agentId)
+      ? selectAgentSession.select(getReduxStore().getState(), agentId)
       : undefined;
     const provider = session ? getAgentProvider(session) : undefined;
     return provider ? getProviderConfig(provider).id : undefined;
@@ -415,7 +429,7 @@
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
-      ? selectAgentById.select(getReduxStore().getState(), agentId)
+      ? selectAgentSession.select(getReduxStore().getState(), agentId)
       : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;

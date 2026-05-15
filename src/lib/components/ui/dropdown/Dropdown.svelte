@@ -1,8 +1,17 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick, type Snippet } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+  tick,
+  type Snippet,
+} from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faChevronDown,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import Portal from '../Portal.svelte';
   import type {

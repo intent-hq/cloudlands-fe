@@ -2,7 +2,12 @@
  * Tests for getTaskNotes functionality (Phase 1A Increment 7)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { NotesService } from '../notes.service';
 import type { Note, WorkspaceId } from '../../../shared/types';
 import { randomUUID } from 'crypto';

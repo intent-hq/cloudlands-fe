@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import { faStop, faPaperPlane, faPlus } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentSession } from '$features/agent/agent-ipc-bridge';
-  import type { Workspace } from '$shared/types';
+  import {
+  faStop,
+  faPaperPlane,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
+  import type { AgentSession, Workspace } from '$shared/types';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 

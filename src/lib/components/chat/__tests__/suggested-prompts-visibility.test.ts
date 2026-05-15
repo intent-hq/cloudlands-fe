@@ -10,7 +10,11 @@
  * 3. The derived computation correctly extracts prompts from the last assistant message
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import type { AgentMessage } from '$shared/types';
 import type { SuggestedPrompt } from '$shared/types';

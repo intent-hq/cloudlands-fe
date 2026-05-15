@@ -1,10 +1,17 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faGear,
+  faChevronDown,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
-  import { selectSpecialists, selectUserOverrides } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+  selectSpecialists,
+  selectUserOverrides,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';

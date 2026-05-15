@@ -5,16 +5,19 @@
   Supports removal and displays file metadata.
 -->
 <script lang="ts">
-  import { fade, scale } from 'svelte/transition';
+  import {
+  fade,
+  scale,
+} from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-    faXmark,
-    faFile,
-    faImage,
-    faFileCode,
-    faFileAlt,
-  } from '@fortawesome/free-solid-svg-icons';
+  faXmark,
+  faFile,
+  faImage,
+  faFileCode,
+  faFileAlt,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
 
   interface Props {

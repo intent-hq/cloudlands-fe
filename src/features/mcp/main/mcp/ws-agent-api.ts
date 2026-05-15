@@ -13,7 +13,10 @@ import {
   ReportToParentTool,
 } from './agent-interaction-tools';
 import { agentPersistence } from '$features/agent/main/agent-persistence';
-import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import {
+  AgentId,
+  WorkspaceId,
+} from '$shared/types/branded-ids';
 import { getMainState } from '../../../../store/main/redux-store-bridge';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 

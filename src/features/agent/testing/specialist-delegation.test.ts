@@ -7,7 +7,11 @@
  * Uses actual prompts from the codebase to ensure tests stay in sync.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   loadInstruction,
   getSpecialists,

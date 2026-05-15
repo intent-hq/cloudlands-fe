@@ -1,5 +1,12 @@
-import { call, put, type SagaGenerator } from "typed-redux-saga";
-import { lockUpdates, unlockUpdates } from "../store-utility-slice";
+import {
+  call,
+  put,
+  type SagaGenerator,
+} from "typed-redux-saga";
+import {
+  lockUpdates,
+  unlockUpdates,
+} from "../store-utility-slice";
 import { selectUpdatesLocked } from "../store-utility-selectors";
 
 /*

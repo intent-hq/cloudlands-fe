@@ -2,7 +2,11 @@
  * Tests for Safe Parsers
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   safeParseAgentSession,
   safeParseAgentMessage,

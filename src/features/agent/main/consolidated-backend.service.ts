@@ -38,7 +38,10 @@ import { type UnifiedAgentConfig } from '$shared/types/agent.types';
 import { StreamManager } from '../services/stream-manager';
 import { agentValidator } from '../services/agent-validator';
 import { errorHandler } from '../services/error-handler';
-import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
+import {
+  AGENT_BACKEND_CHANNELS,
+  PERSISTENCE_CHANNELS,
+} from '$shared/ipc/channels';
 import { memoryManager } from '../services/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';

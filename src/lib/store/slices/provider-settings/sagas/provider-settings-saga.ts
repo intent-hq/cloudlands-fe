@@ -1,12 +1,40 @@
-import { call, fork, put, takeEvery } from "typed-redux-saga";
-import { getLocalStorageJSON, getLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
-import { ACP_PROVIDERS, getAvailableIdsFromResult, getDefaultProviderId, } from "$shared/config/provider-config";
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  getLocalStorageJSON,
+  getLocalStorageItem,
+  setLocalStorageJSON,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
+import {
+  ACP_PROVIDERS,
+  getAvailableIdsFromResult,
+  getDefaultProviderId,
+} from "$shared/config/provider-config";
 import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 import { switchProvider as switchBgAgentProvider } from "../../background-agent-settings/background-agent-settings-slice";
 import { switchModelOverridesForProvider } from "../../specialists/specialists-slice";
-import { ACTIVE_PROVIDER_STORAGE_KEY, ENABLED_PROVIDERS_STORAGE_KEY, OLD_STORAGE_KEY, ensureEnabledIfUnset, hydrateActiveProvider, loadEnabledProvidersFromStorage, setActiveProvider, setProviderEnabled, toggleProvider, validateActiveProvider, } from "../provider-settings-slice";
-import { selectActiveProviderId, selectEnabledProviders, } from "../provider-settings-selectors";
+import {
+  ACTIVE_PROVIDER_STORAGE_KEY,
+  ENABLED_PROVIDERS_STORAGE_KEY,
+  OLD_STORAGE_KEY,
+  ensureEnabledIfUnset,
+  hydrateActiveProvider,
+  loadEnabledProvidersFromStorage,
+  setActiveProvider,
+  setProviderEnabled,
+  toggleProvider,
+  validateActiveProvider,
+} from "../provider-settings-slice";
+import {
+  selectActiveProviderId,
+  selectEnabledProviders,
+} from "../provider-settings-selectors";
 type ProviderAvailabilityIpcResult = {
     success?: boolean;
     data?: ProviderAvailabilityResult;

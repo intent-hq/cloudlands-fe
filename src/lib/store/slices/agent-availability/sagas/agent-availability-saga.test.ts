@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import * as sagaEffects from 'redux-saga/effects';
 
 vi.mock('typed-redux-saga', () => ({
@@ -25,7 +30,10 @@ vi.mock('typed-redux-saga', () => ({
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
 
 import { invoke } from '$lib/electron-bridge';
-import { CODEX_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import {
+  CODEX_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from '$shared/ipc/channels';
 import {
   fetchProviderUserInfoComplete,
   fetchProviderUserInfoRequested,

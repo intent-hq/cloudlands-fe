@@ -3,10 +3,10 @@
 
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
-  - Stalled: Warning with status page link and Stop button (driven by ChatService)
+  - Stalled: Warning with status page link and Stop button (driven by chat sagas)
   - Error/Timeout: "Connection issue" with Try Again button
 
-  Stall detection is handled entirely by ChatService (which has context about
+  Stall detection is handled entirely by chat sagas (which have context about
   running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
 -->
 <script lang="ts">
@@ -15,9 +15,9 @@
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-    faRotateRight,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRotateRight,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
@@ -222,7 +222,7 @@
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    // if (isStalled) return 'stalled'; // All stall detection is handled by ChatService
+    // if (isStalled) return 'stalled'; // All stall detection is handled by chat sagas
     return 'normal';
   });
 

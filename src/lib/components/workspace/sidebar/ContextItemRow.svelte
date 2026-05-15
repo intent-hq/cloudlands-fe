@@ -9,11 +9,11 @@
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import Fa from 'svelte-fa';
   import {
-    faExternalLink,
-    faChevronRight,
-    faTrash,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faExternalLink,
+  faChevronRight,
+  faTrash,
+  faArrowUpRightFromSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';

@@ -5,7 +5,10 @@
  */
 
 import { createSelector } from "../../utils/create-selector";
-import { defaultGitOperationFlags, getGitWorkspaceState } from "./git-slice";
+import {
+  defaultGitOperationFlags,
+  getGitWorkspaceState,
+} from "./git-slice";
 import type { GitOperationFlagName, PostMergeState } from "./git-types";
 
 const defaultPostMergeState: PostMergeState = {

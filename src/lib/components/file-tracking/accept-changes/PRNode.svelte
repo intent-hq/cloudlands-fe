@@ -5,7 +5,10 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faCodePullRequest, faExternalLink } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCodePullRequest,
+  faExternalLink,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import type { PRInfo } from './types';

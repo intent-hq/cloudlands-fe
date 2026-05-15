@@ -1,6 +1,9 @@
 import { type UnknownAction } from "redux";
 import { shallowEqual } from "fast-equals";
-import { type StoreAction, type StoreActionCreator } from "../types";
+import {
+  type StoreAction,
+  type StoreActionCreator,
+} from "../types";
 
 export type StoreReducer<S, A> = (state: S, action: A) => S;
 

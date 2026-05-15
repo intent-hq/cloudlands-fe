@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import { initialState } from "./system-status-slice";
 import {

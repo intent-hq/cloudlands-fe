@@ -5,7 +5,11 @@
  * including edge cases like worktree branches (+ prefix) and HEAD references.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   parseBranchName,
   parseRemoteBranchName,

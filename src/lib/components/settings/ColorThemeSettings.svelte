@@ -6,18 +6,18 @@
   import Fa from 'svelte-fa';
   import { faUpload } from '@fortawesome/free-solid-svg-icons';
   import {
-    selectActiveThemePresetId,
-    selectCustomThemeName,
-    selectHasCustomTheme,
-    selectIsDarkTheme,
-    selectThemeError,
-  } from '$lib/store/slices/theme/theme-selectors';
+  selectActiveThemePresetId,
+  selectCustomThemeName,
+  selectHasCustomTheme,
+  selectIsDarkTheme,
+  selectThemeError,
+} from '$lib/store/slices/theme/theme-selectors';
   import {
-    clearThemeCustomization,
-    importCustomTheme,
-    selectThemePreset,
-    setThemeError,
-  } from '$lib/store/slices/theme/theme-slice';
+  clearThemeCustomization,
+  importCustomTheme,
+  selectThemePreset,
+  setThemeError,
+} from '$lib/store/slices/theme/theme-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const dispatch = getDispatch();

@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { ProviderRegistry } from '../main/provider-registry';
 import type { BaseAgentProvider, AgentConfig } from '../main/agent-providers/base-provider';
 import { ACP_PROVIDERS } from '$shared/config/provider-config';

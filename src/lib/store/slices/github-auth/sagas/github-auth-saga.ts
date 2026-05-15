@@ -1,5 +1,13 @@
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
-import { call, delay, fork, put, race, take, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   authCancelled,
   authCompleted,

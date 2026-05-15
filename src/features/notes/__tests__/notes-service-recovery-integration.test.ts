@@ -6,10 +6,19 @@
  * but test the real recovery logic.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { NotesService } from '../main/notes.service';
 import type { Note, NoteVersion, UpdateNoteRequest, NoteComment } from '../../../shared/types';
-import { ContentType, NoteVisibility } from '../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+} from '../../../shared/types';
 import type { NotesRepository } from '../main/notes.repository';
 import type { CommentsRepository } from '../../comments/comments.repository';
 // NotesService no longer takes an event bus parameter; events are dispatched via Redux actions

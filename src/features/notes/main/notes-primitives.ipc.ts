@@ -15,7 +15,12 @@ import { exec } from 'child_process';
 import { ipcMain } from 'electron';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
 import { existsSync } from 'fs';
-import { copyFile, mkdir, readdir, unlink } from 'fs/promises';
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  unlink,
+} from 'fs/promises';
 import { join } from 'path';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

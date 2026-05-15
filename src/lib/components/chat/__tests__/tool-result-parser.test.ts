@@ -4,7 +4,11 @@
  * Tests that tool results are correctly parsed for display.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { parseToolResult } from '../tool-result-parser';
 
 describe('tool-result-parser', () => {

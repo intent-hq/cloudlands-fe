@@ -1,7 +1,10 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faRobot } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
+  import {
+  fade,
+  scale,
+} from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { Spinner } from '$lib/components/ui/indicators';
 

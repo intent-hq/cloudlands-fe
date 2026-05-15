@@ -1,13 +1,24 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
+  import {
+  formatDistanceToNow,
+  format,
+  differenceInDays,
+} from 'date-fns';
   import { Button } from '$lib/components/ui/button';
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { slide } from 'svelte/transition';
   import InitialsAvatar from './InitialsAvatar.svelte';
-  import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
-  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import {
+  faEdit,
+  faCheck,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+} from '$lib/utils/markdown-processor';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';

@@ -4,8 +4,15 @@
  * Tests for consistent error and success response formatting
  */
 
-import { describe, it, expect } from 'vitest';
-import { formatIpcSuccess, formatIpcError } from '../ipc-response-formatter';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  formatIpcSuccess,
+  formatIpcError,
+} from '../ipc-response-formatter';
 import { ZodError } from 'zod';
 
 describe('IPC Response Formatter', () => {

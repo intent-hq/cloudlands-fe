@@ -1,7 +1,19 @@
 import { createSelector } from "../../utils/create-selector";
-import { getItem, getItems, type Collection } from "../../utils/collection-utils";
-import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS, type Specialist } from "$lib/constants/specialists";
-import { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS, } from "$shared/config/provider-config";
+import {
+  getItem,
+  getItems,
+  type Collection,
+} from "../../utils/collection-utils";
+import {
+  SPECIALISTS,
+  GITHUB_DEPENDENT_SPECIALIST_IDS,
+  type Specialist,
+} from "$lib/constants/specialists";
+import {
+  getDefaultModelForProvider,
+  getDefaultProviderId,
+  PROVIDER_MODEL_TIERS,
+} from "$shared/config/provider-config";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import type { CustomSpecialist, FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";

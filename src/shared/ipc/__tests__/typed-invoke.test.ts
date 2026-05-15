@@ -4,8 +4,16 @@
  * Tests for type-safe IPC invoke wrapper
  */
 
-import { describe, it, expect } from 'vitest';
-import { isSuccessResponse, isErrorResponse, throwOnError } from '../typed-invoke';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  isSuccessResponse,
+  isErrorResponse,
+  throwOnError,
+} from '../typed-invoke';
 import type { IpcResponse } from '../contracts';
 
 describe('Typed Invoke Helpers', () => {

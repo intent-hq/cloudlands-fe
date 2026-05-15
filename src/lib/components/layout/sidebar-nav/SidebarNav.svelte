@@ -15,9 +15,18 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { invoke } from '$lib/electron-bridge';
-  import { navigateToSettings, navigateBackFromSettings } from '$lib/utils/workspace-navigation';
+  import {
+  navigateToSettings,
+  navigateBackFromSettings,
+} from '$lib/utils/workspace-navigation';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { faHome, faPlus, faLayerGroup, faCog, faBell } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faHome,
+  faPlus,
+  faLayerGroup,
+  faCog,
+  faBell,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SidebarNavItem } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
@@ -25,10 +34,29 @@
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectActiveStreamsVersion, selectPanelItem, selectActiveCard, selectOnboardingActive, selectExpandedItem, selectIsCardPinned, selectContextMenuOpen } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { closeAll, togglePanel, setHoveredItem, setExpandedItem, setDeferredLeave, clearDeferredLeave, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+  selectActiveStreamsVersion,
+  selectPanelItem,
+  selectActiveCard,
+  selectOnboardingActive,
+  selectExpandedItem,
+  selectIsCardPinned,
+  selectContextMenuOpen,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+  closeAll,
+  togglePanel,
+  setHoveredItem,
+  setExpandedItem,
+  setDeferredLeave,
+  clearDeferredLeave,
+  setShowCreateModal,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import {
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { isWorkspaceActivityWithin } from '$shared/utils/workspace-activity-time';
 
   const dispatch = getDispatch();

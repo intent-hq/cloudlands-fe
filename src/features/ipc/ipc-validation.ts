@@ -6,7 +6,10 @@
  */
 
 import { Logger } from '$shared/logger';
-import { isValidWorkspaceIdFormat, sanitizePath } from '../../main/utils/workspace-validation';
+import {
+  isValidWorkspaceIdFormat,
+  sanitizePath,
+} from '../../main/utils/workspace-validation';
 
 const logger = new Logger('IPCValidation');
 

@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-    LINEAR_ISSUE_FILTER_OPTIONS,
-    type LinearIssueFilter,
-  } from '$features/linear-auth/constants';
+  LINEAR_ISSUE_FILTER_OPTIONS,
+  type LinearIssueFilter,
+} from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Select } from '$lib/components/ui/select';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
@@ -10,16 +10,16 @@
   import Fa from 'svelte-fa';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    selectLinearIsAuthenticated,
-    selectLinearIsAuthenticating,
-    selectLinearError,
-    selectLinearRequiresAugmentAuth,
-  } from '$lib/store/slices/linear-auth/linear-auth-selectors';
+  selectLinearIsAuthenticated,
+  selectLinearIsAuthenticating,
+  selectLinearError,
+  selectLinearRequiresAugmentAuth,
+} from '$lib/store/slices/linear-auth/linear-auth-selectors';
   import {
-    initializeLinearAuth,
-    startLinearAuth,
-    logoutLinear,
-  } from '$lib/store/slices/linear-auth/linear-auth-slice';
+  initializeLinearAuth,
+  startLinearAuth,
+  logoutLinear,
+} from '$lib/store/slices/linear-auth/linear-auth-slice';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */

@@ -1,21 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const {
-  createAgentMock,
   dismissMock,
   dispatchMock,
   generateReportMock,
-  getInstanceMock,
   getReduxStoreMock,
   selectCurrentWorkspaceMock,
   selectWorkspaceDefaultModelMock,
   toastCustomMock,
 } = vi.hoisted(() => ({
-  createAgentMock: vi.fn(),
   dismissMock: vi.fn(),
   dispatchMock: vi.fn(),
   generateReportMock: vi.fn(),
-  getInstanceMock: vi.fn(),
   getReduxStoreMock: vi.fn(),
   selectCurrentWorkspaceMock: vi.fn(),
   selectWorkspaceDefaultModelMock: vi.fn(),
@@ -57,10 +59,6 @@ vi.mock('$lib/utils/error-reporter', () => ({
   errorReporter: { generateReport: generateReportMock },
 }));
 
-vi.mock('$features/agent/services/agent-factory', () => ({
-  UnifiedAgentFactory: { getInstance: getInstanceMock },
-}));
-
 import { showErrorToast } from '../error-toast';
 
 describe('showErrorToast', () => {
@@ -74,11 +72,9 @@ describe('showErrorToast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
-    getInstanceMock.mockReturnValue({ createAgent: createAgentMock });
     getReduxStoreMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
     selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
-    createAgentMock.mockResolvedValue({ agentId: 'agent-123' });
   });
 
   it('uses the workspace default selector when launching the debug agent', async () => {
@@ -97,14 +93,16 @@ describe('showErrorToast', () => {
     await options.componentProps.onDebug();
 
     expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');
-    expect(createAgentMock).toHaveBeenCalledWith(
-      { id: 'ws-1' },
-      expect.objectContaining({ model: 'selector-workspace-model' }),
-    );
-    expect(createAgentMock.mock.calls[0][1].model).not.toBe(
-      legacyState.model.workspaceModels['ws-1'],
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceAgents/createAgentFromConfigRequested',
+        payload: expect.arrayContaining([
+          'ws-1',
+          expect.objectContaining({ model: 'selector-workspace-model' }),
+          expect.objectContaining({ openAgent: true }),
+        ]),
+      }),
     );
     expect(dismissMock).toHaveBeenCalledWith('error-1');
-    expect(dispatchMock).toHaveBeenCalled();
   });
 });

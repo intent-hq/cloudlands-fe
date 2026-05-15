@@ -10,7 +10,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as parcelWatcher from '@parcel/watcher';
 import { GitStateManager } from './git-state-manager';
-import { ActorType, EventActor, createWorkspaceEvent } from '../../events/types';
+import {
+  ActorType,
+  EventActor,
+  createWorkspaceEvent,
+} from '../../events/types';
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
@@ -709,7 +713,7 @@ export class GitWatcherService extends EventEmitter {
   /**
    * Detect git operations from state changes
    */
-   
+
   private async detectGitOperations(_state: any): Promise<void> {
     // This would compare with previous state to detect:
     // - New commits

@@ -13,7 +13,10 @@ import type { ContentBlock } from '../../../../shared/types';
 import { changeDetectorManager } from '../../../workspace/main/change-detector-manager';
 import { getAttributionEngine } from '../../../workspace/main/provenance/attribution-engine';
 import { readFile } from 'fs/promises';
-import { join, isAbsolute } from 'path';
+import {
+  join,
+  isAbsolute,
+} from 'path';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import * as Diff from 'diff';
 import { createWorkspaceEvent } from '../../../events/types';

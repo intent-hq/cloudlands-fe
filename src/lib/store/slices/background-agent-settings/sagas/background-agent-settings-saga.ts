@@ -1,8 +1,37 @@
-import { call, put, takeEvery } from "typed-redux-saga";
-import { getLocalStorageJSON, setLocalStorageJSON, } from "$lib/store/utils/safe-local-storage-saga";
-import { getDefaultModelForProvider, getDefaultProviderId, PROVIDER_MODEL_TIERS, } from "$shared/config/provider-config";
-import { STORAGE_KEY, PROVIDER_SETTINGS_KEY, hydrateSettings, hydrateProviderSettings, setDefaultModel, setTypeOverride, clearTypeOverride, resetSettings, saveProviderSnapshot, restoreProviderSettings, switchProvider, type ProviderBgSettings, type BackgroundAgentType, } from "../background-agent-settings-slice";
-import { selectBgDefaultModel, selectBgTypeOverrides, selectProviderSettings, } from "../background-agent-settings-selectors";
+import {
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
+import {
+  getDefaultModelForProvider,
+  getDefaultProviderId,
+  PROVIDER_MODEL_TIERS,
+} from "$shared/config/provider-config";
+import {
+  STORAGE_KEY,
+  PROVIDER_SETTINGS_KEY,
+  hydrateSettings,
+  hydrateProviderSettings,
+  setDefaultModel,
+  setTypeOverride,
+  clearTypeOverride,
+  resetSettings,
+  saveProviderSnapshot,
+  restoreProviderSettings,
+  switchProvider,
+  type ProviderBgSettings,
+  type BackgroundAgentType,
+} from "../background-agent-settings-slice";
+import {
+  selectBgDefaultModel,
+  selectBgTypeOverrides,
+  selectProviderSettings,
+} from "../background-agent-settings-selectors";
 // ============================================================================
 // Init saga: load from localStorage on startup
 // ============================================================================

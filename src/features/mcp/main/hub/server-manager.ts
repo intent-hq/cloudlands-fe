@@ -6,7 +6,10 @@
 
 import { app } from 'electron';
 import { EventEmitter } from '$shared/utils/event-emitter';
-import { ChildProcess, spawn } from 'child_process';
+import {
+  ChildProcess,
+  spawn,
+} from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';

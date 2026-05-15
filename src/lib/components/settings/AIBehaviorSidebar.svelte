@@ -1,17 +1,25 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faGear, faArrowUpRightFromSquare, faPencil } from '@fortawesome/free-solid-svg-icons';
   import {
-    filterSpecialistsByGitHubAuth,
-    selectSpecialists,
-    selectIsBuiltIn,
-    selectHasOverrides,
-    selectSpecialistSourceLabel,
-    selectUserOverrides,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  faPlus,
+  faGear,
+  faArrowUpRightFromSquare,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  filterSpecialistsByGitHubAuth,
+  selectSpecialists,
+  selectIsBuiltIn,
+  selectHasOverrides,
+  selectSpecialistSourceLabel,
+  selectUserOverrides,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { openSpecialistsFolder } from '$lib/store/slices/specialists/specialists-slice';
-  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
 

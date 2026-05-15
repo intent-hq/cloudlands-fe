@@ -3,7 +3,10 @@
  * Manages singleton instances per workspace
  */
 
-import { GitStateManager, GitStateManagerConfig } from './main/git-state-manager';
+import {
+  GitStateManager,
+  GitStateManagerConfig,
+} from './main/git-state-manager';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('GitStateManagerRegistry');

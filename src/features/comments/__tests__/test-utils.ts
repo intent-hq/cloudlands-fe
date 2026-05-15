@@ -12,7 +12,10 @@ import {
   getAllAnchoredCommentIds,
 } from '$lib/components/tiptap/CommentAnchor';
 import type { CommentV2 } from '../comment-types-v2';
-import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+} from '$lib/store/redux-dispatch-bridge';
 import { loadCommentsAction } from '$lib/store/slices/comments/comments-slice';
 import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';

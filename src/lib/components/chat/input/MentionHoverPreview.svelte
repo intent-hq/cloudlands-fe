@@ -3,15 +3,15 @@
   import { faNote } from '$lib/icons/faNote';
   import Fa from 'svelte-fa';
   import {
-    faFile,
-    faFolder,
-    faCheckSquare,
-    faBook,
-    faTerminal,
-    faGlobe,
-    faRobot,
-    faUserTie,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faFolder,
+  faCheckSquare,
+  faBook,
+  faTerminal,
+  faGlobe,
+  faRobot,
+  faUserTie,
+} from '@fortawesome/free-solid-svg-icons';
   import type { MentionCandidate, MentionType } from '$lib/services/mentions/types';
 
   interface Props {

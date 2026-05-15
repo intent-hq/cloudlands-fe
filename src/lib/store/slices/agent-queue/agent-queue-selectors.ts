@@ -1,7 +1,11 @@
 import type { QueuedMessage } from "$shared/types";
 import type { StoreState } from "../../types";
 import { createSelector } from "../../utils/create-selector";
-import { createCollection, getItem, getItems } from "../../utils/collection-utils";
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import type { AgentQueueEntryState } from "./agent-queue-types";
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {

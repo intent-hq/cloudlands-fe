@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { faArrowsRotate, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowsRotate,
+  faChevronDown,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   import Button from '$lib/components/ui/button/button.svelte';

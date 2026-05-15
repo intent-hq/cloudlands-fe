@@ -1,6 +1,9 @@
 import type { EditorCategory } from "$shared/editors/editor-registry";
 import { createSelector } from "../../utils/create-selector";
-import { getItems, type Collection } from "../../utils/collection-utils";
+import {
+  getItems,
+  type Collection,
+} from "../../utils/collection-utils";
 import type { InstalledEditor, OpenAction } from "./external-editors-slice";
 
 /** Select the selected open action */

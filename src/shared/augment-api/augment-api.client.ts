@@ -6,7 +6,10 @@
  */
 
 import { net } from 'electron';
-import { existsSync, readFileSync } from 'fs';
+import {
+  existsSync,
+  readFileSync,
+} from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import yaml from 'js-yaml';

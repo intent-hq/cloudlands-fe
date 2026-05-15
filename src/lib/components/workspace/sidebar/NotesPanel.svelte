@@ -1,56 +1,66 @@
 <script lang="ts">
   import type { Note, TaskStatus } from '$shared/types';
-  import { ListContainer, ListItem } from '$lib/components/ui/list';
+  import {
+  ListContainer,
+  ListItem,
+} from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { cn } from '$lib/utils';
   import {
-    getNoteIcon,
-    getNoteTitle,
-    sortNotes,
-    isChildNote,
-    isSpecNote,
-    getChildNotes,
-    getNoteDepth,
-    isHiddenByAnyCollapsedAncestor,
-    parseTaskStats,
-    getNoteIconClass,
-  } from './utils';
+  getNoteIcon,
+  getNoteTitle,
+  sortNotes,
+  isChildNote,
+  isSpecNote,
+  getChildNotes,
+  getNoteDepth,
+  isHiddenByAnyCollapsedAncestor,
+  parseTaskStats,
+  getNoteIconClass,
+} from './utils';
   import {
-    faChevronDown,
-    faPlus,
-    faArrowUpRightFromSquare,
-    faPencil,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faPlus,
+  faArrowUpRightFromSquare,
+  faPencil,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import {
-    type AvatarState,
-    getAvatarState,
-  } from '$lib/components/ui/auggie-avatar/avatar-state';
+  type AvatarState,
+  getAvatarState,
+} from '$lib/components/ui/auggie-avatar/avatar-state';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSessionsByIds,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+  selectAgentSessionsByIds,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { writable } from 'svelte/store';
   import {
-    setWorkspaceNoteOrder,
-    toggleWorkspaceCollapsedNote,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  setWorkspaceNoteOrder,
+  toggleWorkspaceCollapsedNote,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    selectWorkspaceCollapsedNoteIds,
-    selectWorkspaceNoteOrder,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  selectWorkspaceCollapsedNoteIds,
+  selectWorkspaceNoteOrder,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { getPanelLayoutManager, hasPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import {
+  getPanelLayoutManager,
+  hasPanelLayoutManager,
+} from '$features/layout/panel-layout-adapter';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { deleteNote, createNote, updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import {
+  deleteNote,
+  createNote,
+  updateNoteTitle,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { toast } from 'svelte-sonner';
 
   const dispatch = getDispatch();

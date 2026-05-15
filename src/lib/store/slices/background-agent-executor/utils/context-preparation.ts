@@ -8,13 +8,19 @@
 import { gitClient } from '$features/git/git.client';
 import { setGitStatus } from '$lib/store/slices/git/git-slice';
 import { invoke } from '$lib/electron-bridge';
-import { GIT_CHANNELS, FILE_CHANNELS } from '$shared/ipc/channels';
+import {
+  GIT_CHANNELS,
+  FILE_CHANNELS,
+} from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
 import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
 import { dispatch } from '$lib/store/redux-dispatch-bridge';
 import type { Workspace } from '$shared/types';
 import type { AgentExecutorContext } from '../background-agent-executor-types';
-import { MAX_DIFF_SIZE_PER_FILE, MAX_TOTAL_DIFF_SIZE } from '../background-agent-executor-types';
+import {
+  MAX_DIFF_SIZE_PER_FILE,
+  MAX_TOTAL_DIFF_SIZE,
+} from '../background-agent-executor-types';
 
 const logger = createLogger('BgExecutorContextPrep');
 
@@ -181,7 +187,7 @@ async function getStagedDiffs(
 async function prepareCommitContext(
   workspace: Workspace,
   resultTag: string,
-   
+
   _context?: AgentExecutorContext,
 ): Promise<string> {
   const statusResult = await gitClient.getStatus(workspace.id);
@@ -436,9 +442,9 @@ Wrap your final review in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
  */
 async function prepareWalkthroughContext(
   workspace: Workspace,
-   
+
   _resultTag: string,
-   
+
   _context?: AgentExecutorContext,
 ): Promise<string> {
   const walkthroughStatusResult = await gitClient.getStatus(workspace.id);

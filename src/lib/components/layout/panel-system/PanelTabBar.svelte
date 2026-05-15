@@ -14,17 +14,17 @@
   import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
   import {
-    faXmark,
-    faFile,
-    faRobot,
-    faTerminal,
-    faGlobe,
-    faPlus,
-    faCrosshairs,
-    faCopy,
-    faFolderOpen,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faXmark,
+  faFile,
+  faRobot,
+  faTerminal,
+  faGlobe,
+  faPlus,
+  faCrosshairs,
+  faCopy,
+  faFolderOpen,
+  faArrowUpRightFromSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
   import { locateItemInSidebarRequested } from '$lib/store/slices/app-layout/app-layout-slice';
@@ -32,38 +32,50 @@
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { getContext, tick, type Snippet } from 'svelte';
+  import {
+  getContext,
+  tick,
+  type Snippet,
+} from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
-  import { startDrag, endDrag } from '$lib/store/slices/tab-state/tab-state-slice';
+  import {
+  startDrag,
+  endDrag,
+} from '$lib/store/slices/tab-state/tab-state-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { filterSpecialistsByGitHubAuth, selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+  filterSpecialistsByGitHubAuth,
+  selectSpecialistName,
+  selectSpecialists,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import {
-    selectAgentById,
-    selectAllWorkspaceAgents,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import {
+  type AvatarState,
+  getAvatarState,
+} from '$lib/components/ui/auggie-avatar/avatar-state';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -939,7 +951,7 @@
   /**
    * "Delegated by" parent-agent attribution for the active agent tab.
    *
-   * The parent agent ID is mirrored into a writable store so selectAgentById
+   * The parent agent ID is mirrored into a writable store so selectAgentSession
    * re-evaluates reactively — the label appears as soon as the parent session
    * lands in Redux (e.g. after a workspace switch loads sessions), without
    * requiring any user interaction.
@@ -953,7 +965,7 @@
   $effect(() => {
     activeAgentParentIdStore.set(activeAgentParentId ?? '');
   });
-  const activeAgentParent$ = selectAgentById(activeAgentParentIdStore);
+  const activeAgentParent$ = selectAgentSession(activeAgentParentIdStore);
   const activeAgentDelegatedByName = $derived(
     activeAgentParentId ? $activeAgentParent$?.name || null : null,
   );

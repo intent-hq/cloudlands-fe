@@ -5,7 +5,10 @@
    * Used in settings and other places where you want to show the specialist
    * icon standalone without the full AuggieAvatar.
    */
-  import { getSpecialistIcon, getSpecialistGlowColor } from './specialist-icons';
+  import {
+  getSpecialistIcon,
+  getSpecialistGlowColor,
+} from './specialist-icons';
 
   interface Props {
     /** Specialist ID - can be any specialist ID, but only built-in specialists have custom icons */

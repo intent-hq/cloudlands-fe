@@ -1,5 +1,8 @@
 import { spawn } from 'child_process';
-import { createHash, randomUUID } from 'crypto';
+import {
+  createHash,
+  randomUUID,
+} from 'crypto';
 import { app } from 'electron';
 import * as fsSync from 'fs';
 import { promises as fs } from 'fs';

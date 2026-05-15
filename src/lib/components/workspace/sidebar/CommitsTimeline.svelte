@@ -8,34 +8,37 @@
   import { gitCache } from '$features/git/git-cache';
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import {
-    selectFileTrackingCommits as selectFtCommits,
-    selectFileTrackingBoundarySha as selectFtBoundarySha,
-    selectFileTrackingOlderCommits as selectFtOlderCommits,
-    selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
-  } from '$lib/store/slices/changes/changes-selectors';
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
   import {
-    clearOlderCommits as ftClearOlderCommits,
-    refreshRequested,
-    loadOlderCommitsRequested,
-  } from '$lib/store/slices/changes/changes-slice';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  selectFileTrackingCommits as selectFtCommits,
+  selectFileTrackingBoundarySha as selectFtBoundarySha,
+  selectFileTrackingOlderCommits as selectFtOlderCommits,
+  selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
+} from '$lib/store/slices/changes/changes-selectors';
   import {
-    selectPostMergeState,
-    selectGitOperationFlags,
-  } from '$lib/store/slices/git/git-selectors';
+  clearOlderCommits as ftClearOlderCommits,
+  refreshRequested,
+  loadOlderCommitsRequested,
+} from '$lib/store/slices/changes/changes-slice';
   import {
-    setGitOperationFlag,
-  } from '$lib/store/slices/git/git-slice';
+  loadGitStatus,
+  setGitOperationFlag,
+} from '$lib/store/slices/git/git-slice';
   import {
-    selectWorkspaceById,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import {
-    setWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  selectPostMergeState,
+  selectGitOperationFlags,
+} from '$lib/store/slices/git/git-selectors';
+
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
+  import {
+  addTerminal,
+  openTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -47,35 +50,42 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
-  import { track, trackGitOp, getFileExtension } from '$lib/services/analytics';
+  import {
+  track,
+  trackGitOp,
+  getFileExtension,
+} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-    faArrowUpFromBracket,
-    faArrowUpRightFromSquare,
-    faChevronDown,
-    faCloud,
-    faCodeCommit,
-    faFlag,
-    faRotateLeft,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowUpFromBracket,
+  faArrowUpRightFromSquare,
+  faChevronDown,
+  faCloud,
+  faCodeCommit,
+  faFlag,
+  faRotateLeft,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import TimelineSection from './TimelineSection.svelte';
-  import { openWorkspaceCommitChangeset, openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import {
-    getCommitsToPushCount,
-    getCommitsToUndoCount,
-    getLocalCommitsToUndoCount,
-    getPushTooltip as getPushTooltipUtil,
-    getUndoTooltip as getUndoTooltipUtil,
-    getUndoCommitTooltip as getUndoCommitTooltipUtil,
-    canAmendCommit as canAmendCommitUtil,
-  } from './sidebar-changes-utils';
+  openWorkspaceCommitChangeset,
+  openWorkspaceDiff,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+  getCommitsToPushCount,
+  getCommitsToUndoCount,
+  getLocalCommitsToUndoCount,
+  getPushTooltip as getPushTooltipUtil,
+  getUndoTooltip as getUndoTooltipUtil,
+  getUndoCommitTooltip as getUndoCommitTooltipUtil,
+  canAmendCommit as canAmendCommitUtil,
+} from './sidebar-changes-utils';
 
   const dispatch = getDispatch();
 
@@ -110,9 +120,7 @@
   // Derived state from Redux
   const allCommits = $derived($ftCommits$ ?? []);
   const commits = $derived((allCommits ?? []).filter((c) => !c.isPushed));
-  const boundarySha = $derived($ftBoundarySha$);
   const olderCommits = $derived($ftOlderCommits$ ?? []);
-  const loadingOlderCommits = $derived($ftLoadingOlderCommits$);
   const hasRemote = $derived($postMergeState$.hasRemote);
   const isPushing = $derived($gitOps$.isPushing);
 
@@ -830,17 +838,17 @@
   {/if}
 
   <!-- Workspace start boundary marker + show previous toggle -->
-  {#if boundarySha}
+  {#if $ftBoundarySha$}
     <button
       class="group/boundary relative w-full cursor-pointer {allCommits.length > 0
         ? 'mt-2'
         : ''}"
-      disabled={loadingOlderCommits}
+      disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
           dispatch(ftClearOlderCommits(workspaceId));
         } else {
-          getReduxStore().dispatch(loadOlderCommitsRequested(workspaceId, boundarySha));
+          getReduxStore().dispatch(loadOlderCommitsRequested(workspaceId, $ftBoundarySha$));
         }
       }}
     >
@@ -854,7 +862,7 @@
           class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none"
         >
           Workspace start
-          {#if loadingOlderCommits}
+          {#if $ftLoadingOlderCommits$}
             <Fa icon={faSpinner} class="opacity-50 animate-spin" size="xs" />
           {:else}
             <Fa
@@ -954,7 +962,7 @@
   {#if olderCommits.length > 0}
     <button
       class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
-      disabled={loadingOlderCommits}
+      disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];
         if (lastOlder)
@@ -963,7 +971,7 @@
           );
       }}
     >
-      {#if loadingOlderCommits}
+      {#if $ftLoadingOlderCommits$}
         <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
       {/if}
       Show more previous commits

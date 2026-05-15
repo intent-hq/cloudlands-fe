@@ -1,4 +1,7 @@
-import { call, fork } from "typed-redux-saga";
+import {
+  call,
+  fork,
+} from "typed-redux-saga";
 import { initSaga } from "./init-saga";
 import { persistenceSaga } from "./persistence-saga";
 import { fileSpecialistsSaga } from "./file-specialists-saga";

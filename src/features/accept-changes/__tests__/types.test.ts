@@ -5,7 +5,11 @@
  * and can be used as expected.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type {
   AcceptAction,
   MergeStrategy,

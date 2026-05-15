@@ -2,13 +2,13 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faDownload,
-    faSearchPlus,
-    faSearchMinus,
-    faArrowsRotate,
-    faCopy,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faDownload,
+  faSearchPlus,
+  faSearchMinus,
+  faArrowsRotate,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 

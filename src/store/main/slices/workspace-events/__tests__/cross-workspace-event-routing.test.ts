@@ -9,7 +9,12 @@
  * 5. Buffer rollover in one workspace does not affect another
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  beforeEach,
+} from "vitest";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import {
   workspaceEventsReducer,

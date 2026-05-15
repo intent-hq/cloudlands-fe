@@ -1,4 +1,7 @@
-import { type Readable, writable } from "svelte/store";
+import {
+  type Readable,
+  writable,
+} from "svelte/store";
 
 const hasRAF = typeof requestAnimationFrame === "function";
 const unsetValue = Symbol("unset-throttled-readable-value");

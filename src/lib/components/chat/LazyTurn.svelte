@@ -25,7 +25,10 @@
    * ```
    */
 
-  import { onMount, type Snippet } from 'svelte';
+  import {
+  onMount,
+  type Snippet,
+} from 'svelte';
 
   // PERF: Default estimated height for turns that haven't been measured yet
   // This allows us to start with placeholders instead of rendering all content

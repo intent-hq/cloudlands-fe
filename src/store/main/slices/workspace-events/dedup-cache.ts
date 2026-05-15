@@ -10,7 +10,11 @@
  */
 
 import type { WorkspaceEvent } from "../../../../features/events/types";
-import { DEDUP_WINDOW_MS, DEDUP_MAX_CACHE, DEDUP_FIELDS } from "./types";
+import {
+  DEDUP_WINDOW_MS,
+  DEDUP_MAX_CACHE,
+  DEDUP_FIELDS,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Module-level cache: workspaceId → Map<eventKey, timestampMs>

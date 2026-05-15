@@ -2,7 +2,13 @@
  * Integration test for protocol adapter getCurrentContext functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { randomUUID } from 'crypto';
 import { ProtocolAdapter } from '../protocol-adapter';
 import { WorkspaceService } from '../../workspace/main/workspace.service';

@@ -8,18 +8,21 @@
    * All subscription data comes from Redux selectors (populated by the
    * agent-subscription-ui saga). No IPC listeners, polling, or timers in this component.
    */
-  import { fade, slide } from 'svelte/transition';
+  import {
+  fade,
+  slide,
+} from 'svelte/transition';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
-    faHourglass,
-    faBell,
-    faXmark,
-    faChevronDown,
-    faChevronRight,
-    faStop,
-    faTriangleExclamation,
-    faCircleCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faHourglass,
+  faBell,
+  faXmark,
+  faChevronDown,
+  faChevronRight,
+  faStop,
+  faTriangleExclamation,
+  faCircleCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
@@ -28,17 +31,20 @@
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    selectAgentSubscriptions,
-    selectDelegationGroups,
-    selectWokenUpInfo,
-    selectCompletionStatus,
-    selectWaitingState,
-  } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-  import { resetSubscriptionUI, requestSubscriptionFetch } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  selectAgentSubscriptions,
+  selectDelegationGroups,
+  selectWokenUpInfo,
+  selectCompletionStatus,
+  selectWaitingState,
+} from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+  import {
+  resetSubscriptionUI,
+  requestSubscriptionFetch,
+} from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const logger = createLogger('AgentSubscriptions');
 
@@ -171,8 +177,16 @@
       const agentIdsToStop = [...watchedAgentIds];
       await invoke('events:unsubscribe-agent', { workspaceId, agentId });
       dispatch(resetSubscriptionUI(workspaceId, agentId));
-      await agentService.stopSession(agentId);
-      await Promise.all(agentIdsToStop.map((id) => agentService.stopSession(id)));
+      const stopAction = stopAgentSessionRequested(workspaceId, agentId);
+      dispatch(stopAction);
+      await stopAction.promise;
+      await Promise.all(
+        agentIdsToStop.map((id) => {
+          const action = stopAgentSessionRequested(workspaceId, id);
+          dispatch(action);
+          return action.promise;
+        }),
+      );
     } catch (error) {
       logger.error('Failed to stop all agents', { error });
     }

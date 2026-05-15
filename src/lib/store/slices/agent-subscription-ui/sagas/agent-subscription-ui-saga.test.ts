@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import * as sagaEffects from 'redux-saga/effects';
 
 // Must mock typed-redux-saga before importing any saga module

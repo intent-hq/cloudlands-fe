@@ -17,13 +17,17 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
-    selectAgentIsResponding,
-    selectAgentIsThinking,
-    selectAgentIsWaiting,
-    selectAgentIsWaitingForOtherAgents,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsThinking,
+  selectAgentIsWaiting,
+  selectAgentIsWaitingForOtherAgents,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import Fa from 'svelte-fa';
-  import { faHourglass, faFile, faStickyNote } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faHourglass,
+  faFile,
+  faStickyNote,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     agent: AgentNode;
@@ -41,7 +45,6 @@
 
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
   const agentIsResponding$ = selectAgentIsResponding(agent.agentId);
-  const isActive = $derived($agentIsResponding$);
   // Get names of agents we're waiting for
   const waitingForNames = $derived.by(() => {
     if (!agent.waitingForAgentIds || agent.waitingForAgentIds.length === 0) return [];
@@ -54,7 +57,6 @@
   const agentIsWaiting$ = selectAgentIsWaiting(agent.agentId);
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
-  const isWaitingForOtherAgents = $derived($agentIsWaitingForOtherAgents$);
 
   // Map agent status to avatar state
   function getAvatarState(
@@ -69,12 +71,12 @@
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status, isWaitingForOtherAgents, isActive));
+  const avatarState = $derived(getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $agentIsResponding$));
 </script>
 
 <div class="agent-card-wrapper flex items-center gap-3 shadow">
   <!-- Left activity pill (file) -->
-  {#if activeFile && isActive}
+  {#if activeFile && $agentIsResponding$}
     <div
       class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-subtle max-w-32 truncate"
     >
@@ -113,13 +115,13 @@
 
     <!-- Status footer - shows current activity or last response -->
     <div class="status-footer mt-auto pt-2 w-full text-center">
-      {#if isWaitingForOtherAgents}
+      {#if $agentIsWaitingForOtherAgents$}
         <!-- Waiting for other agents -->
         <div class="text-sm text-primary flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />
           <span class="truncate">Waiting for {waitingForNames.join(', ')}</span>
         </div>
-      {:else if isActive || $agentIsThinking$}
+      {:else if $agentIsResponding$ || $agentIsThinking$}
         <!-- Active: always show spinner + descriptive label -->
         {@const toolDisplay = agent.activeToolName ? classifyTool(agent.activeToolName, agent.activeToolInput || {}) : null}
         <div class="flex flex-col items-center gap-1">
@@ -153,7 +155,7 @@
   </button>
 
   <!-- Right activity pill (note) -->
-  {#if activeNote && isActive}
+  {#if activeNote && $agentIsResponding$}
     <div
       class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-subtle max-w-32 truncate"
     >

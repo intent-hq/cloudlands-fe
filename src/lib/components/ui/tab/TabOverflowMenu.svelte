@@ -1,6 +1,9 @@
 <script lang="ts">
   import { cn } from '$lib/utils.js';
-  import { fade, scale } from 'svelte/transition';
+  import {
+  fade,
+  scale,
+} from 'svelte/transition';
   import type { Snippet } from 'svelte';
 
   interface TabOverflowMenuSlotProps {

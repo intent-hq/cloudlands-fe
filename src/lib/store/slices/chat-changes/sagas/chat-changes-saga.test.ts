@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
 import * as sagaEffects from 'redux-saga/effects';
-import { channel as createSagaChannel, type Task } from 'redux-saga';
+import {
+  channel as createSagaChannel,
+  type Task,
+} from 'redux-saga';
 
 vi.mock('typed-redux-saga', () => ({
   call: function* (fnOrDescriptor: any, ...args: any[]) {
@@ -52,7 +61,10 @@ vi.mock('$lib/store/utils/ipc-channel', () => ({
 }));
 
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { agentFileChangeReceived, agentFileRefreshTriggered } from '../chat-changes-slice';
+import {
+  agentFileChangeReceived,
+  agentFileRefreshTriggered,
+} from '../chat-changes-slice';
 import {
   AGENT_FILE_REFRESH_DEBOUNCE_MS,
   chatChangesSaga,

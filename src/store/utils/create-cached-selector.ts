@@ -143,6 +143,8 @@ export function __resetAllCachedSelectorsForTests(): void {
   for (const reset of cachedSelectorResets) reset();
 }
 
+// let maxAccessedPaths = 0;
+
 export const createCachedSelector = <STATE, ARGS extends unknown[] = [], R = undefined>(
   selectorFunc: CachedSelector<STATE, R, ARGS>,
   options?: CreateCachedSelectorOptions<STATE>
@@ -199,6 +201,17 @@ export const createCachedSelector = <STATE, ARGS extends unknown[] = [], R = und
     previousArgs = args;
     previousState = rawValue;
     accessedPaths = newAccessedPaths;
+
+    // Enable this for debugging selectors that access too much state,
+    // which can lead to inefficient caching and more frequent cache misses.
+    // Ideally, selectors should only access the specific parts of the state they need.
+    // if (accessedPaths.size > maxAccessedPaths) {
+    //   maxAccessedPaths = accessedPaths.size;
+    //   // eslint-disable-next-line no-console
+    //   console.error(
+    //     `[createCachedSelector] New max accessed paths: ${maxAccessedPaths}. This may indicate a need to optimize the selector by reducing the number of accessed paths. /n ${selectorFunc.toString()} /n ${[...accessedPaths].join("\n") }`
+    //   );
+    // }
 
     return finalResult;
   };

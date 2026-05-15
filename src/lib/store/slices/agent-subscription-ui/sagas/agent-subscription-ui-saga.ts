@@ -6,8 +6,17 @@
  * auto-dismiss, and stop/cancel cleanup.
  */
 
-import { call, delay, fork, put, takeEvery } from 'typed-redux-saga';
-import { extractEventData, invoke } from '$lib/electron-bridge';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+} from 'typed-redux-saga';
+import {
+  extractEventData,
+  invoke,
+} from '$lib/electron-bridge';
 import { takeEveryFromListenSync } from '$lib/store/utils/ipc-channel';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -18,7 +27,10 @@ import {
   requestSubscriptionFetch,
   makeKey,
 } from '../agent-subscription-ui-slice';
-import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
+import {
+  selectTrackedAgentIds,
+  selectWaitingState,
+} from '../agent-subscription-ui-selectors';
 import type {
   Subscription,
   DelegationGroupStatus,

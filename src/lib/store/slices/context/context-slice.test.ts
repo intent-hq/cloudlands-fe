@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import {
   contextReducer,
   initialState,

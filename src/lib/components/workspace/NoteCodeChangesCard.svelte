@@ -1,31 +1,46 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   /**
-   * NoteCodeChangesCard - A sleek, compact card showing code changes from agents
+   * NoteCodeChangesCard - A sleek,
+  compact card showing code changes from agents
    *
-   * Displays file changes made by assigned agents in a clean, Vercel-like UI.
+   * Displays file changes made by assigned agents in a clean,
+  Vercel-like UI.
    * Shows inline below the metadata bar with expandable file list.
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronDown,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { faFile } from '@fortawesome/free-regular-svg-icons';
-  import type { Note, AgentMessage, AgentSession } from '$shared/types';
+  import type { Note,
+  AgentMessage,
+  AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { selectCurrentChanges } from '$lib/store/slices/changes/changes-selectors';
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
+  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import {
-    getFileChangesFromMessages,
-    type ChatFileChange,
-  } from '$lib/utils/get-file-changes-from-messages';
+  getFileChangesFromMessages,
+  type ChatFileChange,
+} from '$lib/utils/get-file-changes-from-messages';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
-  import { openWorkspaceChatChanges, openWorkspaceDiff, type JsonValue } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+  openWorkspaceChatChanges,
+  openWorkspaceDiff,
+  type JsonValue,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('NoteCodeChangesCard');
 
@@ -72,12 +87,14 @@
 
       for (const agentId of assignedAgentIds) {
         try {
-          let agent: AgentSession | null | undefined = selectAgentById.select(
+          let agent: AgentSession | null | undefined = selectAgentSession.select(
             getReduxStore().getState(),
             agentId,
           );
           if (!agent && workspace) {
-            agent = await agentService.restoreSession(agentId, workspace);
+            const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
+            getReduxStore().dispatch(restoreAction);
+            agent = await restoreAction.promise;
           }
           if (agent?.messages) {
             allMessages.push(...agent.messages);

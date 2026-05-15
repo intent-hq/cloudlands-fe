@@ -21,10 +21,16 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
-import { ProviderRegistry, upsertCodexConfigArgs } from './provider-registry';
+import {
+  ProviderRegistry,
+  upsertCodexConfigArgs,
+} from './provider-registry';
 import { unifiedAgentBackend } from './consolidated-backend.service';
 import { InstructionService } from './instruction-service';
-import { refreshSpecialistsFromFiles, resolveSpecialistForAgent } from './specialists.service';
+import {
+  refreshSpecialistsFromFiles,
+  resolveSpecialistForAgent,
+} from './specialists.service';
 import { parseCodexReasoningEffort } from '$shared/config/open-ai-codex-models';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
@@ -42,7 +48,10 @@ import {
 } from '$shared/types/branded-ids';
 import type { CanonicalAgentStatusFields } from '../../events/types';
 import type { IpcMainInvokeEvent } from 'electron';
-import { BrowserWindow, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+} from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -52,8 +61,14 @@ import { workspaceService } from '../../workspace/main/workspace.service';
 import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.service';
 import { agentValidator } from '../services/agent-validator';
 import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
-import { resolveStreamingConfig, DEFAULT_PROFILE } from '$lib/store/slices/streaming-config/streaming-config-types';
-import { agentPersistence, UnifiedPersistence } from './agent-persistence';
+import {
+  resolveStreamingConfig,
+  DEFAULT_PROFILE,
+} from '$lib/store/slices/streaming-config/streaming-config-types';
+import {
+  agentPersistence,
+  UnifiedPersistence,
+} from './agent-persistence';
 import { checkAndUpdateNoteStatus } from './note-status-checker';
 import { getAgentContextRegistry } from '../agent-context-registry';
 import { notesService } from '../../notes/main/notes.service';
@@ -67,13 +82,23 @@ import {
   onHttpBridgeUnrecoverable,
   type HttpBridgeUnrecoverableHandler,
 } from '../../../main/http-mcp-bridge';
-import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import {
+  getWindowIdForWorkspace,
+  getWindowIdsForWorkspace,
+} from '../../system/main/system.ipc';
 import { trackMain } from '$lib/services/analytics/main';
-import { getMainState, mainDispatch } from '../../../store/main/redux-store-bridge';
+import {
+  getMainState,
+  mainDispatch,
+} from '../../../store/main/redux-store-bridge';
 import { selectAgentSubscriptions } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { evictDeletedAgent } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+import {
+  deduplicateAgentMessages,
+  normalizeAgentMessage,
+} from '$shared/utils/message-dedup';
 
 const logger = new Logger('AgentBackendHandler');
 
@@ -195,6 +220,10 @@ export class AgentBackendHandler {
   private streamSessionIds = new Map<string, string>();
   /** @property {Map<string, string>} streamWorkspaceIds - Map of agentId to workspaceId for stream tracking */
   private streamWorkspaceIds = new Map<string, string>();
+  /** @property {Map<string, string>} streamAssistantMessageIds - Active request assistant IDs for stream timeout finalization */
+  private streamAssistantMessageIds = new Map<string, string>();
+  /** @property {Map<string, string>} streamAssistantAppMessageIds - Active request app-owned assistant IDs for stream timeout finalization */
+  private streamAssistantAppMessageIds = new Map<string, string>();
   /** @property {Map<string, number>} streamGenerations - Monotonic counter per agent to detect stale stream cleanup.
    *  Incremented each time a new stream starts for an agent. Stale cleanup callbacks compare their
    *  captured generation against the current value to avoid erasing a newer stream's tracking state. */
@@ -1458,6 +1487,8 @@ export class AgentBackendHandler {
         this.streamStartTimes.delete(request.agentId);
         this.streamSessionIds.delete(request.agentId);
         this.streamWorkspaceIds.delete(request.agentId);
+        this.streamAssistantMessageIds.delete(request.agentId);
+        this.streamAssistantAppMessageIds.delete(request.agentId);
         this.streamWindowIds.delete(request.agentId);
         provider = undefined;
       }
@@ -2445,7 +2476,7 @@ export class AgentBackendHandler {
       // 1. Frontend adds user message and saves to disk
       // 2. Backend loads from disk (includes user message)
       // 3. Backend would add user message AGAIN without this check
-      // Check recent messages (last 5) for duplicate, matching frontend logic (agent.service.ts:2757)
+      // Check recent messages (last 5) for duplicates, matching frontend stream lifecycle logic.
       let userMessageAlreadyExists = false;
       if (messages.length > 0 && originalContent) {
         // Check if the LAST message is already this user message
@@ -2883,6 +2914,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       this.streamStartTimes.set(request.agentId, Date.now());
       this.streamSessionIds.set(request.agentId, request.sessionId);
       this.streamWorkspaceIds.set(request.agentId, request.workspaceId);
+      if (request.assistantMessageId) {
+        this.streamAssistantMessageIds.set(request.agentId, request.assistantMessageId);
+      } else {
+        this.streamAssistantMessageIds.delete(request.agentId);
+      }
+      if (request.assistantAppMessageId) {
+        this.streamAssistantAppMessageIds.set(request.agentId, request.assistantAppMessageId);
+      } else {
+        this.streamAssistantAppMessageIds.delete(request.agentId);
+      }
       // Track the sender window ID for targeted stream delivery (prevents crossed streams)
       if ((request as any)._senderWindowId !== undefined) {
         this.streamWindowIds.set(request.agentId, (request as any)._senderWindowId);
@@ -3411,26 +3452,35 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                 backendSession.messages = [];
               }
 
-              // Find and replace the streaming message, or add new one
-              const existingStreamingMsgIndex = backendSession.messages.findIndex(
-                (m: any) => m.role === 'assistant' && m.isStreaming,
+              // Find and replace the matching assistant placeholder/finalized copy,
+              // or add a new one. Logical lookup prefers provider/message ID,
+              // then app-owned logical ID, then the current streaming fallback.
+              const existingAssistantMsgIndex = this.findAssistantPersistenceMessageIndex(
+                backendSession.messages,
+                request.assistantMessageId,
+                request.assistantAppMessageId,
               );
 
-              if (existingStreamingMsgIndex >= 0) {
-                // Use the same ID from the streaming message
-                assistantMessage.id = backendSession.messages[existingStreamingMsgIndex].id;
+              if (existingAssistantMsgIndex >= 0) {
+                // Prefer the active request's provider/message ID, but keep an
+                // existing placeholder ID when the request did not carry one.
+                assistantMessage.id =
+                  request.assistantMessageId || backendSession.messages[existingAssistantMsgIndex].id;
                 // Replace the streaming message with final version
-                backendSession.messages[existingStreamingMsgIndex] = assistantMessage;
+                backendSession.messages[existingAssistantMsgIndex] = assistantMessage;
               } else {
                 // No streaming message found, add new one
                 backendSession.messages.push(assistantMessage);
               }
+              backendSession.messages = this.normalizeBackendSessionMessages(
+                backendSession.messages,
+              );
               backendSession.updatedAt = new Date();
 
               logger.debug('Backend: Finalized assistant message in backend session', {
                 agentId: request.agentId,
                 messageCount: backendSession.messages.length,
-                replacedStreaming: existingStreamingMsgIndex >= 0,
+                replacedStreaming: existingAssistantMsgIndex >= 0,
               });
 
               // Update status before persisting so the on-disk JSON reflects idle state
@@ -4965,7 +5015,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     let healthCheckCount = 0;
 
     // Health check every 5 seconds
-    const healthCheck = setInterval(() => {
+    const healthCheck = setInterval(async () => {
       healthCheckCount++;
       const windows = BrowserWindow.getAllWindows();
 
@@ -5035,14 +5085,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
         // If we have content, send a completion with the partial content
         if (finalContentBlocks.length > 0) {
-          const partialMessage = {
-            id: `msg_timeout_${Date.now()}`,
-            appMessageId: createAppMessageId(),
-            role: 'assistant' as const,
-            contentBlocks: finalContentBlocks,
-            timestamp: new Date().toISOString(),
-            metadata: { timedOut: true, duration },
-          };
+          const partialMessage = await this.persistTimedOutStreamingSessionState(
+            agentId,
+            finalContentBlocks,
+            duration,
+            this.streamAssistantMessageIds.get(agentId),
+            this.streamAssistantAppMessageIds.get(agentId),
+          );
 
           this.sendStreamToRenderer(agentId, `agent:stream:${agentId}`, {
             type: 'complete',
@@ -5325,6 +5374,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.streamStartTimes.delete(agentId);
     this.streamSessionIds.delete(agentId);
     this.streamWorkspaceIds.delete(agentId);
+    this.streamAssistantMessageIds.delete(agentId);
+    this.streamAssistantAppMessageIds.delete(agentId);
     this.streamWindowIds.delete(agentId);
 
     // Clear IPC heartbeat tracking
@@ -5384,6 +5435,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.streamStartTimes.delete(agentId);
     this.streamSessionIds.delete(agentId);
     this.streamWorkspaceIds.delete(agentId);
+    this.streamAssistantMessageIds.delete(agentId);
+    this.streamAssistantAppMessageIds.delete(agentId);
     this.streamWindowIds.delete(agentId);
     this.streamGenerations.delete(agentId);
 
@@ -5891,21 +5944,23 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         const { contentBlocks: currentContentBlocks } =
           messageAccumulator.getPartialContent(agentId);
 
-        // Create/update streaming assistant message
-        // Look for existing streaming message or create new one
-        const existingStreamingMsgIndex = backendSession.messages.findIndex(
-          (m: any) => m.role === 'assistant' && m.isStreaming,
+        // Create/update streaming assistant message. Prefer exact provider/app
+        // IDs from the active request before falling back to the current
+        // streaming assistant placeholder.
+        const existingStreamingMsgIndex = this.findAssistantPersistenceMessageIndex(
+          backendSession.messages,
+          assistantMessageId,
+          assistantAppMessageId,
         );
+        const existingStreamingMessage =
+          existingStreamingMsgIndex >= 0
+            ? backendSession.messages[existingStreamingMsgIndex]
+            : undefined;
 
         const streamingMessage = {
-          id:
-            existingStreamingMsgIndex >= 0
-              ? backendSession.messages[existingStreamingMsgIndex].id
-              : assistantMessageId || `msg_${uuidv4()}`,
+          id: assistantMessageId || existingStreamingMessage?.id || `msg_${uuidv4()}`,
           appMessageId:
-            existingStreamingMsgIndex >= 0
-              ? backendSession.messages[existingStreamingMsgIndex].appMessageId
-              : assistantAppMessageId || createAppMessageId(),
+            assistantAppMessageId || existingStreamingMessage?.appMessageId || createAppMessageId(),
           role: 'assistant' as const,
           contentBlocks: currentContentBlocks,
           timestamp: new Date().toISOString(),
@@ -5917,6 +5972,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         } else {
           backendSession.messages.push(streamingMessage);
         }
+        backendSession.messages = this.normalizeBackendSessionMessages(backendSession.messages);
         backendSession.updatedAt = new Date();
 
         // Persist to disk
@@ -5944,6 +6000,38 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private normalizeBackendSessionMessages(messages: AgentMessage[] = []): AgentMessage[] {
+    return deduplicateAgentMessages(messages.map((message) => normalizeAgentMessage(message)));
+  }
+
+  private findAssistantPersistenceMessageIndex(
+    messages: AgentMessage[],
+    assistantMessageId?: string,
+    assistantAppMessageId?: string,
+  ): number {
+    if (assistantMessageId) {
+      const idMatch = messages.findIndex(
+        (message) => message.role === 'assistant' && message.id === assistantMessageId,
+      );
+      if (idMatch >= 0) return idMatch;
+    }
+
+    if (assistantAppMessageId) {
+      const appIdMatch = messages.findIndex(
+        (message) =>
+          message.role === 'assistant' && message.appMessageId === assistantAppMessageId,
+      );
+      if (appIdMatch >= 0) return appIdMatch;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message.role === 'assistant' && message.isStreaming === true) return index;
+    }
+
+    return -1;
   }
 
   /**
@@ -5990,9 +6078,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         backendSession.messages = [];
       }
 
-      const interruptedMsgIndex = this.findInterruptedAssistantMessageIndex(
+      const interruptedMsgIndex = this.findAssistantPersistenceMessageIndex(
         backendSession.messages,
         assistantMessageId,
+        assistantAppMessageId,
       );
 
       const interruptedMetadata = { interrupted: true, stopReason: 'cancelled' };
@@ -6000,8 +6089,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         const existingMessage = backendSession.messages[interruptedMsgIndex];
         backendSession.messages[interruptedMsgIndex] = {
           ...existingMessage,
+          id: assistantMessageId || existingMessage.id,
           appMessageId:
-            existingMessage.appMessageId || assistantAppMessageId || createAppMessageId(),
+            assistantAppMessageId || existingMessage.appMessageId || createAppMessageId(),
           contentBlocks:
             currentContentBlocks.length > 0
               ? currentContentBlocks
@@ -6025,6 +6115,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           metadata: interruptedMetadata,
         });
       }
+      backendSession.messages = this.normalizeBackendSessionMessages(backendSession.messages);
 
       backendSession.status = AgentStatus.Idle;
       backendSession.isStreaming = false;
@@ -6055,28 +6146,80 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     }
   }
 
-  private findInterruptedAssistantMessageIndex(
-    messages: AgentMessage[],
+  private async persistTimedOutStreamingSessionState(
+    agentId: string,
+    contentBlocks: ContentBlock[],
+    duration: number,
     assistantMessageId?: string,
-  ): number {
-    if (assistantMessageId) {
-      const exactIndex = messages.findIndex(
-        (message: any) => message.role === 'assistant' && message.id === assistantMessageId,
-      );
-      if (exactIndex >= 0) return exactIndex;
-    }
+    assistantAppMessageId?: string,
+  ): Promise<AgentMessage> {
+    const timeoutMetadata = { timedOut: true, duration };
 
-    for (let index = messages.length - 1; index >= 0; index--) {
-      const message = messages[index] as any;
-      if (
-        message?.role === 'assistant' &&
-        (message.isStreaming === true || message.streamingComplete === false)
-      ) {
-        return index;
+    try {
+      const backend = await this.getBackend();
+      const backendSession = backend.getSession(agentId);
+      if (backendSession) {
+        if (!Array.isArray(backendSession.messages)) {
+          backendSession.messages = [];
+        }
+
+        const timeoutMsgIndex = this.findAssistantPersistenceMessageIndex(
+          backendSession.messages,
+          assistantMessageId,
+          assistantAppMessageId,
+        );
+        const existingMessage =
+          timeoutMsgIndex >= 0 ? backendSession.messages[timeoutMsgIndex] : undefined;
+        const timeoutMessage: AgentMessage = {
+          ...existingMessage,
+          id: assistantMessageId || existingMessage?.id || `msg_timeout_${Date.now()}`,
+          appMessageId: assistantAppMessageId || existingMessage?.appMessageId || createAppMessageId(),
+          role: 'assistant',
+          contentBlocks,
+          timestamp: new Date().toISOString(),
+          isStreaming: false,
+          streamingComplete: true,
+          metadata: {
+            ...(existingMessage?.metadata || {}),
+            ...timeoutMetadata,
+          },
+        };
+
+        if (timeoutMsgIndex >= 0) {
+          backendSession.messages[timeoutMsgIndex] = timeoutMessage;
+        } else {
+          backendSession.messages.push(timeoutMessage);
+        }
+        backendSession.messages = this.normalizeBackendSessionMessages(backendSession.messages);
+        backendSession.status = AgentStatus.Idle;
+        backendSession.isStreaming = false;
+        (backendSession as any).isProcessing = false;
+        backendSession.updatedAt = new Date();
+
+        const saveResult = await agentPersistence.saveAgent(backendSession);
+        if (!saveResult.success) {
+          logger.warn('Backend: Failed to persist timed-out streaming state', {
+            agentId,
+            error: saveResult.error,
+          });
+        }
+        return timeoutMessage;
       }
+    } catch (error) {
+      logger.warn('Backend: Error persisting timed-out streaming state', {
+        agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
-    return -1;
+    return {
+      id: assistantMessageId || `msg_timeout_${Date.now()}`,
+      appMessageId: assistantAppMessageId || createAppMessageId(),
+      role: 'assistant',
+      contentBlocks,
+      timestamp: new Date().toISOString(),
+      metadata: timeoutMetadata,
+    };
   }
 
   /**
@@ -7101,6 +7244,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       this.streamStartTimes.delete(sessionId);
       this.streamSessionIds.delete(sessionId);
       this.streamWorkspaceIds.delete(sessionId);
+      this.streamAssistantMessageIds.delete(sessionId);
+      this.streamAssistantAppMessageIds.delete(sessionId);
       this.streamWindowIds.delete(sessionId);
       existingProvider = undefined;
     }
@@ -9246,6 +9391,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.streamStartTimes.clear();
     this.streamSessionIds.clear();
     this.streamWorkspaceIds.clear();
+    this.streamAssistantMessageIds.clear();
+    this.streamAssistantAppMessageIds.clear();
     this.streamWindowIds.clear();
     this.streamGenerations.clear();
 

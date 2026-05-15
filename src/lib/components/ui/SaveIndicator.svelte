@@ -2,8 +2,16 @@
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import { faCircle, faCheck, faCloudArrowUp, faSpinner } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
+  import {
+  faCircle,
+  faCheck,
+  faCloudArrowUp,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  fade,
+  scale,
+} from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 
   interface Props {

@@ -5,33 +5,35 @@
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import Fa from 'svelte-fa';
   import {
-    faRotateRight,
-    faStop,
-    faCheck,
-    faSpinner,
-    faRobot,
-    faCodeCompare,
-    faChevronLeft,
-    faChevronRight,
-    faWandMagicSparkles,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRotateRight,
+  faStop,
+  faCheck,
+  faSpinner,
+  faRobot,
+  faCodeCompare,
+  faChevronLeft,
+  faChevronRight,
+  faWandMagicSparkles,
+} from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import ReviewCommentCard from './ReviewCommentCard.svelte';
   import type { ReviewComment, ReviewStatus, ReviewSeverity, CodeReview } from './types';
-  import { parseAllReviewComments, parseReviewSummary } from './types';
+  import {
+  parseAllReviewComments,
+  parseReviewSummary,
+} from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
-  import { CodeWalkthroughSection, parseWalkthrough } from './walkthrough';
+  import {
+  CodeWalkthroughSection,
+  parseWalkthrough,
+} from './walkthrough';
   import type { CodeWalkthrough, WalkthroughStatus } from './walkthrough';
-  import {
-    selectExecutorState,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
-  import {
-    executeBackgroundAgent,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { executeBackgroundAgent } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
+  import { sendMessage } from '$features/agent/agent-stream-lifecycle';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -237,7 +239,7 @@
         },
       ]);
 
-      await agentService.sendMessage(agentId, contextMessage, workspace, {
+      await sendMessage(agentId, contextMessage, workspace, {
         stdinContext,
       });
 

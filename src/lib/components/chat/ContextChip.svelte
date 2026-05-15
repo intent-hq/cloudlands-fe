@@ -1,17 +1,17 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-    faFileLines,
-    faCodeBranch,
-    faClipboard,
-    faICursor,
-    faFolder,
-    faXmark,
-    faTicket,
-    faBug,
-    faLink,
-    faCodePullRequest,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFileLines,
+  faCodeBranch,
+  faClipboard,
+  faICursor,
+  faFolder,
+  faXmark,
+  faTicket,
+  faBug,
+  faLink,
+  faCodePullRequest,
+} from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import Button from '$lib/components/ui/button/button.svelte';

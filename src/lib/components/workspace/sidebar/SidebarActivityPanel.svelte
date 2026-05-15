@@ -8,37 +8,40 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faFile,
-    faFileCirclePlus,
-    faFileCircleMinus,
-    faFileEdit,
-    faArrowRightArrowLeft,
-    faCodeBranch,
-    faTerminal,
-    faPlay,
-    faCheck,
-    faXmark,
-    faWrench,
-    faCircle,
-    faMessage,
-    faEye,
-    faEyeSlash,
-    faBell,
-    faListCheck,
-    faVial,
-    faHammer,
-    faComment,
-    faPause,
-    faRotate,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faFileCirclePlus,
+  faFileCircleMinus,
+  faFileEdit,
+  faArrowRightArrowLeft,
+  faCodeBranch,
+  faTerminal,
+  faPlay,
+  faCheck,
+  faXmark,
+  faWrench,
+  faCircle,
+  faMessage,
+  faEye,
+  faEyeSlash,
+  faBell,
+  faListCheck,
+  faVial,
+  faHammer,
+  faComment,
+  faPause,
+  faRotate,
+} from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { WorkspaceEvent } from '$features/events/types';
-  import { selectWorkspaceEvents, selectEventsLoading } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+  import {
+  selectWorkspaceEvents,
+  selectEventsLoading,
+} from '$lib/store/slices/workspace-events/workspace-events-selectors';
 
   import {
-    getActivityLabelParts,
-    type StructuredLabel,
-  } from '$features/events/activity-labels';
+  getActivityLabelParts,
+  type StructuredLabel,
+} from '$features/events/activity-labels';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
@@ -96,8 +99,6 @@
   // Read events and loading state from Redux
   const events$ = selectWorkspaceEvents(workspaceIdStore);
   const loading$ = selectEventsLoading(workspaceIdStore);
-  const events = $derived($events$);
-  const isLoading = $derived($loading$);
 
   /**
    * Event types that should be hidden from the activity log.
@@ -176,7 +177,7 @@
     const seenContent = new Map<string, number>(); // contentKey -> timestamp
     const deduped: WorkspaceEvent[] = [];
 
-    for (const event of events) {
+    for (const event of $events$) {
       // Skip hidden events (based on type and/or data)
       if (shouldHideEvent(event)) {
         continue;
@@ -406,7 +407,7 @@
 </script>
 
 <div class="h-full flex flex-col">
-  {#if isLoading}
+  {#if $loading$}
     <!-- Loading skeleton -->
     <div class="px-5 py-3 space-y-3">
       {#each [0, 1, 2, 3, 4, 5] as i (i)}

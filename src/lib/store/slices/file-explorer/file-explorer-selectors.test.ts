@@ -1,5 +1,9 @@
 import type { FileNode, FileGitStatus } from "$shared/types";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import {
   emptyFileExplorerWorkspaceState,

@@ -9,7 +9,14 @@
  * TextEncoder is kept as a saga-local variable (non-serializable).
  */
 
-import { delay, fork, put, select, takeEvery, cancel } from "typed-redux-saga";
+import {
+  delay,
+  fork,
+  put,
+  select,
+  takeEvery,
+  cancel,
+} from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import { Logger } from "../../../../../shared/logger";
 import {
@@ -18,7 +25,10 @@ import {
   clearAllAccumulators,
   cleanupStaleAccumulators,
 } from "../message-accumulator-slice";
-import { selectActiveSessionIds, selectAccumulator } from "../message-accumulator-selectors";
+import {
+  selectActiveSessionIds,
+  selectAccumulator,
+} from "../message-accumulator-selectors";
 
 const logger = new Logger("MessageAccumulatorSaga");
 

@@ -10,14 +10,15 @@
  * persistence and broadcast to renderer windows via sagas.
  */
 
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import {
   addSubscription,
   subscribeToDelegationGroup,
 } from "../agent-subscriptions-slice";
-import {
-  selectWorkspaceSubscriptionState,
-} from "../agent-subscriptions-selectors";
+import { selectWorkspaceSubscriptionState } from "../agent-subscriptions-selectors";
 
 // ---------------------------------------------------------------------------
 // External service wrappers (called via `call()` for testability)

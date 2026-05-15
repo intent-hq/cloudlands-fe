@@ -7,7 +7,10 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import {
+  findBinary,
+  getCommonNpmPaths,
+} from '../../../shared/main/find-binary';
 import { execFileAsync } from '../../../shared/main/async-utils';
 import { ensureManagedCodexAcp } from './codex-acp-manager';
 

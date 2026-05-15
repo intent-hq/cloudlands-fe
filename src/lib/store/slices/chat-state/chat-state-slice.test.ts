@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type { StoreState } from '../../types';
 import {
   chatStateReducer,
@@ -16,11 +20,7 @@ import {
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
-  streamStarted,
-  streamChunkFlushed,
-  streamChunkReceived,
   streamCompleted,
-  streamErrored,
   streamTimedOut,
   chatStallDetected,
   chatStuckStateCleared,
@@ -36,9 +36,9 @@ import {
   selectChatAgentState,
   selectChatError,
   selectChatIsStalled,
-  selectChatStreamingContent,
   selectChatLastMessageTime,
 } from './chat-state-selectors';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 
 const AGENT = 'agent-1';
 
@@ -58,7 +58,6 @@ describe('chatStateReducer', () => {
       initialState,
       chatInitialized(AGENT, {
         isStreaming: false,
-        streamingContent: '',
         lastAttemptedMessage: null,
       }),
     );
@@ -77,12 +76,14 @@ describe('chatStateReducer', () => {
   });
 
   it('chatSendStarted sets UI flags (isStreaming/isProcessing now on agent-session)', () => {
-    const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const action = chatSendStarted(AGENT);
+    const state = chatStateReducer(initialState, action);
     const agent = state.byAgentId[AGENT];
-    expect(agent.streamingContent).toBe('');
     expect(agent.error).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
     expect(agent.isStalled).toBe(false);
+    expect(agent.lastMessageTime).toBe(action.payload.timestamp);
+    expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(action.payload.timestamp);
   });
 
   it('chatSendFailed sets error', () => {
@@ -105,13 +106,13 @@ describe('chatStateReducer', () => {
     expect(state.byAgentId[AGENT].isInterrupting).toBe(true);
   });
 
-  it('chatStopCompleted clears interrupting and streaming content', () => {
+  it('chatStopCompleted clears interrupting and streaming start time', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const s2 = chatStateReducer(s1, chatStopInitiated(AGENT));
     const s3 = chatStateReducer(s2, chatStopCompleted(AGENT));
     const agent = s3.byAgentId[AGENT];
     expect(agent.isInterrupting).toBe(false);
-    expect(agent.streamingContent).toBe('');
+    expect(agent.streamingStartTime).toBeNull();
   });
 
   it('chatReset returns to empty state', () => {
@@ -120,33 +121,7 @@ describe('chatStateReducer', () => {
     expect(s2.byAgentId[AGENT]).toEqual(emptyChatAgentState);
   });
 
-  it('streamChunkFlushed updates streaming content (messages now in agent-session)', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, streamChunkFlushed(AGENT, 'hello world'));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.streamingContent).toBe('hello world');
-  });
-
-  it('streamChunkReceived(text) sets receivedFirstChunk and adds status event', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, streamChunkReceived(AGENT, true));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.receivedFirstChunk).toBe(true);
-    expect(agent.isStalled).toBe(false);
-    expect(agent.statusEvents).toHaveLength(1);
-    expect(agent.statusEvents[0].phase).toBe('streaming');
-  });
-
-  it('streamChunkReceived(non-text) does not set receivedFirstChunk', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, streamChunkReceived(AGENT, false));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.receivedFirstChunk).toBe(false);
-    expect(agent.isStalled).toBe(false);
-    expect(agent.statusEvents).toHaveLength(0);
-  });
-
-  it('streamCompleted clears streaming content', () => {
+  it('streamCompleted clears streaming metadata', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const s2 = chatStateReducer(
       s1,
@@ -156,19 +131,118 @@ describe('chatStateReducer', () => {
       }),
     );
     const agent = s2.byAgentId[AGENT];
-    expect(agent.streamingContent).toBe('');
+    expect(agent.streamingStartTime).toBeNull();
+    expect(agent.receivedFirstChunk).toBe(false);
   });
 
-  it('streamErrored sets error', () => {
+  it('agentStreamUpdateReceived(started) sets streaming metadata state', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(
-      s1,
-      streamErrored(AGENT, {
-        error: 'stream failed',
-      }),
-    );
+    const action = agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'started',
+    });
+    const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
+    expect(agent.error).toBeNull();
+    expect(agent.isStalled).toBe(false);
+    expect(agent.lastChunkTime).toBe(action.payload[0].timestamp);
+  });
+
+  it('agentStreamUpdateReceived(chunk) sets receivedFirstChunk and adds status event', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const action = agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'chunk',
+      chunk: 'hello',
+    });
+    const s2 = chatStateReducer(s1, action);
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.receivedFirstChunk).toBe(true);
+    expect(agent.isStalled).toBe(false);
+    expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
+    expect(agent.statusEvents).toHaveLength(1);
+    expect(agent.statusEvents[0]).toMatchObject({ phase: 'streaming' });
+  });
+
+  it('agentStreamUpdateReceived(content-blocks) records non-text activity without first chunk', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const action = agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'content-blocks',
+      contentBlocks: [{ type: 'text', text: 'structured' }],
+    });
+    const s2 = chatStateReducer(s1, action);
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.receivedFirstChunk).toBe(false);
+    expect(agent.statusEvents).toHaveLength(0);
+    expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
+  });
+
+  it('agentStreamUpdateReceived(complete) clears streaming metadata and derives model unavailable info', () => {
+    let state = chatStateReducer(initialState, chatSendStarted(AGENT));
+    state = chatStateReducer(state, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'chunk',
+      chunk: 'hello',
+    }));
+    const completed = chatStateReducer(state, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      completeMessage: {
+        role: 'assistant',
+        metadata: {
+          modelUnavailable: true,
+          failedModel: 'slow-model',
+          nextAvailableModel: 'fast-model',
+        },
+      },
+    }));
+    const agent = completed.byAgentId[AGENT];
+    expect(agent.streamingStartTime).toBeNull();
+    expect(agent.receivedFirstChunk).toBe(false);
+    expect(agent.statusEvents).toEqual([]);
+    expect(agent.modelUnavailable).toEqual({
+      failedModel: 'slow-model',
+      nextAvailableModel: 'fast-model',
+    });
+  });
+
+  it('agentStreamUpdateReceived(error) clears streaming metadata and stores error', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const s2 = chatStateReducer(s1, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'error',
+      error: 'stream failed',
+    }));
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.streamingStartTime).toBeNull();
+    expect(agent.statusEvents).toEqual([]);
     expect(agent.error).toBe('stream failed');
+  });
+
+  it('agentStreamUpdateReceived(timeout) clears streaming metadata without setting error', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const s2 = chatStateReducer(s1, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'timeout',
+    }));
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.streamingStartTime).toBeNull();
+    expect(agent.error).toBeNull();
   });
 
   it('chatStallDetected sets isStalled', () => {
@@ -238,21 +312,6 @@ describe('chatStateReducer', () => {
     expect(agent.streamingStartTime).toBeDefined();
   });
 
-  it('streamStarted sets streaming content state', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, streamStarted(AGENT, { hasRestoredContent: false, existingContent: '' }));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.error).toBeNull();
-    expect(agent.isStalled).toBe(false);
-    expect(agent.streamingContent).toBe('');
-  });
-
-  it('streamStarted restores content when hasRestoredContent is true', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, streamStarted(AGENT, { hasRestoredContent: true, existingContent: 'restored text' }));
-    expect(s2.byAgentId[AGENT].streamingContent).toBe('restored text');
-  });
-
   it('streamStatusReceived appends status event', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const event = { phase: 'connecting', message: 'test', level: 'info' as const, timestamp: 1000 };
@@ -288,7 +347,13 @@ describe('chatStateReducer', () => {
 
   it('streamStatusReceived resets receivedFirstChunk when resetFirstChunk is true', () => {
     let s = chatStateReducer(initialState, chatSendStarted(AGENT));
-    s = chatStateReducer(s, streamChunkReceived(AGENT, true));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'chunk',
+      chunk: 'hello',
+    }));
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(true);
     const event = { phase: 'tool_use', message: 'running', level: 'info' as const, timestamp: 2000 };
     s = chatStateReducer(s, streamStatusReceived(AGENT, event, true));
@@ -323,6 +388,15 @@ describe('chatStateReducer', () => {
     s = chatStateReducer(s, chatTrackedWorkspaceSet(AGENT, null));
     expect(s.byAgentId[AGENT].trackedWorkspaceId).toBeNull();
   });
+
+  it('does not store one-shot UI cleanup request state', () => {
+    const rejectedField = ['ui', 'Cleanup', 'Request'].join('');
+    expect(emptyChatAgentState).not.toHaveProperty(rejectedField);
+
+    const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+    expect(state.byAgentId[AGENT]).not.toHaveProperty(rejectedField);
+  });
+
 });
 
 describe('chatState selectors', () => {
@@ -338,10 +412,6 @@ describe('chatState selectors', () => {
 
   it('selectChatIsStalled returns false by default', () => {
     expect(selectChatIsStalled.select(asStoreState(initialState), AGENT)).toBe(false);
-  });
-
-  it('selectChatStreamingContent returns empty for fresh state', () => {
-    expect(selectChatStreamingContent.select(asStoreState(initialState), AGENT)).toBe('');
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {

@@ -1,12 +1,12 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-    faTerminal,
-    faWandMagicSparkles,
-    faTrash,
-    faPlus,
-    faPencil,
-  } from '@fortawesome/free-solid-svg-icons';
+  faTerminal,
+  faWandMagicSparkles,
+  faTrash,
+  faPlus,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
@@ -15,27 +15,27 @@
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
   import {
-    SETUP_SCRIPT_TEMPLATES,
-    SETUP_SCRIPT_VARIABLES,
-    getTemplateContent,
-    type ProjectType,
-  } from '$features/setup-scripts';
+  SETUP_SCRIPT_TEMPLATES,
+  SETUP_SCRIPT_VARIABLES,
+  getTemplateContent,
+  type ProjectType,
+} from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    saveScript,
-    renameScript,
-    updateScriptContent,
-    removeScriptFromUI,
-    restoreScriptToUI,
-    deleteScript,
-  } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  saveScript,
+  renameScript,
+  updateScriptContent,
+  removeScriptFromUI,
+  restoreScriptToUI,
+  deleteScript,
+} from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import {
-    selectScripts,
-    selectScriptById,
-    selectLastUsedScriptForRepo,
-  } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+  selectScripts,
+  selectScriptById,
+  selectLastUsedScriptForRepo,
+} from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
   import type { SetupScript } from '$lib/store/slices/setup-scripts/setup-scripts-types';
 
   interface Props {

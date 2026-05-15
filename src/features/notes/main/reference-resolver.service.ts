@@ -9,8 +9,14 @@
  */
 
 import { promises as fs } from 'fs';
-import { join, extname } from 'path';
-import { parseSemanticId, type ParsedSemanticId } from '$shared/types/notes-primitives';
+import {
+  join,
+  extname,
+} from 'path';
+import {
+  parseSemanticId,
+  type ParsedSemanticId,
+} from '$shared/types/notes-primitives';
 import { EnhancedLogger } from '$shared/enhanced-logger';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { createWorkspaceId } from '$shared/types';

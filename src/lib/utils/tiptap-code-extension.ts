@@ -1,6 +1,9 @@
 import { Code } from '@tiptap/extension-code';
 import { mergeAttributes } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import {
+  Plugin,
+  PluginKey,
+} from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 
 const codeMarkBoundaryPluginKey = new PluginKey('codeMarkBoundary');

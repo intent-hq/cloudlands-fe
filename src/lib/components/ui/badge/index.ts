@@ -1,5 +1,8 @@
 import Badge from './badge.svelte';
-import { type VariantProps, tv } from 'tailwind-variants';
+import {
+  type VariantProps,
+  tv,
+} from 'tailwind-variants';
 
 // Re-export the badge variants function
 export const badgeVariants = tv({

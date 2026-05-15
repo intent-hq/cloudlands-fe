@@ -1,12 +1,21 @@
 import path from 'path';
-import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
+import {
+  app,
+  screen,
+  nativeTheme,
+  nativeImage,
+  BrowserWindow,
+} from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
 import { Logger } from '../shared/logger';
 import { resolveAppTitle } from './utils/resolve-app-title';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
-import { getMainWindow, setMainWindow } from './state';
+import {
+  getMainWindow,
+  setMainWindow,
+} from './state';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 

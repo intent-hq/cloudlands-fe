@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
@@ -25,46 +31,59 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("$lib/store/utils/selector-channel-effects", () => ({
+vi.mock("$lib/store/utils/selector-channel-effects",
+  () => ({
   takeLatestFromSelector: function* () {
     // No-op for these tests — return a fake task object.
     return { id: "fake-task" };
   },
-}));
-
-const { eventChannelMock, getReduxStoreMock, isFocusInEditableElementMock, isFocusInTerminalMock, isRespondingMock } =
-  vi.hoisted(() => ({
-    eventChannelMock: vi.fn(),
-    getReduxStoreMock: vi.fn(),
-    isFocusInEditableElementMock: vi.fn(),
-    isFocusInTerminalMock: vi.fn(),
-    isRespondingMock: vi.fn(),
   }));
 
-vi.mock("redux-saga", async () => {
+const { eventChannelMock,
+  getReduxStoreMock,
+  isFocusInEditableElementMock,
+  isFocusInTerminalMock,
+  isRespondingMock } =
+  vi.hoisted(() => ({
+    eventChannelMock: vi.fn(),
+  getReduxStoreMock: vi.fn(),
+  isFocusInEditableElementMock: vi.fn(),
+  isFocusInTerminalMock: vi.fn(),
+  isRespondingMock: vi.fn(),
+  }));
+
+vi.mock("redux-saga",
+  async () => {
   const actual = await vi.importActual<typeof import("redux-saga")>("redux-saga");
-  return { ...actual, eventChannel: eventChannelMock };
+  return { ...actual,
+  eventChannel: eventChannelMock };
 });
 
-vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+vi.mock("$lib/store/redux-dispatch-bridge",
+  () => ({
   getReduxStore: getReduxStoreMock,
-}));
+  }));
 
-vi.mock("$lib/utils/keyboardShortcuts", () => ({
+vi.mock("$lib/utils/keyboardShortcuts",
+  () => ({
   isFocusInEditableElement: isFocusInEditableElementMock,
   isFocusInTerminal: isFocusInTerminalMock,
-}));
+  }));
 
-vi.mock("$lib/store/slices/agent-session/agent-session-selectors", () => ({
+vi.mock("$lib/store/slices/agent-session/agent-session-selectors",
+  () => ({
   selectAgentIsResponding: {
     select: isRespondingMock,
   },
-}));
+  }));
 
-import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
+import {
+  openTerminalOverlay,
+  createTerminalRequested,
+} from "$lib/store/slices/terminals/terminals-slice";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
-import { createTerminalRequested } from "$lib/store/slices/terminals/terminals-slice";
+
 import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
 import { openWorkspaceDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
 import {

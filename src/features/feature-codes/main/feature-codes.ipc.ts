@@ -1,4 +1,7 @@
-import { app, ipcMain } from 'electron';
+import {
+  app,
+  ipcMain,
+} from 'electron';
 import { FEATURE_CODES_CHANNELS } from '../../../shared/ipc/channels';
 import { featureCodesService } from './feature-codes.service';
 

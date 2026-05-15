@@ -2,7 +2,12 @@
  * Tests for MockSessionRegistry
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { MockSessionRegistry } from '../session-registry.mock';
 
 describe('MockSessionRegistry', () => {

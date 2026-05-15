@@ -2,12 +2,17 @@
  * Scripts saga — IPC listeners and initialization.
  */
 
-import { call, put, fork, takeLatest, select, type SagaGenerator } from "typed-redux-saga";
-import { createListenSyncChannel } from "$lib/store/utils/ipc-channel";
-import { take } from "typed-redux-saga";
-import { scriptsClient } from "$features/scripts/scripts.client";
-import { createDefaultRuntimeState } from "$features/scripts/types";
-import type { WorkspaceScript, ScriptRuntimeState } from "../scripts-types";
+import {
+  call,
+  put,
+  fork,
+  takeLatest,
+  type SagaGenerator,
+  take,
+} from 'typed-redux-saga';
+import { createListenSyncChannel } from '$lib/store/utils/ipc-channel';
+
+import { scriptsClient } from '$features/scripts/scripts.client';
 import type {
   ScriptStartedEvent,
   ScriptStoppedEvent,
@@ -15,7 +20,7 @@ import type {
   ScriptErrorEvent,
   ScriptUrlDetectedEvent,
   ScriptOutputLine,
-} from "../scripts-types";
+} from '../scripts-types';
 import {
   initializeScripts,
   refreshScripts,
@@ -25,8 +30,8 @@ import {
   setScriptOutput,
   updateRuntimeState,
   appendScriptOutput,
-} from "../scripts-slice";
-import { selectScriptsInitialized, selectWorkspaceScriptsInitialized } from "../scripts-selectors";
+} from '../scripts-slice';
+import { selectWorkspaceScriptsInitialized } from '../scripts-selectors';
 
 // ============================================================================
 // IPC Listener Sagas
@@ -37,14 +42,16 @@ function* watchScriptStarted(): SagaGenerator<void> {
   try {
     while (true) {
       const data = yield* take(channel);
-      yield* put(updateRuntimeState(data.workspaceId, data.scriptId, {
-        status: 'running',
-        pid: data.pid,
-        startedAt: data.startedAt,
-        exitCode: undefined,
-        stoppedAt: undefined,
-        error: undefined,
-      }));
+      yield* put(
+        updateRuntimeState(data.workspaceId, data.scriptId, {
+          status: 'running',
+          pid: data.pid,
+          startedAt: data.startedAt,
+          exitCode: undefined,
+          stoppedAt: undefined,
+          error: undefined,
+        }),
+      );
     }
   } finally {
     channel.close();
@@ -56,12 +63,14 @@ function* watchScriptStopped(): SagaGenerator<void> {
   try {
     while (true) {
       const data = yield* take(channel);
-      yield* put(updateRuntimeState(data.workspaceId, data.scriptId, {
-        status: 'exited',
-        exitCode: data.exitCode,
-        stoppedAt: data.stoppedAt,
-        pid: undefined,
-      }));
+      yield* put(
+        updateRuntimeState(data.workspaceId, data.scriptId, {
+          status: 'exited',
+          exitCode: data.exitCode,
+          stoppedAt: data.stoppedAt,
+          pid: undefined,
+        }),
+      );
     }
   } finally {
     channel.close();
@@ -90,9 +99,11 @@ function* watchScriptError(): SagaGenerator<void> {
   try {
     while (true) {
       const data = yield* take(channel);
-      yield* put(updateRuntimeState(data.workspaceId, data.scriptId, {
-        error: data.error,
-      }));
+      yield* put(
+        updateRuntimeState(data.workspaceId, data.scriptId, {
+          error: data.error,
+        }),
+      );
     }
   } finally {
     channel.close();
@@ -104,21 +115,24 @@ function* watchScriptUrlDetected(): SagaGenerator<void> {
   try {
     while (true) {
       const data = yield* take(channel);
-      yield* put(updateRuntimeState(data.workspaceId, data.scriptId, {
-        detectedUrl: data.url,
-      }));
+      yield* put(
+        updateRuntimeState(data.workspaceId, data.scriptId, {
+          detectedUrl: data.url,
+        }),
+      );
     }
   } finally {
     channel.close();
   }
 }
 
-
 // ============================================================================
 // Init & Refresh Handlers
 // ============================================================================
 
-function* handleInitializeScripts(action: ReturnType<typeof initializeScripts>): SagaGenerator<void> {
+function* handleInitializeScripts(
+  action: ReturnType<typeof initializeScripts>,
+): SagaGenerator<void> {
   const wsId = action.payload[0];
 
   // Check if already initialized for this workspace
@@ -131,16 +145,7 @@ function* handleInitializeScripts(action: ReturnType<typeof initializeScripts>):
   const response = yield* call([scriptsClient, scriptsClient.list], wsId);
 
   if (response.success && response.data) {
-    const scripts: Record<string, WorkspaceScript> = {};
-    const runtimeStates: Record<string, ScriptRuntimeState> = {};
-
-    for (const entry of response.data) {
-      const { runtime, ...scriptDef } = entry;
-      scripts[scriptDef.id] = scriptDef;
-      runtimeStates[scriptDef.id] = runtime;
-    }
-
-    yield* put(setScriptsData(wsId, scripts, runtimeStates));
+    yield* put(setScriptsData(wsId, response.data));
 
     // Fetch buffered output for non-idle scripts
     for (const entry of response.data) {
@@ -155,9 +160,10 @@ function* handleInitializeScripts(action: ReturnType<typeof initializeScripts>):
             const lines: ScriptOutputLine[] = outputResponse.lines.map((line) => ({
               text: line.text,
               stream: line.stream,
-              timestamp: typeof line.timestamp === 'number'
-                ? new Date(line.timestamp).toISOString()
-                : String(line.timestamp),
+              timestamp:
+                typeof line.timestamp === 'number'
+                  ? new Date(line.timestamp).toISOString()
+                  : String(line.timestamp),
             }));
             yield* put(setScriptOutput(wsId, entry.id, lines));
           }
@@ -178,16 +184,7 @@ function* handleRefreshScripts(action: ReturnType<typeof refreshScripts>): SagaG
   const response = yield* call([scriptsClient, scriptsClient.list], wsId);
 
   if (response.success && response.data) {
-    const scripts: Record<string, WorkspaceScript> = {};
-    const runtimeStates: Record<string, ScriptRuntimeState> = {};
-
-    for (const entry of response.data) {
-      const { runtime, ...scriptDef } = entry;
-      scripts[scriptDef.id] = scriptDef;
-      runtimeStates[scriptDef.id] = runtime;
-    }
-
-    yield* put(setScriptsData(wsId, scripts, runtimeStates));
+    yield* put(setScriptsData(wsId, response.data));
   }
 }
 

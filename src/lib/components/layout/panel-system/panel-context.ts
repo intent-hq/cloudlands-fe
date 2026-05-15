@@ -10,7 +10,10 @@
  * - In child components: const ctx = getContext<PanelContext>(PANEL_CONTEXT_KEY)
  */
 
-import { getContext, setContext } from 'svelte';
+import {
+  getContext,
+  setContext,
+} from 'svelte';
 
 export const PANEL_CONTEXT_KEY = Symbol('panel-context');
 

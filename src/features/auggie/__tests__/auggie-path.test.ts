@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // Mock logger before importing the module under test
 vi.mock('../../../shared/logger', () => ({
@@ -52,7 +59,10 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-import { getEnhancedPath, findAuggieInEnhancedPath } from '../main/auggie-path';
+import {
+  getEnhancedPath,
+  findAuggieInEnhancedPath,
+} from '../main/auggie-path';
 import { findBinary } from '../../../shared/main/find-binary';
 
 describe('getEnhancedPath — empty segment filtering', () => {

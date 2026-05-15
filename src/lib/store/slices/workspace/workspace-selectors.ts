@@ -1,10 +1,17 @@
 import type { PullRequestInfo, Workspace } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { createSelector } from "../../utils/create-selector";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import { type WorkspaceRecencyState } from "./workspace-slice";
 import { selectIsNewlyCreatedWorkspace } from "../workspace-agents/workspace-agents-selectors";
-import { selectCurrentStagedWorkingChanges, selectCurrentUnstagedWorkingChanges, selectFileTrackingCommits } from "../changes/changes-selectors";
+import {
+  selectCurrentStagedWorkingChanges,
+  selectCurrentUnstagedWorkingChanges,
+  selectFileTrackingCommits,
+} from "../changes/changes-selectors";
 import { selectGitStatus } from "../git/git-selectors";
 
 export const selectActiveWorkspaceId = createSelector((state) => {

@@ -16,11 +16,11 @@
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
   import {
-    selectWorkspaceInitializerBranchByRepo,
-    selectWorkspaceInitializerDefaultParentPath,
-    selectWorkspaceInitializerHydrated,
-    selectWorkspaceInitializerLastSelectedRepo,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  selectWorkspaceInitializerBranchByRepo,
+  selectWorkspaceInitializerDefaultParentPath,
+  selectWorkspaceInitializerHydrated,
+  selectWorkspaceInitializerLastSelectedRepo,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
 
   const logger = createLogger('ProjectPickerMessage');

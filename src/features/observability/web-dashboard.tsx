@@ -6,7 +6,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AgentEvent, AgentEventType, EventFilter } from './event-collector';
+import {
+  AgentEvent,
+  AgentEventType,
+  EventFilter,
+} from './event-collector';
 import { formatDistanceToNow } from 'date-fns';
 import {
   LineChart,

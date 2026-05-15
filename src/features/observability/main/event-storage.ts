@@ -7,7 +7,11 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
-import { AgentEvent, AgentEventFilter, AgentEventType } from '../event-collector';
+import {
+  AgentEvent,
+  AgentEventFilter,
+  AgentEventType,
+} from '../event-collector';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('EventStorage');

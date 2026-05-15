@@ -13,12 +13,12 @@
   //
   // By returning plain AnimationConfig objects, Svelte takes the non-deferred
   // code path which uses safe no-op handlers.
-   
+
   function send(node: Element, _params: { key: any }) {
     return scale(node, { duration: 150, start: 0.97, easing: quintOut });
   }
 
-   
+
   function receive(node: Element, _params: { key: any }) {
     return scale(node, { duration: 150, start: 0.97, easing: quintOut });
   }

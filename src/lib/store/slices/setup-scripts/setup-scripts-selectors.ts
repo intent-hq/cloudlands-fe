@@ -1,4 +1,7 @@
-import { createSelector, createCollectionItemSelector } from "../../utils/create-selector";
+import {
+  createSelector,
+  createCollectionItemSelector,
+} from "../../utils/create-selector";
 import { getItems } from "../../utils/collection-utils";
 import type { SetupScript } from "./setup-scripts-types";
 

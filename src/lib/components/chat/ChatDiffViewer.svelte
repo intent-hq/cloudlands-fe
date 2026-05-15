@@ -8,7 +8,10 @@
   import { DiffViewer } from '$lib/components/ui/diff';
   import type { DiffAction } from '$lib/components/ui/diff';
   import { toast } from 'svelte-sonner';
-  import { track, getFileExtension } from '$lib/services/analytics';
+  import {
+  track,
+  getFileExtension,
+} from '$lib/services/analytics';
 
   interface Props {
     diff: string;

@@ -5,23 +5,26 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faTerminal,
-    faPlay,
-    faArrowUpRightFromSquare,
-    faCheck,
-    faTimes,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { invoke, listenSync } from '$lib/electron-bridge';
+  faTerminal,
+  faPlay,
+  faArrowUpRightFromSquare,
+  faCheck,
+  faTimes,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  invoke,
+  listenSync,
+} from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { onDestroy } from 'svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    openAgentTabRequested,
-    openTerminalTabRequested,
-  } from '$lib/store/slices/app-layout/app-layout-slice';
+  openAgentTabRequested,
+  openTerminalTabRequested,
+} from '$lib/store/slices/app-layout/app-layout-slice';
 
   const logger = createLogger('CliBlock');
 

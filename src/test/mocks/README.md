@@ -8,7 +8,6 @@ This directory contains production-quality mock implementations of core services
 
 - **MockStreamManager** - Simulates streaming message accumulation
 - **MockPersistenceService** - In-memory session and message storage
-- **MockAgentService** - Agent lifecycle and message management
 - **MockSessionRegistry** - Frontend-backend session mapping
 
 ## Quick Start
@@ -28,7 +27,7 @@ describe('My Test', () => {
   });
 
   it('should work with mocks', async () => {
-    // Use env.streaming, env.persistence, env.agentService, env.sessionRegistry
+    // Use env.streaming, env.persistence, and env.sessionRegistry
   });
 });
 ```
@@ -86,31 +85,6 @@ const loaded = await env.persistence.loadSession("agent-1", "workspace-1");
 - `getLoadHistory()` - Get load history
 - `clear(): void` - Clear all data
 
-## MockAgentService
-
-Agent lifecycle and message management.
-
-```typescript
-const agent = await env.agentService.createAgent({
-  name: 'Test Agent',
-  model: 'claude-opus',
-});
-await env.agentService.sendMessage(agent.id, 'Hello');
-const messages = await env.agentService.getMessages(agent.id);
-```
-
-**Methods:**
-
-- `createAgent(options?): Promise<AgentSession>`
-- `getAgent(agentId): Promise<AgentSession | null>`
-- `listAgents(workspaceId?): Promise<AgentSession[]>`
-- `deleteAgent(agentId): Promise<void>`
-- `sendMessage(agentId, content): Promise<AgentMessage>`
-- `getMessages(agentId): Promise<AgentMessage[]>`
-- `addMessage(agentId, message): Promise<void>`
-- `getCallLog()` - Get method call history
-- `clear(): void` - Clear all data
-
 ## MockSessionRegistry
 
 Frontend-backend session mapping with status tracking.
@@ -138,15 +112,16 @@ Use `createMockEnvironment()` for complete integration tests:
 
 ```typescript
 it('should handle complete workflow', async () => {
-  const agent = await env.agentService.createAgent({ name: 'Agent' });
-  await env.sessionRegistry.registerSession(agent.id, agent.sessionId, 'ws-1');
+  const frontendId = 'agent-1';
+  const backendId = 'session-1';
+  await env.sessionRegistry.registerSession(frontendId, backendId, 'ws-1');
 
-  const streamId = env.streaming.startStream(agent.id, agent.sessionId);
+  const streamId = env.streaming.startStream(frontendId, backendId);
   env.streaming.addChunk(streamId, 'Response');
   const message = await env.streaming.completeStream(streamId);
 
-  await env.persistence.saveMessage(message, agent.sessionId);
-  const messages = await env.persistence.loadMessages(agent.sessionId);
+  await env.persistence.saveMessage(message, backendId);
+  const messages = await env.persistence.loadMessages(backendId);
 
   expect(messages).toHaveLength(1);
 });
@@ -157,24 +132,15 @@ it('should handle complete workflow', async () => {
 ### Verify Call History
 
 ```typescript
-const log = env.agentService.getCallLog();
-expect(log.some((l) => l.method === 'createAgent')).toBe(true);
+const log = env.sessionRegistry.getCallLog();
+expect(log.some((l) => l.method === 'registerSession')).toBe(true);
 ```
 
 ### Test Error Scenarios
 
 ```typescript
-const agent = await env.agentService.getAgent('non-existent');
-expect(agent).toBeNull();
-```
-
-### Multi-Agent Scenarios
-
-```typescript
-const agent1 = await env.agentService.createAgent({ name: 'Agent 1' });
-const agent2 = await env.agentService.createAgent({ name: 'Agent 2' });
-const agents = await env.agentService.listAgents();
-expect(agents).toHaveLength(2);
+const session = await env.sessionRegistry.getSession('non-existent');
+expect(session).toBeNull();
 ```
 
 ## Best Practices
@@ -189,7 +155,6 @@ expect(agents).toHaveLength(2);
 
 - `streaming.mock.ts` - MockStreamManager implementation
 - `persistence.mock.ts` - MockPersistenceService implementation
-- `agent-service.mock.ts` - MockAgentService implementation
 - `session-registry.mock.ts` - MockSessionRegistry implementation
 - `index.ts` - Central exports and factories
-- `__tests__/` - Comprehensive test suite (54 tests)
+- `__tests__/` - Mock test suite

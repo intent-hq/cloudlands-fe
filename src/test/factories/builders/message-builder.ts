@@ -7,7 +7,10 @@
 import { faker } from '@faker-js/faker';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import type { AgentMessage, ContentBlock, ToolCall } from '$shared/types';
-import { createTestContentBlock, createTestToolUseBlock } from '../agent.factory';
+import {
+  createTestContentBlock,
+  createTestToolUseBlock,
+} from '../agent.factory';
 
 export class MessageBuilder {
   private message: AgentMessage;

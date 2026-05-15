@@ -128,7 +128,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     ContextPicker: LogLevel.WARN,
     BranchSelector: LogLevel.WARN,
     ChatPanel: LogLevel.WARN,
-    ChatService: LogLevel.WARN,
     NoteWithComments: LogLevel.WARN,
     PanelLayoutManager: LogLevel.WARN,
     PanelContentRenderer: LogLevel.WARN,

@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
 const { mockRpcClient, mockFs } = vi.hoisted(() => {

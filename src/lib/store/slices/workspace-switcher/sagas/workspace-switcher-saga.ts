@@ -1,8 +1,18 @@
 import { goto } from "$app/navigation";
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import { END, eventChannel, type EventChannel } from "redux-saga";
-import { call, fork, put, take, type SagaGenerator } from "typed-redux-saga";
+import {
+  END,
+  eventChannel,
+  type EventChannel,
+} from "redux-saga";
+import {
+  call,
+  fork,
+  put,
+  take,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { openWorkspaceRequested } from "../../workspace/workspace-slice";
 import {
   selectActiveWorkspaceId,

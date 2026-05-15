@@ -7,7 +7,12 @@ import {
 } from "$lib/store/slices/global-modals/global-modals-slice";
 import { selectHasShownGitCredentialsModalForWorkspace } from "$lib/store/slices/global-modals/global-modals-selectors";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
-import { call, fork, put, select } from "typed-redux-saga";
+import {
+  call,
+  fork,
+  put,
+  select,
+} from "typed-redux-saga";
 
 type GitAuthRequiredEvent = GitCredentialsModalError & {
   remote?: string;

@@ -1,8 +1,13 @@
 import type { StoreState } from "../../types";
 import { createSelector } from "../../utils/create-selector";
-import { AgentStatus, type AgentSession, type AgentMessage, type QueuedMessage } from "$shared/types";
+import {
+  AgentStatus,
+  type AgentSession,
+  type AgentMessage,
+  type QueuedMessage,
+} from "$shared/types";
 import { AgentActivationState } from "$shared/types/agent-session";
-import { getItem, getItems } from "../../utils/collection-utils";
+import { getContentBlockText } from "$shared/utils/content-block-helpers";
 import type { StoredAgentSession } from "./agent-session-types";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
 
@@ -11,30 +16,17 @@ import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
 // ============================================================================
 
 /**
- * Memoize materialized sessions keyed on their stored (Collection-backed)
- * reference. As long as the reducer does not replace the stored entry, callers
- * that go through `materializeSession` (e.g. `selectAgentSession.select`)
- * receive the same object reference — preserving reference-equality guarantees
- * that subscription layers rely on for dedup.
+ * Stored sessions already mirror the public `AgentSession` message-array shape.
+ * Returning the stored reference preserves selector reference-equality when the
+ * reducer keeps the session object unchanged.
  */
-const materializedCache = new WeakMap<StoredAgentSession, AgentSession>();
-
-/**
- * Materialize the stored (Collection-backed) session shape back to the
- * public `AgentSession` shape expected by callers — specifically, `messages`
- * as an ordered array.
- */
-function materializeSession(stored: StoredAgentSession | undefined): AgentSession | null {
-  if (!stored) return null;
-  const cached = materializedCache.get(stored);
-  if (cached) return cached;
-  const materialized: AgentSession = { ...stored, messages: getItems(stored.messages) };
-  materializedCache.set(stored, materialized);
-  return materialized;
+function materializeSession(stored: StoredAgentSession | undefined): AgentSession | undefined {
+  if (!stored) return undefined;
+  return stored;
 }
 
 function getLatestAssistantMessage(stored: StoredAgentSession): AgentMessage | undefined {
-  const messages = getItems(stored.messages);
+  const messages = stored.messages;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'assistant') return messages[i];
   }
@@ -49,6 +41,43 @@ function hasTerminalMessageMetadata(message: AgentMessage | undefined): boolean 
 function isStreamingMessage(message: AgentMessage | undefined): boolean {
   if (hasTerminalMessageMetadata(message)) return false;
   return message?.isStreaming === true || message?.streamingComplete === false;
+}
+
+function getCurrentStreamingAssistantMessage(stored: StoredAgentSession): AgentMessage | undefined {
+  const messages = stored.messages;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === 'assistant' && isStreamingMessage(message)) return message;
+  }
+
+  const latestMessage = messages[messages.length - 1];
+  if (
+    stored.isStreaming === true &&
+    latestMessage?.role === 'assistant' &&
+    !hasTerminalMessageMetadata(latestMessage)
+  ) {
+    return latestMessage;
+  }
+
+  return undefined;
+}
+
+function getCurrentStreamingText(message: AgentMessage | undefined): string {
+  const contentBlocks = message?.contentBlocks ?? [];
+  let lastToolUseIndex = -1;
+  for (let i = contentBlocks.length - 1; i >= 0; i--) {
+    if (contentBlocks[i].type === 'tool_use') {
+      lastToolUseIndex = i;
+      break;
+    }
+  }
+
+  let streamingText = '';
+  for (let i = lastToolUseIndex + 1; i < contentBlocks.length; i++) {
+    const block = contentBlocks[i];
+    if (block.type === 'text') streamingText += getContentBlockText(block);
+  }
+  return streamingText;
 }
 
 function hasUnresolvedToolUse(message: AgentMessage | undefined): boolean {
@@ -126,8 +155,8 @@ function isActiveAgentThread(stored: StoredAgentSession): boolean {
 
 /** Select a single agent session by agentId */
 export const selectAgentSession = createSelector(
-  (state: StoreState, agentId?: string): AgentSession | null => {
-    if (!agentId) return null;
+  (state: StoreState, agentId?: string): AgentSession | undefined => {
+    if (!agentId) return undefined;
     return materializeSession(state.agentSessions?.byAgentId[agentId]);
   },
 );
@@ -148,7 +177,7 @@ export const selectAgentSessionsByIds = createSelector(
 export const selectAgentMessages = createSelector(
   (state: StoreState, agentId: string): AgentMessage[] => {
     const stored = state.agentSessions?.byAgentId[agentId];
-    return stored ? getItems(stored.messages) : [];
+    return stored ? stored.messages : [];
   },
 );
 
@@ -158,27 +187,14 @@ export const selectAgentMessages = createSelector(
  * subscribe via this selector stay in sync during streaming updates instead
  * of depending on a possibly-stale prop.
  *
- * O(1) Collection lookup via `getItem`.
+ * Bounded lookup over the stored ordered message list.
  */
 export const selectAgentMessageById = createSelector(
   (state: StoreState, agentId: string, messageId: string): AgentMessage | undefined => {
     if (!agentId || !messageId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return undefined;
-    return getItem(stored.messages, messageId);
-  },
-);
-
-/** Select all agent sessions across all workspaces */
-export const selectAllAgentSessions = createSelector(
-  (state: StoreState): AgentSession[] => {
-    const byAgentId = state.agentSessions?.byAgentId ?? {};
-    const result: AgentSession[] = [];
-    for (const id of Object.keys(byAgentId)) {
-      const materialized = materializeSession(byAgentId[id]);
-      if (materialized) result.push(materialized);
-    }
-    return result;
+    return stored.messages.find((message) => message.id === messageId);
   },
 );
 
@@ -189,6 +205,52 @@ export const selectAllAgentSessions = createSelector(
 export const selectAgentSessionIsProcessing = createSelector(
   (state: StoreState, agentId: string): boolean =>
     state.agentSessions?.byAgentId[agentId]?.isProcessing === true,
+);
+
+/** Select the raw session streaming flag. */
+export const selectAgentSessionIsStreaming = createSelector(
+  (state: StoreState, agentId: string): boolean =>
+    state.agentSessions?.byAgentId[agentId]?.isStreaming === true,
+);
+
+/**
+ * Select the currently visible streaming assistant text from canonical
+ * agent-session messages. Text before the latest tool_use belongs to a previous
+ * segment, so tool-use boundaries clear the transient visible streaming text
+ * without removing persisted content blocks from the assistant message.
+ */
+export const selectAgentSessionStreamingContent = createSelector(
+  (state: StoreState, agentId: string): string => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return '';
+    return getCurrentStreamingText(getCurrentStreamingAssistantMessage(stored));
+  },
+);
+
+/** Select the workspace ID for a given agent session. */
+export const selectAgentSessionWorkspaceId = createSelector(
+  (state: StoreState, agentId: string): AgentSession['workspaceId'] | undefined =>
+    state.agentSessions?.byAgentId[agentId]?.workspaceId,
+);
+
+/** Select whether a session exists for a given agent. */
+export const selectAgentSessionExists = createSelector(
+  (state: StoreState, agentId: string): boolean =>
+    state.agentSessions?.byAgentId[agentId] !== undefined,
+);
+
+/**
+ * Select whether first-send activation has reached a terminal store state.
+ * Active/backed sessions are ready to send; activation errors are terminal so
+ * callers can surface the stored activation error instead of waiting forever.
+ */
+export const selectAgentActivationWaitComplete = createSelector(
+  (state: StoreState, agentId: string): boolean => {
+    const session = state.agentSessions?.byAgentId[agentId];
+    if (!session) return false;
+    if (session.activationState === AgentActivationState.ERROR) return true;
+    return session.status !== AgentStatus.Pending && !!session.backendSessionId;
+  },
 );
 
 /**

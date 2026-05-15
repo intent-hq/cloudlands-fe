@@ -9,7 +9,14 @@
  * - Interruption handling
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 
 // workspace-event-bus was deleted; event delivery is now handled by Redux sagas
 
@@ -23,7 +30,10 @@ vi.mock('$shared/logger', () => ({
 }));
 
 // Mock the Redux store bridge for agent-subscription-ops
-import { agentSubscriptionsReducer, initialState as sliceInitialState } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+import {
+  agentSubscriptionsReducer,
+  initialState as sliceInitialState,
+} from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
 let _state = { agentSubscriptions: { ...sliceInitialState } } as any;
 vi.mock('../../../store/main/redux-store-bridge', () => ({
   getMainState: () => _state,

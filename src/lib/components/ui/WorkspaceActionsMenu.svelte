@@ -29,19 +29,23 @@
   import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
-  import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
+  import {
+  isAbsolutePath,
+  toNativePath,
+  isWindowsPlatform,
+} from '$lib/utils/path-utils';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-    faBoxArchive,
-    faBoxOpen,
-    faCode,
-    faFile,
-    faFolder,
-    faSpinner,
-    faTerminal,
-    faTrash,
-    faUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faBoxArchive,
+  faBoxOpen,
+  faCode,
+  faFile,
+  faFolder,
+  faSpinner,
+  faTerminal,
+  faTrash,
+  faUpRightFromSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
@@ -117,7 +121,6 @@
   });
 
   // Get installed editors for dynamic menu
-  const installedEditors = $derived($installedEditors$);
 
   // Resolve the absolute path
   $effect(() => {
@@ -577,7 +580,7 @@
   {#if showFileActions}
     <!-- Open Actions - dynamically rendered based on installed editors -->
     <div class="space-y-0.5">
-      {#each installedEditors as editor (editor.id)}
+      {#each $installedEditors$ as editor (editor.id)}
         {@const IconComponent = EDITOR_ICONS[editor.id]}
         <Button
           variant="ghost"

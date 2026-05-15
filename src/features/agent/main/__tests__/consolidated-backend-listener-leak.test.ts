@@ -15,7 +15,14 @@
  * the SIGTERM/SIGINT listener count on process grows unboundedly.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // Mock all heavy dependencies so we can instantiate ConsolidatedBackendService in isolation.
 

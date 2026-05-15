@@ -1,7 +1,18 @@
 import type { Task } from "redux-saga";
-import { cancel, call, fork, put, select, takeEvery } from "typed-redux-saga";
+import {
+  cancel,
+  call,
+  fork,
+  put,
+  select,
+  takeEvery,
+} from "typed-redux-saga";
 import type { ReviewStatus } from "$lib/components/code-review/types";
-import { ChangeStage, type DiffHunk, type TrackedChange } from "$features/file-tracking/types";
+import {
+  ChangeStage,
+  type DiffHunk,
+  type TrackedChange,
+} from "$features/file-tracking/types";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,

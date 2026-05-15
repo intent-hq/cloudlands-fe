@@ -8,7 +8,14 @@
  * agent-subscriptions-saga.test.ts.
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  afterEach,
+} from 'vitest';
 
 // Mock logger
 vi.mock('$shared/logger', () => ({
@@ -21,7 +28,10 @@ vi.mock('$shared/logger', () => ({
 }));
 
 // Set up in-memory Redux store
-import { agentSubscriptionsReducer, initialState as sliceInitialState } from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+import {
+  agentSubscriptionsReducer,
+  initialState as sliceInitialState,
+} from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
 let _state = { agentSubscriptions: { ...sliceInitialState } } as any;
 vi.mock('../../../../../store/main/redux-store-bridge', () => ({
   getMainState: () => _state,
@@ -39,7 +49,10 @@ import {
   agentUnsubscribe,
   updateAgentStatus,
 } from '$features/events/main/agent-subscription-ops';
-import { selectAgentQueueLength, selectAgentStatus } from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import {
+  selectAgentQueueLength,
+  selectAgentStatus,
+} from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import { getMainState } from '../../../../../store/main/redux-store-bridge';
 
 describe('Agent Interaction Integration', () => {

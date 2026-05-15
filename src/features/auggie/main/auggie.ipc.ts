@@ -1,7 +1,10 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { ipcMain } from 'electron';
-import { existsSync, readdirSync } from 'fs';
+import {
+  existsSync,
+  readdirSync,
+} from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -12,7 +15,11 @@ import {
   MINIMUM_AUGGIE_VERSION,
   MINIMUM_NODE_VERSION,
 } from '../../../shared/constants/auggie';
-import { execAsync, execAsyncWithRetry, execFileAsyncWithRetry } from '../../../shared/git/git-env';
+import {
+  execAsync,
+  execAsyncWithRetry,
+  execFileAsyncWithRetry,
+} from '../../../shared/git/git-env';
 
 const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';

@@ -9,11 +9,17 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import type { WorkspaceId, NoteId, NoteComment } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
-import { validateCommentsData, safeValidateCommentsData } from '../../../shared/schemas';
+import {
+  validateCommentsData,
+  safeValidateCommentsData,
+} from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { STORAGE_FILES } from '../../notes/main/storage/note-storage.types';
-import { fsyncFile, fsyncDir } from '../../../shared/main/file-sync-utils';
+import {
+  fsyncFile,
+  fsyncDir,
+} from '../../../shared/main/file-sync-utils';
 
 const { FileReadError, FileWriteError, CommentNotFoundError } = Errors;
 

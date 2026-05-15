@@ -5,7 +5,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { Readable } from 'stream';
 import { gzipSync } from 'zlib';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   userData: '',

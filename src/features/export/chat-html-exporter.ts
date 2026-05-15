@@ -1,5 +1,8 @@
 import type { AgentMessage } from '$shared/types';
-import { renderContentBlock, escapeHtml } from './content-renderer';
+import {
+  renderContentBlock,
+  escapeHtml,
+} from './content-renderer';
 import { getHtmlTemplate } from './html-template';
 
 /**

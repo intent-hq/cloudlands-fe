@@ -33,11 +33,11 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for memory leaks in streaming handlers...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServicePath = path.join(__dirname, '../src/features/agent/utils/stream-handler-registry.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for event listener cleanup
-      const hasRemoveEventListener = content.includes('removeEventListener') || content.includes('off(');
+      const hasRemoveEventListener = content.includes('removeEventListener') || content.includes('off(') || content.includes('offById');
       const hasCleanup = content.includes('cleanup') || content.includes('destroy') || content.includes('dispose');
 
       if (!hasRemoveEventListener) {
@@ -64,7 +64,7 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for race conditions in concurrent streams...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check if stream IDs are properly isolated
@@ -165,7 +165,7 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for potential infinite loops...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for recursive calls without exit conditions
@@ -254,7 +254,7 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for proper message ordering...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for ordering logic
@@ -285,15 +285,16 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for duplicate message prevention...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServicePath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for duplicate prevention
       const hasIdCheck = content.includes('id ===') || content.includes('id !==');
       const hasSet = content.includes('Set<') || content.includes('new Set');
       const hasFind = content.includes('.find(') && content.includes('id');
+      const hasDedup = content.includes('deduplicateAgentMessages');
 
-      if (!hasIdCheck && !hasSet && !hasFind) {
+      if (!hasIdCheck && !hasSet && !hasFind && !hasDedup) {
         this.issues.push('No duplicate prevention logic found - could show duplicate messages');
         return false;
       }

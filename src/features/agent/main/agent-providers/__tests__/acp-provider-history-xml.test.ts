@@ -6,7 +6,11 @@
  * truncation, content block rendering, and structural correctness.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   escapeXml,
   safeStringify,

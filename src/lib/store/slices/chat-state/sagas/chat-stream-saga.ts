@@ -1,23 +1,36 @@
 /**
  * Chat Stream Saga
  *
- * Manages the streaming lifecycle that was previously handled by ChatService
+ * Manages the streaming lifecycle that was previously handled by chat service
  * instance fields and methods:
  *
- * - Stream handler registration/cleanup (DOM event listeners)
- * - Session-updated handler registration/cleanup
  * - Stream timeout management
- * - Online/offline connection monitoring
  *
- * Non-serializable state (function refs, timer handles) lives in the
- * chat-stream-registry module, NOT in Redux state.
+ * Non-serializable timer handles live in the chat-stream-registry module,
+ * NOT in Redux state.
  */
 
-import { call, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import type { Task } from 'redux-saga';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
 import {
-  cleanupStreamRequested,
+  streamStatusReceived,
+  streamTimedOut,
 } from '../chat-state-slice';
+import {
+  selectAgentSessionExists,
+  selectAgentSessionIsStreaming,
+  selectAgentSessionWorkspaceId,
+} from '../../agent-session/agent-session-selectors';
+import { setAgentStreaming } from '../../agent-session/agent-session-slice';
+import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-slice';
 import * as registry from '../chat-stream-registry';
 
 const logger = createLogger('ChatStreamSaga');
@@ -26,50 +39,31 @@ const logger = createLogger('ChatStreamSaga');
 // chat-lifecycle-saga.ts (watchConnectionChange). Not duplicated here.
 
 // ============================================================================
-// Cleanup Streaming — saga handler
+// Canonical stream updates — saga-owned runtime effects only
 // ============================================================================
 
-function* handleCleanupStream(
-  action: ReturnType<typeof cleanupStreamRequested>,
+function* handleAgentStreamUpdateRuntimeEffects(
+  action: ReturnType<typeof agentStreamUpdateReceived>,
 ): SagaGenerator<void> {
-  const [sessionId, preserveContent] = action.payload;
-
-  logger.debug('cleanupStreamRequested received', { sessionId, preserveContent });
-
-  // Perform registry cleanup
-  yield* call(cleanupStreamFromRegistry, sessionId, preserveContent);
+  const [payload] = action.payload;
+  if (
+    payload.eventType === 'started' ||
+    payload.eventType === 'chunk' ||
+    payload.eventType === 'content-blocks'
+  ) {
+    yield* rearmStreamTimeout(payload.handlerSessionId, payload.agentId);
+    return;
+  }
+  if (
+    payload.eventType === 'complete' ||
+    payload.eventType === 'error' ||
+    payload.eventType === 'timeout'
+  ) {
+    yield* clearStreamTimeout(payload.handlerSessionId);
+  }
 }
 
-
-
-/**
- * Clean up stream state from the registry.
- * Extracted from ChatService.cleanupStream().
- *
- * The DOM listener removal and agentService interaction still happen
- * in ChatService (which calls registry accessors). This function
- * handles the registry-level cleanup for cases where the saga
- * directly triggers cleanup.
- */
- 
-function cleanupStreamFromRegistry(sessionId: string, _preserveContent: boolean): void {
-  // 1. Remove stream handler
-  const handler = registry.getStreamHandler(sessionId);
-  if (handler) {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener(`agent:stream:${sessionId}`, handler);
-    }
-    registry.deleteStreamHandler(sessionId);
-  }
-
-  // 2. Remove session-updated cleanup
-  const sessionUpdatedCleanup = registry.getSessionUpdatedCleanup(sessionId);
-  if (sessionUpdatedCleanup) {
-    sessionUpdatedCleanup();
-    registry.deleteSessionUpdatedCleanup(sessionId);
-  }
-
-  // 3. Clear timeout
+function cancelStreamTimeoutFromRegistry(sessionId: string): void {
   const timeout = registry.getStreamTimeout(sessionId);
   if (timeout) {
     timeout.cleanup();
@@ -77,42 +71,40 @@ function cleanupStreamFromRegistry(sessionId: string, _preserveContent: boolean)
   }
 }
 
-// ============================================================================
-// Dispose All — called on ChatService destroy
-// ============================================================================
+function* backendStreamTimeoutLoop(sessionId: string, agentId: string): SagaGenerator<void> {
+  yield* delay(registry.STREAM_TIMEOUT_MS);
 
-/**
- * Clean up all stream-related registry state.
- * Replaces the cleanup logic in ChatService.destroy().
- */
-export function disposeAllChatStreamState(): void {
-  // Clean up DOM stream handlers
-  if (typeof window !== 'undefined') {
-    registry.forEachStreamHandler((handler, sessionId) => {
-      window.removeEventListener(`agent:stream:${sessionId}`, handler);
-    });
+  const isStreaming = yield* selectAgentSessionIsStreaming.effect(agentId);
+  const hasSession = yield* selectAgentSessionExists.effect(agentId);
+  const currentWorkspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+
+  if (isStreaming && hasSession) {
+    logger.warn('Stream timeout - cleaning up', { sessionId });
+    if (currentWorkspaceId) {
+      yield* put(setAgentStreaming(agentId, false));
+    }
+    yield* put(streamTimedOut(agentId));
   }
-  registry.clearAllStreamHandlers();
 
-  // Clean up session-updated handlers
-  registry.forEachSessionUpdatedCleanup((cleanup) => {
-    cleanup();
-  });
-  registry.clearAllSessionUpdatedCleanups();
+  registry.deleteStreamTimeout(sessionId);
+}
 
-  // Clean up timeouts
-  registry.forEachStreamTimeout((timeout) => {
-    timeout.cleanup();
-  });
-  registry.clearAllStreamTimeouts();
+function* rearmStreamTimeout(sessionId: string, agentId: string): SagaGenerator<void> {
+  yield* call(cancelStreamTimeoutFromRegistry, sessionId);
+  const task: Task = yield* fork(backendStreamTimeoutLoop, sessionId, agentId);
+  registry.setStreamTimeout(sessionId, { cleanup: () => task.cancel() });
+}
 
-  // Clean up connection handler
-  const connHandler = registry.getConnectionHandler();
-  if (connHandler && typeof window !== 'undefined') {
-    window.removeEventListener('online', connHandler);
-    window.removeEventListener('offline', connHandler);
-  }
-  registry.setConnectionHandler(null);
+function* clearStreamTimeout(sessionId: string): SagaGenerator<void> {
+  yield* call(cancelStreamTimeoutFromRegistry, sessionId);
+}
+
+function* handleStreamStatusRuntimeEffects(
+  action: ReturnType<typeof streamStatusReceived>,
+): SagaGenerator<void> {
+  const [agentId, , , context] = action.payload;
+  if (!context?.sessionId) return;
+  yield* rearmStreamTimeout(context.sessionId, agentId);
 }
 
 // ============================================================================
@@ -120,5 +112,6 @@ export function disposeAllChatStreamState(): void {
 // ============================================================================
 
 export function* chatStreamSaga(): SagaGenerator<void> {
-  yield* takeEvery(cleanupStreamRequested, handleCleanupStream);
+  yield* takeEvery(agentStreamUpdateReceived, handleAgentStreamUpdateRuntimeEffects);
+  yield* takeEvery(streamStatusReceived, handleStreamStatusRuntimeEffects);
 }

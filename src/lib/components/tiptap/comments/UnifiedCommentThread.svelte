@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowUp,
+  faAt,
+  faPaperclip,
+} from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
   import Fa from 'svelte-fa';
@@ -9,8 +13,14 @@
   import { Button } from '$lib/components/ui/button';
   import { slide } from 'svelte/transition';
 
-  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
-  import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+  import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+} from '$lib/utils/markdown-processor';
+  import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
   import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
 

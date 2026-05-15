@@ -9,7 +9,11 @@
  * - File download functionality
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { ContentBlock } from '$shared/types/content-block.ts';
 
 describe('File Handling in Chat Messages', () => {

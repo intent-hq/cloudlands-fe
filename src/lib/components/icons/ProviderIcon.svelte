@@ -15,7 +15,10 @@
   import GitHubIcon from './GitHubIcon.svelte';
   import SentryIcon from './SentryIcon.svelte';
   import Fa from 'svelte-fa';
-  import { faGlobe, faFileAlt } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faGlobe,
+  faFileAlt,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     /** Provider type */

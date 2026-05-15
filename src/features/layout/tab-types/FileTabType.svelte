@@ -8,26 +8,32 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectFileContent,
-    selectFileError,
-    selectFileIsBinary,
-    selectFileIsDirty,
-    selectFileLoading,
-    selectFileSaving,
-  } from '$lib/store/slices/files/files-selectors';
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import {
-    loadFileContentRequested,
-    saveFileContentRequested,
-    updateFileContent,
-  } from '$lib/store/slices/files/files-slice';
+  selectFileContent,
+  selectFileError,
+  selectFileIsBinary,
+  selectFileIsDirty,
+  selectFileLoading,
+  selectFileSaving,
+} from '$lib/store/slices/files/files-selectors';
+  import {
+  loadFileContentRequested,
+  saveFileContentRequested,
+  updateFileContent,
+} from '$lib/store/slices/files/files-slice';
   import { selectFileTrackingChanges } from '$lib/store/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { invoke } from '$lib/electron-bridge';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
-  import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
+  import {
+  parseHunksToLineChanges,
+  type LineChange,
+} from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
@@ -36,28 +42,31 @@
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
   import {
-    selectLineWrapping,
-    selectDiffIndicators,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectLineWrapping,
+  selectDiffIndicators,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    toggleLineWrapping,
-    toggleDiffIndicators,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  toggleLineWrapping,
+  toggleDiffIndicators,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
+
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-    faPaintbrush,
-    faTextWidth,
-    faPencil,
-    faTrash,
-    faEye,
-    faCode,
-  } from '@fortawesome/free-solid-svg-icons';
+  faPaintbrush,
+  faTextWidth,
+  faPencil,
+  faTrash,
+  faEye,
+  faCode,
+} from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
-  import { track, getFileExtension } from '$lib/services/analytics';
+  import {
+  track,
+  getFileExtension,
+} from '$lib/services/analytics';
   import { writable } from 'svelte/store';
 
   const lineWrapping = selectLineWrapping();

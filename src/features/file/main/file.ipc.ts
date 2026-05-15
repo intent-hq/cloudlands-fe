@@ -19,7 +19,10 @@ import {
 } from '../../../shared/binary-file-extensions';
 import { FILE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { type IpcResponse, FileIpc } from '$shared/ipc';
+import {
+  type IpcResponse,
+  FileIpc,
+} from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,

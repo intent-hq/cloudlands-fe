@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { faTerminal, faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faTerminal,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
 

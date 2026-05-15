@@ -9,14 +9,29 @@
   import { writable } from 'svelte/store';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import Fa from 'svelte-fa';
-  import { faPlus, faTerminal, faGlobe, faFile, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faTerminal,
+  faGlobe,
+  faFile,
+  faRobot,
+} from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+  dispatch,
+  getReduxStore,
+} from '$lib/store/redux-dispatch-bridge';
   import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
+  import {
+  SHORTCUTS,
+  formatShortcut,
+} from '$lib/utils/shortcuts';
   import { openPalette } from '$lib/store/slices/palette/palette-slice';
-  import { selectRecentlyClosed } from '$lib/store/slices/panel-layout/panel-layout-selectors';
-  import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import {
+  selectRecentlyClosed,
+  selectFocusedPanelId,
+} from '$lib/store/slices/panel-layout/panel-layout-selectors';
+
   import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
 
   interface Props {

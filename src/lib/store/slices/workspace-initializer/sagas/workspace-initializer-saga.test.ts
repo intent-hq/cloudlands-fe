@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import { resetOnboarding } from "$lib/store/slices/onboarding/onboarding-slice";

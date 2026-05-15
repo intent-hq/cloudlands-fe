@@ -27,7 +27,11 @@
  *
  * These effects automatically fork themselves, so you don't need to wrap them in fork().
  */
-import { take, cancel, fork } from "typed-redux-saga";
+import {
+  take,
+  cancel,
+  fork,
+} from "typed-redux-saga";
 import { END } from "redux-saga";
 import type { EventChannel, Task } from "redux-saga";
 import type { NotUndefined } from "@redux-saga/types";

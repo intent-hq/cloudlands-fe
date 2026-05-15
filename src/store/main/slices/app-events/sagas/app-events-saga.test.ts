@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   APP_EVENT_ACTION_MAP,
   APP_EVENT_TYPES,

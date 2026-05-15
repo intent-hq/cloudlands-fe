@@ -1,5 +1,9 @@
 import { setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   clearCurrentWorkspaceTab,
   cleanupInvalidWorkspaceTabs,
@@ -20,7 +24,10 @@ import {
   unmarkWorkspaceTabOptimistic,
   WORKSPACE_TABS_STORAGE_KEY,
 } from "../tab-state-slice";
-import { selectAllScrollPositions, selectPersistedWorkspaceTabsState } from "../tab-state-selectors";
+import {
+  selectAllScrollPositions,
+  selectPersistedWorkspaceTabsState,
+} from "../tab-state-selectors";
 
 export function* persistScrollPositionsState(): SagaGenerator<void> {
   const positions = yield* selectAllScrollPositions.effect();

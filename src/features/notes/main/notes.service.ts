@@ -5,7 +5,11 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
-import { ContentType, NoteVisibility, AuthorType } from '../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+  AuthorType,
+} from '../../../shared/types';
 import type {
   Note,
   NoteId,
@@ -24,19 +28,32 @@ export type { NoteComment, NoteCommentsData } from '../../../shared/types';
 import type { CommentsRepository } from '../../comments/main/comments.repository';
 import type { NotesRepository } from './notes.repository';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { noteCreated, noteUpdated, noteDeleted } from '../../../store/main/slices/note-events/note-events-slice';
+import {
+  noteCreated,
+  noteUpdated,
+  noteDeleted,
+} from '../../../store/main/slices/note-events/note-events-slice';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { FileSystemCommentsRepository } from '../../comments/main/comments.repository';
 import { FileSystemNotesRepository } from './notes.repository';
 import { Logger } from '../../../shared/logger';
-import { createNoteId, NoteId as NoteIdBrand } from '../../../shared/types/branded-ids';
+import {
+  createNoteId,
+  NoteId as NoteIdBrand,
+} from '../../../shared/types/branded-ids';
 import { trackMain } from '$lib/services/analytics/main';
 import { taskNoteLink } from '../../../shared/constants/intent-links';
 import { editEventsCapturer } from './edit-events.capturer';
 import { editEventsStore } from './edit-events.store';
-import { generateCommentId, isValidCommentId } from '$shared/utils/comment-id-generator';
+import {
+  generateCommentId,
+  isValidCommentId,
+} from '$shared/utils/comment-id-generator';
 import { getProvenanceContextManager } from '../../workspace/main/provenance/provenance-context-manager';
-import { createWorkspaceEvent, type EventActor } from '../../events/types';
+import {
+  createWorkspaceEvent,
+  type EventActor,
+} from '../../events/types';
 import { randomUUID } from 'crypto';
 import { recoverAllPartialAnchors } from '../../comments/markdown-anchor-recovery';
 import { preserveAgentAnchors } from '../agent-anchor-preservation';

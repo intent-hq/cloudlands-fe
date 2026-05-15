@@ -1,8 +1,11 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   /**
    * Note Tab Type Component
    *
-   * Renders a note editor with comments, version history, and header actions.
+   * Renders a note editor with comments,
+  version history,
+  and header actions.
    * Shows SpecWritingOnboarding when the coordinator is writing the initial spec.
    */
 
@@ -11,13 +14,15 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-    selectIsInitialSpecWriteInProgress,
-    selectInitialAgentId,
-    selectAgentById,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  selectIsInitialSpecWriteInProgress,
+  selectInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { createNote, deleteNote } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import {
+  createNote,
+  deleteNote,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { toggleRawNoteView } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import { isSpecNote } from '$shared/constants/notes';
@@ -37,12 +42,12 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import Fa from 'svelte-fa';
   import {
-    faCheck,
-    faCode,
-    faCopy,
-    faSpellCheck,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faCode,
+  faCopy,
+  faSpellCheck,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { track } from '$lib/services/analytics';
 
@@ -104,7 +109,7 @@
     const initialAgentId = selectInitialAgentId.select(state, workspaceId);
     if (!initialAgentId) return null;
 
-    const agent = selectAgentById.select(state, initialAgentId);
+    const agent = selectAgentSession.select(state, initialAgentId);
     const isSpecWriter = (agent?.metadata as any)?.specialist === 'spec-writer';
     return isSpecWriter ? initialAgentId : null;
   });
@@ -323,7 +328,7 @@
     />
   {:else if showSpecOnboarding}
     <!-- Show onboarding when coordinator is writing initial spec -->
-    <SpecWritingOnboarding agentId={initialSpecWriterAgentId} />
+    <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
   {:else if $workspace}
     <NoteWithComments
       workspace={$workspace}

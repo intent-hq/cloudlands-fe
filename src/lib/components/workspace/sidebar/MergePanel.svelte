@@ -7,29 +7,21 @@
   import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import {
-    refreshRequested,
-  } from '$lib/store/slices/changes/changes-slice';
-  import {
-    clearOlderCommits as ftClearOlderCommits,
-  } from '$lib/store/slices/changes/changes-slice';
+  refreshRequested,
+  clearOlderCommits as ftClearOlderCommits,
+  setSidebarMergeWhenReady,
+} from '$lib/store/slices/changes/changes-slice';
+
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    cancelExecution,
-    executeBackgroundAgent,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-  import {
-    setSidebarMergeWhenReady,
-  } from '$lib/store/slices/changes/changes-slice';
-  import {
-    refreshPRStatusRequested,
-  } from '$lib/store/slices/pr-status/pr-status-slice';
-  import {
-    selectWorkspaceById,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import {
-    setWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  cancelExecution,
+  executeBackgroundAgent,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+
+  import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -43,14 +35,17 @@
   import { trackGitOp } from '$lib/services/analytics';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-    faCheck,
-    faCodeMerge,
-    faEye,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { readable, writable } from 'svelte/store';
+  faCheck,
+  faCodeMerge,
+  faEye,
+  faRobot,
+  faSpinner,
+  faStop,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  readable,
+  writable,
+} from 'svelte/store';
   import Fa from 'svelte-fa';
 
   const dispatch = getDispatch();
@@ -106,7 +101,6 @@
   // Derived from Redux
   const isGeneratingMerge = $derived($mergeExecState$.status === 'running');
   const mergeAgentId = $derived($mergeExecState$.agentId);
-  const mergeWhenReady = $derived($mergeWhenReady$);
 
   // Local state
   let isMergingToTrunk = $state(false);
@@ -163,7 +157,7 @@
   }
 
   function toggleMergeWhenReady() {
-    dispatch(setSidebarMergeWhenReady(workspaceId, !mergeWhenReady));
+    dispatch(setSidebarMergeWhenReady(workspaceId, !$mergeWhenReady$));
   }
 
   function viewMergeThoughtProcess(e?: MouseEvent) {
@@ -475,7 +469,7 @@
           <Switch
             id="squash-merge-toggle"
             bind:checked={mergeOptions.squash}
-            disabled={isMergingToTrunk || (isGeneratingMerge && mergeWhenReady)}
+            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />
           <label
@@ -500,7 +494,7 @@
           <Switch
             id="push-after-merge-toggle"
             bind:checked={mergeOptions.pushAfter}
-            disabled={isMergingToTrunk || (isGeneratingMerge && mergeWhenReady)}
+            disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />
           <label
@@ -524,9 +518,9 @@
         handleMergeToTrunk({ squash: mergeOptions.squash, localOnly: !mergeOptions.pushAfter })}
       disabled={isMergingToTrunk ||
         (hasStaged && !commitMessage.trim()) ||
-        (isGeneratingMerge && mergeWhenReady)}
+        (isGeneratingMerge && $mergeWhenReady$)}
     >
-      {#if isMergingToTrunk || (isGeneratingMerge && mergeWhenReady)}
+      {#if isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
         <Fa icon={faSpinner} size="xs" class="animate-spin" />
         <span>{isMergingToTrunk ? 'Merging...' : 'Will merge when done...'}</span>
       {:else}
@@ -563,12 +557,12 @@
           {/if}
 
           <Button
-            variant={mergeWhenReady ? 'default' : 'outline'}
+            variant={$mergeWhenReady$ ? 'default' : 'outline'}
             size="xs"
             class="rounded-l-none border-l-0"
             onclick={toggleMergeWhenReady}
           >
-            {#if mergeWhenReady}
+            {#if $mergeWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
             Auto-merge when done

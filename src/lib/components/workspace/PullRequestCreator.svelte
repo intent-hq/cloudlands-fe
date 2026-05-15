@@ -12,16 +12,16 @@
   import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    faCodePullRequest,
-    faExclamationCircle,
-    faCircleCheck,
-    faMagic,
-    faPaperPlane,
-    faSpinner,
-    faCodeBranch,
-    faXmark,
-    faInfo,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCodePullRequest,
+  faExclamationCircle,
+  faCircleCheck,
+  faMagic,
+  faPaperPlane,
+  faSpinner,
+  faCodeBranch,
+  faXmark,
+  faInfo,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { PullRequestInfo } from '$shared/types';
 

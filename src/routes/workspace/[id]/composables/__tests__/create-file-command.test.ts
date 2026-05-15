@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { createFileRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 

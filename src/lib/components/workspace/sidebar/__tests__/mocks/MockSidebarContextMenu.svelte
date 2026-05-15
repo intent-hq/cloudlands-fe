@@ -1,5 +1,5 @@
 <script lang="ts">
-   
+
   let { items, x, y, onClickOutside }: any = $props();
   void x; void y; void onClickOutside;
 </script>

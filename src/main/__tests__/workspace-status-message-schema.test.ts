@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
-import { WorkspaceCreateSchema, WorkspaceUpdateSchema } from '../ipc-schemas';
+import {
+  WorkspaceCreateSchema,
+  WorkspaceUpdateSchema,
+} from '../ipc-schemas';
 import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH } from '../../shared/types';
 
 describe('workspace status message IPC schemas', () => {

@@ -4,7 +4,12 @@
    * Ported from githubocto/repo-visualizer
    */
   import type { FileType, ProcessedDataItem, ColorEncoding } from './types';
-  import { packData, LOOSE_FILES_ID, DEFAULT_WIDTH, DEFAULT_HEIGHT } from './tree-processing';
+  import {
+  packData,
+  LOOSE_FILES_ID,
+  DEFAULT_WIDTH,
+  DEFAULT_HEIGHT,
+} from './tree-processing';
   import { truncateString } from './utils';
   import languageColors from './language-colors';
   import CircleText from './CircleText.svelte';

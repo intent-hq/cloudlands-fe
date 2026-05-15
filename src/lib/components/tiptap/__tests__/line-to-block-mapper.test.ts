@@ -1,7 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
 // CustomTaskItem renders TaskItemNodeView.svelte which calls these at init time
@@ -51,7 +58,10 @@ import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import { CustomTaskItem } from '../CustomTaskItem';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
-import { mapLineAttributionsToBlocks, type AttributionInfo } from '../line-to-block-mapper';
+import {
+  mapLineAttributionsToBlocks,
+  type AttributionInfo,
+} from '../line-to-block-mapper';
 
 describe('Line to Block Attribution Mapper', () => {
   let editor: Editor | null = null;

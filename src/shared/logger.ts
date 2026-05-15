@@ -5,7 +5,10 @@
  * Consolidates logging from multiple implementations into a single, flexible system.
  */
 
-import { getLogLevel, LogLevel } from './logging-config';
+import {
+  getLogLevel,
+  LogLevel,
+} from './logging-config';
 
 // Re-export LogLevel for backward compatibility
 export { LogLevel };

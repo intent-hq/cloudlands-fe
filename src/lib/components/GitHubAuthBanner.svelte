@@ -2,24 +2,32 @@
   import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { faCheck, faRotateRight, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { onDestroy, onMount } from 'svelte';
+  import {
+  faCheck,
+  faRotateRight,
+  faSpinner,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  onDestroy,
+  onMount,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    initializeGitHubAuth,
-    startGitHubAuth,
-    cancelGitHubAuth,
-    clearGitHubAuthError,
-  } from '$lib/store/slices/github-auth/github-auth-slice';
+  initializeGitHubAuth,
+  startGitHubAuth,
+  cancelGitHubAuth,
+  clearGitHubAuthError,
+} from '$lib/store/slices/github-auth/github-auth-slice';
   import {
-    selectGitHubAuthIsAuthenticated,
-    selectGitHubAuthIsAuthenticating,
-    selectGitHubAuthOauthUrl,
-    selectGitHubAuthError,
-    selectGitHubAuthRequiresAugmentAuth,
-  } from '$lib/store/slices/github-auth/github-auth-selectors';
+  selectGitHubAuthIsAuthenticated,
+  selectGitHubAuthIsAuthenticating,
+  selectGitHubAuthOauthUrl,
+  selectGitHubAuthError,
+  selectGitHubAuthRequiresAugmentAuth,
+} from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Message shown before auth starts */
@@ -158,7 +166,6 @@
   const isAuthenticating = $derived(authStartedHere && $isAuthenticating$);
   const hasOAuthUrl = $derived(authStartedHere && $oauthUrl$);
   const hasError = $derived(authStartedHere && $error$);
-  const requiresAugmentAuth = $derived($requiresAugmentAuth$);
 </script>
 
 <div class="rounded-sm bg-sidebar overflow-hidden {className}">
@@ -180,7 +187,7 @@
         <span>Try Again</span>
       </Button>
     </div>
-  {:else if requiresAugmentAuth}
+  {:else if $requiresAugmentAuth$}
     <!-- Augment auth required state -->
     <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
       <p class="text-xs text-subtle">Please authenticate with Augment first.</p>

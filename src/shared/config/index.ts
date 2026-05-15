@@ -8,7 +8,11 @@
  *
  * Usage:
  * ```typescript
- * import { AppConfig, DEFAULT_APP_CONFIG, validateAppConfig } from '$shared/config';
+ * import {
+  AppConfig,
+  DEFAULT_APP_CONFIG,
+  validateAppConfig,
+} from '$shared/config';
  * ```
  */
 

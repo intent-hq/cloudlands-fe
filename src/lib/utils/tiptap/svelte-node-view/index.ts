@@ -10,7 +10,11 @@
  * @example
  * ```typescript
  * // In your TipTap extension:
- * import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
+ * import {
+  SvelteNodeViewRenderer,
+  NodeViewWrapper,
+  NodeViewContent,
+} from '$lib/utils/tiptap/svelte-node-view';
  * import MyNodeView from './MyNodeView.svelte';
  *
  * export const MyNode = Node.create({
@@ -26,7 +30,7 @@
  * <!-- In your Svelte node view component: -->
  * <script lang="ts">
  *   import type { NodeViewProps } from '@tiptap/core';
- *   import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
+ *
  *
  *   // Props are passed directly and are reactive via $state
  *   let { node, selected, updateAttributes }: NodeViewProps = $props();

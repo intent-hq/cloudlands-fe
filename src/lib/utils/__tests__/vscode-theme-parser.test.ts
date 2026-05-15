@@ -2,7 +2,11 @@
  * Tests for VS Code theme parser
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   hexToHSL,
   isHexDark,
@@ -204,7 +208,7 @@ describe('parseVSCodeTheme', () => {
   });
 
   it('falls back to editor.background heuristic when type is missing', () => {
-     
+
     const { type: _type, ...noType } = MINIMAL_DARK_THEME;
     const result = parseVSCodeTheme(noType);
     expect(result.type).toBe('dark');

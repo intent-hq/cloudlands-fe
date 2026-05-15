@@ -11,7 +11,10 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
 import { AppError } from '../errors';
-import { Logger, LogEntry } from '../logger';
+import {
+  Logger,
+  LogEntry,
+} from '../logger';
 import { writeJsonAsync } from './async-utils';
 
 export interface TrackedError {

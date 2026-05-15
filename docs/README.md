@@ -6,6 +6,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 
 ### Top-level docs
 - **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** - Agent system architecture and design
+- **[agent-message-dedup-and-stream-sagas.md](./agent-message-dedup-and-stream-sagas.md)** - Agent message deduplication and saga-owned stream reconciliation architecture
 - **[AUGGIE_USAGE_TRACKING_AUDIT.md](./AUGGIE_USAGE_TRACKING_AUDIT.md)** - Audit notes for Auggie usage tracking
 - **[BROWSER_PANEL_SPEC.md](./BROWSER_PANEL_SPEC.md)** - Browser panel product and UX specification
 - **[CDP_MCP_TOOLS.md](./CDP_MCP_TOOLS.md)** - Browser/CDP MCP tools reference
@@ -42,6 +43,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 
 ### Architecture & Design
 - **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** - Agent system architecture and design
+- **[agent-message-dedup-and-stream-sagas.md](./agent-message-dedup-and-stream-sagas.md)** - Agent message deduplication and stream saga architecture
 - **[COMPONENT_RESPONSIBILITIES.md](./COMPONENT_RESPONSIBILITIES.md)** - Component structure and responsibilities
 - **[EVENT_SYSTEM.md](./EVENT_SYSTEM.md)** - Event system architecture
 
@@ -88,6 +90,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **ConsolidatedBackendService** - Single source of truth for all agent operations
 - **AgentFactory** - Standardized creation with guaranteed user rules
 - **StreamManager** - Direct streaming with session management and cleanup
+- **Stream lifecycle + Redux sagas** - Thin stream adapters dispatch raw actions; sagas own shared-state reconciliation and side-effect orchestration
 - **ACP Protocol** - Agent Communication Protocol with Auggie
 - **Session Management** - Agent lifecycle with automatic cleanup
 - **Tool Execution** - Standardized tool interface

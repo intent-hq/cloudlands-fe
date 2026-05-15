@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { createCollection, getItems } from "../../utils/collection-utils";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  createCollection,
+  getItems,
+} from "../../utils/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 import {
   clearGithubRepoSearch,

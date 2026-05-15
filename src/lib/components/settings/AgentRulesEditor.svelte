@@ -1,13 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import {
-    faRotateLeft,
-    faCheck,
-    faCircleNotch,
-    faCircleExclamation,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRotateLeft,
+  faCheck,
+  faCircleNotch,
+  faCircleExclamation,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';

@@ -8,8 +8,16 @@
  * - Circular delegation detection
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { StuckDetector, createStuckDetector } from './stuck-detector';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
+import {
+  StuckDetector,
+  createStuckDetector,
+} from './stuck-detector';
 
 describe('StuckDetector', () => {
   let detector: StuckDetector;

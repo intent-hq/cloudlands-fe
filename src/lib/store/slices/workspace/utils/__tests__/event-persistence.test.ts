@@ -2,8 +2,17 @@
  * Tests for EventPersistenceService
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EventPersistenceService, importEventsFromFile } from '../event-persistence';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
+import {
+  EventPersistenceService,
+  importEventsFromFile,
+} from '../event-persistence';
 import type { WorkspaceEvent } from '$features/events/types';
 import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 

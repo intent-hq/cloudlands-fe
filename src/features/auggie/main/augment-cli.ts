@@ -1,11 +1,17 @@
-import { spawn, ChildProcess } from 'child_process';
+import {
+  spawn,
+  ChildProcess,
+} from 'child_process';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { homedir } from 'os';
 import { join } from 'path';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { Logger } from '$shared/logger';
-import { findAuggieAsync, existsAsync } from '../../../shared/main/async-utils';
+import {
+  findAuggieAsync,
+  existsAsync,
+} from '../../../shared/main/async-utils';
 
 interface StreamResponse {
   content: string;

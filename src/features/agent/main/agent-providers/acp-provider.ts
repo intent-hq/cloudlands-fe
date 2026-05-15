@@ -18,8 +18,15 @@ import {
 } from '$shared/config/provider-config';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import { ChildProcess, spawn, SpawnOptions } from 'child_process';
-import { app, BrowserWindow } from 'electron';
+import {
+  ChildProcess,
+  spawn,
+  SpawnOptions,
+} from 'child_process';
+import {
+  app,
+  BrowserWindow,
+} from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -38,9 +45,15 @@ import {
   extractACPToolCalls,
   parseACPMessage,
 } from '../../../acp-official/parsers/acp-message-parser';
-import { mainDispatch, getMainState } from '../../../../store/main/redux-store-bridge';
+import {
+  mainDispatch,
+  getMainState,
+} from '../../../../store/main/redux-store-bridge';
 import { selectAgentSubscriptions } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
-import { agentAuthRequired, agentPlanRequired } from '../../../../store/main/slices/agent-events/agent-events-slice';
+import {
+  agentAuthRequired,
+  agentPlanRequired,
+} from '../../../../store/main/slices/agent-events/agent-events-slice';
 import {
   normalizeMcpServers,
   toAcpMcpServers,
@@ -66,7 +79,10 @@ import type { StatusEventData, StreamMessage, StreamToolCall } from '../../types
 import { ACPProviderStreaming } from './acp-provider-streaming';
 import type { AgentConfig, AgentMessage, Tool } from './base-provider';
 import { BaseAgentProvider } from './base-provider';
-import { ProviderCapabilities, resolveProviderCapabilities } from './provider-capabilities';
+import {
+  ProviderCapabilities,
+  resolveProviderCapabilities,
+} from './provider-capabilities';
 import { trimSession } from './session-trimmer';
 import { sanitizeSurrogates } from '../../../../shared/validation';
 import {

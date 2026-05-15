@@ -10,7 +10,10 @@
  * Usage: node cortex-acp.js
  */
 
-import { spawn, type ChildProcess } from 'child_process';
+import {
+  spawn,
+  type ChildProcess,
+} from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

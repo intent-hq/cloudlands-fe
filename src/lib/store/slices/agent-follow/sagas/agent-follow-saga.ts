@@ -7,7 +7,14 @@
  * - Error recovery (animation queue overflow)
  */
 
-import { call, delay, put, select, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  put,
+  select,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   setCurrentFile,
   queueTextAnimation,

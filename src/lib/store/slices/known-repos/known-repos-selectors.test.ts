@@ -1,5 +1,9 @@
 import type { KnownRepo } from "$shared/types/known-repo";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import { createCollection } from "../../utils/collection-utils";
 import { initialState } from "./known-repos-slice";

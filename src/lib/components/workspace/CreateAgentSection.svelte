@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faPlus, faGear } from '@fortawesome/free-solid-svg-icons';
   import {
-    filterSpecialistsByGitHubAuth,
-    selectSpecialists,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  faPlus,
+  faGear,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  filterSpecialistsByGitHubAuth,
+  selectSpecialists,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { scale } from 'svelte/transition';

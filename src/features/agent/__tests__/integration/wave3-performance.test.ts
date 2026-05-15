@@ -5,24 +5,23 @@
  * of the refactored agent system.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
-import { MessagePruner } from '../../services/message-pruner';
 import { MemoryMonitor } from '../../../../shared/monitoring/memory-monitor';
 import { EventEmitter } from '../../../../shared/event-emitter';
-import type { AgentSession } from '$shared/types';
 
 describe('Wave 3 Performance Integration', () => {
   let listenerManager: ListenerManager;
-  let messagePruner: MessagePruner;
   let memoryMonitor: MemoryMonitor;
 
   beforeEach(() => {
     listenerManager = new ListenerManager();
-    messagePruner = new MessagePruner({
-      maxMessagesPerSession: 500,
-      maxMessageAge: 1000 * 60 * 60,
-    });
     memoryMonitor = new MemoryMonitor({
       checkInterval: 100,
       warningThreshold: 500 * 1024 * 1024,
@@ -32,43 +31,7 @@ describe('Wave 3 Performance Integration', () => {
 
   afterEach(() => {
     listenerManager.cleanup();
-    messagePruner.stop();
     memoryMonitor.stop();
-  });
-
-  it('should handle large message histories efficiently', () => {
-    const agent: AgentSession = {
-      id: 'test-agent' as any,
-      backendSessionId: null,
-      workspaceId: 'test-workspace' as any,
-      name: 'Test Agent',
-      status: 'ready' as any,
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // Add 1000 messages
-    const startTime = Date.now();
-    for (let i = 0; i < 1000; i++) {
-      agent.messages.push({
-        id: `msg-${i}` as any,
-        role: i % 2 === 0 ? 'user' : 'assistant',
-        content: `Message ${i}`,
-        timestamp: new Date(Date.now() - i * 1000),
-      });
-    }
-    const addTime = Date.now() - startTime;
-
-    expect(addTime).toBeLessThan(1000); // Should add 1000 messages in < 1 second
-
-    // Prune messages
-    const pruneStart = Date.now();
-    messagePruner.pruneOldMessages(agent);
-    const pruneTime = Date.now() - pruneStart;
-
-    expect(pruneTime).toBeLessThan(100); // Should prune in < 100ms
-    expect(agent.messages.length).toBeLessThanOrEqual(500);
   });
 
   it('should manage many listeners efficiently', () => {
@@ -117,30 +80,6 @@ describe('Wave 3 Performance Integration', () => {
     });
   });
 
-  it('should estimate memory usage accurately', () => {
-    const agent: AgentSession = {
-      id: 'test-agent' as any,
-      backendSessionId: null,
-      workspaceId: 'test-workspace' as any,
-      name: 'Test Agent',
-      status: 'ready' as any,
-      messages: Array.from({ length: 100 }, (_, i) => ({
-        id: `msg-${i}` as any,
-        role: 'user' as const,
-        contentBlocks: [{ type: 'text' as const, text: 'x'.repeat(100) }],
-        timestamp: new Date(),
-      })),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const usage = messagePruner.estimateMemoryUsage(agent.messages);
-
-    // 100 messages * 100 chars = 10KB minimum
-    expect(usage).toBeGreaterThan(10000);
-    expect(usage).toBeLessThan(1000000); // Less than 1MB
-  });
-
   it('should handle rapid listener add/remove cycles', () => {
     const emitter = new EventEmitter();
     const startTime = Date.now();
@@ -156,36 +95,18 @@ describe('Wave 3 Performance Integration', () => {
     expect(listenerManager.getListenerCount()).toBe(0);
   });
 
-  it('should maintain performance with concurrent operations', () => {
+  it('should maintain performance with concurrent listener operations', () => {
     const emitters = Array.from({ length: 10 }, () => new EventEmitter());
-    const agent: AgentSession = {
-      id: 'test-agent' as any,
-      backendSessionId: null,
-      workspaceId: 'test-workspace' as any,
-      name: 'Test Agent',
-      status: 'ready' as any,
-      messages: Array.from({ length: 100 }, (_, i) => ({
-        id: `msg-${i}` as any,
-        role: 'user' as const,
-        content: `Message ${i}`,
-        timestamp: new Date(),
-      })),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
 
     const startTime = Date.now();
 
-    // Concurrent operations
+    // Concurrent listener operations
     emitters.forEach((emitter) => {
       listenerManager.addListener(emitter, 'test', () => {});
     });
 
-    messagePruner.pruneOldMessages(agent);
-    const usage = messagePruner.estimateMemoryUsage(agent.messages);
-
     const duration = Date.now() - startTime;
     expect(duration).toBeLessThan(500); // All operations in < 500ms
-    expect(usage).toBeGreaterThan(0);
+    expect(listenerManager.getListenerCount()).toBe(10);
   });
 });

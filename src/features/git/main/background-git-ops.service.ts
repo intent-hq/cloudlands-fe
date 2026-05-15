@@ -12,7 +12,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { gitOpStarted, gitOpProgress, gitOpCompleted, gitOpFailed } from '../../../store/main/slices/git-events/git-events-slice';
+import {
+  gitOpStarted,
+  gitOpProgress,
+  gitOpCompleted,
+  gitOpFailed,
+} from '../../../store/main/slices/git-events/git-events-slice';
 
 const logger = new Logger('BackgroundGitOpsService');
 

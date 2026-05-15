@@ -2,7 +2,14 @@
  * Tests for reversible-actions
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // Mock svelte-sonner
 vi.mock('svelte-sonner', () => ({

@@ -14,7 +14,11 @@
  * below to mirror the new implementation exactly.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 
 type SendRequest = (method: string) => Promise<{ error?: { code?: number; message?: string } }>;
 

@@ -4,7 +4,10 @@
  * Modular terminal adapter with proper separation of concerns
  */
 
-import { Terminal, IDisposable } from '@xterm/xterm';
+import {
+  Terminal,
+  IDisposable,
+} from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -12,7 +15,10 @@ import * as AddOnSearch from '@xterm/addon-search';
 const SearchAddon = AddOnSearch.SearchAddon;
 import '@xterm/xterm/css/xterm.css';
 import { Logger } from '../../shared/logger';
-import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
+import {
+  TerminalStateMachine,
+  TerminalState,
+} from './terminal-state-machine';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';

@@ -74,7 +74,10 @@ import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { notesService } from '$features/notes/main/notes.service';
 import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings.service';
 import { createWorkspaceEvent } from '$features/events/types';
-import { getMainState, mainDispatch } from '../../../../store/main/redux-store-bridge';
+import {
+  getMainState,
+  mainDispatch,
+} from '../../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import {

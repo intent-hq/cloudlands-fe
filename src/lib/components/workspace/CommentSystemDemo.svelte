@@ -1,24 +1,34 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectComments, selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
-  import { selectCommentAction, loadCommentsAction, clearCommentsAction } from '$lib/store/slices/comments/comments-slice';
+  import {
+  selectComments,
+  selectSelectedComment,
+} from '$lib/store/slices/comments/comments-selectors';
+  import {
+  selectCommentAction,
+  loadCommentsAction,
+  clearCommentsAction,
+} from '$lib/store/slices/comments/comments-slice';
 
   const reduxDispatch = getDispatch();
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
   import {
-    faComment,
-    faLightbulb,
-    faCodePullRequest,
-    faCircleQuestion,
-    faPaperPlane,
-    faCheck,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faComment,
+  faLightbulb,
+  faCodePullRequest,
+  faCircleQuestion,
+  faPaperPlane,
+  faCheck,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
 
   const logger = createLogger('CommentSystemDemo');
 
@@ -132,8 +142,6 @@
   // Reactive state
   const comments$ = selectComments();
   const selectedComment$ = selectSelectedComment();
-  let comments = $derived($comments$);
-  let selectedComment = $derived($selectedComment$);
 
   function handleAddComment() {
     if (!editor || !commentManager) return;
@@ -207,13 +215,13 @@
 
     <!-- Comments Panel -->
     <div class="comments-panel">
-      <h3>Comments ({comments.length})</h3>
+      <h3>Comments ({$comments$.length})</h3>
 
       <div class="comments-list">
-        {#each comments as comment (comment.id)}
+        {#each $comments$ as comment (comment.id)}
           <div
             class="comment-card"
-            class:selected={selectedComment?.id === comment.id}
+            class:selected={$selectedComment$?.id === comment.id}
             class:resolved={comment.status === 'resolved'}
           >
             <div class="comment-header">
@@ -253,7 +261,7 @@
           </div>
         {/each}
 
-        {#if comments.length === 0}
+        {#if $comments$.length === 0}
           <div class="no-comments">
             <p>No comments yet</p>
             <p class="text-subtle">Select text and click "Add Comment" to start</p>

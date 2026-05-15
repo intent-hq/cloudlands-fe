@@ -10,7 +10,10 @@ import type { Result, CommandResponse, WorkspaceId, NoteComment } from '../../..
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { Logger } from '../../../shared/logger';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { commentUpdatedBatch, commentDeleted } from '../../../store/main/slices/note-events/note-events-slice';
+import {
+  commentUpdatedBatch,
+  commentDeleted,
+} from '../../../store/main/slices/note-events/note-events-slice';
 import { COMMENTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {

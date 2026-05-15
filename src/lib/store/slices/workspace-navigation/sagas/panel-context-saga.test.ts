@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
@@ -32,14 +39,20 @@ vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
   },
 }));
 
-import { clearCurrentlyViewed, markAsViewed } from "../../note-read-tracking/note-read-tracking-slice";
+import {
+  clearCurrentlyViewed,
+  markAsViewed,
+} from "../../note-read-tracking/note-read-tracking-slice";
 import { selectWorkspaceNavigationState } from "../workspace-navigation-selectors";
 import {
   hydrateWorkspaceNavigation,
   openWorkspaceNote,
   setWorkspaceMainPanel,
 } from "../workspace-navigation-slice";
-import { handlePanelChanged, panelContextSaga } from "./panel-context-saga";
+import {
+  handlePanelChanged,
+  panelContextSaga,
+} from "./panel-context-saga";
 
 describe("panelContextSaga", () => {
   beforeEach(() => {

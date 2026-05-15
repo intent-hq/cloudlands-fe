@@ -6,8 +6,14 @@
  */
 
 import { createRequire } from 'module';
-import { ipcMain, BrowserWindow } from 'electron';
-import { sendToWorkspaceWindows, getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
+import {
+  ipcMain,
+  BrowserWindow,
+} from 'electron';
+import {
+  sendToWorkspaceWindows,
+  getFocusedWindowWorkspaceId,
+} from '../../system/main/system.ipc';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { changeDetectorManager as singletonChangeDetectorManager } from './change-detector-manager';
@@ -28,11 +34,17 @@ import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
 import { GitService } from '../../git/main/git.service';
-import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-router';
+import {
+  getWorkspaceGitInfo,
+  getRemoteGitManager,
+} from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
-import { shutdownUnifiedWatcher, shutdownOtherWatchers } from './unified-workspace-watcher';
+import {
+  shutdownUnifiedWatcher,
+  shutdownOtherWatchers,
+} from './unified-workspace-watcher';
 import {
   initRepoRegistry,
   getAllRepos,
@@ -41,8 +53,14 @@ import {
   syncRepos,
   clearRepos,
 } from './repo-registry';
-import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
-import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
+import {
+  sshManager,
+  type SSHConnectionConfig,
+} from '../../../shared/main/ssh-manager';
+import {
+  getIntentServerPath,
+  escapeShellArg,
+} from '../../agent/main/agent-providers/acp-provider';
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { notesService } from '../../notes/main/notes.service';
@@ -56,7 +74,10 @@ import {
   isValidBranchName,
   getBranchNameValidationError,
 } from '../../../main/utils/workspace-validation';
-import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
+import {
+  WORKSPACE_CHANNELS,
+  EDITOR_CHANNELS,
+} from '$shared/ipc/channels';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   createSafeValidatedHandler,

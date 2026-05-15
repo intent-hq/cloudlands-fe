@@ -8,13 +8,13 @@
   import ErrorBoundary from '../ErrorBoundary.svelte';
   import { fly } from 'svelte/transition';
   import {
-    selectPanelVisibilityFlag,
-    selectWorkspaceSidebarPanelLayout,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectPanelVisibilityFlag,
+  selectWorkspaceSidebarPanelLayout,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    setWorkspaceSidebarPanelLayout,
-    type WorkspaceSidebarPanelLayoutState,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  setWorkspaceSidebarPanelLayout,
+  type WorkspaceSidebarPanelLayoutState,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';

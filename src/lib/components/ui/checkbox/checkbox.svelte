@@ -1,7 +1,10 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import { faCheck, faMinus } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faMinus,
+} from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
 
   interface Props {

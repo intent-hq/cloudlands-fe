@@ -5,7 +5,10 @@
    * Simplified panel that renders the agent hierarchy visualization.
    * Uses a clean hierarchical layout showing delegation relationships.
    */
-  import { onDestroy, untrack } from 'svelte';
+  import {
+  onDestroy,
+  untrack,
+} from 'svelte';
   import type { AgentNode } from './types';
   import { isAgentNode } from './types';
   import AgentHierarchyGraph from './AgentHierarchyGraph.svelte';
@@ -15,9 +18,9 @@
   import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
   import { loadEventsRequested } from '$lib/store/slices/workspace-events/workspace-events-slice';
   import {
-    processWorkspaceEvents,
-    clearAgentOverview,
-  } from '$lib/store/slices/agent-overview/agent-overview-slice';
+  processWorkspaceEvents,
+  clearAgentOverview,
+} from '$lib/store/slices/agent-overview/agent-overview-slice';
   import { convertToInteractionEvent } from './graph-helpers';
   import type { InteractionEvent } from './types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -75,16 +78,15 @@
   }
 
   // Derived values from Redux selector
-  const graphState = $derived($graphState$);
 
   // Get only agent nodes
-  const agentNodes = $derived(graphState.nodes.filter((n): n is AgentNode => isAgentNode(n)));
+  const agentNodes = $derived($graphState$.nodes.filter((n): n is AgentNode => isAgentNode(n)));
 </script>
 
 <div class="agent-overview-panel flex flex-col h-full bg-background overflow-auto">
   <AgentHierarchyGraph
     agents={agentNodes}
-    edges={graphState.edges}
+    edges={$graphState$.edges}
     onAgentClick={handleAgentClick}
     {onFocus}
   />

@@ -5,10 +5,19 @@
  * are correctly parsed by TipTap and can be found by the decoration system.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { CommentAnchor, findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';
+import {
+  CommentAnchor,
+  findCommentAnchors,
+} from '$lib/components/tiptap/CommentAnchor';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
 

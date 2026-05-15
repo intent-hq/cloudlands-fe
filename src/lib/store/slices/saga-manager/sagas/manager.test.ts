@@ -1,5 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runSaga, stdChannel, type Task } from "redux-saga";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  runSaga,
+  stdChannel,
+  type Task,
+} from "redux-saga";
 import { writable } from "svelte/store";
 
 const mockSentry = vi.hoisted(() => ({
@@ -39,8 +50,14 @@ vi.mock("../../store-utility/store-utility-slice", () => ({
 }));
 
 import type { ReduxStoreContext, StoreState } from "../../../types";
-import { startSaga, stopSaga } from "../saga-manager-slice";
-import { getBackOffDelay, sagaManager } from "./manager";
+import {
+  startSaga,
+  stopSaga,
+} from "../saga-manager-slice";
+import {
+  getBackOffDelay,
+  sagaManager,
+} from "./manager";
 
 const flushMicrotasks = async () => {
   await Promise.resolve();

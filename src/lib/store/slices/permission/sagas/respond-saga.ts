@@ -1,8 +1,19 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { getItem } from "../../../utils/collection-utils";
-import { approvePermission, denyPermission, cancelPermission, selectPermissionOption, removePermissionRequest, type PermissionRequest, } from "../permission-slice";
+import {
+  approvePermission,
+  denyPermission,
+  cancelPermission,
+  selectPermissionOption,
+  removePermissionRequest,
+  type PermissionRequest,
+} from "../permission-slice";
 import { selectPermissionRequestsCollection } from "../permission-selectors";
 function* getRequest(requestId: string): Generator<any, PermissionRequest | undefined, any> {
     const requests = yield* selectPermissionRequestsCollection.effect();

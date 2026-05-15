@@ -1,8 +1,14 @@
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import { setAutoCommitEnabled } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { invoke } from "$lib/electron-bridge";
-import { WORKSPACE_CHANNELS, SETTINGS_CHANNELS } from "$shared/ipc/channels";
+import {
+  WORKSPACE_CHANNELS,
+  SETTINGS_CHANNELS,
+} from "$shared/ipc/channels";
 
 /**
  * Sync autoCommit setting to main process for a workspace.

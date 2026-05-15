@@ -6,7 +6,12 @@
  *
  * Usage:
  * ```typescript
- * import { initAnalytics, track, identify, page } from '$lib/services/analytics';
+ * import {
+  initAnalytics,
+  track,
+  identify,
+  page,
+} from '$lib/services/analytics';
  *
  * // Initialize (call once at app startup)
  * await initAnalytics();

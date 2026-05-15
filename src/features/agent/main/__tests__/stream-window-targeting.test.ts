@@ -12,7 +12,13 @@
  * and uses sendStreamToRenderer to target the correct workspace windows.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import { BrowserWindow } from 'electron';
 
 // Mock electron

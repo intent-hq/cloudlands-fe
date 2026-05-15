@@ -4,7 +4,12 @@
    * Has a background to "cut through" the divider line
    */
   import Fa from 'svelte-fa';
-  import { faSpinner, faArrowDown, faArrowRight, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faSpinner,
+  faArrowDown,
+  faArrowRight,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { Tooltip as TooltipPrimitive } from 'bits-ui';

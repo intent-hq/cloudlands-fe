@@ -5,28 +5,32 @@
 -->
 
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import type { WorkspaceEvent } from '../../events/types';
   import Fa from 'svelte-fa';
   import {
-    faFile,
-    faFileCirclePlus,
-    faFileCircleMinus,
-    faFileEdit,
-    faArrowRightArrowLeft,
-    faCodeBranch,
-    faTerminal,
-    faPlay,
-    faCheck,
-    faXmark,
-    faWrench,
-    faCircle,
-    faServer,
-    faGlobe,
-    faCamera,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faFileCirclePlus,
+  faFileCircleMinus,
+  faFileEdit,
+  faArrowRightArrowLeft,
+  faCodeBranch,
+  faTerminal,
+  faPlay,
+  faCheck,
+  faXmark,
+  faWrench,
+  faCircle,
+  faServer,
+  faGlobe,
+  faCamera,
+} from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { writable } from 'svelte/store';
-  import { selectWorkspaceEvents, selectEventsLoading } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+  import {
+  selectWorkspaceEvents,
+  selectEventsLoading,
+} from '$lib/store/slices/workspace-events/workspace-events-selectors';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
@@ -35,12 +39,12 @@
   import EntityChip from './EntityChip.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import {
-    getFriendlyLabel,
-    type EntityRef,
-    type AgentNameResolver,
-  } from '../utils/friendly-labels';
+  getFriendlyLabel,
+  type EntityRef,
+  type AgentNameResolver,
+} from '../utils/friendly-labels';
   import { faNote } from '$lib/icons/faNote';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
@@ -63,15 +67,12 @@
   // Read events and loading state from Redux
   const events$ = selectWorkspaceEvents(workspaceIdStore);
   const loading$ = selectEventsLoading(workspaceIdStore);
-  const events = $derived($events$);
-  const isLoading = $derived($loading$);
 
   let expandedEventId: string | null = $state(null);
 
   // Create an agent name resolver that looks up agent names from the Redux store
   const agentNameResolver: AgentNameResolver = (agentId: string): string | undefined => {
-    const agents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
-    const agent = agents.find((a) => a.id === agentId);
+    const agent = selectAgentSession.select(getReduxStore().getState(), agentId);
     return agent?.name;
   };
 
@@ -79,7 +80,7 @@
   const dedupedEvents = $derived.by(() => {
     const seen = new Set<string>();
     const deduped: WorkspaceEvent[] = [];
-    for (const event of events) {
+    for (const event of $events$) {
       if (event.id && !seen.has(event.id)) {
         seen.add(event.id);
         deduped.push(event);
@@ -87,8 +88,6 @@
     }
     return deduped;
   });
-
-
 
   // Icon mapping (same as sandbox)
   function getEventIcon(type: WorkspaceEvent['type']): IconDefinition {
@@ -150,9 +149,7 @@
       relativePath: filePath,
       ...data,
     } as unknown as TrackedChange;
-    getReduxStore().dispatch(
-      openWorkspaceDiff(workspaceId, change, { filePath }),
-    );
+    getReduxStore().dispatch(openWorkspaceDiff(workspaceId, change, { filePath }));
   }
 
   function handleEntityClick(ref: EntityRef, wsEvent?: WorkspaceEvent) {
@@ -175,7 +172,7 @@
 
 <div class="h-full flex flex-col">
   <div class="flex-1 overflow-y-auto">
-    {#if isLoading}
+    {#if $loading$}
       <!-- Loading skeleton -->
       <div class="px-3 py-2 space-y-4">
         {#each Array.from({ length: 6 }, (__, idx) => idx) as i}
@@ -188,7 +185,7 @@
           </div>
         {/each}
       </div>
-    {:else if events.length === 0}
+    {:else if $events$.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-subtle py-8">
         <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
         <p class="text-sm">No activity yet</p>

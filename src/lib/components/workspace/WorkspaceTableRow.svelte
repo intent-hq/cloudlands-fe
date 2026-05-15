@@ -6,10 +6,20 @@
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { cn } from '$lib/utils';
   import type { Workspace } from '$shared/types';
-  import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
-  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
+  import {
+  PullRequestStatus,
+  WorkspaceStatusEnum,
+} from '$shared/types';
+  import {
+  isPRMergeable as checkPRMergeable,
+  getPRTooltipContent,
+} from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
-  import { faBoxArchive, faBoxOpen, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faBoxArchive,
+  faBoxOpen,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
 

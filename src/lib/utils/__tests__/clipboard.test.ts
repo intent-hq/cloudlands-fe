@@ -1,5 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { invoke, isElectron } from '$lib/electron-bridge';
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  invoke,
+  isElectron,
+} from '$lib/electron-bridge';
 import { writeTextToClipboard } from '../clipboard';
 
 function setBrowserClipboard(writeText?: ReturnType<typeof vi.fn>) {

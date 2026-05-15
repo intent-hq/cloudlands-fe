@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faCheck, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faRotateLeft,
+} from '@fortawesome/free-solid-svg-icons';
   import Textarea from '../ui/textarea/textarea.svelte';
 
   interface Props {

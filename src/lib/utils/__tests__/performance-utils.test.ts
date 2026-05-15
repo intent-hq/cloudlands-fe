@@ -2,8 +2,20 @@
  * Tests for performance utilities
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { debounce, throttle, batchUpdates, memoize } from '../performance-utils';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
+import {
+  debounce,
+  throttle,
+  batchUpdates,
+  memoize,
+} from '../performance-utils';
 
 vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
 

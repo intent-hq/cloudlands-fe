@@ -1,4 +1,7 @@
-import { fork, join } from "typed-redux-saga";
+import {
+  fork,
+  join,
+} from "typed-redux-saga";
 import { initSaga } from "./init-saga";
 import { persistenceSaga } from "./persistence-saga";
 import { syncSaga } from "./sync-saga";

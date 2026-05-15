@@ -2,7 +2,14 @@
  * Tool Service Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { ToolService } from '../main/tool.service';
 import type { ToolContext, ToolOperation } from '../main/types';
 import * as fs from 'fs/promises';

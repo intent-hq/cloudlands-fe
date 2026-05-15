@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { setContext, onMount, onDestroy } from 'svelte';
+  import {
+  setContext,
+  onMount,
+  onDestroy,
+} from 'svelte';
   import type { Snippet } from 'svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 

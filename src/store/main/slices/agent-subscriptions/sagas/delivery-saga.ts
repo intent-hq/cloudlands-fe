@@ -8,7 +8,16 @@
  * called via `call()` so they remain mockable in tests.
  */
 
-import { call, join, put, spawn, takeEvery, delay, race, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  join,
+  put,
+  spawn,
+  takeEvery,
+  delay,
+  race,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { handleDelegationGroupDelivery } from "./delegation-group-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord, AgentStatus } from "../types";

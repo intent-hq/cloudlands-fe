@@ -5,7 +5,12 @@
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faCodeCommit, faExternalLink, faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCodeCommit,
+  faExternalLink,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import type { LocalCommitInfo } from '$features/accept-changes/types';
   import FileRow from './FileRow.svelte';

@@ -1,5 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  render,
+} from '@testing-library/svelte';
 
 const { selectAgentIsThinkingMock, getRandomColorsWithSeedMock } = vi.hoisted(() => ({
   selectAgentIsThinkingMock: vi.fn((agentId: string) => ({

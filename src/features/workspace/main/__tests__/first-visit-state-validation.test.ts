@@ -2,7 +2,11 @@
  * Tests for First Visit State IPC validation schemas
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   FirstVisitStateLoadSchema,
   FirstVisitStateSaveSchema,

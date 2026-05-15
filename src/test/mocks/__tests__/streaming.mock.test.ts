@@ -2,7 +2,14 @@
  * Tests for MockStreamManager
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { MockStreamManager } from '../streaming.mock';
 import type { ContentBlock } from '$shared/types';
 

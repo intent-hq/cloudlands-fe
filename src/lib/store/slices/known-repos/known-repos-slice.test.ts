@@ -1,5 +1,9 @@
 import type { KnownRepo } from "$shared/types/known-repo";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { createCollection } from "../../utils/collection-utils";
 import {
   initialState,

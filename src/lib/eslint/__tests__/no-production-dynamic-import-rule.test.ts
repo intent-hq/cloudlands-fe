@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { ESLint } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';

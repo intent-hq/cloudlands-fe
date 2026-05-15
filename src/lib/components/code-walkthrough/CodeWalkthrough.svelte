@@ -6,7 +6,11 @@
    * Shows a summary, sections with grouped files, and inline annotations.
    */
   import Fa from 'svelte-fa';
-  import { faBook, faSpinner, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faBook,
+  faSpinner,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughData, WalkthroughAnnotation } from './types';
   import WalkthroughSection from './WalkthroughSection.svelte';
   import { splitDiffByFile } from './patch-utils';

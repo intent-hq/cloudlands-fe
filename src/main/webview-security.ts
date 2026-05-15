@@ -16,10 +16,17 @@
  * to ensure consistency across the codebase.
  */
 
-import { app, session, shell } from 'electron';
+import {
+  app,
+  session,
+  shell,
+} from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
+import {
+  BROWSER_PANEL_PARTITION,
+  BROWSER_PROTOCOLS,
+} from '../shared/constants';
 import { Logger } from '../shared/logger';
 
 const logger = new Logger('WebviewSecurity');
@@ -451,7 +458,7 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     callback(false);
   });
 
-   
+
   ses.setPermissionCheckHandler((_webContents, permission, _requestingOrigin, _details) => {
     if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
       return true;
@@ -504,7 +511,7 @@ function setupBrowserPanelSession(): void {
 
   // Permission check handler — synchronous permission queries
   browserSession.setPermissionCheckHandler(
-     
+
     (_webContents, permission, _requestingOrigin, _details) => {
       return BROWSER_PANEL_ALLOWED_PERMISSIONS.has(permission);
     },

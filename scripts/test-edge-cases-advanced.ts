@@ -46,12 +46,12 @@ class AdvancedEdgeCaseTest {
             issues.push('Agent factory may not handle duplicate IDs properly');
           }
 
-          // Check unified state store
-          const storePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+          // Check Redux agent session store
+          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
-          if (!storeContent.includes('agents.get') || !storeContent.includes('agents.set')) {
-            issues.push('State store may allow duplicate agents');
+          if (!storeContent.includes('byAgentId') || !storeContent.includes('registerInWorkspaceIndex')) {
+            issues.push('Agent session store may allow duplicate agents');
           }
 
           return { passed: issues.length === 0, issues };
@@ -63,16 +63,18 @@ class AdvancedEdgeCaseTest {
         test: async () => {
           const issues: string[] = [];
 
-          // Check for cleanup handlers
-          const servicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
-          const serviceContent = await fs.readFile(servicePath, 'utf-8');
+          // Check for cleanup handlers in the current saga/lifecycle split
+          const sagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const sagaContent = await fs.readFile(sagaPath, 'utf-8');
+          const registryPath = path.join(__dirname, '../src/features/agent/utils/stream-handler-registry.ts');
+          const registryContent = await fs.readFile(registryPath, 'utf-8');
 
-          if (!serviceContent.includes('stopSession') || !serviceContent.includes('deleteSession')) {
-            issues.push('Agent service may not handle deletion during streaming');
+          if (!sagaContent.includes('agentSessionStopChatRequested') || !sagaContent.includes('chatStopCompleted')) {
+            issues.push('Agent chat saga may not handle stopping during deletion');
           }
 
           // Check for stream cleanup
-          if (!serviceContent.includes('streamingService.stopStream')) {
+          if (!registryContent.includes('cleanupStreamHandler')) {
             issues.push('Streaming may not be stopped on deletion');
           }
 
@@ -85,20 +87,20 @@ class AdvancedEdgeCaseTest {
         test: async () => {
           const issues: string[] = [];
 
-          // Check for message queueing or locking
-          const chatServicePath = path.join(__dirname, '../src/features/agent/services/chat.service.ts');
-          const chatServiceContent = await fs.readFile(chatServicePath, 'utf-8');
+          // Check for message queueing or locking in current saga/state ownership
+          const chatSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
-          if (!chatServiceContent.includes('isProcessing') && !chatServiceContent.includes('queue')) {
-            issues.push('Chat service may not handle concurrent messages properly');
+          if (!chatSagaContent.includes('stopIfResponding') || !chatSagaContent.includes('selectAgentSessionIsProcessing')) {
+            issues.push('Chat saga may not handle concurrent messages properly');
           }
 
-          // Check agent service
-          const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
-          const agentServiceContent = await fs.readFile(agentServicePath, 'utf-8');
+          // Check stream lifecycle
+          const lifecyclePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+          const lifecycleContent = await fs.readFile(lifecyclePath, 'utf-8');
 
-          if (!agentServiceContent.includes('isStreaming') || !agentServiceContent.includes('isProcessing')) {
-            issues.push('Agent service may not prevent concurrent message sending');
+          if (!lifecycleContent.includes('setAgentStreaming') || !lifecycleContent.includes('agentStreamResetStreamingMessagesRequested')) {
+            issues.push('Stream lifecycle may not prevent concurrent message sending');
           }
 
           return { passed: issues.length === 0, issues };
@@ -153,8 +155,8 @@ class AdvancedEdgeCaseTest {
         test: async () => {
           const issues: string[] = [];
 
-          // Check for JSON.stringify usage
-          const storePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+          // Check for JSON.stringify usage in Redux-owned message state
+          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
           if (storeContent.includes('JSON.stringify') && !storeContent.includes('try')) {
@@ -178,8 +180,8 @@ class AdvancedEdgeCaseTest {
             issues.push('Backend handler may not handle activation timeouts');
           }
 
-          // Check agent service
-          const servicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+          // Check stream lifecycle
+          const servicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
           const serviceContent = await fs.readFile(servicePath, 'utf-8');
 
           if (!serviceContent.includes('timeout') || !serviceContent.includes('clearTimeout')) {
@@ -203,12 +205,12 @@ class AdvancedEdgeCaseTest {
             issues.push('ChatPanel may not validate empty messages');
           }
 
-          // Check chat service
-          const chatServicePath = path.join(__dirname, '../src/features/agent/services/chat.service.ts');
-          const chatServiceContent = await fs.readFile(chatServicePath, 'utf-8');
+          // Check chat send saga
+          const chatSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
-          if (!chatServiceContent.includes('trim()') && !chatServiceContent.includes('message.length')) {
-            issues.push('Chat service may not validate empty messages');
+          if (!chatSagaContent.includes('trim()') || !chatSagaContent.includes('Message cannot be empty')) {
+            issues.push('Chat send saga may not validate empty messages');
           }
 
           return { passed: issues.length === 0, issues };
@@ -249,16 +251,16 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for disconnection handling
-          const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+          const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
           const agentServiceContent = await fs.readFile(agentServicePath, 'utf-8');
 
-          if (!agentServiceContent.includes('stream:disconnected') &&
-              !agentServiceContent.includes('stream:error')) {
-            issues.push('Agent service may not handle stream disconnection');
+          if (!agentServiceContent.includes("data.type === 'error'") &&
+              !agentServiceContent.includes('Agent Outcome Received')) {
+            issues.push('Stream lifecycle may not handle stream disconnection');
           }
 
           // Check for reconnection logic
-          if (!agentServiceContent.includes('reconnect') && !agentServiceContent.includes('retry')) {
+          if (!agentServiceContent.includes('executeWithRecovery') && !agentServiceContent.includes('retry')) {
             logger.warn('No automatic reconnection logic found for streaming');
           }
 
@@ -272,16 +274,16 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for state validation
-          const storePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
-          if (!storeContent.includes('try') || !storeContent.includes('catch')) {
-            issues.push('State store may not handle corrupted state gracefully');
+          if (!storeContent.includes('deduplicateRecoverySession') || !storeContent.includes('refreshSessionForMissingTarget')) {
+            issues.push('Agent stream saga may not handle corrupted state gracefully');
           }
 
           // Check for state recovery
-          if (!storeContent.includes('logger.error') || !storeContent.includes('logger.warn')) {
-            issues.push('State store may not log state corruption issues');
+          if (!storeContent.includes('logger.warn')) {
+            issues.push('Agent stream saga may not log state corruption issues');
           }
 
           return { passed: issues.length === 0, issues };
@@ -297,13 +299,13 @@ class AdvancedEdgeCaseTest {
           const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
           const pageContent = await fs.readFile(pagePath, 'utf-8');
 
-          if (!pageContent.includes('onDestroy') || !pageContent.includes('cleanup')) {
+          if (!pageContent.includes('onDestroy') || !pageContent.includes('cleanupManager.dispose')) {
             issues.push('Workspace page may not clean up on rapid navigation');
           }
 
           // Check for subscription cleanup
-          if (!pageContent.includes('unsubscribe') || !pageContent.includes('.off(')) {
-            issues.push('Event listeners may not be cleaned up on navigation');
+          if (!pageContent.includes('workspaceUnmounted')) {
+            issues.push('Workspace lifecycle may not clean up on navigation');
           }
 
           return { passed: issues.length === 0, issues };
@@ -406,7 +408,11 @@ class AdvancedEdgeCaseTest {
           console.log('  - Implement reconnection with backoff');
         }
       }
+
+      process.exit(1);
     }
+
+    process.exit(0);
   }
 }
 

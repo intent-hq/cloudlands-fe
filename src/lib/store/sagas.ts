@@ -78,7 +78,8 @@ import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-sag
 import { filesSaga } from "./slices/files/sagas/files-saga";
 import { agentQueueSaga } from "./slices/agent-queue/sagas/agent-queue-saga";
 import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
-import { agentStreamSaga } from "./slices/workspace-agents/sagas/agent-stream-saga";
+import { agentChatEffectsSaga } from "./slices/agent-session/sagas/agent-chat-effects-saga";
+import { agentStreamSaga } from "./slices/agent-session/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
@@ -162,6 +163,7 @@ export const sagas = {
   filesSaga,
   agentQueueSaga,
   agentIpcSaga,
+  agentChatEffectsSaga,
   agentStreamSaga,
   agentSubscriptionUISaga,
   agentAvailabilitySaga,

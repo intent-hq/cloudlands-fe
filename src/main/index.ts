@@ -173,12 +173,18 @@ setTimeout(() => {
 
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import { dialog, protocol } from 'electron';
+import {
+  dialog,
+  protocol,
+} from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
-import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
+import {
+  exportHandlerDebugInfo,
+  setupIPCInterceptor,
+} from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { setupWebviewSecurity } from './webview-security';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -300,7 +306,10 @@ import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupCommentsIPC } from '../features/comments/main/comments.ipc';
-import { setupConfigIPC } from '../features/config/main/config.ipc';
+import {
+  setupConfigIPC,
+  getConfigManager,
+} from '../features/config/main/config.ipc';
 import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEditorIPC } from '../features/editor/main/editor.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
@@ -315,7 +324,10 @@ import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout
 import { registerLineChangesIPC } from '../features/line-changes/line-changes.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
-import { setupMCPIPC, cleanupMCP } from '../features/mcp/mcp.ipc';
+import {
+  setupMCPIPC,
+  cleanupMCP,
+} from '../features/mcp/mcp.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupAssetsIPC } from '../features/notes/main/assets.ipc';
@@ -355,7 +367,10 @@ import {
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
-import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
+import {
+  cleanupTerminals,
+  setupTerminalIPC,
+} from '../features/terminal/main/terminal.ipc';
 import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
@@ -382,7 +397,7 @@ import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/ac
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
-import { getConfigManager } from '../features/config/main/config.ipc';
+
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
@@ -392,9 +407,21 @@ import { registerSSHHandlers } from '../features/ssh/main/ssh.ipc';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { resolveAppTitle } from './utils/resolve-app-title.js';
-import { getMainWindow} from './state';
-import { captureWindowSessionsSnapshot, clearWindowSessionsSnapshot, createWindow, createWindowForDeepLink, createWindowForSession, getWindowSessionsPath, loadWindowSessions, saveWindowSessions } from './window.js';
-import { setupAppProtocolHandler, setupWorkspaceAssetProtocolHandler } from './protocol-handlers.js';
+import { getMainWindow } from './state';
+import {
+  captureWindowSessionsSnapshot,
+  clearWindowSessionsSnapshot,
+  createWindow,
+  createWindowForDeepLink,
+  createWindowForSession,
+  getWindowSessionsPath,
+  loadWindowSessions,
+  saveWindowSessions,
+} from './window.js';
+import {
+  setupAppProtocolHandler,
+  setupWorkspaceAssetProtocolHandler,
+} from './protocol-handlers.js';
 
 const logger = new Logger('Main');
 

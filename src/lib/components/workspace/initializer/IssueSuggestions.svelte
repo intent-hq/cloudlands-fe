@@ -194,19 +194,27 @@
 
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+  untrack,
+} from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faPlus, faSearch, faSync } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faSearch,
+  faSync,
+} from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
   import { handleLink } from '$features/navigation/link-handler';
   import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.client';
   import {
-    selectGitHubAuthIsAuthenticated,
-    selectGitHubAuthIsAuthenticating,
-  } from '$lib/store/slices/github-auth/github-auth-selectors';
+  selectGitHubAuthIsAuthenticated,
+  selectGitHubAuthIsAuthenticating,
+} from '$lib/store/slices/github-auth/github-auth-selectors';
   import { startGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
   import { selectLinearIsAuthenticating } from '$lib/store/slices/linear-auth/linear-auth-selectors';
@@ -216,9 +224,9 @@
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { connectSentry } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
   import {
-    selectSentryIsConnecting,
-    selectSentryError,
-  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+  selectSentryIsConnecting,
+  selectSentryError,
+} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
   import Header from '$lib/components/ui/Header.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';

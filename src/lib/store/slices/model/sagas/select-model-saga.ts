@@ -1,8 +1,28 @@
-import { call, put, takeLatest } from "typed-redux-saga";
-import { getLocalStorageJSON, removeLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  call,
+  put,
+  takeLatest,
+} from "typed-redux-saga";
+import {
+  getLocalStorageJSON,
+  removeLocalStorageItem,
+  setLocalStorageJSON,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
-import { normalizeModelForProvider, normalizeProviderModels, } from "../model-selection-utils";
-import { selectModel, setSelectedModel, resetToDefaults, clearAllWorkspaceModels, GLOBAL_MODEL_KEY, PROVIDER_MODELS_KEY, WORKSPACE_MODELS_KEY, } from "../model-slice";
+import {
+  normalizeModelForProvider,
+  normalizeProviderModels,
+} from "../model-selection-utils";
+import {
+  selectModel,
+  setSelectedModel,
+  resetToDefaults,
+  clearAllWorkspaceModels,
+  GLOBAL_MODEL_KEY,
+  PROVIDER_MODELS_KEY,
+  WORKSPACE_MODELS_KEY,
+} from "../model-slice";
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 /**
  * Handle selecting a model: update state, persist, sync with unified store,

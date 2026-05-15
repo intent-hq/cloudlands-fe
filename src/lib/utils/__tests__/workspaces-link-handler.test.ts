@@ -4,8 +4,15 @@
  * including both short format (current workspace) and long format (cross-workspace)
  */
 
-import { describe, it, expect } from 'vitest';
-import { parseIntentLink, generateNoteLink } from '../workspaces-link-handler';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  parseIntentLink,
+  generateNoteLink,
+} from '../workspaces-link-handler';
 
 describe('workspaces-link-handler', () => {
   describe('parseIntentLink', () => {

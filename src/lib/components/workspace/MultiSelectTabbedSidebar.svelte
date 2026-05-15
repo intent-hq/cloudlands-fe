@@ -4,85 +4,98 @@
   import { addContextItem } from '$lib/store/slices/context/context-slice';
   import { v4 as uuidv4 } from 'uuid';
   import {
-    selectCurrentWorkspaceId,
-    selectCurrentStagedWorkingChanges,
-    selectCurrentUnstagedWorkingChanges,
-    selectCurrentCommits,
-  } from '$lib/store/slices/changes/changes-selectors';
+  selectCurrentWorkspaceId,
+  selectCurrentStagedWorkingChanges,
+  selectCurrentUnstagedWorkingChanges,
+  selectCurrentCommits,
+} from '$lib/store/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
-  import { type AvatarState, getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import {
+  type AvatarState,
+  getAvatarState,
+} from '$lib/components/ui/auggie-avatar/avatar-state';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
-  import { getFileExtension, track } from '$lib/services/analytics';
+  import {
+  getFileExtension,
+  track,
+} from '$lib/services/analytics';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    markNoteRead,
-    refreshUnreadNotes,
-  } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  markNoteRead,
+  refreshUnreadNotes,
+} from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
   import {
-    selectAllWorkspaceAgents,
-    selectForegroundWorkspaceAgents,
-    selectIsLoadingAgents,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  selectAllWorkspaceAgents,
+  selectForegroundWorkspaceAgents,
+  selectIsLoadingAgents,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import { loadWorkspacesRequested } from '$lib/store/slices/workspace/workspace-slice';
   import { locateItemInSidebarConsumed } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$lib/store/slices/app-layout/app-layout-selectors';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
-    faAsterisk,
-    faCompressAlt,
-    faExpandAlt,
-    faFolderTree,
-    faPencil,
-    faPlus,
-    faRobot,
-    faSearch,
-    faTimes,
-  } from '@fortawesome/free-solid-svg-icons';
+  faAsterisk,
+  faCompressAlt,
+  faExpandAlt,
+  faFolderTree,
+  faPencil,
+  faPlus,
+  faRobot,
+  faSearch,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
 
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { fly, slide } from 'svelte/transition';
+  import {
+  fly,
+  slide,
+} from 'svelte/transition';
   import AnimatedNumber from '../ui/AnimatedNumber.svelte';
   import Input from '../ui/input/input.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import OverviewTimelinePanel from './OverviewTimelinePanel.svelte';
-  import { FilesPanel, SidebarChangesPanel, isSpecNote } from './sidebar';
+  import {
+  FilesPanel,
+  SidebarChangesPanel,
+  isSpecNote,
+} from './sidebar';
   import AddContextSection from './sidebar/AddContextSection.svelte';
   import ContextPanel from './sidebar/ContextPanel.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import {
-    deriveWorkspacePhase,
-    deriveWorkspaceStats,
-    type WorkspacePhaseInfo,
-    type WorkspacePhaseStats,
-  } from './workspace-phase';
+  deriveWorkspacePhase,
+  deriveWorkspaceStats,
+  type WorkspacePhaseInfo,
+  type WorkspacePhaseStats,
+} from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
-    openWorkspaceCommitChangeset,
-    openWorkspaceDiff,
-    openWorkspaceLocalChanges,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceCommitChangeset,
+  openWorkspaceDiff,
+  openWorkspaceLocalChanges,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import {
-    setMultiSelectSidebarSelectedTabs,
-    setMultiSelectSidebarTabOrder,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  setMultiSelectSidebarSelectedTabs,
+  setMultiSelectSidebarTabOrder,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    selectMultiSelectSidebarSelectedTabIds,
-    selectMultiSelectSidebarTabOrder,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  selectMultiSelectSidebarSelectedTabIds,
+  selectMultiSelectSidebarTabOrder,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
     workspaceId: string;

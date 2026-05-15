@@ -13,7 +13,11 @@
  * 6. Promise resolves and ACPProvider sends response to auggie CLI
  */
 
-import { ipcMain, BrowserWindow, Notification } from 'electron';
+import {
+  ipcMain,
+  BrowserWindow,
+  Notification,
+} from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import type { PermissionOption, RequestPermissionOutcome } from '../types/base';

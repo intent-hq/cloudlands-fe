@@ -1,5 +1,8 @@
 import { logger } from '$lib/utils/client-logger';
-import { fuzzyMatch, pathFuzzyMatch } from './fuzzy-matcher';
+import {
+  fuzzyMatch,
+  pathFuzzyMatch,
+} from './fuzzy-matcher';
 
 /**
  * Debounced Search Service with Caching and Cancellation

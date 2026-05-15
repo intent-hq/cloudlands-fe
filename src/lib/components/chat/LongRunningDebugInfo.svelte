@@ -5,10 +5,17 @@
   Helps users understand what might be wrong and diagnose issues.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faInfoCircle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faInfoCircle,
+  faChevronDown,
+  faChevronUp,
+} from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
 
   interface Props {

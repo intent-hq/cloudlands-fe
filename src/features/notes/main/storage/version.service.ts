@@ -12,7 +12,11 @@
 import { Logger } from '../../../../shared/logger';
 import type { VersionEntry, VersionAuthor } from './note-storage.types';
 import { VERSION_CONFIG } from './note-storage.types';
-import { writeFileAtomic, appendFileAtomic, readFileSafe } from './atomic-file';
+import {
+  writeFileAtomic,
+  appendFileAtomic,
+  readFileSafe,
+} from './atomic-file';
 
 const logger = new Logger('VersionService');
 

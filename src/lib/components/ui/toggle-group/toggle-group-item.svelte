@@ -1,6 +1,9 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import { tv, type VariantProps } from 'tailwind-variants';
+  import {
+  tv,
+  type VariantProps,
+} from 'tailwind-variants';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { getContext } from 'svelte';
   import Button from '../button/button.svelte';

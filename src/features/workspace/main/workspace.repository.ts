@@ -9,7 +9,10 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
-import { validateWorkspace, safeValidateWorkspace } from '../../../shared/schemas';
+import {
+  validateWorkspace,
+  safeValidateWorkspace,
+} from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import * as LoggerModule from '../../../shared/logger';
 import {

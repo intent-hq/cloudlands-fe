@@ -9,7 +9,10 @@
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
-  import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
+  import {
+  Tooltip,
+  TooltipRich,
+} from '$lib/components/ui/tooltip';
   import type { ContextProvider, ContextItemType } from '$features/context/types';
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';

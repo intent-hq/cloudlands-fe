@@ -8,7 +8,13 @@
  * 4. Move the cursor to the beginning of the new option
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { ChoiceBlock } from '../ChoiceBlock';

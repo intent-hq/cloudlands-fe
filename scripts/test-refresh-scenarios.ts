@@ -34,26 +34,26 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      // Check unified-state-store for proper state preservation
-      const storeFile = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+      // Check Redux agent-session slice for proper state preservation
+      const storeFile = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
       const storeContent = fs.readFileSync(storeFile, 'utf-8');
 
       // Check if messages are preserved when session updates
-      if (!storeContent.includes('messages: session.messages || existingAgent?.messages || []')) {
+      if (!storeContent.includes('mergeSessionMessages') || !storeContent.includes('deduplicateAgentMessages')) {
         issues.push('Messages not preserved when updating session during streaming');
       }
 
-      // Check sessionStore for proper message handling
-      const sessionFile = path.join(__dirname, '../src/features/agent/browser/index.ts');
+      // Check stream saga for proper message handling
+      const sessionFile = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
       const sessionContent = fs.readFileSync(sessionFile, 'utf-8');
 
       // Check if updateMessage creates new objects for reactivity
-      if (!sessionContent.includes('...agent.messages[messageIndex]')) {
+      if (!sessionContent.includes('updateMessage(')) {
         issues.push('updateMessage not creating new objects for reactivity');
       }
 
       // Check if messages are merged properly on getSession
-      if (!sessionContent.includes('messages: agent.messages || agent.session.messages || []')) {
+      if (!sessionContent.includes('replaceMessages(') || !sessionContent.includes('deduplicateAgentMessages')) {
         issues.push('getSession not merging messages properly');
       }
 
@@ -81,7 +81,7 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check if textBuffer is preserved
@@ -131,14 +131,14 @@ class RefreshScenarioTester {
         issues.push('No onMount handler - streaming state may not be restored');
       }
 
-      // Check if agent status is checked on mount
-      if (!content.includes('currentAgent.status') && !content.includes('agent?.status') && !content.includes('AgentStatus')) {
-        issues.push('Agent status not checked on mount - may show wrong streaming state');
+      // Check if streaming state is read from Redux agent-session selectors
+      if (!content.includes('selectAgentSessionIsStreaming') || !content.includes('agentSessionIsStreaming')) {
+        issues.push('Streaming state not loaded from agent-session selectors on mount');
       }
 
-      // Check if messages are loaded from store
-      if (!content.includes('currentAgent.messages') && !content.includes('agent?.messages') && !content.includes('agent.messages')) {
-        issues.push('Messages not loaded from agent state on mount');
+      // Check if messages are loaded from Redux agent-session selectors
+      if (!content.includes('selectAgentMessages') || !content.includes('agentMessages')) {
+        issues.push('Messages not loaded from agent-session selectors on mount');
       }
 
       return {
@@ -165,7 +165,7 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check if tool blocks are preserved
@@ -210,16 +210,16 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const unifiedStoreFile = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+      const unifiedStoreFile = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
       const content = fs.readFileSync(unifiedStoreFile, 'utf-8');
 
       // Check for idempotent operations
-      if (!content.includes('existingAgent')) {
+      if (!content.includes('existing')) {
         issues.push('No check for existing agent - may duplicate data on multiple refreshes');
       }
 
       // Check for proper state merging
-      if (!content.includes('...existingAgent') || !content.includes('...session')) {
+      if (!content.includes('mergeSessionMessages') || !content.includes('updateSessionFields')) {
         issues.push('State not properly merged - may lose data on multiple refreshes');
       }
 
@@ -324,14 +324,14 @@ class RefreshScenarioTester {
       const sessionStoreFile = path.join(__dirname, '../src/features/agent/browser/index.ts');
       const content = fs.readFileSync(sessionStoreFile, 'utf-8');
 
-      // Check if store updates trigger reactivity
-      if (!content.includes('sessionStoreData.set')) {
-        issues.push('Store not using .set() - updates may not trigger reactivity');
+      // Check if browser compatibility subscribers are driven by Redux updates
+      if (!content.includes('getReduxStore().subscribe') || !content.includes('selectAgentById.select')) {
+        issues.push('Browser subscriber bridge not using Redux updates for reactivity');
       }
 
-      // Check if getAllSessions preserves messages
-      if (!content.includes('messages: agent.messages')) {
-        issues.push('getAllSessions not preserving messages');
+      // Check if message loading preserves persisted session messages
+      if (!content.includes('loadMessages') || !content.includes('return session.messages')) {
+        issues.push('Message loading not preserving session messages');
       }
 
       return {
@@ -358,7 +358,7 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check for session/stream ID isolation

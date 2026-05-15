@@ -2,8 +2,19 @@
  * Tests for date utilities
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { formatDistanceToNow, formatDate, formatRelativeTimeCompact } from '../date';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
+import {
+  formatDistanceToNow,
+  formatDate,
+  formatRelativeTimeCompact,
+} from '../date';
 
 describe('date utilities', () => {
   const NOW = new Date('2025-12-13T10:00:00Z');

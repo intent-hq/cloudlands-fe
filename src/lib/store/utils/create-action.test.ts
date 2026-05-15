@@ -1,5 +1,12 @@
-import { expect, describe, test } from "vitest";
-import { createAction, createAsyncAction } from "./create-action";
+import {
+  expect,
+  describe,
+  test,
+} from "vitest";
+import {
+  createAction,
+  createAsyncAction,
+} from "./create-action";
 import type { PayloadModifier } from "../types";
 
 // Test data types

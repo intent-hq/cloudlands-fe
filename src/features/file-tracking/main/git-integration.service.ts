@@ -13,7 +13,10 @@ import { Logger } from '$lib/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 import { getAttributionEngine } from '../../workspace/main/provenance/attribution-engine';
-import { storeBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
+import {
+  storeBlob,
+  isGitRepository,
+} from '../../../shared/git/git-blob-storage';
 import {
   partitionDefaultFileTrackingExcludes,
   summarizeDefaultFileTrackingExcludes,

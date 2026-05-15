@@ -87,22 +87,31 @@ interface UnifiedAgentConfig {
 
   // Optional - name is derived from initialMessage if not provided
   name?: string;
-  id?: string;                      // Pre-generated agent ID
+  id?: string; // Pre-generated agent ID
   model?: string;
   initialMessage?: string;
   contextReferences?: any[];
   metadata?: Record<string, any>;
-  behaviorPrompt?: string;          // Custom behavior instructions (from specialist)
-  workspaceContext?: {              // Open panels + linked references
+  behaviorPrompt?: string; // Custom behavior instructions (from specialist)
+  workspaceContext?: {
+    // Open panels + linked references
     openPanels: Array<{ type: string; title: string; id?: string; path?: string }>;
     linkedReferences: Array<{ type: string; title: string; identifier?: string; url?: string }>;
   };
 
   // Source tracking
-  source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' |
-           'background-agent-trigger' | 'workspace-page' | 'agent-launch-menu' |
-           'bubble-menu' | 'specialist-picker' | string;
-  agentType?: AgentTypeId;          // Backend builds system prompt from this
+  source?:
+    | 'workspace-initializer'
+    | 'contextual-menu'
+    | 'chat-panel'
+    | 'api'
+    | 'background-agent-trigger'
+    | 'workspace-page'
+    | 'agent-launch-menu'
+    | 'bubble-menu'
+    | 'specialist-picker'
+    | string;
+  agentType?: AgentTypeId; // Backend builds system prompt from this
 
   // NOTE: systemPrompt is DEPRECATED - backend builds from agentType via InstructionService
 }
@@ -117,6 +126,7 @@ const result = await agentFactory.createAgent(workspace, {
 ```
 
 **Key Responsibilities**:
+
 - Validate configuration
 - Generate agent IDs using `unifiedIdService`
 - Call backend via IPC
@@ -129,6 +139,7 @@ const result = await agentFactory.createAgent(workspace, {
 Handles all IPC requests from the frontend and orchestrates backend operations.
 
 **Key Data Structures**:
+
 ```typescript
 private messageQueues = new Map<string, QueuedMessage[]>();
 private processingQueue = new Set<string>();
@@ -136,6 +147,7 @@ private interruptedAgents = new Set<string>();
 ```
 
 **Key Methods**:
+
 - `handleCreateAgent()` - Create new agent
 - `handleSendMessage()` - Send message to agent
 - `handleStopSession()` - Stop agent and mark as interrupted
@@ -161,6 +173,7 @@ Builds system prompts using a **9-layer** architecture. The order is:
 The mandatory footer remains at the end, and sub-agents skip the parent-only orchestration layers plus workspace context.
 
 **3-Tier Rule Fallback** (for specialization rules):
+
 1. User customizations (EndUserRulesManager via electron-store)
 2. Workspace files (.augment/agent-rules/{type}.md)
 3. Bundled defaults (TypeScript constants in instructions/ directory)
@@ -175,6 +188,7 @@ The mandatory footer remains at the end, and sub-agents skip the parent-only orc
 **Location**: `src/features/agent/main/consolidated-backend.service.ts`
 
 Single source of truth for agent operations. Manages:
+
 - Agent sessions
 - ACP provider connections
 - Health monitoring
@@ -230,35 +244,41 @@ This handshake ensures stream handlers are registered before streaming begins.
 
 ### Session Recovery (Page Refresh/HMR)
 
-The AgentService handles session recovery on page refresh or HMR reload:
+Session recovery is split between a thin renderer stream adapter and Redux sagas. `src/features/agent/agent-stream-lifecycle.ts` reconnects stream handlers and emits typed Redux actions; state-dependent decisions and side-effect orchestration live in `src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts`.
 
 **On initialization** (`reconnectActiveStreams()`):
+
 1. Scans all sessions in store for messages with `isStreaming === true`
 2. Re-registers stream handlers for those sessions
 3. This allows continuing to receive chunks from ongoing backend streams
 
 **Backend stream query** (`reconnectToBackendStreams()`):
+
 1. Calls `agent:get-active-streams` IPC to query active backend streams
-2. Clears stale streaming states for sessions not in active backend streams
-3. **Grace period**: 15 seconds for newly created agents (prevents race conditions)
-4. Re-registers IPC handlers and marks sessions as streaming
-5. Dispatches `session-updated` event so ChatService syncs its state
+2. Dispatches `backendStreamsReconnectResultReceived(...)` with the raw backend snapshot
+3. Lets agent-session stream sagas clear stale streaming state, refresh stale sessions, and reconcile active streams
+4. Re-registers IPC handlers and marks sessions as streaming where appropriate
+5. Reconciles Redux-owned agent-session and chat lifecycle state for restored streams
 
 **Cross-workspace streaming**:
+
 - Uses `getAllSessionsAcrossWorkspaces()` to check ALL workspaces
 - `setStreamingForWorkspace()` updates state in non-current workspaces
 - Backend tracks `streamWorkspaceIds` Map for each active stream
 - Stream completion correctly updates session even if user switched workspaces
 
 **SessionStorage persistence**:
+
 - Active streams saved to sessionStorage on page unload (`beforeunload` handler)
 - Restored via `restoreFromSessionStorage()` on next load
 - Restored sessions marked as `degraded` until verified
 
+**Thin service rule**: service and lifecycle files should remain as thin as possible. They may subscribe to IPC/stream events and dispatch typed Redux actions, but Redux-state target lookup, stale-session refresh/reconcile, rate limiting, fallback assistant message creation policy, and other side-effect orchestration belong in Redux sagas. See [Agent Message Deduplication and Stream Saga Architecture](./agent-message-dedup-and-stream-sagas.md).
+
 ### Message Flow
 
 ```
-1. UI calls agentService.sendMessage(agentId, content, workspace)
+1. UI sends message request through the current Redux/IPC message flow
 2. IPC call to backend: AGENT_BACKEND_CHANNELS.SEND_MESSAGE
 3. AgentBackendHandler.handleSendMessage()
 4. If agent busy → queue message
@@ -276,6 +296,7 @@ The AgentService handles session recovery on page refresh or HMR reload:
 The StreamManager uses **agentId as the canonical key** for all sessions. Since only ONE stream per agent is allowed at a time (enforced by `cleanupSessionByAgentId` at the start of `startStream`), we use agentId directly as the session key. This eliminates the need for complex ID mapping between streamId, sessionId, frontendSessionId, and backendSessionId.
 
 Key features:
+
 - Direct pass-through streaming (no batching, no buffering, no delays)
 - Session management with automatic cleanup
 - Health monitoring and recovery
@@ -304,6 +325,7 @@ MEMORY_LEAK_THRESHOLD: 20 * 1024 * 1024 // 20MB
 ```
 
 **Health Statuses**:
+
 - `healthy` - Active within timeout, normal operation
 - `degraded` - No activity for half of STALLED_TIMEOUT
 - `stalled` - No activity for full STALLED_TIMEOUT, recovery attempted
@@ -319,11 +341,11 @@ MEMORY_LEAK_THRESHOLD: 20 * 1024 * 1024 // 20MB
 
 ```typescript
 type StreamEventType =
-  | 'chunk'           // Text chunk
-  | 'content-blocks'  // ContentBlock array
-  | 'complete'        // Stream finished
-  | 'error'           // Stream error
-  | 'end';            // Final cleanup
+  | 'chunk' // Text chunk
+  | 'content-blocks' // ContentBlock array
+  | 'complete' // Stream finished
+  | 'error' // Stream error
+  | 'end'; // Final cleanup
 ```
 
 ### ContentBlocks
@@ -340,6 +362,12 @@ type ContentBlock =
   | { type: 'image'; source: ImageSource }
   | { type: 'audio'; source: AudioSource };
 ```
+
+### Message Deduplication and Missing-Target Reconciliation
+
+Agent session message deduplication is centralized in `src/shared/utils/message-dedup.ts` and applied by `src/lib/store/slices/agent-session/agent-session-slice.ts` during session/message ingestion. The shared utility owns duplicate matching and merge policy for assistant stream finalization cases, including near-duplicate content with divergent renderer/backend identities, so renderer and main-process persistence paths use the same rules.
+
+When stream updates arrive without a local assistant update target, `agent-stream-lifecycle.ts` dispatches raw stream actions and the agent-session `agent-stream-saga.ts` performs the stateful reconciliation: select the session, try canonical target matching, refresh from persistence with bypass cache, and only then create a fallback assistant message if needed. See [Agent Message Deduplication and Stream Saga Architecture](./agent-message-dedup-and-stream-sagas.md) for the full flow.
 
 ## Queueing & Interruption
 
@@ -365,6 +393,7 @@ interface QueuedMessage {
 ```
 
 **Queue Operations (AgentBackendHandler)**:
+
 - `handleQueueMessage()` - Add message to queue
 - `handleEditQueuedMessage()` - Edit content of queued message
 - `handleRemoveQueuedMessage()` - Remove message from queue
@@ -376,6 +405,7 @@ interface QueuedMessage {
 ### Interruption Handling
 
 When `handleStopSession()` is called:
+
 1. Agent ID added to `interruptedAgents` Set
 2. ACP Provider interrupted via `provider.interrupt()`
 3. Backend cleanup via `backend.backendStop()`
@@ -386,6 +416,7 @@ When `handleStopSession()` is called:
 This prevents queued messages from auto-sending after user stops an agent.
 
 **Error vs Interruption Behavior**:
+
 - **Interruptions**: Send 'complete' event, agent not marked as failed
 - **Real Errors**: Send 'error' event, agent marked as failed, `agent:failed` event emitted
 
@@ -436,7 +467,7 @@ When `resetHistory=true` is passed to `sendMessage()`:
 
 ### Critical Implementation Details
 
-1. **Dual State Update**: Both ChatService state AND sessionStore must be updated when truncating messages. Otherwise, the `session-updated` event handler will overwrite truncated messages with stale data.
+1. **Dual State Update**: Both chat state and persisted agent-session state must be updated when truncating messages. Otherwise, stale persistence can restore truncated messages.
 
 2. **Index Refresh**: After `stopChat()`, the message list may change. The message index must be re-calculated using the updated state.
 
@@ -462,7 +493,7 @@ type AgentTypeId =
   | 'workspace-agent'
   | 'code-review'
   | 'commit-message'
-  | 'pr-description'
+  | 'pr-description';
 ```
 
 Most typed IDs have corresponding instruction sources in `src/features/agent/instructions/`; `common` is the shared instruction layer that gets prepended during specialization assembly.
@@ -484,27 +515,27 @@ const executor = new BackgroundAgentExecutor({
   timeout: 60000,
   onResult: (result) => {
     commitMessage = result;
-  }
+  },
 });
 
 // Execute the agent
 await executor.execute(workspace, context);
 
 // Access reactive state (Svelte 5 runes)
-executor.status;   // 'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled'
+executor.status; // 'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled'
 executor.messages; // Array of messages
-executor.result;   // Extracted result
+executor.result; // Extracted result
 executor.progress; // 0-100
 ```
 
 ### Background Agent Types
 
-| Trigger Type | Instruction ID | Result Tag | Timeout | Purpose |
-|------|----------------|------------|---------|---------|
-| `commit` | `commit-message` | `COMMIT_MESSAGE` | 120s | Generate commit messages |
-| `pr` | `pr-description` | `PR_DESCRIPTION` | 180s | Generate PR descriptions |
-| `review` | `code-review` | `CODE_REVIEW` | 120s | Code review analysis |
-| `walkthrough` | `code-walkthrough` | `CODE_WALKTHROUGH` | 120s | Code walkthrough |
+| Trigger Type  | Instruction ID     | Result Tag         | Timeout | Purpose                  |
+| ------------- | ------------------ | ------------------ | ------- | ------------------------ |
+| `commit`      | `commit-message`   | `COMMIT_MESSAGE`   | 120s    | Generate commit messages |
+| `pr`          | `pr-description`   | `PR_DESCRIPTION`   | 180s    | Generate PR descriptions |
+| `review`      | `code-review`      | `CODE_REVIEW`      | 120s    | Code review analysis     |
+| `walkthrough` | `code-walkthrough` | `CODE_WALKTHROUGH` | 120s    | Code walkthrough         |
 
 ### Factory Functions
 
@@ -513,11 +544,11 @@ import {
   createCommitMessageExecutor,
   createPRDescriptionExecutor,
   createCodeReviewExecutor,
-  createWalkthroughExecutor
+  createWalkthroughExecutor,
 } from './background-agent-executor.svelte';
 
 const executor = createCommitMessageExecutor({
-  onResult: (result) => console.log(result)
+  onResult: (result) => console.log(result),
 });
 ```
 
@@ -556,19 +587,20 @@ Using ACP's native session modes:
 
 All agent creation goes through `agentFactory.createAgent()`:
 
-| Component | Source | Notes |
-|-----------|--------|-------|
-| WorkspaceInitializer | `workspace-initializer` | New workspace agents |
-| AgentLaunchMenu | `agent-launch-menu` | Contextual agent launch |
-| ContextualMenu | `contextual-menu` | Right-click menu |
-| ChatPanel | `chat-panel` | Chat interface |
-| BubbleMenu | `bubble-menu` | Text selection menu |
-| TaskDelegation | `task-menu` | Task assignment |
-| MCP Tools | `mcp-tool` | Agent-spawned agents |
+| Component            | Source                  | Notes                   |
+| -------------------- | ----------------------- | ----------------------- |
+| WorkspaceInitializer | `workspace-initializer` | New workspace agents    |
+| AgentLaunchMenu      | `agent-launch-menu`     | Contextual agent launch |
+| ContextualMenu       | `contextual-menu`       | Right-click menu        |
+| ChatPanel            | `chat-panel`            | Chat interface          |
+| BubbleMenu           | `bubble-menu`           | Text selection menu     |
+| TaskDelegation       | `task-menu`             | Task assignment         |
+| MCP Tools            | `mcp-tool`              | Agent-spawned agents    |
 
 ## Persistence
 
 Agents are persisted to disk at:
+
 ```
 ~/.workspaces/{workspaceId}/.workspace/agents/{agentId}.json
 ```
@@ -592,10 +624,12 @@ errorHandler.track(error);
 ## Testing
 
 Tests are located in:
+
 - `services/__tests__/` - Unit tests
 - `tests/integration/` - Integration tests
 
 Run tests:
+
 ```bash
 pnpm run test:unit -- --reporter=default
 ```

@@ -11,7 +11,11 @@
 
 import type { Workspace, WorkspaceId } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { getItem } from "../../../utils/collection-utils";
 import {
   clearWorkspacePendingDeletion,

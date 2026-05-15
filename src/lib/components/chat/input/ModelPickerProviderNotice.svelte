@@ -25,7 +25,10 @@
 
 <script lang="ts">
   import { shell } from '$lib/electron-bridge';
-  import { faCircleNotch, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCircleNotch,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {

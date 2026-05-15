@@ -11,28 +11,32 @@
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import Fa from 'svelte-fa';
-  import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCode,
+  faTerminal,
+  faRobot,
+} from '@fortawesome/free-solid-svg-icons';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import {
-    parseAgentMessage,
-    parseSuggestedPrompts,
-    groupParsedBlocks,
-    groupContentBlocks,
-    type RenderBlock,
-    type ParsedContent,
-    type ContentBlockGroup,
-    type RenderContentBlock,
-  } from '$lib/utils/messageParser';
+  parseAgentMessage,
+  parseSuggestedPrompts,
+  groupParsedBlocks,
+  groupContentBlocks,
+  type RenderBlock,
+  type ParsedContent,
+  type ContentBlockGroup,
+  type RenderContentBlock,
+} from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    openWorkspaceFile,
-    openWorkspaceNote,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
   const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');

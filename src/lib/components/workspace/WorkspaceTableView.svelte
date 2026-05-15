@@ -3,21 +3,27 @@
   import { selectUnreadAgentIdsByWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSession,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+  selectAgentSession,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
+  import {
+  buildRepoPathLookup,
+  getGroupKey,
+} from './utils/workspace-grouping';
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
-  import { scale, slide } from 'svelte/transition';
   import {
-    compareWorkspaceActivityDisplayTimeDesc,
-    getWorkspaceActivityDisplayTime,
-  } from '$shared/utils/workspace-activity-time';
+  scale,
+  slide,
+} from 'svelte/transition';
+  import {
+  compareWorkspaceActivityDisplayTimeDesc,
+  getWorkspaceActivityDisplayTime,
+} from '$shared/utils/workspace-activity-time';
   import WorkspaceTableCollapseButton from './WorkspaceTableCollapseButton.svelte';
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
   import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
@@ -33,12 +39,12 @@
   //
   // By returning plain AnimationConfig objects, Svelte takes the non-deferred
   // code path which uses safe no-op handlers.
-   
+
   function send(node: Element, _params: { key: any }) {
     return scale(node, { duration: 200, start: 0.95, easing: quintOut });
   }
 
-   
+
   function receive(node: Element, _params: { key: any }) {
     return scale(node, { duration: 200, start: 0.95, easing: quintOut });
   }

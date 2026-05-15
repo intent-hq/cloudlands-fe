@@ -6,12 +6,12 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faChevronRight,
-    faCodeBranch,
-    faServer,
-    faSpinner,
-    faArrowRight,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronRight,
+  faCodeBranch,
+  faServer,
+  faSpinner,
+  faArrowRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';

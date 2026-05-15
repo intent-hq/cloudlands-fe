@@ -16,7 +16,10 @@ import {
   type McpEvent,
   type McpActor,
 } from '../../types/events';
-import { TOOL_SCHEMAS, type ToolName } from '../../types/schemas';
+import {
+  TOOL_SCHEMAS,
+  type ToolName,
+} from '../../types/schemas';
 import type { BrowserWindow } from 'electron';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { Logger } from '../../../../shared/logger';

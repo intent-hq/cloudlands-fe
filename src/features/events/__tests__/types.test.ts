@@ -2,7 +2,11 @@
  * Tests for event types and type guards
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   isFileChangedEvent,
   isAgentToolCallEvent,

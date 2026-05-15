@@ -2,8 +2,15 @@
  * Tests for workspace-validation utilities
  */
 
-import { describe, it, expect } from 'vitest';
-import { validateBranchPrefix, sanitizeBranchPrefix } from '../workspace-validation';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  validateBranchPrefix,
+  sanitizeBranchPrefix,
+} from '../workspace-validation';
 
 describe('workspace-validation', () => {
   describe('validateBranchPrefix', () => {

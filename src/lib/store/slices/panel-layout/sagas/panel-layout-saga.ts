@@ -8,7 +8,15 @@
  * - Cleanup on clearPanelLayout
  */
 
-import { call, debounce, fork, put, select, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  debounce,
+  fork,
+  put,
+  select,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { clearPanelLayoutAdapter } from "$features/layout/panel-layout-adapter";
 import {
   workspaceMounted,
@@ -75,7 +83,10 @@ import {
   updateFileTabPath,
   consumePendingFocus,
 } from "../panel-layout-slice";
-import { PANEL_LAYOUT_STORAGE_KEY_PREFIX, HISTORY_PERSIST_DEBOUNCE_MS } from "../panel-layout-types";
+import {
+  PANEL_LAYOUT_STORAGE_KEY_PREFIX,
+  HISTORY_PERSIST_DEBOUNCE_MS,
+} from "../panel-layout-types";
 import type { PanelLayoutNode, WorkspacePanelLayout } from "../panel-layout-types";
 
 // ============================================================================

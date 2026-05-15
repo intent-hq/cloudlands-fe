@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import { panelContextSaga } from "./slices/workspace-navigation/sagas/panel-context-saga";
 import {
@@ -6,7 +10,10 @@ import {
   watchWorkspaceNavigationLifecycleSaga,
   watchWorkspaceNavigationPersistenceSaga,
 } from "./slices/workspace-navigation/sagas/workspace-navigation-saga";
-import { sagaNames, sagas } from "./sagas";
+import {
+  sagaNames,
+  sagas,
+} from "./sagas";
 
 describe("renderer saga registry", () => {
   it("registers workspace navigation static child sagas independently", () => {

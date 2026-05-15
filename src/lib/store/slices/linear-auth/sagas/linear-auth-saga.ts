@@ -1,5 +1,13 @@
 import { linearAuthClient } from "$features/linear-auth/renderer/linear-auth.client";
-import { call, delay, fork, put, race, take, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+} from "typed-redux-saga";
 import {
   cancelLinearAuth,
   fetchLinearIssues,

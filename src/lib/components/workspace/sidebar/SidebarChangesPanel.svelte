@@ -7,48 +7,52 @@
 
   import { recomputeAgentLocks } from '$lib/store/slices/agent-lock/agent-lock-slice';
   import {
-    selectStagedWorkingChanges as selectFtStagedChanges,
-    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-    selectFileTrackingCommits as selectFtCommits,
-    selectFileTrackingLoading as selectFtLoading,
-    selectFileTrackingChangesTruncated as selectFtChangesTruncated,
-    selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
-  } from '$lib/store/slices/changes/changes-selectors';
-  import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
+  selectStagedWorkingChanges as selectFtStagedChanges,
+  selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+  selectFileTrackingCommits as selectFtCommits,
+  selectFileTrackingLoading as selectFtLoading,
+  selectFileTrackingChangesTruncated as selectFtChangesTruncated,
+  selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
+  selectPendingAutoAction,
+  selectAcceptChangesState,
+} from '$lib/store/slices/changes/changes-selectors';
+  import {
+  refreshRequested,
+  refreshAcceptChangesStatus,
+  setPendingAutoAction,
+} from '$lib/store/slices/changes/changes-slice';
   import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
   import { gitCache } from '$features/git/git-cache';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import {
-    selectGitStatus,
-    selectGitAhead,
-    selectGitBehind,
-  } from '$lib/store/slices/git/git-selectors';
+  loadGitStatus,
+  setPostMergeState,
+  setGitOperationFlag,
+} from '$lib/store/slices/git/git-slice';
+  import {
+  selectGitStatus,
+  selectGitAhead,
+  selectGitBehind,
+  selectPostMergeState,
+  selectGitOperationFlags,
+} from '$lib/store/slices/git/git-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
-  import { addTerminal, openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
+  import {
+  addTerminal,
+  openTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
+
+
+
+
   import {
-    setPostMergeState,
-    setGitOperationFlag,
-  } from '$lib/store/slices/git/git-slice';
-  import {
-    selectPostMergeState,
-    selectGitOperationFlags,
-  } from '$lib/store/slices/git/git-selectors';
-  import {
-    refreshAcceptChangesStatus,
-    setPendingAutoAction,
-  } from '$lib/store/slices/changes/changes-slice';
-  import { selectPendingAutoAction } from '$lib/store/slices/changes/changes-selectors';
-  import {
-    selectAcceptChangesState,
-  } from '$lib/store/slices/changes/changes-selectors';
-  import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-    selectWorkspaceActivePullRequest,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspaceId,
+  selectWorkspaceById,
+  selectWorkspaceActivePullRequest,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
   import { openWorkspaceLocalChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
@@ -61,14 +65,17 @@
   import { syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, untrack } from 'svelte';
+  import {
+  onMount,
+  untrack,
+} from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import {
-    constructPrUrl as constructPrUrlUtil,
-    computeTotalStats,
-    mapWorkspacePRs,
-  } from './sidebar-changes-utils';
+  constructPrUrl as constructPrUrlUtil,
+  computeTotalStats,
+  mapWorkspacePRs,
+} from './sidebar-changes-utils';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -355,9 +362,6 @@
       );
     }
   });
-
-  // Deferred results restoration is now handled by executor-result-saga
-  // on workspace mount (via workspaceMounted action).
 
   // Handle manual git status refresh
   async function handleRefreshGitStatus() {

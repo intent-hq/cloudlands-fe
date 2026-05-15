@@ -8,10 +8,10 @@
    */
   import { slide } from 'svelte/transition';
   import {
-    faArrowUpRightFromSquare,
-    faArrowsRotate,
-    faPlug,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowUpRightFromSquare,
+  faArrowsRotate,
+  faPlug,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';

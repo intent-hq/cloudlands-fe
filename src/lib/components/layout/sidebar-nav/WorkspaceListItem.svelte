@@ -1,12 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
   import {
-    faCheck,
-    faThumbtack,
-    faArrowUpRightFromSquare,
-    faBoxArchive,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faThumbtack,
+  faArrowUpRightFromSquare,
+  faBoxArchive,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
@@ -21,24 +21,27 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    incrementContextMenuOpen,
-    decrementContextMenuOpen,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  incrementContextMenuOpen,
+  decrementContextMenuOpen,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSession,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+  selectAgentSession,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import {
-    requestArchiveWorkspace,
-    requestDeleteWorkspace,
-  } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  requestArchiveWorkspace,
+  requestDeleteWorkspace,
+} from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import { selectWorkspaceActivePullRequest } from '$lib/store/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
-  import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
+  import {
+  isPRMergeable as checkPRMergeable,
+  getPRTooltipContent,
+} from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
   interface Props {

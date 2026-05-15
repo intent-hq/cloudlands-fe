@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { generateLinePatchFromContent, getChangedLineNumbersFromContent } from '../line-staging';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  generateLinePatchFromContent,
+  getChangedLineNumbersFromContent,
+} from '../line-staging';
 
 describe('line staging helpers', () => {
   it('reports changed lines in displayed real-file coordinates for partial diffs', () => {

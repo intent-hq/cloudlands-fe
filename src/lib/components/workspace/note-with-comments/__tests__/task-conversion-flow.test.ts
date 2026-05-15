@@ -1,10 +1,24 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  render,
+  waitFor,
+} from '@testing-library/svelte';
 import type { Note } from '$shared/types';
-import { ContentType, NoteVisibility } from '$shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+} from '$shared/types';
 
 const {
   mockDispatch,

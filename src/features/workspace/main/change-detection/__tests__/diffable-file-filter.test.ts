@@ -6,11 +6,20 @@
  * in files with no extension or unrecognized extensions.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { isFileDiffable, filterDiffableFiles } from '../diffable-file-filter';
+import {
+  isFileDiffable,
+  filterDiffableFiles,
+} from '../diffable-file-filter';
 
 let tmpDir: string;
 

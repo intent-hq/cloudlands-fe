@@ -6,7 +6,10 @@
  */
 
 import { z } from 'zod';
-import { IpcContracts, type IpcContractKey } from './contracts';
+import {
+  IpcContracts,
+  type IpcContractKey,
+} from './contracts';
 import { Logger } from '../logger';
 
 const logger = new Logger('TypeValidation');

@@ -5,9 +5,18 @@
  * registration, and debugging type issues. Only active in development mode.
  */
 
-import { handlerRegistry, type ValidationReport } from './registry';
-import { IpcContracts, type IpcContractKey } from './contracts';
-import { validateIpcRequest, validateIpcResponse } from './validation';
+import {
+  handlerRegistry,
+  type ValidationReport,
+} from './registry';
+import {
+  IpcContracts,
+  type IpcContractKey,
+} from './contracts';
+import {
+  validateIpcRequest,
+  validateIpcResponse,
+} from './validation';
 import { Logger } from '../logger';
 import { TypeValidationError } from './errors';
 

@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { Note } from '$shared/types';
-import { flattenTaskTree, findReadyTasks } from '../task-tree-utils';
+import {
+  flattenTaskTree,
+  findReadyTasks,
+} from '../task-tree-utils';
 
 // Helper to create a minimal task note for testing
 // Note: Task orchestration now uses parentId hierarchy - children block their parent

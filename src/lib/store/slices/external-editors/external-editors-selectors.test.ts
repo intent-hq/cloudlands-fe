@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { createCollection } from "$lib/store/utils/collection-utils";
 import type { StoreState } from "../../types";
 import type { InstalledEditor } from "./external-editors-slice";

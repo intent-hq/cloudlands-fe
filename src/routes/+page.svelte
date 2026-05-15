@@ -7,67 +7,73 @@
 
   import { loadKnownRepos } from '$lib/store/slices/known-repos/known-repos-slice';
   import {
-    selectKnownRepos,
-    selectKnownReposLoaded,
-  } from '$lib/store/slices/known-repos/known-repos-selectors';
+  selectKnownRepos,
+  selectKnownReposLoaded,
+} from '$lib/store/slices/known-repos/known-repos-selectors';
   import {
-    selectWorkspaceHasLoaded,
-    selectWorkspaceItems,
-    selectWorkspaceLoading,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectWorkspaceHasLoaded,
+  selectWorkspaceItems,
+  selectWorkspaceLoading,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    toggleGroupByRepo,
-    toggleShowArchived,
-  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  toggleGroupByRepo,
+  toggleShowArchived,
+} from '$lib/store/slices/user-preferences/user-preferences-slice';
   import {
-    selectGroupByRepo,
-    selectHasCompletedProviderSetup,
-    selectShowArchived,
-  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  selectGroupByRepo,
+  selectHasCompletedProviderSetup,
+  selectShowArchived,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { clearHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-slice';
   import { selectHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-selectors';
   import {
-    selectNodeVersion,
-    selectShowNodeWarning,
-  } from '$lib/store/slices/system-status/system-status-selectors';
+  selectNodeVersion,
+  selectShowNodeWarning,
+} from '$lib/store/slices/system-status/system-status-selectors';
   import {
-    closeBulkArchiveConfirm,
-    closeBulkDeleteArchivedConfirm,
-    closeBulkDeleteWarningConfirm,
-    closeDeleteWarning,
-    closeRemoveRepoConfirm,
-    confirmBulkArchive,
-    confirmBulkDeleteArchived,
-    confirmBulkDeleteWarning,
-    confirmDeleteWorkspace,
-    confirmRemoveRepo,
-    openBulkArchiveConfirm,
-    openBulkDeleteArchivedConfirm,
-    openRemoveRepoConfirm,
-    requestArchiveWorkspace,
-    requestDeleteWorkspace,
-    requestOpenWorkspace,
-    requestUnarchiveWorkspace,
-  } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  closeBulkArchiveConfirm,
+  closeBulkDeleteArchivedConfirm,
+  closeBulkDeleteWarningConfirm,
+  closeDeleteWarning,
+  closeRemoveRepoConfirm,
+  confirmBulkArchive,
+  confirmBulkDeleteArchived,
+  confirmBulkDeleteWarning,
+  confirmDeleteWorkspace,
+  confirmRemoveRepo,
+  openBulkArchiveConfirm,
+  openBulkDeleteArchivedConfirm,
+  openRemoveRepoConfirm,
+  requestArchiveWorkspace,
+  requestDeleteWorkspace,
+  requestOpenWorkspace,
+  requestUnarchiveWorkspace,
+} from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import {
-    selectBulkDeleteWorkspaceCount,
-    selectPendingBulkRepoKey,
-    selectPendingRemoveRepoPath,
-    selectRunningAgentNamesForDelete,
-    selectShowBulkArchiveConfirm,
-    selectShowBulkDeleteArchivedConfirm,
-    selectShowBulkDeleteWarningConfirm,
-    selectShowDeleteWarning,
-    selectShowRemoveRepoConfirm,
-  } from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
+  selectBulkDeleteWorkspaceCount,
+  selectPendingBulkRepoKey,
+  selectPendingRemoveRepoPath,
+  selectRunningAgentNamesForDelete,
+  selectShowBulkArchiveConfirm,
+  selectShowBulkDeleteArchivedConfirm,
+  selectShowBulkDeleteWarningConfirm,
+  selectShowDeleteWarning,
+  selectShowRemoveRepoConfirm,
+} from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,
   } from '$lib/components/workspace/WorkspaceTableView.svelte';
 
-  import { faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { tick, untrack } from 'svelte';
+  import {
+  faSearch,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  tick,
+  untrack,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';

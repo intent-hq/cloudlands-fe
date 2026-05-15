@@ -3,8 +3,15 @@
  */
 import { Editor } from '@tiptap/core';
 import { createEditorConfig } from '../editor-config';
-import { describe, it, expect } from 'vitest';
-import { processMarkdownToHTML, processHTMLToMarkdown } from '../markdown-processor';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+} from '../markdown-processor';
 
 describe('TipTap Markdown Processor - Round Trip Tests', () => {
   describe('Basic Elements', () => {

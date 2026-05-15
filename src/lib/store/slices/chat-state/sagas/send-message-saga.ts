@@ -5,23 +5,36 @@
  * - Queue-vs-send decision based on streaming state
  * - Workspace rebind waiting
  * - Workspace change detection + reinitialization
- * - Calling chatService.sendMessage / unifiedOrchestrator.queueMessage
+ * - Dispatching agent-session send trigger / unifiedOrchestrator.queueMessage
  * - Error handling + toast notifications
  *
  * Replaces the ~250-line handleSend() in ChatPanel.svelte.
  */
 
-import { call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
-import { getChatService, MessageGuardError, type SendMessageOptions } from '$features/agent/services/chat.service';
 import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
-import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
-import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import {
+  selectAgentIsResponding,
+  selectAgentSession,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
+import {
+  agentSessionStopChatRequested,
+  agentSessionSendMessageRequested,
+} from '$lib/store/slices/agent-session/agent-session-slice';
+import type { AgentSessionSendMessageOptions } from '$lib/store/slices/agent-session/agent-session-types';
+
 import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
 import { clearChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
 import { uncheckAllSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
-import { cleanErrorMessage } from '$shared/errors/messages';
 import type { AgentSession } from '$shared/types';
 import { waitFor } from '$lib/store/slices/store-utility/sagas/waitFor';
 import {
@@ -37,9 +50,13 @@ import {
 } from '../chat-state-slice';
 import {
   selectChatIsRebinding,
+  selectChatLastMessageTime,
   selectChatTrackedWorkspaceId,
 } from '../chat-state-selectors';
-import type { SendMessagePayload } from '../chat-state-types';
+import {
+  MIN_MESSAGE_SEND_INTERVAL,
+  type SendMessagePayload,
+} from '../chat-state-types';
 
 const logger = createLogger('SendMessageSaga');
 
@@ -93,6 +110,118 @@ function showErrorToast(message: string): void {
   });
 }
 
+type SerializedContextItem = NonNullable<SendMessagePayload['serializedContextItems']>[number];
+type ImageBlock = NonNullable<SendMessagePayload['imageBlocks']>[number];
+
+function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve({
+        data: result.split(',')[1] || result,
+        mimeType: file.type || 'application/octet-stream',
+      });
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function extractImageBlocks(items: SerializedContextItem[] | undefined): ImageBlock[] | undefined {
+  const imageBlocks = items
+    ?.filter((item) => item.imageData && item.imageMimeType)
+    .map((item) => ({
+      type: 'image' as const,
+      data: item.imageData!,
+      mimeType: item.imageMimeType!,
+    }));
+
+  return imageBlocks && imageBlocks.length > 0 ? imageBlocks : undefined;
+}
+
+function* serializeContextItemsForQueue(
+  payload: SendMessagePayload,
+): SagaGenerator<{
+  serializedContextItems?: SerializedContextItem[];
+  imageBlocks?: ImageBlock[];
+}> {
+  if (payload.serializedContextItems) {
+    return {
+      serializedContextItems: payload.serializedContextItems,
+      imageBlocks: payload.imageBlocks ?? extractImageBlocks(payload.serializedContextItems),
+    };
+  }
+
+  if (!payload.contextItems || payload.contextItems.length === 0) {
+    return { imageBlocks: payload.imageBlocks };
+  }
+
+  const serializedItems: SerializedContextItem[] = [];
+  for (const item of payload.contextItems) {
+    if (!item.file) {
+      serializedItems.push(item);
+      continue;
+    }
+
+    try {
+      const { data, mimeType } = yield* call(fileToBase64, item.file);
+      const { file: _file, ...rest } = item;
+      serializedItems.push(
+        item.file.type.startsWith('image/')
+          ? { ...rest, imageData: data, imageMimeType: mimeType }
+          : { ...rest, fileData: data, fileMimeType: mimeType },
+      );
+    } catch (error) {
+      logger.error('Failed to serialize context item for queued send', {
+        label: item.label,
+        error,
+      });
+    }
+  }
+
+  return {
+    serializedContextItems: serializedItems,
+    imageBlocks: payload.imageBlocks ?? extractImageBlocks(serializedItems),
+  };
+}
+
+function* removeQueuedMessageBeforeSend(
+  agentId: string,
+  payload: SendMessagePayload,
+): SagaGenerator<boolean> {
+  if (!payload.queuedMessageId) return true;
+
+  const result = yield* call(
+    unifiedOrchestrator.removeQueuedMessage.bind(unifiedOrchestrator),
+    agentId,
+    payload.queuedMessageId,
+  );
+  if (!result.success) {
+    logger.error('Failed to remove queued message before sending', {
+      agentId,
+      messageId: payload.queuedMessageId,
+      error: result.error,
+    });
+  }
+  return result.success;
+}
+
+function* stopBeforeForceSubmit(agentId: string, payload: SendMessagePayload): SagaGenerator<void> {
+  if (!payload.forceSubmit) return;
+
+  const isResponding = yield* selectAgentIsResponding.effect(agentId);
+  if (!isResponding) return;
+
+  const stopAction = agentSessionStopChatRequested(agentId);
+  yield* put(stopAction);
+  try {
+    yield* call(() => stopAction.promise);
+  } catch (error) {
+    logger.warn('Failed to stop chat before force submit', { agentId, error });
+  }
+}
+
 // ============================================================================
 // Queue path
 // ============================================================================
@@ -103,7 +232,8 @@ function* handleQueuePath(
   wsId: string,
   reason?: string,
 ): SagaGenerator<void> {
-  const { text, serializedContextItems, imageBlocks } = payload;
+  const { text } = payload;
+  const { serializedContextItems, imageBlocks } = yield* call(serializeContextItemsForQueue, payload);
 
   logger.info(reason ?? 'Agent is streaming, queueing message', { agentId });
 
@@ -137,7 +267,21 @@ function* handleSendPath(
   agentId: string,
   payload: SendMessagePayload,
 ): SagaGenerator<void> {
-  const { text, serializedContextItems, workspaceContextStr, noteIds, imageBlocks } = payload;
+  const { text, workspaceContextStr, noteIds } = payload;
+
+  const removedQueuedMessage = yield* call(removeQueuedMessageBeforeSend, agentId, payload);
+  if (!removedQueuedMessage) return;
+
+  yield* call(stopBeforeForceSubmit, agentId, payload);
+
+  // --- Redux-owned rate limiting ---
+  const now = Date.now();
+  const lastMessageTime = yield* selectChatLastMessageTime.effect(agentId);
+  if (lastMessageTime > 0 && now - lastMessageTime < MIN_MESSAGE_SEND_INTERVAL) {
+    logger.warn('Message sent too quickly, rejecting', { agentId });
+    yield* put(chatSendFailed(agentId, ''));
+    return;
+  }
 
   // --- Dispatch chatSendStarted immediately so loading UI appears right away ---
   yield* put(chatSendStarted(agentId, wsId));
@@ -208,28 +352,21 @@ function* handleSendPath(
 
   // --- Actually send ---
   try {
-    const chatService = getChatService(agentId);
-    const workspace = yield* selectWorkspaceById.effect(wsId);
-    if (!workspace) {
-      logger.error('Workspace not found in Redux for send', { wsId });
-      yield* put(chatSendFailed(agentId, 'Workspace not found. Please try again.'));
-      yield* call(showErrorToast, 'Workspace not found. Please try again.');
-      return;
-    }
-
     // Prepend workspace context to the message if available
     const messageWithContext = workspaceContextStr
       ? `${workspaceContextStr}\n\n${text.trim()}`
       : text.trim();
 
-    // Dispatch UI cleanup actions
+    // Dispatch shared/domain cleanup actions. ChatPanel owns local DOM/input cleanup.
     yield* put(clearChatDraft(wsId, agentId));
     yield* put(uncheckAllSelections());
 
-    // When serializedContextItems is already present, it already contains image
+    const { serializedContextItems, imageBlocks } = yield* call(serializeContextItemsForQueue, payload);
+
+    // When serializedContextItems are present, they already contain image
     // entries (with imageData/imageMimeType) from the normal ChatPanel send flow.
     // Only reconstruct from imageBlocks for the queue-replay ("Send now") flow,
-    // which dispatches imageBlocks without serializedContextItems.
+    // which may dispatch imageBlocks without context items.
     const hasSerializedContext = !!serializedContextItems && serializedContextItems.length > 0;
     const imageContextItems =
       !hasSerializedContext
@@ -247,39 +384,21 @@ function* handleSendPath(
       ...imageContextItems,
     ];
 
-    yield* call(
-      chatService.sendMessage.bind(chatService),
-      messageWithContext,
-      workspace,
+    const sendAction = agentSessionSendMessageRequested(agentId, wsId, messageWithContext, {
+      // serializedContextItems have File objects stripped (serialized to base64 data),
+      // so they satisfy the send context shape at runtime even though `file` is absent.
+      contextItems: allContextItems.length > 0
+        ? (allContextItems as AgentSessionSendMessageOptions['contextItems'])
+        : undefined,
+      noteIds,
       agentId,
-      {
-        // serializedContextItems have File objects stripped (serialized to base64 data),
-        // so they satisfy ContextItem at runtime even though the `file` property is absent.
-        contextItems: allContextItems.length > 0 ? (allContextItems as SendMessageOptions['contextItems']) : undefined,
-        noteIds,
-        agentId,
-      },
-    );
+    });
+    yield* put(sendAction);
+    yield* call(() => sendAction.promise);
 
     logger.info('Message sent successfully', { agentId });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
-    const isInterrupted = errorMessage.includes('Agent interrupted');
-
-    // FIX: MessageGuardError (rate limiter / idempotency check) means the message
-    // was legitimately blocked. Clear the streaming state that chatSendStarted set,
-    // but don't show an error toast — this is expected double-click protection.
-    if (error instanceof MessageGuardError) {
-      logger.info('Message blocked by guard, clearing send state', { agentId, reason: errorMessage });
-      yield* put(chatSendFailed(agentId, ''));
-      return;
-    }
-
-    if (!isInterrupted) {
-      logger.error('Failed to send message', { agentId, error });
-      yield* put(chatSendFailed(agentId, cleanErrorMessage(errorMessage)));
-      yield* call(showErrorToast, cleanErrorMessage(errorMessage));
-    }
+  } catch {
+    // The core agentSessionSendMessageRequested handler owns send failure side effects.
   }
 }
 
@@ -297,7 +416,7 @@ function* handleSendMessage(
   if (!payload.skipQueueCheck) {
     // agent-session canonical selector is the single source of truth for responding state
     const isResponding = yield* selectAgentIsResponding.effect(agentId);
-    const agent = yield* selectAgentById.effect(agentId);
+    const agent = yield* selectAgentSession.effect(agentId);
     const isUserActionWait = yield* call(isWaitingForUserAction, agentId);
     const isStoppedTurnReadyForInput = isCompletedTurnReadyForInput(agent);
 
@@ -337,7 +456,7 @@ export function* watchSendMessage(): SagaGenerator<void> {
     const wsId = payload.wsId;
 
     if (activeSends.has(agentId)) {
-      const agent = yield* selectAgentById.effect(agentId);
+      const agent = yield* selectAgentSession.effect(agentId);
       const isUserActionWait = yield* call(isWaitingForUserAction, agentId);
       const isStoppedTurnReadyForInput = isCompletedTurnReadyForInput(agent);
       if (payload.skipQueueCheck || isStoppedTurnReadyForInput || isUserActionWait) {

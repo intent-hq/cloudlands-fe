@@ -9,8 +9,19 @@
  *    are silently rejected, preventing interleaved text.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { combineReducers, legacy_createStore as createStore, type Store } from 'redux';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
+import {
+  combineReducers,
+  legacy_createStore as createStore,
+  type Store,
+} from 'redux';
 import { messageAccumulatorReducer } from '../../../../../store/main/slices/message-accumulator/message-accumulator-slice';
 
 let testStore: Store;
@@ -45,7 +56,10 @@ vi.mock('../../../../workspace/main/provenance/attribution-engine', () => ({
   }),
 }));
 
-import { ACPProviderStreaming, testStreamManager } from '../acp-provider-streaming';
+import {
+  ACPProviderStreaming,
+  testStreamManager,
+} from '../acp-provider-streaming';
 import * as messageAccumulator from '../../../../../store/main/slices/message-accumulator/message-accumulator-api';
 
 describe('ACP Provider Streaming Handler Lifecycle', () => {

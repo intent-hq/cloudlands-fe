@@ -1,8 +1,13 @@
-import type { AgentSession, AgentMessage } from "$shared/types";
-import { createAction } from "../../utils/create-action";
+import type { AgentSession, AgentMessage, ContentBlock, AgentId } from "$shared/types";
+import type { UnifiedAgentConfig } from "$shared/types/agent.types";
+import {
+  createAction,
+  createAsyncAction,
+} from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
+import { upsertSession } from "../agent-session/agent-session-slice";
 
 export interface InitialAgentConfig {
   agentId: string;
@@ -21,6 +26,8 @@ export interface InitialAgentConfig {
 export interface WorkspaceAgentState {
   /** Ordered list of agent IDs belonging to this workspace. Session data lives in agent-session slice. */
   agentIds: string[];
+  /** Ordered list of foreground agent IDs belonging to this workspace. */
+  foregroundAgentIds: AgentId[];
   agentsLoaded: boolean;
   isLoadingAgents: boolean;
   initialAgentId: string | null;
@@ -33,10 +40,10 @@ export interface WorkspaceAgentState {
   /** Whether the initial spec-writer agent is actively writing the spec */
   isInitialSpecWriteInProgress: boolean;
   /**
-   * Track the message count from disk for each agent session.
+   * Track the message count from disk/restored upserts for each agent session.
    * Prevents beforeunload from overwriting a complete session on disk
    * with a stale in-memory session that has fewer messages.
-   * Key: agentId, Value: message count from last disk load.
+   * Key: agentId, Value: message count from last upserted session payload.
    */
   diskMessageCounts: Record<string, number>;
   /**
@@ -49,6 +56,60 @@ export interface WorkspaceAgentState {
 
 export interface WorkspaceAgentsState {
   byWorkspaceId: Record<string, WorkspaceAgentState>;
+}
+
+export interface AgentStreamUpdatePayload {
+  workspaceId?: string;
+  agentId: string;
+  handlerSessionId: string;
+  source: "sendMessage" | "restored";
+  eventType: "started" | "chunk" | "content-blocks" | "complete" | "error" | "timeout";
+  timestamp?: number;
+  assistantMessageId?: string;
+  assistantAppMessageId?: string;
+  contentBlocks?: ContentBlock[];
+  rawContentBlocks?: ContentBlock[];
+  chunk?: string;
+  completeMessage?: unknown;
+  finishReason?: string;
+  error?: string;
+  createInitialPlaceholder?: boolean;
+  streamId?: string;
+}
+
+export interface BackendActiveStreamPayload {
+  agentId: string;
+  workspaceId?: string;
+  assistantAppMessageId?: string;
+  accumulatedContent?: {
+    content?: string;
+    contentBlocks?: ContentBlock[];
+  };
+}
+
+export interface AgentCreationRequestOptions {
+  openAgent?: boolean;
+  openInAdjacentPanel?: boolean;
+  panelId?: string;
+  sourcePanelId?: string;
+  assignTaskNoteId?: string;
+  reloadNotes?: boolean;
+  markInitialMessageSent?: boolean;
+}
+
+export interface ForkAgentRequest {
+  forkedAgentId: string;
+  sourceAgentId: string;
+  name: string;
+  model?: string;
+  messages: AgentMessage[];
+  forkPoint: number;
+  selectedText?: string;
+  switchToForked?: boolean;
+}
+
+export interface SaveAgentSessionOptions {
+  allowTruncation?: boolean;
 }
 
 function reconcileWorkspaceAgentSnapshot(
@@ -67,6 +128,16 @@ function reconcileWorkspaceAgentSnapshot(
   }
 
   const allIdSet = new Set(mergedIds);
+  const diskIdSet = new Set(diskAgentIds);
+  const diskForegroundAgentIds = agents.filter((agent) => !isBackgroundAgent(agent)).map((agent) => agent.id);
+  const diskForegroundIdSet = new Set(diskForegroundAgentIds.map((id) => String(id)));
+  const foregroundAgentIds = mergeUniqueAgentIds(
+    workspaceState.foregroundAgentIds.filter((id) => {
+      const agentId = String(id);
+      return allIdSet.has(agentId) && (!diskIdSet.has(agentId) || diskForegroundIdSet.has(agentId));
+    }),
+    diskForegroundAgentIds
+  );
   const recentlyCreatedAgents = workspaceState.recentlyCreatedAgents.filter((id) =>
     allIdSet.has(id)
   );
@@ -79,14 +150,47 @@ function reconcileWorkspaceAgentSnapshot(
   return {
     ...workspaceState,
     agentIds: mergedIds,
+    foregroundAgentIds,
     recentlyCreatedAgents,
     isWaitingForFirstMessage,
   };
 }
 
+function isBackgroundAgent(agent: AgentSession): boolean {
+  return agent.isBackground === true || agent.metadata?.isBackground === true;
+}
+
+function mergeUniqueAgentIds(existing: AgentId[], additions: AgentId[]): AgentId[] {
+  const existingIds = new Set(existing.map((id) => String(id)));
+  const merged = [...existing];
+  let changed = false;
+  for (const id of additions) {
+    if (!existingIds.has(String(id))) {
+      merged.push(id);
+      existingIds.add(String(id));
+      changed = true;
+    }
+  }
+  return changed ? merged : existing;
+}
+
+function removeAgentId(existing: AgentId[], agentId: string): AgentId[] {
+  if (!existing.some((id) => String(id) === agentId)) {
+    return existing;
+  }
+  return existing.filter((id) => String(id) !== agentId);
+}
+
+function syncForegroundAgentId(existing: AgentId[], agent: AgentSession): AgentId[] {
+  return isBackgroundAgent(agent)
+    ? removeAgentId(existing, String(agent.id))
+    : mergeUniqueAgentIds(existing, [agent.id]);
+}
+
 
 export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   agentIds: [],
+  foregroundAgentIds: [],
   agentsLoaded: false,
   isLoadingAgents: false,
   initialAgentId: null,
@@ -117,9 +221,6 @@ export const addAgent = createAction<[wsId: string, agent: AgentSession]>(
 export const removeAgent = createAction<[wsId: string, agentId: string]>(
   "workspaceAgents/removeAgent"
 );
-export const renameAgent = createAction<[wsId: string, agentId: string, name: string]>(
-  "workspaceAgents/renameAgent"
-);
 export const markAgentRecentlyCreated = createAction<[wsId: string, agentId: string]>(
   "workspaceAgents/markAgentRecentlyCreated"
 );
@@ -141,6 +242,19 @@ export const createAgentRequested = createAction<[wsId: string, agentType?: stri
 export const createAgentWithSpecialistRequested = createAction<
   [wsId: string, specialistId: string | null]
 >("workspaceAgents/createAgentWithSpecialistRequested");
+export const createAgentFromConfigRequested = createAsyncAction<[
+  wsId: string,
+  config: UnifiedAgentConfig,
+  options?: AgentCreationRequestOptions,
+], AgentSession>("workspaceAgents/createAgentFromConfig", "workspaceAgents/createAgentFromConfigRequested");
+export const activateInitialAgentRequested = createAction<[
+  wsId: string,
+  agentId: string,
+  config: UnifiedAgentConfig,
+]>("workspaceAgents/activateInitialAgentRequested");
+export const forkAgentRequested = createAction<[wsId: string, request: ForkAgentRequest]>(
+  "workspaceAgents/forkAgentRequested"
+);
 export const delegateTaskRequested = createAction<[wsId: string, taskText: string, openAgent?: boolean]>(
   "workspaceAgents/delegateTaskRequested"
 );
@@ -170,52 +284,6 @@ export const setActiveAgentId = createAction<[wsId: string, agentId: string | nu
   "workspaceAgents/setActiveAgentId"
 );
 
-/** Upsert an agent session with message-preservation logic */
-export const upsertAgentSession = createAction<[wsId: string, session: AgentSession]>(
-  "workspaceAgents/upsertAgentSession"
-);
-
-/** Set streaming state for an agent */
-export const setAgentStreaming = createAction<[wsId: string, agentId: string, isStreaming: boolean]>(
-  "workspaceAgents/setAgentStreaming"
-);
-
-/** Add a message to an agent's conversation */
-export const addAgentMessage = createAction<[wsId: string, agentId: string, message: AgentMessage]>(
-  "workspaceAgents/addAgentMessage"
-);
-
-/** Update a specific message in an agent's conversation */
-export const updateAgentMessage = createAction<[wsId: string, agentId: string, messageId: string, updates: Partial<AgentMessage>]>(
-  "workspaceAgents/updateAgentMessage"
-);
-
-/** Replace all messages for an agent */
-export const replaceAgentMessages = createAction<[wsId: string, agentId: string, messages: AgentMessage[]]>(
-  "workspaceAgents/replaceAgentMessages"
-);
-
-/** Atomically remove a single message by ID (avoids TOCTOU with read→filter→replace) */
-export const removeAgentMessage = createAction<[wsId: string, agentId: string, messageId: string]>(
-  "workspaceAgents/removeAgentMessage"
-);
-
-/**
- * Swaps the message at the matched index in place. Does not re-sort or
- * re-dedup — the caller must ensure the new message is semantically close
- * enough to the old one (same logical turn) that re-normalization isn't
- * required. Used by the saga's content-match dedup to preserve canonical-ID
- * without reordering.
- */
-export const replaceAgentMessageById = createAction<[wsId: string, agentId: string, oldId: string, newMessage: AgentMessage]>(
-  "workspaceAgents/replaceAgentMessageById"
-);
-
-/** Update an agent's digest field */
-export const updateAgentDigest = createAction<[wsId: string, agentId: string, digest: string | null]>(
-  "workspaceAgents/updateAgentDigest"
-);
-
 /** Set the initial spec write in-progress flag */
 export const setInitialSpecWriteInProgress = createAction<[wsId: string, isWriting: boolean]>(
   "workspaceAgents/setInitialSpecWriteInProgress"
@@ -226,29 +294,9 @@ export const removeWorkspaceAgentState = createAction<[wsId: string]>(
   "workspaceAgents/removeWorkspaceAgentState"
 );
 
-// Heartbeat actions (saga-only — no reducer state needed; timers live in the saga)
-export const startHeartbeat = createAction<[sessionId: string, intervalMs?: number]>(
-  "workspaceAgents/startHeartbeat"
-);
-export const heartbeatReceived = createAction<[sessionId: string]>(
-  "workspaceAgents/heartbeatReceived"
-);
-export const stopHeartbeat = createAction<[sessionId: string]>(
-  "workspaceAgents/stopHeartbeat"
-);
-export const stopAllHeartbeats = createAction("workspaceAgents/stopAllHeartbeats");
-export const heartbeatTimedOut = createAction<[sessionId: string]>(
-  "workspaceAgents/heartbeatTimedOut"
-);
-
 // --------------------------------------------------------------------------
 // Actions for AgentService serializable state (6a migration)
 // --------------------------------------------------------------------------
-
-/** Set the disk message count for an agent (used to prevent stale overwrites) */
-export const setDiskMessageCount = createAction<[wsId: string, agentId: string, count: number]>(
-  "workspaceAgents/setDiskMessageCount"
-);
 
 /** Record a recent agent:created event timestamp for deduplication */
 export const recordAgentCreatedEvent = createAction<[wsId: string, agentId: string, timestamp: number]>(
@@ -269,6 +317,42 @@ export const triggerBackendStreamReconnect = createAction(
   "workspaceAgents/triggerBackendStreamReconnect"
 );
 
+// Session lifecycle request actions (saga-owned side effects)
+export const saveAgentSessionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+  immediate?: boolean,
+  options?: SaveAgentSessionOptions,
+], void>("workspaceAgents/saveAgentSession", "workspaceAgents/saveAgentSessionRequested");
+export const renameAgentSessionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+  name: string,
+], void>("workspaceAgents/renameAgentSession", "workspaceAgents/renameAgentSessionRequested");
+export const stopAgentSessionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+], void>("workspaceAgents/stopAgentSession", "workspaceAgents/stopAgentSessionRequested");
+export const deleteAgentSessionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+], void>("workspaceAgents/deleteAgentSession", "workspaceAgents/deleteAgentSessionRequested");
+export const deleteAgentWithUndoRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+  agentName?: string,
+], AgentSession | null>("workspaceAgents/deleteAgentWithUndo", "workspaceAgents/deleteAgentWithUndoRequested");
+export const undoAgentDeletionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+], boolean>("workspaceAgents/undoAgentDeletion", "workspaceAgents/undoAgentDeletionRequested");
+export const commitPendingAgentDeletionRequested = createAction<[wsId: string, agentId: string]>(
+  "workspaceAgents/commitPendingAgentDeletionRequested"
+);
+export const flushPendingAgentDeletionsRequested = createAsyncAction<[
+  wsId: string,
+], void>("workspaceAgents/flushPendingAgentDeletions", "workspaceAgents/flushPendingAgentDeletionsRequested");
+
 // Stream lifecycle actions (saga-only — stream state lives in stream-handler-registry.ts)
 
 /** Request the safety timeout check after reconnect (replaces startStreamingSafetyTimeout) */
@@ -276,16 +360,35 @@ export const triggerStreamingSafetyCheck = createAction<[confirmedActiveIds: str
   "workspaceAgents/triggerStreamingSafetyCheck"
 );
 
-/** Request cleanup of orphaned stream handlers */
-export const cleanupOrphanedStreamHandlersRequested = createAction(
-  "workspaceAgents/cleanupOrphanedStreamHandlersRequested"
+/** Request stream handler re-registration for streaming sessions in a workspace. */
+export const reconnectStreamHandlersForWorkspaceRequested = createAction<[workspaceId: string]>(
+  "workspaceAgents/reconnectStreamHandlersForWorkspaceRequested"
 );
+
+/** Backend active-stream snapshot from the thin lifecycle adapter. */
+export const backendStreamsReconnectResultReceived = createAction<[
+  streams: BackendActiveStreamPayload[],
+]>("workspaceAgents/backendStreamsReconnectResultReceived");
+
+/** Raw stream update from the thin lifecycle adapter; reducers/sagas derive serializable state. */
+export const agentStreamUpdateReceived = createAction<
+  [payload: AgentStreamUpdatePayload],
+  [payload: AgentStreamUpdatePayload & { timestamp: number }]
+>(
+  "workspaceAgents/agentStreamUpdateReceived",
+  (payload) => [{ ...payload, timestamp: payload.timestamp ?? Date.now() }]
+);
+
+/** Clear stale streaming assistant messages before a new stream mutates state. */
+export const agentStreamResetStreamingMessagesRequested = createAction<[
+  payload: { workspaceId?: string; agentId: string; reason: string },
+]>("workspaceAgents/agentStreamResetStreamingMessagesRequested");
 
 /**
  * Saga-only trigger: ensure a single agent session is loaded into Redux.
  * If the session already exists for the given agentId it is a no-op;
- * otherwise the saga resolves the workspace and calls
- * `agentService.restoreSessionWithoutBackend`. Idempotent and debounced
+ * otherwise the saga resolves the workspace and loads persisted session/config
+ * through the saga-owned persistence utility. Idempotent and debounced
  * per `(wsId, agentId)` — rapid re-dispatches while a load is in flight
  * are ignored. Handled in sagas/ensure-agent-session-saga.ts.
  */
@@ -293,7 +396,21 @@ export const ensureAgentSessionLoaded = createAction<[wsId: string, agentId: str
   "workspaceAgents/ensureAgentSessionLoaded"
 );
 
+export const activateAgentRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+], AgentSession | null>(
+  "workspaceAgents/activateAgent",
+  "workspaceAgents/activateAgentRequested",
+);
 
+export const restoreAgentSessionRequested = createAsyncAction<[
+  wsId: string,
+  agentId: string,
+], AgentSession | null>(
+  "workspaceAgents/restoreAgentSession",
+  "workspaceAgents/restoreAgentSessionRequested",
+);
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState)
   .with(setAgents, (state, { payload: [wsId, agents] }) => {
@@ -303,23 +420,33 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
   .with(addAgent, (state, { payload: [wsId, agent] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     const agentId = String(agent.id);
+    const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, agent);
     if (workspaceState.agentIds.includes(agentId)) {
+      if (foregroundAgentIds !== workspaceState.foregroundAgentIds) {
+        return setWorkspaceState(state, wsId, {
+          ...workspaceState,
+          foregroundAgentIds,
+        });
+      }
       return state;
     }
     return setWorkspaceState(state, wsId, {
       ...workspaceState,
       agentIds: [...workspaceState.agentIds, agentId],
+      foregroundAgentIds,
     });
   })
   .with(removeAgent, (state, { payload: [wsId, agentId] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
-    if (!workspaceState.agentIds.includes(agentId)) {
+    const foregroundAgentIds = removeAgentId(workspaceState.foregroundAgentIds, agentId);
+    if (!workspaceState.agentIds.includes(agentId) && foregroundAgentIds === workspaceState.foregroundAgentIds) {
       return state;
     }
 
     return setWorkspaceState(state, wsId, {
       ...workspaceState,
       agentIds: workspaceState.agentIds.filter((id) => id !== agentId),
+      foregroundAgentIds,
       initialAgentId:
         workspaceState.initialAgentId === agentId ? null : workspaceState.initialAgentId,
       recentlyCreatedAgents: workspaceState.recentlyCreatedAgents.filter(
@@ -406,16 +533,33 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
     if (workspaceState.activeAgentId === agentId) return state;
     return setWorkspaceState(state, wsId, { ...workspaceState, activeAgentId: agentId });
   })
-  .with(upsertAgentSession, (state, { payload: [wsId, session] }) => {
+  .with(upsertSession, (state, { payload: [session] }) => {
     // Only track the agent ID — session data lives in agent-session slice
+    const wsId = String(session.workspaceId);
     const workspaceState = getWorkspaceState(state, wsId);
     const agentId = String(session.id);
+    const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, session);
+    const diskMessageCounts = workspaceState.diskMessageCounts[agentId] !== undefined
+      ? workspaceState.diskMessageCounts
+      : { ...workspaceState.diskMessageCounts, [agentId]: session.messages?.length ?? 0 };
     if (workspaceState.agentIds.includes(agentId)) {
+      if (
+        foregroundAgentIds !== workspaceState.foregroundAgentIds ||
+        diskMessageCounts !== workspaceState.diskMessageCounts
+      ) {
+        return setWorkspaceState(state, wsId, {
+          ...workspaceState,
+          foregroundAgentIds,
+          diskMessageCounts,
+        });
+      }
       return state;
     }
     return setWorkspaceState(state, wsId, {
       ...workspaceState,
       agentIds: [...workspaceState.agentIds, agentId],
+      foregroundAgentIds,
+      diskMessageCounts,
     });
   })
   .with(setInitialSpecWriteInProgress, (state, { payload: [wsId, isWriting] }) => {
@@ -430,14 +574,6 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
   // --------------------------------------------------------------------------
   // AgentService serializable state (6a migration)
   // --------------------------------------------------------------------------
-  .with(setDiskMessageCount, (state, { payload: [wsId, agentId, count] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.diskMessageCounts[agentId] === count) return state;
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      diskMessageCounts: { ...workspaceState.diskMessageCounts, [agentId]: count },
-    });
-  })
   .with(recordAgentCreatedEvent, (state, { payload: [wsId, agentId, timestamp] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {

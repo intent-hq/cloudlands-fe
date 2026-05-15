@@ -1,5 +1,8 @@
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
-import { getDefaultProviderId, parseCompoundModelId } from "$shared/config/provider-config";
+import {
+  getDefaultProviderId,
+  parseCompoundModelId,
+} from "$shared/config/provider-config";
 
 const DEFAULT_PROVIDER_ID = getDefaultProviderId();
 

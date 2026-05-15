@@ -1,13 +1,12 @@
-import type { AgentSession, QueuedMessage } from "$shared/types";
+import type { AgentId, AgentSession, QueuedMessage } from "$shared/types";
 import type { StoreState } from "../../types";
 import { createSelector } from "../../utils/create-selector";
 import { selectAgentSession } from "../agent-session/agent-session-selectors";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
-import { emptyWorkspaceAgentState, type InitialAgentConfig } from "./workspace-agents-slice";
-
-function isBackgroundAgent(agent: AgentSession): boolean {
-  return !!(agent.isBackground || agent.metadata?.isBackground);
-}
+import {
+  emptyWorkspaceAgentState,
+  type InitialAgentConfig,
+} from "./workspace-agents-slice";
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
@@ -16,7 +15,7 @@ function getWorkspaceAgentState(state: StoreState, wsId: string) {
 /** Derives agent sessions from workspace agentIds + agent-session slice */
 export const selectAllWorkspaceAgents = createSelector((state, wsId?: string): AgentSession[] => {
   if (!wsId) return [];
-  
+
   const agentIds = getWorkspaceAgentState(state, wsId).agentIds;
   const result: AgentSession[] = [];
   for (const id of agentIds) {
@@ -26,8 +25,39 @@ export const selectAllWorkspaceAgents = createSelector((state, wsId?: string): A
   return result;
 });
 
+/** Get reducer-maintained foreground agent IDs for a workspace. */
+export const selectWorkspaceForegroundAgentIds = createSelector(
+  (state, wsId?: string): AgentId[] => {
+    if (!wsId) return [];
+    return getWorkspaceAgentState(state, wsId).foregroundAgentIds;
+  }
+);
+
+/** Get background agent sessions for a workspace. */
+export const selectBackgroundWorkspaceAgents = createSelector(
+  (state, wsId?: string): AgentSession[] => {
+    if (!wsId) return [];
+
+    const workspaceState = getWorkspaceAgentState(state, wsId);
+    const foregroundAgentIds = new Set(workspaceState.foregroundAgentIds.map((id) => String(id)));
+    const result: AgentSession[] = [];
+    for (const id of workspaceState.agentIds) {
+      if (foregroundAgentIds.has(String(id))) continue;
+      const session = selectAgentSession.select(state, id);
+      if (session) result.push(session);
+    }
+    return result;
+  }
+);
+
 export const selectForegroundWorkspaceAgents = createSelector((state, wsId: string) => {
-  return selectAllWorkspaceAgents.select(state, wsId).filter((agent) => !isBackgroundAgent(agent));
+  const foregroundAgentIds = selectWorkspaceForegroundAgentIds.select(state, wsId);
+  const result: AgentSession[] = [];
+  for (const id of foregroundAgentIds) {
+    const session = selectAgentSession.select(state, String(id));
+    if (session) result.push(session);
+  }
+  return result;
 });
 
 export const selectAgentsLoaded = createSelector((state, wsId: string) => {
@@ -79,13 +109,6 @@ export const selectActiveAgentId = createSelector((state, wsId: string): string 
   return getWorkspaceAgentState(state, wsId).activeAgentId;
 });
 
-/** Get a specific agent session by ID — reads from agent-session slice */
-export const selectAgentById = createSelector(
-  (state, agentId: string): AgentSession | undefined => {
-    return selectAgentSession.select(state, agentId) ?? undefined;
-  }
-);
-
 /**
  * Returns the ready session for an agent within a workspace, or null until the
  * agent-session slice has hydrated the session for that workspace.
@@ -97,6 +120,46 @@ export const selectWorkspaceAgentReadySession = createSelector(
     if (String(session.workspaceId) === String(wsId)) return session;
 
     return null;
+  }
+);
+
+/**
+ * Get a workspace-scoped agent session. Use this instead of bridge read helpers
+ * when a caller knows the workspace that owns the agent.
+ */
+export const selectWorkspaceAgentSession = createSelector(
+  (state, wsId: string, agentId: string): AgentSession | undefined => {
+    if (!wsId || !agentId) return undefined;
+
+    const plainAgentId = String(agentId);
+    const session = selectAgentSession.select(state, plainAgentId);
+    if (!session) return undefined;
+    if (session.workspaceId === wsId) return session;
+
+    const workspaceState = getWorkspaceAgentState(state, wsId);
+    const trackedInWorkspace = workspaceState.agentIds.some((id) => String(id) === plainAgentId);
+    return trackedInWorkspace ? session : undefined;
+  }
+);
+
+/** Check whether a workspace owns an agent session. */
+export const selectWorkspaceHasAgent = createSelector(
+  (state, wsId: string, agentId: string): boolean => {
+    return !!selectWorkspaceAgentSession.select(state, wsId, agentId);
+  }
+);
+
+/** Check whether a workspace-scoped agent is currently streaming. */
+export const selectWorkspaceAgentIsStreaming = createSelector(
+  (state, wsId: string, agentId: string): boolean => {
+    return selectWorkspaceAgentSession.select(state, wsId, agentId)?.isStreaming === true;
+  }
+);
+
+/** Check whether a workspace-scoped agent is soft-deleted. */
+export const selectWorkspaceAgentIsSoftDeleted = createSelector(
+  (state, wsId: string, agentId: string): boolean => {
+    return selectWorkspaceAgentSession.select(state, wsId, agentId)?.metadata?.softDeleted === true;
   }
 );
 
@@ -125,7 +188,7 @@ export const selectAgentQueuedMessages = createSelector(
 // AgentService serializable state selectors (6a migration)
 // --------------------------------------------------------------------------
 
-/** Get the disk message count for a specific agent */
+/** Get the disk/restored message count for a specific agent */
 export const selectDiskMessageCount = createSelector(
   (state, wsId: string, agentId: string): number => {
     return getWorkspaceAgentState(state, wsId).diskMessageCounts[agentId] ?? 0;

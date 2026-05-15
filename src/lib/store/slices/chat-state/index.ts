@@ -22,11 +22,7 @@ export {
   chatReset,
   chatStreamingReconciled,
   // Streaming events
-  streamStarted,
-  streamChunkFlushed,
-  streamChunkReceived,
   streamCompleted,
-  streamErrored,
   streamStatusReceived,
   streamTimedOut,
   // Detection
@@ -41,14 +37,11 @@ export {
   // Saga triggers
   initializeChatRequested,
   sendMessage,
-  // Stream lifecycle saga triggers
-  cleanupStreamRequested,
 } from './chat-state-slice';
 
 export {
   selectChatAgentState,
   selectChatIsInterrupting,
-  selectChatStreamingContent,
   selectChatError,
   selectChatIsStalled,
   selectChatStreamingStartTime,
@@ -72,8 +65,8 @@ export type {
   SerializableContextItem,
   SendMessagePayload,
   InitializeChatOptions,
+  StreamStatusContext,
 } from './chat-state-types';
 
 export { chatStateSaga } from './sagas/chat-state-saga';
 export { chatStreamSaga } from './sagas/chat-stream-saga';
-

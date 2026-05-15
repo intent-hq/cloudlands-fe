@@ -1,6 +1,19 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
-import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+} from '@testing-library/svelte';
+import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -99,7 +112,10 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.getAgents()); return () => {}; } }),
     { select: (_state: unknown, _wsId: string) => mocks.getAgents() },
   ),
-  selectAgentById: Object.assign(
+}));
+
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: Object.assign(
     () => ({ subscribe: (run: (v: unknown) => void) => { run(undefined); return () => {}; } }),
     { select: (_state: unknown, _agentId: string) => undefined },
   ),
@@ -109,12 +125,6 @@ const mockExecute = vi.fn();
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
   AcceptChangesClient: {
     execute: mockExecute,
-  },
-}));
-
-vi.mock('$features/agent/agent-ipc-bridge', () => ({
-  agentService: {
-    getSession: vi.fn((_id: string) => undefined),
   },
 }));
 

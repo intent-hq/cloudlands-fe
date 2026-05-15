@@ -3,12 +3,18 @@
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
-    selectWorkspaceItems,
-    selectWorkspaceActivePullRequest,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import { WorkspaceStatusEnum, PullRequestStatus } from '$shared/types';
+  selectWorkspaceItems,
+  selectWorkspaceActivePullRequest,
+} from '$lib/store/slices/workspace/workspace-selectors';
+  import {
+  WorkspaceStatusEnum,
+  PullRequestStatus,
+} from '$shared/types';
   import type { Workspace } from '$shared/types';
-  import { buildRepoPathLookup, getGroupKey } from '$lib/components/workspace/utils/workspace-grouping';
+  import {
+  buildRepoPathLookup,
+  getGroupKey,
+} from '$lib/components/workspace/utils/workspace-grouping';
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import { onMount } from 'svelte';
@@ -16,23 +22,26 @@
   import Header from '$lib/components/ui/Header.svelte';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    selectActiveStreamsVersion,
-    selectPinnedWorkspaceIds,
-    selectAllSpacesViewMode,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  selectActiveStreamsVersion,
+  selectPinnedWorkspaceIds,
+  selectAllSpacesViewMode,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    closeAll,
-    togglePinWorkspace,
-    setAllSpacesViewMode,
-  } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  closeAll,
+  togglePinWorkspace,
+  setAllSpacesViewMode,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import type { AllSpacesViewMode } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
   import {
-    compareWorkspaceActivityDisplayTimeDesc,
-    getWorkspaceActivityDisplayTime,
-  } from '$shared/utils/workspace-activity-time';
+  compareWorkspaceActivityDisplayTimeDesc,
+  getWorkspaceActivityDisplayTime,
+} from '$shared/utils/workspace-activity-time';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -51,7 +60,6 @@
 
   let { expanded = false }: Props = $props();
 
-  const viewMode = $derived($viewMode$);
 
   let searchQuery = $state('');
   let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -60,7 +68,7 @@
   // Reset highlight when search query or view mode changes
   $effect(() => {
     void searchQuery;
-    void viewMode;
+    void $viewMode$;
     highlightedIndex = filteredWorkspaces.length > 0 ? 0 : -1;
   });
 
@@ -239,9 +247,9 @@
 
   // Flat ordered list of workspace IDs matching the current view mode's display order
   const allVisibleIds = $derived.by(() => {
-    if (viewMode === 'repo') {
+    if ($viewMode$ === 'repo') {
       return groupedByRepo.flatMap(([, group]) => group.workspaces.map((w) => w.id));
-    } else if (viewMode === 'status') {
+    } else if ($viewMode$ === 'status') {
       return groupedByStatus.flatMap(([, workspaces]) => workspaces.map((w) => w.id));
     }
     return filteredWorkspaces.map((w) => w.id);
@@ -306,7 +314,7 @@
       {#each [['recent', 'Recent'], ['repo', 'Repo'], ['status', 'Status']] as [mode, label]}
         <button
           class="view-mode-tab px-1.5 py-1 text-xs rounded-md transition-all duration-150 cursor-pointer text-center truncate
-            {viewMode === mode
+            {$viewMode$ === mode
             ? 'bg-background text-foreground font-medium shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
           onclick={() => dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
@@ -333,7 +341,7 @@
     <div class="px-3 pb-3 text-xs text-subtle">No workspaces yet</div>
   {:else}
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
-      {#if viewMode === 'recent'}
+      {#if $viewMode$ === 'recent'}
         {#each filteredWorkspaces as workspace, i (workspace.id)}
           {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
             <div class="border-t border-border my-1 mx-2"></div>
@@ -356,7 +364,7 @@
             onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
           />
         {/each}
-      {:else if viewMode === 'repo'}
+      {:else if $viewMode$ === 'repo'}
         {#each groupedByRepo as [, group]}
           <div class="section-header flex items-center gap-1.5 px-3 pt-2.5 pb-1 mt-3 min-w-0">
             {#if group.owner}
@@ -395,7 +403,7 @@
             />
           {/each}
         {/each}
-      {:else if viewMode === 'status'}
+      {:else if $viewMode$ === 'status'}
         {#each groupedByStatus as [statusLabel, workspaces]}
           <div class="section-header px-3 pt-2 pb-1 mt-3 min-w-0">
             <Header size={3} class="truncate">{statusLabel}</Header>

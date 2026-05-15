@@ -1,6 +1,9 @@
 import type { KnownRepo } from "$shared/types/known-repo";
 import { createSelector } from "../../utils/create-selector";
-import { getItems, type Collection } from "../../utils/collection-utils";
+import {
+  getItems,
+  type Collection,
+} from "../../utils/collection-utils";
 
 export const selectKnownReposCollection = createSelector(
   (state): Collection<KnownRepo, "path"> => {

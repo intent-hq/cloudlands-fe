@@ -5,7 +5,11 @@
  * Manages update lifecycle: check → download → install
  */
 
-import { app, BrowserWindow, powerMonitor } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  powerMonitor,
+} from 'electron';
 import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';

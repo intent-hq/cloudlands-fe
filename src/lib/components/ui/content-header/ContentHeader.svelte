@@ -13,7 +13,11 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faXmark, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faXmark,
+  faChevronLeft,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import type { Snippet } from 'svelte';

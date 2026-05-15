@@ -1,7 +1,10 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import type { TerminalAdapter } from '$features/terminal/TerminalAdapter';
   import TerminalSearchBar from './TerminalSearchBar.svelte';

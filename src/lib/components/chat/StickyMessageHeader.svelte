@@ -4,15 +4,15 @@
    * Renders context pills and inline mentions matching ChatMessage's rendering style.
    */
   import {
-    faFile,
-    faCodeCompare,
-    faNoteSticky,
-    faClipboard,
-    faArrowUp,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faCodeCompare,
+  faNoteSticky,
+  faClipboard,
+  faArrowUp,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
-  import type { AgentMessage } from '$features/agent/agent-ipc-bridge';
+  import type { AgentMessage } from '$shared/types';
   import { extractAllContent } from '$shared/types/agent-message.conversion';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';

@@ -1,17 +1,29 @@
-import { call, delay, fork, put, takeEvery } from "typed-redux-saga";
-import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
-import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
-import { workspaceMounted } from "$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice";
-import { takeEveryFromElectronChannel, takeEveryFromWindowEvent } from "$lib/store/utils/ipc-channel";
 import {
-    exportBuiltinToFile,
-    saveFileSpecialist,
-    deleteFileSpecialist,
-    openSpecialistsFolder,
-    loadFileSpecialists,
-    setFileSpecialists,
-    setFileSpecialistsLoaded,
-    type FileSpecialist,
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
+import {
+  selectActiveWorkspace,
+  selectWorkspaceById,
+} from "$lib/store/slices/workspace/workspace-selectors";
+import { workspaceMounted } from "$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  takeEveryFromElectronChannel,
+  takeEveryFromWindowEvent,
+} from "$lib/store/utils/ipc-channel";
+import {
+  exportBuiltinToFile,
+  saveFileSpecialist,
+  deleteFileSpecialist,
+  openSpecialistsFolder,
+  loadFileSpecialists,
+  setFileSpecialists,
+  setFileSpecialistsLoaded,
+  type FileSpecialist,
 } from "../specialists-slice";
 
 import type { Workspace } from "$shared/types";

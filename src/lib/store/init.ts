@@ -1,4 +1,8 @@
-import { applyMiddleware, combineReducers, legacy_createStore as createStore } from "redux";
+import {
+  applyMiddleware,
+  combineReducers,
+  legacy_createStore as createStore,
+} from "redux";
 import type {
   PreloadedStoreState,
   ReducersMap,
@@ -7,7 +11,10 @@ import type {
   StoreState,
 } from "./types";
 import { reducers } from "./reducer";
-import { middleware, runSaga } from "./middleware";
+import {
+  middleware,
+  runSaga,
+} from "./middleware";
 import { sagaManager } from "./slices/saga-manager/sagas/manager";
 import type { Saga, Task } from "redux-saga";
 import {
@@ -17,9 +24,18 @@ import {
 } from "./constants";
 import { safeLocalStorage } from "../utils/safe-storage";
 import { createStoreStateReadable } from "./utils/create-readable-store-state";
-import { initReduxDispatchBridge, initReduxStoreBridge } from "./redux-dispatch-bridge";
-import { readable, derived } from "svelte/store";
-import { getStoreContext, isLifecycleOutsideComponentError } from "./utils/svelte-context";
+import {
+  initReduxDispatchBridge,
+  initReduxStoreBridge,
+} from "./redux-dispatch-bridge";
+import {
+  readable,
+  derived,
+} from "svelte/store";
+import {
+  getStoreContext,
+  isLifecycleOutsideComponentError,
+} from "./utils/svelte-context";
 import { createThrottledReadable } from "./utils/selector-scheduler";
 import { initSvelteDeps } from "./utils/create-selector";
 
@@ -82,7 +98,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
     applyMiddleware(...middleware)
   );
 
-  // Initialize the dispatch bridge for non-Svelte code (agent.service.ts, stream-manager.ts)
+  // Initialize the dispatch bridge for non-Svelte code (agent stream lifecycle, stream-manager.ts)
   initReduxDispatchBridge(store.dispatch.bind(store));
   initReduxStoreBridge(store);
 
@@ -125,7 +141,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
     window.intent = window.intent || {};
 
     if (window.intent.reduxContext === storeContext) {
-       
+
       console.log("Context is exposed already");
     } else if (!window.intent.reduxContext) {
       window.intent.reduxContext = storeContext;
@@ -134,7 +150,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
       window.intent.reduxContext = list.concat(window.intent.reduxContext).concat(storeContext);
       // In storybook we expect multiple stores e.g. in Docs page
       if (window.isStorybook) {
-         
+
         console.log("Multiple Redux stores initialized:", window.intent.reduxContext);
       } else {
         console.error("Multiple Redux stores initialized:", window.intent.reduxContext);
@@ -176,7 +192,7 @@ export const init = (loadedState?: PreloadedStoreState) => {
     };
 
     const logReduxLoggingReloadMessage = () => {
-       
+
       console.log("Redux logging preference updated. Reload to take effect.");
     };
 

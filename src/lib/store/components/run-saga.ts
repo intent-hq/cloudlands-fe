@@ -1,5 +1,8 @@
 import type { SagaName } from '../types';
-import { startSaga, stopSaga } from '../slices/saga-manager/saga-manager-slice';
+import {
+  startSaga,
+  stopSaga,
+} from '../slices/saga-manager/saga-manager-slice';
 import type { ReduxStore } from '../types';
 
 /**

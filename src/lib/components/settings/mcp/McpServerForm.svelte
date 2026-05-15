@@ -1,11 +1,21 @@
 <script lang="ts">
   import type { McpServerFormState, McpTransportType, McpAuthType } from './types';
-  import { createEmptyFormState, formStateToServer } from './types';
+  import {
+  createEmptyFormState,
+  formStateToServer,
+} from './types';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
-  import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { RESERVED_MCP_SERVER_NAMES, MCP_SERVER_NAME_REGEX, MCP_SERVER_NAME_MAX_LENGTH } from '$shared/config/mcp-constants';
+  import {
+  RESERVED_MCP_SERVER_NAMES,
+  MCP_SERVER_NAME_REGEX,
+  MCP_SERVER_NAME_MAX_LENGTH,
+} from '$shared/config/mcp-constants';
 
   interface Props {
     /** Initial form values (for edit mode) */

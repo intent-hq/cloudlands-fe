@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { AgentStatus, type AgentSession } from '$shared/types';
-import { getNodeStatus, getStreamingState } from '../graph-helpers';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  AgentStatus,
+  type AgentSession,
+} from '$shared/types';
+import {
+  getNodeStatus,
+  getStreamingState,
+} from '../graph-helpers';
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {

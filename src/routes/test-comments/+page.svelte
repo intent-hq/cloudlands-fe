@@ -1,11 +1,21 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
   import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
-  import { selectComments, selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
-  import { selectCommentAction, loadCommentsAction, clearCommentsAction } from '$lib/store/slices/comments/comments-slice';
+  import {
+  selectComments,
+  selectSelectedComment,
+} from '$lib/store/slices/comments/comments-selectors';
+  import {
+  selectCommentAction,
+  loadCommentsAction,
+  clearCommentsAction,
+} from '$lib/store/slices/comments/comments-slice';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 

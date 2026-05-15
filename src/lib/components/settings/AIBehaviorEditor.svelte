@@ -1,31 +1,34 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faRotateLeft,
+  faTrash,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
 
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectSpecialists,
-    selectIsBuiltIn,
-    selectIsFileBased,
-    selectEffectiveModel,
-    selectEffectiveBehaviorPrompt,
-    selectGetFileSpecialist,
-    selectSpecialistFilePath,
-    selectSpecialistSourceLabel,
-    selectSpecialistsFolderPath,
-    selectEffectiveCodingAgent,
-    selectFileSpecialists,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  selectSpecialists,
+  selectIsBuiltIn,
+  selectIsFileBased,
+  selectEffectiveModel,
+  selectEffectiveBehaviorPrompt,
+  selectGetFileSpecialist,
+  selectSpecialistFilePath,
+  selectSpecialistSourceLabel,
+  selectSpecialistsFolderPath,
+  selectEffectiveCodingAgent,
+  selectFileSpecialists,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import {
-    deleteFileSpecialist as deleteFileSpecialistAction,
-    saveFileSpecialist,
-  } from '$lib/store/slices/specialists/specialists-slice';
+  deleteFileSpecialist as deleteFileSpecialistAction,
+  saveFileSpecialist,
+} from '$lib/store/slices/specialists/specialists-slice';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import {
-    selectActiveProviderId,
-  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';

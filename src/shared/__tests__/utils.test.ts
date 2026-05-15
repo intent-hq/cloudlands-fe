@@ -9,9 +9,16 @@
  * and testing the behavior based on the current system's home directory.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { getSafeHomeDir } from '../main/utils';
-import { homedir, tmpdir } from 'os';
+import {
+  homedir,
+  tmpdir,
+} from 'os';
 import * as path from 'path';
 
 describe('getSafeHomeDir', () => {

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { ESLint } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
@@ -42,7 +46,10 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('allows Redux dispatch and selector reads from component code', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { onMount } from 'svelte';
+        import {
+  onMount,
+  tick,
+} from 'svelte';
         import { loadThings } from '$lib/store/slices/example/example-slice';
         import { selectThings } from '$lib/store/slices/example/example-selectors';
         import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -62,7 +69,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('allows component-local DOM and visual async work', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { tick } from 'svelte';
+
 
         async function focusInput() {
           await tick();
@@ -92,7 +99,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('reports direct fetch calls in lifecycle and effect callbacks', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { onMount } from 'svelte';
+
 
         onMount(async () => {
           const response = await fetch('/api/things');
@@ -113,7 +120,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('reports awaited API, client, provider, and IPC calls', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { onMount } from 'svelte';
+
         import { workspaceApi } from '$lib/api/workspace-api';
         import { issueClient } from '$lib/clients/issue-client';
 
@@ -169,7 +176,10 @@ describe('no-component-async-data-fetch ESLint rule', () => {
       <script lang="ts">
         import { chooseParentFolder } from '$features/onboarding/utils/choose-parent-folder';
         import { applyPrimitivePatch } from './patch-block-commands';
-        import { resolveRtkAvailability, persistRtkEnabled } from './rtk-settings-commands';
+        import {
+  resolveRtkAvailability,
+  persistRtkEnabled,
+} from './rtk-settings-commands';
 
         async function runHelpers(workspaceId, patch) {
           await chooseParentFolder();
@@ -199,7 +209,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   it('ignores Svelte 5 boolean module scripts outside component instances', async () => {
     const messages = await lintSvelte(`
       <script module lang="ts">
-        import { workspaceApi } from '$lib/api/workspace-api';
+
 
         export async function loadMetadata() {
           return await workspaceApi.get('workspace-id');

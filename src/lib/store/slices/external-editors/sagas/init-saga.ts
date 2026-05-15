@@ -1,6 +1,13 @@
 import { getLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, type SagaGenerator } from "typed-redux-saga";
-import { normalizeOpenAction, setOpenAction } from "../external-editors-slice";
+import {
+  call,
+  put,
+  type SagaGenerator,
+} from "typed-redux-saga";
+import {
+  normalizeOpenAction,
+  setOpenAction,
+} from "../external-editors-slice";
 
 const STORAGE_KEY = "open-combo-button-last-action";
 const DEFAULT_ACTION = "vscode";

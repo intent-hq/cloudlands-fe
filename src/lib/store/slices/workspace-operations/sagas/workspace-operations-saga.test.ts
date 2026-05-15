@@ -1,4 +1,11 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 
@@ -102,7 +109,12 @@ import {
   closeDeleteWarning,
   workspaceOperationsReducer,
 } from "../workspace-operations-slice";
-import { applyMiddleware, combineReducers, createStore, type Store } from "redux";
+import {
+  applyMiddleware,
+  combineReducers,
+  createStore,
+  type Store,
+} from "redux";
 import createSagaMiddleware from "redux-saga";
 
 function makeWorkspace(id: string): Workspace {

@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { ListenerManager } from '../listener-manager';
 import { EventEmitter } from '../../event-emitter';
 

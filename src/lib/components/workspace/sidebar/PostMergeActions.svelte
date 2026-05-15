@@ -7,36 +7,36 @@
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    setPostMergeState,
-    setGitOperationFlag,
-  } from '$lib/store/slices/git/git-slice';
-  import { refreshAcceptChangesStatus } from '$lib/store/slices/changes/changes-slice';
+  setPostMergeState,
+  setGitOperationFlag,
+  loadGitStatus,
+} from '$lib/store/slices/git/git-slice';
   import {
-    selectPostMergeState,
-    selectGitOperationFlags,
-  } from '$lib/store/slices/git/git-selectors';
+  refreshAcceptChangesStatus,
+  clearOlderCommits as ftClearOlderCommits,
+  refreshRequested,
+} from '$lib/store/slices/changes/changes-slice';
   import {
-    selectWorkspaceById,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectPostMergeState,
+  selectGitOperationFlags,
+} from '$lib/store/slices/git/git-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    loadWorkspacesRequested,
-    setWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import {
-    clearOlderCommits as ftClearOlderCommits,
-    refreshRequested,
-  } from '$lib/store/slices/changes/changes-slice';
+  loadWorkspacesRequested,
+  setWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
+
+
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$lib/store/slices/git/git-types';
   import {
-    faRotateLeft,
-    faRocket,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRotateLeft,
+  faRocket,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
 

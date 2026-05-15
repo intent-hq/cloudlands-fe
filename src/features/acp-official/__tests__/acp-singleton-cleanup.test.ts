@@ -7,7 +7,13 @@
  * - PermissionManager.clearDecisions() clears remaining decisions
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import { SessionManager } from '../main/server/session-manager';
 import { PermissionManager } from '../permissions/permission-manager';
 import type { AgentId } from '$shared/types/branded-ids';

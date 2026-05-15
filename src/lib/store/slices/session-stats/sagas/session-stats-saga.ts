@@ -17,7 +17,10 @@ import {
   type SagaGenerator,
 } from "typed-redux-saga";
 import type { Task } from "redux-saga";
-import { invoke, isElectron } from "$lib/electron-bridge";
+import {
+  invoke,
+  isElectron,
+} from "$lib/electron-bridge";
 import { SESSION_STATS_CHANNELS } from "$shared/ipc/channels";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {

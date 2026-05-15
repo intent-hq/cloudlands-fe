@@ -6,15 +6,28 @@
    * Supports zoom, breadcrumb navigation, and color modes
    */
   import type { FileType, ProcessedDataItem, ColorEncoding } from './types';
-  import { packData, LOOSE_FILES_ID, DEFAULT_WIDTH, DEFAULT_HEIGHT } from './tree-processing';
+  import {
+  packData,
+  LOOSE_FILES_ID,
+  DEFAULT_WIDTH,
+  DEFAULT_HEIGHT,
+} from './tree-processing';
   import { truncateString } from './utils';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
-  import { layoutCache, type CachedPosition } from './layout-cache';
+  import {
+  layoutCache,
+  type CachedPosition,
+} from './layout-cache';
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import languageColors from './language-colors';
   import Fa from 'svelte-fa';
-  import { faSearch, faFile, faFolder, faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faSearch,
+  faFile,
+  faFolder,
+  faExternalLinkAlt,
+} from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -1259,7 +1272,7 @@
     });
   }
 
-   
+
   function handleClick(_event: MouseEvent) {
     // Click on whatever is currently hovered (shown in hover card)
     if (hoveredFilePath) {

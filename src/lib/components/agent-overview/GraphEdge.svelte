@@ -8,7 +8,11 @@
    */
   import type { GraphEdge as GraphEdgeType } from './types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import { CARD_DIMENSIONS, EDGE_STYLES, EDGE_ANIMATION } from './constants';
+  import {
+  CARD_DIMENSIONS,
+  EDGE_STYLES,
+  EDGE_ANIMATION,
+} from './constants';
 
   interface Props {
     edge: GraphEdgeType;

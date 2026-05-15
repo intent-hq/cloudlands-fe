@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
@@ -26,10 +32,21 @@ vi.mock("typed-redux-saga", () => ({
 }));
 
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { hydrateWorkspaceNavigation, updateWorkspaceCodeReview, workspaceNavigationStorageKey } from "../workspace-navigation-slice";
+import {
+  hydrateWorkspaceNavigation,
+  updateWorkspaceCodeReview,
+  workspaceNavigationStorageKey,
+} from "../workspace-navigation-slice";
 import { selectWorkspaceNavigationState } from "../workspace-navigation-selectors";
 import { removeWorkspaceEntity } from "../../workspace/workspace-slice";
-import { cleanupDeletedWorkspaceCacheSaga, hydrateWorkspaceNavigationStateSaga, persistWorkspaceNavigationSaga, retroactiveNavigationMountCheckSaga, watchWorkspaceNavigationForWorkspaceSaga, watchWorkspaceNavigationLifecycleSaga } from "./workspace-navigation-saga";
+import {
+  cleanupDeletedWorkspaceCacheSaga,
+  hydrateWorkspaceNavigationStateSaga,
+  persistWorkspaceNavigationSaga,
+  retroactiveNavigationMountCheckSaga,
+  watchWorkspaceNavigationForWorkspaceSaga,
+  watchWorkspaceNavigationLifecycleSaga,
+} from "./workspace-navigation-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 
 describe("workspace navigation sagas", () => {

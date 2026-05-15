@@ -11,7 +11,10 @@
 
 import { Logger } from "../../../../shared/logger";
 import type { ContentBlock } from "../../../../shared/types";
-import { mainDispatch, getMainState } from "../../redux-store-bridge";
+import {
+  mainDispatch,
+  getMainState,
+} from "../../redux-store-bridge";
 import {
   startAccumulation as startAccumulationAction,
   addChunk as addChunkAction,

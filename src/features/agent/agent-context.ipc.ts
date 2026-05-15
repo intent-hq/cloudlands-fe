@@ -3,10 +3,13 @@
  *
  * Handles IPC communication for agent context between renderer and main processes.
  * This allows the main process (HTTP MCP bridge) to access agent context
- * that is set in the renderer process (agent.service).
+ * that is set in the renderer process by agent context utilities.
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  IpcMainInvokeEvent,
+} from 'electron';
 import { getAgentContextRegistry } from './agent-context-registry';
 import { Logger } from '../../shared/logger';
 import { createSafeValidatedHandler } from '../../main/ipc-validation-middleware';

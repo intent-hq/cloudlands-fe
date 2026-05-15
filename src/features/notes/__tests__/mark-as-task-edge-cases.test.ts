@@ -2,7 +2,12 @@
  * Tests for markAsTask edge cases (Phase 1A Increment 3)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { NotesService } from '../notes.service';
 import type { Note, WorkspaceId, NoteId } from '../../../shared/types';
 import { randomUUID } from 'crypto';

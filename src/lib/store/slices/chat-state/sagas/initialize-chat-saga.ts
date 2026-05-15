@@ -5,37 +5,26 @@
  * Uses takeLatest so a new dispatch automatically cancels any in-flight older init.
  *
  * Flow:
- * 1. Look up session from Redux state, agentService memory, disk restore
- * 2. Retry with backoff if not found
- * 3. Wait for session readiness via selector channel if retries exhausted
- * 4. Load and deduplicate messages, detect streaming state
- * 5. Dispatch chatInitialized to Redux
- * 6. Set up instance-local state on ChatService (workspaceId, streaming content, DOM handlers)
+ * 1. Look up session from Redux state and disk restore
+ * 2. Wait for session readiness via waitFor utility if not found
+ * 3. Load and deduplicate messages, detect streaming state
+ * 4. Dispatch chatInitialized to Redux
+ * 5. Stream lifecycle is delivered through Redux-owned sagas and IPC handlers.
  */
 
 import {
   call,
   cancel,
-  delay,
   fork,
   join,
   put,
-  race,
-  take,
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { Task } from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
-import { agentService } from '$features/agent/agent-ipc-bridge';
 import { persistenceService } from '$features/agent/browser/index';
 import {
-  getChatService,
-  MessageGuardError,
-  type SendMessageOptions,
-} from '$features/agent/services/chat.service';
-import {
-  selectAgentById,
   selectWorkspaceAgentReadySession,
   selectIsInitialSpecWriteInProgress,
 } from '../../workspace-agents/workspace-agents-selectors';
@@ -49,20 +38,23 @@ import {
   chatSendFailed,
 } from '../chat-state-slice';
 import {
+  agentSessionSendMessageRequested,
   upsertSession,
   replaceMessages,
 } from '../../agent-session/agent-session-slice';
+import type { AgentSessionSendMessageOptions } from '../../agent-session/agent-session-types';
 import { hydrateAgentQueueRequested } from '../../agent-queue/agent-queue-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
-import { createChannelFromSelector } from '../../../utils/selector-channel-effects';
+import { waitFor } from '../../store-utility/sagas/waitFor';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
 import type {
   InitializeChatOptions,
   InitialMessagePayload,
   LastAttemptedMessage,
 } from '../chat-state-types';
-import { cleanErrorMessage } from '$shared/errors/messages';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('InitializeChatSaga');
 
@@ -73,26 +65,19 @@ const logger = createLogger('InitializeChatSaga');
 /**
  * Try to find the agent session from multiple sources:
  * 1. Redux workspace-agents state
- * 2. agentService in-memory cache
- * 3. Disk restore via agentService.restoreSession
+ * 2. Disk restore via restoreSession
  */
 function* lookupSession(wsId: string, agentId: string): SagaGenerator<AgentSession | null> {
   // 1. Redux state
-  const session: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
+  const session: AgentSession | undefined | null = yield* selectAgentSession.effect(agentId);
   if (session) return session;
 
-  // 2. Redux state (re-read) — historically a fallback to agentService in-memory,
-  // which itself just delegates to selectAgentById. Kept as a tick-separated
-  // re-read so downstream retries behave the same.
-  const tempSession: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
-  if (tempSession) return tempSession;
-
-  // 3. Disk restore
+  // 2. Disk restore
   const workspace = yield* selectWorkspaceById.effect(wsId);
   if (workspace) {
     try {
       const restored: AgentSession | null = yield* call(
-        [agentService, agentService.restoreSession],
+        restoreSessionFromDiskWithoutBackend,
         agentId,
         workspace,
       );
@@ -104,24 +89,6 @@ function* lookupSession(wsId: string, agentId: string): SagaGenerator<AgentSessi
     }
   }
 
-  return null;
-}
-
-// ============================================================================
-// Retry with backoff
-// ============================================================================
-
-function* retryLookup(wsId: string, agentId: string): SagaGenerator<AgentSession | null> {
-  const retryDelays = [500, 1000, 2000];
-  for (const ms of retryDelays) {
-    yield* delay(ms);
-    // Check Redux
-    const session: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
-    if (session) return session;
-    // Re-read Redux (historical fallback to agentService, which itself just reads Redux)
-    const temp: AgentSession | undefined | null = yield* selectAgentById.effect(agentId);
-    if (temp) return temp;
-  }
   return null;
 }
 
@@ -230,20 +197,37 @@ function* waitForInitialSession(
   agentId: string,
   timeoutMs = 5000,
 ): SagaGenerator<AgentSession | null> {
-  const currentSession = yield* selectWorkspaceAgentReadySession.effect(wsId, agentId);
-  if (currentSession) return currentSession;
+  const isReady = yield* waitFor(
+    selectWorkspaceAgentReadySession,
+    [wsId, agentId],
+    (session) => !!session,
+    timeoutMs,
+  );
+  if (!isReady) return null;
 
-  const channel = yield* createChannelFromSelector(selectWorkspaceAgentReadySession, wsId, agentId);
-  try {
-    const waitResult = yield* race({
-      sessionReady: take(channel),
-      timeout: delay(timeoutMs),
-    });
+  return (yield* selectWorkspaceAgentReadySession.effect(wsId, agentId)) ?? null;
+}
 
-    return waitResult.sessionReady?.payload ?? null;
-  } finally {
-    channel.close();
-  }
+/**
+ * Resolve the initialize-chat session in one explicit order:
+ * 1. Immediate Redux session lookup
+ * 2. Disk restore fallback
+ * 3. Utility-backed readiness wait for async hydration
+ */
+function* resolveInitializeChatSession(
+  wsId: string,
+  agentId: string,
+  timeoutMs: number,
+): SagaGenerator<AgentSession | null> {
+  const immediateSession = yield* lookupSession(wsId, agentId);
+  if (immediateSession) return immediateSession;
+
+  logger.warn('Session not found immediately, waiting for selector readiness', {
+    wsId,
+    agentId,
+  });
+
+  return yield* call(waitForInitialSession, wsId, agentId, timeoutMs);
 }
 
 function* handleSendInitialMessage(
@@ -269,7 +253,10 @@ function* handleSendInitialMessage(
 
   const session = yield* call(waitForInitialSession, wsId, agentId, 5000);
   if (!session) {
-    logger.error('Failed to send initial message - session not ready before timeout', { agentId, wsId });
+    logger.error('Failed to send initial message - session not ready before timeout', {
+      agentId,
+      wsId,
+    });
     const errorMsg = 'Chat session timed out — please try again.';
     yield* put(chatSendFailed(agentId, errorMsg));
     yield* call(showErrorToast, errorMsg);
@@ -286,45 +273,28 @@ function* handleSendInitialMessage(
   }
 
   const messageWithContext = buildInitialMessage(initialPayload);
-  const imageContextItems = initialPayload.imageBlocks?.map((block, index) => ({
-    id: `initial-image-${index}`,
-    type: 'file' as const,
-    label: `Image ${index + 1}`,
-    imageData: block.data,
-    imageMimeType: block.mimeType,
-  })) ?? [];
+  const imageContextItems =
+    initialPayload.imageBlocks?.map((block, index) => ({
+      id: `initial-image-${index}`,
+      type: 'file' as const,
+      label: `Image ${index + 1}`,
+      imageData: block.data,
+      imageMimeType: block.mimeType,
+    })) ?? [];
 
-  try {
-    yield* put(chatSendStarted(agentId, wsId));
-    const chatServiceInstance = yield* call(getChatService, agentId);
-    yield* call(
-      chatServiceInstance.sendMessage.bind(chatServiceInstance),
-      messageWithContext,
-      workspace,
-      agentId,
-      {
-        contextItems: imageContextItems.length > 0
-          ? (imageContextItems as SendMessageOptions['contextItems'])
-          : undefined,
-        contextReferences: initialPayload.contextReferences ?? undefined,
-        agentId,
-      },
-    );
-    yield* call(cleanupInitialAgentArtifacts, wsId);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Failed to send initial message';
-    if (error instanceof MessageGuardError) {
-      logger.info('Initial message blocked by guard, clearing send state', { agentId, reason: errorMessage });
-      yield* put(chatSendFailed(agentId, ''));
-      return;
-    }
-    if (!errorMessage.includes('Agent interrupted')) {
-      const cleanMessage = cleanErrorMessage(errorMessage);
-      logger.error('Failed to send initial message', { agentId, error });
-      yield* put(chatSendFailed(agentId, cleanMessage));
-      yield* call(showErrorToast, cleanMessage);
-    }
-  }
+  yield* put(chatSendStarted(agentId, wsId));
+  const sendAction = agentSessionSendMessageRequested(agentId, wsId, messageWithContext, {
+    contextItems:
+      imageContextItems.length > 0
+        ? (imageContextItems as AgentSessionSendMessageOptions['contextItems'])
+        : undefined,
+    contextReferences: initialPayload.contextReferences
+      ? (initialPayload.contextReferences as AgentSessionSendMessageOptions['contextReferences'])
+      : undefined,
+    agentId,
+  });
+  yield* put(sendAction);
+  yield* call(cleanupInitialAgentArtifacts, wsId);
 }
 
 // ============================================================================
@@ -344,42 +314,30 @@ function* handleInitializeChat(
   logger.info('initializeChatRequested saga started', { wsId, agentId });
 
   try {
-    // Step 1: Look up session
-    let session: AgentSession | null = yield* lookupSession(wsId, agentId);
-
-    // Step 2: Retry with backoff if not found
+    // Step 1: Resolve session through Redux, disk restore, then selector readiness.
+    let session: AgentSession | null = yield* resolveInitializeChatSession(wsId, agentId, 30_000);
     if (!session) {
-      session = yield* retryLookup(wsId, agentId);
+      logger.warn('Session not found after wait, giving up', { wsId, agentId });
+      yield* put(chatInitFailed(agentId, 'Session not found after wait timeout'));
+      return;
     }
 
-    // Step 3: If still not found, wait for session to become ready in Redux
-    if (!session) {
-      logger.warn('Session not found after retries, waiting for selector readiness', { wsId, agentId });
-      session = yield* call(waitForInitialSession, wsId, agentId, 30_000);
-
-      if (!session) {
-        // Timed out or session still not found
-        logger.warn('Session not found after wait, giving up', { wsId, agentId });
-        yield* put(chatInitFailed(agentId, 'Session not found after wait timeout'));
-        return;
-      }
-    }
-
-    // Step 4: Load messages — resolve from multiple sources
+    // Step 2: Load messages — resolve from multiple sources
     // Read messages from agent-session slice (canonical source)
     const agentSessionMessages: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-    // Read isStreaming from agent-session (single source of truth)
-    const sessionForStreamCheck = yield* selectAgentById.effect(agentId);
+    // Fresh store snapshot before optional disk load controls stream skip + Redux message comparison.
+    const storeSessionBeforeDisk: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
     const hasActiveStream =
-      (sessionForStreamCheck?.isStreaming ?? false) && agentSessionMessages.length > 0;
+      (storeSessionBeforeDisk?.isStreaming ?? false) && agentSessionMessages.length > 0;
 
     let messages: AgentMessage[] = [];
     if (hasActiveStream) {
       messages = agentSessionMessages;
     } else {
-      const reduxSession: AgentSession | undefined = yield* selectAgentById.effect(agentId);
       const reduxMessages =
-        reduxSession?.messages && Array.isArray(reduxSession.messages) ? reduxSession.messages : [];
+        storeSessionBeforeDisk?.messages && Array.isArray(storeSessionBeforeDisk.messages)
+          ? storeSessionBeforeDisk.messages
+          : [];
 
       if (agentSessionMessages.length > 0 && agentSessionMessages.length > reduxMessages.length) {
         messages = agentSessionMessages;
@@ -403,9 +361,8 @@ function* handleInitializeChat(
       } else if (session.messages && Array.isArray(session.messages)) {
         messages = session.messages;
       } else {
-        const agent: AgentSession | undefined = yield* selectAgentById.effect(agentId);
-        if (agent?.messages) {
-          messages = agent.messages;
+        if (storeSessionBeforeDisk?.messages) {
+          messages = storeSessionBeforeDisk.messages;
         }
       }
     }
@@ -415,7 +372,7 @@ function* handleInitializeChat(
     // directly (e.g., sub-agent delegation, subscription wake-ups) without the
     // frontend ever receiving them via IPC events.
     // We use persistenceService.loadSession with bypassCache (a fresh disk read
-    // with no Redux side effects) rather than agentService.restoreSession which
+    // with no Redux side effects) rather than restoreSession which
     // dispatches actions like setActiveAgentId and may trigger backend activation.
     // bypassCache is critical: the renderer-side PersistenceService has a 5s TTL
     // cache that could return stale data, defeating the purpose of the merge.
@@ -435,9 +392,7 @@ function* handleInitializeChat(
           } else {
             // Check if disk has messages the frontend is missing
             const inMemoryIds = new Set(messages.map((m) => m.id));
-            const missingFromDisk = diskSession.messages.filter(
-              (m) => !inMemoryIds.has(m.id),
-            );
+            const missingFromDisk = diskSession.messages.filter((m) => !inMemoryIds.has(m.id));
             if (missingFromDisk.length > 0) {
               logger.info('Merging disk messages missing from in-memory state', {
                 agentId,
@@ -459,10 +414,11 @@ function* handleInitializeChat(
       }
     }
 
-    // Step 5: Determine streaming state
+    // Step 3: Determine streaming state
     let isCurrentlyStreaming = session?.isStreaming || false;
-    const agentFromStore: AgentSession | undefined = yield* selectAgentById.effect(agentId);
-    if (agentFromStore?.isStreaming) {
+    // Fresh store snapshot after disk load preserves late streaming-state changes during async IO.
+    const storeSessionAfterDisk: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
+    if (storeSessionAfterDisk?.isStreaming) {
       isCurrentlyStreaming = true;
     }
     if (hasActiveStream && !isCurrentlyStreaming) {
@@ -478,31 +434,14 @@ function* handleInitializeChat(
       }
     }
 
-    // Step 6: Compute existing streaming content
-    let existingStreamingContent = '';
+    // Step 4: Read fresh chat-state metadata after async disk load.
+    // Streaming text is derived from agent-session messages by
+    // selectAgentSessionStreamingContent, not stored in chat-state.
     const freshChatState = yield* selectChatStateOrDefault.effect(agentId);
-
-    // Check if Redux chat state already has streaming content (HMR case)
-    const chatServiceInstance = yield* call(getChatService, agentId);
-    const instanceHasContent = isCurrentlyStreaming && freshChatState.streamingContent?.length > 0;
-
-    if (instanceHasContent) {
-      existingStreamingContent = freshChatState.streamingContent;
-    } else if (isCurrentlyStreaming && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage?.role === 'assistant' && lastMessage?.contentBlocks) {
-        const textBlocks = lastMessage.contentBlocks.filter((b: ContentBlock) => b.type === 'text');
-        const lastTextBlock = textBlocks[textBlocks.length - 1];
-        if (lastTextBlock && 'text' in lastTextBlock) {
-          existingStreamingContent = (lastTextBlock as any).text || '';
-        }
-      }
-    }
-
-    // Step 7: Deduplicate messages
+    // Step 5: Deduplicate messages
     const deduplicatedMessages = deduplicateMessages(messages);
 
-    // Step 8: Compute lastAttemptedMessage for retry support
+    // Step 6: Compute lastAttemptedMessage for retry support
     let restoredLastAttemptedMessage: LastAttemptedMessage | null = null;
     if (isCurrentlyStreaming && deduplicatedMessages.length > 0) {
       for (let i = deduplicatedMessages.length - 1; i >= 0; i--) {
@@ -522,34 +461,25 @@ function* handleInitializeChat(
     const effectiveLastAttempted =
       restoredLastAttemptedMessage ?? freshChatState.lastAttemptedMessage;
 
-    // Step 9: Upsert session data into agent-session slice
+    // Step 7: Upsert session data into agent-session slice
     const normalizedSession = session
       ? { ...session, isStreaming: session.isStreaming ?? false, messages: deduplicatedMessages }
       : null;
+
     if (normalizedSession) {
       yield* put(upsertSession(normalizedSession));
     } else if (deduplicatedMessages.length > 0) {
       yield* put(replaceMessages(agentId, deduplicatedMessages));
     }
 
-    // Step 9b: Request backend-owned queue hydration, then dispatch chatInitialized to Redux (streaming/UI flags only)
+    // Step 7b: Request backend-owned queue hydration, then dispatch chatInitialized to Redux (streaming/UI flags only)
     yield* put(hydrateAgentQueueRequested(agentId));
     yield* put(
       chatInitialized(agentId, {
         isStreaming: isCurrentlyStreaming,
-        streamingContent: existingStreamingContent,
         lastAttemptedMessage: effectiveLastAttempted,
       }),
     );
-
-    // Step 10: Set up DOM handlers for streaming
-    if (session) {
-      yield* call(
-        [chatServiceInstance, chatServiceInstance.setupStreamingForSession],
-        agentId,
-        session.id,
-      );
-    }
 
     logger.info('initializeChatRequested saga completed', {
       wsId,

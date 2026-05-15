@@ -6,7 +6,10 @@
  */
 
 import { z } from 'zod';
-import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
+import {
+  FirstVisitStateSchema,
+  WorkspaceStatusMessageSchema,
+} from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 
 // ============================================================================

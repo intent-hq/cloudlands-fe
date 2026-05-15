@@ -21,7 +21,10 @@ import type {
 } from '../types';
 
 // Import ContentBlock utilities
-import { isContentBlock, normalizeContentBlock } from './content-block';
+import {
+  isContentBlock,
+  normalizeContentBlock,
+} from './content-block';
 import type {
   isTextBlock,
   isCodeBlock,

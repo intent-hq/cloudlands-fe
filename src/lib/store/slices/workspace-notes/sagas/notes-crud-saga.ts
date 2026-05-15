@@ -8,8 +8,15 @@
 import { notesIpc } from "./notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import type { Note, UpdateNoteRequest, CreateNoteRequest } from "$shared/types";
-import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
-import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
+import {
+  AuthorType,
+  ContentType,
+  NoteVisibility,
+} from "$shared/types";
+import {
+  NoteId,
+  WorkspaceId,
+} from "$shared/types/branded-ids";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import {
   call,

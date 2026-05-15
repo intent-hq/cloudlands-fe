@@ -4,8 +4,18 @@ import {
   takeEveryFromElectronChannel,
   takeEveryFromWindowEvent,
 } from "$lib/store/utils/ipc-channel";
-import { END, eventChannel, type EventChannel } from "redux-saga";
-import { call, fork, put, select, take } from "typed-redux-saga";
+import {
+  END,
+  eventChannel,
+  type EventChannel,
+} from "redux-saga";
+import {
+  call,
+  fork,
+  put,
+  select,
+  take,
+} from "typed-redux-saga";
 import {
   clearPendingDeepLinkAction,
   deepLinkError,

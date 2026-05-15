@@ -7,24 +7,25 @@
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCurrentStagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    selectExecutorState,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
-  import {
-    executeBackgroundAgent,
-    cancelExecution,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  executeBackgroundAgent,
+  cancelExecution,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import type { ReviewStatus } from './types';
-  import { CodeWalkthroughSection, parseWalkthrough } from './walkthrough';
+  import {
+  CodeWalkthroughSection,
+  parseWalkthrough,
+} from './walkthrough';
   import type { CodeWalkthrough, WalkthroughStatus } from './walkthrough';
   import Fa from 'svelte-fa';
   import {
-    faWandMagicSparkles,
-    faSpinner,
-    faStop,
-    faRotateRight,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faWandMagicSparkles,
+  faSpinner,
+  faStop,
+  faRotateRight,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -44,7 +45,6 @@
   const activeWorkspace = selectActiveWorkspace();
   const workspace = $derived($activeWorkspace);
   const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
-  const stagedFiles = $derived($ftStagedChanges$);
   const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
 
   // Review state
@@ -102,7 +102,7 @@
   // Derived states
   const isRunning = $derived(status === 'running');
   const isComplete = $derived(status === 'complete');
-  const hasChanges = $derived(stagedFiles.length > 0);
+  const hasChanges = $derived($ftStagedChanges$.length > 0);
 
   // Auto-generate walkthrough when review completes
   $effect(() => {
@@ -126,7 +126,7 @@
     error = '';
 
     dispatch(executeBackgroundAgent(workspaceId, 'review', {
-      files: stagedFiles.map((f) => f.relativePath),
+      files: $ftStagedChanges$.map((f) => f.relativePath),
     }));
   }
 
@@ -159,7 +159,7 @@
         <h3 class="text-sm font-medium text-foreground mb-2">Review Your Changes</h3>
         <p class="text-xs text-subtle mb-4 max-w-60">
           {#if hasChanges}
-            Get AI-powered feedback on your {stagedFiles.length} staged file{stagedFiles.length ===
+            Get AI-powered feedback on your {$ftStagedChanges$.length} staged file{$ftStagedChanges$.length ===
             1
               ? ''
               : 's'}.
@@ -222,7 +222,7 @@
         <CodeWalkthroughSection
           {walkthrough}
           {workspacePath}
-          changes={stagedFiles}
+          changes={$ftStagedChanges$}
           status={walkthroughStatus}
           error={walkthroughError}
           onRegenerate={handleGenerateWalkthrough}

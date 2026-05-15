@@ -8,7 +8,11 @@
  * cached at module level to avoid duplicate file handles.
  */
 
-import { call, cancelled, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  cancelled,
+  takeEvery,
+} from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { workspaceEventAccepted } from "../workspace-events-slice";
 

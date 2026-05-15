@@ -1,6 +1,19 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import DiffViewer from './DiffViewer.svelte';
 
 const testState = vi.hoisted(() => {

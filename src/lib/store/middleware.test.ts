@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
 import { REDUX_DEBUG_LS_KEY } from "./constants";
 
 const mocks = vi.hoisted(() => {

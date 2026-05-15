@@ -1,26 +1,48 @@
 <script lang="ts">
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { faPlus, faLink, faGlobe } from '@fortawesome/free-solid-svg-icons';
-  import { faGithub, faGoogle, faSlack, faFigma } from '@fortawesome/free-brands-svg-icons';
+  import {
+  faPlus,
+  faLink,
+  faGlobe,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  faGithub,
+  faGoogle,
+  faSlack,
+  faFigma,
+} from '@fortawesome/free-brands-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
-  import { ListContainer, ListItem } from '../ui/list';
+  import {
+  ListContainer,
+  ListItem,
+} from '../ui/list';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { createNote as createNoteAction, initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { selectNotesLoading, selectNotesError, selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+  createNote as createNoteAction,
+  initializeNotes,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import {
+  selectNotesLoading,
+  selectNotesError,
+  selectAllNotes,
+} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { thirdPartySourcesClient } from '$features/third-party-sources/third-party-sources.client';
   import type { ThirdPartySource } from '$shared/types';
-  import { hasUrls, handleThirdPartyDrop } from '$lib/utils/third-party-drag-drop';
+  import {
+  hasUrls,
+  handleThirdPartyDrop,
+} from '$lib/utils/third-party-drag-drop';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import {
-    sortNotes,
-    getNoteIcon,
-    getNoteTitle,
-    getNoteDepth,
-    parseTaskStats,
-  } from '../workspace/sidebar/utils';
+  sortNotes,
+  getNoteIcon,
+  getNoteTitle,
+  getNoteDepth,
+  parseTaskStats,
+} from '../workspace/sidebar/utils';
 
 
   const logger = createLogger('NotesPanel');
@@ -98,16 +120,13 @@
 
   // Get notes from Redux store
   const loading$ = selectNotesLoading(workspaceId);
-  let loading = $derived($loading$);
   const error$ = selectNotesError(workspaceId);
-  let error = $derived($error$);
 
   // Get all notes as array for parent/child detection
   const allNotes$ = selectAllNotes(workspaceId);
-  let allNotes = $derived($allNotes$);
 
   // Filtered and sorted notes (with parent/child grouping)
-  let filteredNotes = $derived(sortNotes(allNotes, []));
+  let filteredNotes = $derived(sortNotes($allNotes$, []));
 
   // Helper functions
   function getSourceIcon(type: string) {
@@ -203,7 +222,7 @@
       <div class="p-4 m-2 border-2 border-dashed border-primary rounded-lg bg-primary/5">
         <div class="text-center text-sm text-primary">Drop third-party reference here</div>
       </div>
-    {:else if loading}
+    {:else if $loading$}
       <div class="pt-1.5 px-2">
         {#each Array(5) as _}
           <div class="flex items-center gap-2 py-1">
@@ -212,9 +231,9 @@
           </div>
         {/each}
       </div>
-    {:else if error}
+    {:else if $error$}
       <div class="text-xs text-destructive-foreground px-1">
-        {error}
+        {$error$}
       </div>
     {:else if filteredNotes.length === 0 && thirdPartySources.length === 0}
       <!-- <ListEmpty message="No notes yet" icon={faStickyNote} /> -->
@@ -222,8 +241,8 @@
       <ListContainer spacing="compact">
         <!-- Show all notes (including spec note with fixed ID "spec") -->
         {#each filteredNotes as note (note.id)}
-          {@const depth = getNoteDepth(note, allNotes)}
-          {@const taskStats = parseTaskStats(note.content, allNotes)}
+          {@const depth = getNoteDepth(note, $allNotes$)}
+          {@const taskStats = parseTaskStats(note.content, $allNotes$)}
           {@const hasTasks = taskStats.total > 0}
           {#if hasTasks}
             {@const isAllComplete = taskStats.completed === taskStats.total}

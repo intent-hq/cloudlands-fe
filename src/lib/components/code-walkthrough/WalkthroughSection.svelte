@@ -7,7 +7,11 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronDown,
+  faChevronRight,
+  faFile,
+} from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
   import WalkthroughDiffViewer from './WalkthroughDiffViewer.svelte';
 

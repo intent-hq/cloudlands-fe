@@ -3,7 +3,10 @@ import yaml from 'js-yaml';
 import { Logger } from '../../../../shared/logger';
 import { augmentApiClient } from '../../../../shared/augment-api/augment-api.client';
 import { githubService } from '../../../git-tracking/main/github.service';
-import { prCommentService, type ReviewThread } from '../../../git-tracking/main/pr-comment.service';
+import {
+  prCommentService,
+  type ReviewThread,
+} from '../../../git-tracking/main/pr-comment.service';
 import type { PullRequest } from '../../../git-tracking/types';
 
 const logger = new Logger('WsPrApi');

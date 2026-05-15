@@ -2,7 +2,14 @@
  * Tests for FirstVisitStateClient
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { firstVisitStateClient } from '../first-visit-state.client';
 import type { WorkspaceId } from '$shared/types';
 

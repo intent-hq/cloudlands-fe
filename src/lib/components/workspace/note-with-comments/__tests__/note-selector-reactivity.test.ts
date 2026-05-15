@@ -7,12 +7,23 @@
  *
  * The fix passes writable stores so the selector re-evaluates when noteId changes.
  */
-import { describe, it, expect } from "vitest";
-import { get, writable } from "svelte/store";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
+import {
+  get,
+  writable,
+} from "svelte/store";
 import { init } from "$lib/store/init";
 import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
 import { loadWorkspaceNotesSucceeded } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
-import { ContentType, NoteVisibility, type Note } from "$shared/types";
+import {
+  ContentType,
+  NoteVisibility,
+  type Note,
+} from "$shared/types";
 
 const WS_1 = "ws-1";
 

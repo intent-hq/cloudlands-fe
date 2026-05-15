@@ -1,4 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { workspaceEventAccepted } from "../workspace-events-slice";

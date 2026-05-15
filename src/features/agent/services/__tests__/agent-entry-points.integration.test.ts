@@ -7,7 +7,14 @@
 
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { UnifiedAgentFactory } from '../agent-factory';
 
 // Mock Redux store bridge

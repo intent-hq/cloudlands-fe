@@ -7,9 +7,13 @@
  * 3. Apply the layout with appropriate content
  */
 
-import { selectStagedWorkingChanges, selectUnstagedWorkingChanges, selectFileTrackingCommits } from '$lib/store/slices/changes/changes-selectors';
 import {
-  selectAllWorkspaceAgents,
+  selectStagedWorkingChanges,
+  selectUnstagedWorkingChanges,
+  selectFileTrackingCommits,
+} from '$lib/store/slices/changes/changes-selectors';
+import {
+  selectBackgroundWorkspaceAgents,
   selectForegroundWorkspaceAgents,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -118,20 +122,14 @@ async function applyAgentsRowPreset(
   const { workspaceId, containerWidth, containerHeight } = context;
   const MAX_AGENTS = 6;
 
-  // Use Redux store to get ALL agents including background ones
-  // (selectForegroundWorkspaceAgents filters out background agents)
-  const allAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+  const state = getReduxStore().getState();
 
-  // Helper to check if agent is background
-  const isBackground = (a: (typeof allAgents)[0]) =>
-    !!(a.isBackground || (a.metadata as any)?.isBackground);
-
-  // Get non-background agents first
-  const nonBackgroundAgents = allAgents.filter((a) => !isBackground(a));
+  // Get foreground agents first, using reducer-maintained foreground agent IDs.
+  const foregroundAgents = selectForegroundWorkspaceAgents.select(state, workspaceId);
 
   // Get background agents, sorted by: running first, then most recent activity
-  const backgroundAgents = allAgents
-    .filter((a) => isBackground(a))
+  const backgroundAgents = selectBackgroundWorkspaceAgents
+    .select(state, workspaceId)
     .sort((a, b) => {
       // Running agents first (status === 'active' or isProcessing)
       const aIsRunning = a.status === 'active' || a.isProcessing;
@@ -154,15 +152,15 @@ async function applyAgentsRowPreset(
     });
 
   logger.info('Agents row preset - agent counts', {
-    total: allAgents.length,
-    nonBackground: nonBackgroundAgents.length,
+    total: foregroundAgents.length + backgroundAgents.length,
+    foreground: foregroundAgents.length,
     background: backgroundAgents.length,
   });
 
-  // Combine: non-background first, then fill remaining slots with background
+  // Combine: foreground first, then fill remaining slots with background
   const agents = [
-    ...nonBackgroundAgents,
-    ...backgroundAgents.slice(0, MAX_AGENTS - nonBackgroundAgents.length),
+    ...foregroundAgents,
+    ...backgroundAgents.slice(0, MAX_AGENTS - foregroundAgents.length),
   ].slice(0, MAX_AGENTS);
 
   if (agents.length === 0) {

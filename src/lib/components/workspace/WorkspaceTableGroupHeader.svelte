@@ -3,7 +3,12 @@
    * WorkspaceTableGroupHeader - Header row for a repository group in the workspace table
    */
   import Fa from 'svelte-fa';
-  import { faFolder, faPlus, faBoxArchive, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faFolder,
+  faPlus,
+  faBoxArchive,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
 
   interface Props {

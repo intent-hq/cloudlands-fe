@@ -2,8 +2,14 @@
  * Builder for the `ws.event` JavaScript API surface.
  */
 
-import { AgentEventTools, type AgentEventFilter } from '../../../events/main';
-import { agentSubscribe, agentUnsubscribe } from '../../../events/main/agent-subscription-ops';
+import {
+  AgentEventTools,
+  type AgentEventFilter,
+} from '../../../events/main';
+import {
+  agentSubscribe,
+  agentUnsubscribe,
+} from '../../../events/main/agent-subscription-ops';
 import { EventStore } from '../../../events/main/event-store';
 import { EventQueryEngine } from '../../../events/main/event-query-engine';
 import type { EventFilter } from '../../../events/types';

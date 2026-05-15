@@ -5,7 +5,11 @@
  * Allows the frontend to list, read, write, and delete specialist files.
  */
 
-import { ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { z } from 'zod';
 import { SPECIALISTS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

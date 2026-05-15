@@ -8,34 +8,43 @@
    * Uses a scrollable container with auto-scroll-into-view for keyboard navigation.
    */
   import { goto } from '$app/navigation';
-  import { fade, fly } from 'svelte/transition';
-  import { onMount, tick } from 'svelte';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSession,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { selectUnreadAgentIds, selectUnreadAgentIdsForWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  selectAgentIsResponding,
+  selectAgentIsWaiting,
+  selectAgentSession,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
+  import {
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import {
-    closeSwitcher,
-    confirmSelection,
-  } from '$lib/store/slices/workspace-switcher/workspace-switcher-slice';
+  closeSwitcher,
+  confirmSelection,
+} from '$lib/store/slices/workspace-switcher/workspace-switcher-slice';
   import {
-    selectSwitcherState,
-    selectSwitcherWorkspaceIds,
-  } from '$lib/store/slices/workspace-switcher/workspace-switcher-selectors';
+  selectSwitcherState,
+  selectSwitcherWorkspaceIds,
+} from '$lib/store/slices/workspace-switcher/workspace-switcher-selectors';
   import {
-    selectActiveWorkspaceId,
-    selectWorkspaceItems,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspaceId,
+  selectWorkspaceItems,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';

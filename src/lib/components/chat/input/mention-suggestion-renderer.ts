@@ -1,5 +1,8 @@
 import { logger } from '$lib/utils/client-logger';
-import { mount, unmount } from 'svelte';
+import {
+  mount,
+  unmount,
+} from 'svelte';
 import EnhancedMentionList from './EnhancedMentionList.svelte';
 
 class MentionSuggestionRenderer {

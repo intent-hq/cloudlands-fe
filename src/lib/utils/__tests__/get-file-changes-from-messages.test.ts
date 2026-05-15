@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { getFileChangesFromMessage } from '../get-file-changes-from-messages';
 import type { AgentMessage } from '$shared/types';
 

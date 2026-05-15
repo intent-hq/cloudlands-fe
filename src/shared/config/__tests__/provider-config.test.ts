@@ -5,7 +5,11 @@
  * "<providerId>:<modelId>" form expected by the coordinator layer.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   normalizeModelOverride,
   isModelValidForProvider,

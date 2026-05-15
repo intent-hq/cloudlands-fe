@@ -8,7 +8,12 @@
  * Covers all primitive types in all valid states to prevent regressions.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import {
   NotesPrimitivesSerializer,
   serializePrimitiveToMarkdown,

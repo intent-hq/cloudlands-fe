@@ -1,25 +1,32 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import type { ToolUseBlock } from '$shared/types';
   import {
-    faCheckCircle,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheckCircle,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
-  import { classifyTool, isContextEngineTool } from './tool-classifier';
+  import {
+  classifyTool,
+  isContextEngineTool,
+} from './tool-classifier';
   import ContextEngineToolCall from './ContextEngineToolCall.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
-  import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -87,7 +94,7 @@
     const state = getReduxStore().getState();
     const workspaceId = selectActiveWorkspaceId.select(state);
     const session = workspaceId
-      ? selectAgentById.select(state, parsedResult.toAgentId)
+      ? selectAgentSession.select(state, parsedResult.toAgentId)
       : undefined;
     if (session?.name && !isGenericAgentName(session.name)) {
       return session.name;

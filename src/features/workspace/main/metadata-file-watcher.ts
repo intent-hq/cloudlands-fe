@@ -4,7 +4,10 @@ import * as path from 'path';
 import { Logger } from '$shared/logger';
 import { WorkspaceId } from '$shared/types';
 import { createHash } from 'crypto';
-import { UnifiedWorkspaceWatcher, type WatchEvent } from './unified-workspace-watcher';
+import {
+  UnifiedWorkspaceWatcher,
+  type WatchEvent,
+} from './unified-workspace-watcher';
 
 const logger = new Logger('MetadataFileWatcher');
 

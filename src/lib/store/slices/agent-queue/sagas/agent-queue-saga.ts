@@ -2,9 +2,15 @@ import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import { AGENT_BACKEND_CHANNELS } from "$shared/ipc/channels";
-import type { ElectronEventName } from "$shared/ipc-registry";
 import type { QueuedMessage } from "$shared/types";
-import { call, cancelled, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  cancelled,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   hydrateAgentQueueRequested,
   replaceAgentQueue,
@@ -30,10 +36,6 @@ type WrappedQueueResponse = {
   data?: QueueOperationResult;
   error?: { message?: string } | string;
 };
-
-function ec(name: string): ElectronEventName {
-  return name as ElectronEventName;
-}
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
@@ -99,7 +101,7 @@ export function* hydrateAgentQueue(
 
 export function* watchQueueUpdatedSaga(): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<QueueUpdatedData>(
-    ec("agent:queue:updated"),
+    "agent:queue:updated",
     function* (data) {
       yield* call(handleQueueUpdated, data);
     },

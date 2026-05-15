@@ -5,9 +5,9 @@
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import {
-    requestCollapsiblePanelCollapsed,
-    setCollapsiblePanelCollapsed,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  requestCollapsiblePanelCollapsed,
+  setCollapsiblePanelCollapsed,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 

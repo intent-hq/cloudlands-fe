@@ -8,8 +8,19 @@
  * saga-local closure variables, NOT in Redux state.
  */
 
-import { call, put, takeEvery, delay, fork, type SagaGenerator } from "typed-redux-saga";
-import { invoke, invokeWithTimeout, IpcTimeoutError } from "$lib/electron-bridge";
+import {
+  call,
+  put,
+  takeEvery,
+  delay,
+  fork,
+  type SagaGenerator,
+} from "typed-redux-saga";
+import {
+  invoke,
+  invokeWithTimeout,
+  IpcTimeoutError,
+} from "$lib/electron-bridge";
 import { Logger } from "$lib/utils/logger";
 import {
   setChanges,

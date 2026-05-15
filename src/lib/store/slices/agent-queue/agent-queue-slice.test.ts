@@ -1,7 +1,14 @@
 import type { QueuedMessage } from "$shared/types";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import {
   agentQueueReducer,
   clearAgentQueue,

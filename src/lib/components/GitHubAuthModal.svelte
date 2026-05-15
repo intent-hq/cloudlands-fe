@@ -1,19 +1,22 @@
 <script lang="ts">
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
-  import { onDestroy, onMount } from 'svelte';
+  import {
+  onDestroy,
+  onMount,
+} from 'svelte';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    startGitHubAuth,
-    cancelGitHubAuth,
-    clearGitHubAuthError,
-  } from '$lib/store/slices/github-auth/github-auth-slice';
+  startGitHubAuth,
+  cancelGitHubAuth,
+  clearGitHubAuthError,
+} from '$lib/store/slices/github-auth/github-auth-slice';
   import {
-    selectGitHubAuthIsAuthenticated,
-    selectGitHubAuthIsAuthenticating,
-    selectGitHubAuthOauthUrl,
-    selectGitHubAuthError,
-    selectGitHubAuthRequiresAugmentAuth,
-  } from '$lib/store/slices/github-auth/github-auth-selectors';
+  selectGitHubAuthIsAuthenticated,
+  selectGitHubAuthIsAuthenticating,
+  selectGitHubAuthOauthUrl,
+  selectGitHubAuthError,
+  selectGitHubAuthRequiresAugmentAuth,
+} from '$lib/store/slices/github-auth/github-auth-selectors';
 
   interface Props {
     open?: boolean;

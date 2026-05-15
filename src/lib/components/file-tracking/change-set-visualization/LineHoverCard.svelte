@@ -10,7 +10,7 @@
     position: HoverPosition;
   }
 
-   
+
   let { fileColumn, lineIndex, line: _line, position }: Props = $props();
 
   const language = $derived(getLanguageFromPath(fileColumn.filePath));

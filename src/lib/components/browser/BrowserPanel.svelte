@@ -9,18 +9,24 @@
    * - Highlights the currently focused browser tab's URL
    */
   import { Input } from '$lib/components/ui/input';
-  import { ListContainer, ListItem } from '$lib/components/ui/list';
+  import {
+  ListContainer,
+  ListItem,
+} from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import {
-    addRecentUrl,
-    removeRecentUrl,
-    clearRecentUrls,
-    initBrowserWorkspace,
-  } from '$lib/store/slices/browser/browser-slice';
-  import { faGlobe, faTimes } from '@fortawesome/free-solid-svg-icons';
+  addRecentUrl,
+  removeRecentUrl,
+  clearRecentUrls,
+  initBrowserWorkspace,
+} from '$lib/store/slices/browser/browser-slice';
+  import {
+  faGlobe,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
 

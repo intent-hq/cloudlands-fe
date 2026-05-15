@@ -12,10 +12,21 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { Logger } from '../../../../shared/logger';
 import type { TrashMetadata, NoteStoragePaths } from './note-storage.types';
-import { VERSION_CONFIG, STORAGE_FILES } from './note-storage.types';
-import { getNoteStoragePaths, getTrashDir } from './note-storage-paths';
+import {
+  VERSION_CONFIG,
+  STORAGE_FILES,
+} from './note-storage.types';
+import {
+  getNoteStoragePaths,
+  getTrashDir,
+} from './note-storage-paths';
 import type { NoteId, WorkspaceId } from '../../../../shared/types';
-import { writeFileAtomic, readFileSafe, deleteFileSafe, fileExists } from './atomic-file';
+import {
+  writeFileAtomic,
+  readFileSafe,
+  deleteFileSafe,
+  fileExists,
+} from './atomic-file';
 
 const logger = new Logger('TrashService');
 

@@ -3,7 +3,14 @@
  * and JSON-RPC response (handleStreamCompletion) when resolving
  * the streamMessage() promise.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 
 describe('streamMessage resolve race', () => {
   let streamingCallbacks: Map<string, { resolveStream: () => void; streamGeneration: number }>;

@@ -4,8 +4,19 @@
  * ignores unrelated store updates.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { combineReducers, legacy_createStore as createStore, type Store } from 'redux';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  combineReducers,
+  legacy_createStore as createStore,
+  type Store,
+} from 'redux';
 import {
   agentSessionReducer,
   upsertSession,
@@ -15,7 +26,10 @@ import {
   initReduxDispatchBridge,
   initReduxStoreBridge,
 } from '$lib/store/redux-dispatch-bridge';
-import { subscribeToAgent, notifyAgentSubscribers } from '$features/agent/browser';
+import {
+  subscribeToAgent,
+  notifyAgentSubscribers,
+} from '$features/agent/browser';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 

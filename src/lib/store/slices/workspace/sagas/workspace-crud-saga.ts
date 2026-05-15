@@ -1,4 +1,3 @@
-import { clearDeferredResults } from "$features/agent/deferred-results-cache";
 import { removeWorkspaceAgentState } from "../../workspace-agents/workspace-agents-slice";
 import { cleanupPRStatusWorkspace } from "$lib/store/slices/pr-status/pr-status-slice";
 import { clearWorkspaceTransientUi } from "$lib/store/slices/transient-ui/transient-ui-slice";
@@ -9,7 +8,13 @@ import { invalidateAgentCache } from "$lib/utils/agent-loader";
 import type { CreateWorkspaceRequest } from "$shared/types";
 
 import { WorkspaceId } from "$shared/types/branded-ids";
-import { call, delay, fork, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   clearPendingCreation,
@@ -173,7 +178,6 @@ export function* handleDeleteWorkspace(action: ReturnType<typeof deleteWorkspace
       return;
     }
 
-    yield* call(clearDeferredResults, wsId);
     yield* put(cleanupPRStatusWorkspace(wsId));
     yield* call(invalidateAgentCache, wsId);
     yield* put(removeWorkspaceAgentState(wsId));

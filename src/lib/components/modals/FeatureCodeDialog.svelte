@@ -3,8 +3,14 @@
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { selectActiveFeatures, selectHasActiveFeatures } from '$lib/store/slices/feature-codes/feature-codes-selectors';
-  import { fetchFeatures, deactivateFeature } from '$lib/store/slices/feature-codes/feature-codes-slice';
+  import {
+  selectActiveFeatures,
+  selectHasActiveFeatures,
+} from '$lib/store/slices/feature-codes/feature-codes-selectors';
+  import {
+  fetchFeatures,
+  deactivateFeature,
+} from '$lib/store/slices/feature-codes/feature-codes-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {

@@ -1,5 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+} from '@testing-library/svelte';
 import TestWrapper from './TestWrapper.svelte';
 
 // Create mock logger outside describe block

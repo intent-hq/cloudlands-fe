@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const mockMemoryMonitor = {
   start: vi.fn(),
@@ -17,18 +24,12 @@ const mockComponentDisposalManager = {
 
 vi.mock('$lib/utils/logger', () => ({
   Logger: class {
-     
+
     constructor(_config?: unknown) {}
     debug = vi.fn();
     info = vi.fn();
     warn = vi.fn();
     error = vi.fn();
-  },
-}));
-
-vi.mock('../../agent/agent.service', () => ({
-  agentService: {
-    dispose: vi.fn(),
   },
 }));
 

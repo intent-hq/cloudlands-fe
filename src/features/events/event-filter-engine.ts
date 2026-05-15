@@ -4,7 +4,13 @@
  * Handles filtering of workspace events based on filter criteria.
  */
 
-import { WorkspaceEvent, WorkspaceEventType, EventFilter, FilterOperator, ActorType } from './types';
+import {
+  WorkspaceEvent,
+  WorkspaceEventType,
+  EventFilter,
+  FilterOperator,
+  ActorType,
+} from './types';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('EventFilterEngine');
@@ -232,7 +238,7 @@ export class EventFilterEngine {
  * Pure utility – builds an EventFilter[] array from a fluent API.
  * Moved here from workspace-event-bus.ts during Redux migration cleanup.
  */
- 
+
 export class EventFilterBuilder<_T extends WorkspaceEvent = WorkspaceEvent> {
   private filters: EventFilter[] = [];
 

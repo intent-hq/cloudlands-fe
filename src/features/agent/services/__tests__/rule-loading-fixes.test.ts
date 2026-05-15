@@ -8,7 +8,13 @@
  * 4. Different agent types work correctly
  */
 
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  vi,
+} from 'vitest';
 
 // Mock IPC and Redux dependencies
 vi.mock('$shared/ipc/typed-invoke', () => ({

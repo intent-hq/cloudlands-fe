@@ -87,6 +87,7 @@ export type SagaName =
   | 'filesSaga'
   | 'agentQueueSaga'
   | 'agentIpcSaga'
+  | 'agentChatEffectsSaga'
   | 'agentStreamSaga'
   | 'agentSubscriptionUISaga'
   | 'agentAvailabilitySaga'

@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { initialState, uiNotificationsReducer, type UiNotificationsState } from "./ui-notifications-slice";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  initialState,
+  uiNotificationsReducer,
+  type UiNotificationsState,
+} from "./ui-notifications-slice";
 
 describe("uiNotificationsReducer", () => {
   it("returns the initial state", () => {

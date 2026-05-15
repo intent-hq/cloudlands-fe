@@ -2,7 +2,10 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
+import {
+  sanitizeWorkspaceEvent,
+  sanitizeWorkspaceEventsList,
+} from './workspace-events-sanitizer';
 
 const MAX_EVENTS = 100;
 

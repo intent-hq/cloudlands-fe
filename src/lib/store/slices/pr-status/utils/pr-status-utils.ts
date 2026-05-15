@@ -5,7 +5,10 @@
  * No side effects, no store access, no IPC — safe to import anywhere.
  */
 
-import { PullRequestStatus, type PullRequestInfo } from "$shared/types";
+import {
+  PullRequestStatus,
+  type PullRequestInfo,
+} from "$shared/types";
 
 /**
  * Sanitize data for IPC by converting any Svelte reactive proxies to plain objects.

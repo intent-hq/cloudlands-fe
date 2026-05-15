@@ -5,12 +5,18 @@
  * Uses JSONL format (one event per line) for efficient append-only writes.
  */
 
-import { WorkspaceEvent, WorkspaceEventType } from '../types';
+import {
+  WorkspaceEvent,
+  WorkspaceEventType,
+} from '../types';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { existsSync, createReadStream } from 'fs';
+import {
+  existsSync,
+  createReadStream,
+} from 'fs';
 import { createInterface } from 'readline';
 
 const logger = new Logger('EventStore');

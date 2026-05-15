@@ -1,11 +1,17 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import Fa from 'svelte-fa';
-  import { faFolder, faKey } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faFolder,
+  faKey,
+} from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { onMount } from 'svelte';
-  import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
+  import {
+  validateBranchPrefix,
+  sanitizeBranchPrefix,
+} from '$lib/utils/workspace-validation';
 
   const dispatch = getDispatch();
 

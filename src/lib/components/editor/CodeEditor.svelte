@@ -1,28 +1,44 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { writable } from 'svelte/store';
-  import { monaco, initializeMonaco, ensureMonacoInitialized } from '$lib/utils/monaco-workers';
-  import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
+  import {
+  monaco,
+  initializeMonaco,
+  ensureMonacoInitialized,
+} from '$lib/utils/monaco-workers';
+  import {
+  defineMonacoThemes,
+  getActiveMonacoThemeName,
+} from '$lib/utils/monaco-theme';
   import { createLogger } from '$lib/utils/client-logger';
   import AgentTypingAnimation from './AgentTypingAnimation.svelte';
-  import { type LineChange, createLineChangeDecorations } from '$lib/utils/line-change-decorations';
+  import {
+  type LineChange,
+  createLineChangeDecorations,
+} from '$lib/utils/line-change-decorations';
 
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faExternalLinkAlt, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faExternalLinkAlt,
+  faFolderOpen,
+} from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import {
-    selectActiveWorkspace,
-    selectWorkspaceById,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectActiveWorkspace,
+  selectWorkspaceById,
+} from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-    createUniqueMonacoModelPath,
-    normalizeMonacoModelPath,
-  } from '$lib/utils/monaco-model-uri';
+  createUniqueMonacoModelPath,
+  normalizeMonacoModelPath,
+} from '$lib/utils/monaco-model-uri';
 
   const logger = createLogger('CodeEditor');
 
@@ -165,7 +181,6 @@
   let editorModel: monaco.editor.ITextModel | null = null;
   let editorReady = $state(false);
   const isFollowing$ = selectIsFollowing();
-  let isFollowingAgent = $derived($isFollowing$);
   const modelUriInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // Track decoration IDs for line changes
@@ -380,7 +395,7 @@
       const currentValue = editor.getValue();
       if (currentValue !== val) {
         // If following an agent, don't update immediately - let animation handle it
-        if (!isFollowingAgent) {
+        if (!$isFollowing$) {
           // Save cursor position before updating
           const position = editor.getPosition();
           editor.setValue(val);
@@ -412,7 +427,7 @@
 
   // Handle agent typing animations
   $effect(() => {
-    if (!editor || !isFollowingAgent) return;
+    if (!editor || !$isFollowing$) return;
 
     const handleAnimationEvent = (event: Event) => {
       const detail = (event as CustomEvent).detail as
@@ -938,7 +953,7 @@
       </div>
     </div>
   {:else}
-    {#if isFollowingAgent}
+    {#if $isFollowing$}
       <AgentTypingAnimation
         bind:content={value}
         onContentChange={(newContent) => (value = newContent)}

@@ -7,11 +7,15 @@
  * next type-0 exchange.
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { homedir } from 'os';
-import { existsSync } from 'fs';
+
 
 const SESSIONS_DIR = join(homedir(), '.augment', 'sessions');
 

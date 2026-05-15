@@ -1,14 +1,14 @@
 <script lang="ts">
   import {
-    faCirclePlus,
-    faArrowUp,
-    faTrash,
-    faChevronDown,
-    faCircle,
-    faCircleHalfStroke,
-    faCircleCheck,
-    faCircleXmark,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCirclePlus,
+  faArrowUp,
+  faTrash,
+  faChevronDown,
+  faCircle,
+  faCircleHalfStroke,
+  faCircleCheck,
+  faCircleXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import type { TaskDiffSections, ParsedTask } from './tool-result-parser';

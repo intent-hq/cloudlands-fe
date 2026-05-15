@@ -5,7 +5,10 @@
  * that will be displayed in the Panel's content header.
  */
 
-import { getContext, setContext } from 'svelte';
+import {
+  getContext,
+  setContext,
+} from 'svelte';
 import type { Snippet } from 'svelte';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 

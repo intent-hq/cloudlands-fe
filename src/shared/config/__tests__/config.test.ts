@@ -4,7 +4,11 @@
  * Tests for configuration types, defaults, and validation.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   DEFAULT_AGENT_CONFIG,
   DEFAULT_STREAM_CONFIG,

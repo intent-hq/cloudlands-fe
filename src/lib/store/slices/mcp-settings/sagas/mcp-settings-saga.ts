@@ -4,7 +4,14 @@
  * Handles all side effects: IPC calls, error listener, connection tests.
  */
 
-import { call, put, fork, takeEvery, select, delay } from "typed-redux-saga";
+import {
+  call,
+  put,
+  fork,
+  takeEvery,
+  select,
+  delay,
+} from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
 import { on } from "$lib/electron-bridge";

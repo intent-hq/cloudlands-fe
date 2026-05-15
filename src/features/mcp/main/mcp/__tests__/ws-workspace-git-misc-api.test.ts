@@ -4,7 +4,13 @@
  * and cross-workspace-tools.test.ts.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 // --- Mocks for workspace API dependencies ---
 vi.mock('$features/git/main/git.service', () => ({

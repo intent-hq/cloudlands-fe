@@ -7,11 +7,11 @@
    */
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
-    faChevronRight,
-    faFileCode,
-    faPencil,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faChevronRight,
+  faFileCode,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
   import type { DiffAction } from './types.js';
 
   interface Props {

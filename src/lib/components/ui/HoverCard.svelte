@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import type { Snippet } from 'svelte';
   import Portal from './Portal.svelte';
   interface Props {

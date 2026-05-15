@@ -4,11 +4,20 @@
  * Handles opening files and projects in external IDEs like VSCode and JetBrains
  */
 
-import { ipcMain, shell } from 'electron';
+import {
+  ipcMain,
+  shell,
+} from 'electron';
 import { spawn } from 'child_process';
 import { unlinkSync } from 'fs';
-import { writeFile, access } from 'fs/promises';
-import { homedir, tmpdir } from 'os';
+import {
+  writeFile,
+  access,
+} from 'fs/promises';
+import {
+  homedir,
+  tmpdir,
+} from 'os';
 import { join } from 'path';
 import { Logger } from '$lib/utils/logger';
 import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';

@@ -4,7 +4,12 @@
  */
 
 import { EventEmitter } from 'events';
-import { ToolExecutionStatus, type Tool, type ToolExecution, type ToolResult } from './types';
+import {
+  ToolExecutionStatus,
+  type Tool,
+  type ToolExecution,
+  type ToolResult,
+} from './types';
 
 export class ExecutionManager extends EventEmitter {
   private executions: Map<string, ToolExecution> = new Map();

@@ -5,7 +5,10 @@
  * by wrapping the `highlight` method to fall back to `highlightAuto` when a language
  * is not registered, instead of throwing.
  */
-import { common, createLowlight } from 'lowlight';
+import {
+  common,
+  createLowlight,
+} from 'lowlight';
 // Additional languages not in 'common' bundle that users may encounter
 import protobuf from 'highlight.js/lib/languages/protobuf';
 import dockerfile from 'highlight.js/lib/languages/dockerfile';

@@ -2,7 +2,12 @@
  * Tests for useCloseHandlers composable
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
 
 describe('useCloseHandlers', () => {
   describe('handleCloseMainPanel', () => {

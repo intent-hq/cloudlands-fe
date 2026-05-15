@@ -2,8 +2,15 @@
  * Integration Tests for Error Messages with AgentError
  */
 
-import { describe, it, expect } from 'vitest';
-import { AgentError, AgentErrorCode } from '../../../features/agent/errors/agent-errors';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  AgentError,
+  AgentErrorCode,
+} from '../../../features/agent/errors/agent-errors';
 
 describe('Error Messages Integration', () => {
   describe('AgentError with Messages Module', () => {

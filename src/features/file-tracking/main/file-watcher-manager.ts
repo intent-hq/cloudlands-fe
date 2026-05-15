@@ -4,7 +4,10 @@
  * Manages file watching with proper resource management to avoid EMFILE errors
  */
 
-import { FSWatcher, watch } from 'chokidar';
+import {
+  FSWatcher,
+  watch,
+} from 'chokidar';
 import { EventEmitter } from 'events';
 import { Logger } from '$lib/utils/logger';
 

@@ -9,6 +9,10 @@ export interface StatusEvent {
   timestamp: number;
 }
 
+export interface StreamStatusContext {
+  sessionId: string;
+}
+
 export interface LastAttemptedMessage {
   text: string;
   options?: SendMessageOptions;
@@ -37,15 +41,14 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 
 /**
  * Serializable per-agent chat state stored in Redux.
- * Mirrors the old ChatState from chat.service.ts but
- * without non-serializable fields (those stay in the saga).
+ * Serializable per-agent chat state without non-serializable fields
+ * (those stay in the saga).
  */
 export interface ChatAgentState {
   agentId: string;
   // NOTE: isStreaming and isProcessing have been moved to agent-session slice.
   // Read them from AgentSession via canonical agent-session selectors.
   isInterrupting: boolean;
-  streamingContent: string;
   error: string | null;
   lastChunkTime: number | null;
   receivedFirstChunk: boolean;
@@ -58,25 +61,44 @@ export interface ChatAgentState {
   trackedWorkspaceId: string | null;
   /** True while an async initializeChat triggered by a workspace rebind is in flight. */
   isRebinding: boolean;
-  /** Timestamp of the last message send (for rate limiting) */
+  /** Timestamp of the last accepted message send (for saga-owned rate limiting) */
   lastMessageTime: number;
   /** Timestamp of the last chunk received (for reconciliation skip logic) */
   lastChunkReceivedAt: number;
 }
 
 /**
+ * Renderer chat state composed from transient chat-state flags plus canonical
+ * agent-session data so UI utilities depend on store-owned types rather than
+ * retired service orchestration.
+ */
+export type ChatState = ChatAgentState & {
+  session: AgentSession | null;
+  messages: AgentMessage[];
+  /** Streaming flag — sourced from agent-session slice (single source of truth) */
+  isStreaming: boolean;
+  /** Processing flag — sourced from agent-session slice (single source of truth) */
+  isProcessing: boolean;
+};
+
+/**
  * Payload for the sendMessage saga-trigger action.
- * All DOM-derived data is serialized by the component before dispatch.
+ * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
   text: string;
-  serializedContextItems?: Omit<ContextItem, 'file'>[];
+  contextItems?: ChatInputContextItem[];
+  serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;
   noteIds?: string[];
   /** Image blocks extracted from serialized context items */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Queued message id to remove before replaying a queued message. */
+  queuedMessageId?: string;
   /** Whether this is a "send queued message now" flow that skips queue-vs-send decision */
   skipQueueCheck?: boolean;
+  /** Whether saga-owned stop orchestration should run before sending. */
+  forceSubmit?: boolean;
   /** Agent name used for reinitializing chat on workspace change */
   agentName?: string;
   /** Agent model used for reinitializing chat on workspace change */
@@ -106,10 +128,9 @@ export interface InitializeChatOptions {
   isInitialWorkspaceAgent?: boolean;
 }
 
-// Re-export ContextItem so the types file stays self-contained for serialization
-import type { ContextItem } from '$features/context/types';
 import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-api';
 import type { ContextReference } from '$features/agent/agent-context';
+import type { AgentMessage, AgentSession } from '$shared/types';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)
@@ -127,7 +148,6 @@ export const STALL_DETECTION_MS = 90_000; // 90 seconds
 export const STATE_RECONCILIATION_INTERVAL_MS = 10_000; // Check every 10 seconds
 export const STATE_RECONCILIATION_FAILURE_THRESHOLD = 2;
 export const STUCK_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-export const CHUNK_THROTTLE_MS = 16; // ~60fps
 export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
 
 /** Minimum time between messages in ms (rate limiting) */

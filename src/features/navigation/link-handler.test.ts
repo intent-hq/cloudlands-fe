@@ -1,5 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
+import {
+  handleLink,
+  createGlobalLinkClickHandler,
+  createLinkClickHandler,
+} from './link-handler';
 import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 

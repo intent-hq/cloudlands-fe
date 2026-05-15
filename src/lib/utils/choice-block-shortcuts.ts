@@ -1,6 +1,9 @@
-import { Extension } from '@tiptap/core';
+import {
+  Extension,
+  InputRule,
+} from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
-import { InputRule } from '@tiptap/core';
+
 import type { RawCommands } from '@tiptap/core';
 
 /**

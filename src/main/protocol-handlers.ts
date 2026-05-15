@@ -1,4 +1,7 @@
-import { app, protocol } from 'electron';
+import {
+  app,
+  protocol,
+} from 'electron';
 import { decodeUrlPath } from './utils/decode-url-path';
 import { logger } from '../shared/logger';
 import path from 'path';

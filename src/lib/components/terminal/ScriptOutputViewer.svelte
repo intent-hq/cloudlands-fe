@@ -7,28 +7,36 @@
    * Output streams in real-time via store subscription.
    * On re-open, loads buffered output from the store.
    */
-  import { onDestroy, untrack } from 'svelte';
+  import {
+  onDestroy,
+  untrack,
+} from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faXmark,
+  faWandMagicSparkles,
+  faPlay,
+} from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectScriptById, selectScriptRuntime, selectScriptOutput } from '$lib/store/slices/scripts/scripts-selectors';
+  import {
+  selectScriptById,
+  selectScriptRuntime,
+  selectScriptOutput,
+} from '$lib/store/slices/scripts/scripts-selectors';
   import { removeScript } from '$lib/store/slices/scripts/scripts-slice';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const dispatch = getDispatch();
-  const activeWorkspace = selectActiveWorkspace();
 
   interface Props {
     scriptId: string;
@@ -52,18 +60,15 @@
   const script$ = selectScriptById(scriptId);
   const runtime$ = selectScriptRuntime(scriptId);
   const outputLines$ = selectScriptOutput(scriptId);
-  const script = $derived($script$);
-  const runtime = $derived($runtime$);
-  const outputLines = $derived($outputLines$);
 
   // Track how many lines we've already written to xterm
   let writtenLineCount = $state(0);
 
   const isFailing = $derived(
-    runtime.status === 'exited' &&
-      runtime.exitCode != null &&
-      runtime.exitCode !== 0 &&
-      runtime.exitCode < 128,
+    $runtime$.status === 'exited' &&
+      $runtime$.exitCode != null &&
+      $runtime$.exitCode !== 0 &&
+      $runtime$.exitCode < 128,
   );
 
   // ---- xterm lifecycle ----
@@ -169,7 +174,7 @@
   // ---- Real-time streaming via $effect ----
 
   $effect(() => {
-    const lines = outputLines; // tracked — triggers effect on new output
+    const lines = $outputLines$; // tracked — triggers effect on new output
     const written = untrack(() => writtenLineCount); // NOT tracked — avoids cycle
     if (!xterm || lines.length <= written) return;
 
@@ -201,9 +206,8 @@
   // ---- Ask Agent ----
 
   async function handleAskAgent(): Promise<void> {
-    const workspace = $activeWorkspace;
-    if (!workspace) {
-      toast.error('No active workspace');
+    if (!workspaceId) {
+      toast.error('No workspace selected');
       return;
     }
 
@@ -212,26 +216,19 @@
       .slice(-100)
       .map((l) => l.text)
       .join('\n');
-    const exitCode = runtime.exitCode;
+    const exitCode = $runtime$.exitCode;
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
 
-    const prompt = `The script '${script?.name}'${failedText}.\n\nCommand: \`${script?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
+    const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
-      const agentFactory = UnifiedAgentFactory.getInstance();
-      const result = await agentFactory.createAgent(workspace, {
-        name: `Fix: ${script?.name ?? 'script'}`,
-        workspaceId: WorkspaceId(workspace.id),
+      dispatch(createAgentFromConfigRequested(workspaceId, {
+        name: `Fix: ${$script$?.name ?? 'script'}`,
+        workspaceId: WorkspaceId(workspaceId),
         initialMessage: prompt,
         source: 'error-notification',
-      });
-
-      if (result.agentId) {
-        getReduxStore().dispatch(
-          openAgentTabRequested(workspaceId, { agentId: result.agentId }),
-        );
-      }
+      }, { openAgent: true }));
     } catch {
       toast.error('Failed to create agent');
     }
@@ -241,7 +238,7 @@
 
   // Reset xterm when transitioning back to empty state
   $effect(() => {
-    const isEmptyState = runtime.status === 'idle' && outputLines.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
     if (isEmptyState && xterm) {
       disposeXterm();
     }
@@ -249,7 +246,7 @@
 
   // Initialize xterm when the container is visible (not during empty state)
   $effect(() => {
-    const isEmptyState = runtime.status === 'idle' && outputLines.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
     if (!isEmptyState && xtermContainer && !xterm) {
       // Container just became visible, initialize xterm
       // Use requestAnimationFrame to ensure DOM has updated
@@ -272,7 +269,7 @@
         <div class="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
           <Fa icon={faXmark} size="xs" />
         </div>
-        <span>Build failed with exit code {runtime.exitCode}</span>
+        <span>Build failed with exit code {$runtime$.exitCode}</span>
       </div>
       <Button
         variant="outline"
@@ -286,13 +283,13 @@
     </div>
   {/if}
 
-  {#if runtime.status === 'idle' && outputLines.length === 0}
+  {#if $runtime$.status === 'idle' && $outputLines$.length === 0}
     <!-- Empty state: script hasn't been run yet -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
       <div class="flex items-center gap-3 text-sm">
         <span class="text-subtle font-mono">$</span>
-        {#if script}
-          <code class="text-muted-foreground font-mono text-xs">{script.command}</code>
+        {#if $script$}
+          <code class="text-muted-foreground font-mono text-xs">{$script$.command}</code>
         {/if}
         <Button
           variant="ghost"
@@ -308,7 +305,7 @@
   {/if}
 
   <!-- xterm output (hidden when empty state is showing) -->
-  <div class="flex-1 relative overflow-hidden" class:hidden={runtime.status === 'idle' && outputLines.length === 0}>
+  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $outputLines$.length === 0}>
     <div class="xterm-output" bind:this={xtermContainer}></div>
   </div>
 </div>

@@ -2,23 +2,26 @@
   /* eslint-disable max-lines */
   import { slide } from 'svelte/transition';
   import type { Note } from '$shared/types';
-  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
+  import {
+  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
+  WorkspaceStatusEnum,
+} from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
-    computeTaskStats,
-    extractOrderedSpecTaskIds,
-    extractSpecTaskIds,
-  } from '$shared/utils/task-stats';
+  computeTaskStats,
+  extractOrderedSpecTaskIds,
+  extractSpecTaskIds,
+} from '$shared/utils/task-stats';
   import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
   import Fa from 'svelte-fa';
   import {
-    faEllipsisV,
-    faArrowRight,
-    faCodeBranch,
-    faCodePullRequest,
-    faCheck,
-    faFileLines,
-  } from '@fortawesome/free-solid-svg-icons';
+  faEllipsisV,
+  faArrowRight,
+  faCodeBranch,
+  faCodePullRequest,
+  faCheck,
+  faFileLines,
+} from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -26,7 +29,8 @@
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import WorkspaceActionsMenu, {
+  import WorkspaceActionsMenu,
+  {
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
@@ -34,39 +38,48 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { goto } from '$app/navigation';
-  import { tick, onMount } from 'svelte';
-  import { logger, createLogger } from '$lib/utils/client-logger';
+  import {
+  tick,
+  onMount,
+} from 'svelte';
+  import {
+  logger,
+  createLogger,
+} from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
-    fetchReadyTasks,
-    applyReadyTasks,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  fetchReadyTasks,
+  applyReadyTasks,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
-    shouldClearGitStatusBeforeLoad,
-    shouldApplyGitStatusResult,
-    shouldClearGitStatusOnError,
-    isFetchCurrent,
-  } from './git-status-refresh-utils';
+  shouldClearGitStatusBeforeLoad,
+  shouldApplyGitStatusResult,
+  shouldClearGitStatusOnError,
+  isFetchCurrent,
+} from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceCreditStats from '$lib/components/workspace/WorkspaceCreditStats.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
+  import {
+  hasRunningAgents,
+  getRunningAgentNames,
+} from '$lib/utils/delete-warning-utils';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import {
-    loadWorkspacesRequested,
-    setWorkspaceEntity,
-  } from '$lib/store/slices/workspace/workspace-slice';
+  loadWorkspacesRequested,
+  setWorkspaceEntity,
+} from '$lib/store/slices/workspace/workspace-slice';
   import {
-    selectWorkspaceById,
-    selectWorkspaceActivePullRequest,
-  } from '$lib/store/slices/workspace/workspace-selectors';
+  selectWorkspaceById,
+  selectWorkspaceActivePullRequest,
+} from '$lib/store/slices/workspace/workspace-selectors';
 
   const readyLogger = createLogger('ReadyTasks');
 

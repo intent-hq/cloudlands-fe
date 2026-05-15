@@ -11,9 +11,15 @@ import { LineType } from '../../../shared/types';
 import { WorkspaceId } from '../../../shared/types/branded-ids';
 import { diffsService } from '../diffs.service';
 import { Logger } from '../../../shared/logger';
-import { DIFFS_CHANNELS, LINE_CHANGES_CHANNELS } from '../../../shared/ipc/channels';
+import {
+  DIFFS_CHANNELS,
+  LINE_CHANGES_CHANNELS,
+} from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { getWorkspaceGitInfo, getRemoteGitManager } from '../../git/main/git-router';
+import {
+  getWorkspaceGitInfo,
+  getRemoteGitManager,
+} from '../../git/main/git-router';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import {
   DiffsListSchema,

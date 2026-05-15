@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({

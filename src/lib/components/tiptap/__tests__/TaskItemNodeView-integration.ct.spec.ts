@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import {
+  test,
+  expect,
+} from '@playwright/experimental-ct-svelte';
 import TipTapEditorTestHarness from './TipTapEditorTestHarness.svelte';
 
 /**

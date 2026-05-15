@@ -9,8 +9,18 @@
  * and by simulating the adapter's listener pattern.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TerminalStateMachine, TerminalState } from '../terminal-state-machine';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
+import {
+  TerminalStateMachine,
+  TerminalState,
+} from '../terminal-state-machine';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({

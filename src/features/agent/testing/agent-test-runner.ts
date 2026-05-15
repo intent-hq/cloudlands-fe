@@ -5,7 +5,12 @@
  * Manages test suites, parallel execution, and reporting.
  */
 
-import { AgentTestHarness, TestScenario, TestMetrics, HarnessConfig } from './agent-test-harness';
+import {
+  AgentTestHarness,
+  TestScenario,
+  TestMetrics,
+  HarnessConfig,
+} from './agent-test-harness';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import * as fs from 'fs/promises';
 

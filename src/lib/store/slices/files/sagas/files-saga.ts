@@ -1,9 +1,18 @@
-import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { invoke } from '$lib/electron-bridge';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
 import { pathsMatch } from '$lib/utils/file-utils';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-import { selectAllFileContentEntries, selectFileContentEntry } from '../files-selectors';
+import {
+  selectAllFileContentEntries,
+  selectFileContentEntry,
+} from '../files-selectors';
 import {
   applyExternalFileContent,
   loadFileContentFailed,

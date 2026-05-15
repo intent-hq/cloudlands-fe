@@ -1,8 +1,22 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+} from '@testing-library/svelte';
 import { tick } from 'svelte';
 import BubbleMenu from '../BubbleMenu.svelte';
 import TooltipWrapper from '../comments/__tests__/TooltipWrapper.svelte';
+
+const { dispatchMock } = vi.hoisted(() => ({
+  dispatchMock: vi.fn(),
+}));
 
 // Mock the createLogger function at module level
 vi.mock('$lib/utils/client-logger', () => {
@@ -32,13 +46,29 @@ vi.mock('$features/agent/instruction-registry', () => ({
 
 // Mock model selectors
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: () => ({ subscribe: (fn: (v: string) => void) => { fn('test-model'); return () => {}; } }),
-  selectSelectedModel: () => ({ subscribe: (fn: (v: string) => void) => { fn('test-model'); return () => {}; } }),
+  selectWorkspaceDefaultModel: Object.assign(
+    () => ({
+      subscribe: (fn: (v: string) => void) => {
+        fn('test-model');
+        return () => {};
+      },
+    }),
+    { select: vi.fn(() => 'test-model') },
+  ),
+  selectSelectedModel: () => ({
+    subscribe: (fn: (v: string) => void) => {
+      fn('test-model');
+      return () => {};
+    },
+  }),
 }));
 
-// Mock UnifiedAgentFactory
-vi.mock('$features/agent/services/agent-factory', () => ({
-  UnifiedAgentFactory: vi.fn(),
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => dispatchMock,
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
 }));
 
 describe('BubbleMenu', () => {
@@ -54,20 +84,27 @@ describe('BubbleMenu', () => {
     await tick();
   };
 
-  const renderBubbleMenu = () =>
+  const renderBubbleMenu = (props: Record<string, unknown> = {}) =>
     render(TooltipWrapper, {
       props: {
         component: BubbleMenu,
         props: {
           editor: mockEditor,
           workspace: mockWorkspace,
+          ...props,
         },
       },
     });
 
+  const flushPromises = async () => {
+    await Promise.resolve();
+    await tick();
+  };
+
   beforeEach(() => {
     // Clear mock calls
     vi.clearAllMocks();
+    dispatchMock.mockReset();
 
     // Reset event handlers
     editorEventHandlers = {};
@@ -273,5 +310,55 @@ describe('BubbleMenu', () => {
     await fireEvent.click(strikeButton!);
 
     expect(mockEditor.chain).toHaveBeenCalled();
+  });
+
+  it('should close launch dialog and notify only after launch succeeds', async () => {
+    const onAgentLaunched = vi.fn();
+    const createdAgent = {
+      id: 'agent-created',
+      name: 'Created Agent',
+      workspaceId: 'test-workspace-id',
+    };
+    dispatchMock.mockImplementation((action) => {
+      if (action.type === 'agentSessions/launchAgentRequested') {
+        action.success(createdAgent);
+      }
+    });
+
+    renderBubbleMenu({ onAgentLaunched });
+    await triggerSelectionUpdate();
+
+    await fireEvent.click(document.body.querySelector('[aria-label="Send to Agent"]')!);
+    await tick();
+    await fireEvent.click(document.body.querySelector('.launch-submit-btn')!);
+    await flushPromises();
+
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'agentSessions/launchAgentRequested' }),
+      );
+      expect(onAgentLaunched).toHaveBeenCalledWith(createdAgent);
+      expect(document.body.querySelector('.launch-dialog')).toBeFalsy();
+    });
+  });
+
+  it('should keep launch dialog open and avoid notifying when launch fails', async () => {
+    const onAgentLaunched = vi.fn();
+    dispatchMock.mockImplementation((action) => {
+      if (action.type === 'agentSessions/launchAgentRequested') {
+        action.failure('creation failed');
+      }
+    });
+
+    renderBubbleMenu({ onAgentLaunched });
+    await triggerSelectionUpdate();
+
+    await fireEvent.click(document.body.querySelector('[aria-label="Send to Agent"]')!);
+    await tick();
+    await fireEvent.click(document.body.querySelector('.launch-submit-btn')!);
+    await flushPromises();
+
+    expect(onAgentLaunched).not.toHaveBeenCalled();
+    expect(document.body.querySelector('.launch-dialog')).toBeTruthy();
   });
 });

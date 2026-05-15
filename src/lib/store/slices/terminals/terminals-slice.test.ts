@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
 import {
   terminalsReducer,
   openTerminalOverlay,
@@ -19,7 +23,11 @@ import {
   type TerminalOverlayState,
   type TerminalTab,
 } from "./terminals-slice";
-import { createCollection, getItems, getItem } from "../../utils/collection-utils";
+import {
+  createCollection,
+  getItems,
+  getItem,
+} from "../../utils/collection-utils";
 
 const WS = "ws-1";
 

@@ -1,6 +1,13 @@
 import { PassThrough } from 'stream';
-import { describe, expect, it } from 'vitest';
-import { AdapterDisposedError, CodexAppServerAcpAdapter } from '../codex-app-server-transport';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  AdapterDisposedError,
+  CodexAppServerAcpAdapter,
+} from '../codex-app-server-transport';
 
 function createMockCodex() {
   const stdin = new PassThrough();

@@ -3,9 +3,17 @@
  * High-level workflow for creating prerequisite notes
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { NotesService } from '../notes.service';
-import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId,
+  NoteId,
+} from '$shared/types/branded-ids';
 import { randomUUID } from 'crypto';
 
 describe('NotesService - createPrerequisiteNote', () => {

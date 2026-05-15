@@ -4,7 +4,14 @@
  * Tests for edge cases, error handling, and duplicate handler prevention.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { ipcMain } from 'electron';
 import { registerAgentHandlers } from '../unified-agent-handlers';
 import { getAgentBackendAdapter } from '../agent-backend-adapter';

@@ -3,13 +3,13 @@
   /**
    * Chat Panel Component
    *
-   * A clean, focused chat interface that delegates all logic to the ChatService.
+   * A clean, focused chat interface that delegates chat side effects to Redux sagas.
    * This component is purely presentational with minimal state management.
    *
    * @component
    * @description Primary chat interface for interacting with AI agents in the workspace.
    * Manages the full chat lifecycle including initialization, message sending/receiving,
-   * streaming responses, and error handling through the ChatService.
+   * streaming responses, and error handling through Redux-owned chat state.
    *
    * @example
    * ```svelte
@@ -35,61 +35,80 @@
    * - onChatUpdate: Callback for chat state updates
    */
 
-  import { onMount, onDestroy, untrack, tick } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+  untrack,
+  tick,
+} from 'svelte';
   import { writable } from 'svelte/store';
-  import { getChatService, MessageGuardError } from '$features/agent/services/chat.service';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
-  import { agentService, type AgentMessage } from '$features/agent/agent-ipc-bridge';
-  import { setAgentStreaming } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import type { AgentMessage } from '$shared/types';
+  import { saveAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import {
-    selectAgentSession,
-    selectAgentMessages,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
+  agentSessionEditAndRegenerateRequested,
+  agentSessionForkSessionRequested,
+  agentSessionRegenerateFromMessageRequested,
+  agentSessionRetryLastMessageRequested,
+  agentSessionRetryWithModelRequested,
+  agentSessionStopChatRequested,
+  updateSession as updateAgentSessionFields,
+} from '$lib/store/slices/agent-session/agent-session-slice';
+  import {
+  selectAgentSession,
+  selectAgentIsResponding,
+  selectAgentSessionIsStreaming,
+  selectAgentSessionStreamingContent,
+  selectAgentMessages,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$lib/store/slices/agent-queue/agent-queue-selectors';
-  import {
-    addMessage as addAgentSessionMessage,
-    updateMessage as updateAgentSessionMessage,
-    updateSession as updateAgentSessionFields,
-  } from '$lib/store/slices/agent-session/agent-session-slice';
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import {
-    setWorkspace as setMultiPanelWorkspace,
-    updatePanels as updateMultiPanels,
-    setSelection as setMultiPanelSelection,
-    clearSelection as clearMultiPanelSelection,
-    uncheckAllSelections,
-    type PanelContextItem,
-  } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+  setWorkspace as setMultiPanelWorkspace,
+  updatePanels as updateMultiPanels,
+  setSelection as setMultiPanelSelection,
+  clearSelection as clearMultiPanelSelection,
+  type PanelContextItem,
+} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
   import {
-    selectCheckedPanels,
-    selectPanels,
-    selectCheckedSelections,
-  } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+  selectCheckedPanels,
+  selectPanels,
+  selectCheckedSelections,
+} from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectWorkspaceTerminalState } from '$lib/store/slices/terminals/terminals-selectors';
-  import { getItems } from '$lib/store/utils/collection-utils';
+  import { selectWorkspaceSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';
 
-  import { clearChatDraft, setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import { setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
   import {
-    sendMessage,
-    initializeChatRequested,
-    sendInitialMessageRequested,
-    chatRebindStarted,
-    chatRebindEnded,
-    chatTrackedWorkspaceSet,
-  } from '$lib/store/slices/chat-state/chat-state-slice';
-  import { selectChatStateOrDefault } from '$lib/store/slices/chat-state/chat-state-selectors';
-  import type { SendMessagePayload } from '$lib/store/slices/chat-state/chat-state-types';
+  sendMessage,
+  initializeChatRequested,
+  sendInitialMessageRequested,
+  chatRebindStarted,
+  chatRebindEnded,
+  chatTrackedWorkspaceSet,
+} from '$lib/store/slices/chat-state/chat-state-slice';
+  import {
+  selectChatError,
+  selectChatIsStalled,
+  selectChatLastChunkTime,
+  selectChatModelUnavailable,
+  selectChatReceivedFirstChunk,
+  selectChatStatusEvents,
+  selectChatStreamingStartTime,
+} from '$lib/store/slices/chat-state/chat-state-selectors';
   import { selectChatDraft } from '$lib/store/slices/transient-ui/transient-ui-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
 
   import { selectTasksForAgent } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, AgentMetadata } from '$shared/types';
-  import { extractAllContent, type SuggestedPrompt } from '$shared/types';
+  import {
+  extractAllContent,
+  type SuggestedPrompt,
+} from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -102,55 +121,66 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
-  import { followBottom, scrollToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
+  import {
+  followBottom,
+  scrollToBottom as scrollToBottomUtil,
+} from '$lib/utils/smartScroll';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
-  import { toast } from 'svelte-sonner';
   import Fa from 'svelte-fa';
   import { formatDistanceToNow } from '$lib/utils/date';
-  import { faArrowDown, faSquareCheck, faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
-  import { fade, slide } from 'svelte/transition';
+  import {
+  faArrowDown,
+  faSquareCheck,
+  faLock,
+  faLockOpen,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  fade,
+  slide,
+} from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
-  import { createMessageId } from '$shared/types/branded-ids';
-  import { createAppMessageId } from '$shared/utils/app-message-id';
-  import { v4 as uuidv4 } from 'uuid';
   import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
-  import { groupContentBlocks, parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import {
+  groupContentBlocks,
+  parseSuggestedPrompts,
+} from '$lib/utils/messageParser';
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import { selectIsAgentMonospace } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import {
-    markAgentAsViewed,
-    clearCurrentlyViewedAgent,
-  } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+  markAgentAsViewed,
+  clearCurrentlyViewedAgent,
+} from '$lib/store/slices/unread-tracking/unread-tracking-slice';
   import AuroraBackground from './AuroraBackground.svelte';
-  import { invoke, listenSync } from '$lib/electron-bridge';
   import {
-    selectSpecialists,
-    selectEffectiveBehaviorPrompt,
-    selectEffectiveModel,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  invoke,
+  listenSync,
+} from '$lib/electron-bridge';
+  import {
+  selectSpecialists,
+  selectEffectiveBehaviorPrompt,
+  selectEffectiveModel,
+} from '$lib/store/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
-  import { cleanErrorMessage } from '$shared/errors/messages';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
-    isSessionActivelyResponding,
-    shouldShowEndOfListStreamingStatus,
-    shouldShowPendingAssistantStatus,
-  } from './chat-panel-visibility';
+  shouldShowEndOfListStreamingStatus,
+  shouldShowPendingAssistantStatus,
+} from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
 
   const logger = createLogger('ChatPanel');
@@ -234,15 +264,12 @@
     isNewWorkspace = false,
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
-     
+
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
   }: Props = $props();
-
-  // Service instance — per-agent, permanently bound to this agent's ID
-  const chatService = getChatService(agentId);
 
   // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
   const workspaceIdStore = writable(workspace?.id ?? '');
@@ -258,22 +285,22 @@
   const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
 
   // Redux selectors for chat values — called at init time, reactive via Svelte store protocol
-  const chatAgentState$ = selectChatStateOrDefault(agentId ?? '');
-  const agentSession$ = selectAgentSession(agentId ?? '');
-  const agentMessages$ = selectAgentMessages(agentId ?? '');
+  // Broad selector rationale: ChatPanel passes the materialized session to
+  // helpers/components that need model, metadata, provider, and prompt-handled state.
+  const agentSession$ = selectAgentSession(agentIdStore);
+  const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
+  const agentMessages$ = selectAgentMessages(agentIdStore);
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
-  const queuedMessages$ = selectAgentQueueMessages(agentId ?? '');
-
-  const isStreaming = $derived($agentSession$?.isStreaming ?? false);
-  const isProcessing = $derived(isSessionActivelyResponding($agentSession$));
-  const streamingContent = $derived($chatAgentState$.streamingContent);
-  const error = $derived($chatAgentState$.error);
-  const isStalled = $derived($chatAgentState$.isStalled);
-  const streamingStartTime = $derived($chatAgentState$.streamingStartTime);
-  const lastChunkTime = $derived($chatAgentState$.lastChunkTime);
-  const modelUnavailable = $derived($chatAgentState$.modelUnavailable);
-  const statusEvents = $derived($chatAgentState$.statusEvents);
-  const receivedFirstChunk = $derived($chatAgentState$.receivedFirstChunk);
+  const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
+  const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
+  const chatError$ = selectChatError(agentIdStore);
+  const chatIsStalled$ = selectChatIsStalled(agentIdStore);
+  const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
+  const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
+  const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
+  const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
+  const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -317,8 +344,10 @@
   } | null>(null);
 
   function handleFocusSetupTerminal() {
-    const termState = selectWorkspaceTerminalState.select(getReduxStore().getState(), workspace.id);
-    const setupTerminal = getItems(termState.terminals).find((t: any) => t.name === 'Setup');
+    const setupTerminal = selectWorkspaceSetupTerminal.select(
+      getReduxStore().getState(),
+      workspace.id,
+    );
     if (setupTerminal) {
       getReduxStore().dispatch(
         openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }),
@@ -364,12 +393,10 @@
 
   // Hoist suggested prompts so keyboard handlers can reference them
   const suggestedPrompts = $derived.by((): SuggestedPrompt[] => {
-    if (isStreaming || $agentMessages$.length === 0) {
+    if ($agentSessionIsStreaming$ || $agentMessages$.length === 0) {
       return [];
     }
-    const lastAssistantMessage = [...$agentMessages$]
-      .reverse()
-      .find((m) => m.role === 'assistant');
+    const lastAssistantMessage = [...$agentMessages$].reverse().find((m) => m.role === 'assistant');
     if (!lastAssistantMessage) {
       return [];
     }
@@ -429,8 +456,7 @@
     const grouped = groupContentBlocks(blocks, !!msg.isStreaming);
     const lastIndex = grouped.length - 1;
     const parts: string[] = [];
-    const pushText = (text: string) =>
-      parts.push(parseSuggestedPrompts(text).cleanedContent);
+    const pushText = (text: string) => parts.push(parseSuggestedPrompts(text).cleanedContent);
     grouped.forEach((block, i) => {
       if (block.type === 'text') {
         pushText(block.text || block.content || '');
@@ -855,110 +881,6 @@
     }
   });
 
-  /**
-   * Convert a File object to base64 data
-   * Used for serializing context items before sending through IPC
-   */
-  async function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Extract base64 data from data URL (remove "data:image/png;base64," prefix)
-        const base64Data = result.split(',')[1] || result;
-        resolve({
-          data: base64Data,
-          mimeType: file.type || 'application/octet-stream',
-        });
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  /**
-   * Serialize context items for IPC transmission.
-   * File objects cannot be cloned through Electron's structured clone algorithm,
-   * so we convert them to base64 data before sending.
-   */
-  async function serializeContextItemsForIpc(
-    items: ContextItem[],
-  ): Promise<Omit<ContextItem, 'file'>[]> {
-    const serializedItems: Omit<ContextItem, 'file'>[] = [];
-
-    logger.info('serializeContextItemsForIpc: Starting serialization', {
-      itemCount: items.length,
-      items: items.map((item) => ({
-        id: item.id,
-        type: item.type,
-        label: item.label,
-        hasFile: !!item.file,
-        fileName: item.file?.name,
-        fileType: item.file?.type,
-      })),
-    });
-
-    for (const item of items) {
-      if (item.file) {
-        // Convert File to base64 for both images and non-image files
-        try {
-          logger.info('Converting file to base64', {
-            fileName: item.label,
-            fileType: item.file.type,
-            fileSize: item.file.size,
-          });
-
-          const { data, mimeType } = await fileToBase64(item.file);
-          // Create a new object without the File property, but with base64 data
-           
-          const { file: _file, ...rest } = item;
-
-          logger.info('File converted successfully', {
-            fileName: item.label,
-            dataLength: data.length,
-            mimeType,
-          });
-
-          if (item.file.type.startsWith('image/')) {
-            // For images, use imageData and imageMimeType
-            serializedItems.push({
-              ...rest,
-              imageData: data,
-              imageMimeType: mimeType,
-            });
-          } else {
-            // For non-image files, use fileData and fileMimeType
-            serializedItems.push({
-              ...rest,
-              fileData: data,
-              fileMimeType: mimeType,
-            });
-          }
-        } catch (error) {
-          logger.error('Failed to serialize file context item', { fileName: item.label, error });
-          // Skip items that fail to serialize
-        }
-      } else {
-        // No File property, item is already serializable
-        serializedItems.push(item);
-      }
-    }
-
-    logger.info('serializeContextItemsForIpc: Serialization complete', {
-      originalCount: items.length,
-      serializedCount: serializedItems.length,
-      serializedItems: serializedItems.map((item) => ({
-        id: item.id,
-        type: item.type,
-        label: item.label,
-        hasFileData: !!(item as any).fileData,
-        hasImageData: !!(item as any).imageData,
-      })),
-    });
-
-    return serializedItems;
-  }
-
   // Restore draft input from transient store on mount
   let draftRestored = $state(false);
   $effect(() => {
@@ -1291,7 +1213,7 @@
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
-      session: $agentSession$,
+      session: $agentSession$ ?? null,
       messages: $agentMessages$,
       pendingInitialPrompt,
       pendingContextReferenceCount: pendingInitialData.contextReferences?.length ?? 0,
@@ -1299,9 +1221,7 @@
   );
 
   // Hydrated input model — uses session model when available, falls back to agentModel prop
-  let hydratedInputModel = $derived(
-    resolveHydratedInputModel($agentSession$, agentModel),
-  );
+  let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
@@ -1323,7 +1243,7 @@
           metadata: pendingInitialData.contextReferences?.length
             ? { contextReferences: pendingInitialData.contextReferences }
             : undefined,
-        } as import('$features/agent/agent-ipc-bridge').AgentMessage)
+        } as AgentMessage)
       : null,
   );
 
@@ -1457,15 +1377,14 @@
 
   const showEndOfListStreamingStatus = $derived(
     shouldShowEndOfListStreamingStatus({
-      isStreaming,
-      isProcessing,
-      error,
-      modelUnavailable,
+      isStreaming: $agentSessionIsStreaming$,
+      isProcessing: $agentIsResponding$,
+      error: $chatError$,
+      modelUnavailable: $chatModelUnavailable$,
       hasMessages: $agentMessages$.length > 0,
-      lastTurnHasAssistantMessages:
-        (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
+      lastTurnHasAssistantMessages: (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
       lastAssistantMessageIsStreaming:
-        isStreaming && (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
+        $agentSessionIsStreaming$ && (lastConversationTurn?.assistantMessages.length ?? 0) > 0,
     }),
   );
 
@@ -1564,7 +1483,6 @@
   });
 
   // Get tasks assigned to this agent (reactive via Redux task-agent association state)
-  const agentTasks = $derived($agentTasks$);
 
   // Get the current specialist ID from the session metadata
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1679,7 +1597,7 @@
     });
   });
 
-  // WORKSPACE REBIND FIX: Reactively re-initialize the ChatService when the workspace
+  // WORKSPACE REBIND FIX: Reactively re-initialize chat state when the workspace
   // changes underneath an already-mounted ChatPanel. Without this, the panel stays stuck
   // on the pre-send conversation snapshot because initializeChatRequested only runs on mount and
   // during workspace rebind. During workspace restore/rebind the workspace prop changes
@@ -2252,11 +2170,6 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
-    // Pause background timers (state reconciliation, stall detection) to prevent
-    // false positives during workspace switches. The timers would otherwise keep
-    // running and falsely reset streaming state when the backend query returns
-    // no active streams (because the query runs in the wrong workspace context).
-    chatService.pauseBackgroundTimers();
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
@@ -2276,7 +2189,7 @@
     onChatUpdate({
       lastUserMessage: lastUserMessage ? extractAllContent(lastUserMessage) : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
-      isProcessing,
+      isProcessing: $agentIsResponding$,
       messageCount: messages.length,
     });
   });
@@ -2298,47 +2211,36 @@
   }
 
   // Handle sending a queued message immediately (interrupts current stream)
-  async function handleSendQueuedMessageNow(messageId: string) {
+  function handleSendQueuedMessageNow(messageId: string) {
     const message = $queuedMessages$.find((m) => m.id === messageId);
     if (!message || !workspace) return;
 
     logger.info('Send queued message now triggered', { messageId, agentId });
 
-    // Remove from queue first
-    const removeResult = await unifiedOrchestrator.removeQueuedMessage(agentId, messageId);
-    if (!removeResult.success) {
-      logger.error('Failed to remove queued message before sending', { messageId });
-      return;
-    }
-
-    // Stop current streaming (fire-and-forget — the saga handles the wait)
-    if ((isStreaming || isProcessing)) {
-      try {
-        await chatService.stopChat(agentId);
-      } catch (error) {
-        logger.error('Failed to stop chat before sending queued message', error);
-      }
-    }
-
-    // Dispatch through the send-message saga with skipQueueCheck so the message
-    // is never re-queued even if the interrupt hasn't fully cleared yet.
-    const noteIds = currentMainPanelContext?.noteId
-      ? [currentMainPanelContext.noteId]
-      : undefined;
+    // Dispatch through the send-message saga with forceSubmit/skipQueueCheck so
+    // saga-owned queue removal and stop orchestration run before send.
+    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     multiPanelDispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text: message.content,
+        queuedMessageId: messageId,
+        serializedContextItems: message.contextItems as any,
         noteIds,
         imageBlocks: message.imageBlocks,
         skipQueueCheck: true,
+        forceSubmit: true,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
       }),
     );
 
-    shouldFollowBottom = true;
-    isScrollUnlocked = false;
-    if (scrollContainer) scrollToBottomUtil(scrollContainer);
+    performLocalSendCleanup({
+      clearInput: false,
+      followBottom: true,
+    });
   }
 
   // Build workspace context string for agent messages
@@ -2459,150 +2361,82 @@
     resetHistoryNavigation();
   }
 
+  function performLocalSendCleanup(options: {
+    clearInput?: boolean;
+    followBottom?: boolean;
+    historyText?: string | null;
+  }) {
+    if (options.historyText) {
+      addToInputHistory(options.historyText);
+    }
+
+    if (options.clearInput) {
+      contextItems = [];
+      inputValue = '';
+      inputComponent?.clear();
+    }
+
+    if (options.followBottom) {
+      shouldFollowBottom = true;
+      isScrollUnlocked = false;
+      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+    }
+  }
+
   // Handle sending messages
-  async function handleSend(text: string) {
-    // Gather DOM state (inline images, mentions) BEFORE clearing input
+  function handleSend(text: string) {
+    // Gather DOM state only. Validation, queue decisions, serialization,
+    // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    const hasContent = text?.trim() || contextItems.length > 0 || inlineImageItems.length > 0;
-    if (!hasContent || !workspace || !isActive) return;
+    if (!workspace || !isActive) return;
 
-    if (text?.trim()) addToInputHistory(text);
-
-    // Merge and serialize context items (File objects → base64 for IPC)
     const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-    const serializedContext =
-      allContextItems.length > 0 ? await serializeContextItemsForIpc(allContextItems) : undefined;
-    const imageBlocks = serializedContext
-      ?.filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
-
-    // Clear input immediately (DOM concern — stays in component)
-    contextItems = [];
-    inputValue = '';
-    inputComponent?.clear();
-    shouldFollowBottom = true;
-    isScrollUnlocked = false;
-    // Snap to bottom explicitly: the follow action no longer auto-snaps when
-    // `follow` flips to true, and waiting for the message-count effect leaves
-    // a small window where mutations could land above the viewport.
-    if (scrollContainer) scrollToBottomUtil(scrollContainer);
 
     // Dispatch all orchestration to the send-message saga
     multiPanelDispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
-        serializedContextItems: serializedContext as SendMessagePayload['serializedContextItems'],
+        contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
-        imageBlocks,
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
       }),
     );
+
+    performLocalSendCleanup({
+      clearInput: true,
+      followBottom: true,
+      historyText: text,
+    });
   }
 
   // Handle stopping the current generation
-  async function handleStop() {
-    try {
-      // Per-agent ChatService: always bound to this agent, use stopChat() directly
-      await chatService.stopChat(agentId);
-
-      // FIX: Directly update the last message with interrupted flag and clear streaming state.
-      // We can't rely on the backend completion event because the stream handler is cleaned up
-      // by backendStop() before the completion event with stopReason arrives.
-      if (workspace) {
-        // Clear streaming state immediately (setAgentStreaming triggers cross-slice handler in agent-session-slice)
-        getReduxStore().dispatch(setAgentStreaming(workspace.id, agentId, false));
-
-        // Find and update the last assistant message with interrupted flag
-        const messages = $agentMessages$;
-        const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
-        if (lastAssistantMessage) {
-          const updatedMetadata = {
-            ...lastAssistantMessage.metadata,
-            interrupted: true,
-          };
-          logger.info('Setting interrupted flag on last assistant message', {
-            agentId,
-            messageId: lastAssistantMessage.id,
-            existingMetadata: lastAssistantMessage.metadata,
-            newMetadata: updatedMetadata,
-          });
-          getReduxStore().dispatch(
-            updateAgentSessionMessage(agentId, lastAssistantMessage.id, {
-              isStreaming: false,
-              metadata: updatedMetadata,
-            }),
-          );
-        } else {
-          // No assistant message exists yet (user stopped before any response arrived).
-          // Create a placeholder assistant message with interrupted flag so the UI shows "Stopped".
-          const stoppedMessage: AgentMessage = {
-            id: createMessageId(`msg_${uuidv4()}`),
-            appMessageId: createAppMessageId(),
-            role: 'assistant',
-            contentBlocks: [],
-            timestamp: new Date().toISOString(),
-            isStreaming: false,
-            metadata: {
-              interrupted: true,
-            },
-          };
-
-          logger.info('Creating placeholder interrupted message (stopped before response)', {
-            agentId,
-            messageId: stoppedMessage.id,
-          });
-
-          // Add the message to Redux store — the reactive selector will update the UI
-          getReduxStore().dispatch(addAgentSessionMessage(agentId, stoppedMessage));
-        }
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to stop chat', error);
-      toast.error(cleanErrorMessage(msg));
-    }
+  function handleStop() {
+    multiPanelDispatch(agentSessionStopChatRequested(agentId));
   }
 
   // Handle retrying the last failed message
-  async function handleRetry() {
+  function handleRetry() {
     if (!workspace) return;
-    try {
-      await chatService.retryLastMessage(workspace, agentId);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Something went wrong';
-      logger.error('Failed to retry message', error);
-      toast.error(cleanErrorMessage(msg));
-    }
+    multiPanelDispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
   }
 
   // Handle retrying with a specific model (when current model is unavailable)
-  async function handleRetryWithModel(model: string) {
+  function handleRetryWithModel(model: string) {
     if (!workspace) return;
-    try {
-      // Retry with the specified model (this also clears modelUnavailable state)
-      await chatService.retryWithModel(workspace, agentId, model);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Something went wrong';
-      logger.error('Failed to retry with model', { model, error });
-      toast.error(cleanErrorMessage(msg));
-    }
+    multiPanelDispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
 
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
   // The new specialist behavior will apply to subsequent messages.
-  async function handleSpecialistChange(specialistId: string | null) {
+  function handleSpecialistChange(specialistId: string | null) {
     if (!workspace || !agentId) return;
 
     const session = $agentSession$;
@@ -2647,161 +2481,91 @@
       );
     }
 
-    // Try to persist the session to disk for future sessions.
+    // Request persistence for future sessions (fire-and-forget; saga reports failures).
     // NOTE: This may fail for sessions with no messages (which is fine), because:
     // 1. The in-memory metadata is updated via Redux dispatch above
     // 2. When sending a message, the metadata is passed directly in the request
     // 3. The backend will read from request.metadata (priority) before disk
     // If persistence succeeds, the specialist will be remembered for future sessions.
-    try {
-      await agentService.saveSession(agentId, workspace.id, true);
-      logger.info('Agent specialist changed and persisted', {
-        agentId,
-        specialistId,
-        newModel,
-        hasBehaviorPrompt: !!behaviorPrompt,
-        behaviorPromptLength: behaviorPrompt?.length || 0,
-      });
-    } catch (error) {
-      // Expected to fail for empty sessions - that's OK, metadata is passed in request
-      logger.debug('Could not persist specialist change (expected for empty sessions)', {
-        agentId,
-        error,
-      });
-    }
+    getReduxStore().dispatch(saveAgentSessionRequested(workspace.id, agentId, true));
+    logger.info('Agent specialist change dispatched', {
+      agentId,
+      specialistId,
+      newModel,
+      hasBehaviorPrompt: !!behaviorPrompt,
+      behaviorPromptLength: behaviorPrompt?.length || 0,
+    });
   }
 
   // Handle force submit - interrupt streaming and send immediately (⌘Enter)
-  async function handleForceSubmit(text: string) {
-    // Check for content: text, context items, or inline images
+  function handleForceSubmit(text: string) {
+    // Gather DOM state only; validation and stop/send orchestration live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-    const hasContent = text?.trim() || contextItems.length > 0 || inlineImageItems.length > 0;
-    if (!hasContent || !workspace) {
-      return;
-    }
+    const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    if (!workspace) return;
 
-    logger.info('Force submit triggered - stopping current stream and sending', { agentId });
+    logger.info('Force submit triggered', { agentId });
 
-    // Stop current streaming first
-    if ((isStreaming || isProcessing)) {
-      try {
-        await chatService.stopChat(agentId);
-        // Wait for the interrupt to fully complete (isInterrupting becomes false)
-        const maxWaitMs = 500;
-        const pollIntervalMs = 25;
-        let waited = 0;
-        while (waited < maxWaitMs) {
-          const state = chatService.getState(agentId);
-          if (!state.isInterrupting) {
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-          waited += pollIntervalMs;
-        }
-      } catch (error) {
-        logger.error('Failed to stop chat before force submit', error);
-      }
-    }
+    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const workspaceContextStr = buildWorkspaceContextString();
+    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // Now send the message using the same logic as handleSend (but skip the queue check)
-    try {
-      // Extract inline images and @-mentioned files from the editor BEFORE clearing
-      const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-      const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-
-      // Merge inline images and mention-derived context items with existing context items
-      const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-      const contextToSend = allContextItems.length > 0 ? allContextItems : undefined;
-      const workspaceContextStr = buildWorkspaceContextString();
-
-      // Clear input immediately
-      contextItems = [];
-      inputValue = '';
-      inputComponent?.clear();
-      multiPanelDispatch(clearChatDraft(workspace.id, agentId));
-      // Clear selection context - it's been captured in workspaceContextStr above
-      // This prevents stale selections from being included in subsequent messages
-      multiPanelDispatch(uncheckAllSelections());
-      const messageWithContext = workspaceContextStr
-        ? `${workspaceContextStr}\n\n${text.trim()}`
-        : text.trim();
-
-      // Include noteIds if the current context is a note - this allows agents to "see" images in notes
-      const noteIds = currentMainPanelContext?.noteId
-        ? [currentMainPanelContext.noteId]
-        : undefined;
-      // Pass agentId to ensure message goes to the correct agent
-      await chatService.sendMessage(messageWithContext, workspace, agentId, {
-        contextItems: contextToSend,
+    multiPanelDispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text,
+        contextItems: allContextItems,
+        workspaceContextStr,
         noteIds,
-        agentId,
-      });
+        skipQueueCheck: true,
+        forceSubmit: true,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
 
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
-    } catch (error) {
-      // Rate-limited or idempotency-blocked — silently ignore for suggested replies
-      if (error instanceof MessageGuardError) {
-        return;
-      }
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
-      const isInterrupted = errorMessage.includes('Agent interrupted');
-      if (!isInterrupted) {
-        logger.error('Failed to send message', error);
-        toast.error(cleanErrorMessage(errorMessage));
-      }
-    }
+    performLocalSendCleanup({
+      clearInput: true,
+      followBottom: true,
+      historyText: text,
+    });
   }
 
   // Handle editing a user message and regenerating
-  async function handleEditMessage(messageId: string, newText: string, model?: string) {
+  function handleEditMessage(messageId: string, newText: string, model?: string) {
     if (!workspace) return;
-    try {
-      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.editAndRegenerate(
+    multiPanelDispatch(
+      agentSessionEditAndRegenerateRequested(
+        agentId,
+        workspace.id,
         messageId,
         newText,
-        workspace,
-        agentId,
         model ? { model } : undefined,
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Something went wrong';
-      logger.error('Failed to edit message', error);
-      toast.error(cleanErrorMessage(msg));
-    }
+      ),
+    );
   }
 
   // Handle regenerating from a specific assistant message
-  async function handleRegenerateFromMessage(assistantMessageId: string) {
+  function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
-    try {
-      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      await chatService.regenerateFromMessage(assistantMessageId, workspace, agentId);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Something went wrong';
-      logger.error('Failed to regenerate from message', error);
-      toast.error(cleanErrorMessage(msg));
-    }
+    multiPanelDispatch(
+      agentSessionRegenerateFromMessageRequested(
+        agentId,
+        workspace.id,
+        assistantMessageId,
+      ),
+    );
   }
 
   // Handle forking the conversation from a specific message
-  async function handleForkFromMessage(messageId: string) {
+  function handleForkFromMessage(messageId: string) {
     if (!workspace) return;
-    try {
-      // Per-agent ChatService: always bound to this agent, no re-acquisition needed
-      // forkSession creates the fork and opens it via workspace:open-agent event,
-      // which opens the fork in its own panel tab with its own ChatService instance.
-      // This preserves the parent ChatService's state.
-      const forkedId = await chatService.forkSession(workspace, agentId, {
+    multiPanelDispatch(
+      agentSessionForkSessionRequested(agentId, workspace.id, {
         forkFromMessageId: messageId,
-      });
-      toast.success('Conversation forked');
-      logger.info('Forked conversation from message', { messageId, forkedId });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Something went wrong';
-      logger.error('Failed to fork conversation', error);
-      toast.error(cleanErrorMessage(msg));
-    }
+      }),
+    );
   }
 
   // Handle selecting a suggested prompt - sends immediately
@@ -2865,14 +2629,14 @@
   }
 
   // Resend/regenerate the last assistant message (triggered by Alt+Enter)
-  async function handleResendLastMessage() {
+  function handleResendLastMessage() {
     const messages = $agentMessages$;
     if (messages.length === 0) return;
 
     // Find the last assistant message
     const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
     if (lastAssistantMessage) {
-      await handleRegenerateFromMessage(lastAssistantMessage.id);
+      handleRegenerateFromMessage(lastAssistantMessage.id);
     } else {
       logger.debug('No assistant message to regenerate');
     }
@@ -2892,7 +2656,6 @@
       window.removeEventListener('chat:resend-message', handleResendEvent);
     };
   });
-
 </script>
 
 <svelte:window
@@ -2937,7 +2700,11 @@
   }}
 />
 
-<div bind:this={panelElement} class="group/panel flex flex-col h-full w-full min-w-0 relative z-20" data-agent-model={agentModel}>
+<div
+  bind:this={panelElement}
+  class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  data-agent-model={agentModel}
+>
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -2967,10 +2734,7 @@
         // placeholder expands between us computing and applying the match's
         // scroll target.
         follow:
-          shouldFollowBottom &&
-          !isScrollUnlocked &&
-          !showSearch &&
-          $agentMessages$.length > 0,
+          shouldFollowBottom && !isScrollUnlocked && !showSearch && $agentMessages$.length > 0,
         threshold: 100,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
@@ -2984,8 +2748,8 @@
       class:agent-font-monospace={$isAgentMonospace}
     >
       <!-- Task Assignment Pill -->
-      {#if agentTasks.length > 0}
-        {@const task = agentTasks[0]}
+      {#if $agentTasks$.length > 0}
+        {@const task = $agentTasks$[0]}
         <a
           href={getTaskUrl(task)}
           class="flex items-center gap-1.5 px-2.5 py-1 mt-2 text-xs rounded-full border border-border bg-background hover:bg-muted transition-colors w-fit cursor-pointer no-underline mb-2"
@@ -2998,22 +2762,10 @@
         </a>
       {/if}
 
-      {#if !isInitialWorkspaceAgent &&
-        $agentMessages$.length === 0 &&
-        !isStreaming &&
-        $agentSession$ &&
-        !pendingInitialPrompt}
+      {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt}
         <div class="mt-16"></div>
-        <RegularAgentWelcome
-          onSpecialistChange={handleSpecialistChange}
-          session={$agentSession$}
-        />
-      {:else if isInitialWorkspaceAgent &&
-        onboardingContext &&
-        !onboardingContext.prompt?.trim() &&
-        $agentMessages$.length === 0 &&
-        !isStreaming &&
-        !pendingInitialPrompt}
+        <RegularAgentWelcome onSpecialistChange={handleSpecialistChange} session={$agentSession$} />
+      {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
         <div class="pt-16 pb-6">
           <WorkspaceSetupCard
@@ -3038,7 +2790,7 @@
             skipWorktree={onboardingContext.skipWorktree}
           />
         </div>
-      {:else if !$agentSession$ && $agentMessages$.length === 0 && !isStreaming && !pendingInitialPrompt}
+      {:else if !$agentSession$ && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Show setup card even while session is loading -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">
@@ -3153,38 +2905,38 @@
                 <!-- Render any streaming assistant messages -->
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
-                  {@const isCurrentlyStreaming = isLastMessage && isStreaming}
+                  {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                   <div
                     data-message-id={message.id}
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
                     <ChatMessage
-                      agentId={agentId}
+                      {agentId}
                       messageId={message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
-                  {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
+                  {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
                     <div class="mb-16">
                       <StreamingStatus
-                        isStreaming={isStreaming}
-                        isProcessing={isProcessing}
-                        lastChunkTime={lastChunkTime}
-                        receivedFirstChunk={receivedFirstChunk}
-                        streamingContentLength={streamingContent?.length ?? 0}
-                        error={error}
-                        isStalled={isStalled}
-                        modelUnavailable={modelUnavailable}
+                        isStreaming={$agentSessionIsStreaming$}
+                        isProcessing={$agentIsResponding$}
+                        lastChunkTime={$chatLastChunkTime$}
+                        receivedFirstChunk={$chatReceivedFirstChunk$}
+                        streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                        error={$chatError$}
+                        isStalled={$chatIsStalled$}
+                        modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        statusEvents={statusEvents}
-                        streamingStartTime={streamingStartTime}
+                        statusEvents={$chatStatusEvents$}
+                        streamingStartTime={$chatStreamingStartTime$}
                       />
                     </div>
                   {/if}
@@ -3194,21 +2946,21 @@
                 {#if streamingAssistantMessages.length === 0}
                   <div class="mb-4">
                     <StreamingStatus
-                      isStreaming={isStreaming}
-                      isProcessing={isProcessing}
-                      lastChunkTime={lastChunkTime}
-                      receivedFirstChunk={receivedFirstChunk}
-                      streamingContentLength={streamingContent?.length ?? 0}
-                      error={error}
-                      isStalled={isStalled}
-                      modelUnavailable={modelUnavailable}
+                      isStreaming={$agentSessionIsStreaming$}
+                      isProcessing={$agentIsResponding$}
+                      lastChunkTime={$chatLastChunkTime$}
+                      receivedFirstChunk={$chatReceivedFirstChunk$}
+                      streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                      error={$chatError$}
+                      isStalled={$chatIsStalled$}
+                      modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      statusEvents={statusEvents}
-                      streamingStartTime={streamingStartTime}
+                      statusEvents={$chatStatusEvents$}
+                      streamingStartTime={$chatStreamingStartTime$}
                     />
                   </div>
                 {/if}
@@ -3257,38 +3009,38 @@
                 <!-- Render any streaming assistant messages -->
                 {#each streamingAssistantMessages as message, index (message.id)}
                   {@const isLastMessage = index === streamingAssistantMessages.length - 1}
-                  {@const isCurrentlyStreaming = isLastMessage && isStreaming}
+                  {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                   <div
                     data-message-id={message.id}
                     data-message-role="assistant"
                     class="message-nav-target"
                   >
                     <ChatMessage
-                      agentId={agentId}
+                      {agentId}
                       messageId={message.id}
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
-                  {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
+                  {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
                     <div class="mb-16">
                       <StreamingStatus
-                        isStreaming={isStreaming}
-                        isProcessing={isProcessing}
-                        lastChunkTime={lastChunkTime}
-                        receivedFirstChunk={receivedFirstChunk}
-                        streamingContentLength={streamingContent?.length ?? 0}
-                        error={error}
-                        isStalled={isStalled}
-                        modelUnavailable={modelUnavailable}
+                        isStreaming={$agentSessionIsStreaming$}
+                        isProcessing={$agentIsResponding$}
+                        lastChunkTime={$chatLastChunkTime$}
+                        receivedFirstChunk={$chatReceivedFirstChunk$}
+                        streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                        error={$chatError$}
+                        isStalled={$chatIsStalled$}
+                        modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
                         onRetryWithModel={handleRetryWithModel}
                         onStop={handleStop}
                         seed={agentId}
-                        statusEvents={statusEvents}
-                        streamingStartTime={streamingStartTime}
+                        statusEvents={$chatStatusEvents$}
+                        streamingStartTime={$chatStreamingStartTime$}
                       />
                     </div>
                   {/if}
@@ -3298,21 +3050,21 @@
                 {#if streamingAssistantMessages.length === 0}
                   <div class="mb-4">
                     <StreamingStatus
-                      isStreaming={isStreaming}
-                      isProcessing={isProcessing}
-                      lastChunkTime={lastChunkTime}
-                      receivedFirstChunk={receivedFirstChunk}
-                      streamingContentLength={streamingContent?.length ?? 0}
-                      error={error}
-                      isStalled={isStalled}
-                      modelUnavailable={modelUnavailable}
+                      isStreaming={$agentSessionIsStreaming$}
+                      isProcessing={$agentIsResponding$}
+                      lastChunkTime={$chatLastChunkTime$}
+                      receivedFirstChunk={$chatReceivedFirstChunk$}
+                      streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                      error={$chatError$}
+                      isStalled={$chatIsStalled$}
+                      modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
                       onRetryWithModel={handleRetryWithModel}
                       onStop={handleStop}
                       seed={agentId}
-                      statusEvents={statusEvents}
-                      streamingStartTime={streamingStartTime}
+                      statusEvents={$chatStatusEvents$}
+                      streamingStartTime={$chatStreamingStartTime$}
                     />
                   </div>
                 {/if}
@@ -3323,25 +3075,25 @@
 
         <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
         <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-        {#if !pendingCondition && !messagesCondition && (isProcessing || isStreaming || error || modelUnavailable)}
+        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
           <div class="w-full">
             <div class="mb-4">
               <StreamingStatus
-                isStreaming={isStreaming}
-                isProcessing={isProcessing}
-                lastChunkTime={lastChunkTime}
-                receivedFirstChunk={receivedFirstChunk}
-                streamingContentLength={streamingContent?.length ?? 0}
-                error={error}
-                isStalled={isStalled}
-                modelUnavailable={modelUnavailable}
+                isStreaming={$agentSessionIsStreaming$}
+                isProcessing={$agentIsResponding$}
+                lastChunkTime={$chatLastChunkTime$}
+                receivedFirstChunk={$chatReceivedFirstChunk$}
+                streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                error={$chatError$}
+                isStalled={$chatIsStalled$}
+                modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
                 onRetry={handleRetry}
                 onRetryWithModel={handleRetryWithModel}
                 onStop={handleStop}
                 seed={agentId}
-                statusEvents={statusEvents}
-                streamingStartTime={streamingStartTime}
+                statusEvents={$chatStatusEvents$}
+                streamingStartTime={$chatStreamingStartTime$}
               />
             </div>
           </div>
@@ -3397,7 +3149,7 @@
                     {turnKey}
                     scrollRoot={scrollContainer}
                     forceVisible={isTurnForceVisible(turnKey) ||
-                      (isStreaming && isLastTurnInConversation) ||
+                      ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
                       visibleSearchTurnKeys.has(turnKey)}
                   >
                     {#snippet children()}
@@ -3502,7 +3254,7 @@
                           class="message-nav-target z-20 mb-9 bg-sidebar relative"
                         >
                           <ChatMessage
-                            agentId={agentId}
+                            {agentId}
                             messageId={message.id}
                             {workspace}
                             onEditSubmit={(newText, model) =>
@@ -3518,32 +3270,24 @@
                       {/if}
 
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 &&
-                        turnIndex === turns.length - 1 &&
-                        turn.assistantMessages.length === 0 &&
-                        shouldShowPendingAssistantStatus({
-                          isStreaming,
-                          isProcessing,
-                          error,
-                          modelUnavailable,
-                        })}
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
                           <StreamingStatus
-                            isStreaming={isStreaming}
-                            isProcessing={isProcessing}
-                            lastChunkTime={lastChunkTime}
-                            receivedFirstChunk={receivedFirstChunk}
-                            streamingContentLength={streamingContent?.length ?? 0}
-                            error={error}
-                            isStalled={isStalled}
-                            modelUnavailable={modelUnavailable}
+                            isStreaming={$agentSessionIsStreaming$}
+                            isProcessing={$agentIsResponding$}
+                            lastChunkTime={$chatLastChunkTime$}
+                            receivedFirstChunk={$chatReceivedFirstChunk$}
+                            streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                            error={$chatError$}
+                            isStalled={$chatIsStalled$}
+                            modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
                             onRetry={handleRetry}
                             onRetryWithModel={handleRetryWithModel}
                             onStop={handleStop}
                             seed={agentId}
-                            statusEvents={statusEvents}
-                            streamingStartTime={streamingStartTime}
+                            statusEvents={$chatStatusEvents$}
+                            streamingStartTime={$chatStreamingStartTime$}
                           />
                         </div>
                       {/if}
@@ -3557,7 +3301,7 @@
                         {@const isLastAssistant =
                           assistantIndex === turn.assistantMessages.length - 1}
                         {@const isLastMessage = isLastTurn && isLastAssistant}
-                        {@const isCurrentlyStreaming = isLastMessage && isStreaming}
+                        {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                         {@const turnNumber = getMessageTurnNumber(message.id)}
                         {@const globalIndex = getMessageIndex(message.id)}
                         <div
@@ -3568,7 +3312,7 @@
                           class="message-nav-target"
                         >
                           <ChatMessage
-                            agentId={agentId}
+                            {agentId}
                             messageId={message.id}
                             {workspace}
                             isStreaming={isCurrentlyStreaming}
@@ -3580,24 +3324,24 @@
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                        {#if (isCurrentlyStreaming && (isProcessing || isStreaming)) || (isLastMessage && (error || modelUnavailable))}
+                        {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
                           <div class="mb-16">
                             <StreamingStatus
-                              isStreaming={isStreaming}
-                              isProcessing={isProcessing}
-                              lastChunkTime={lastChunkTime}
-                              receivedFirstChunk={receivedFirstChunk}
-                              streamingContentLength={streamingContent?.length ?? 0}
-                              error={error}
-                              isStalled={isStalled}
-                              modelUnavailable={modelUnavailable}
+                              isStreaming={$agentSessionIsStreaming$}
+                              isProcessing={$agentIsResponding$}
+                              lastChunkTime={$chatLastChunkTime$}
+                              receivedFirstChunk={$chatReceivedFirstChunk$}
+                              streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                              error={$chatError$}
+                              isStalled={$chatIsStalled$}
+                              modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
                               onRetry={handleRetry}
                               onRetryWithModel={handleRetryWithModel}
                               onStop={handleStop}
                               seed={agentId}
-                              statusEvents={statusEvents}
-                              streamingStartTime={streamingStartTime}
+                              statusEvents={$chatStatusEvents$}
+                              streamingStartTime={$chatStreamingStartTime$}
                             />
                           </div>
                         {/if}
@@ -3630,21 +3374,21 @@
             {#if showEndOfListStreamingStatus}
               <div class="mb-16">
                 <StreamingStatus
-                  isStreaming={isStreaming}
-                  isProcessing={isProcessing}
-                  lastChunkTime={lastChunkTime}
-                  receivedFirstChunk={receivedFirstChunk}
-                  streamingContentLength={streamingContent?.length ?? 0}
-                  error={error}
-                  isStalled={isStalled}
-                  modelUnavailable={modelUnavailable}
+                  isStreaming={$agentSessionIsStreaming$}
+                  isProcessing={$agentIsResponding$}
+                  lastChunkTime={$chatLastChunkTime$}
+                  receivedFirstChunk={$chatReceivedFirstChunk$}
+                  streamingContentLength={$chatStreamingContent$?.length ?? 0}
+                  error={$chatError$}
+                  isStalled={$chatIsStalled$}
+                  modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
                   onRetry={handleRetry}
                   onRetryWithModel={handleRetryWithModel}
                   onStop={handleStop}
                   seed={agentId}
-                  statusEvents={statusEvents}
-                  streamingStartTime={streamingStartTime}
+                  statusEvents={$chatStatusEvents$}
+                  streamingStartTime={$chatStreamingStartTime$}
                 />
               </div>
             {/if}
@@ -3658,7 +3402,7 @@
             messages={$agentMessages$}
             suffix="in conversation"
             isAggregate={true}
-            isStreaming={isStreaming}
+            isStreaming={$agentSessionIsStreaming$}
             {agentId}
           />
         </div>
@@ -3752,10 +3496,10 @@
   <div
     class="relative w-full px-2 z-0"
     class:input-flash={showInputFlash}
-    data-streaming={isStreaming}
+    data-streaming={$agentSessionIsStreaming$}
   >
     <!-- Aurora northern lights effect during streaming -->
-    {#if isStreaming}
+    {#if $agentSessionIsStreaming$}
       <div
         class="absolute -inset-x-2 -bottom-2 pointer-events-none z-0 overflow-hidden"
         transition:fade
@@ -3775,7 +3519,7 @@
       onHistoryPrev={handleHistoryPrev}
       onHistoryNext={handleHistoryNext}
       disabled={!workspace || !$agentSession$}
-      isStreaming={isStreaming}
+      isStreaming={$agentSessionIsStreaming$}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}

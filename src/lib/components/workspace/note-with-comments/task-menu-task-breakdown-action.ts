@@ -1,46 +1,38 @@
 import type { Workspace } from '$shared/types';
-import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
 
 import type { AgentContext } from '$features/agent/agent-context';
 
-import type { LoggerLike } from './logger.types';
-
-export async function runTaskBreakdownTaskMenuAction({
+export function runTaskBreakdownTaskMenuAction({
   workspace,
   noteId,
   taskData,
-  model,
-  dispatch,
-  logger,
 }: {
   workspace: Workspace;
   noteId: string | null | undefined;
   taskData: any;
-  model: string;
-  dispatch: (type: 'agentLaunched', detail: any) => void;
-  logger: LoggerLike;
-}): Promise<void> {
-  try {
-    const taskText = taskData.text || 'Unknown task';
-    const taskPosition = parseInt(taskData.position) || 0;
-    const taskChecked = taskData.checked === true || taskData.checked === 'true';
+}): void {
+  const taskText = taskData.text || 'Unknown task';
+  const taskPosition = parseInt(taskData.position) || 0;
+  const taskChecked = taskData.checked === true || taskData.checked === 'true';
 
-    const context: AgentContext[] = [
-      {
-        type: 'task',
-        content: taskText,
-        metadata: {
-          source: 'task-menu',
-          noteId: noteId || 'spec',
-          workspaceId: workspace.id,
-          taskPosition,
-          taskChecked,
-          anchorName: taskData.anchorName,
-        },
+  const context: AgentContext[] = [
+    {
+      type: 'task',
+      content: taskText,
+      metadata: {
+        source: 'task-menu',
+        noteId: noteId || 'spec',
+        workspaceId: workspace.id,
+        taskPosition,
+        taskChecked,
+        anchorName: taskData.anchorName,
       },
-      noteId
-        ? {
+    },
+    noteId
+      ? {
           type: 'note',
           content: `Note ID: ${noteId}`,
           metadata: {
@@ -48,7 +40,7 @@ export async function runTaskBreakdownTaskMenuAction({
             source: 'task-menu',
           },
         }
-        : {
+      : {
           type: 'spec',
           content: "Space specification (note ID 'spec').",
           metadata: {
@@ -56,46 +48,25 @@ export async function runTaskBreakdownTaskMenuAction({
             source: 'task-menu',
           },
         },
-    ];
+  ];
 
-    const userMessage = `Please break down this task into smaller subtasks: "${taskText}". Read the space specification and analyze the codebase for context, then replace the original task with a breakdown of manageable subtasks.`;
+  const userMessage = `Please break down this task into smaller subtasks: "${taskText}". Read the space specification and analyze the codebase for context, then replace the original task with a breakdown of manageable subtasks.`;
 
-    // Use the task text with a prefix to indicate it's a breakdown task
-    // The factory will sanitize and truncate the name
-    const agentName = `Break down: ${taskText}`;
+  // Use the task text with a prefix to indicate it's a breakdown task
+  // The factory will sanitize and truncate the name
+  const agentName = `Break down: ${taskText}`;
 
-    // Launch agent using agentFactory (consistent with other creation paths)
-    // Use workspace's default model if set, otherwise fall back to global
-    const { agentFactory } = await import('$features/agent/services/agent-factory');
-    const result = await agentFactory.createAgent(workspace, {
-      name: agentName,
-      workspaceId: WorkspaceId(workspace.id),
-      initialMessage: userMessage, // User message (sent as initial message)
-      agentType: createAgentTypeId('task-breakdown'),
-      model,
-      contextReferences: context,
+  const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
+    name: agentName,
+    initialMessage: userMessage, // User message (sent as initial message)
+    agentType: createAgentTypeId('task-breakdown'),
+    contextReferences: context,
+    source: 'task-menu',
+    metadata: {
       source: 'task-menu',
-      metadata: {
-        source: 'task-menu',
-        agentType: 'task-breakdown',
-        contextReferences: context,
-      },
-    });
-
-    if (!result.success || !result.agent) {
-      throw new Error(result.error || 'Failed to create agent session');
-    }
-
-    const session = result.agent;
-    const agentData = session;
-
-    logger.info('Dispatching agentLaunched event from task-breakdown agent', {
-      agentId: agentData.id,
-      agentName: agentData.name,
-    });
-    // Task breakdown agents from task menu should also avoid auto-opening the drawer
-    dispatch('agentLaunched', { agent: agentData, autoOpenDrawer: false });
-  } catch (error) {
-    logger.error('Failed to launch task-breakdown agent:', error);
-  }
+      agentType: 'task-breakdown',
+      contextReferences: context,
+    },
+  });
+  getReduxStore().dispatch(launchAction);
 }

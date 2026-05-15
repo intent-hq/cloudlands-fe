@@ -2,7 +2,11 @@ import { runInNewContext } from 'node:vm';
 
 import { Logger } from '$shared/logger';
 
-import { BaseMCPTool, createInputSchema, stringProperty } from './tool';
+import {
+  BaseMCPTool,
+  createInputSchema,
+  stringProperty,
+} from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import type { PRContext } from './ws-pr-api';
 import { AVAILABLE_TOPICS } from './reference-docs';
@@ -187,7 +191,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
     private workspacePath: string,
     private workspaceId: string,
     private workspaceManager?: any,
-     
+
     _eventEmitter?: any,
   ) {
     super(

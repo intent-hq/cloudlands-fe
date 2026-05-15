@@ -13,7 +13,10 @@ import { protocolAdapter } from '../../../protocol/main/protocol-adapter';
 import { GitService } from '../../../git/main/git.service';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config.js';
-import { createWorkspaceUpdatedEvent, type McpActor } from '../../types/events';
+import {
+  createWorkspaceUpdatedEvent,
+  type McpActor,
+} from '../../types/events';
 import type { ToolName } from '../../types/schemas';
 import { createHash } from 'crypto';
 import { emitAgentFileChange } from '../mcp/workspace-tools';
@@ -306,7 +309,7 @@ export class McpBridge extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
-    // NOTE: Agent sessions are managed client-side via agentService
+    // NOTE: Agent sessions are managed client-side via renderer agent APIs
     // This MCP tool returns an empty list as sessions are not accessible from main process
     // Future: Consider moving agent session storage to main process for MCP access
     return {
@@ -322,9 +325,9 @@ export class McpBridge extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     context: BridgeCallContext,
   ): Promise<BridgeResponse> {
-    // NOTE: Agent sessions are managed client-side via agentService
+    // NOTE: Agent sessions are managed client-side via renderer agent APIs
     // This MCP tool returns a mock session for compatibility
-    // Actual session creation should be done through the client-side agentService
+    // Actual session creation should be done through client-side agent APIs
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     return {

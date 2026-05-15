@@ -8,7 +8,14 @@
  * this saga triggers delivery to the parent agent with all accumulated events.
  */
 
-import { call, put, select, take, takeEvery, delay } from "typed-redux-saga";
+import {
+  call,
+  put,
+  select,
+  take,
+  takeEvery,
+  delay,
+} from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { Logger } from "../../../../../shared/logger";
 import {

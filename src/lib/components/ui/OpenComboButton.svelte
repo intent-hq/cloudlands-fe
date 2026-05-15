@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
+  import {
+  onMount,
+  type Snippet,
+} from 'svelte';
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
   import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
   import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
@@ -12,28 +15,28 @@
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
   import {
-    fetchEditors,
-    setOpenAction,
-    type InstalledEditor,
-    type OpenAction,
-  } from '$lib/store/slices/external-editors/external-editors-slice';
+  fetchEditors,
+  setOpenAction,
+  type InstalledEditor,
+  type OpenAction,
+} from '$lib/store/slices/external-editors/external-editors-slice';
   import {
-    selectInstalledEditorsFiltered,
-    selectOpenAction,
-  } from '$lib/store/slices/external-editors/external-editors-selectors';
+  selectInstalledEditorsFiltered,
+  selectOpenAction,
+} from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';
   import {
-    faArrowUpRightFromSquare,
-    faChevronDown,
-    faCode,
-    faCodeBranch,
-    faCopy,
-    faFolder,
-    faFolderOpen,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowUpRightFromSquare,
+  faChevronDown,
+  faCode,
+  faCodeBranch,
+  faCopy,
+  faFolder,
+  faFolderOpen,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('OpenComboButton');

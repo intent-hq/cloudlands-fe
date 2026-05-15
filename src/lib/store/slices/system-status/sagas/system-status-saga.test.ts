@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
@@ -13,7 +18,10 @@ vi.mock("typed-redux-saga", () => ({
 import { invoke } from "$lib/electron-bridge";
 import { AUGGIE_CHANNELS } from "$shared/ipc/channels";
 import { setSystemStatus } from "../system-status-slice";
-import { loadSystemStatusSaga, systemStatusSaga } from "./system-status-saga";
+import {
+  loadSystemStatusSaga,
+  systemStatusSaga,
+} from "./system-status-saga";
 
 describe("systemStatusSaga", () => {
   it("loads status on startup", () => {

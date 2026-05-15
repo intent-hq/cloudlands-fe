@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { testSaga } from 'redux-saga-test-plan';
 import * as sagaEffects from 'redux-saga/effects';
 
@@ -7,14 +12,20 @@ vi.mock(
   async () => await import('$lib/store/utils/test-helpers/typed-redux-saga-mock'),
 );
 
-import { getLocalStorageJSON, setLocalStorageJSON } from '$lib/store/utils/safe-local-storage-saga';
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from '$lib/store/utils/safe-local-storage-saga';
 import {
   hydratePaletteFileMru,
   hydratePaletteMruEntries,
   recordPaletteFileMru,
   recordPaletteMruItem,
 } from '../palette-slice';
-import { selectPaletteFileMru, selectPaletteMruEntries } from '../palette-selectors';
+import {
+  selectPaletteFileMru,
+  selectPaletteMruEntries,
+} from '../palette-selectors';
 import {
   hydratePalettePersistence,
   paletteSaga,

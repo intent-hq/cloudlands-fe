@@ -9,7 +9,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { Logger } from '../../../shared/logger';
 
-import { attributeLines, type LineAttribution } from '../line-attribution';
+import {
+  attributeLines,
+  type LineAttribution,
+} from '../line-attribution';
 import type { WorkspaceId, NoteId, Note } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
 

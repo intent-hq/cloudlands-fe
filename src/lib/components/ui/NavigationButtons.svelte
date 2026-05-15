@@ -2,7 +2,10 @@
   import { Button } from '$lib/components/ui/button';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronLeft,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     canGoBack: boolean;

@@ -8,10 +8,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import { createWorkspaceEvent } from '../types';
 import type { CanonicalAgentStatusFields } from '../types';
-import { getMainState, mainDispatch } from '../../../store/main/redux-store-bridge';
+import {
+  getMainState,
+  mainDispatch,
+} from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
-  addSubscription, removeSubscription, removeAllSubscriptions,
+  addSubscription,
+  removeSubscription,
+  removeAllSubscriptions,
   setAgentStatus as setAgentStatusAction,
   setDelegationGroup,
   subscribeToDelegationGroup,

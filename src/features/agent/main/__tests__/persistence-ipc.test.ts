@@ -4,15 +4,32 @@
  * with the right parameters and return the expected response format.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { setupPersistenceIPC } from '../persistence.ipc';
 import { UnifiedPersistence } from '../agent-persistence';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { BrandedIds } from '$shared/types/branded-ids';
+import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types/agent-session';
+
+const mocks = vi.hoisted(() => ({
+  unifiedPersistence: {
+    loadAgent: vi.fn(),
+    saveAgent: vi.fn(),
+    deleteAgent: vi.fn(),
+    listAgents: vi.fn(),
+  },
+  workspacePath: vi.fn((workspaceId: string) => `/test/workspaces/${workspaceId}`),
+}));
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -23,16 +40,17 @@ vi.mock('electron', () => ({
 
 // Mock the unified persistence
 vi.mock('../agent-persistence', () => ({
+  unifiedPersistence: mocks.unifiedPersistence,
   UnifiedPersistence: {
-    getInstance: vi.fn(),
+    getInstance: vi.fn(() => mocks.unifiedPersistence),
   },
 }));
 
 // Mock the workspace config
-vi.mock('$shared/config', () => ({
+vi.mock('../../../../shared/main/config.js', () => ({
   WorkspaceConfig: {
     paths: {
-      workspace: vi.fn((workspaceId: string) => `/test/workspaces/${workspaceId}`),
+      workspace: mocks.workspacePath,
     },
   },
 }));
@@ -51,13 +69,7 @@ describe('Persistence IPC Handlers', () => {
       handlers.set(channel, handler);
     });
 
-    // Create mock unified persistence instance
-    mockUnifiedPersistence = {
-      loadAgent: vi.fn(),
-      saveAgent: vi.fn(),
-      deleteAgent: vi.fn(),
-      listAgents: vi.fn(),
-    };
+    mockUnifiedPersistence = mocks.unifiedPersistence;
 
     (UnifiedPersistence.getInstance as any).mockReturnValue(mockUnifiedPersistence);
 
@@ -73,7 +85,7 @@ describe('Persistence IPC Handlers', () => {
     it('should call loadAgent with all three required parameters', async () => {
       const testAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-123'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-456'),
+        workspaceId: BrandedIds.WorkspaceId('blue-river'),
         name: 'Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -111,14 +123,14 @@ describe('Persistence IPC Handlers', () => {
       // Call the handler
       const result = await handler!(mockEvent, {
         agentId: 'agent-123',
-        workspaceId: 'workspace-456',
+        workspaceId: 'blue-river',
       });
 
       // Verify loadAgent was called with all THREE parameters
       expect(mockUnifiedPersistence.loadAgent).toHaveBeenCalledWith(
         'agent-123',
-        'workspace-456',
-        '/test/workspaces/workspace-456', // The workspacePath parameter that was missing!
+        'blue-river',
+        '/test/workspaces/blue-river', // The workspacePath parameter that was missing!
       );
 
       // Verify response format
@@ -140,7 +152,7 @@ describe('Persistence IPC Handlers', () => {
 
       const result = await handler!(mockEvent, {
         agentId: 'non-existent',
-        workspaceId: 'workspace-456',
+        workspaceId: 'blue-river',
       });
 
       // Verify response format for failure case
@@ -171,14 +183,14 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         agentId: 'agent-789',
-        workspaceId: 'workspace-789',
+        workspaceId: 'green-hill',
       });
 
       // Verify all three parameters are passed
       expect(mockUnifiedPersistence.loadAgent).toHaveBeenCalledWith(
         'agent-789',
-        'workspace-789',
-        '/test/workspaces/workspace-789',
+        'green-hill',
+        '/test/workspaces/green-hill',
       );
 
       // Verify response format
@@ -193,7 +205,7 @@ describe('Persistence IPC Handlers', () => {
     it('should handle existing agent update correctly', async () => {
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-existing'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'Existing Agent',
         status: AgentStatus.Active,
         messages: [],
@@ -231,14 +243,14 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: updatedAgent,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
       });
 
       // Verify loadAgent was called with all three parameters
       expect(mockUnifiedPersistence.loadAgent).toHaveBeenCalledWith(
         'agent-existing',
-        'workspace-123',
-        '/test/workspaces/workspace-123',
+        'amber-forest',
+        '/test/workspaces/amber-forest',
       );
 
       // Verify saveAgent was called
@@ -254,7 +266,7 @@ describe('Persistence IPC Handlers', () => {
       // The fix should merge: keep all 6 disk messages + append the 1 new user message
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-merge-test'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'Merge Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -295,7 +307,7 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: frontendSession,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
       });
 
       expect(result.success).toBe(true);
@@ -316,7 +328,7 @@ describe('Persistence IPC Handlers', () => {
       // The merge should produce [user1, assistant1, user2]
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-equal-count-test'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'Equal Count Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -350,7 +362,7 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: frontendSession,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
       });
 
       expect(result.success).toBe(true);
@@ -363,13 +375,57 @@ describe('Persistence IPC Handlers', () => {
       expect(savedAgent.messages[2].id).toBe(BrandedIds.MessageId('msg-new')); // appended from frontend
     });
 
+    it('deduplicates stale frontend placeholder against backend final message with same appMessageId', async () => {
+      const existingAgent: AgentSession = {
+        id: BrandedIds.AgentId('agent-app-message-dedup-test'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
+        name: 'App Message Dedup Test Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: BrandedIds.MessageId('msg-user-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-03-05T17:08:49Z' },
+          { id: BrandedIds.MessageId('msg_backend_final'), appMessageId: 'app-msg-final', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Final answer' }], timestamp: '2026-03-05T17:08:55Z', isStreaming: false },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      const frontendSession = {
+        ...existingAgent,
+        messages: [
+          { id: BrandedIds.MessageId('msg-user-1'), role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }], timestamp: '2026-03-05T17:08:49Z' },
+          { id: BrandedIds.MessageId('550e8400-e29b-41d4-a716-446655440001'), appMessageId: 'app-msg-final', role: 'assistant', contentBlocks: [{ type: 'text', text: 'Final answer' }], timestamp: '2026-03-05T17:08:54Z', isStreaming: true },
+          { id: BrandedIds.MessageId('msg-new-user'), role: 'user', contentBlocks: [{ type: 'text', text: 'Follow up' }], timestamp: '2026-03-05T17:09:00Z' },
+        ] as any[],
+      };
+
+      mockUnifiedPersistence.loadAgent.mockResolvedValue({ success: true, data: existingAgent });
+      mockUnifiedPersistence.saveAgent.mockResolvedValue({ success: true });
+
+      const handler = handlers.get(IPC_CHANNELS.PERSISTENCE.SAVE_SESSION);
+      const result = await handler!({} as IpcMainInvokeEvent, {
+        session: frontendSession,
+        workspaceId: 'amber-forest',
+      });
+
+      expect(result.success).toBe(true);
+      const savedAgent = mockUnifiedPersistence.saveAgent.mock.calls[0][0];
+      expect(savedAgent.messages.map((message: any) => message.id)).toEqual([
+        BrandedIds.MessageId('msg-user-1'),
+        BrandedIds.MessageId('msg_backend_final'),
+        BrandedIds.MessageId('msg-new-user'),
+      ]);
+      expect(savedAgent.messages[1].appMessageId).toBe('app-msg-final');
+      expect(savedAgent.messages[1].isStreaming).toBe(false);
+    });
+
     it('should NOT merge when frontend has zero overlap with disk messages (unrelated histories)', async () => {
       // Edge case: frontend has entirely new messages with no IDs matching disk.
       // frontendKnownMessages would be empty, isPrefix would vacuously be true,
       // and without the guard this would falsely merge unrelated histories.
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-no-overlap-test'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'No Overlap Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -402,7 +458,7 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: frontendSession,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
       });
 
       expect(result.success).toBe(true);
@@ -418,7 +474,7 @@ describe('Persistence IPC Handlers', () => {
       // The allowTruncation flag tells the handler to skip the merge logic
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-edit-test'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'Edit Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -455,7 +511,7 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: frontendSession,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
         options: { allowTruncation: true },
       });
 
@@ -476,7 +532,7 @@ describe('Persistence IPC Handlers', () => {
       // sending messages: []. The guard must keep the disk messages intact.
       const existingAgent: AgentSession = {
         id: BrandedIds.AgentId('agent-empty-guard'),
-        workspaceId: BrandedIds.WorkspaceId('workspace-123'),
+        workspaceId: BrandedIds.WorkspaceId('amber-forest'),
         name: 'Guard Test Agent',
         status: AgentStatus.Active,
         messages: [
@@ -506,7 +562,7 @@ describe('Persistence IPC Handlers', () => {
       const mockEvent = {} as IpcMainInvokeEvent;
       const result = await handler!(mockEvent, {
         session: frontendSession,
-        workspaceId: 'workspace-123',
+        workspaceId: 'amber-forest',
       });
 
       expect(result.success).toBe(true);
@@ -548,7 +604,7 @@ describe('Persistence IPC Handlers', () => {
 
         const result = await handler!(mockEvent, {
           agentId: 'test-id',
-          workspaceId: 'workspace-test',
+          workspaceId: 'test-workspace',
         });
 
         expect(result).toEqual(testCase.expectedResponse);

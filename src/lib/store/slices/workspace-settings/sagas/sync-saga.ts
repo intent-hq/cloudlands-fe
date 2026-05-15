@@ -1,4 +1,9 @@
-import { call, join, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  join,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import {
   syncWorkspaceSettings,
@@ -8,7 +13,10 @@ import {
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { initSaga, getGlobalAutoCommitDefault } from "./init-saga";
+import {
+  initSaga,
+  getGlobalAutoCommitDefault,
+} from "./init-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 
 /**

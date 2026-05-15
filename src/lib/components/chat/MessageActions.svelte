@@ -7,18 +7,21 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
+  import {
+  Tooltip,
+  TooltipShortcut,
+} from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-    faCopy,
-    faCheck,
-    faPencil,
-    faRotateRight,
-    faThumbsUp,
-    faThumbsDown,
-    faCodeBranch,
-    faArrowUp,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCopy,
+  faCheck,
+  faPencil,
+  faRotateRight,
+  faThumbsUp,
+  faThumbsDown,
+  faCodeBranch,
+  faArrowUp,
+} from '@fortawesome/free-solid-svg-icons';
 
   type MessageRole = 'user' | 'assistant';
 

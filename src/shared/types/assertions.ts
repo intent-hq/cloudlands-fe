@@ -6,7 +6,12 @@
  */
 
 import type { AgentSession, AgentMessage, ContentBlock, ToolCall } from '../types';
-import { isAgentSession, isAgentMessage, isContentBlock, isToolCall } from './guards';
+import {
+  isAgentSession,
+  isAgentMessage,
+  isContentBlock,
+  isToolCall,
+} from './guards';
 
 /**
  * Assert that an object is an AgentSession

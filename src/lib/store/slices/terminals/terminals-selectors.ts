@@ -1,7 +1,13 @@
 import { type StoreState } from "$lib/store/types";
 import { createSelector } from "../../utils/create-selector";
-import { emptyWorkspaceState } from "./terminals-slice";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  emptyWorkspaceState,
+  type TerminalTab,
+} from "./terminals-slice";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 
 function getActiveWs(state: StoreState) {
   const wsId = state.workspace.activeWorkspaceId;
@@ -11,6 +17,10 @@ function getActiveWs(state: StoreState) {
 
 function getWsById(state: StoreState, wsId: string) {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
+}
+
+function isSetupTerminal(terminal: TerminalTab): boolean {
+  return (terminal.customName || terminal.name) === 'Setup';
 }
 
 export const selectIsTerminalOverlayOpen = createSelector((state) => {
@@ -41,10 +51,12 @@ export const selectTerminalsForWorkspace = createSelector((state, wsId: string) 
   return getItems(getWsById(state, wsId).terminals);
 });
 
+export const selectWorkspaceSetupTerminal = createSelector((state, wsId: string) => {
+  return getItems(getWsById(state, wsId).terminals).find(isSetupTerminal);
+});
+
 export const selectWorkspaceHasSetupTerminal = createSelector((state, wsId: string) => {
-  return getItems(getWsById(state, wsId).terminals).some(
-    (terminal) => (terminal.customName || terminal.name) === 'Setup',
-  );
+  return selectWorkspaceSetupTerminal.select(state, wsId) !== undefined;
 });
 
 /** Select only user-created terminals, filtering out agent terminals (IDs starting with "agent-") */

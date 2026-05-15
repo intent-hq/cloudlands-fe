@@ -5,20 +5,20 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-    faXmark,
-    faTerminal,
-    faCode,
-    faCodeBranch,
-    faExclamationTriangle,
-    faChevronDown,
-    faArrowUpRightFromSquare,
-    faFolder,
-  } from '@fortawesome/free-solid-svg-icons';
+  faXmark,
+  faTerminal,
+  faCode,
+  faCodeBranch,
+  faExclamationTriangle,
+  faChevronDown,
+  faArrowUpRightFromSquare,
+  faFolder,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import {
-    fetchEditors,
-    type InstalledEditor,
-  } from '$lib/store/slices/external-editors/external-editors-slice';
+  fetchEditors,
+  type InstalledEditor,
+} from '$lib/store/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { invoke } from '$lib/electron-bridge';
@@ -83,7 +83,6 @@
   });
 
   // Get all installed editors (combined IDEs and terminals)
-  const installedEditors = $derived($installedEditors$);
 
   /**
    * Detect the type of pull error based on the error message
@@ -169,7 +168,7 @@
 </script>
 
 {#if open}
-  <Portal zIndex={100}>
+  <Portal>
     <div
       class="bg-black/50 flex items-center justify-center w-screen h-screen fixed inset-0"
       role="button"
@@ -228,7 +227,7 @@
           <div class="grid grid-cols-2 gap-2 items-center">
             <p class="text-xs select-none">Resolve conflicts in another app</p>
             <!-- Open in dropdown (combined IDEs and terminals) -->
-            {#if installedEditors.length > 0}
+            {#if $installedEditors$.length > 0}
               <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
                 {#snippet trigger({ toggle }: { toggle: () => void })}
                   <Button variant="outline" onclick={toggle} class="w-full justify-between gap-2">
@@ -242,7 +241,7 @@
 
                 {#snippet content()}
                   <div class="max-w-60 py-1">
-                    {#each installedEditors as editor (editor.id)}
+                    {#each $installedEditors$ as editor (editor.id)}
                       {@const IconComponent = EDITOR_ICONS[editor.id]}
                       <button
                         type="button"

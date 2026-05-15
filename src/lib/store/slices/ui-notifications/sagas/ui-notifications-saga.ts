@@ -1,9 +1,20 @@
 import { goto } from "$app/navigation";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
-import { selectNotificationVolume, selectSoundEnabled, selectSoundOnlyWhenUnfocused } from "$lib/store/slices/user-preferences/user-preferences-selectors";
-import { selectActiveWorkspace, selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
+import {
+  selectNotificationVolume,
+  selectSoundEnabled,
+  selectSoundOnlyWhenUnfocused,
+} from "$lib/store/slices/user-preferences/user-preferences-selectors";
+import {
+  selectActiveWorkspace,
+  selectWorkspaceById,
+} from "$lib/store/slices/workspace/workspace-selectors";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
-import { call, fork, select } from "typed-redux-saga";
+import {
+  call,
+  fork,
+  select,
+} from "typed-redux-saga";
 
 type BackgroundAgentSpawnedEvent = {
   workspaceId: string;

@@ -24,11 +24,21 @@ import { isValidMessageId } from '$shared/types/branded-ids';
 import { validateAgentSession } from '$shared/schemas';
 import { AgentStatus } from '$shared/types/agent.types';
 import { WorkspaceConfig } from '$shared/main/config';
-import { fsyncFile, renameWithRetry } from '$shared/main/file-sync-utils';
+import {
+  fsyncFile,
+  renameWithRetry,
+} from '$shared/main/file-sync-utils';
 import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 import { truncateLargeFields } from './persistence-truncation';
-import { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
+import {
+  isGenericAgentName,
+  isRandomAgentName,
+} from '$shared/utils/agent-name-utils';
+import {
+  deduplicateAgentMessages,
+  normalizeAgentMessage,
+} from '$shared/utils/message-dedup';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -654,23 +664,14 @@ export class UnifiedPersistence {
       }
     }
 
-    // CRITICAL: Deduplicate messages before saving to prevent duplicate message IDs on disk.
+    // CRITICAL: Deduplicate messages before saving to prevent duplicate logical messages on disk.
     // This is a safety net - duplicates should be prevented upstream, but this ensures
     // the persisted data is always clean regardless of how we got here.
     let deduplicatedMessages = messagesWithPreservedUserMsgs;
     if (messagesWithPreservedUserMsgs.length > 0) {
-      const seenIds = new Set<string>();
-      const uniqueMessages: AgentMessage[] = [];
-      let duplicatesRemoved = 0;
-
-      for (const msg of messagesWithPreservedUserMsgs) {
-        if (!seenIds.has(msg.id)) {
-          seenIds.add(msg.id);
-          uniqueMessages.push(msg);
-        } else {
-          duplicatesRemoved++;
-        }
-      }
+      const normalizedMessages = messagesWithPreservedUserMsgs.map((msg) => normalizeAgentMessage(msg));
+      const uniqueMessages = deduplicateAgentMessages(normalizedMessages);
+      const duplicatesRemoved = normalizedMessages.length - uniqueMessages.length;
 
       if (duplicatesRemoved > 0) {
         logger.warn('saveAgent - removed duplicate messages before saving', {
@@ -1199,23 +1200,11 @@ export class UnifiedPersistence {
         agent.endedAt = this.normalizeDate(agent.endedAt);
       }
 
-      // Normalize message timestamps and deduplicate messages
+      // Normalize message timestamps and deduplicate logical messages
       if (agent.messages) {
-        const seenIds = new Set<string>();
-        const uniqueMessages: AgentMessage[] = [];
-        let duplicatesFound = 0;
-
-        for (const msg of agent.messages) {
-          if (!seenIds.has(msg.id)) {
-            seenIds.add(msg.id);
-            uniqueMessages.push({
-              ...msg,
-              timestamp: this.normalizeDate(msg.timestamp),
-            });
-          } else {
-            duplicatesFound++;
-          }
-        }
+        const normalizedMessages = agent.messages.map((msg) => normalizeAgentMessage(msg));
+        const uniqueMessages = deduplicateAgentMessages(normalizedMessages);
+        const duplicatesFound = normalizedMessages.length - uniqueMessages.length;
 
         if (duplicatesFound > 0) {
           logger.warn('loadAgent - found and removed duplicate messages from disk', {

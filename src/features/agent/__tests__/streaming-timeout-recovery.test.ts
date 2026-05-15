@@ -12,7 +12,14 @@
  * 5. Partial content is preserved on timeout
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import {
   STREAMING_PROFILES,
   resolveStreamingConfig,
@@ -177,14 +184,14 @@ describe('Stream Completion Guarantees', () => {
     };
 
     // Simulate stream completion
-     
+
     const completeStream = (state: MockStreamState, _reason: string) => {
       state.isStreaming = false;
       state.completedAt = Date.now();
       return state;
     };
 
-     
+
     const errorStream = (state: MockStreamState, _error: string) => {
       state.isStreaming = false;
       state.hasError = true;
@@ -291,14 +298,14 @@ describe('Behavior Tests', () => {
   });
 
   it('should fire stall detection after inactivity period', () => {
-    // Simulate the stall detection logic from ChatService.startStallDetection()
-    const STALL_DETECTION_MS = 90_000; // matches ChatService
+    // Simulate the stall detection logic from chat-state sagas.
+    const STALL_DETECTION_MS = 90_000; // matches chat-state saga threshold
     const CHECK_INTERVAL_MS = 10_000;
     let isStalled = false;
     const lastChunkTime = Date.now();
     const isStreaming = true;
 
-    // Start stall detection interval (mirrors ChatService.startStallDetection)
+    // Start stall detection interval (mirrors chat-state saga behavior)
     const timer = setInterval(() => {
       if (!isStreaming || !lastChunkTime) return;
       const timeSinceLastChunk = Date.now() - lastChunkTime;
@@ -384,7 +391,7 @@ describe('Behavior Tests', () => {
       const timeSinceLastChunk = Date.now() - lastChunkTime;
       if (timeSinceLastChunk >= STALL_DETECTION_MS && !isStalled) {
         isStalled = true;
-        // Recovery: re-register handler (simulates ChatService recovery)
+        // Recovery: re-register handler (simulates stream recovery)
         handlerRegistered = false;
         recoveryAttempts++;
         handlerRegistered = true;

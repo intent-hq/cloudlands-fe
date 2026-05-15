@@ -33,17 +33,29 @@
  */
 
 import * as fs from 'fs/promises';
-import { watch, type FSWatcher } from 'fs';
+import {
+  watch,
+  type FSWatcher,
+} from 'fs';
 import os from 'os';
 import path from 'path';
 import { Logger } from '$shared/logger';
 import { isWorkspaceSlug } from '$shared/services/workspace-slug';
 import { EndUserRulesManager } from '../../rules/user-rules.service';
-import { getInstructionWithCommon, NON_INTERACTIVE_BACKGROUND_AGENTS } from '../instructions';
+import {
+  getInstructionWithCommon,
+  NON_INTERACTIVE_BACKGROUND_AGENTS,
+} from '../instructions';
 import { getBaseInstruction } from '../instructions/base-system-prompt';
-import { loadUserRules, formatUserRulesForContext } from './rules-loader';
+import {
+  loadUserRules,
+  formatUserRulesForContext,
+} from './rules-loader';
 import { formatSkillsCatalogForPrompt } from './skills-loader';
-import { formatSpecialistsForPrompt, initSpecialistsService } from './specialists.service';
+import {
+  formatSpecialistsForPrompt,
+  initSpecialistsService,
+} from './specialists.service';
 import {
   formatActiveTeamForPrompt,
   formatGlobalKnobsForPrompt,

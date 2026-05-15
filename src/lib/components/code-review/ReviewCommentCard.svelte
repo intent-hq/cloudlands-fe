@@ -1,15 +1,18 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-    faCircleExclamation,
-    faTriangleExclamation,
-    faCircleInfo,
-    faChevronDown,
-    faArrowUpRightFromSquare,
-    faWrench,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCircleExclamation,
+  faTriangleExclamation,
+  faCircleInfo,
+  faChevronDown,
+  faArrowUpRightFromSquare,
+  faWrench,
+} from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
-  import { type ReviewComment, type ReviewSeverity } from './types';
+  import {
+  type ReviewComment,
+  type ReviewSeverity,
+} from './types';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { invoke } from '$lib/electron-bridge';

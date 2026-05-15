@@ -1,5 +1,10 @@
 import { type EventChannel } from "redux-saga";
-import { call, race, take, delay } from "typed-redux-saga";
+import {
+  call,
+  race,
+  take,
+  delay,
+} from "typed-redux-saga";
 import { type StoreSelector } from "../../../types";
 import { createChannelFromSelector } from "../../../utils/selector-channel-effects";
 

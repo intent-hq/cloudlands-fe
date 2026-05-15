@@ -18,7 +18,10 @@ import { RemoteRPCError } from '$shared/main/remote-rpc-client';
 import type { RemoteRPCClient, WatchChangeEvent } from '$shared/main/remote-rpc-client';
 import { RemoteFileSystemService } from '../../remote-fs/main/remote-file-system.service';
 import type { RemoteFileSystemConfig } from '../../remote-fs/main/remote-file-system.service';
-import { createHash, randomUUID } from 'crypto';
+import {
+  createHash,
+  randomUUID,
+} from 'crypto';
 import * as path from 'path';
 import type {
   DiffChunk,

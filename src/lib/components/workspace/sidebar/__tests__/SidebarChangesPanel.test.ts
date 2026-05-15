@@ -1,5 +1,16 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+  type Mock,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+} from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 
@@ -29,11 +40,11 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
   }
 
   function _createMockFtSelector<T>(getter: () => T) {
-     
+
     const fn = (..._args: any[]) => _makeReadable(getter);
-     
+
     fn.select = (_state: any, ..._args: any[]) => getter();
-     
+
     fn.effect = (..._args: any[]) => { };
     fn.withStore = () => fn;
     return fn;
@@ -238,7 +249,7 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
     },
   ),
   selectWorkspaceActivePullRequest: Object.assign(
-     
+
     (_workspaceId: any) => createReadable(null),
     { select: () => null },
   ),
@@ -299,10 +310,6 @@ vi.mock('$lib/store/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
 }));
 
-vi.mock('$features/agent/agent-ipc-bridge', () => ({
-  agentService: { getSession: vi.fn().mockReturnValue(null) },
-}));
-
 const defaultExecutorState = { status: 'idle', result: null, error: null, agentId: null };
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorState: Object.assign(
@@ -323,17 +330,13 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => { }; } }),
     { select: vi.fn().mockReturnValue([]) },
   ),
-  selectAgentById: Object.assign(
+}));
+
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: Object.assign(
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(undefined); return () => { }; } }),
     { select: vi.fn().mockReturnValue(undefined) },
   ),
-}));
-
-vi.mock('$features/agent/deferred-results-cache', () => ({
-  getDeferredResults: vi.fn().mockReturnValue([]),
-  hasDeferredResults: vi.fn().mockReturnValue(false),
-  clearDeferredResults: vi.fn(),
-  addDeferredResult: vi.fn(),
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -581,11 +584,6 @@ async function resetMocks() {
     },
   });
 
-  const { hasDeferredResults, getDeferredResults } = await import(
-    '$features/agent/deferred-results-cache'
-  );
-  (hasDeferredResults as Mock).mockReturnValue(false);
-  (getDeferredResults as Mock).mockReturnValue([]);
 }
 
 async function renderPanel(props: Record<string, any> = {}) {

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { AgentStatus } from '$shared/types';
 import type { AgentSession } from '$shared/types/agent-session';
 import {

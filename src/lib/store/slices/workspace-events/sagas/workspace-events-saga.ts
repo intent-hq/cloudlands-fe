@@ -1,6 +1,11 @@
 import { invoke } from '$lib/electron-bridge';
 import { takeEveryFromListenSync } from '$lib/store/utils/ipc-channel';
-import { call, fork, put, takeEvery } from 'typed-redux-saga';
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+} from 'typed-redux-saga';
 import {
   eventReceived,
   eventsCleared,
@@ -8,7 +13,10 @@ import {
   loadEventsRequested,
   setEventsLoading,
 } from '../workspace-events-slice';
-import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from '../workspace-events-sanitizer';
+import {
+  sanitizeWorkspaceEvent,
+  sanitizeWorkspaceEventsList,
+} from '../workspace-events-sanitizer';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 // ---------------------------------------------------------------------------

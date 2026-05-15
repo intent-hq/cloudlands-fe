@@ -1,16 +1,19 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { slide } from 'svelte/transition';
   import { Logger } from '../../shared/logger';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faTriangleExclamation,
-    faRotateRight,
-    faArrowsRotate,
-    faCopy,
-    faCheck,
-  } from '@fortawesome/free-solid-svg-icons';
+  faTriangleExclamation,
+  faRotateRight,
+  faArrowsRotate,
+  faCopy,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     fallback?: string;

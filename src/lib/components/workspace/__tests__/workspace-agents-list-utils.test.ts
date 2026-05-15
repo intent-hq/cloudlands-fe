@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import * as BrandedIds from '$shared/types/branded-ids';
-import { AgentStatus, type AgentSession } from '$shared/types';
+import {
+  AgentStatus,
+  type AgentSession,
+} from '$shared/types';
 import { getWorkspaceAgentsVisibilitySummary } from '../workspace-agents-list-utils';
 
 function makeAgent(id: string, overrides: Partial<AgentSession> = {}): AgentSession {

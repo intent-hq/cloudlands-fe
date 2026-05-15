@@ -8,7 +8,13 @@
  * renderer-side listenSync handlers, exercising the real extractEventData
  * logic and both reducers.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import {
   agentSubscriptionUIReducer,
   initialState as rendererInitialState,

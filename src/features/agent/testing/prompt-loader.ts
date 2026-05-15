@@ -21,7 +21,10 @@ import {
   common,
   workspace,
 } from '../instructions';
-import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
+import {
+  SPECIALISTS,
+  type Specialist,
+} from '$lib/constants/specialists';
 
 /**
  * Prompt metadata extracted from instruction content

@@ -2,7 +2,11 @@
  * Tests for Assertion Helpers
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   assertAgentSession,
   assertAgentMessage,

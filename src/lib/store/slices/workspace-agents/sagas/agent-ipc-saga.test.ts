@@ -8,27 +8,62 @@
  * 4. Normal flow works with session present on first try
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runSaga } from "redux-saga";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  runSaga,
+  stdChannel,
+} from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
-import { AgentStatus, type AgentSession } from "$shared/types";
+import {
+  AgentStatus,
+  type AgentSession,
+} from "$shared/types";
 
 const {
   sendMock,
   saveSessionMock,
+  deleteAgentMock,
   ensureStreamHandlerMock,
+  invokeMock,
+  clearKeysForAgentMock,
+  getReduxStoreDispatchMock,
+  toastWarningMock,
+  toastDismissMock,
+  trackMock,
+  eventCollectorTrackMock,
   selectState,
+  streamingSessionsState,
+  diskCountState,
 } = vi.hoisted(() => ({
   sendMock: vi.fn(),
   saveSessionMock: vi.fn(async () => {}),
+  deleteAgentMock: vi.fn(async () => {}),
   ensureStreamHandlerMock: vi.fn(async () => ({ created: false })),
+  invokeMock: vi.fn(async () => ({ success: true })),
+  clearKeysForAgentMock: vi.fn(async () => {}),
+  getReduxStoreDispatchMock: vi.fn(),
+  toastWarningMock: vi.fn(() => "toast-1"),
+  toastDismissMock: vi.fn(),
+  trackMock: vi.fn(),
+  eventCollectorTrackMock: vi.fn(),
   selectState: { results: [] as any[], index: 0 },
+  streamingSessionsState: { results: [] as any[] },
+  diskCountState: { value: 0 },
 }));
 
 // Mock window + electronAPI
 vi.stubGlobal("window", {
   electronAPI: { send: sendMock },
   dispatchEvent: vi.fn(),
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
   CustomEvent: class CustomEvent { constructor(public type: string) {} },
 });
 
@@ -61,25 +96,51 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("$features/agent/agent-ipc-bridge", () => ({
-  agentService: {
-    saveSession: saveSessionMock,
-    ensureStreamHandler: ensureStreamHandlerMock,
-    isSendMessageSettingUpStream: vi.fn(async () => false),
-    hasActiveStreamHandler: vi.fn(async () => false),
-    clearPendingStreamRegistration: vi.fn(async () => {}),
-    dispose: vi.fn(),
-    reconnectToBackendStreams: vi.fn(async () => {}),
-    extractPendingDeletions: vi.fn(async () => []),
-    deleteSession: vi.fn(async () => {}),
-  },
+vi.mock("$features/agent/agent-stream-lifecycle", () => ({
+  ensureStreamHandler: ensureStreamHandlerMock,
+  isSendMessageSettingUpStream: vi.fn(async () => false),
+  hasActiveStreamHandler: vi.fn(async () => false),
+  clearPendingStreamRegistration: vi.fn(async () => {}),
 }));
 
 vi.mock("$features/agent/browser", () => ({
+  agentIpcProxy: {
+    deleteAgent: deleteAgentMock,
+  },
   persistenceService: {
     loadSession: vi.fn(async () => null),
-    saveSession: vi.fn(async () => {}),
+    saveSession: saveSessionMock,
   },
+}));
+
+vi.mock("$features/agent/browser/services/request-deduplicator.service", () => ({
+  requestDeduplicator: {
+    clearKeysForAgent: clearKeysForAgentMock,
+  },
+}));
+
+vi.mock("$lib/electron-bridge", () => ({
+  invoke: invokeMock,
+}));
+
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: () => ({ dispatch: getReduxStoreDispatchMock }),
+}));
+
+vi.mock("svelte-sonner", () => ({
+  toast: {
+    warning: toastWarningMock,
+    dismiss: toastDismissMock,
+  },
+}));
+
+vi.mock("$lib/services/analytics", () => ({
+  track: trackMock,
+}));
+
+vi.mock("$features/observability/event-collector-client", () => ({
+  eventCollector: { track: eventCollectorTrackMock },
+  AgentEventType: { SESSION_DELETED: "SESSION_DELETED" },
 }));
 
 vi.mock("$lib/utils/client-logger", () => ({
@@ -92,23 +153,61 @@ vi.mock("$lib/utils/client-logger", () => ({
 }));
 
 vi.mock("../workspace-agents-selectors", () => {
-  const selectAgentByIdImpl = (_state: any, _agentId: string) => {
+  const selectAgentSessionImpl = (_state: any, _agentId: string) => {
     const result = selectState.results[selectState.index] ?? undefined;
     selectState.index++;
     return result;
   };
   return {
-    selectAgentById: {
-      select: selectAgentByIdImpl,
+    selectAgentSession: {
+      select: selectAgentSessionImpl,
       effect: function* (agentId: string) {
-        return yield sagaEffects.select(selectAgentByIdImpl, agentId);
+        return yield sagaEffects.select(selectAgentSessionImpl, agentId);
       },
     },
-    selectDiskMessageCount: { select: () => 0 },
-    selectRecentAgentCreatedEvent: { select: () => undefined },
-    selectRecentAgentCreatedEventsCount: { select: () => 0 },
+    selectDiskMessageCount: {
+      select: () => diskCountState.value,
+      effect: function* () {
+        return yield sagaEffects.select(() => diskCountState.value);
+      },
+    },
+    selectRecentAgentCreatedEvent: {
+      select: () => undefined,
+      effect: function* () {
+        return yield sagaEffects.select(() => undefined);
+      },
+    },
+    selectRecentAgentCreatedEventsCount: {
+      select: () => 0,
+      effect: function* () {
+        return yield sagaEffects.select(() => 0);
+      },
+    },
   };
 });
+
+vi.mock("../../agent-session/agent-session-selectors", () => ({
+  selectAgentSession: {
+    select: (_state: any, _agentId: string) => {
+      const result = selectState.results[selectState.index] ?? undefined;
+      selectState.index++;
+      return result;
+    },
+    effect: function* (agentId: string) {
+      return yield sagaEffects.select((_state: any, _agentId: string) => {
+        const result = selectState.results[selectState.index] ?? undefined;
+        selectState.index++;
+        return result;
+      }, agentId);
+    },
+  },
+  selectAllStreamingAgents: {
+    select: () => streamingSessionsState.results,
+    effect: function* () {
+      return yield sagaEffects.select(() => streamingSessionsState.results);
+    },
+  },
+}));
 
 vi.mock("../../workspace/workspace-selectors", () => ({
   selectActiveWorkspaceId: { select: () => "active-ws-id" },
@@ -118,7 +217,6 @@ vi.mock("../../agent-session/agent-session-slice", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
   return {
     ...actual,
-    upsertSession: vi.fn((s: any) => ({ type: "agentSessions/upsertSession", payload: s })),
     addMessage: vi.fn((agentId: string, msg: any) => ({ type: "agentSessions/addMessage", payload: [agentId, msg] })),
     removeMessage: vi.fn((agentId: string, msgId: string) => ({ type: "agentSessions/removeMessage", payload: [agentId, msgId] })),
     replaceMessageById: vi.fn((agentId: string, oldId: string, newMsg: any) => ({ type: "agentSessions/replaceMessageById", payload: [agentId, oldId, newMsg] })),
@@ -132,15 +230,55 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
 
 // Import after mocks
 import {
-  handleQueueProcessing,
-  handleQueueCancelled,
-  handleExistingSessionUpdate,
+  agentIpcSaga,
   handleAgentCreated,
-  handleStreamDisconnected,
   handleAgentIdle,
+  handleCommitPendingAgentDeletionRequested,
+  handleDeleteAgentSessionRequested,
+  handleDeleteAgentWithUndoRequested,
+  handleExistingSessionUpdate,
+  handleFlushPendingAgentDeletionsRequested,
+  handleQueueCancelled,
+  handleQueueProcessing,
+  handleRenameAgentSessionRequested,
+  handleSaveAgentSessionRequested,
+  handleStopAgentSessionRequested,
+  handleUndoAgentDeletionRequested,
+  watchAgentCreatedIpcSaga,
+  watchAgentIdleSaga,
+  watchBackendStreamReconnectSaga,
+  watchBeforeUnloadSaga,
+  watchPagehideSaga,
+  watchPrepareHandlerSaga,
+  watchQueueCancelledSaga,
+  watchQueueProcessingSaga,
+  watchStreamStartingSaga,
 } from "./agent-ipc-saga";
-import { setAgentStreaming, removeAgentMessage, replaceAgentMessageById, updateAgentMessage } from "../workspace-agents-slice";
+import {
+  setAgentStreaming,
+  updateMessage,
+  upsertSession,
+} from "../../agent-session/agent-session-slice";
 import { streamCompleted } from "../../chat-state/chat-state-slice";
+import { clearAgentUnread } from "../../unread-tracking/unread-tracking-slice";
+import {
+  commitPendingAgentDeletionRequested,
+  backendStreamsReconnectResultReceived,
+  deleteAgentSessionRequested,
+  deleteAgentWithUndoRequested,
+  flushPendingAgentDeletionsRequested,
+  removeAgent,
+  renameAgentSessionRequested,
+  saveAgentSessionRequested,
+  stopAgentSessionRequested,
+  triggerStreamingSafetyCheck,
+  triggerBackendStreamReconnect,
+  undoAgentDeletionRequested,
+} from "../workspace-agents-slice";
+import {
+  AGENT_BACKEND_CHANNELS,
+  AGENT_CHANNELS,
+} from "$shared/ipc/channels";
 
 const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   id: "agent-1",
@@ -184,7 +322,8 @@ describe("handleAgentCreated", () => {
     ).toPromise();
 
     const upsert = dispatched.find((a) => a.type === "agentSessions/upsertSession");
-    expect(upsert?.payload).toMatchObject({
+    expect(upsert?.payload?.[0].workspaceId).toBe("ws-blank");
+    expect(upsert?.payload?.[0]).toMatchObject({
       id: "agent-blank",
       status: AgentStatus.Idle,
       isStreaming: false,
@@ -196,6 +335,17 @@ describe("handleAgentCreated", () => {
     });
   });
 });
+
+function captureWindowListeners() {
+  const listeners: Record<string, (event?: any) => void> = {};
+  (window as any).addEventListener = vi.fn((eventName: string, handler: (event?: any) => void) => {
+    listeners[eventName] = handler;
+  });
+  (window as any).removeEventListener = vi.fn((eventName: string) => {
+    delete listeners[eventName];
+  });
+  return listeners;
+}
 
 describe("handleQueueProcessing", () => {
   beforeEach(() => {
@@ -223,9 +373,8 @@ describe("handleQueueProcessing", () => {
     ).toPromise();
 
     expect(sendMock).toHaveBeenCalledWith("agent:handler-ready", { agentId: "agent-1" });
-    // Should use session.workspaceId ("ws-agent-1"), not selectActiveWorkspaceId
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
-    expect(streamingAction?.payload).toEqual(["ws-agent-1", "agent-1", true]);
+    expect(streamingAction?.payload).toEqual(["agent-1", true]);
   });
 
   it("preserves queued user app ID and passes assistant app ID to stream handler", async () => {
@@ -246,6 +395,7 @@ describe("handleQueueProcessing", () => {
 
     const userMessageAction = dispatched.find((a) => a.payload?.[1]?.id === data.messageId);
     expect(userMessageAction?.payload[1].appMessageId).toBe(data.appMessageId);
+    expect(userMessageAction?.type).toBe("agentSessions/addMessage");
     expect(ensureStreamHandlerMock).toHaveBeenCalledWith("agent-1", {
       forceReregister: true,
       assistantAppMessageId: data.assistantAppMessageId,
@@ -270,10 +420,10 @@ describe("handleQueueProcessing", () => {
     await vi.advanceTimersByTimeAsync(300);
     await task.toPromise();
 
-    expect(selectState.index).toBe(2); // Called twice
+    expect(selectState.index).toBe(3); // Retry lookup plus persistence lookup
     expect(sendMock).toHaveBeenCalledWith("agent:handler-ready", { agentId: "agent-1" });
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
-    expect(streamingAction?.payload).toEqual(["ws-agent-1", "agent-1", true]);
+    expect(streamingAction?.payload).toEqual(["agent-1", true]);
   });
 
   // Regression test for root cause #1: handler-ready MUST always be sent even
@@ -320,7 +470,7 @@ describe("handleQueueProcessing", () => {
 
   it("uses session.workspaceId for all dispatches, not active workspace", async () => {
     const session = makeSession({ workspaceId: "different-ws" as any });
-    selectState.results = [session];
+    selectState.results = [session, session];
 
     const dispatched: any[] = [];
     await runSaga(
@@ -329,10 +479,15 @@ describe("handleQueueProcessing", () => {
       queueData,
     ).toPromise();
 
-    // All dispatched actions should use "different-ws", not "active-ws-id"
+    // Workspace-scoped persistence should use "different-ws", not "active-ws-id".
+    const addActions = dispatched.filter((a) => a.payload?.[1]?.id === queueData.messageId);
+    expect(addActions.map((a) => a.type)).toEqual(["agentSessions/addMessage"]);
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
-    expect(streamingAction?.payload[0]).toBe("different-ws");
-    expect(saveSessionMock).toHaveBeenCalledWith("agent-1", "different-ws", true);
+    expect(streamingAction?.payload).toEqual(["agent-1", true]);
+    expect(saveSessionMock).toHaveBeenCalledWith(session, "different-ws", {
+      immediate: true,
+      allowTruncation: undefined,
+    });
   });
 });
 
@@ -363,7 +518,7 @@ describe("handleQueueCancelled", () => {
   it("uses session.workspaceId for cleanup, not active workspace (verifier regression)", async () => {
     // Session has workspaceId "ws-agent-1" but active workspace is "active-ws-id"
     const session = makeSession({ workspaceId: "ws-agent-1" as any });
-    selectState.results = [session];
+    selectState.results = [session, session];
 
     const dispatched: any[] = [];
     await runSaga(
@@ -372,13 +527,15 @@ describe("handleQueueCancelled", () => {
       cancelData,
     ).toPromise();
 
-    // removeAgentMessage should use session.workspaceId, not "active-ws-id"
-    const removeAction = dispatched.find((a) => a.type === removeAgentMessage.type);
+    const removeAction = dispatched.find((a) => a.type === "agentSessions/removeMessage");
     expect(removeAction).toBeDefined();
-    expect(removeAction?.payload[0]).toBe("ws-agent-1");
+    expect(removeAction?.payload).toEqual(["agent-1", "msg-cancel-1"]);
 
     // saveSession should use session.workspaceId
-    expect(saveSessionMock).toHaveBeenCalledWith("agent-1", "ws-agent-1", true);
+    expect(saveSessionMock).toHaveBeenCalledWith(session, "ws-agent-1", {
+      immediate: true,
+      allowTruncation: undefined,
+    });
   });
 
   it("still removes agent-session message when session has no workspaceId", async () => {
@@ -399,13 +556,8 @@ describe("handleQueueCancelled", () => {
     );
     expect(removeSessionMsg).toBeDefined();
 
-    // workspace-agents removal SHOULD happen using activeWorkspaceId fallback
-    const removeAgentMsg = dispatched.find((a) => a.type === removeAgentMessage.type);
-    expect(removeAgentMsg).toBeDefined();
-    expect(removeAgentMsg.payload).toEqual(["active-ws-id", "agent-1", "msg-cancel-1"]);
-
-    // saveSession should be called with the active workspace fallback
-    expect(saveSessionMock).toHaveBeenCalledWith("agent-1", "active-ws-id", true);
+    // saveSession should not fall back to the active workspace.
+    expect(saveSessionMock).not.toHaveBeenCalled();
   });
 
   it("still removes agent-session message when session is not found at all", async () => {
@@ -425,13 +577,8 @@ describe("handleQueueCancelled", () => {
     );
     expect(removeSessionMsg).toBeDefined();
 
-    // workspace-agents cleanup SHOULD happen using activeWorkspaceId fallback
-    const removeAgentMsg = dispatched.find((a) => a.type === removeAgentMessage.type);
-    expect(removeAgentMsg).toBeDefined();
-    expect(removeAgentMsg.payload).toEqual(["active-ws-id", "agent-1", "msg-cancel-1"]);
-
-    // saveSession should be called with the active workspace fallback
-    expect(saveSessionMock).toHaveBeenCalledWith("agent-1", "active-ws-id", true);
+    // saveSession should not fall back to the active workspace.
+    expect(saveSessionMock).not.toHaveBeenCalled();
   });
 });
 
@@ -449,6 +596,26 @@ describe("handleExistingSessionUpdate — content-hash collision", () => {
   beforeEach(() => {
     selectState.index = 0;
     selectState.results = [];
+  });
+
+  it("dispatches a single canonical workspace-aware upsert for session field updates", async () => {
+    const session = makeSession({ id: "agent-1", workspaceId: "ws-1", name: "Before" });
+    const agent = { name: "After" };
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleExistingSessionUpdate as any,
+      session,
+      agent,
+      "agent-1",
+      "ws-1",
+    ).toPromise();
+
+    const canonicalUpserts = dispatched.filter((a) => a.type === upsertSession.type);
+    expect(canonicalUpserts).toHaveLength(1);
+    expect(canonicalUpserts[0].payload[0].workspaceId).toBe("ws-1");
+    expect(canonicalUpserts[0].payload[0]).toMatchObject({ id: "agent-1", name: "After" });
   });
 
   it("picks the closest-timestamp local message when multiple share the same content hash", async () => {
@@ -481,10 +648,6 @@ describe("handleExistingSessionUpdate — content-hash collision", () => {
     expect(replaceOps.length).toBe(1);
     expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-b", canonical]);
 
-    // Workspace-agents store should also get in-place replacement
-    const wsReplace = dispatched.filter((a) => a.type === replaceAgentMessageById.type);
-    expect(wsReplace.length).toBe(1);
-    expect(wsReplace[0].payload).toEqual(["ws-1", "agent-1", "local-uuid-b", canonical]);
   });
 
   it("preserves single-match behavior (no regression)", async () => {
@@ -515,74 +678,6 @@ describe("handleExistingSessionUpdate — content-hash collision", () => {
     expect(replaceOps[0].payload).toEqual(["agent-1", "local-uuid-only", canonical]);
   });
 });
-
-
-// ============================================================================
-// handleStreamDisconnected — regression: must not fall back to active workspace
-//
-// Scenario: agent belongs to workspace A, user is viewing workspace B.
-// If the session lacks a workspaceId, the saga must skip — NOT write to
-// the active workspace (B). Writing to B lands stale flags in a workspace
-// the agent doesn't own.
-// ============================================================================
-
-describe("handleStreamDisconnected", () => {
-  beforeEach(() => {
-    sendMock.mockClear();
-    selectState.index = 0;
-    selectState.results = [];
-  });
-
-  it("uses session.workspaceId (agent's workspace A), not active workspace (B)", async () => {
-    // Agent belongs to workspace A; user is viewing active workspace "active-ws-id" (B)
-    const session = makeSession({ workspaceId: "ws-A" as any });
-    selectState.results = [session];
-
-    const dispatched: any[] = [];
-    await runSaga(
-      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
-      handleStreamDisconnected,
-      { agentId: "agent-1" },
-    ).toPromise();
-
-    const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
-    expect(streamingAction).toBeDefined();
-    expect(streamingAction.payload[0]).toBe("ws-A");
-    // Must NOT land on the active workspace (B)
-    expect(streamingAction.payload[0]).not.toBe("active-ws-id");
-  });
-
-  it("skips when session has no workspaceId — no state change lands on active workspace (B)", async () => {
-    // Session found in state but missing workspaceId; active workspace is "active-ws-id" (B)
-    const session = makeSession({ workspaceId: "" as any });
-    selectState.results = [session];
-
-    const dispatched: any[] = [];
-    await runSaga(
-      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
-      handleStreamDisconnected,
-      { agentId: "agent-1" },
-    ).toPromise();
-
-    // No setAgentStreaming dispatch at all — must not fall back to "active-ws-id"
-    const streamingActions = dispatched.filter((a) => a.type === setAgentStreaming.type);
-    expect(streamingActions).toHaveLength(0);
-  });
-
-  it("skips when session is not found", async () => {
-    selectState.results = [undefined];
-
-    const dispatched: any[] = [];
-    await runSaga(
-      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
-      handleStreamDisconnected,
-      { agentId: "agent-1" },
-    ).toPromise();
-
-    expect(dispatched).toHaveLength(0);
-  });
-});
-
 
 describe("handleExistingSessionUpdate — in-place replacement preserves order", () => {
   const makeMsg = (id: string, text: string, ts: string): AgentMessage => ({
@@ -645,7 +740,7 @@ describe("handleExistingSessionUpdate — in-place replacement preserves order",
 //
 // The agent overview reads `session.isStreaming`/`session.isProcessing` and
 // `lastAssistantMsg.isStreaming`/`streamingComplete` to decide if an agent
-// is "responding". When ChatService misses the per-stream `complete` event
+// is "responding". When stream sagas miss the per-stream `complete` event
 // (e.g. delegated agent never had a chat handler, or IPC was congested),
 // these flags get stuck. `agent:idle` is the backend's authoritative signal,
 // and the saga must clear all stale flags so the overview matches reality.
@@ -695,10 +790,9 @@ describe("handleAgentIdle", () => {
       { agentId: "agent-1", workspaceId: "ws-A" },
     ).toPromise();
 
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
     expect(updates).toHaveLength(1);
     expect(updates[0].payload).toEqual([
-      "ws-A",
       "agent-1",
       "msg-asst-1",
       { isStreaming: false, streamingComplete: true },
@@ -721,9 +815,9 @@ describe("handleAgentIdle", () => {
       { agentId: "agent-1" },
     ).toPromise();
 
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
     expect(updates).toHaveLength(1);
-    expect(updates[0].payload[3]).toEqual({ isStreaming: false, streamingComplete: true });
+    expect(updates[0].payload[2]).toEqual({ isStreaming: false, streamingComplete: true });
   });
 
   it("does not dispatch updates for messages that are already finalized", async () => {
@@ -742,11 +836,11 @@ describe("handleAgentIdle", () => {
       { agentId: "agent-1" },
     ).toPromise();
 
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
     expect(updates).toHaveLength(0);
   });
 
-  it("prefers session.workspaceId over the event payload's workspaceId", async () => {
+  it("uses the canonical message update when the event workspaceId is stale", async () => {
     const session = makeSession({
       workspaceId: "ws-A" as any,
       messages: [
@@ -762,11 +856,15 @@ describe("handleAgentIdle", () => {
       { agentId: "agent-1", workspaceId: "ws-WRONG" },
     ).toPromise();
 
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
-    expect(updates[0].payload[0]).toBe("ws-A");
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
+    expect(updates[0].payload).toEqual([
+      "agent-1",
+      "msg-asst-1",
+      { isStreaming: false, streamingComplete: true },
+    ]);
   });
 
-  it("falls back to the event's workspaceId when the session has none", async () => {
+  it("uses the canonical message update when falling back to the event workspaceId", async () => {
     const session = makeSession({
       workspaceId: "" as any,
       messages: [
@@ -782,8 +880,12 @@ describe("handleAgentIdle", () => {
       { agentId: "agent-1", workspaceId: "ws-fallback" },
     ).toPromise();
 
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
-    expect(updates[0].payload[0]).toBe("ws-fallback");
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
+    expect(updates[0].payload).toEqual([
+      "agent-1",
+      "msg-asst-1",
+      { isStreaming: false, streamingComplete: true },
+    ]);
   });
 
   it("skips when session is not found", async () => {
@@ -827,7 +929,7 @@ describe("handleAgentIdle", () => {
   // ---------------------------------------------------------------------
   // Guard: only act if there is stale state to clean up. This keeps the
   // handler as a strict fallback so it cannot interfere with the healthy
-  // path (where ChatService has already cleared the flags) or with a
+  // path (where stream sagas have already cleared the flags) or with a
   // queued message's freshly-starting stream on the same agent.
   // ---------------------------------------------------------------------
   it("dispatches nothing when session flags are already cleared and no in-flight messages", async () => {
@@ -868,7 +970,7 @@ describe("handleAgentIdle", () => {
     ).toPromise();
 
     const completed = dispatched.filter((a) => a.type === streamCompleted.type);
-    const updates = dispatched.filter((a) => a.type === updateAgentMessage.type);
+    const updates = dispatched.filter((a) => a.type === updateMessage.type);
     expect(completed).toHaveLength(0);
     expect(updates).toHaveLength(1);
   });
@@ -890,5 +992,377 @@ describe("handleAgentIdle", () => {
 
     const completed = dispatched.filter((a) => a.type === streamCompleted.type);
     expect(completed).toHaveLength(1);
+  });
+});
+
+describe("agentIpcSaga lifecycle registrations", () => {
+  it("registers migrated lifecycle action handlers and watcher flows", () => {
+    const saga = agentIpcSaga();
+
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(saveAgentSessionRequested, handleSaveAgentSessionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(renameAgentSessionRequested, handleRenameAgentSessionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(stopAgentSessionRequested, handleStopAgentSessionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(deleteAgentSessionRequested, handleDeleteAgentSessionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(deleteAgentWithUndoRequested, handleDeleteAgentWithUndoRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(undoAgentDeletionRequested, handleUndoAgentDeletionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(commitPendingAgentDeletionRequested, handleCommitPendingAgentDeletionRequested),
+    );
+    expect(saga.next().value).toEqual(
+      sagaEffects.takeEvery(flushPendingAgentDeletionsRequested, handleFlushPendingAgentDeletionsRequested),
+    );
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentIdleSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchStreamStartingSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchPrepareHandlerSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentCreatedIpcSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchQueueProcessingSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchQueueCancelledSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchBeforeUnloadSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchPagehideSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchBackendStreamReconnectSaga));
+    expect(saga.next().done).toBe(true);
+  });
+
+  it("watches backend stream reconnect request actions", () => {
+    const saga = watchBackendStreamReconnectSaga();
+
+    const reconnectEffect: any = saga.next().value;
+    expect(reconnectEffect.payload.args[0]).toBe(triggerBackendStreamReconnect);
+    expect(typeof reconnectEffect.payload.args[1]).toBe("function");
+    expect(saga.next().done).toBe(true);
+  });
+});
+
+describe("migrated agent IPC lifecycle handlers", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    invokeMock.mockResolvedValue({ success: true });
+    deleteAgentMock.mockResolvedValue(undefined);
+    saveSessionMock.mockResolvedValue(undefined);
+    ensureStreamHandlerMock.mockResolvedValue({ created: false });
+    selectState.index = 0;
+    selectState.results = [];
+    streamingSessionsState.results = [];
+    diskCountState.value = 0;
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("saves the selected agent session and resolves the request", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any });
+    selectState.results = [session];
+    const action = saveAgentSessionRequested("ws-A", "agent-1", true, { allowTruncation: true });
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleSaveAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(saveSessionMock).toHaveBeenCalledWith(session, "ws-A", {
+      immediate: true,
+      allowTruncation: true,
+    });
+    expect(dispatched.find((a) => a.type === saveAgentSessionRequested.success.type)?.payload).toEqual({
+      request: ["ws-A", "agent-1", true, { allowTruncation: true }],
+      response: undefined,
+    });
+  });
+
+  it("renames an agent session with a trimmed name", async () => {
+    const action = renameAgentSessionRequested("ws-A", "agent-1", "  New Name  ");
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleRenameAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(invokeMock).toHaveBeenCalledWith(AGENT_CHANNELS.RENAME, {
+      agentId: "agent-1",
+      workspaceId: "ws-A",
+      name: "New Name",
+    });
+    expect(dispatched.find((a) => a.type === renameAgentSessionRequested.success.type)).toBeDefined();
+  });
+
+  it("stops an agent session through runtime cleanup and backend stop", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, isStreaming: true });
+    selectState.results = [session];
+    const action = stopAgentSessionRequested("ws-A", "agent-1");
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleStopAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(clearKeysForAgentMock).toHaveBeenCalledWith("agent-1");
+    expect(dispatched.find((a) => a.type === setAgentStreaming.type)?.payload).toEqual([
+      "agent-1",
+      false,
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith(AGENT_BACKEND_CHANNELS.STOP, {
+      agentId: "agent-1",
+      sessionId: "agent-1",
+    });
+    expect(trackMock).toHaveBeenCalledWith("Stopped Agent", expect.objectContaining({
+      agent_id: "agent-1",
+      workspace_id: "ws-A",
+    }));
+    expect(dispatched.find((a) => a.type === stopAgentSessionRequested.success.type)).toBeDefined();
+  });
+
+  it("permanently deletes an agent session and clears local state", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, isStreaming: true });
+    selectState.results = [session, session];
+    const action = deleteAgentSessionRequested("ws-A", "agent-1");
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleDeleteAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(deleteAgentMock).toHaveBeenCalledWith("agent-1", expect.objectContaining({ id: "ws-A" }));
+    expect(dispatched.find((a) => a.type === removeAgent.type)?.payload).toEqual(["ws-A", "agent-1"]);
+    expect(dispatched.find((a) => a.type === clearAgentUnread.type)?.payload).toEqual(["agent-1"]);
+    expect(eventCollectorTrackMock).toHaveBeenCalledWith("SESSION_DELETED", {
+      agentId: "agent-1",
+      workspaceId: "ws-A",
+    });
+    expect(dispatched.find((a) => a.type === deleteAgentSessionRequested.success.type)).toBeDefined();
+  });
+
+  it("soft-deletes with undo and restores the pending session", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, name: "Undo Me" });
+    selectState.results = [session, session];
+    const deleteAction = deleteAgentWithUndoRequested("ws-A", "agent-1", "Undo Me");
+    const deleteDispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => deleteDispatched.push(a), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAction,
+    ).toPromise();
+
+    expect(deleteDispatched.find((a) => a.type === removeAgent.type)?.payload).toEqual(["ws-A", "agent-1"]);
+    expect(toastWarningMock).toHaveBeenCalledWith("Deleted \"Undo Me\"", expect.any(Object));
+    expect(deleteDispatched.find((a) => a.type === deleteAgentWithUndoRequested.success.type)?.payload.response).toBe(session);
+
+    const undoAction = undoAgentDeletionRequested("ws-A", "agent-1");
+    const undoDispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => undoDispatched.push(a), getState: () => ({}) },
+      handleUndoAgentDeletionRequested,
+      undoAction,
+    ).toPromise();
+
+    expect(undoDispatched.find((a) => a.type === upsertSession.type)?.payload).toEqual([
+      { ...session, workspaceId: "ws-A" },
+    ]);
+    expect(toastDismissMock).toHaveBeenCalledWith("toast-1");
+    expect(undoDispatched.find((a) => a.type === undoAgentDeletionRequested.success.type)?.payload.response).toBe(true);
+  });
+
+  it("flushes pending agent deletions", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any });
+    selectState.results = [session, session];
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAgentWithUndoRequested("ws-A", "agent-1", "Flush Me"),
+    ).toPromise();
+
+    deleteAgentMock.mockClear();
+    selectState.index = 0;
+    selectState.results = [undefined];
+    const action = flushPendingAgentDeletionsRequested("ws-A");
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleFlushPendingAgentDeletionsRequested,
+      action,
+    ).toPromise();
+
+    expect(deleteAgentMock).toHaveBeenCalledWith("agent-1", expect.objectContaining({ id: "ws-A" }));
+    expect(dispatched.find((a) => a.type === flushPendingAgentDeletionsRequested.success.type)).toBeDefined();
+  });
+
+  it("beforeunload saves streaming sessions and flushes pending deletions", async () => {
+    const pending = makeSession({ id: "agent-pending" as any, workspaceId: "ws-A" as any });
+    selectState.results = [pending, pending];
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAgentWithUndoRequested("ws-A", "agent-pending", "Pending"),
+    ).toPromise();
+
+    const streaming = makeSession({
+      id: "agent-streaming" as any,
+      workspaceId: "ws-stream" as any,
+      isStreaming: true,
+      messages: [{ id: "msg-streaming", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any],
+    });
+    streamingSessionsState.results = [streaming];
+    saveSessionMock.mockClear();
+    deleteAgentMock.mockClear();
+    const listeners = captureWindowListeners();
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, watchBeforeUnloadSaga);
+
+    listeners.beforeunload();
+    await Promise.resolve();
+
+    expect(saveSessionMock).toHaveBeenCalledWith(streaming, "ws-stream", { immediate: true });
+    expect(deleteAgentMock).toHaveBeenCalledWith("agent-pending", expect.objectContaining({ id: "ws-A" }));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("beforeunload skips saving a streaming session that has fewer messages than restored state", async () => {
+    const streaming = makeSession({
+      id: "agent-streaming" as any,
+      workspaceId: "ws-stream" as any,
+      isStreaming: true,
+      messages: [{ id: "msg-streaming", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any],
+    });
+    streamingSessionsState.results = [streaming];
+    diskCountState.value = 2;
+    const listeners = captureWindowListeners();
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, watchBeforeUnloadSaga);
+
+    listeners.beforeunload();
+    await Promise.resolve();
+
+    expect(saveSessionMock).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("pagehide without bfcache clears pending deletion runtime state", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any });
+    selectState.results = [session, session];
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAgentWithUndoRequested("ws-A", "agent-1", "Pagehide Me"),
+    ).toPromise();
+
+    const listeners = captureWindowListeners();
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, watchPagehideSaga);
+    listeners.pagehide({ persisted: false });
+    await Promise.resolve();
+    task.cancel();
+    await task.toPromise();
+
+    const undoAction = undoAgentDeletionRequested("ws-A", "agent-1");
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleUndoAgentDeletionRequested,
+      undoAction,
+    ).toPromise();
+
+    expect(dispatched.find((a) => a.type === undoAgentDeletionRequested.success.type)?.payload.response).toBe(false);
+  });
+
+  it("debounces backend stream reconnect requests and dispatches active stream results", async () => {
+    const activeStreams = [
+      { agentId: "agent-active-1", workspaceId: "ws-A", assistantAppMessageId: "app-1" },
+      { agentId: "agent-active-2", workspaceId: "ws-B" },
+    ];
+    invokeMock.mockResolvedValue({ success: true, data: activeStreams });
+    const channel = stdChannel();
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { channel, dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      watchBackendStreamReconnectSaga,
+    );
+
+    channel.put(triggerBackendStreamReconnect());
+    await vi.advanceTimersByTimeAsync(501);
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock.mock.calls[0]?.[0]).toBe("agent:get-active-streams");
+    expect(dispatched).toContainEqual(backendStreamsReconnectResultReceived(activeStreams));
+    expect(dispatched).toContainEqual(triggerStreamingSafetyCheck(["agent-active-1", "agent-active-2"]));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("dispatches an empty reconnect result without a safety check when backend has no active streams", async () => {
+    invokeMock.mockResolvedValue({ success: true, data: [] });
+    const channel = stdChannel();
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { channel, dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      watchBackendStreamReconnectSaga,
+    );
+
+    channel.put(triggerBackendStreamReconnect());
+    await vi.advanceTimersByTimeAsync(501);
+
+    expect(invokeMock.mock.calls[0]?.[0]).toBe("agent:get-active-streams");
+    expect(dispatched).toContainEqual(backendStreamsReconnectResultReceived([]));
+    expect(dispatched.some((action) => action.type === triggerStreamingSafetyCheck.type)).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("treats unsuccessful backend reconnect responses as empty results", async () => {
+    invokeMock.mockResolvedValue({ success: false, data: [{ agentId: "ignored" }] });
+    const channel = stdChannel();
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { channel, dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      watchBackendStreamReconnectSaga,
+    );
+
+    channel.put(triggerBackendStreamReconnect());
+    await vi.advanceTimersByTimeAsync(501);
+
+    expect(invokeMock.mock.calls[0]?.[0]).toBe("agent:get-active-streams");
+    expect(dispatched).toContainEqual(backendStreamsReconnectResultReceived([]));
+    expect(dispatched.some((action) => action.type === triggerStreamingSafetyCheck.type)).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("handles backend reconnect IPC errors without throwing", async () => {
+    invokeMock.mockRejectedValue(new Error("backend unavailable"));
+    const channel = stdChannel();
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { channel, dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      watchBackendStreamReconnectSaga,
+    );
+
+    channel.put(triggerBackendStreamReconnect());
+    await vi.advanceTimersByTimeAsync(501);
+
+    expect(invokeMock.mock.calls[0]?.[0]).toBe("agent:get-active-streams");
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
   });
 });

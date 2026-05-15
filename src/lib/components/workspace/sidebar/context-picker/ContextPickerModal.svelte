@@ -9,7 +9,10 @@
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import LinearPicker from './LinearPicker.svelte';
   import SentryPicker from './SentryPicker.svelte';

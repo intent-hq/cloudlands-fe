@@ -18,7 +18,12 @@
  * by simulating the streamingCallbacks map and the two recording functions.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 
 /**
  * Minimal reproduction of the streaming callbacks structure used by ACPProvider.

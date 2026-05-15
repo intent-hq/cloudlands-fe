@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-    createReactiveRelativeTime,
-    createReactiveCompactTime,
-  } from '$lib/utils/reactive-time.svelte';
+  createReactiveRelativeTime,
+  createReactiveCompactTime,
+} from '$lib/utils/reactive-time.svelte';
   import { onDestroy } from 'svelte';
 
   interface Props {

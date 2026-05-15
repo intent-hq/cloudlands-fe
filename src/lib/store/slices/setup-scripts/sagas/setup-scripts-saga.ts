@@ -1,4 +1,10 @@
-import { call, put, fork, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  fork,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   getLocalStorageItem,
   getLocalStorageJSON,
@@ -17,7 +23,10 @@ import {
   dismissSetupScriptBannerGlobally,
   SETUP_SCRIPT_BANNER_DISMISSED_KEY,
 } from "../setup-scripts-slice";
-import { selectScripts, selectSetupScriptBannerDismissalRecord } from "../setup-scripts-selectors";
+import {
+  selectScripts,
+  selectSetupScriptBannerDismissalRecord,
+} from "../setup-scripts-selectors";
 import type { SetupScript } from "../setup-scripts-types";
 
 const STORAGE_KEY = "setup-scripts";

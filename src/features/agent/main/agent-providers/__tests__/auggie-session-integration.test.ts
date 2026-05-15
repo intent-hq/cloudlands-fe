@@ -9,8 +9,18 @@
  * Run with: npx vitest run src/features/agent/main/agent-providers/__tests__/auggie-session-integration.test.ts
  */
 
-import { describe, it, expect, afterEach, beforeAll } from 'vitest';
-import { execFile, spawn, type ChildProcess } from 'child_process';
+import {
+  describe,
+  it,
+  expect,
+  afterEach,
+  beforeAll,
+} from 'vitest';
+import {
+  execFile,
+  spawn,
+  type ChildProcess,
+} from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

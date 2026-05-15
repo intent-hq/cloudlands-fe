@@ -1,14 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { AgentStatus } from '$shared/types';
 
 const {
   getStateMock,
-  selectAgentByIdMock,
+  selectAgentSessionMock,
   selectAgentIsRespondingMock,
   selectAgentIsWaitingMock,
 } = vi.hoisted(() => ({
   getStateMock: vi.fn(() => ({ marker: 'state' })),
-  selectAgentByIdMock: vi.fn(),
+  selectAgentSessionMock: vi.fn(),
   selectAgentIsRespondingMock: vi.fn(),
   selectAgentIsWaitingMock: vi.fn(),
 }));
@@ -18,12 +24,15 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 }));
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAgentById: {
-    select: selectAgentByIdMock,
+  selectAgentSession: {
+    select: selectAgentSessionMock,
   },
 }));
 
 vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: {
+    select: selectAgentSessionMock,
+  },
   selectAgentIsResponding: {
     select: selectAgentIsRespondingMock,
   },
@@ -32,18 +41,21 @@ vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 
-import { getAvatarStateFromStore, isAgentStreamingFromStore } from './avatar-state';
+import {
+  getAvatarStateFromStore,
+  isAgentStreamingFromStore,
+} from './avatar-state';
 
 describe('avatar-state store-backed selectors', () => {
   beforeEach(() => {
     getStateMock.mockClear();
-    selectAgentByIdMock.mockReset();
+    selectAgentSessionMock.mockReset();
     selectAgentIsRespondingMock.mockReset();
     selectAgentIsWaitingMock.mockReset();
   });
 
   it('uses selectAgentIsResponding for running state', () => {
-    selectAgentByIdMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Active });
+    selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Active });
     selectAgentIsRespondingMock.mockReturnValue(true);
     selectAgentIsWaitingMock.mockReturnValue(false);
 
@@ -52,7 +64,7 @@ describe('avatar-state store-backed selectors', () => {
   });
 
   it('lets selectAgentIsWaiting take precedence over responding for avatar state', () => {
-    selectAgentByIdMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Processing });
+    selectAgentSessionMock.mockReturnValue({ id: 'agent-1', status: AgentStatus.Processing });
     selectAgentIsRespondingMock.mockReturnValue(true);
     selectAgentIsWaitingMock.mockReturnValue(true);
 

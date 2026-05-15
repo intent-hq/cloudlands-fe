@@ -4,20 +4,23 @@
   import Label from '$lib/components/ui/label/label.svelte';
   import Fa from 'svelte-fa';
   import {
-    faXmark,
-    faServer,
-    faCheck,
-    faTimes,
-    faSpinner,
-    faExclamationTriangle,
-    faKey,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
+  faXmark,
+  faServer,
+  faCheck,
+  faTimes,
+  faSpinner,
+  faExclamationTriangle,
+  faKey,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  fade,
+  scale,
+} from 'svelte/transition';
   import { scaleConfig } from '$lib/utils/animations';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
   import { invoke } from '$lib/electron-bridge';
-  
+
 interface Props {
     isOpen: boolean;
     onclose: () => void;

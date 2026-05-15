@@ -4,7 +4,10 @@
   import EnhancedErrorBoundary from '$lib/components/error/EnhancedErrorBoundary.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faTriangleExclamation, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faTriangleExclamation,
+  faCheckCircle,
+} from '@fortawesome/free-solid-svg-icons';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const logger = createLogger('TestErrorBoundary');

@@ -7,7 +7,10 @@
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import type { Note } from "$shared/types";
 import { createSelector } from "../../utils/create-selector";
-import { getItem, getItems } from "../../utils/collection-utils";
+import {
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import { emptyWorkspaceNotesState } from "./workspace-notes-slice";
 import type { NoteVersionsState, ReadyTasksState, WorkspaceNotesWorkspaceState } from "./workspace-notes-types";
 

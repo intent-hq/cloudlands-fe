@@ -14,9 +14,19 @@
  * reached sagas regardless of reducer behavior.
  */
 
-import { put, takeEvery } from "typed-redux-saga";
-import { emitWorkspaceEvent, cleanupWorkspace, workspaceEventAccepted } from "../workspace-events-slice";
-import { isDuplicateEvent, clearWorkspaceCache } from "../dedup-cache";
+import {
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  emitWorkspaceEvent,
+  cleanupWorkspace,
+  workspaceEventAccepted,
+} from "../workspace-events-slice";
+import {
+  isDuplicateEvent,
+  clearWorkspaceCache,
+} from "../dedup-cache";
 import { Logger } from "../../../../../shared/logger";
 
 const logger = new Logger("DedupGate");

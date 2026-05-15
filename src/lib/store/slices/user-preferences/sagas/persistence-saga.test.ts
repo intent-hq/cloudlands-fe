@@ -1,4 +1,8 @@
-import { describe, it, vi } from 'vitest';
+import {
+  describe,
+  it,
+  vi,
+} from 'vitest';
 import { testSaga } from 'redux-saga-test-plan';
 
 vi.mock(

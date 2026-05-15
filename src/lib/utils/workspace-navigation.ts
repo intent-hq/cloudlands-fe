@@ -6,7 +6,10 @@
  *
  * Usage:
  * ```typescript
- * import { navigateToAgent, navigateToNote } from '$lib/utils/workspace-navigation';
+ * import {
+  navigateToAgent,
+  navigateToNote,
+} from '$lib/utils/workspace-navigation';
  *
  * // Navigate to an agent's chat drawer
  * await navigateToAgent('agent-123');
@@ -21,7 +24,10 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { track } from '$lib/services/analytics';
-import { dispatch, getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import {
+  dispatch,
+  getReduxStore,
+} from '$lib/store/redux-dispatch-bridge';
 import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$lib/store/slices/tab-state/tab-state-selectors';

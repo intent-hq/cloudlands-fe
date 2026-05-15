@@ -6,7 +6,11 @@
  * in the UI when displaying tool calls.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { classifyTool } from '../tool-classifier';
 
 describe('tool-classifier', () => {

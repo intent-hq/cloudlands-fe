@@ -10,7 +10,12 @@
  * (normalize, marked.parse, anchor conversion, mention injection,
  * sanitization) still run through the large-content path.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import {
   processMarkdownToHTML,
   processHTMLToMarkdown,

@@ -1,5 +1,9 @@
 import { render } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import AgentStatsTooltip from '../AgentStatsTooltip.svelte';
 import type { AgentSessionStats } from '$lib/store/slices/session-stats/session-stats-types';

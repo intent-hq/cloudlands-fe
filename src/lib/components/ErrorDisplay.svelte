@@ -1,19 +1,19 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-    faTimesCircle,
-    faExclamationTriangle,
-    faInfo,
-    faChevronDown,
-    faChevronRight,
-    faLightbulb,
-    faExternalLinkAlt,
-  } from '@fortawesome/free-solid-svg-icons';
+  faTimesCircle,
+  faExclamationTriangle,
+  faInfo,
+  faChevronDown,
+  faChevronRight,
+  faLightbulb,
+  faExternalLinkAlt,
+} from '@fortawesome/free-solid-svg-icons';
   import {
-    isSvelteErrorUrl,
-    resolveSvelteError,
-    type SvelteErrorInfo,
-  } from '$lib/utils/svelte-error-resolver';
+  isSvelteErrorUrl,
+  resolveSvelteError,
+  type SvelteErrorInfo,
+} from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 

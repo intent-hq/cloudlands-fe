@@ -2,7 +2,10 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { Button } from '$lib/components/ui/button';
-  import { faEllipsisV, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faEllipsisV,
+  faTableColumns,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -10,11 +13,17 @@
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type Workspace } from '$shared/types';
+  import {
+  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
+  type Workspace,
+} from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
+  import {
+  hasRunningAgents,
+  getRunningAgentNames,
+} from '$lib/utils/delete-warning-utils';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';

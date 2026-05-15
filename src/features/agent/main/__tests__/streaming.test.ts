@@ -4,7 +4,14 @@
  * Tests for agent message streaming and real-time updates.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { BrowserWindow } from 'electron';
 import { registerAgentHandlers } from '../unified-agent-handlers';
 import { getAgentBackendAdapter } from '../agent-backend-adapter';

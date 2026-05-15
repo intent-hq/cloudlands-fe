@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { ChangeStage, type TrackedChange, type CommitInfo } from '$features/file-tracking/types';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  ChangeStage,
+  type TrackedChange,
+  type CommitInfo,
+} from '$features/file-tracking/types';
 import type { AgentChangeGroup } from '$lib/components/file-tracking/accept-changes/types';
 import type { PullRequestInfo } from '$shared/types';
 import {

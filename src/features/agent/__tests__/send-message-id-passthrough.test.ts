@@ -2,15 +2,22 @@
  * Renderer-side ID pass-through tests
  *
  * Verifies the ID generation and pass-through patterns used by sendMessage
- * and registerStreamHandlerForSession in agent-stream-lifecycle.ts.
+ * and restored-stream handler setup in agent-stream-lifecycle.ts.
  *
  * Instead of mocking the entire sendMessage call chain, we test the specific
  * ID-generation pattern and the reconnect-path placeholder ID format directly.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
-import { createMessageId, isValidMessageId } from '$shared/types/branded-ids';
+import {
+  createMessageId,
+  isValidMessageId,
+} from '$shared/types/branded-ids';
 import { pickPlaceholderId } from '../utils/pick-placeholder-id';
 
 describe('Renderer-side assistant message ID generation', () => {

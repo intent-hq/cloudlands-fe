@@ -1,5 +1,9 @@
 import type { FileGitStatus } from "$shared/types";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   fileExplorerReducer,
   initialState,

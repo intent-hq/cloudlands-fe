@@ -1,5 +1,8 @@
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put } from "typed-redux-saga";
+import {
+  call,
+  put,
+} from "typed-redux-saga";
 import {
   loadScrollPositions,
   loadWorkspaceTabsState,

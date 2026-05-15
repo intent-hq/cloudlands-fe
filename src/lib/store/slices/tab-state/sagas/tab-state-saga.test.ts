@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
-import { getLocalStorageJSON, setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from "$lib/store/utils/safe-local-storage-saga";
 import {
   loadScrollPositions,
   loadWorkspaceTabsState,
@@ -25,7 +32,10 @@ import {
   toggleWorkspaceTabPin,
   unmarkWorkspaceTabOptimistic,
 } from "../tab-state-slice";
-import { selectAllScrollPositions, selectPersistedWorkspaceTabsState } from "../tab-state-selectors";
+import {
+  selectAllScrollPositions,
+  selectPersistedWorkspaceTabsState,
+} from "../tab-state-selectors";
 import { initSaga } from "./init-saga";
 import {
   persistenceSaga,

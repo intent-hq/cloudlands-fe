@@ -3,7 +3,7 @@ import type { GenericAction, ReduxStore } from "./types";
 /**
  * Bridge for dispatching Redux actions from non-Svelte code.
  * This is initialized when the store is created and provides
- * a way for services (agent.service.ts, stream-manager.ts, etc.)
+ * a way for services (agent stream lifecycle, stream-manager.ts, etc.)
  * to dispatch actions without needing Svelte context.
  */
 

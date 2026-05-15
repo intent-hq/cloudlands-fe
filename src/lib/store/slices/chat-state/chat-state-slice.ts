@@ -1,5 +1,6 @@
 import { createAction } from '../../utils/create-action';
 import { createReducer } from '../../utils/create-reducer';
+import type { StoreActionCreator } from '../../types';
 import type {
   ChatAgentState,
   ChatStateSlice,
@@ -9,8 +10,10 @@ import type {
   SendMessagePayload,
   InitialMessagePayload,
   InitializeChatOptions,
+  StreamStatusContext,
 } from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
+import type { AgentStreamUpdatePayload } from '../workspace-agents/workspace-agents-slice';
 
 // ============================================================================
 // Initial State
@@ -19,7 +22,6 @@ import { sanitizeStatusEvent } from './chat-state-serialization';
 export const emptyChatAgentState: ChatAgentState = {
   agentId: '',
   isInterrupting: false,
-  streamingContent: '',
   error: null,
   lastChunkTime: null,
   receivedFirstChunk: false,
@@ -69,23 +71,113 @@ function updateAgent(
   return setAgent(state, agentId, { ...current, ...partial });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
+  if (!isRecord(value) || !isRecord(value.metadata)) return null;
+  const { metadata } = value;
+  if (metadata.modelUnavailable !== true || typeof metadata.nextAvailableModel !== 'string') {
+    return null;
+  }
+  return {
+    failedModel: typeof metadata.failedModel === 'string' ? metadata.failedModel : '',
+    nextAvailableModel: metadata.nextAvailableModel,
+  };
+}
+
+function reduceChunkReceived(
+  state: ChatStateSlice,
+  agentId: string,
+  isTextChunk: boolean,
+  timestamp: number,
+): ChatStateSlice {
+  if (!isTextChunk) {
+    return updateAgent(state, agentId, {
+      lastChunkTime: timestamp,
+      isStalled: false,
+      lastChunkReceivedAt: timestamp,
+    });
+  }
+
+  const agent = getAgent(state, agentId);
+  return updateAgent(state, agentId, {
+    lastChunkTime: timestamp,
+    isStalled: false,
+    receivedFirstChunk: true,
+    lastChunkReceivedAt: timestamp,
+    statusEvents: !agent.receivedFirstChunk
+      ? [
+          ...agent.statusEvents,
+          {
+            phase: 'streaming',
+            message: 'Streaming response…',
+            level: 'info' as const,
+            timestamp,
+          },
+        ]
+      : agent.statusEvents,
+  });
+}
+
+function reduceAgentStreamUpdate(
+  state: ChatStateSlice,
+  payload: AgentStreamUpdatePayload,
+): ChatStateSlice {
+  const timestamp = payload.timestamp ?? 0;
+  if (payload.eventType === 'started') {
+    return updateAgent(state, payload.agentId, {
+      error: null,
+      lastChunkTime: timestamp,
+      isStalled: false,
+    });
+  }
+  if (payload.eventType === 'chunk') {
+    return reduceChunkReceived(state, payload.agentId, true, timestamp);
+  }
+  if (payload.eventType === 'content-blocks') {
+    return reduceChunkReceived(state, payload.agentId, false, timestamp);
+  }
+  if (payload.eventType === 'complete' || payload.eventType === 'timeout') {
+    return updateAgent(state, payload.agentId, {
+      streamingStartTime: null,
+      lastChunkTime: null,
+      receivedFirstChunk: false,
+      isStalled: false,
+      statusEvents: [],
+      lastAttemptedMessage: null,
+      modelUnavailable: getModelUnavailableInfo(payload.completeMessage),
+    });
+  }
+  if (payload.eventType === 'error') {
+    return updateAgent(state, payload.agentId, {
+      streamingStartTime: null,
+      statusEvents: [],
+      error: payload.error || 'The response was interrupted. Please try again.',
+    });
+  }
+  return state;
+}
+
 // ============================================================================
 // Actions
 // ============================================================================
 
 /** Initialize chat session with loaded data (session/messages now live in agent-session slice) */
 export const chatInitialized = createAction<
-  [agentId: string, payload: {
-    isStreaming: boolean;
-    streamingContent: string;
-    lastAttemptedMessage: LastAttemptedMessage | null;
-  }]
+  [
+    agentId: string,
+    payload: {
+      isStreaming: boolean;
+      lastAttemptedMessage: LastAttemptedMessage | null;
+    },
+  ]
 >('chatState/initialized');
 
 /** Set error on chat init failure */
-export const chatInitFailed = createAction<[agentId: string, error: string]>(
-  'chatState/initFailed',
-);
+export const chatInitFailed =
+  createAction<[agentId: string, error: string]>('chatState/initFailed');
 
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
@@ -94,34 +186,27 @@ export const chatSendStarted = createAction(
 );
 
 /** Send failed (activation or network error) */
-export const chatSendFailed = createAction<[agentId: string, error: string]>(
-  'chatState/sendFailed',
-);
+export const chatSendFailed =
+  createAction<[agentId: string, error: string]>('chatState/sendFailed');
 
 /** Agent was interrupted — clear streaming without error */
-export const chatInterrupted = createAction<[agentId: string]>(
-  'chatState/interrupted',
-);
+export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
 
 /** Clear error and retry-related state before retry */
-export const chatRetryCleared = createAction<[agentId: string]>(
-  'chatState/retryCleared',
-);
+export const chatRetryCleared = createAction<[agentId: string]>('chatState/retryCleared');
 
 /** Clear error + modelUnavailable before model retry */
-export const chatModelRetryCleared = createAction<[agentId: string]>(
-  'chatState/modelRetryCleared',
-);
+export const chatModelRetryCleared = createAction<[agentId: string]>('chatState/modelRetryCleared');
 
 /** Clear error/retry for smart retry (messages now managed via agent-session slice) */
-export const chatSmartRetryPrepared = createAction<
-  [agentId: string]
->('chatState/smartRetryPrepared');
+export const chatSmartRetryPrepared = createAction<[agentId: string]>(
+  'chatState/smartRetryPrepared',
+);
 
 /** Set model unavailable info */
-export const chatModelUnavailableSet = createAction<
-  [agentId: string, info: ModelUnavailableInfo]
->('chatState/modelUnavailableSet');
+export const chatModelUnavailableSet = createAction<[agentId: string, info: ModelUnavailableInfo]>(
+  'chatState/modelUnavailableSet',
+);
 
 /** Clear model unavailable info */
 export const chatModelUnavailableCleared = createAction<[agentId: string]>(
@@ -129,14 +214,10 @@ export const chatModelUnavailableCleared = createAction<[agentId: string]>(
 );
 
 /** Stop completed — clear all streaming/interrupt flags */
-export const chatStopCompleted = createAction<[agentId: string]>(
-  'chatState/stopCompleted',
-);
+export const chatStopCompleted = createAction<[agentId: string]>('chatState/stopCompleted');
 
 /** Reset chat to initial empty state (destroy) */
-export const chatReset = createAction<[agentId: string]>(
-  'chatState/reset',
-);
+export const chatReset = createAction<[agentId: string]>('chatState/reset');
 
 /** Reconcile streaming state when panel remounts */
 export const chatStreamingReconciled = createAction(
@@ -144,95 +225,65 @@ export const chatStreamingReconciled = createAction(
   (agentId: string) => ({ agentId, timestamp: Date.now() }),
 );
 
-// --- Streaming event actions (dispatched by saga from DOM events) ---
-
-/** Stream started event */
-export const streamStarted = createAction(
-  'chatState/streamStarted',
-  (agentId: string, payload: { hasRestoredContent: boolean; existingContent: string }) => ({
-    agentId, payload, timestamp: Date.now(),
-  }),
-);
-
-/** Chunk received — update streaming content via RAF-batched saga (messages now in agent-session) */
-export const streamChunkFlushed = createAction<
-  [agentId: string, streamingContent: string]
->('chatState/streamChunkFlushed');
-
-/** Record chunk received for stall detection (non-text or text) */
-export const streamChunkReceived = createAction(
-  'chatState/streamChunkReceived',
-  (agentId: string, isTextChunk: boolean) => ({
-    agentId, isTextChunk, timestamp: Date.now(),
-  }),
-);
+// --- Streaming event actions ---
 
 /** Stream completed — finalize streaming flags (messages now in agent-session) */
 export const streamCompleted = createAction<
-  [agentId: string, payload: {
-    lastAttemptedMessage: LastAttemptedMessage | null;
-    modelUnavailable: ModelUnavailableInfo | null;
-  }]
+  [
+    agentId: string,
+    payload: {
+      lastAttemptedMessage: LastAttemptedMessage | null;
+      modelUnavailable: ModelUnavailableInfo | null;
+    },
+  ]
 >('chatState/streamCompleted');
-
-/** Stream error event (error messages now added via agent-session slice) */
-export const streamErrored = createAction<
-  [agentId: string, payload: {
-    error: string;
-  }]
->('chatState/streamErrored');
 
 /** Status event received during streaming */
 export const streamStatusReceived = createAction(
   'chatState/streamStatusReceived',
-  (agentId: string, statusEvent: unknown, resetFirstChunk: boolean): [string, StatusEvent, boolean] => [
+  (
+    agentId: string,
+    statusEvent: unknown,
+    resetFirstChunk: boolean,
+    context?: StreamStatusContext,
+  ): [string, StatusEvent, boolean, StreamStatusContext?] => [
     agentId,
     sanitizeStatusEvent(statusEvent, Date.now()),
     resetFirstChunk,
+    context,
   ],
 );
 
+/** Restore status events persisted by chat-state sagas during initialization */
+export const chatStatusEventsHydrated = createAction<
+  [agentId: string, statusEvents: StatusEvent[]]
+>('chatState/statusEventsHydrated');
+
 /** Stream timed out */
-export const streamTimedOut = createAction<[agentId: string]>(
-  'chatState/streamTimedOut',
-);
+export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
 
 /** Stall detected by stall detection saga */
-export const chatStallDetected = createAction<[agentId: string]>(
-  'chatState/stallDetected',
-);
+export const chatStallDetected = createAction<[agentId: string]>('chatState/stallDetected');
 
 /** State reconciliation: clear stuck processing state */
-export const chatStuckStateCleared = createAction<[agentId: string]>(
-  'chatState/stuckStateCleared',
-);
+export const chatStuckStateCleared = createAction<[agentId: string]>('chatState/stuckStateCleared');
 
 /** Remove agent chat state on cleanup */
-export const chatAgentRemoved = createAction<[agentId: string]>(
-  'chatState/agentRemoved',
-);
+export const chatAgentRemoved = createAction<[agentId: string]>('chatState/agentRemoved');
 
 /** Clear error */
-export const chatErrorCleared = createAction<[agentId: string]>(
-  'chatState/errorCleared',
-);
+export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
 
 /** Set isInterrupting flag (stop chat in progress) */
-export const chatStopInitiated = createAction<[agentId: string]>(
-  'chatState/stopInitiated',
-);
+export const chatStopInitiated = createAction<[agentId: string]>('chatState/stopInitiated');
 
 // --- Rebind tracking actions (managed by component $effect, read by sagas) ---
 
 /** Mark workspace rebind as started (async initializeChat in flight) */
-export const chatRebindStarted = createAction<[agentId: string]>(
-  'chatState/rebindStarted',
-);
+export const chatRebindStarted = createAction<[agentId: string]>('chatState/rebindStarted');
 
 /** Mark workspace rebind as completed and record the tracked workspace ID */
-export const chatRebindEnded = createAction<[agentId: string]>(
-  'chatState/rebindEnded',
-);
+export const chatRebindEnded = createAction<[agentId: string]>('chatState/rebindEnded');
 
 /** Update tracked workspace ID (e.g. after recordMount or recordRebind) */
 export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsId: string | null]>(
@@ -244,7 +295,10 @@ export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsI
 /** Trigger the initialize-chat saga. Dispatched from ChatPanel to start chat initialization. */
 export const initializeChatRequested = createAction(
   'chatState/initializeChatRequested',
-  (agentId: string, payload: { wsId: string; options?: InitializeChatOptions }) => ({ agentId, ...payload }),
+  (agentId: string, payload: { wsId: string; options?: InitializeChatOptions }) => ({
+    agentId,
+    ...payload,
+  }),
 );
 
 /** Trigger the initial-message saga after ChatPanel detects pending workspace config. */
@@ -261,13 +315,9 @@ export const sendMessage = createAction(
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
 
-// --- Stream lifecycle saga triggers (no reducer state change) ---
-
-/** Request stream cleanup for a session. Handled by chat-stream-saga. */
-export const cleanupStreamRequested = createAction<[sessionId: string, preserveContent: boolean]>(
-  'chatState/cleanupStreamRequested',
-);
-
+const agentStreamUpdateReceivedAction = {
+  type: 'workspaceAgents/agentStreamUpdateReceived',
+} as StoreActionCreator<[payload: AgentStreamUpdatePayload]>;
 
 // ============================================================================
 // Reducer
@@ -277,7 +327,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(chatInitialized, (state, { payload: [agentId, data] }) =>
     updateAgent(state, agentId, {
       agentId,
-      streamingContent: data.streamingContent,
       error: null,
       lastAttemptedMessage: data.lastAttemptedMessage,
     }),
@@ -287,9 +336,9 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
     updateAgent(state, agentId, {
-      streamingContent: '',
       error: null,
       streamingStartTime: timestamp,
+      lastMessageTime: timestamp,
       lastChunkTime: null,
       receivedFirstChunk: false,
       isStalled: false,
@@ -311,7 +360,11 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, { error: null, lastAttemptedMessage: null }),
   )
   .with(chatModelRetryCleared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { error: null, modelUnavailable: null, lastAttemptedMessage: null }),
+    updateAgent(state, agentId, {
+      error: null,
+      modelUnavailable: null,
+      lastAttemptedMessage: null,
+    }),
   )
   .with(chatSmartRetryPrepared, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
@@ -335,7 +388,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(chatStopCompleted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       isInterrupting: false,
-      streamingContent: '',
       streamingStartTime: null,
     }),
   )
@@ -352,40 +404,11 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }
     return state;
   })
-  .with(streamStarted, (state, { payload: { agentId, payload: data, timestamp } }) =>
-    updateAgent(state, agentId, {
-      streamingContent: data.hasRestoredContent ? data.existingContent : '',
-      error: null,
-      lastChunkTime: timestamp,
-      isStalled: false,
-    }),
+  .with(agentStreamUpdateReceivedAction, (state, { payload: [payload] }) =>
+    reduceAgentStreamUpdate(state, payload),
   )
-  .with(streamChunkFlushed, (state, { payload: [agentId, streamingContent] }) =>
-    updateAgent(state, agentId, { streamingContent }),
-  )
-  .with(streamChunkReceived, (state, { payload: { agentId, isTextChunk, timestamp } }) => {
-    if (!isTextChunk) {
-      return updateAgent(state, agentId, { lastChunkTime: timestamp, isStalled: false, lastChunkReceivedAt: timestamp });
-    }
-    const agent = getAgent(state, agentId);
-    return updateAgent(state, agentId, {
-      lastChunkTime: timestamp,
-      isStalled: false,
-      receivedFirstChunk: true,
-      lastChunkReceivedAt: timestamp,
-      statusEvents: !agent.receivedFirstChunk
-        ? [...agent.statusEvents, {
-            phase: 'streaming',
-            message: 'Streaming response…',
-            level: 'info' as const,
-            timestamp,
-          }]
-        : agent.statusEvents,
-    });
-  })
   .with(streamCompleted, (state, { payload: [agentId, data] }) =>
     updateAgent(state, agentId, {
-      streamingContent: '',
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
@@ -395,14 +418,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       modelUnavailable: data.modelUnavailable,
     }),
   )
-  .with(streamErrored, (state, { payload: [agentId, data] }) =>
-    updateAgent(state, agentId, {
-      streamingContent: '',
-      streamingStartTime: null,
-      statusEvents: [],
-      error: data.error,
-    }),
-  )
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
@@ -410,6 +425,12 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       receivedFirstChunk: resetFirstChunk ? false : agent.receivedFirstChunk,
     });
   })
+  .with(chatStatusEventsHydrated, (state, { payload: [agentId, statusEvents] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      statusEvents,
+    }),
+  )
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
@@ -436,7 +457,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
   )
   .with(chatAgentRemoved, (state, { payload: [agentId] }) => {
-     
     const { [agentId]: _, ...restAgents } = state.byAgentId;
     return { ...state, byAgentId: restAgents };
-  })
+  });

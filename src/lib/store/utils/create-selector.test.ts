@@ -1,17 +1,35 @@
 // We use expectSaga, which works as expect, but eslint does not like it
 
-import { describe, it, expect, expectTypeOf, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  expectTypeOf,
+  vi,
+} from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { get, type Readable } from "svelte/store";
-import { take, type SagaGenerator } from "typed-redux-saga";
+import {
+  get,
+  type Readable,
+} from "svelte/store";
+import {
+  take,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { createSelector } from "./create-selector";
 import { createChannelFromSelector } from "./selector-channel-effects";
 import { init } from "../init";
 import type { StoreState } from "../types";
-import { lockUpdates, unlockUpdates } from "../slices/store-utility/store-utility-slice";
+import {
+  lockUpdates,
+  unlockUpdates,
+} from "../slices/store-utility/store-utility-slice";
 import { saveScrollPosition } from "../slices/tab-state/tab-state-slice";
-import { getDispatch, getStoreContext } from "./svelte-context";
+import {
+  getDispatch,
+  getStoreContext,
+} from "./svelte-context";
 
 describe("createSelector", () => {
   describe("Basic selector functionality", () => {
@@ -27,7 +45,7 @@ describe("createSelector", () => {
 
     it("should compute and return values with single argument", () => {
       const { store } = init();
-       
+
       const selector = createSelector((state, _id: string) => {
         return state.storeUtility;
       });
@@ -506,22 +524,22 @@ describe("createSelector", () => {
     it("should handle primitive return values", () => {
       const { store } = init();
 
-       
+
       const stringSelector = createSelector((_state: StoreState) => "constant");
       expect(stringSelector.select(store.getState())).toBe("constant");
 
-       
+
       const numberSelector = createSelector((_state: StoreState) => 42);
       expect(numberSelector.select(store.getState())).toBe(42);
 
-       
+
       const booleanSelector = createSelector((_state: StoreState) => true);
       expect(booleanSelector.select(store.getState())).toBe(true);
     });
 
     it("should handle array return values", () => {
       const { store } = init();
-       
+
       const selector = createSelector((_state: StoreState) => {
         return Object.keys(store.getState().tabState.scrollPositions);
       });
@@ -561,7 +579,7 @@ describe("createSelector", () => {
 
     it("should handle empty state access (no properties accessed)", () => {
       const { store } = init();
-       
+
       const computeFn = vi.fn((_state: StoreState) => {
         // Don't access any state properties
         return "constant";

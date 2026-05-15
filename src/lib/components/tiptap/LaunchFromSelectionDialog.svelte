@@ -20,9 +20,9 @@
   let {
     x = 0,
     y = 0,
-     
+
     workspace: _workspace,
-     
+
     noteId: _noteId,
     initialMessage = '',
     onSubmit,

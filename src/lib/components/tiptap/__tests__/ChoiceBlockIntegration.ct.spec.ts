@@ -9,7 +9,10 @@
  * This validates the full V2 architecture.
  */
 
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import {
+  test,
+  expect,
+} from '@playwright/experimental-ct-svelte';
 import ChoiceBlockIntegrationHarness from './ChoiceBlockIntegrationHarness.svelte';
 
 test.describe('Phase 2.4: Choice Block Integration (TDD)', () => {

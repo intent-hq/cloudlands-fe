@@ -5,13 +5,12 @@
 import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
-import { UnifiedAgentFactory } from '$features/agent/services/agent-factory';
 import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
 
@@ -67,30 +66,21 @@ async function sendToAgent(error: AppError): Promise<void> {
 
 ${report.agentPrompt}`;
 
-  const agentFactory = UnifiedAgentFactory.getInstance();
-  const result = await agentFactory.createAgent(workspace, {
+  const state = getReduxStore().getState();
+  getReduxStore().dispatch(createAgentFromConfigRequested(workspace.id, {
     name: 'Debug Agent',
     workspaceId: WorkspaceId(workspace.id),
     agentType: createAgentTypeId('debug'),
     initialMessage: prompt,
-    model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
+    model: selectWorkspaceDefaultModel.select(state, workspace.id),
     source: 'error-toast',
     metadata: {
       source: 'error-toast',
       errorId: error.id,
     },
-  });
+  }, { openAgent: true }));
 
   errorHandler.dismiss(error.id);
-
-  if (result.agentId) {
-    getReduxStore().dispatch(
-      openAgentTabRequested(workspace.id, {
-        agentId: result.agentId,
-        openInAdjacentPanel: false,
-      }),
-    );
-  }
 }
 
 /**

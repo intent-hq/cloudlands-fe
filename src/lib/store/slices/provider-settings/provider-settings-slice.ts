@@ -1,6 +1,9 @@
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
-import { getDefaultProviderId, getProviderConfig } from "$shared/config/provider-config";
+import {
+  getDefaultProviderId,
+  getProviderConfig,
+} from "$shared/config/provider-config";
 
 export type ProviderSettingsState = {
   activeProviderId: string;

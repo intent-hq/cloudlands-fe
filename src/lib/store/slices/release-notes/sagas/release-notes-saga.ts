@@ -4,7 +4,13 @@
  * Handles localStorage persistence (last seen version) and fetch calls.
  */
 
-import { call, put, fork, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  fork,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { DEFAULTS } from "$shared/constants";
 import {
   getLocalStorageItem,

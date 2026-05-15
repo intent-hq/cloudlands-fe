@@ -1,5 +1,8 @@
 <script lang="ts" module>
-  import { tv, type VariantProps } from 'tailwind-variants';
+  import {
+  tv,
+  type VariantProps,
+} from 'tailwind-variants';
   export const sheetVariants = tv({
     base: 'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
     variants: {
@@ -26,7 +29,10 @@
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import SheetOverlay from './sheet-overlay.svelte';
-  import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+  import {
+  cn,
+  type WithoutChildrenOrChild,
+} from '$lib/utils.js';
 
   let {
     ref = $bindable(null),

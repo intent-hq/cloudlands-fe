@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
-import { getAvatarState, isAgentActivelyWorking } from '../avatar-state';
+import {
+  getAvatarState,
+  isAgentActivelyWorking,
+} from '../avatar-state';
 
 describe('avatar state helpers', () => {
   it('trusts explicit idle status over stale responding flags', () => {

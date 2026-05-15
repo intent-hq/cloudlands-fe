@@ -8,7 +8,10 @@
 import type { Editor } from '@tiptap/core';
 import type { CommentV2, CommentAnchor } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
-import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/tiptap/CommentAnchor';
+import {
+  findCommentAnchors,
+  getAllAnchoredCommentIds,
+} from '$lib/components/tiptap/CommentAnchor';
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
 import {
   loadComments as loadCommentsFromBackend,
@@ -17,7 +20,10 @@ import {
 } from './comment-loader';
 import { convertBackendCommentToV2 } from './comment-types-v2';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
-import { getReduxStore, dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+} from '$lib/store/redux-dispatch-bridge';
 import {
   addCommentAction,
   updateCommentAction,

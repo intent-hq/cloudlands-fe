@@ -6,7 +6,14 @@
  * without `screen` which our module requires.
  */
 
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterAll,
+} from 'vitest';
 
 // Save originals so we can restore after all tests
 const originalGetSystemVersion = (process as any).getSystemVersion;

@@ -12,32 +12,38 @@
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
-  import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
+  import {
+  AUGGIE_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from '$shared/ipc/channels';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
 
   import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
   import {
-    setActiveProvider,
-    setProviderEnabled,
-  } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider, retryLoadModels } from '$lib/store/slices/model/model-slice';
+  setActiveProvider,
+  setProviderEnabled,
+} from '$lib/store/slices/provider-settings/provider-settings-slice';
+  import {
+  reloadModelsForProvider,
+  retryLoadModels,
+} from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { identifyUser } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
-  import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+
   import {
-    selectProviderStatusMap,
-    selectProviderLoadingMap,
-    selectHasCheckedOnce,
-  } from '$lib/store/slices/agent-availability/agent-availability-selectors';
+  selectProviderStatusMap,
+  selectProviderLoadingMap,
+  selectHasCheckedOnce,
+} from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import {
-    checkSingleProviderSuccess,
-    checkSingleProviderFailure,
-    checkAllProvidersRequested,
-    ensureProvidersChecked as ensureProvidersCheckedAction,
-  } from '$lib/store/slices/agent-availability/agent-availability-slice';
+  checkSingleProviderSuccess,
+  checkSingleProviderFailure,
+  checkAllProvidersRequested,
+  ensureProvidersChecked as ensureProvidersCheckedAction,
+} from '$lib/store/slices/agent-availability/agent-availability-slice';
   import type { ProviderStatus } from '$lib/store/slices/agent-availability/agent-availability-types';
 
   import { fly } from 'svelte/transition';

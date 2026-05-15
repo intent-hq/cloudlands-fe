@@ -5,7 +5,10 @@
    * A minimal inline comment input for asking questions about code.
    */
   import Fa from 'svelte-fa';
-  import { faArrowRight, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faArrowRight,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     /** Line number for the comment */

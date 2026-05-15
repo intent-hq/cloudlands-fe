@@ -2,10 +2,10 @@
   import { createEventDispatcher } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-    faExclamationCircle,
-    faTriangleExclamation,
-    faCircleInfo,
-  } from '@fortawesome/free-solid-svg-icons';
+  faExclamationCircle,
+  faTriangleExclamation,
+  faCircleInfo,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { AppError } from '$lib/utils/error-handler.svelte';
 

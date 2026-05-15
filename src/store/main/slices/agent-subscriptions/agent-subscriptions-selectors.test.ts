@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import type { StoreState } from "$lib/store/types";
 import type { MainStoreState } from "../../types";

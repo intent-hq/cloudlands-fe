@@ -2,7 +2,11 @@
   import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
-  import { onMount, tick, type Snippet } from 'svelte';
+  import {
+  onMount,
+  tick,
+  type Snippet,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import type { ItemActionContext, Option } from './types';

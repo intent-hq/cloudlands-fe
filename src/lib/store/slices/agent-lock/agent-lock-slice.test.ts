@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { AgentLockState } from "./agent-lock-types";
 import type { StoreState } from "../../types";
 import {

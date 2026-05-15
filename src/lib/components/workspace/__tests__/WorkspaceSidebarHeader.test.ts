@@ -1,8 +1,19 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+  screen,
+} from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 

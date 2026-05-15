@@ -6,7 +6,14 @@
  * starting a new thread.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { AgentStatus } from '../../../shared/types/agent.types';
 import type { AgentSession } from '../../../shared/types/agent-session';
 

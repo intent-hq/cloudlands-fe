@@ -8,14 +8,17 @@
 
   import Fa from 'svelte-fa';
   import {
-    faPen,
-    faTrash,
-    faCheck,
-    faTimes,
-    faListOl,
-    faPaperPlane,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { fly, slide } from 'svelte/transition';
+  faPen,
+  faTrash,
+  faCheck,
+  faTimes,
+  faListOl,
+  faPaperPlane,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  fly,
+  slide,
+} from 'svelte/transition';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
 

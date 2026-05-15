@@ -3,7 +3,11 @@
  * Verifies that file staging operations respect workspace scope boundaries
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { validatePathsInScope } from '../main/git-router';
 
 describe('validatePathsInScope', () => {

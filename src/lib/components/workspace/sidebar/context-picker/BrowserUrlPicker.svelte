@@ -6,12 +6,19 @@
    */
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faGlobe, faPlus, faHistory } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faGlobe,
+  faPlus,
+  faHistory,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
-  import { addRecentUrl, initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
+  import {
+  addRecentUrl,
+  initBrowserWorkspace,
+} from '$lib/store/slices/browser/browser-slice';
 
   interface Props {
     workspaceId: string;

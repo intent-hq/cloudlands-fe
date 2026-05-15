@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { NoteDependency } from '../../../shared/types';
 import { NoteDependencySchema } from '../../../shared/schemas';
 import type { NoteId } from '../../../shared/types';

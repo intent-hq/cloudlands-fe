@@ -8,7 +8,10 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faCodeCommit, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCodeCommit,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openWorkspaceCommitChangeset } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 

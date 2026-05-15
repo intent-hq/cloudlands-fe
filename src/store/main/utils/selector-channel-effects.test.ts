@@ -1,5 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { runSaga, stdChannel, END, type Task, type EventChannel } from "redux-saga";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  runSaga,
+  stdChannel,
+  END,
+  type Task,
+  type EventChannel,
+} from "redux-saga";
 import { take } from "typed-redux-saga";
 import { createStore } from "redux";
 

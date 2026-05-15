@@ -7,11 +7,17 @@
  * No EventBus imports — persistence, broadcast, and dedup are handled by sagas.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import {
+  ipcMain,
+  BrowserWindow,
+} from 'electron';
 import { Logger } from '../../../shared/logger';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
 import type { WorkspaceEvent } from '../types';
-import { mainDispatch, getMainState } from '../../../store/main/redux-store-bridge';
+import {
+  mainDispatch,
+  getMainState,
+} from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import {
   selectRecentEvents,

@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
@@ -21,7 +26,10 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-import { getLocalStorageJSON, removeLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  getLocalStorageJSON,
+  removeLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
 import { debounceWithKeySaga } from "../../../utils/debounce-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../../workspace/workspace-slice";

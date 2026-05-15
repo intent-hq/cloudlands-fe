@@ -10,7 +10,10 @@
  * that move naturally with the document content.
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { createLogger } from '$lib/utils/client-logger';
 

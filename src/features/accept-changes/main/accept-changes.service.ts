@@ -27,10 +27,18 @@ import {
 import { Logger } from '../../../shared/logger';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
-import { PullRequestStatus, type WorkspaceId } from '../../../shared/types';
+import {
+  PullRequestStatus,
+  type WorkspaceId,
+} from '../../../shared/types';
 import { matchesBaseRef } from '../../../shared/services/baseref-matching';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { gitAuthRequired, gitCommitCreated, githubAuthRequired, gitStatusChanged } from '../../../store/main/slices/git-events/git-events-slice';
+import {
+  gitAuthRequired,
+  gitCommitCreated,
+  githubAuthRequired,
+  gitStatusChanged,
+} from '../../../store/main/slices/git-events/git-events-slice';
 import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { githubService } from '../../git-tracking/main/github.service';
 import { keychainIPCBridge } from '../../git/main/keychain.ipc';
@@ -474,7 +482,7 @@ export class AcceptChangesService {
    *
    * @returns 'origin' - Let git use the configured remote with local credentials
    */
-   
+
   private resolvePushRemote(_status: WorkspaceGitStatus, _workspaceId: WorkspaceId, _operation: string): string {
     // Always use 'origin' and let git handle authentication via local credentials
     // (SSH keys, credential manager, etc.). The user's local git config determines

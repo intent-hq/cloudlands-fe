@@ -3,12 +3,18 @@ import { Logger } from '$shared/logger';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
 import { gitService } from '$features/git/main/git.service';
 import { renameAgentOnDisk } from '$features/agent/main/agent-rename';
-import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type WorkspaceId } from '$shared/types';
+import {
+  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
+  type WorkspaceId,
+} from '$shared/types';
 
 import { createWorkspaceEvent } from '../../../events/types';
 import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
-import { AVAILABLE_TOPICS, REFERENCE_DOCS } from './reference-docs';
+import {
+  AVAILABLE_TOPICS,
+  REFERENCE_DOCS,
+} from './reference-docs';
 import type { ToolCall } from './protocol';
 
 const logger = new Logger('WsWorkspaceApi');

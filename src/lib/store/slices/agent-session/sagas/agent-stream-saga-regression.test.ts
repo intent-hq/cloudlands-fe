@@ -13,33 +13,21 @@
  * dispatched actions correctly clear both flags.
  */
 
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import {
   agentSessionReducer,
   initialState as sessionInitialState,
-  upsertSession,
-} from '../../agent-session/agent-session-slice';
-import {
-  chatSendStarted,
-  streamStarted,
-} from '../../chat-state/chat-state-slice';
-import {
   setAgentStreaming,
-} from '../workspace-agents-slice';
+  upsertSession,
+} from '../agent-session-slice';
+import { chatSendStarted } from '../../chat-state/chat-state-slice';
 import type { AgentSession } from '$shared/types';
-import { getItems } from '../../../utils/collection-utils';
 
 const AGENT = 'agent-safety-timeout';
-
-/**
- * The agent-session slice now stores `messages` as a Collection. When a test
- * pulls a stored session out of state and spreads it back into an
- * `upsertSession` payload (which expects `AgentSession` with array messages),
- * we need to materialize the Collection back to an array first.
- */
-function toDispatchable(stored: any): AgentSession {
-  return { ...stored, messages: getItems(stored.messages) } as unknown as AgentSession;
-}
 
 const dummySession: AgentSession = {
   id: AGENT,
@@ -58,7 +46,6 @@ function getSession(state: ReturnType<typeof agentSessionReducer>, agentId: stri
 function midStreamState() {
   let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
   s = agentSessionReducer(s, chatSendStarted(AGENT));
-  s = agentSessionReducer(s, streamStarted(AGENT, { hasRestoredContent: false, existingContent: '' }));
   return s;
 }
 
@@ -74,7 +61,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     let state = midStreamState();
 
     // This is what the OLD safety timeout did: only dispatch setAgentStreaming
-    state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
+    state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
 
     const session = getSession(state, AGENT);
     expect(session.isStreaming).toBe(false); // cleared ✓
@@ -85,11 +72,11 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     let state = midStreamState();
 
     // Step 1: dispatch setAgentStreaming(false) — clears isStreaming
-    state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
+    state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
 
     // Step 2: dispatch upsertSession with both flags cleared (the fix)
     const updatedSession = {
-      ...toDispatchable(getSession(state, AGENT)),
+      ...getSession(state, AGENT),
       isStreaming: false,
       isProcessing: false,
     };
@@ -105,10 +92,10 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
 
     // OLD behavior: safety timeout only dispatches setAgentStreaming(false)
     // and upsertSession with isStreaming: false but NOT isProcessing: false
-    state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
+    state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
 
     const oldBehaviorSession = {
-      ...toDispatchable(getSession(state, AGENT)),
+      ...getSession(state, AGENT),
       isStreaming: false,
       // BUG: isProcessing NOT explicitly set to false
     };
@@ -130,9 +117,9 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     expect(getSession(state, AGENT).isProcessing).toBe(false);
 
     // Safety timeout fires anyway (race condition)
-    state = agentSessionReducer(state, setAgentStreaming('ws-1', AGENT, false));
+    state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
     const updatedSession = {
-      ...toDispatchable(getSession(state, AGENT)),
+      ...getSession(state, AGENT),
       isStreaming: false,
       isProcessing: false,
     };

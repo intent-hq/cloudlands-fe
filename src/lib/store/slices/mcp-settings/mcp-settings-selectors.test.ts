@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import type { StoreState } from "../../types";
 import { initialState } from "./mcp-settings-slice";
 import type { McpSettingsState, McpServerConfig } from "./mcp-settings-types";

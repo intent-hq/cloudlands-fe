@@ -23,16 +23,34 @@ import type {
   NoteVersion,
   NoteMetadata,
 } from '../../../../shared/types';
-import { ContentType, NoteVisibility, AuthorType } from '../../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+  AuthorType,
+} from '../../../../shared/types';
 import type { NotesRepository } from '../notes.repository';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
-import { getNoteStoragePaths, getLegacyNotePath, getLegacyFolderPath } from './note-storage-paths';
+import {
+  getNoteStoragePaths,
+  getLegacyNotePath,
+  getLegacyFolderPath,
+} from './note-storage-paths';
 import type { NoteFrontmatter, VersionEntry, VersionAuthor } from './note-storage.types';
 import { STORAGE_FILES } from './note-storage.types';
-import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
-import { readVersions, getContentAtVersion } from './version.service';
-import { trackChange, flushPendingVersion, clearVersionState } from './version-manager';
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+} from './frontmatter';
+import {
+  readVersions,
+  getContentAtVersion,
+} from './version.service';
+import {
+  trackChange,
+  flushPendingVersion,
+  clearVersionState,
+} from './version-manager';
 import { moveToTrash } from './trash.service';
 import type { IMetadataFS } from '../../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../../metadata-fs/main/local-metadata-fs';

@@ -15,9 +15,7 @@ export type { ContextItem } from '$lib/components/chat/input/context-api';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import {
-  selectAgentById,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
 
@@ -58,7 +56,7 @@ function ensureStoreSubscription() {
     if (agentSubscribers.size === 0) return;
     const state = getReduxStore().getState();
     for (const [agentId, subscribers] of agentSubscribers) {
-      const next = selectAgentById.select(state, agentId);
+      const next = selectAgentSession.select(state, agentId);
       if (lastSessionByAgent.get(agentId) === next) continue;
       lastSessionByAgent.set(agentId, next);
       dispatchCallbacks(agentId, subscribers, next);
@@ -98,7 +96,7 @@ export function subscribeToAgent(
   ensureStoreSubscription();
 
   const state = getReduxStore().getState();
-  const current = selectAgentById.select(state, agentId);
+  const current = selectAgentSession.select(state, agentId);
 
   // Seed the last-seen session on first subscriber for this agent so the
   // shared listener only fires when the reference actually changes.
@@ -135,7 +133,7 @@ export function subscribeToAgent(
 
 /**
  * Force a fresh callback dispatch for a specific agent. Retained for
- * backwards compatibility with `chat.service.ts`; the shared store
+ * backwards compatibility with older manual notification callers; the shared store
  * subscription now handles the common case automatically.
  */
 export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: WorkspaceId) {
@@ -143,7 +141,7 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
   if (!subscribers || subscribers.size === 0) return;
 
   const state = getReduxStore().getState();
-  const session = selectAgentById.select(state, agentId);
+  const session = selectAgentSession.select(state, agentId);
 
   if (!session) {
     console.warn('[DIAG notifyAgentSubscribers] Agent NOT FOUND — subscribers get undefined', {
@@ -164,7 +162,10 @@ export { configCache, ConfigCacheProxyService } from './config-cache-proxy.servi
 
 // Create IPC proxies for services that need Node.js APIs
 import { invoke } from '$lib/electron-bridge';
-import { AGENT_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
+import {
+  AGENT_CHANNELS,
+  PERSISTENCE_CHANNELS,
+} from '$shared/ipc/channels';
 import type { Workspace, AgentSession } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
@@ -639,7 +640,7 @@ export class PersistenceService {
       if (!finalWorkspaceId) {
         const reduxState = getReduxStore().getState();
         const wsId = selectActiveWorkspaceId.select(reduxState) ?? '';
-        const agent = wsId ? selectAgentById.select(reduxState, plainAgentId) : undefined;
+        const agent = wsId ? selectAgentSession.select(reduxState, plainAgentId) : undefined;
         finalWorkspaceId = (agent?.workspaceId as string) || wsId || '';
       }
 
@@ -830,23 +831,36 @@ class StreamingServiceProxy {
     agentId: string,
     sessionId: string,
     workspaceId: string,
+    callbacksOrAssistantAppMessageId?: string | {
+      onChunk?: (chunk: string) => void;
+      onComplete?: () => Promise<void>;
+      onError?: (error: Error) => void;
+    },
     callbacks?: {
       onChunk?: (chunk: string) => void;
       onComplete?: () => Promise<void>;
       onError?: (error: Error) => void;
     },
   ): Promise<void> {
+    const assistantAppMessageId = typeof callbacksOrAssistantAppMessageId === 'string'
+      ? callbacksOrAssistantAppMessageId
+      : undefined;
+    const resolvedCallbacks = typeof callbacksOrAssistantAppMessageId === 'string'
+      ? callbacks
+      : callbacksOrAssistantAppMessageId;
+
     this.streamManager.startStream(
       {
         agentId,
         sessionId,
         workspaceId: WorkspaceId(workspaceId),
+        assistantAppMessageId,
       },
-      callbacks
+      resolvedCallbacks
         ? {
-            onChunk: callbacks.onChunk,
-            onComplete: callbacks.onComplete,
-            onError: callbacks.onError,
+            onChunk: resolvedCallbacks.onChunk,
+            onComplete: resolvedCallbacks.onComplete,
+            onError: resolvedCallbacks.onError,
           }
         : undefined,
     );
@@ -876,13 +890,13 @@ class RecoveryServiceProxy {
     { agentId: string; workspaceId: string; timestamp: number }
   >();
 
-   
+
   async needsRecovery(agentId: string, _workspaceId: string): Promise<boolean> {
     // Check if there's recovery data for this agent
     return this.recoveryData.has(agentId);
   }
 
-   
+
   async recoverSession(session: AgentSession, _workspaceId: string): Promise<AgentSession> {
     // Clear recovery data after recovery
     this.recoveryData.delete(session.id);

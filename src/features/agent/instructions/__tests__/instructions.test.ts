@@ -2,7 +2,11 @@
  * Tests for Agent Instructions
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   getInstructionById,
   getAvailableInstructionIds,

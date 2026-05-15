@@ -9,13 +9,13 @@
   import Fa from 'svelte-fa';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
-    faFile,
-    faNoteSticky,
-    faRobot,
-    faCodeBranch,
-    faTerminal,
-    faFolder,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFile,
+  faNoteSticky,
+  faRobot,
+  faCodeBranch,
+  faTerminal,
+  faFolder,
+} from '@fortawesome/free-solid-svg-icons';
   import * as Tooltip from '$lib/components/ui/tooltip';
 
   type EntityType =

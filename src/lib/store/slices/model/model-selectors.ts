@@ -1,8 +1,15 @@
 import { createSelector } from '../../utils/create-selector';
-import { findItem, getItems, type Collection } from '../../utils/collection-utils';
+import {
+  findItem,
+  getItems,
+  type Collection,
+} from '../../utils/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-import { ACP_PROVIDERS, parseCompoundModelId } from '$shared/config/provider-config';
+import {
+  ACP_PROVIDERS,
+  parseCompoundModelId,
+} from '$shared/config/provider-config';
 import { selectActiveProviderId } from '../provider-settings/provider-settings-selectors';
 import type { ModelLoadingState } from './model-types';
 

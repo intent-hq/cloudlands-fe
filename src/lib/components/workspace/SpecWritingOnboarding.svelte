@@ -6,17 +6,21 @@
    * Sets expectations for the multi-agent coordination workflow.
    */
 
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  
-const logger = createLogger('SpecWritingOnboarding');
+  import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+  const logger = createLogger('SpecWritingOnboarding');
 
   interface Props {
     /** The agent ID of the coordinator writing the spec */
     agentId?: string | null;
+    workspaceId: string;
   }
 
-  let { agentId }: Props = $props();
+  let { agentId, workspaceId }: Props = $props();
+
+  const dispatch = getDispatch();
 
   let isStopping = $state(false);
 
@@ -26,7 +30,9 @@ const logger = createLogger('SpecWritingOnboarding');
     isStopping = true;
     try {
       logger.info('User stopping coordinator', { agentId });
-      await agentService.stopSession(agentId);
+      const action = stopAgentSessionRequested(workspaceId, agentId);
+      dispatch(action);
+      await action.promise;
     } catch (error) {
       logger.error('Failed to stop coordinator', error as Error, { agentId });
     } finally {

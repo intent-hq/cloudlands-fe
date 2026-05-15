@@ -9,7 +9,10 @@ import { notesService } from '../../../notes/main/notes.service';
 import { assetsService } from '$features/notes/main/assets.service';
 import { trackMain } from '$lib/services/analytics/main';
 import { WorkspaceId } from '../../../../shared/types/branded-ids';
-import { noteLink, noteUrl } from '../../../../shared/constants/intent-links';
+import {
+  noteLink,
+  noteUrl,
+} from '../../../../shared/constants/intent-links';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
 import type {
   AgentActionPrimitive,

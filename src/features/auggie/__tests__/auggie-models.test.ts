@@ -2,8 +2,17 @@
  * Tests for auggie-models client
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getModelIcon, type AuggieModel } from '../auggie-models.client';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
+import {
+  getModelIcon,
+  type AuggieModel,
+} from '../auggie-models.client';
 
 // Mock the electron-bridge
 vi.mock('$lib/electron-bridge', async () => await import('$lib/store/utils/test-helpers/electron-bridge-mock'));

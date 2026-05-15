@@ -7,9 +7,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import { MCPServer } from './server';
-import { extractToolCalls, hasToolCalls, ExtractedToolCall } from './tool-call-extractor';
+import {
+  extractToolCalls,
+  hasToolCalls,
+  ExtractedToolCall,
+} from './tool-call-extractor';
 import { AgentMessage } from '$features/agent/main/agent-providers/base-provider';
-import { getPendingFileOperations, clearPendingFileOperations } from './workspace-tools';
+import {
+  getPendingFileOperations,
+  clearPendingFileOperations,
+} from './workspace-tools';
 import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { Logger } from '$shared/logger';
 import { execFileAsync } from '../../../../shared/git/git-env';

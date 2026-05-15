@@ -7,7 +7,11 @@
  * For agents without a specialist, uses "Agent" as the base name.
  */
 
-import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
+import {
+  uniqueNamesGenerator,
+  adjectives,
+  animals,
+} from 'unique-names-generator';
 
 /**
  * Maximum length for generated agent names

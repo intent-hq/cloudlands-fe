@@ -1,4 +1,7 @@
-import { delay, takeLatest } from "typed-redux-saga";
+import {
+  delay,
+  takeLatest,
+} from "typed-redux-saga";
 import { refreshUnreadNotes } from "../note-read-tracking-slice";
 import { handleComputeUnreadNotes } from "./ipc-saga";
 

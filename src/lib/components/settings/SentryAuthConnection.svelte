@@ -2,17 +2,17 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    selectSentryIsAuthenticated,
-    selectSentryOrganization,
-    selectSentryIsConnecting,
-    selectSentryError,
-  } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+  selectSentryIsAuthenticated,
+  selectSentryOrganization,
+  selectSentryIsConnecting,
+  selectSentryError,
+} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
   import {
-    initializeSentryAuth,
-    connectSentry,
-    logoutSentry,
-    clearSentryError,
-  } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  initializeSentryAuth,
+  connectSentry,
+  logoutSentry,
+  clearSentryError,
+} from '$lib/store/slices/sentry-auth/sentry-auth-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';

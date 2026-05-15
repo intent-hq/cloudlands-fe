@@ -3,10 +3,10 @@
   import type { Note, TaskStatus } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
-    computeTaskStats,
-    extractSpecTaskIds,
-    EXCLUDED_STATUSES,
-  } from '$shared/utils/task-stats';
+  computeTaskStats,
+  extractSpecTaskIds,
+  EXCLUDED_STATUSES,
+} from '$shared/utils/task-stats';
 
   interface Props {
     notes: Note[];

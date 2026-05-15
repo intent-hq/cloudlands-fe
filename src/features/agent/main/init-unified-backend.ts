@@ -5,7 +5,10 @@
  * This is now the single source of truth for all agent operations.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+} from 'electron';
 import { ConsolidatedBackendService } from './consolidated-backend.service';
 import { Logger } from '../../../shared/logger';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';

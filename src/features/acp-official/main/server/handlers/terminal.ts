@@ -4,7 +4,10 @@
  * Manages terminal sessions for command execution within the workspace.
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import {
+  spawn,
+  ChildProcess,
+} from 'child_process';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { TerminalExitStatus } from '../../../types';

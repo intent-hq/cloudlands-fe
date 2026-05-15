@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { stringToHash, SeededRandom } from '$lib/utils/hash';
+  import {
+  stringToHash,
+  SeededRandom,
+} from '$lib/utils/hash';
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';

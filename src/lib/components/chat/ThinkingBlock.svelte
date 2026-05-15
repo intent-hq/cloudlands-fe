@@ -8,7 +8,10 @@
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import { faChevronRight, faBrain } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronRight,
+  faBrain,
+} from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
 
   interface Props {

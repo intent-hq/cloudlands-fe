@@ -1,7 +1,14 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const { getSafeHomeDirMock } = vi.hoisted(() => ({
   getSafeHomeDirMock: vi.fn<() => string>(),
@@ -20,7 +27,10 @@ vi.mock('../../../../shared/logger', () => ({
   },
 }));
 
-import { discoverSkills, formatSkillsCatalogForPrompt } from '../skills-loader';
+import {
+  discoverSkills,
+  formatSkillsCatalogForPrompt,
+} from '../skills-loader';
 
 function buildSkillContent(frontmatter: string, body = 'Use this skill when needed.') {
   return `---\n${frontmatter}\n---\n\n${body}\n`;

@@ -2,9 +2,30 @@
  * Tests for usePanelActions composable
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
+
+const { dispatchMock } = vi.hoisted(() => ({
+  dispatchMock: vi.fn(),
+}));
+
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => dispatchMock,
+}));
+
+import { usePanelActions } from '../use-panel-actions.svelte';
 
 describe('usePanelActions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dispatchMock.mockReset();
+  });
+
   describe('openAgent', () => {
     it('should not open agent with undefined id', () => {
       const mockOpenDrawer = vi.fn();
@@ -152,6 +173,90 @@ describe('usePanelActions', () => {
 
       expect(mockCloseDrawer).toHaveBeenCalled();
       expect(mockOpenDrawer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleCreateAgentWithPrompt', () => {
+    function createActions(overrides: Record<string, unknown> = {}) {
+      const openDrawer = vi.fn();
+      const markAgentRecentlyCreated = vi.fn();
+      const onDraftPromptSet = vi.fn();
+      const actions = usePanelActions({
+        workspace: () => ({ id: 'ws-1', title: 'Workspace' }) as any,
+        workspaceState: () =>
+          ({
+            openFile: vi.fn(),
+            openNote: vi.fn(),
+            openDrawer,
+            closeDrawer: vi.fn(),
+            state: { workspace: { id: 'ws-1' } },
+          }) as any,
+        state: () => ({ drawer: { open: false } }) as any,
+        markAgentRecentlyCreated,
+        onDraftPromptSet,
+        ...overrides,
+      });
+
+      return { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet };
+    }
+
+    it('waits for the saga launch result before draft prompt follow-up', async () => {
+      let resolveLaunch: ((session: any) => void) | undefined;
+      dispatchMock.mockImplementation((action) => {
+        if (action.type === 'agentSessions/launchAgentRequested') {
+          resolveLaunch = action.success;
+        }
+      });
+      const createdSession = {
+        id: 'agent-created-by-saga',
+        name: 'Prompt Agent',
+        workspaceId: 'ws-1',
+      };
+      const { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = createActions();
+
+      const promise = actions.handleCreateAgentWithPrompt('Draft prompt', 'Prompt Agent');
+      await Promise.resolve();
+
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agentSessions/launchAgentRequested',
+          payload: [
+            'ws-1',
+            expect.objectContaining({
+              name: 'Prompt Agent',
+              agentType: 'chat',
+              source: 'progress-card-action',
+            }),
+          ],
+        }),
+      );
+      expect(dispatchMock.mock.calls[0][0].payload[1]).not.toHaveProperty('id');
+      expect(dispatchMock.mock.calls[0][0].payload[1]).not.toHaveProperty('model');
+      expect(markAgentRecentlyCreated).not.toHaveBeenCalled();
+      expect(onDraftPromptSet).not.toHaveBeenCalled();
+      expect(openDrawer).not.toHaveBeenCalled();
+
+      resolveLaunch?.(createdSession);
+      await promise;
+
+      expect(markAgentRecentlyCreated).toHaveBeenCalledWith('agent-created-by-saga');
+      expect(onDraftPromptSet).toHaveBeenCalledWith('Draft prompt');
+      expect(openDrawer).toHaveBeenCalledWith('agent', 'agent-created-by-saga');
+    });
+
+    it('does not run draft prompt follow-up when saga launch fails', async () => {
+      dispatchMock.mockImplementation((action) => {
+        if (action.type === 'agentSessions/launchAgentRequested') {
+          action.failure('creation failed');
+        }
+      });
+      const { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = createActions();
+
+      await actions.handleCreateAgentWithPrompt('Draft prompt', 'Prompt Agent');
+
+      expect(markAgentRecentlyCreated).not.toHaveBeenCalled();
+      expect(onDraftPromptSet).not.toHaveBeenCalled();
+      expect(openDrawer).not.toHaveBeenCalled();
     });
   });
 });

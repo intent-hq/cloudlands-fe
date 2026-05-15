@@ -1,5 +1,5 @@
 <script lang="ts">
-  
+
 interface Props {
     digest: string;
   }

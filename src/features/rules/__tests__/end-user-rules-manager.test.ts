@@ -4,7 +4,14 @@
  * Tests the CRUD interface for user-defined rules stored in electron-store.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import {
   EndUserRulesManager,
   type EndUserRulesConfig,

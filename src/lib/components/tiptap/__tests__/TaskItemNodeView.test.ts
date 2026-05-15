@@ -1,8 +1,16 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+} from '@testing-library/svelte';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
 // TaskItemNodeView.svelte calls these at component init time (readable form)

@@ -10,11 +10,11 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faCheck,
-    faRotateLeft,
-    faSpinner,
-    faPlusMinus,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faRotateLeft,
+  faSpinner,
+  faPlusMinus,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';

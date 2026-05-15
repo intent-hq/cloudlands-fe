@@ -5,13 +5,13 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import Fa from 'svelte-fa';
   import {
-    faChevronDown,
-    faChevronRight,
-    faPlus,
-    faCheck,
-    faLaptop,
-    faXmark,
-  } from '@fortawesome/free-solid-svg-icons';
+  faChevronDown,
+  faChevronRight,
+  faPlus,
+  faCheck,
+  faLaptop,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import { performanceMonitor } from '$lib/utils/performance';

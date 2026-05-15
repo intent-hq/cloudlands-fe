@@ -5,12 +5,22 @@
  * git:status-changed listener, loadStatus/commits/diffs handlers.
  */
 
-import { call, put, fork, delay, takeEvery, takeLatest } from "typed-redux-saga";
+import {
+  call,
+  put,
+  fork,
+  delay,
+  takeEvery,
+  takeLatest,
+} from "typed-redux-saga";
 import { Logger } from "$shared/logger";
 import { gitClient } from "$features/git/git.client";
 import { gitCache } from "$features/git/git-cache";
 import type { GitStatus } from "$shared/types";
-import { isValidWorkspaceId, WorkspaceId } from "$shared/types/branded-ids";
+import {
+  isValidWorkspaceId,
+  WorkspaceId,
+} from "$shared/types/branded-ids";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import {
   loadGitStatus,

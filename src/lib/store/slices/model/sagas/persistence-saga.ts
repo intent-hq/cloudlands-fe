@@ -1,10 +1,48 @@
-import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
-import { getLocalStorageItem, getLocalStorageJSON, removeLocalStorageItem, setLocalStorageJSON, setLocalStorageItem, } from "$lib/store/utils/safe-local-storage-saga";
+import {
+  call,
+  put,
+  takeEvery,
+  takeLatest,
+} from "typed-redux-saga";
+import {
+  getLocalStorageItem,
+  getLocalStorageJSON,
+  removeLocalStorageItem,
+  setLocalStorageJSON,
+  setLocalStorageItem,
+} from "$lib/store/utils/safe-local-storage-saga";
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import { selectActiveProviderId } from "../../provider-settings/provider-settings-selectors";
-import { selectModelPickerCollapsedGroups, selectProviderModels, selectWorkspaceModels, } from "../model-selectors";
-import { normalizeModelForProvider, normalizeProviderModels, } from "../model-selection-utils";
-import { loadModels, reloadModelsForProvider, setSelectedModel, clearAllWorkspaceModels, clearLoadingStateForProvider, setWorkspaceModel, setAvailableModels, clearWorkspaceModel, loadWorkspaceModelsFromStorage, loadProviderModelsFromStorage, GLOBAL_MODEL_KEY, WORKSPACE_MODELS_KEY, PROVIDER_MODELS_KEY, hydrateModelPickerCollapsedGroups, setModelPickerGroupCollapsed, requestHydrateModelFallbackInfo, hydrateModelFallbackInfo, setModelFallbackInfo, clearModelFallbackInfo, } from "../model-slice";
+import {
+  selectModelPickerCollapsedGroups,
+  selectProviderModels,
+  selectWorkspaceModels,
+} from "../model-selectors";
+import {
+  normalizeModelForProvider,
+  normalizeProviderModels,
+} from "../model-selection-utils";
+import {
+  loadModels,
+  reloadModelsForProvider,
+  setSelectedModel,
+  clearAllWorkspaceModels,
+  clearLoadingStateForProvider,
+  setWorkspaceModel,
+  setAvailableModels,
+  clearWorkspaceModel,
+  loadWorkspaceModelsFromStorage,
+  loadProviderModelsFromStorage,
+  GLOBAL_MODEL_KEY,
+  WORKSPACE_MODELS_KEY,
+  PROVIDER_MODELS_KEY,
+  hydrateModelPickerCollapsedGroups,
+  setModelPickerGroupCollapsed,
+  requestHydrateModelFallbackInfo,
+  hydrateModelFallbackInfo,
+  setModelFallbackInfo,
+  clearModelFallbackInfo,
+} from "../model-slice";
 import type { ModelFallbackInfo } from "../model-types";
 
 export const MODEL_PICKER_COLLAPSED_GROUPS_KEY = "model-picker-collapsed-groups";

@@ -9,7 +9,11 @@
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import { faClipboard, faICursor, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faClipboard,
+  faICursor,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
 
   let { node, selected, deleteNode, editor, getPos }: NodeViewProps = $props();

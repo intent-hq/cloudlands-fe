@@ -5,7 +5,14 @@
  * Ensures no duplicate handlers and proper cleanup.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { ipcMain } from 'electron';
 import { registerAgentHandlers } from '../unified-agent-handlers';
 import { getAgentBackendAdapter } from '../agent-backend-adapter';

@@ -17,7 +17,11 @@ import { Result } from '../../../shared/result';
 import { ThirdPartySourcesRepository } from './third-party-sources.repository';
 import { MetadataExtractor } from '../metadata-extractor';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { sourceCreated, sourceUpdated, sourceDeleted } from '../../../store/main/slices/source-events/source-events-slice';
+import {
+  sourceCreated,
+  sourceUpdated,
+  sourceDeleted,
+} from '../../../store/main/slices/source-events/source-events-slice';
 
 const logger = new Logger('third-party-sources-service');
 

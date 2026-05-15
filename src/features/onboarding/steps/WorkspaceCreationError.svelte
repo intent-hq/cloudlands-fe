@@ -7,18 +7,18 @@
   import { fly } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faExclamationTriangle,
-    faClipboard,
-    faCheck,
-    faChevronDown,
-    faChevronRight,
-  } from '@fortawesome/free-solid-svg-icons';
+  faExclamationTriangle,
+  faClipboard,
+  faCheck,
+  faChevronDown,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { shell } from '$lib/electron-bridge';
   import { Button } from '$lib/components/ui/button';
   import {
-    diagnoseCloneError,
-    type CloneErrorKind,
-  } from '$features/onboarding/utils/diagnose-clone-error';
+  diagnoseCloneError,
+  type CloneErrorKind,
+} from '$features/onboarding/utils/diagnose-clone-error';
 
   interface Props {
     message: string;

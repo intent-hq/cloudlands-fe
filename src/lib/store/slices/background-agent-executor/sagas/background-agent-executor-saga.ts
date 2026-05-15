@@ -10,11 +10,26 @@
  * - Cleanup
  */
 
-import { call, put, takeEvery, delay, race, take, select, fork, type SagaGenerator } from 'typed-redux-saga';
-import { eventChannel, END, type EventChannel } from 'redux-saga';
+import {
+  call,
+  put,
+  takeEvery,
+  delay,
+  race,
+  take,
+  select,
+  fork,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import {
+  eventChannel,
+  END,
+  type EventChannel,
+} from 'redux-saga';
 import type { StoreState } from '$lib/store/types';
 
-import { agentService } from '$features/agent/agent-ipc-bridge';
+import { agentFactory } from '$features/agent/services/agent-factory';
+import { sendMessage } from '$features/agent/agent-stream-lifecycle';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   getValidatedModelForType,
@@ -23,24 +38,31 @@ import {
 import { loadModels } from '$lib/store/slices/model/model-slice';
 import { getGroupedModels } from '$lib/store/slices/model/model-utils';
 import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-import { getModelLabel, generateFallbackChain } from '$lib/utils/model-fallback';
-import { addDeferredResult } from '$features/agent/deferred-results-cache';
+import {
+  getModelLabel,
+  generateFallbackChain,
+} from '$lib/utils/model-fallback';
 import { track } from '$lib/services/analytics';
+import { deleteAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import {
   selectAvailableModels,
   selectIsLoadingModels,
   selectModelsLoaded,
 } from '$lib/store/slices/model/model-selectors';
-import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
 import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { AgentStatus } from '$shared/types';
 import type { AgentMessage } from '$shared/types/agent.types';
-import { removeLocalStorageItem, setLocalStorageJSON, getLocalStorageJSON } from '$lib/store/utils/safe-local-storage-saga';
+import {
+  removeLocalStorageItem,
+  setLocalStorageJSON,
+  getLocalStorageJSON,
+} from '$lib/store/utils/safe-local-storage-saga';
 import { debounceWithKeySaga } from '$lib/store/utils/debounce-saga';
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+import { WorkspaceId } from '$shared/types/branded-ids';
 
 import {
   executeBackgroundAgent,
@@ -62,11 +84,15 @@ import type {
   ExecutorStatus,
   BackgroundAgentExecutorWorkspaceState,
 } from '../background-agent-executor-types';
-import { EXECUTOR_CONFIGS, emptyExecutorState } from '../background-agent-executor-types';
+import {
+  EXECUTOR_CONFIGS,
+  emptyExecutorState,
+} from '../background-agent-executor-types';
 import { selectExecutorState } from '../background-agent-executor-selectors';
 import { prepareContext } from '../utils/context-preparation';
 import { extractResultFromMessages } from '../utils/result-extraction';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('BgExecutorSaga');
 
@@ -121,68 +147,48 @@ function* ensureModelsLoaded(): SagaGenerator<void> {
 // Agent state change channel
 // ============================================================================
 
-function createAgentStateChannel(
+export function createAgentStateChannel(
   agentId: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   workspaceId: string,
 ): EventChannel<{ messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean }> {
   return eventChannel((emitter) => {
-    let wasStreaming = false;
-    let noNewMessageTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastMessageCount = 0;
+    let isClosed = false;
+
+    const emitTerminal = (
+      event: { messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean },
+    ) => {
+      if (isClosed) return;
+      isClosed = true;
+      emitter(event);
+      emitter(END);
+    };
 
     const processUpdate = () => {
+      if (isClosed) return;
+
       const state = getReduxStore().getState();
-      const session = selectAgentById.select(state, agentId);
+      const session = selectAgentSession.select(state, agentId);
       if (!session) return;
 
       const messages = [...(session.messages ?? [])];
-      const isStreaming = selectAgentIsResponding.select(state, agentId);
+      const isResponding = selectAgentIsResponding.select(state, agentId);
 
-      if (isStreaming) {
-        wasStreaming = true;
-        if (noNewMessageTimer) { clearTimeout(noNewMessageTimer); noNewMessageTimer = null; }
-      }
-
-      if (messages.length > lastMessageCount) {
-        lastMessageCount = messages.length;
-        if (noNewMessageTimer) clearTimeout(noNewMessageTimer);
-        noNewMessageTimer = setTimeout(() => {
-          const currentState = getReduxStore().getState();
-          const isStillActive = selectAgentIsResponding.select(currentState, agentId);
-          if (!isStillActive) {
-            emitter({ messages, isComplete: true, isError: false, isStreaming: false });
-            emitter(END);
-          }
-        }, 3000);
-      }
-
-      const completionReasons = {
-        idleWithMessages: session.status === AgentStatus.Idle && messages.length > 0,
-        statusCompleted: session.status === AgentStatus.Completed,
-        streamingStopped: wasStreaming && !isStreaming && messages.length > 0,
-      };
-      const isComplete = Object.values(completionReasons).some(Boolean);
-
-      if (isComplete) {
-        if (noNewMessageTimer) { clearTimeout(noNewMessageTimer); noNewMessageTimer = null; }
-        emitter({ messages, isComplete: true, isError: false, isStreaming: false });
-        emitter(END);
-      } else if (session.status === AgentStatus.Error) {
-        if (noNewMessageTimer) { clearTimeout(noNewMessageTimer); noNewMessageTimer = null; }
-        emitter({ messages, isComplete: false, isError: true, isStreaming: false });
-        emitter(END);
+      if (session.status === AgentStatus.Error) {
+        emitTerminal({ messages, isComplete: false, isError: true, isStreaming: false });
+      } else if (!isResponding && messages.length > 0) {
+        emitTerminal({ messages, isComplete: true, isError: false, isStreaming: false });
       } else {
-        emitter({ messages, isComplete: false, isError: false, isStreaming });
+        emitter({ messages, isComplete: false, isError: false, isStreaming: isResponding });
       }
     };
 
     // Subscribe to Redux store changes for agent state updates
     const store = getReduxStore();
-    let previousSession = selectAgentById.select(store.getState(), agentId);
+    let previousSession = selectAgentSession.select(store.getState(), agentId);
 
     const unsubscribe = store.subscribe(() => {
-      const currentSession = selectAgentById.select(store.getState(), agentId);
+      const currentSession = selectAgentSession.select(store.getState(), agentId);
       if (currentSession !== previousSession) {
         previousSession = currentSession;
         processUpdate();
@@ -193,8 +199,8 @@ function createAgentStateChannel(
     processUpdate();
 
     return () => {
+      isClosed = true;
       unsubscribe();
-      if (noNewMessageTimer) clearTimeout(noNewMessageTimer);
     };
   });
 }
@@ -227,7 +233,9 @@ function* handleExecute(action: ReturnType<typeof executeBackgroundAgent>): Saga
     const prevState = yield* selectExecutorState.effect(workspaceId, executorType);
     if (prevState?.agentId && prevState?.workspaceId) {
       try {
-        yield* call([agentService, agentService.deleteSession], prevState.agentId, prevState.workspaceId);
+        const deleteAction = deleteAgentSessionRequested(prevState.workspaceId, prevState.agentId);
+        yield* put(deleteAction);
+        yield* call(() => deleteAction.promise);
       } catch (e) {
         logger.warn('Failed to delete previous agent', { error: e });
       }
@@ -278,21 +286,31 @@ function* handleExecute(action: ReturnType<typeof executeBackgroundAgent>): Saga
         `${requestedLabel} is not available. Using ${fallbackLabel} instead.`);
     }
 
-    // Create agent
-    const agent = yield* call([agentService, agentService.createAgent], workspace, {
-      name: config.name,
-      model: modelResult.model,
-      agentType: agentType as any,
-      metadata: {
+    // Create agent through the saga-owned factory path.
+    const creationResult: Awaited<ReturnType<typeof agentFactory.createAgent>> = yield* call(
+      [agentFactory, agentFactory.createAgent],
+      workspace,
+      {
+        name: config.name,
+        model: modelResult.model,
+        workspaceId: WorkspaceId(workspaceId),
+        agentType: agentType as any,
+        source: 'background-agent',
+        metadata: {
+          isBackground: true,
+          triggerType: executorType,
+          resultTag: config.resultTag,
+          modelFallbackChain: fallbackChain,
+        },
         isBackground: true,
-        triggerType: executorType,
-        resultTag: config.resultTag,
-        modelFallbackChain: fallbackChain,
       },
-      isBackground: true,
-    });
+    );
 
-    if (!agent) throw new Error('Failed to create agent');
+    const agent = creationResult.agent;
+
+    if (!creationResult.success || !agent) {
+      throw new Error(creationResult.error || 'Failed to create agent');
+    }
 
     yield* put(setExecutorState(workspaceId, executorType, {
       status: 'running',
@@ -302,7 +320,7 @@ function* handleExecute(action: ReturnType<typeof executeBackgroundAgent>): Saga
 
     // Prepare and send context message
     const contextMessage = yield* call(prepareContext, workspace, executorType, config.resultTag, context);
-    yield* call([agentService, agentService.sendMessage], agent.id, contextMessage, workspace);
+    yield* call(sendMessage, agent.id, contextMessage, workspace);
 
     yield* put(setExecutorState(workspaceId, executorType, { progress: 20 }));
 
@@ -369,13 +387,6 @@ function* monitorAgent(
               progress: 100,
             }));
 
-            // Handle cross-workspace deferred results
-            if (finalResult) {
-              const currentWorkspaceId = yield* selectActiveWorkspaceId.effect();
-              if (currentWorkspaceId !== workspaceId) {
-                addDeferredResult(workspaceId, finalResult, executorType as BackgroundAgentType);
-              }
-            }
             return true;
           }
 
@@ -444,7 +455,7 @@ function* handleReconnect(action: ReturnType<typeof reconnectAgent>): SagaGenera
   }
 
   // Check if agent exists and is still running via Redux
-  const agentSession = yield* selectAgentById.effect(agentId);
+  const agentSession = yield* selectAgentSession.effect(agentId);
   if (!agentSession) return;
 
   if (yield* selectAgentIsResponding.effect(agentId)) {

@@ -9,10 +9,12 @@
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { selectInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+  selectInitialAgentId,
+  selectWorkspaceAgentSession,
+} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
@@ -22,32 +24,38 @@
   import { Button } from '$lib/components/ui/button';
   import { cycleFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import {
-    selectAgentFontStyleLabel,
-    selectIsAgentMonospace,
-  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  selectAgentFontStyleLabel,
+  selectIsAgentMonospace,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import {
-    selectSpecialistName,
-    selectSpecialists,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  selectSpecialistName,
+  selectSpecialists,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
-  import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faCircleInfo,
+  faCopy,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import AgentStatsTooltip from '$lib/components/chat/AgentStatsTooltip.svelte';
   import {
-    AGENT_STATS_TOOLTIP_TITLE,
-    AGENT_STATS_TRIGGER_LABEL,
-  } from '$lib/components/chat/agent-stats-tooltip-copy';
+  AGENT_STATS_TOOLTIP_TITLE,
+  AGENT_STATS_TRIGGER_LABEL,
+} from '$lib/components/chat/agent-stats-tooltip-copy';
   import {
-    selectAgentStats,
-    selectIsLoadingAgentStats,
-    selectAgentStatsError,
-  } from '$lib/store/slices/session-stats/session-stats-selectors';
+  selectAgentStats,
+  selectIsLoadingAgentStats,
+  selectAgentStatsError,
+} from '$lib/store/slices/session-stats/session-stats-selectors';
   import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
   import { isAuggieSession } from '$shared/types/agent-session';
+  import { deleteAgentWithUndoRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const logger = createLogger('AgentTabType');
 
@@ -128,7 +136,10 @@
   );
   const agentStatsSession = $derived.by(() => {
     if (!tab.agentId) return undefined;
-    return agentService.getSession(tab.agentId) ?? agentSession;
+    return (
+      selectWorkspaceAgentSession.select(getReduxStore().getState(), workspaceId, tab.agentId) ??
+      agentSession
+    );
   });
   const showAgentStatsAction = $derived(
     !!agentStatsSession && isAuggieSession(agentStatsSession),
@@ -179,7 +190,9 @@
     // error optimistically so the user can retry after a failed fetch.
     // Only Auggie sessions go through `auggie session stats`; skip other
     // providers so the tooltip surfaces no data instead of a stale error.
-    const session = agentService.getSession(tab.agentId) ?? agentSession;
+    const session =
+      selectWorkspaceAgentSession.select(getReduxStore().getState(), workspaceId, tab.agentId) ??
+      agentSession;
     if (!session || !isAuggieSession(session)) {
       statsTooltipOpen = false;
       return;
@@ -232,11 +245,9 @@
     isAgentDeleting = true;
     try {
       getReduxStore().dispatch(closeTab(workspaceId, tab.id));
-      await agentService.deleteSessionWithUndo({
-        agentId: agentIdToDelete,
-        workspaceId,
-        agentName,
-      });
+      const action = deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName);
+      getReduxStore().dispatch(action);
+      await action.promise;
     } catch (error) {
       logger.error('Failed to delete agent', error);
     } finally {

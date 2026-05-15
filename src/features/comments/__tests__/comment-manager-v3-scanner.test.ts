@@ -6,12 +6,30 @@
  * - What anchors actually exist in the editor
  */
 
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  beforeAll,
+} from 'vitest';
 import { Editor } from '@tiptap/core';
 import { CommentManagerV2 } from '../comment-manager-v2';
-import { getReduxStore, dispatch as reduxDispatch, initReduxDispatchBridge, initReduxStoreBridge } from '$lib/store/redux-dispatch-bridge';
-import { loadCommentsAction, commentsReducer, initialState as commentsInitialState } from '$lib/store/slices/comments/comments-slice';
-import { selectComments, selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+  initReduxDispatchBridge,
+  initReduxStoreBridge,
+} from '$lib/store/redux-dispatch-bridge';
+import {
+  loadCommentsAction,
+  commentsReducer,
+  initialState as commentsInitialState,
+} from '$lib/store/slices/comments/comments-slice';
+import {
+  selectComments,
+  selectCommentById,
+} from '$lib/store/slices/comments/comments-selectors';
 import {
   createTestEditor,
   insertTextWithAnchors,

@@ -4,8 +4,16 @@
  * Tests edge cases: special chars, malformed input, UTF-8, delimiter handling
  */
 
-import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, createDefaultFrontmatter } from '../frontmatter';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+  createDefaultFrontmatter,
+} from '../frontmatter';
 import type { NoteId } from '../../../../../shared/types';
 
 describe('Frontmatter', () => {

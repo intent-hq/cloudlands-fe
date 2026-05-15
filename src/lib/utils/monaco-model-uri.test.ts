@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { createUniqueMonacoModelPath, normalizeMonacoModelPath } from './monaco-model-uri';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  createUniqueMonacoModelPath,
+  normalizeMonacoModelPath,
+} from './monaco-model-uri';
 
 function inferMonacoTypeScriptWorkerScriptKind(
   fileName: string,

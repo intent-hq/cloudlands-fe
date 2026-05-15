@@ -1,6 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
-import { createScrollToHeadingHandler, createScrollToTaskHandler } from '../note-scroll-handlers';
+import {
+  createScrollToHeadingHandler,
+  createScrollToTaskHandler,
+} from '../note-scroll-handlers';
 
 function createLogger() {
   return {

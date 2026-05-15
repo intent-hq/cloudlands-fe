@@ -8,7 +8,10 @@
   import { Button } from '$lib/components/ui/button';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Fa from 'svelte-fa';
-  import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronLeft,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 

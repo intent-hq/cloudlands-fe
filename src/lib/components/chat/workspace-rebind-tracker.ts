@@ -17,7 +17,7 @@ export class WorkspaceRebindTracker {
   /**
    * True while an async initializeChat triggered by a workspace rebind is
    * in flight. The send path must check this to avoid sending against a
-   * stale/partially-initialized ChatService.
+   * stale/partially-initialized chat session.
    */
   private _isRebinding = false;
 
@@ -148,7 +148,7 @@ export class WorkspaceRebindTracker {
    * Handles supersession: if a newer startRebind() resolves the promise
    * we were awaiting while a newer rebind is still in flight, we loop
    * and wait on the new promise. This prevents the send path from
-   * proceeding against a stale/partially-initialized chatService.
+   * proceeding against a stale/partially-initialized chat session.
    */
   async waitForRebind(timeoutMs = 5000): Promise<boolean> {
     if (!this._isRebinding || !this._rebindPromise) return false;

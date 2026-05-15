@@ -5,7 +5,14 @@
  * MCP server caching/eviction.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 // ── Hoisted mock state ──────────────────────────────────────────────
 const {

@@ -6,52 +6,72 @@
    * for opening tabs, splitting panels, etc.
    */
 
-  import { setContext } from 'svelte';
-  import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
   import {
-    createPanelKeyboardShortcuts,
-    registerPanelKeyboardShortcuts,
-    unregisterPanelKeyboardShortcuts,
-  } from '$features/layout/panel-keyboard-shortcuts.svelte';
+  setContext,
+  onMount,
+  onDestroy,
+  untrack,
+} from 'svelte';
+  import {
+  getPanelLayoutManager,
+  type PanelTab,
+} from '$features/layout/panel-layout-adapter';
+  import {
+  createPanelKeyboardShortcuts,
+  registerPanelKeyboardShortcuts,
+  unregisterPanelKeyboardShortcuts,
+} from '$features/layout/panel-keyboard-shortcuts.svelte';
   import PanelContainer from './PanelContainer.svelte';
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminals/terminals-selectors';
-  import { get, writable } from 'svelte/store';
+  import {
+  get,
+  writable,
+} from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { track } from '$lib/services/analytics';
-  import { onMount, onDestroy, untrack } from 'svelte';
+
   import { fade } from 'svelte/transition';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import {
-    selectIsCollapsed,
-    selectSidebarSide,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { flattenPanels, openTabFromConfig } from './panel-ai-layout-helpers';
+  selectIsCollapsed,
+  selectSidebarSide,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import {
+  flattenPanels,
+  openTabFromConfig,
+} from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
   import { updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
   import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { invoke, listenSync } from '$lib/electron-bridge';
-  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
+  import {
+  invoke,
+  listenSync,
+} from '$lib/electron-bridge';
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
-    selectPanelLayoutRoot,
-    selectPanels,
-    selectFocusedPanelId,
-    selectFocusedPanel,
-    selectActiveTab,
-    selectAllTabs,
-    selectPanelIds,
-    selectRestoreStatus,
-  } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  selectPanelLayoutRoot,
+  selectPanels,
+  selectFocusedPanelId,
+  selectFocusedPanel,
+  selectActiveTab,
+  selectAllTabs,
+  selectPanelIds,
+  selectRestoreStatus,
+} from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { closeActiveTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { renameAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   const logger = createLogger('PanelLayout');
   const isCollapsed = selectIsCollapsed();
@@ -284,7 +304,7 @@
     layoutManager.closePanel(panelId);
   }
 
-   
+
   function handleZoomToggle(_panelId: string) {
     keyboardShortcuts.executeAction('zoom-toggle');
   }
@@ -376,7 +396,9 @@
           // Persist the rename via the lightweight IPC path so other windows
           // pick it up immediately (full saveSession would stall for minutes).
           try {
-            await agentService.renameSession(agentId, workspaceId, newName);
+            const action = renameAgentSessionRequested(workspaceId, agentId, newName);
+            getReduxStore().dispatch(action);
+            await action.promise;
           } catch (err) {
             // Revert optimistic UI so tab title and Redux match disk, then
             // rethrow so ReversibleActionManager surfaces the error toast
@@ -402,7 +424,9 @@
           );
           layoutManager.updateTabTitle(tab.id, oldName);
           try {
-            await agentService.renameSession(agentId, workspaceId, oldName);
+            const action = renameAgentSessionRequested(workspaceId, agentId, oldName);
+            getReduxStore().dispatch(action);
+            await action.promise;
           } catch (err) {
             // Revert the revert: undo failed, so restore the new name in the UI
             // and rethrow so the user sees the error.

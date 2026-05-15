@@ -6,7 +6,12 @@
  * Before the fix, a single `this.assistantMessageId` instance field was
  * overwritten by the second call before the first's completion ran.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 
 /**
  * Minimal reproduction of the streamingCallbacks Map type from ACPProvider.

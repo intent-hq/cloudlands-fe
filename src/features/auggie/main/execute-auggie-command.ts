@@ -1,8 +1,14 @@
 import * as path from 'path';
 import { createRequire } from 'module';
-import { execAsyncWithRetry, execFileAsyncWithRetry } from '../../../shared/git/git-env';
+import {
+  execAsyncWithRetry,
+  execFileAsyncWithRetry,
+} from '../../../shared/git/git-env';
 import { Logger } from '../../../shared/logger';
-import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
+import {
+  findAuggiePathAsync,
+  getEnhancedPath,
+} from './auggie-path';
 
 const logger = new Logger('ExecuteAuggieCommand');
 

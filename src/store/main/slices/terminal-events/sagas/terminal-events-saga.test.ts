@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   TERMINAL_EVENT_ACTION_MAP,
   TERMINAL_EVENT_TYPES,

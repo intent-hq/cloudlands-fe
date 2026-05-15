@@ -1,6 +1,9 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     suggestion: {

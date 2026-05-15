@@ -1,5 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { END, runSaga } from "redux-saga";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  END,
+  runSaga,
+} from "redux-saga";
 import {
   createElectronChannel,
   createListenSyncChannel,

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { getDefaultProviderId } from "$shared/config/provider-config";
 import {
   findAvailableModelMatch,

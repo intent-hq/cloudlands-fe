@@ -10,46 +10,50 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
-  import { untrack } from 'svelte';
+  import {
+  untrack,
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
   import { runTaskBreakdownTaskMenuAction } from './note-with-comments/task-menu-task-breakdown-action';
   import {
-    createImageDropHandler,
-    createImagePasteHandler,
-  } from './note-with-comments/image-upload-handlers';
+  createImageDropHandler,
+  createImagePasteHandler,
+} from './note-with-comments/image-upload-handlers';
   import {
-    discoverTaskMenuPopovers,
-    type TaskMenuPopoverData,
-  } from './note-with-comments/task-menu-popover-discovery';
+  discoverTaskMenuPopovers,
+  type TaskMenuPopoverData,
+} from './note-with-comments/task-menu-popover-discovery';
   import {
-    getTaskAssociationKeysInEditor,
-    getTaskTextsInEditor,
-    removeAgentFromTasks,
-    restoreTaskAgentAssociations,
-  } from './note-with-comments/task-item-utils';
+  getTaskAssociationKeysInEditor,
+  getTaskTextsInEditor,
+  removeAgentFromTasks,
+  restoreTaskAgentAssociations,
+} from './note-with-comments/task-item-utils';
   import {
-    createScrollToHeadingHandler,
-    createScrollToTaskHandler,
-  } from './note-with-comments/note-scroll-handlers';
+  createScrollToHeadingHandler,
+  createScrollToTaskHandler,
+} from './note-with-comments/note-scroll-handlers';
   import TaskMenu from '$lib/components/tiptap/TaskMenu.svelte';
   import NoteMetadataBar from '$lib/components/workspace/NoteMetadataBar.svelte';
   import NoteCodeChangesCard from '$lib/components/workspace/NoteCodeChangesCard.svelte';
   import type { Workspace } from '$shared/types';
   import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
   import {
-    runExternalContentUpdateEffect,
-    shouldSafetyNetTrigger,
-  } from './note-with-comments/external-update-effect';
+  runExternalContentUpdateEffect,
+  shouldSafetyNetTrigger,
+} from './note-with-comments/external-update-effect';
   import { applyExternalUpdateHtmlToEditorPreservingCursor } from './note-with-comments/external-update-editor';
   import {
-    destroyAndClearCommentManagerV2,
-    maybeCreateCommentManagerV2,
-  } from './note-with-comments/comment-manager-lifecycle';
+  destroyAndClearCommentManagerV2,
+  maybeCreateCommentManagerV2,
+} from './note-with-comments/comment-manager-lifecycle';
   import {
-    createOnCommentManagerContentChangedAfterAnchorInsertion,
-    createOnCommentManagerContentChangedUpdateLastKnownContent,
-  } from './note-with-comments/comment-manager-content-change-handlers';
+  createOnCommentManagerContentChangedAfterAnchorInsertion,
+  createOnCommentManagerContentChangedUpdateLastKnownContent,
+} from './note-with-comments/comment-manager-content-change-handlers';
   import { setupCommentMarkClickHandlerV2 } from './note-with-comments/comment-mark-click-handler';
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
@@ -58,41 +62,47 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectComments } from '$lib/store/slices/comments/comments-selectors';
   import {
-    selectCommentAction,
-    updateCommentAction,
-    clearCommentsAction,
-  } from '$lib/store/slices/comments/comments-slice';
+  selectCommentAction,
+  updateCommentAction,
+  clearCommentsAction,
+} from '$lib/store/slices/comments/comments-slice';
 
   const reduxDispatch = getDispatch();
   import { createEditorConfig } from '$lib/utils/editor-config';
-  import { onMount, onDestroy } from 'svelte';
+
   import { writable } from 'svelte/store';
   import { isSpecNote } from '$shared/constants/notes';
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
-    restoreNoteVersion,
-    updateNoteContent,
-    clearNewlyCreatedNoteId,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  restoreNoteVersion,
+  updateNoteContent,
+  clearNewlyCreatedNoteId,
+} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import {
-    selectNoteById,
-    selectNewlyCreatedNoteId,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  selectNoteById,
+  selectNewlyCreatedNoteId,
+} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+} from '$lib/utils/markdown-processor';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
   import {
-    AGENT_ASSOCIATIONS_REMOVED_EVENT,
-    pruneTaskAgentAssociationsForNote,
-    TASK_ASSOCIATION_CHANGED_EVENT,
-  } from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
+  AGENT_ASSOCIATIONS_REMOVED_EVENT,
+  pruneTaskAgentAssociationsForNote,
+  TASK_ASSOCIATION_CHANGED_EVENT,
+} from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
 
   import { invoke } from '$lib/electron-bridge';
-  import { selectNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import {
+  selectNoteFontStyle,
+  selectSpellcheckEnabled,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
+
   import { selectWorkspaceNavigationHistory } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
   import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
@@ -237,7 +247,6 @@
     initialScrollPosition,
     onScrollPositionSave,
     onAttachContent: _onAttachContent,
-    onagentlaunched,
     onnavigatetoagent,
     isInitialSpecWriteInProgress = false,
     isPanelFocused = false,
@@ -255,7 +264,6 @@
     /** Callback to save scroll position before unmounting */
     onScrollPositionSave?: (scrollTop: number) => void;
     onAttachContent?: (event: CustomEvent<{ query: string }>) => void;
-    onagentlaunched?: (data: any) => void;
     onnavigatetoagent?: (data: { agentId: string }) => void;
     /** Whether the initial spec write is in progress (coordinator writing first draft) */
     isInitialSpecWriteInProgress?: boolean;
@@ -866,16 +874,16 @@
     restoreTaskAgentAssociations(editor, associations, logger);
   }
 
-  async function handleTaskMenuAction(
+  function handleTaskMenuAction(
     action: string,
     taskData: any,
     options?: { skipSave?: boolean },
-  ) {
+  ): void {
     if (action === 'assign-agent') {
       const state = getReduxStore().getState();
       const parentNote = noteId ? selectNoteById.select(state, workspace.id, noteId) : null;
       const model = selectWorkspaceDefaultModel.select(state, workspace.id);
-      return runAssignAgentTaskMenuAction({
+      void runAssignAgentTaskMenuAction({
         editor,
         workspace,
         noteId,
@@ -885,25 +893,13 @@
         model,
         debounceUpdate,
         storeDispatch: reduxDispatch,
-        dispatch: (type, detail) => {
-          if (type === 'agentLaunched') {
-            onagentlaunched?.(detail);
-          }
-        },
         logger,
       });
     } else if (action === 'task-breakdown') {
-      return runTaskBreakdownTaskMenuAction({
+      runTaskBreakdownTaskMenuAction({
         workspace,
         noteId,
         taskData,
-        model: selectWorkspaceDefaultModel.select(getReduxStore().getState(), workspace.id),
-        dispatch: (type, detail) => {
-          if (type === 'agentLaunched') {
-            onagentlaunched?.(detail);
-          }
-        },
-        logger,
       });
     }
   }
@@ -2031,7 +2027,6 @@
             {workspace}
             {noteId}
             onAddComment={handleAddCommentClick}
-            onAgentLaunched={(agentData) => onagentlaunched?.(agentData)}
           />
         {/if}
 

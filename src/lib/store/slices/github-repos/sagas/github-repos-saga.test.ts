@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
@@ -40,7 +45,10 @@ import {
   setGithubReposLoading,
   type GithubRepoItem,
 } from "../github-repos-slice";
-import { githubReposSaga, loadGithubReposSaga } from "./github-repos-saga";
+import {
+  githubReposSaga,
+  loadGithubReposSaga,
+} from "./github-repos-saga";
 
 const normalized: GithubRepoItem[] = [
   {

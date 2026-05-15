@@ -6,8 +6,15 @@
  */
 
 import { EventEmitter } from '$shared/utils/event-emitter';
-import { readFile, stat } from 'fs/promises';
-import { join, relative, isAbsolute } from 'path';
+import {
+  readFile,
+  stat,
+} from 'fs/promises';
+import {
+  join,
+  relative,
+  isAbsolute,
+} from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
   extractChangesFromDiff,
@@ -22,7 +29,10 @@ import type { GitDiffResult } from './git-types';
 // Import FileChange from the shared types instead of defining locally
 import type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
 export type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
-import { isGitRepository, storeBlob } from '../../../../shared/git/git-blob-storage';
+import {
+  isGitRepository,
+  storeBlob,
+} from '../../../../shared/git/git-blob-storage';
 import { isBinaryExtension } from '../../../../shared/binary-file-extensions';
 import {
   partitionDefaultFileTrackingExcludes,

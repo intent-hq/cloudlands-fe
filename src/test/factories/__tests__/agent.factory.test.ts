@@ -4,7 +4,11 @@
  * Tests for factory functions that create test data.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   createTestAgent,
   createTestMessage,

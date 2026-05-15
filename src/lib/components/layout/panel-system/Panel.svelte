@@ -16,7 +16,11 @@
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { setPanelContext } from './panel-context';
   import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import {
+  onMount,
+  untrack,
+  type Snippet,
+} from 'svelte';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 

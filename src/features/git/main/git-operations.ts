@@ -7,7 +7,10 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Logger } from '$shared/logger';
-import { execAsync, execFileAsync } from '../../../shared/git/git-env';
+import {
+  execAsync,
+  execFileAsync,
+} from '../../../shared/git/git-env';
 
 const logger = new Logger('GitOperations');
 

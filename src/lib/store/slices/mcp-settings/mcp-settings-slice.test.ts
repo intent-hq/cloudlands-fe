@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   applyWorkspaceDisabledServers,

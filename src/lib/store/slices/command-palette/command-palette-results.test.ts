@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { computeResults, type ComputeResultsInput } from "./command-palette-results";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  computeResults,
+  type ComputeResultsInput,
+} from "./command-palette-results";
 import type { WorkspaceObject } from "./command-palette-utils";
 
 const icon = { iconName: "test" };

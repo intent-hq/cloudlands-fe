@@ -8,20 +8,37 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { createMessageId, createAgentId } from '$shared/types/branded-ids';
+import {
+  createMessageId,
+  createAgentId,
+} from '$shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import type { Workspace, AgentSession } from '$shared/types';
+import type { Workspace,
+  AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
 import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
 import { typedInvoke } from '$shared/ipc/typed-invoke';
 import { agentValidator } from './agent-validator';
 import type { AgentIpc } from '$shared/ipc/contracts';
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import {
+  AGENT_CHANNELS,
+  AGENT_BACKEND_CHANNELS,
+} from '$shared/ipc/channels';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { track } from '$lib/services/analytics';
+import {
+  addMessage,
+  replaceMessages,
+  setAgentStreaming,
+  upsertSession,
+} from '$lib/store/slices/agent-session/agent-session-slice';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
+import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -38,32 +55,6 @@ const isBackend = typeof window === 'undefined';
 // Lazy-loaded frontend modules
 let invokeFunction: any = null;
 let persistenceServiceModule: any = null;
-let reduxStoreModule: any = null;
-let reduxActionsModule: any = null;
-let reduxSelectorsModule: any = null;
-
-// Lazy-load Redux store for frontend
-async function getReduxStoreInstance() {
-  if (!reduxStoreModule && !isBackend) {
-    const module = await import('$lib/store/redux-dispatch-bridge');
-    reduxStoreModule = module.getReduxStore;
-  }
-  return reduxStoreModule ? reduxStoreModule() : null;
-}
-
-async function getReduxActions() {
-  if (!reduxActionsModule && !isBackend) {
-    reduxActionsModule = await import('$lib/store/slices/workspace-agents/workspace-agents-slice');
-  }
-  return reduxActionsModule;
-}
-
-async function getReduxSelectors() {
-  if (!reduxSelectorsModule && !isBackend) {
-    reduxSelectorsModule = await import('$lib/store/slices/workspace-agents/workspace-agents-selectors');
-  }
-  return reduxSelectorsModule;
-}
 
 async function getInvoke() {
   if (!invokeFunction && !isBackend) {
@@ -84,8 +75,6 @@ async function getPersistenceService() {
 async function getActiveProviderId(): Promise<string | null> {
   if (isBackend) return null;
   try {
-    const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-    const { selectActiveProviderId } = await import('$lib/store/slices/provider-settings/provider-settings-selectors');
     const store = getReduxStore();
     return selectActiveProviderId.select(store.getState());
   } catch {
@@ -108,14 +97,20 @@ async function getActiveProviderId(): Promise<string | null> {
  * The backend builds the complete system prompt from agentType via InstructionService.
  *
  * Agent naming follows the VS Code webview pattern:
- * - If `name` is provided, it's used (with sanitization)
- * - If `name` is empty but `initialMessage` is present, name is derived from the message
- * - Otherwise, a default name is generated based on workspace title
+ * - If `name` is provided,
+  it's used (with sanitization)
+ * - If `name` is empty but `initialMessage` is present,
+  name is derived from the message
+ * - Otherwise,
+  a default name is generated based on workspace title
  */
 
 // Re-export from shared for backward compatibility
-export type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
-import type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
+export type { UnifiedAgentConfig,
+  CreateAgentResult } from '$shared/types/agent.types';
+import type { UnifiedAgentConfig,
+  CreateAgentResult } from '$shared/types/agent.types';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 
 /**
  * Normalized agent configuration with guaranteed name
@@ -293,10 +288,6 @@ export class UnifiedAgentFactory {
 
           // Get linked references from context store (Redux)
           try {
-            const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-            const { selectTopLevelContextItems } = await import(
-              '$lib/store/slices/context/context-selectors'
-            );
             const topLevelItems = selectTopLevelContextItems.select(
               getReduxStore().getState(),
               workspace.id,
@@ -548,10 +539,12 @@ export class UnifiedAgentFactory {
 
       // Only update frontend state if we're in the frontend
       if (!isBackend) {
-        const store = await getReduxStoreInstance();
-        const actions = await getReduxActions();
-        if (store && actions) {
-          store.dispatch(actions.upsertAgentSession(agent.workspaceId, agent));
+        const store = getReduxStore();
+        if (store) {
+          store.dispatch(upsertSession({
+            ...agent,
+            workspaceId: agent.workspaceId,
+          }));
         }
       }
       metrics.stateUpdateTime = Date.now() - stateUpdateStart;
@@ -562,14 +555,12 @@ export class UnifiedAgentFactory {
       // This ensures ChatPanel sees streaming state immediately when it mounts
       if (normalized.initialMessage) {
         if (!isBackend) {
-          const store = await getReduxStoreInstance();
-          const actions = await getReduxActions();
+          const store = getReduxStore();
 
           // Set streaming state directly via Redux dispatch.
-          // We use the explicit workspaceId variant to avoid relying on
-          // currentWorkspace which may be null in certain timing scenarios.
-          if (store && actions) {
-            store.dispatch(actions.setAgentStreaming(agent.workspaceId, agent.id, true));
+          // Streaming state is owned by agent-session and keyed by agent ID.
+          if (store) {
+            store.dispatch(setAgentStreaming(agent.id, true));
           }
 
           logger.info('Set streaming state to true BEFORE sending initial message', {
@@ -587,10 +578,8 @@ export class UnifiedAgentFactory {
       const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
 
       if ((hasInitialMessage || hasContextReferences || hasImageBlocks) && !isBackend) {
-        const store = await getReduxStoreInstance();
-        const actions = await getReduxActions();
-        const selectors = await getReduxSelectors();
-        if (store && actions && selectors) {
+        const store = getReduxStore();
+        if (store) {
           // If no text message but we have context references, generate a placeholder
           let messageText = normalized.initialMessage?.trim() || '';
           if (!messageText && hasContextReferences) {
@@ -612,7 +601,7 @@ export class UnifiedAgentFactory {
               ? { contextReferences: normalized.contextReferences }
               : {},
           };
-          store.dispatch(actions.addAgentMessage(agent.workspaceId, agent.id, userMessage));
+          store.dispatch(addMessage(agent.id, userMessage));
           logger.info('Added user message to state before sending', {
             agentId: agent.id,
             messageId: userMessage.id,
@@ -622,7 +611,7 @@ export class UnifiedAgentFactory {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
           try {
-            const session = selectors.selectAgentById.select(store.getState(), agent.id);
+            const session = selectAgentSession.select(store.getState(), agent.id);
             if (session) {
               const persistenceService = await getPersistenceService();
               if (persistenceService) {
@@ -896,13 +885,9 @@ export class UnifiedAgentFactory {
       // This ensures the UI shows the user message immediately when the agent is created
 
       // NOTE: Stream handler is NOT registered here anymore.
-      // AgentService.setupEventListeners() listens for 'agent:created' events from the backend
-      // and calls registerStreamHandlerForSession() which handles all stream processing.
+      // The agent stream lifecycle path ensures the handler for created/restored agents.
       // Previously, this factory also registered a handler, causing duplicate chunk processing
       // and doubled text output like "I'll helpI'll help you fix you fix".
-      //
-      // The stream handler logic that was here has been removed since it's redundant with
-      // AgentService.registerStreamHandlerForSession().
 
       if (!window.electronAPI) {
         logger.error('ElectronAPI not available, cannot send message', {
@@ -912,15 +897,13 @@ export class UnifiedAgentFactory {
 
         // Clean up the user message we added since we can't proceed
         if (!isBackend) {
-          const store = await getReduxStoreInstance();
-          const actions = await getReduxActions();
-          const selectors = await getReduxSelectors();
-          if (store && actions && selectors) {
-            const session = selectors.selectAgentById.select(store.getState(), agent.id);
+          const store = getReduxStore();
+          if (store) {
+            const session = selectAgentSession.select(store.getState(), agent.id);
             if (session && session.messages) {
               // Remove the last message (the user message we just added)
               const trimmedMessages = session.messages.slice(0, -1);
-              store.dispatch(actions.replaceAgentMessages(agent.workspaceId, agent.id, trimmedMessages));
+              store.dispatch(replaceMessages(agent.id, trimmedMessages));
             }
           }
         }
@@ -995,12 +978,11 @@ export class UnifiedAgentFactory {
         messageLength: message?.length,
       });
       // Mark streaming as failed (only in frontend)
-      // Note: Stream handler cleanup is handled by AgentService, not here
+      // Note: stream handler cleanup is handled by agent stream lifecycle, not here
       if (!isBackend) {
-        const store = await getReduxStoreInstance();
-        const actions = await getReduxActions();
-        if (store && actions) {
-          store.dispatch(actions.setAgentStreaming(agent.workspaceId, agent.id, false));
+        const store = getReduxStore();
+        if (store) {
+          store.dispatch(setAgentStreaming(agent.id, false));
         }
       }
       // Don't fail agent creation if initial message fails

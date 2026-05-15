@@ -9,8 +9,15 @@ import * as path from 'path';
 import type { TrackedChange, StageTransition, AgentAttribution } from '../types';
 import { WorkspaceConfig } from '$shared/main/config';
 import { Logger } from '$lib/utils/logger';
-import { fsyncFile, fsyncDir, renameWithRetry } from '$shared/main/file-sync-utils';
-import { getBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
+import {
+  fsyncFile,
+  fsyncDir,
+  renameWithRetry,
+} from '$shared/main/file-sync-utils';
+import {
+  getBlob,
+  isGitRepository,
+} from '../../../shared/git/git-blob-storage';
 
 const logger = new Logger({ category: 'FileTrackingStorage' });
 

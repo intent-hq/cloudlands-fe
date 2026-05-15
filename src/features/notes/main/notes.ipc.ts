@@ -22,7 +22,10 @@ import {
 
 import { Logger } from '../../../shared/logger';
 import { NotesService } from './notes.service';
-import { WorkspaceId as createWorkspaceId, NoteId as createNoteId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId as createWorkspaceId,
+  NoteId as createNoteId,
+} from '$shared/types/branded-ids';
 import { flushPendingVersion } from './storage/version-manager';
 import { getNoteStoragePaths } from './storage/note-storage-paths';
 

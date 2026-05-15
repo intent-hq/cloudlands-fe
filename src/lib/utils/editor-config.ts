@@ -8,8 +8,14 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import {
+  Plugin,
+  PluginKey,
+} from '@tiptap/pm/state';
+import {
+  Decoration,
+  DecorationSet,
+} from '@tiptap/pm/view';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createCommentDecorationsPlugin } from '$lib/components/tiptap/CommentDecorations';
 import { createWorkspacesLink } from './tiptap-link-extension';
@@ -23,14 +29,23 @@ import { ChoiceQuestion } from '$lib/components/tiptap/ChoiceQuestion';
 import { ChoiceOption } from '$lib/components/tiptap/ChoiceOption';
 import { ChoiceBlockShortcuts } from './choice-block-shortcuts';
 import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
-import { openWorkspaceFile, openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 import { dispatchWindowEvent } from './window-events';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
 import { safeLowlight } from './safe-lowlight';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { selectComments, selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+import {
+  selectComments,
+  selectCommentById,
+} from '$lib/store/slices/comments/comments-selectors';
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
-import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
+import {
+  getMentionSystem,
+  type SearchContext,
+} from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
 
 // Import note primitives extensions
@@ -41,7 +56,11 @@ import { PatchBlockNode } from './tiptap-primitives/patch-block-node';
 import { DiagramBlockNode } from './tiptap-primitives/diagram-block-node';
 
 // Import details block extension
-import { DetailsBlock, DetailsSummary, DetailsContent } from '$lib/components/tiptap/DetailsBlock';
+import {
+  DetailsBlock,
+  DetailsSummary,
+  DetailsContent,
+} from '$lib/components/tiptap/DetailsBlock';
 
 // Import context mention extension for inline context pills
 import { ContextMention } from '$lib/components/tiptap/ContextMention';

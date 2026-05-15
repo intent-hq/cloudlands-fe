@@ -1,8 +1,17 @@
 import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 import type { UpdateProgress, UpdateState } from "$features/auto-update/types";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
-import { call, delay, fork, put, takeEvery } from "typed-redux-saga";
-import { selectAutoUpdateToastVisible, selectAutoUpdateStatus } from "../auto-update-selectors";
+import {
+  call,
+  delay,
+  fork,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  selectAutoUpdateToastVisible,
+  selectAutoUpdateStatus,
+} from "../auto-update-selectors";
 import {
   checkForUpdates,
   checkForUpdatesManual,

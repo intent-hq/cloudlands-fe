@@ -1,5 +1,8 @@
 import { createSelector } from "../../utils/create-selector";
-import { SYSTEM_DEFAULT_FONT, type FontOption } from "./user-preferences-slice";
+import {
+  SYSTEM_DEFAULT_FONT,
+  type FontOption,
+} from "./user-preferences-slice";
 
 export const selectAgentFontStyle = createSelector((state) => {
   return state.userPreferences.agentFontStyle;

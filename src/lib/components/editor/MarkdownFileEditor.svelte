@@ -11,10 +11,17 @@
    *   TipTap HTML → processHTMLToMarkdown → markdown string (emitted via bind:value)
    */
 
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
-  import { processMarkdownToHTML, processHTMLToMarkdown, extractFrontMatter } from '$lib/utils/markdown-processor';
+  import {
+  processMarkdownToHTML,
+  processHTMLToMarkdown,
+  extractFrontMatter,
+} from '$lib/utils/markdown-processor';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';

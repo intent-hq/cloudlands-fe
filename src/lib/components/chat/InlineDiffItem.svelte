@@ -12,7 +12,10 @@
 
   import { fade } from 'svelte/transition';
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
@@ -50,7 +53,7 @@
     change,
     foldUnchanged = true,
     lineWrapping = false,
-     
+
     scrollToLine: _scrollToLine,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isAggregate = false,

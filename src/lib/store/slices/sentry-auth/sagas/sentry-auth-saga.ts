@@ -4,7 +4,13 @@
  * Handles side effects for Sentry authentication: IPC calls via sentryAuthClient.
  */
 
-import { call, fork, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { sentryAuthClient } from "$features/sentry-auth/renderer/sentry-auth.client";
 import {
   initializeSentryAuth,
@@ -23,9 +29,7 @@ import {
   setSentryIssues,
   setSentryLoadingIssues,
 } from "../sentry-auth-slice";
-import {
-  selectSentryIsAuthenticated,
-} from "../sentry-auth-selectors";
+import { selectSentryIsAuthenticated } from "../sentry-auth-selectors";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("SentryAuthSaga");

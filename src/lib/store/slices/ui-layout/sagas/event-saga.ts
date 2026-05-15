@@ -1,6 +1,15 @@
-import { call, takeEvery } from "typed-redux-saga";
-import { selectIsCollapsed, selectWidthBeforeCollapse } from "../ui-layout-selectors";
-import { setCollapsed, toggleSidebar } from "../ui-layout-slice";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
+import {
+  selectIsCollapsed,
+  selectWidthBeforeCollapse,
+} from "../ui-layout-selectors";
+import {
+  setCollapsed,
+  toggleSidebar,
+} from "../ui-layout-slice";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
 
 function dispatchSidebarEvent(collapsed: boolean, restoreWidth: number): void {

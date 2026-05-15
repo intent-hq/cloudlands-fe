@@ -13,7 +13,10 @@
  * Based on the POC that validated contentDOM editing works.
  */
 
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import {
+  test,
+  expect,
+} from '@playwright/experimental-ct-svelte';
 import ChoiceOptionHarness from './ChoiceOptionHarness.svelte';
 
 test.describe('Phase 2.2: ChoiceOption Node (TDD)', () => {

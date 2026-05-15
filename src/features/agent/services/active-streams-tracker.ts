@@ -11,7 +11,10 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { on, off } from '$lib/electron-bridge';
+import {
+  on,
+  off,
+} from '$lib/electron-bridge';
 
 const logger = createLogger('ActiveStreamsTracker');
 

@@ -4,7 +4,10 @@
  * Custom TipTap node for reference primitives
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { ReferencePrimitive } from '../../../shared/types/notes-primitives';
 import ReferenceBlock from '../../components/notes/primitives/ReferenceBlock.svelte';

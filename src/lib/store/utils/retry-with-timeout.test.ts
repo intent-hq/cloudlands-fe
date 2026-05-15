@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { runSaga } from "redux-saga";
 
 vi.mock("typed-redux-saga", async () => await import("./test-helpers/typed-redux-saga-mock"));
@@ -15,7 +20,7 @@ describe("retryWithTimeout", () => {
     const fn = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           fn();
         },
@@ -32,7 +37,7 @@ describe("retryWithTimeout", () => {
     const onAttemptError = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           attempt++;
           if (attempt < 3) {
@@ -59,7 +64,7 @@ describe("retryWithTimeout", () => {
     const onAttemptError = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           throw new Error("always fails");
         },
@@ -101,7 +106,7 @@ describe("retryWithTimeout", () => {
 
     await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           throw testError;
         },
@@ -121,7 +126,7 @@ describe("retryWithTimeout", () => {
     let attempts = 0;
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           attempts++;
           if (attempts < 3) {
@@ -147,7 +152,7 @@ describe("retryWithTimeout", () => {
     const fn = vi.fn();
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           fn();
         },
@@ -162,7 +167,7 @@ describe("retryWithTimeout", () => {
   it("returns 'retries-exhausted' with negative maxRetries when fn throws", async () => {
     const result = await runToCompletion(function* () {
       return yield* retryWithTimeout(
-         
+
         function* () {
           throw new Error("fail");
         },

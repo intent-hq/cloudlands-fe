@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { findBestAvailableModel, isModelAvailable, getModelLabel } from '../model-fallback';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  findBestAvailableModel,
+  isModelAvailable,
+  getModelLabel,
+} from '../model-fallback';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 
 describe('model-fallback', () => {

@@ -1,7 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
-import { ContentType, NoteVisibility, type Note } from "$shared/types";
+import {
+  ContentType,
+  NoteVisibility,
+  type Note,
+} from "$shared/types";
 
 vi.mock("typed-redux-saga", () => ({
   call: function* (fn: any, ...args: any[]) {

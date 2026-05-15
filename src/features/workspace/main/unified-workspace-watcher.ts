@@ -12,7 +12,10 @@
 
 import * as parcelWatcher from '@parcel/watcher';
 import { existsSync } from 'fs';
-import { relative, sep } from 'path';
+import {
+  relative,
+  sep,
+} from 'path';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('UnifiedWorkspaceWatcher');

@@ -1,9 +1,17 @@
 import { firstVisitStateClient } from "$lib/store/slices/workspace/utils/first-visit-state.client";
 import type { FirstVisitState } from "$shared/types";
 import { WorkspaceId } from "$shared/types/branded-ids";
-import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
-import { setPanelVisibilityBulk, type PanelVisibilityState } from "../ui-layout-slice";
+import {
+  setPanelVisibilityBulk,
+  type PanelVisibilityState,
+} from "../ui-layout-slice";
 
 export function mapFirstVisitToPanelVisibility(
   state: FirstVisitState,

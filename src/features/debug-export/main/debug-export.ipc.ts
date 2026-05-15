@@ -4,7 +4,10 @@
  * IPC handlers for exporting all debug logs as a zip file.
  */
 
-import { ipcMain, dialog } from 'electron';
+import {
+  ipcMain,
+  dialog,
+} from 'electron';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';

@@ -1,18 +1,69 @@
 import type { AgentSession, AgentMessage } from "$shared/types";
-import type { Collection } from "../../utils/collection-utils";
+import type { UnifiedAgentConfig } from "$shared/types/agent.types";
+
+export interface AgentSessionSendContextItem {
+  id: string;
+  type: string;
+  label?: string;
+  content?: string;
+  path?: string;
+  metadata?: Record<string, unknown>;
+  file?: File;
+  imageData?: string;
+  imageMimeType?: string;
+  fileData?: string;
+  fileMimeType?: string;
+}
+
+export interface AgentSessionContextReference {
+  type: string;
+  filePath?: string;
+  noteId?: string;
+  selectedText?: string;
+  [key: string]: unknown;
+}
+
+export interface AgentSessionSendMessageOptions {
+  contextItems?: AgentSessionSendContextItem[];
+  noteIds?: string[];
+  personality?: string;
+  resetHistory?: boolean;
+  model?: string;
+  agentId?: string;
+  contextReferences?: AgentSessionContextReference[];
+}
+
+export interface AgentSessionForkOptions {
+  forkFromMessageId?: string;
+  switchToForked?: boolean;
+  name?: string;
+  model?: string;
+  selectedText?: string;
+}
+
+export type AgentSessionLaunchConfig = Omit<UnifiedAgentConfig, "workspaceId"> & {
+  workspaceId?: UnifiedAgentConfig["workspaceId"];
+};
+
+export interface AgentSessionLaunchOptions {
+  openAgent?: boolean;
+  openInAdjacentPanel?: boolean;
+  panelId?: string;
+  sourcePanelId?: string;
+  assignTaskNoteId?: string;
+  reloadNotes?: boolean;
+  markInitialMessageSent?: boolean;
+}
 
 /**
  * Internal storage shape for a single agent session.
  *
- * Mirrors the public `AgentSession` type but stores `messages` as a
- * `Collection<AgentMessage, 'id'>` for O(1) per-message lookups and
- * aligns with `src/lib/store/AGENTS.md` §3 ("Use Collection, Not Arrays").
- *
- * Selectors materialize back to the public `AgentSession` shape (with
- * `messages: AgentMessage[]`), so callers outside the slice are unaffected.
+ * Mirrors the public `AgentSession` type while keeping `messages` as the
+ * ordered `AgentMessage[]` consumed by UI, sagas, persistence payloads, and
+ * retry/regenerate flows.
  */
 export type StoredAgentSession = Omit<AgentSession, "messages"> & {
-  messages: Collection<AgentMessage, "id">;
+  messages: AgentMessage[];
 };
 
 /**
@@ -20,10 +71,12 @@ export type StoredAgentSession = Omit<AgentSession, "messages"> & {
  *
  * Flat, agent-keyed state for all AgentSession data.
  * All Date fields are stored as ISO strings (serializable).
- * Messages are stored as a serializable `Collection` (plain object).
+ * Messages are stored as an ordered, serializable array.
  */
 export interface AgentSessionState {
   /** Agent sessions keyed by agentId */
   byAgentId: Record<string, StoredAgentSession>;
+  /** Index: workspace ID → array of agent IDs belonging to that workspace */
+  agentIdsByWorkspace: Record<string, string[]>;
 }
 

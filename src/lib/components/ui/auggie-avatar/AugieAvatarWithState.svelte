@@ -8,7 +8,12 @@
   import AuggieAvatar from './AuggieAvatar.svelte';
   import { cn } from '$lib/utils.js';
   import Fa from 'svelte-fa';
-  import { faCheck, faX, faHourglass, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faX,
+  faHourglass,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import type { AvatarState } from './avatar-state';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
 

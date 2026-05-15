@@ -1,4 +1,8 @@
-import { describe, expect, test } from "vitest";
+import {
+  describe,
+  expect,
+  test,
+} from "vitest";
 import { createReducer } from "./create-reducer";
 import { createAction } from "./create-action";
 import { createBooleanPreference } from "./boolean-preference";

@@ -10,16 +10,23 @@
  * - Event persistence
  */
 
-import { ipcMain, app } from 'electron';
+import {
+  ipcMain,
+  app,
+} from 'electron';
 import path from 'path';
 import { z } from 'zod';
 import { mainLogger } from './main-logger';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import type { CommandResponse } from '../../../shared/types';
-import { WorkspaceEvent, WorkspaceEventType } from '../../events/types';
+import {
+  WorkspaceEvent,
+  WorkspaceEventType,
+  createWorkspaceEvent,
+} from '../../events/types';
 import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
-import { createWorkspaceEvent } from '../../events/types';
+
 import { EventStore } from '../../events/main/event-store';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';

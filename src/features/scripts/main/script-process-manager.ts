@@ -6,13 +6,19 @@
  * accessed via getScriptProcessManager(workspaceId).
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import {
+  spawn,
+  ChildProcess,
+} from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import { createShellEnv } from '../../../shared/git/git-env';
 import { killProcessTree } from '../../../shared/main/process-tree-kill';
-import { ScriptOutputBuffer, OutputLine } from './script-output-buffer';
+import {
+  ScriptOutputBuffer,
+  OutputLine,
+} from './script-output-buffer';
 
 const logger = new Logger('ScriptProcessManager');
 

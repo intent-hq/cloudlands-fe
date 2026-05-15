@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { faExpand, faTimes } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faExpand,
+  faTimes,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import mermaid from 'mermaid';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';

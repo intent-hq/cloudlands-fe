@@ -5,7 +5,10 @@
  */
 
 import { Logger } from '$lib/utils/logger';
-import { EDITOR_REGISTRY, type EditorDefinition } from '$shared/editors/editor-registry';
+import {
+  EDITOR_REGISTRY,
+  type EditorDefinition,
+} from '$shared/editors/editor-registry';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { spawn } from 'child_process';
 import os from 'os';

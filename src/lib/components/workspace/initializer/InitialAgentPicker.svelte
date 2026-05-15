@@ -3,33 +3,36 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
   import {
-    selectSpecialists,
-    selectCustomSpecialistsLoaded,
-    selectUserOverrides,
-    selectEffectiveModel,
-    selectEffectiveCodingAgent,
-    filterSpecialistsByGitHubAuth,
-  } from '$lib/store/slices/specialists/specialists-selectors';
+  selectSpecialists,
+  selectCustomSpecialistsLoaded,
+  selectUserOverrides,
+  selectEffectiveModel,
+  selectEffectiveCodingAgent,
+  filterSpecialistsByGitHubAuth,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectSelectedModel,
-    selectAvailableModels,
-  } from '$lib/store/slices/model/model-selectors';
+  selectSelectedModel,
+  selectAvailableModels,
+} from '$lib/store/slices/model/model-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPlus,
+  faChevronDown,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import {
-    getProviderAvailability,
-    type ProviderAvailabilityResult,
-  } from '$features/providers/provider-availability.client';
+  getProviderAvailability,
+  type ProviderAvailabilityResult,
+} from '$features/providers/provider-availability.client';
   import {
-    ACP_PROVIDERS,
-    getDefaultProviderId,
-    getDefaultModelForProvider,
-    PROVIDER_MODEL_TIERS,
-    parseCompoundModelId,
-  } from '$shared/config/provider-config';
+  ACP_PROVIDERS,
+  getDefaultProviderId,
+  getDefaultModelForProvider,
+  PROVIDER_MODEL_TIERS,
+  parseCompoundModelId,
+} from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
   import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { track } from '$lib/services/analytics';

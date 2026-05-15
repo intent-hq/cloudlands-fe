@@ -8,7 +8,10 @@
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../../shared/logger';
-import { WorkspaceEventType, type WorkspaceEvent } from '../../../events/types';
+import {
+  WorkspaceEventType,
+  type WorkspaceEvent,
+} from '../../../events/types';
 import type { ProcessedChange } from './change-processor';
 import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
 

@@ -5,7 +5,11 @@
  * instruction IDs available in the instruction registry.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { getAvailableInstructionIds } from '../../../features/agent/instructions';
 import type { AgentTypeId } from '../agent.types';
 

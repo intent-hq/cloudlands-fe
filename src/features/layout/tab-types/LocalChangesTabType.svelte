@@ -9,33 +9,41 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-    selectFileTrackingBoundarySha,
-    selectFileTrackingChanges,
-    selectFileTrackingCommits,
-    selectFileTrackingLoading,
-  } from '$lib/store/slices/changes/changes-selectors';
+  selectFileTrackingBoundarySha,
+  selectFileTrackingChanges,
+  selectFileTrackingCommits,
+  selectFileTrackingLoading,
+} from '$lib/store/slices/changes/changes-selectors';
   import {
-    stageByPathRequested,
-    unstageByPathRequested,
-    revertByPathRequested,
-  } from '$lib/store/slices/changes/changes-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  stageByPathRequested,
+  unstageByPathRequested,
+  revertByPathRequested,
+} from '$lib/store/slices/changes/changes-slice';
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import {
-    selectLineWrapping,
-    selectFoldUnchanged,
-    selectDiffSideBySide,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectLineWrapping,
+  selectFoldUnchanged,
+  selectDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    toggleLineWrapping,
-    toggleFoldUnchanged,
-    toggleDiffSideBySide,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  toggleLineWrapping,
+  toggleFoldUnchanged,
+  toggleDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
+
   import Fa from 'svelte-fa';
-  import { faTextWidth, faMap, faColumns, faCompressAlt } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faTextWidth,
+  faMap,
+  faColumns,
+  faCompressAlt,
+} from '@fortawesome/free-solid-svg-icons';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();

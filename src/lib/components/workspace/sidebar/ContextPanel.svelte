@@ -9,10 +9,10 @@
   import type { ContextItem, ContextProvider } from '$features/context/types';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    initContextForWorkspace,
-    addContextItem,
-    removeContextItem,
-  } from '$lib/store/slices/context/context-slice';
+  initContextForWorkspace,
+  addContextItem,
+  removeContextItem,
+} from '$lib/store/slices/context/context-slice';
   import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -74,7 +74,6 @@
 
   // Get context items that aren't linked to any note
   const topLevelItems$ = selectTopLevelContextItems(workspaceId);
-  const standaloneContextItems = $derived($topLevelItems$);
 
   /**
    * Helper to create a fully-formed ContextItem with id + timestamps,
@@ -295,8 +294,8 @@
     />
 
     <!-- Standalone context items (rendered in same list flow) -->
-    {#if standaloneContextItems.length > 0}
-      {#each standaloneContextItems as item (item.id)}
+    {#if $topLevelItems$.length > 0}
+      {#each $topLevelItems$ as item (item.id)}
         <ContextItemRow
           {item}
           isActive={isItemActive(item)}

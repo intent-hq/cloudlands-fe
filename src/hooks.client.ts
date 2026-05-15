@@ -1,6 +1,10 @@
 import { logger } from '$shared/logger';
 import type { HandleClientError } from '@sveltejs/kit';
-import { initAnalytics, track, identifyUser } from '$lib/services/analytics';
+import {
+  initAnalytics,
+  track,
+  identifyUser,
+} from '$lib/services/analytics';
 import { flushReduxActionBreadcrumbs } from '$lib/store/middlewares/sentry-breadcrumbs';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
 

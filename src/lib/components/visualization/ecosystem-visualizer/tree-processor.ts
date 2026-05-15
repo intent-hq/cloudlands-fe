@@ -8,7 +8,10 @@
  * 4. Depth-based limits - control max render depth
  */
 
-import { hierarchy, pack } from 'd3';
+import {
+  hierarchy,
+  pack,
+} from 'd3';
 import type { FileNode, ProcessedNode, BlobShape } from './types';
 import { getColorForExtension } from './language-colors';
 import { DEFAULT_ECOSYSTEM_SETTINGS } from './types';

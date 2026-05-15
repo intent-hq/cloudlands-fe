@@ -1,7 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
 // CustomTaskItem renders TaskItemNodeView.svelte which calls these at init time

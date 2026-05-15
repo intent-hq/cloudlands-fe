@@ -4,7 +4,13 @@
  * Tests for ProvenanceContextManager and AttributionEngine
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import {
   ProvenanceContextManager,
   resetProvenanceContextManager,

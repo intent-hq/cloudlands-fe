@@ -3,12 +3,12 @@
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils.js';
   import {
-    faXmark,
-    faInfo,
-    faCircleExclamation,
-    faCircleCheck,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
+  faXmark,
+  faInfo,
+  faCircleExclamation,
+  faCircleCheck,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
 
   interface Props {

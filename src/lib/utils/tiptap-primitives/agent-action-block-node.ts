@@ -4,7 +4,10 @@
  * Custom TipTap node for agent action primitives
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { AgentActionPrimitive } from '../../../shared/types/notes-primitives';
 import AgentActionBlock from '../../components/notes/primitives/AgentActionBlock.svelte';

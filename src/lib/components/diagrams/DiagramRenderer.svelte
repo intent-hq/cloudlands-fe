@@ -12,7 +12,10 @@
   import DiagramEdge from './DiagramEdge.svelte';
   import DiagramGroup from './DiagramGroup.svelte';
   import DiagramControls from './DiagramControls.svelte';
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 
   interface Props {

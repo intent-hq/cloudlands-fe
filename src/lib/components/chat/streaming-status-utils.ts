@@ -74,7 +74,7 @@ export function computeCompletedEvents(
 
 /**
  * Determine whether to append a "Streaming response…" status event on chunk receipt.
- * Extracted from ChatService.recordChunkReceived() for testability.
+ * Used by canonical agent stream update chunk handling for testability.
  *
  * Returns false when:
  * - receivedFirstChunk is already true (not the first chunk)

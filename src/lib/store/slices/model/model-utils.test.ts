@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 vi.mock('$features/auggie/auggie-models.client', () => ({
   getAuggieModels: vi.fn(),

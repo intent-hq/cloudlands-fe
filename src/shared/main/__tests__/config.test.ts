@@ -5,7 +5,14 @@
  * ~/intent (new) and ~/.workspaces (legacy) roots.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 const { mockExistsSync, toOsPath } = vi.hoisted(() => {
   const pathModule = require('path');
   return {

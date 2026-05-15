@@ -1,7 +1,10 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import type { HTMLAttributes } from 'svelte/elements';
-  import { tv, type VariantProps } from 'tailwind-variants';
+  import {
+  tv,
+  type VariantProps,
+} from 'tailwind-variants';
 
   const buttonGroupVariants = tv({
     base: 'inline-flex -space-x-px',

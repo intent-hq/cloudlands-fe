@@ -7,7 +7,14 @@
  * 3. IPC heartbeat ping/pong mechanism
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 
 // Mock logger before any other imports that might use it
 const mockLogger = {

@@ -13,7 +13,11 @@
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { Snippet } from 'svelte';
   import { onDestroy } from 'svelte';
-  import { classifyTool, CATEGORY_ICONS, type ToolCategory } from './tool-classifier';
+  import {
+  classifyTool,
+  CATEGORY_ICONS,
+  type ToolCategory,
+} from './tool-classifier';
   import type { ContentBlock } from '$shared/types';
   import CylinderScroller from './CylinderScroller.svelte';
 

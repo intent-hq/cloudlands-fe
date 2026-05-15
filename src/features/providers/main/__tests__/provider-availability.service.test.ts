@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { PROVIDERS_CHANNELS } from '../../../../shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({

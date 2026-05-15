@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import type { StoreState } from "../../../types";

@@ -10,7 +10,11 @@
  * They use the actual instruction files from the codebase.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import common from '../instructions/common';
 import workspace from '../instructions/workspace';
 import taskFocused from '../instructions/task-focused';

@@ -3,7 +3,13 @@
  * Phase 1C - Increment 5: MCP Tools for Task Management
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock util.promisify BEFORE any imports that use it
@@ -88,7 +94,10 @@ vi.mock('electron', () => ({
 
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
-import { WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId,
+  NoteId,
+} from '$shared/types/branded-ids';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 describe('Task Management MCP Tools', () => {

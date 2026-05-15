@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import {
   DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS,
   hasDefaultFileTrackingExcludedSegment,

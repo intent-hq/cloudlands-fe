@@ -6,23 +6,30 @@
  * - State reconciliation (detect stuck processing state)
  * - localStorage persistence for status events
  *
- * NOTE: Stream DOM event handling remains in ChatService for now,
- * as it is deeply coupled with the streaming protocol. The saga
- * handles only periodic timers and persistence.
+ * Stream lifecycle event handling now lives in chat stream / agent-session sagas.
+ * This saga handles periodic timers and persistence.
  */
 
 import type { Task } from 'redux-saga';
-import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import {
   selectAgentSessionIsProcessing,
   selectAgentIsResponding,
   selectAgentMessages,
-  selectAgentSession,
 } from '../../agent-session/agent-session-selectors';
 import { initializeChatSaga } from './initialize-chat-saga';
 import { watchSendMessage } from './send-message-saga';
 import { chatLifecycleSaga } from './chat-lifecycle-saga';
 import {
+  getLocalStorageJSON,
   setLocalStorageJSON,
   removeLocalStorageItem,
 } from '../../../utils/safe-local-storage-saga';
@@ -40,21 +47,27 @@ import {
   chatStallDetected,
   chatStuckStateCleared,
   streamCompleted,
-  streamErrored,
   chatStopCompleted,
   chatReset,
   chatInterrupted,
   streamStatusReceived,
+  initializeChatRequested,
+  chatStatusEventsHydrated,
 } from '../chat-state-slice';
 import {
   selectChatAgentState,
   selectChatLastChunkReceivedAt,
   selectChatStatusEvents,
 } from '../chat-state-selectors';
-import { selectAgentById, selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
-import { removeAgent, removeWorkspaceAgentState } from '../../workspace-agents/workspace-agents-slice';
+import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
+import {
+  agentStreamUpdateReceived,
+  removeAgent,
+  removeWorkspaceAgentState,
+} from '../../workspace-agents/workspace-agents-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { sanitizeStatusEvents } from '../chat-state-serialization';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('ChatStateSaga');
 
@@ -172,7 +185,7 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
         && (Date.now() - agentState.lastChunkTime) < STUCK_PROCESSING_TIMEOUT_MS;
       const reconcileWorkspaceId = agentState.trackedWorkspaceId ?? currentSession?.workspaceId;
       const sessionData: any = reconcileWorkspaceId
-        ? yield* selectAgentById.effect(agentId)
+        ? yield* selectAgentSession.effect(agentId)
         : undefined;
       const sessionSaysStreaming = sessionData?.isStreaming ?? false;
 
@@ -267,6 +280,31 @@ function makeStorageKey(agentId: string): string {
   return `${STATUS_EVENTS_STORAGE_KEY}:${agentId}`;
 }
 
+function isStatusEvent(value: unknown): value is StatusEvent {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<StatusEvent>;
+  return typeof candidate.phase === 'string'
+    && typeof candidate.message === 'string'
+    && (candidate.level === 'info' || candidate.level === 'warn' || candidate.level === 'error')
+    && typeof candidate.timestamp === 'number'
+    && Number.isFinite(candidate.timestamp);
+}
+
+function parsePersistedStatusEvents(value: unknown): StatusEvent[] | null {
+  if (!Array.isArray(value) || !value.every(isStatusEvent)) {
+    return null;
+  }
+  return value;
+}
+
+function* hydrateStatusEvents(agentId: string): SagaGenerator<void> {
+  const persisted: unknown = yield* call(getLocalStorageJSON, makeStorageKey(agentId));
+  const statusEvents = parsePersistedStatusEvents(persisted);
+  if (statusEvents && statusEvents.length > 0) {
+    yield* put(chatStatusEventsHydrated(agentId, statusEvents));
+  }
+}
+
 function* persistStatusEvents(agentId: string): SagaGenerator<void> {
   // Read current status events from state (flat: byAgentId)
   const statusEvents: StatusEvent[] = yield* selectChatStatusEvents.effect(agentId);
@@ -331,10 +369,17 @@ function* watchStatusEvents(): SagaGenerator<void> {
   });
 }
 
+/** Hydrate status events from saga-owned localStorage during chat initialization */
+function* watchStatusEventsHydration(): SagaGenerator<void> {
+  yield* takeEvery(initializeChatRequested, function* (action) {
+    yield* call(hydrateStatusEvents, action.payload.agentId);
+  });
+}
+
 /** Clear status events storage on stream completion, error, or reset */
 function* watchClearStorage(): SagaGenerator<void> {
   yield* takeEvery(
-    [streamCompleted, streamErrored, chatReset, chatStopCompleted],
+    [streamCompleted, chatReset, chatStopCompleted],
     function* (action) {
       const [agentId] = action.payload;
       yield* call(clearStatusEventsStorage, agentId);
@@ -395,7 +440,7 @@ function* watchWorkspaceUnmountedForCleanup(): SagaGenerator<void> {
  */
 function* watchSessionLifecycleForTaskCleanup(): SagaGenerator<void> {
   yield* takeEvery(
-    [streamCompleted, streamErrored, chatStopCompleted, chatReset, chatInterrupted, chatStuckStateCleared],
+    [streamCompleted, chatStopCompleted, chatReset, chatInterrupted, chatStuckStateCleared],
     function* (action) {
       const [agentId] = action.payload;
       const existing = activeSendTasks.get(agentId);
@@ -404,6 +449,23 @@ function* watchSessionLifecycleForTaskCleanup(): SagaGenerator<void> {
       }
     },
   );
+}
+
+function isTerminalAgentStreamUpdate(eventType: string): boolean {
+  return eventType === 'complete' || eventType === 'error' || eventType === 'timeout';
+}
+
+function* watchAgentStreamUpdatesForCleanup(): SagaGenerator<void> {
+  yield* takeEvery(agentStreamUpdateReceived, function* (action) {
+    const [payload] = action.payload;
+    if (!isTerminalAgentStreamUpdate(payload.eventType)) return;
+
+    yield* call(clearStatusEventsStorage, payload.agentId);
+    const existing = activeSendTasks.get(payload.agentId);
+    if (existing) {
+      yield* call(cancelAndForgetTasks, payload.agentId, existing);
+    }
+  });
 }
 
 /**
@@ -416,7 +478,7 @@ function* watchWorkspaceAgentStateRemoved(): SagaGenerator<void> {
   yield* takeEvery(removeWorkspaceAgentState, function* (action) {
     const [wsId] = action.payload;
     for (const [agentId, tasks] of Array.from(activeSendTasks.entries())) {
-      const session = yield* selectAgentById.effect(agentId);
+      const session = yield* selectAgentSession.effect(agentId);
       if (!session || String(session.workspaceId) === String(wsId)) {
         yield* call(cancelAndForgetTasks, agentId, tasks);
       }
@@ -432,6 +494,7 @@ export function* chatStateSaga(): SagaGenerator<void> {
   // Reset dedup map when root saga restarts
   activeSendTasks.clear();
   yield* fork(watchSendStarted);
+  yield* fork(watchStatusEventsHydration);
   yield* fork(watchStatusEvents);
   yield* fork(watchClearStorage);
   yield* fork(watchSendMessage);
@@ -440,6 +503,7 @@ export function* chatStateSaga(): SagaGenerator<void> {
   yield* fork(watchAgentRemoved);
   yield* fork(watchWorkspaceUnmountedForCleanup);
   yield* fork(watchSessionLifecycleForTaskCleanup);
+  yield* fork(watchAgentStreamUpdatesForCleanup);
   yield* fork(watchWorkspaceAgentStateRemoved);
 }
 

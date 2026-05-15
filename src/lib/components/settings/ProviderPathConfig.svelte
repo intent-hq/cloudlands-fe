@@ -6,7 +6,10 @@
    * a provider's CLI executable path. Designed for the Integrations > Providers section.
    */
   import { invoke } from '$lib/electron-bridge';
-  import { faFolder, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faFolder,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';

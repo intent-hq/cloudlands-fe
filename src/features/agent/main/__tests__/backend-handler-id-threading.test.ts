@@ -15,7 +15,11 @@
  *   - Finalized message: lines ~3264-3267
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 
@@ -31,10 +35,7 @@ function resolveStreamingMessageId(
   //   id: existingStreamingMsgIndex >= 0
   //     ? backendSession.messages[existingStreamingMsgIndex].id
   //     : (request.assistantMessageId || `msg_${uuidv4()}`)
-  if (existingStreamingMsg) {
-    return existingStreamingMsg.id;
-  }
-  return requestAssistantMessageId || `msg_${uuidv4()}`;
+  return requestAssistantMessageId || existingStreamingMsg?.id || `msg_${uuidv4()}`;
 }
 
 /**
@@ -54,7 +55,27 @@ function resolveStreamingAppMessageId(
   existingStreamingMsg: { appMessageId?: string } | undefined,
   requestAssistantAppMessageId: string | undefined,
 ): string {
-  return existingStreamingMsg?.appMessageId || requestAssistantAppMessageId || createAppMessageId();
+  return requestAssistantAppMessageId || existingStreamingMsg?.appMessageId || createAppMessageId();
+}
+
+function findAssistantPersistenceMessageIndex(
+  messages: Array<{ id: string; appMessageId?: string; role: string; isStreaming?: boolean }>,
+  assistantMessageId?: string,
+  assistantAppMessageId?: string,
+): number {
+  if (assistantMessageId) {
+    const idMatch = messages.findIndex((m) => m.role === 'assistant' && m.id === assistantMessageId);
+    if (idMatch >= 0) return idMatch;
+  }
+
+  if (assistantAppMessageId) {
+    const appMatch = messages.findIndex(
+      (m) => m.role === 'assistant' && m.appMessageId === assistantAppMessageId,
+    );
+    if (appMatch >= 0) return appMatch;
+  }
+
+  return messages.findLastIndex((m) => m.role === 'assistant' && m.isStreaming === true);
 }
 
 function resolveFinalizedAppMessageId(
@@ -85,7 +106,7 @@ describe('Backend handler ID-threading', () => {
       expect(streamingId).toBe(finalizedId);
     });
 
-    it('preserves the existing streaming message ID on subsequent chunks', () => {
+    it('keeps the active request ID on subsequent chunks', () => {
       // First chunk creates the streaming message with the renderer's ID
       const firstChunkId = resolveStreamingMessageId(undefined, RENDERER_MSG_ID);
       expect(firstChunkId).toBe(RENDERER_MSG_ID);
@@ -132,10 +153,10 @@ describe('Backend handler ID-threading', () => {
       expect(finalizedAppMessageId).toBe(RENDERER_APP_MSG_ID);
     });
 
-    it('preserves an existing streaming appMessageId on subsequent chunks', () => {
+    it('adopts the request assistant appMessageId over a stale streaming placeholder appMessageId', () => {
       const appMessageId = resolveStreamingAppMessageId(
-        { appMessageId: RENDERER_APP_MSG_ID },
-        'app_msg_different_request',
+        { appMessageId: 'app_msg_stale_streaming' },
+        RENDERER_APP_MSG_ID,
       );
 
       expect(appMessageId).toBe(RENDERER_APP_MSG_ID);
@@ -144,6 +165,21 @@ describe('Backend handler ID-threading', () => {
     it('falls back to provider or fresh appMessageId when request appMessageId is absent', () => {
       expect(resolveFinalizedAppMessageId(undefined, 'app_msg_provider_assistant')).toBe('app_msg_provider_assistant');
       expect(resolveFinalizedAppMessageId(undefined, undefined)).toMatch(/^app_msg_/);
+    });
+  });
+
+  describe('assistant persistence lookup order', () => {
+    it('prefers assistantMessageId, then assistantAppMessageId, then streaming fallback', () => {
+      const messages = [
+        { id: 'u-1', role: 'user' },
+        { id: 'assistant-streaming', appMessageId: 'app_msg_streaming', role: 'assistant', isStreaming: true },
+        { id: 'assistant-app-match', appMessageId: RENDERER_APP_MSG_ID, role: 'assistant' },
+        { id: RENDERER_MSG_ID, appMessageId: 'app_msg_exact_id', role: 'assistant' },
+      ];
+
+      expect(findAssistantPersistenceMessageIndex(messages, RENDERER_MSG_ID, RENDERER_APP_MSG_ID)).toBe(3);
+      expect(findAssistantPersistenceMessageIndex(messages, undefined, RENDERER_APP_MSG_ID)).toBe(2);
+      expect(findAssistantPersistenceMessageIndex(messages)).toBe(1);
     });
   });
 });

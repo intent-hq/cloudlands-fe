@@ -11,7 +11,13 @@
  * The fix: each stream captures a generation token; cleanup skips if generation is stale.
  */
 
-import { beforeAll, describe, it, expect, vi } from 'vitest';
+import {
+  beforeAll,
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -54,6 +60,8 @@ describe('stream generation-aware cleanup', () => {
     handler.streamStartTimes = new Map();
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
+    handler.streamAssistantMessageIds = new Map();
+    handler.streamAssistantAppMessageIds = new Map();
     handler.streamWindowIds = new Map();
     handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();

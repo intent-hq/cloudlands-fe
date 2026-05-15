@@ -1,4 +1,8 @@
-import { expect, describe, test } from "vitest";
+import {
+  expect,
+  describe,
+  test,
+} from "vitest";
 import {
   createCollection,
   addItem,
@@ -24,7 +28,7 @@ type TestItem = {
 // Helper to check collection invariants
 const assertCollectionInvariants = <ITEM extends object, K extends keyof ITEM & string>(
   collection: Collection<ITEM, K>,
-   
+
   _description: string
 ) => {
   // Check that ids are unique

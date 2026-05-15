@@ -2,7 +2,11 @@
  * Tests for type guards and type restoration utilities
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   restoreAgentId,
   restoreWorkspaceId,

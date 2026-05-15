@@ -122,7 +122,7 @@
 
     {#if visibleAgents.length > 0}
       {#each visibleAgents as agent (agent.id)}
-        
+
         {@const timestamp = getAgentTimestamp(agent)}
         {@const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist}
         <div class="pl-3">

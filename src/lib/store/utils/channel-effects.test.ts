@@ -1,6 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { eventChannel } from "redux-saga";
-import { runSaga } from "redux-saga";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from "vitest";
+import {
+  eventChannel,
+  runSaga,
+} from "redux-saga";
+
 import * as sagaEffects from "redux-saga/effects";
 
 // Mock typed-redux-saga to use real redux-saga effects (same pattern as terminal-overlay tests)
@@ -17,7 +26,10 @@ vi.mock("typed-redux-saga", () => {
   return { take, fork, cancel };
 });
 
-import { takeEveryFromChannel, takeLatestFromChannel } from "./channel-effects";
+import {
+  takeEveryFromChannel,
+  takeLatestFromChannel,
+} from "./channel-effects";
 
 describe("channel-effects", () => {
   beforeEach(() => {

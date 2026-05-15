@@ -20,7 +20,11 @@ import {
   getClaudeCodePath,
   isClaudeCodeInstalled,
 } from '../../claude-code/main/claude-code-resolver';
-import { clearCodexCache, getCodexPath, isCodexInstalled } from '../../codex/main/codex-resolver';
+import {
+  clearCodexCache,
+  getCodexPath,
+  isCodexInstalled,
+} from '../../codex/main/codex-resolver';
 import {
   clearCortexCache,
   getCortexPath,

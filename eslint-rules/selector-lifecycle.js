@@ -6,6 +6,8 @@ const FUNCTION_TYPES = new Set([
 
 const SELECTOR_IMPORT_SOURCE_PATTERN = /selectors/;
 
+const DERIVED_RUNE_NAMES = new Set(['$derived']);
+
 const SELECTOR_NESTED_MESSAGE =
   'Selector readables from *-selectors files must be created during component initialization (top-level <script>). Create the selector store once and reuse it in callbacks, handlers, and async functions.';
 
@@ -14,6 +16,9 @@ const GET_DISPATCH_MESSAGE =
 
 const GET_SELECTOR_MESSAGE =
   'Do not wrap selector readables with svelte/store get(). Create the selector readable during component initialization and use it reactively, or use selector.select(...) with Redux state when you need a one-off read.';
+
+const REDUNDANT_DERIVED_READABLE_MESSAGE =
+  'Do not mirror readable values with $derived($readable$). Use the readable value directly instead.';
 
 function unwrapExpression(node) {
   let current = node;
@@ -73,6 +78,22 @@ function isSelectorCall(node, selectorNames) {
   return isTrackedIdentifier(unwrapped.callee, selectorNames);
 }
 
+function isReadableValueIdentifier(node) {
+  const unwrapped = unwrapExpression(node);
+  return unwrapped?.type === 'Identifier'
+    && unwrapped.name.startsWith('$')
+    && unwrapped.name.endsWith('$')
+    && unwrapped.name.length > 2;
+}
+
+function isRedundantReadableDerivedAlias(node) {
+  const init = unwrapExpression(node.init);
+  return init?.type === 'CallExpression'
+    && isTrackedIdentifier(init.callee, DERIVED_RUNE_NAMES)
+    && init.arguments.length === 1
+    && isReadableValueIdentifier(init.arguments[0]);
+}
+
 function isInsideFunction(node) {
   for (let current = node.parent; current; current = current.parent) {
     if (FUNCTION_TYPES.has(current.type)) {
@@ -130,7 +151,7 @@ export default {
   meta: {
     type: 'problem',
     docs: {
-      description: 'Warn about selector and getDispatch lifecycle violations in Svelte components',
+      description: 'Warn about selector lifecycle violations and redundant readable aliases in Svelte components',
     },
     schema: [],
   },
@@ -180,6 +201,12 @@ export default {
           && !isWrappedSelectorArgumentToGet(node, svelteStoreGetNames)
         ) {
           context.report({ node, message: SELECTOR_NESTED_MESSAGE });
+        }
+      },
+
+      VariableDeclarator(node) {
+        if (isRedundantReadableDerivedAlias(node)) {
+          context.report({ node, message: REDUNDANT_DERIVED_READABLE_MESSAGE });
         }
       },
     };

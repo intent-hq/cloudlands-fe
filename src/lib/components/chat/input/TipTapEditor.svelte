@@ -1,23 +1,34 @@
 <script lang="ts">
 /* eslint-disable max-lines */
-  import { onMount, onDestroy } from 'svelte';
-  import { mount, unmount } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+  mount,
+  unmount,
+} from 'svelte';
+
   import { Editor } from '@tiptap/core';
-  import { PluginKey, TextSelection } from '@tiptap/pm/state';
+  import {
+  PluginKey,
+  TextSelection,
+} from '@tiptap/pm/state';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
   import Mention from '@tiptap/extension-mention';
   import Image from '@tiptap/extension-image';
   import {
-    ContextMention,
-    type ContextMentionAttributes,
-  } from '$lib/components/tiptap/ContextMention';
+  ContextMention,
+  type ContextMentionAttributes,
+} from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
   import { createLogger } from '$lib/utils/client-logger';
   import type { ContextItem } from './context-api';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
-  import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
+  import {
+  getMentionSystem,
+  type SearchContext,
+} from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
   import { injectMentionSpans } from '$lib/utils/markdown-mention-injector';
@@ -204,7 +215,7 @@
     onMentionStart,
     onMentionSelect,
     onSelectionChange,
-     
+
     contextItems: _contextItems = [],
     minHeight = 80,
     maxHeight = 300,

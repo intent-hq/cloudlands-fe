@@ -6,7 +6,10 @@
  */
 
 import { BaseMCPTool } from '../../mcp/main/mcp/tool';
-import { ToolCall, ToolResult } from '../../mcp/main/mcp/protocol';
+import {
+  ToolCall,
+  ToolResult,
+} from '../../mcp/main/mcp/protocol';
 import { CdpConnectionManager } from '../cdp-connection';
 
 export class GetConsoleLogsTool extends BaseMCPTool {

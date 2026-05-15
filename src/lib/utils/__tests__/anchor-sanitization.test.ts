@@ -1,7 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { processHTMLToMarkdown } from '../markdown-processor';
 
 describe('Anchor Sanitization', () => {

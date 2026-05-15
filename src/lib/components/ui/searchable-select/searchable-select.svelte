@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faChevronDown,
+  faSearch,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('SearchableSelect');

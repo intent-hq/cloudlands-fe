@@ -12,8 +12,19 @@
  * the same groupId.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { combineReducers, legacy_createStore as createStore, type Store } from "redux";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from "vitest";
+import {
+  combineReducers,
+  legacy_createStore as createStore,
+  type Store,
+} from "redux";
 import {
   agentSubscriptionsReducer,
   markAgentDeleted,

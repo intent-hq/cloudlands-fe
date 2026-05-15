@@ -7,14 +7,22 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCodeBranch,
+  faFile,
+  faServer,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import {
-    compareWorkspaceActivityDisplayTimeDesc,
-    getWorkspaceActivityDisplayTime,
-  } from '$shared/utils/workspace-activity-time';
-  import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
+  compareWorkspaceActivityDisplayTimeDesc,
+  getWorkspaceActivityDisplayTime,
+} from '$shared/utils/workspace-activity-time';
+  import {
+  buildRepoPathLookup,
+  getGroupKey,
+} from './utils/workspace-grouping';
   interface Props {
     workspaces: Workspace[];
     collapsed?: boolean;

@@ -1,7 +1,11 @@
 import type { KnownRepo } from "$shared/types/known-repo";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { call, put, takeLatest } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeLatest,
+} from "typed-redux-saga";
 import {
   loadKnownRepos,
   removeKnownRepo,

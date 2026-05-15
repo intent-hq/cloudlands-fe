@@ -55,7 +55,7 @@ class GlobalCleanupService {
 
     // Register default cleanup handlers
     // NOTE: AgentService now manages its own lifecycle via pagehide event.
-    // We removed the agentService.dispose() call here because:
+    // We removed the agent bridge dispose call here because:
     // 1. beforeunload fires for HMR and cancelled navigations where we DON'T want to dispose
     // 2. The AgentService singleton would be left in a broken state with no IPC listeners
     // 3. AgentService now uses pagehide with persisted check for reliable cleanup

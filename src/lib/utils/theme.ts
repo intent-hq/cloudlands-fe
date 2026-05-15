@@ -1,5 +1,11 @@
-import { parseVSCodeTheme, type ParsedVSCodeTheme } from './vscode-theme-parser';
-import { applyCustomMonacoTheme, revertMonacoTheme } from './monaco-theme';
+import {
+  parseVSCodeTheme,
+  type ParsedVSCodeTheme,
+} from './vscode-theme-parser';
+import {
+  applyCustomMonacoTheme,
+  revertMonacoTheme,
+} from './monaco-theme';
 import { dispatchWindowEvent } from './window-events';
 import { safeLocalStorage } from './safe-storage';
 

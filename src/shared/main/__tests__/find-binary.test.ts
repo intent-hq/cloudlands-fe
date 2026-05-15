@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const { mockExecAsync, mockExecAsyncWithRetry, mockExistsSync, loggerSpies, originalPlatform, originalEnv } = vi.hoisted(
   () => ({
@@ -42,7 +49,10 @@ vi.mock('../../logger', () => ({
   },
 }));
 
-import { clearBinaryCache, findBinary } from '../find-binary';
+import {
+  clearBinaryCache,
+  findBinary,
+} from '../find-binary';
 
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value: platform });

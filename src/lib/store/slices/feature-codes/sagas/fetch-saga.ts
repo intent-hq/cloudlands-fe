@@ -1,4 +1,9 @@
-import { call, put, takeLatest, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeLatest,
+  takeEvery,
+} from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import {
   fetchFeatures,

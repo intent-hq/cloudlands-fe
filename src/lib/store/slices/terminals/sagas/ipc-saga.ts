@@ -1,6 +1,12 @@
 import { put } from "typed-redux-saga";
-import { takeEveryFromElectronChannel, takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
-import { addTerminal, removeTerminal } from "../terminals-slice";
+import {
+  takeEveryFromElectronChannel,
+  takeEveryFromListenSync,
+} from "$lib/store/utils/ipc-channel";
+import {
+  addTerminal,
+  removeTerminal,
+} from "../terminals-slice";
 interface TerminalCreatedPayload {
   terminalId: string;
   workspaceId: string;

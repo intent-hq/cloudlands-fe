@@ -8,7 +8,10 @@
 import { promises as fs } from 'fs';
 import type { FirstVisitState, WorkspaceId } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config';
-import { validateFirstVisitState, safeValidateFirstVisitState } from '../../../shared/schemas';
+import {
+  validateFirstVisitState,
+  safeValidateFirstVisitState,
+} from '../../../shared/schemas';
 import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { fsyncFile } from '../../../shared/main/file-sync-utils';

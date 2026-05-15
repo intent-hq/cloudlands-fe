@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -36,8 +42,14 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (import
   const original = await importOriginal<Record<string, unknown>>();
   return {
     ...original,
-    addOptimisticNote: (...args: unknown[]) => ({ type: 'workspaceNotes/addOptimisticNote', payload: args }),
-    removeOptimisticNote: (...args: unknown[]) => ({ type: 'workspaceNotes/removeOptimisticNote', payload: args }),
+    addOptimisticNote: (...args: unknown[]) => ({
+      type: 'workspaceNotes/addOptimisticNote',
+      payload: args,
+    }),
+    removeOptimisticNote: (...args: unknown[]) => ({
+      type: 'workspaceNotes/removeOptimisticNote',
+      payload: args,
+    }),
   };
 });
 
@@ -145,7 +157,6 @@ describe('task menu actions provider model', () => {
   });
 
   it('uses the provided workspace default model when assigning an agent to a task', async () => {
-    const dispatch = vi.fn();
     const storeDispatch = vi.fn();
 
     await runAssignAgentTaskMenuAction({
@@ -157,7 +168,6 @@ describe('task menu actions provider model', () => {
       model: 'selector-workspace-model',
       debounceUpdate: vi.fn(),
       storeDispatch,
-      dispatch,
       logger,
     });
 
@@ -176,10 +186,6 @@ describe('task menu actions provider model', () => {
     expect(notesIpcMock.mock.calls[0][1].options.agentConfig.model).not.toBe(
       legacyState.model.workspaceModels['ws-1'],
     );
-    expect(dispatch).toHaveBeenCalledWith('agentLaunched', {
-      agent: { id: 'agent-1', name: 'Task Agent' },
-      autoOpenDrawer: false,
-    });
   });
 
   it('persists menu-assigned duplicate tasks with a stable agent key', async () => {
@@ -195,7 +201,6 @@ describe('task menu actions provider model', () => {
       model: 'selector-workspace-model',
       debounceUpdate: vi.fn(),
       storeDispatch,
-      dispatch: vi.fn(),
       logger,
     });
 
@@ -210,26 +215,30 @@ describe('task menu actions provider model', () => {
     });
   });
 
-  it('uses the provided workspace default model when launching task breakdown agents', async () => {
-    const dispatch = vi.fn();
+  it('launches task breakdown agents through the saga-owned request', () => {
+    const storeDispatch = vi.fn();
+    getReduxStoreMock.mockReturnValue({ getState: () => legacyState, dispatch: storeDispatch });
 
-    await runTaskBreakdownTaskMenuAction({
+    runTaskBreakdownTaskMenuAction({
       workspace,
       noteId: 'note-1',
       taskData: { text: 'Ship feature', position: '2', checked: false },
-      model: 'selector-workspace-model',
-      dispatch,
-      logger,
     });
 
-    expect(createAgentMock).toHaveBeenCalledWith(
-      workspace,
-      expect.objectContaining({ model: 'selector-workspace-model' }),
+    expect(storeDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentSessions/launchAgentRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({
+            name: 'Break down: Ship feature',
+            agentType: 'task-breakdown',
+            source: 'task-menu',
+          }),
+        ],
+      }),
     );
-    expect(createAgentMock.mock.calls[0][1].model).not.toBe(legacyState.model.selectedModel);
-    expect(dispatch).toHaveBeenCalledWith('agentLaunched', {
-      agent: { id: 'agent-2', name: 'Break down: Ship feature' },
-      autoOpenDrawer: false,
-    });
+    expect(storeDispatch.mock.calls[0][0].payload[1]).not.toHaveProperty('id');
+    expect(storeDispatch.mock.calls[0][0].payload[1]).not.toHaveProperty('model');
   });
 });

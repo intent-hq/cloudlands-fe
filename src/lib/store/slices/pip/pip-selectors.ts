@@ -1,5 +1,9 @@
 import { createSelector } from "../../utils/create-selector";
-import { getPipKey, type PipState, type PipWindowState } from "./pip-slice";
+import {
+  getPipKey,
+  type PipState,
+  type PipWindowState,
+} from "./pip-slice";
 
 /** Select whether a tab has an open PiP window */
 export const selectHasPipWindow = createSelector(

@@ -1,19 +1,22 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-    requestResizablePanelSize,
-    setResizablePanelSize,
-    setSidebarExpandedWidth,
-    setWidth as setSidebarWidth,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  requestResizablePanelSize,
+  setResizablePanelSize,
+  setSidebarExpandedWidth,
+  setWidth as setSidebarWidth,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
-    selectIsCollapsed,
-    selectResizablePanelSize,
-    selectSidebarExpandedWidth,
-    selectSidebarWidth,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectIsCollapsed,
+  selectResizablePanelSize,
+  selectSidebarExpandedWidth,
+  selectSidebarWidth,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
 
   let {

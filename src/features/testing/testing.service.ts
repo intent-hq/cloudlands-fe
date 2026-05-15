@@ -5,9 +5,16 @@
  * without interfering with the user's development server.
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import {
+  spawn,
+  ChildProcess,
+} from 'child_process';
 import { join } from 'path';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  rmSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import type { Result } from '../../shared/types';
 

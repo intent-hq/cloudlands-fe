@@ -2,10 +2,18 @@
  * Tests for Notes Repository
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import { InMemoryNotesRepository } from '../notes.repository';
 import type { Note } from '../../../shared/types';
-import { ContentType, NoteVisibility } from '../../../shared/types';
+import {
+  ContentType,
+  NoteVisibility,
+} from '../../../shared/types';
 
 import { randomUUID } from 'crypto';
 

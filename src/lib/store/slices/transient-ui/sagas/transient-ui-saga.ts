@@ -3,7 +3,14 @@ import {
   setLocalStorageJSON,
   getLocalStorageJSON,
 } from '$lib/store/utils/safe-local-storage-saga';
-import { call, fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  fork,
+  put,
+  select,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { StoreState } from '../../../types';
 import { debounceWithKeySaga } from '../../../utils/debounce-saga';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -22,7 +29,10 @@ import {
   toggleRawNoteView,
   type TransientUiWorkspaceState,
 } from '../transient-ui-slice';
-import { getTransientUiStorageKey, sanitizePersistedTransientUiState } from '../utils/persistence';
+import {
+  getTransientUiStorageKey,
+  sanitizePersistedTransientUiState,
+} from '../utils/persistence';
 
 const DEBOUNCED_PERSIST_ACTION_TYPES = [
   setViewedFiles,

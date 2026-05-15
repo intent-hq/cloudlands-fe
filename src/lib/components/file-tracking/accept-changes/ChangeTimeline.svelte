@@ -4,31 +4,34 @@
    * ChangeTimeline - Main timeline component
    * Shows changes organized by location: local, branch, remote branch, trunk
    */
-  import { fly, slide } from 'svelte/transition';
+  import {
+  fly,
+  slide,
+} from 'svelte/transition';
   import Fa from 'svelte-fa';
   import {
-    faPlus,
-    faMinus,
-    faCodeCommit,
-    faSpinner,
-    faRobot,
-    faArrowRight,
-    faCodePullRequest,
-    faFolderOpen,
-    faEye,
-    faChevronRight,
-    faUser,
-    faCheck,
-    faStop,
-    faWandMagicSparkles,
-    faRotateRight,
-    faHistory,
-    faCodeMerge,
-    faRocket,
-    faCheckCircle,
-    faLink,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faPlus,
+  faMinus,
+  faCodeCommit,
+  faSpinner,
+  faRobot,
+  faArrowRight,
+  faCodePullRequest,
+  faFolderOpen,
+  faEye,
+  faChevronRight,
+  faUser,
+  faCheck,
+  faStop,
+  faWandMagicSparkles,
+  faRotateRight,
+  faHistory,
+  faCodeMerge,
+  faRocket,
+  faCheckCircle,
+  faLink,
+  faArrowUpRightFromSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Input } from '$lib/components/ui/input';
@@ -38,11 +41,11 @@
   import CommitNode from './CommitNode.svelte';
   import PRNode from './PRNode.svelte';
   import {
-    type UIFileChange,
-    type PRInfo,
-    groupFilesByAgent,
-    type AgentChangeGroup,
-  } from './types';
+  type UIFileChange,
+  type PRInfo,
+  groupFilesByAgent,
+  type AgentChangeGroup,
+} from './types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -131,14 +134,14 @@
     onReviewStaged?: () => void;
     onReReview?: () => void;
     onOpenReview?: () => void;
-     
+
     onOpenArchivedReview?: (review: any) => void;
     isReviewingCode?: boolean;
     reviewStatus?: 'idle' | 'running' | 'complete' | 'error' | 'stale';
     hasExistingReview?: boolean;
     reviewCommentCount?: number;
     reviewHasCritical?: boolean;
-     
+
     reviewArchive?: any[];
     /** Merge to trunk */
     onMergeToTrunk?: (options?: { squash?: boolean }) => void;

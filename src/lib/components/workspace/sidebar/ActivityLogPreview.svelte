@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { WorkspaceEvent } from '$features/events/types';
-  import { getActivityTitle, getActivityIcon } from './utils';
+  import {
+  getActivityTitle,
+  getActivityIcon,
+} from './utils';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Fa from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';

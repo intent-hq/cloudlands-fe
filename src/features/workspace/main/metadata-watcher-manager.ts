@@ -10,7 +10,10 @@
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import * as fs from 'fs';
-import { watchFile, unwatchFile } from 'fs';
+import {
+  watchFile,
+  unwatchFile,
+} from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { fsyncFile } from '../../../shared/main/file-sync-utils';

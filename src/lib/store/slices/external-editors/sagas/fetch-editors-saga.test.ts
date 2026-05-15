@@ -1,9 +1,17 @@
 import { invoke } from "$lib/electron-bridge";
 import { createCollection } from "$lib/store/utils/collection-utils";
 import { getLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { expectSaga, testSaga } from "redux-saga-test-plan";
+import {
+  expectSaga,
+  testSaga,
+} from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import { beforeEach, describe, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  it,
+  vi,
+} from "vitest";
 import {
   STORAGE_KEY,
   clearError,
@@ -14,7 +22,10 @@ import {
   setLoading,
   type InstalledEditor,
 } from "../external-editors-slice";
-import { handleFetchEditors, loadCachedEditors } from "./fetch-editors-saga";
+import {
+  handleFetchEditors,
+  loadCachedEditors,
+} from "./fetch-editors-saga";
 
 vi.mock("typed-redux-saga", async () => await import("$lib/store/utils/test-helpers/typed-redux-saga-mock"));
 

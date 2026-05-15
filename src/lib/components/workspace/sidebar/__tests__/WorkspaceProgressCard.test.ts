@@ -8,7 +8,11 @@
  * mirroring the exact behavior in WorkspaceProgressCard.svelte lines 76-106.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import {
   shouldClearGitStatusBeforeLoad,

@@ -14,14 +14,14 @@
   import { selectWorkspaceInitializerBranchByRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
-    faCheck,
-    faChevronDown,
-    faChevronRight,
-    faCloud,
-    faExclamationTriangle,
-    faRotate,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faChevronDown,
+  faChevronRight,
+  faCloud,
+  faExclamationTriangle,
+  faRotate,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';

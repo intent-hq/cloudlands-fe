@@ -7,7 +7,11 @@ import type { AgentId } from '$shared/types/branded-ids';
  */
 
 import type { AgentConfig, StreamConfig, PersistenceConfig, AppConfig } from './types';
-import { TIMEOUTS, LIMITS, DEFAULTS as CONST_DEFAULTS } from '../constants';
+import {
+  TIMEOUTS,
+  LIMITS,
+  DEFAULTS as CONST_DEFAULTS,
+} from '../constants';
 
 
 // ============================================================================

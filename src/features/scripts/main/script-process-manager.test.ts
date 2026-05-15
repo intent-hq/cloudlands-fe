@@ -1,5 +1,12 @@
 import { EventEmitter } from 'events';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const { mockSpawn, mockAccessSync, mockReadFileSync, mockMkdirSync, mockWriteFileSync } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),

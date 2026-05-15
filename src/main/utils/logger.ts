@@ -5,7 +5,11 @@
  * Re-exports the unified logger for consistency across the application.
  */
 
-import { appendFileSync, existsSync, mkdirSync } from 'fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+} from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { Logger as BaseLogger } from '../../shared/logger';

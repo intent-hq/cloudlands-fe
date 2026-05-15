@@ -5,7 +5,10 @@
    */
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import type { Snippet } from 'svelte';
@@ -68,7 +71,7 @@
       >
         <!-- Header -->
         <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-          <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground/90">{title}</h2>
+          <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">{title}</h2>
           <Button
             variant="ghost-light"
             size="icon-xs"

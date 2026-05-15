@@ -1,29 +1,38 @@
 <script lang="ts">
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
+  import type { ScriptCategory,
+  ScriptMode,
+  ScriptWithState } from '$features/scripts/types';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectScriptEntries } from '$lib/store/slices/scripts/scripts-selectors';
-  import { refreshScripts, removeScript, upsertScript } from '$lib/store/slices/scripts/scripts-slice';
+  import {
+  refreshScripts,
+  removeScript,
+  upsertScript,
+} from '$lib/store/slices/scripts/scripts-slice';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
+  import {
+  ListContainer,
+  ListItem,
+  ListSection,
+} from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
-    selectExecutorIsRunning,
-    selectExecutorAgentId,
-  } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  selectExecutorIsRunning,
+  selectExecutorAgentId,
+} from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-    selectActiveTerminalId as selectActiveTerminalIdSelector,
-    selectUserTerminals as selectTerminalsSelector,
-  } from '$lib/store/slices/terminals/terminals-selectors';
-  import {
-    removeTerminal,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  selectActiveTerminalId as selectActiveTerminalIdSelector,
+  selectUserTerminals as selectTerminalsSelector,
+} from '$lib/store/slices/terminals/terminals-selectors';
+  import { removeTerminal } from '$lib/store/slices/terminals/terminals-slice';
 
   const activeWorkspace = selectActiveWorkspace();
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -31,18 +40,18 @@
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import {
-    faCheck,
-    faFloppyDisk,
-    faPlay,
-    faPlus,
-    faRotateRight,
-    faSearch,
-    faSpinner,
-    faStop,
-    faTerminal,
-    faTrash,
-    faWandMagicSparkles,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faFloppyDisk,
+  faPlay,
+  faPlus,
+  faRotateRight,
+  faSearch,
+  faSpinner,
+  faStop,
+  faTerminal,
+  faTrash,
+  faWandMagicSparkles,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {
@@ -278,7 +287,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       // Try to salvage JSON from the agent's raw messages via Redux
       const currentAgentId = selectExecutorAgentId.select(getReduxStore().getState(), workspaceId, 'script-detect');
       const agentSession = currentAgentId
-        ? selectAgentById.select(getReduxStore().getState(), currentAgentId)
+        ? selectAgentSession.select(getReduxStore().getState(), currentAgentId)
         : undefined;
       const messages = agentSession?.messages;
       if (messages && messages.length > 0) {
@@ -398,27 +407,24 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceId, 'script-detect');
 
   // Derived
-  const scripts = $derived($scriptEntries$);
-  const hasScripts = $derived(scripts.length > 0);
-  const sortedScripts = $derived(sortScripts(scripts));
+  const hasScripts = $derived($scriptEntries$.length > 0);
+  const sortedScripts = $derived(sortScripts($scriptEntries$));
   const collapsedScriptLimit = $derived(
-    scripts.length === COLLAPSED_SCRIPT_LIMIT + 1
+    $scriptEntries$.length === COLLAPSED_SCRIPT_LIMIT + 1
       ? COLLAPSED_SCRIPT_LIMIT + 1
       : COLLAPSED_SCRIPT_LIMIT,
   );
   const visibleScripts = $derived(
     showAllScripts ? sortedScripts : sortedScripts.slice(0, collapsedScriptLimit),
   );
-  const hiddenScriptCount = $derived(Math.max(0, scripts.length - collapsedScriptLimit));
+  const hiddenScriptCount = $derived(Math.max(0, $scriptEntries$.length - collapsedScriptLimit));
   const showScriptListToggle = $derived(
-    showAllScripts ? scripts.length > collapsedScriptLimit : hiddenScriptCount >= 2,
+    showAllScripts ? $scriptEntries$.length > collapsedScriptLimit : hiddenScriptCount >= 2,
   );
   const effectiveWidth = $derived(collapsed ? COLLAPSED_WIDTH : sidebarWidth);
-  const scriptDetectIsRunning = $derived($_scriptDetectIsRunning$);
-  const scriptDetectAgentId = $derived($_scriptDetectAgentId$);
-  const isDetecting = $derived(detectFlow !== 'idle' || scriptDetectIsRunning);
+  const isDetecting = $derived(detectFlow !== 'idle' || $_scriptDetectIsRunning$);
   const isLocalDetecting = $derived(detectFlow === 'local');
-  const isAgentDetecting = $derived(detectFlow === 'agent' || scriptDetectIsRunning);
+  const isAgentDetecting = $derived(detectFlow === 'agent' || $_scriptDetectIsRunning$);
   const sidebarTerminals = $derived($_sidebarTerminals);
   const activeTerminalId = $derived($_sidebarActiveTerminalId);
 
@@ -842,7 +848,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
-          {#if isAgentDetecting && scriptDetectAgentId}
+          {#if isAgentDetecting && $_scriptDetectAgentId$}
             <button
               type="button"
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
@@ -851,7 +857,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 const wsId = $activeWorkspace?.id;
                 if (wsId) {
                   getReduxStore().dispatch(
-                    openAgentTabRequested(wsId, { agentId: scriptDetectAgentId }),
+                    openAgentTabRequested(wsId, { agentId: $_scriptDetectAgentId$ }),
                   );
                 }
               }}
@@ -862,7 +868,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
               >
                 <AugieAvatarWithState
-                  agentId={scriptDetectAgentId}
+                  agentId={$_scriptDetectAgentId$}
                   state="running"
                   size={16}
                 />
@@ -1032,7 +1038,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
             >
               {#if contextMenuScriptId}
-                {@const script = scripts.find((s) => s.id === contextMenuScriptId)}
+                {@const script = $scriptEntries$.find((s) => s.id === contextMenuScriptId)}
                 {#if script}
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
@@ -1186,13 +1192,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       </ListSection>
     </div>
   {/if}
-
-  <!-- Resize Handle -->
   {#if !collapsed}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="absolute top-0 left-0 w-1 h-full cursor-ew-resize hover:bg-primary/20 transition-colors z-10 -ml-0.5"
-      onmousedown={startResize}
-    ></div>
+    <div class="absolute top-0 left-0 w-1 h-full cursor-ew-resize hover:bg-primary/20 transition-colors z-10 -ml-0.5" onmousedown={startResize}></div>
   {/if}
 </div>

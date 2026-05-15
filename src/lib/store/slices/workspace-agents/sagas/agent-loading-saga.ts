@@ -1,4 +1,3 @@
-import { agentService } from '$features/agent/agent-ipc-bridge';
 import {
   focusPanel,
   openTab,
@@ -13,20 +12,34 @@ import {
 import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
 import { shouldDeferSpecPanel } from '$lib/store/slices/app-layout/sagas/spec-panel-saga';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { AgentId } from '$shared/types/branded-ids';
+import {
+  AgentId,
+  WorkspaceId,
+} from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
+import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import type { StoredAgent } from '$lib/utils/agent-loader';
 import type { PanelLayoutRestoreStatus } from '$lib/store/slices/panel-layout/panel-layout-types';
-import { call, delay, put } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  put,
+} from 'typed-redux-saga';
 import { lockReactiveSelectors } from '../../store-utility/sagas/lock-reactive-selectors';
 import {
   markAgentRecentlyCreated,
   setAgents,
   setAgentsLoaded,
   setIsLoadingAgents,
+  activateInitialAgentRequested,
+  clearInitialAgentConfig,
+  ensureAgentSessionLoaded,
+  setInitialAgentId,
+  triggerBackendStreamReconnect,
+  reconnectStreamHandlersForWorkspaceRequested,
+  type InitialAgentConfig,
 } from '../workspace-agents-slice';
 import {
-  selectAgentById,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
   selectInitialAgentId,
@@ -38,15 +51,55 @@ import {
   removeWorkspaceSessions,
 } from '../../agent-session/agent-session-slice';
 import { clearWorkspaceUnread } from '../../unread-tracking/unread-tracking-slice';
-import {
-  clearInitialAgentConfig,
-  setInitialAgentId,
-  type InitialAgentConfig,
-} from '../workspace-agents-slice';
-import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const PANEL_LAYOUT_RESTORE_POLL_MS = 100;
 const PANEL_LAYOUT_RESTORE_TIMEOUT_MS = 2_000;
+const AGENT_RESTORE_POLL_MS = 100;
+const AGENT_RESTORE_TIMEOUT_MS = 5_000;
+const INITIAL_AGENT_ACTIVATION_TIMEOUT_MS = 60_000;
+
+function* waitForAgentSession(
+  agentId: string,
+  timeoutMs = AGENT_RESTORE_TIMEOUT_MS,
+) {
+  const maxAttempts = Math.ceil(timeoutMs / AGENT_RESTORE_POLL_MS);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
+    if (session) return session;
+    yield* delay(AGENT_RESTORE_POLL_MS);
+  }
+  return null;
+}
+
+function buildInitialActivationConfig(
+  wsId: string,
+  agentId: string,
+  config: InitialAgentConfig['config'] & Record<string, any>,
+  diskMeta?: Record<string, any>,
+  diskAgent?: StoredAgent,
+): UnifiedAgentConfig {
+  return {
+    workspaceId: WorkspaceId(wsId),
+    id: agentId,
+    name: config.name || (diskAgent as any)?.name || 'Agent',
+    model: config.model || (diskAgent as any)?.model,
+    provider: config.provider || diskMeta?.provider,
+    agentType: config.agentType || diskMeta?.agentType,
+    initialMessage: config.prompt || diskMeta?.initialMessage,
+    contextReferences: config.contextReferences,
+    imageBlocks: config.imageBlocks || diskMeta?.imageBlocks,
+    behaviorPrompt: config.behaviorPrompt,
+    source: 'workspace-initializer',
+    metadata: {
+      ...diskMeta,
+      ...config.metadata,
+      isInitialAgent: true,
+      isFirstWorkspaceAgent: config.isFirstWorkspaceAgent ?? diskMeta?.isFirstWorkspaceAgent,
+      specialist: config.specialist || diskMeta?.specialist,
+    },
+  };
+}
 
 function shouldClearUnreadForLoadedWorkspace(wsId: string): boolean {
   return !!wsId && wsId !== 'new' && !wsId.startsWith('optimistic-');
@@ -188,13 +241,11 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     // 6. Reconcile stale agent tabs in panel layout
     yield* reconcileStaleAgentTabs(wsId, restoredAgents);
     // 7. Reconnect IPC stream handlers
-    yield* call([agentService, agentService.reconnectStreamHandlersForWorkspace], wsId);
-    // 8. Reconnect to backend streams and open streaming agent if found
-    const hasOpenedStreamingAgent: boolean = yield* call(
-      handleStreamingAgentReconnect,
-      wsId,
-      restoredAgents,
-    );
+    yield* put(reconnectStreamHandlersForWorkspaceRequested(wsId));
+    // 8. Request backend stream reconnect. The reconnect saga handles backend
+    // queries and intentionally does not auto-open a random streaming agent.
+    yield* put(triggerBackendStreamReconnect());
+    const hasOpenedStreamingAgent = false;
     // 9. Restore persisted drawer / layout state
     yield* restoreLayoutState(
       wsId,
@@ -234,7 +285,7 @@ export function* restoreInitialAgent(
   const initialAgentOnDisk = diskAgents.find((a) => a.id === AgentId(initialAgentId));
   if (initialAgentOnDisk) {
     // Use workspace-scoped Redux selector for race-safe lookup
-    const existingSession: AgentSession | undefined = yield* selectAgentById.effect(initialAgentId);
+    const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(initialAgentId);
     const isAlreadyActive = existingSession && !(existingSession as any).isPending;
     if (!isAlreadyActive && !existingSession) {
       // Check if this is a pending agent from workspace creation that needs
@@ -250,51 +301,36 @@ export function* restoreInitialAgent(
         ((initialAgentOnDisk as any).status === 'pending' ||
           !(initialAgentOnDisk as any).backendSessionId);
       try {
-        // Get full workspace from Redux (not a stub) so createSession has valid paths
-        const workspace = yield* selectWorkspaceById.effect(wsId);
-        const workspaceObj = workspace ?? ({ id: wsId } as any);
         let restored: AgentSession | null;
         if (isPendingWithMessage) {
-          // Use createSession to create a proper backend session and send
-          // the initial message — same pattern as the onboarding flow.
+          // Dispatch the saga-owned activation request so backend creation and
+          // first-message sending happen through the Redux creation flow.
           const reduxConfig: InitialAgentConfig | null = yield* selectInitialAgentConfig.effect(wsId);
           const agentConfigData = sessionStorage.getItem(`workspace:${wsId}:agent-config`);
           const config =
             reduxConfig?.config ?? (agentConfigData ? JSON.parse(agentConfigData) : diskMeta);
-          restored = yield* call(
-            [agentService, agentService.activateInitialAgent],
+          yield* put(
+            activateInitialAgentRequested(
+              wsId,
+              initialAgentId,
+              buildInitialActivationConfig(
+                wsId,
+                initialAgentId,
+                config,
+                diskMeta,
+                initialAgentOnDisk,
+              ),
+            ),
+          );
+          restored = yield* waitForAgentSession(
             initialAgentId,
-            workspaceObj,
-            () =>
-              agentService.createSession(workspaceObj, {
-                agentId: initialAgentId,
-                name: config.name || (initialAgentOnDisk as any).name || 'Agent',
-                model: config.model || (initialAgentOnDisk as any).model,
-                provider: config.provider || diskMeta?.provider,
-                agentType: config.agentType || diskMeta?.agentType,
-                initialMessage: config.prompt || diskMeta.initialMessage,
-                contextReferences: config.contextReferences,
-                imageBlocks: config.imageBlocks || diskMeta?.imageBlocks,
-                behaviorPrompt: config.behaviorPrompt,
-                metadata: {
-                  ...diskMeta,
-                  ...config.metadata,
-                  isInitialAgent: true,
-                  isFirstWorkspaceAgent:
-                    config.isFirstWorkspaceAgent ?? diskMeta?.isFirstWorkspaceAgent,
-                  specialist: config.specialist || diskMeta?.specialist,
-                },
-                isPending: false,
-              }),
+            INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
           );
         } else {
-          // Agent has messages or an active backend session — just resume it.
-          restored = yield* call(
-            [agentService, agentService.activateInitialAgent],
-            initialAgentId,
-            workspaceObj,
-            () => agentService.resumeSession(initialAgentId, workspaceObj),
-          );
+          // Agent has messages or an active backend session — restore it via
+          // the saga-owned disk-load action and observe Redux for the result.
+          yield* put(ensureAgentSessionLoaded(wsId, initialAgentId));
+          restored = yield* waitForAgentSession(initialAgentId);
         }
         if (restored) {
           yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
@@ -308,32 +344,16 @@ export function* restoreInitialAgent(
     const agentConfigData = sessionStorage.getItem(`workspace:${wsId}:agent-config`);
     const config = reduxConfig?.config ?? (agentConfigData ? JSON.parse(agentConfigData) : {});
     try {
-      // Get full workspace from Redux (not a stub) so createSession has valid paths
-      const workspace2 = yield* selectWorkspaceById.effect(wsId);
-      const workspaceObj2 = workspace2 ?? ({ id: wsId } as any);
-      const newSession: AgentSession | null = yield* call(
-        [agentService, agentService.activateInitialAgent],
+      yield* put(
+        activateInitialAgentRequested(
+          wsId,
+          initialAgentId,
+          buildInitialActivationConfig(wsId, initialAgentId, config),
+        ),
+      );
+      const newSession: AgentSession | null = yield* waitForAgentSession(
         initialAgentId,
-        workspaceObj2,
-        () =>
-          agentService.createSession(workspaceObj2, {
-            agentId: initialAgentId,
-            name: config.name || 'Agent',
-            model: config.model,
-            provider: config.provider,
-            agentType: config.agentType,
-            initialMessage: config.prompt,
-            contextReferences: config.contextReferences,
-            imageBlocks: config.imageBlocks,
-            behaviorPrompt: config.behaviorPrompt,
-            metadata: {
-              ...config.metadata,
-              isInitialAgent: config.isInitialAgent,
-              isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
-              specialist: config.specialist || config.metadata?.specialist,
-            },
-            isPending: false,
-          }),
+        INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
       );
       if (newSession) {
         yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
@@ -352,23 +372,12 @@ function* restoreRemainingAgents(
       !existingAgentIds.has(agent.id as any) && (!initialAgentId || agent.id !== initialAgentId),
   );
   if (agentsToRestore.length === 0) return;
-  const workspaceStub = { id: wsId } as any;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const results: Array<{
-    agentId: string;
-    success: boolean;
-  }> = yield* call(() =>
-    Promise.all(
-      agentsToRestore.map(async (agent) => {
-        try {
-          const restored = await agentService.resumeSession(agent.id, workspaceStub);
-          return { agentId: agent.id, success: !!restored };
-        } catch {
-          return { agentId: agent.id, success: false };
-        }
-      }),
-    ),
-  );
+  for (const agent of agentsToRestore) {
+    yield* put(ensureAgentSessionLoaded(wsId, agent.id));
+  }
+  for (const agent of agentsToRestore) {
+    yield* waitForAgentSession(agent.id);
+  }
 }
 function* reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]) {
   if (restoredAgents.length === 0) return;
@@ -389,21 +398,6 @@ function* reconcileStaleAgentTabs(wsId: string, restoredAgents: AgentSession[]) 
       ),
     );
   }
-}
-function* handleStreamingAgentReconnect(
-  _wsId: string,
-  _restoredAgents: AgentSession[],
-): Generator<any, boolean, any> {
-  // Query backend for active streams so stale streaming state is cleared and
-  // stream handlers are reconciled. We intentionally do NOT auto-open a tab
-  // for a streaming agent on workspace switch: the backend returns streams in
-  // arbitrary order, so picking .find() here would open a random agent for
-  // the user. Tab restoration is handled by restoreLayoutState from the
-  // user's persisted panel layout / initial agent.
-  try {
-    yield* call([agentService, agentService.reconnectToBackendStreams]);
-  } catch {}
-  return false;
 }
 /** @internal Exported for testing only. */
 export function* restoreLayoutState(

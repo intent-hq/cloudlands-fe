@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { isSeparator, type SidebarMenuEntry, type SidebarMenuItem } from './types';
+  import {
+  isSeparator,
+  type SidebarMenuEntry,
+  type SidebarMenuItem,
+} from './types';
   import Portal from '$lib/components/ui/Portal.svelte';
 
   interface Props {

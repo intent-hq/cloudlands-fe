@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { isFilePath, extractFilePath } from '../file-path-detector';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  isFilePath,
+  extractFilePath,
+} from '../file-path-detector';
 
 describe('file-path-detector', () => {
   describe('isFilePath', () => {

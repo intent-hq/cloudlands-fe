@@ -1,7 +1,10 @@
 <script lang="ts">
   import type { Note, TaskStatus } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
-  import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
+  import {
+  extractOrderedSpecTaskIds,
+  extractSpecTaskIds,
+} from '$shared/utils/task-stats';
   import Fa from 'svelte-fa';
   import { faFileAlt } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';

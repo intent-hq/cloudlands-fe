@@ -5,9 +5,20 @@
  * listeners for install tracking, and polling fallback.
  */
 
-import { call, delay, fork, put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  select,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { invoke } from '$lib/electron-bridge';
-import { CODEX_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import {
+  CODEX_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from '$shared/ipc/channels';
 import { ACP_PROVIDERS } from '$shared/config/provider-config';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';

@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runSaga, stdChannel } from "redux-saga";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  runSaga,
+  stdChannel,
+} from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import type { QueuedMessage } from "$shared/types";
 
@@ -50,7 +59,11 @@ import {
   setAgentQueueError,
   setAgentQueueHydrating,
 } from "../agent-queue-slice";
-import { handleQueueUpdated, hydrateAgentQueue, watchQueueHydrationSaga } from "./agent-queue-saga";
+import {
+  handleQueueUpdated,
+  hydrateAgentQueue,
+  watchQueueHydrationSaga,
+} from "./agent-queue-saga";
 
 const queuedMessage: QueuedMessage = {
   id: "queue-1",

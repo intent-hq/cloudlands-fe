@@ -17,12 +17,22 @@ import {
   selectWorkspaceById,
   selectWorkspaceItems,
 } from "$lib/store/slices/workspace/workspace-selectors";
-import { getRunningAgentNames, hasRunningAgents } from "$lib/utils/delete-warning-utils";
+import {
+  getRunningAgentNames,
+  hasRunningAgents,
+} from "$lib/utils/delete-warning-utils";
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { WorkspaceStatusEnum, type Workspace } from "$shared/types";
+import {
+  WorkspaceStatusEnum,
+  type Workspace,
+} from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
-import { call, put, takeLatest } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeLatest,
+} from "typed-redux-saga";
 import {
   selectPendingBulkDeleteRepoKey,
   selectPendingBulkRepoKey,

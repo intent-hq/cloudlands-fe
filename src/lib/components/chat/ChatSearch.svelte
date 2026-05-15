@@ -1,12 +1,12 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-    faSearch,
-    faXmark,
-    faFilter,
-    faChevronUp,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
+  faSearch,
+  faXmark,
+  faFilter,
+  faChevronUp,
+  faChevronDown,
+} from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 

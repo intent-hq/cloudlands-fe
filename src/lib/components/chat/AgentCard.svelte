@@ -4,34 +4,39 @@
    *
    * A compact card that shows an agent's avatar, name, status, and message preview.
    * Uses subscription for real-time updates and displays line changes stats.
-   * Listens to streaming events for real-time response updates.
+   * Reads Redux-owned streaming state for real-time response updates.
    */
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-  } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  selectAgentSession,
+  selectAgentIsResponding,
+  selectAgentSessionStreamingContent,
+  selectAgentIsWaiting,
+} from '$lib/store/slices/agent-session/agent-session-selectors';
+  import {
+  deleteAgentWithUndoRequested,
+  ensureAgentSessionLoaded,
+  renameAgentSessionRequested,
+  stopAgentSessionRequested,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
-  import { agentService } from '$features/agent/agent-ipc-bridge';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import AgentStatsTooltip from './AgentStatsTooltip.svelte';
   import { AGENT_STATS_TOOLTIP_TITLE } from './agent-stats-tooltip-copy';
   import {
-    selectAgentStats,
-    selectIsLoadingAgentStats,
-    selectAgentStatsError,
-  } from '$lib/store/slices/session-stats/session-stats-selectors';
+  selectAgentStats,
+  selectIsLoadingAgentStats,
+  selectAgentStatsError,
+} from '$lib/store/slices/session-stats/session-stats-selectors';
   import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
   import { isAuggieSession } from '$shared/types/agent-session';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
@@ -40,21 +45,20 @@
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-adapter';
+  getPanelLayoutManager,
+  hasPanelLayoutManager,
+} from '$features/layout/panel-layout-adapter';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
-    faArrowUpRightFromSquare,
-    faPen,
-    faStop,
-    faTrash,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowUpRightFromSquare,
+  faPen,
+  faStop,
+  faTrash,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     agentId: string;
@@ -170,7 +174,7 @@
       // error optimistically so the user can retry after a failed fetch.
       // Only Auggie sessions go through `auggie session stats`; skip other
       // providers so the tooltip surfaces no data instead of a stale error.
-      const session = selectAgentById.select(getReduxStore().getState(), agentId);
+      const session = selectAgentSession.select(getReduxStore().getState(), agentId);
       if (!session || !isAuggieSession(session)) return;
       const sessionId = session.acpSessionId || session.backendSessionId;
       if (!sessionId) return;
@@ -209,22 +213,26 @@
   // Save the edited name
   function saveEdit() {
     if (editingValue.trim() && editingValue.trim() !== displayName) {
-      const wsId = workspace?.id
-        ? String(workspace.id)
-        : selectActiveWorkspaceId.select(getReduxStore().getState());
+      const wsId = $agent$?.workspaceId
+        ? String($agent$.workspaceId)
+        : workspace?.id
+          ? String(workspace.id)
+          : undefined;
       if (wsId) {
         const trimmed = editingValue.trim();
         // Capture previous values before the optimistic dispatch so a failed
         // rename can revert back to exactly what the user saw.
         const previousName = displayName;
-        const previousNameExplicitlySet = agent?.nameExplicitlySet ?? false;
+        const previousNameExplicitlySet = $agent$?.nameExplicitlySet ?? false;
         getReduxStore().dispatch(
           updateAgentSessionFields(agentId, {
             name: trimmed,
             nameExplicitlySet: true,
           } as any),
         );
-        agentService.renameSession(agentId, wsId, trimmed).catch(() => {
+        const action = renameAgentSessionRequested(wsId, agentId, trimmed);
+        getReduxStore().dispatch(action);
+        action.promise.catch(() => {
           // Revert the optimistic dispatch so Redux matches disk, then notify.
           getReduxStore().dispatch(
             updateAgentSessionFields(agentId, {
@@ -294,8 +302,8 @@
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           {
-            const wsId = agent?.workspaceId
-              ? String(agent.workspaceId)
+            const wsId = $agent$?.workspaceId
+              ? String($agent$.workspaceId)
               : workspace?.id
                 ? String(workspace.id)
                 : undefined;
@@ -324,7 +332,16 @@
         label: 'Stop',
         icon: faStop,
         onClick: async () => {
-          await agentService.stopSession(agentId);
+          const wsId = $agent$?.workspaceId
+            ? String($agent$.workspaceId)
+            : workspace?.id
+              ? String(workspace.id)
+              : undefined;
+          if (wsId) {
+            const action = stopAgentSessionRequested(wsId, agentId);
+            getReduxStore().dispatch(action);
+            await action.promise;
+          }
           closeContextMenu();
         },
       });
@@ -338,18 +355,26 @@
       destructive: true,
       onClick: async () => {
         // Close related panel tabs before deleting
-        const sessionWorkspaceId = workspace?.id ? String(workspace.id) : undefined;
+        const sessionWorkspaceId = $agent$?.workspaceId
+          ? String($agent$.workspaceId)
+          : workspace?.id
+            ? String(workspace.id)
+            : undefined;
         if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
           const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
           layoutManager.closeTabsByType('agent', 'agentId', agentId);
         }
         closeContextMenu();
 
-        await agentService.deleteSessionWithUndo({
-          agentId,
-          workspaceId: sessionWorkspaceId,
-          agentName: agentName || undefined,
-        });
+        if (sessionWorkspaceId) {
+          const action = deleteAgentWithUndoRequested(
+            sessionWorkspaceId,
+            agentId,
+            agentName || undefined,
+          );
+          getReduxStore().dispatch(action);
+          await action.promise;
+        }
       },
     });
 
@@ -358,17 +383,16 @@
 
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
-  const agent$ = selectAgentById(agentId);
+  const agent$ = selectAgentSession(agentId);
   const agentIsResponding$ = selectAgentIsResponding(agentId);
   const agentIsWaiting$ = selectAgentIsWaiting(agentId);
-  const agent = $derived($agent$);
-  const showAgentStatsTooltip = $derived(!!agent && isAuggieSession(agent));
+  const showAgentStatsTooltip = $derived(!!$agent$ && isAuggieSession($agent$));
   const agentStatsEmptyState = $derived.by(() => {
-    if (!agent) return undefined;
-    if (!isAuggieSession(agent)) return 'empty' as const;
-    return agent.acpSessionId || agent.backendSessionId ? undefined : ('empty' as const);
+    if (!$agent$) return undefined;
+    if (!isAuggieSession($agent$)) return 'empty' as const;
+    return $agent$.acpSessionId || $agent$.backendSessionId ? undefined : ('empty' as const);
   });
-  const agentData = $derived(getAgentPeekData(agent));
+  const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
   const parentAgentId = $derived(agentData?.parentAgentId);
@@ -381,75 +405,16 @@
   $effect(() => {
     parentAgentIdStore.set(parentAgentId ?? '');
   });
-  const parentAgent$ = selectAgentById(parentAgentIdStore);
+  const parentAgent$ = selectAgentSession(parentAgentIdStore);
   const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name : undefined);
 
   // Get line changes for this agent
   const lineChanges$ = selectAgentLineStats(agentId);
-  const lineChanges = $derived($lineChanges$);
 
-  // Streaming state - updated via events for real-time display
-  let streamingBuffer: string = $state('');
-  let isStreamActive: boolean = $state(false);
-
-  // Use $effect for stream listener lifecycle so it automatically cleans up
-  // and re-binds when agentId changes (e.g., component reuse in keyed lists).
-  // This also ensures cleanup happens correctly during HMR and workspace switches.
-  $effect(() => {
-    // Capture agentId in the effect's reactive scope
-    const currentAgentId = agentId;
-    // Capture the workspace context for this card — used to guard against
-    // cross-workspace stream events when sidebar panels stay mounted (F3 fix).
-    const cardWorkspaceId = workspace?.id ? String(workspace.id) : undefined;
-
-    const streamEventName = `agent:stream:${currentAgentId}`;
-    const messageSentEventName = `agent:message-sent:${currentAgentId}`;
-
-    // Reset streaming state when effect re-runs (agentId changed)
-    streamingBuffer = '';
-    isStreamActive = false;
-
-    const streamListener = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { type, content } = customEvent.detail || {};
-
-      // Workspace guard: if this card has a workspace context, verify the agent's
-      // session belongs to the same workspace. This prevents streaming indicators
-      // from bleeding across workspaces when sidebar panels stay mounted.
-      if (cardWorkspaceId && agent?.workspaceId) {
-        const agentWsId = String(agent.workspaceId);
-        if (agentWsId !== cardWorkspaceId) {
-          return; // Ignore events for agents in other workspaces
-        }
-      }
-
-      if (type === 'start') {
-        isStreamActive = true;
-      } else if (type === 'chunk' && content) {
-        streamingBuffer += content;
-        isStreamActive = true;
-      } else if (type === 'end' || type === 'complete') {
-        isStreamActive = false;
-        streamingBuffer = '';
-      } else if (type === 'error') {
-        isStreamActive = false;
-        streamingBuffer = '';
-      }
-    };
-
-    const messageSentListener = () => {
-      isStreamActive = true;
-    };
-
-    window.addEventListener(streamEventName, streamListener);
-    window.addEventListener(messageSentEventName, messageSentListener);
-
-    // $effect cleanup: automatically called when effect re-runs or component unmounts
-    return () => {
-      window.removeEventListener(streamEventName, streamListener);
-      window.removeEventListener(messageSentEventName, messageSentListener);
-    };
-  });
+  // Streaming state is derived from Redux-owned stream lifecycle/message state.
+  const streamingContent$ = selectAgentSessionStreamingContent(agentId);
+  const streamingBuffer = $derived($streamingContent$);
+  const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || 'Agent');
@@ -475,7 +440,7 @@
 
   // Get specialist ID from agent metadata (for avatar overlay)
   const specialist = $derived.by(() => {
-    const specialistId = agent?.metadata?.specialist || agent?.agentMetadata?.specialist;
+    const specialistId = $agent$?.metadata?.specialist || $agent$?.agentMetadata?.specialist;
     return specialistId || null;
   });
 
@@ -495,7 +460,7 @@
   // call (see agent-peek-utils). Only used when there's no text to display.
   const lastToolUse = $derived(agentData?.lastToolUse);
 
-  const updatedAt = $derived(agent?.updatedAt);
+  const updatedAt = $derived($agent$?.updatedAt);
 
   // Border color based on state - only show colored border if showStateBorder is true
   const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
@@ -524,8 +489,8 @@
     } else {
       const sourcePanelId = findSourcePanelId(event.target);
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-      const wsId = agent?.workspaceId
-        ? String(agent.workspaceId)
+      const wsId = $agent$?.workspaceId
+        ? String($agent$.workspaceId)
         : workspace?.id
           ? String(workspace.id)
           : undefined;
@@ -618,10 +583,10 @@
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
-            {#if lineChanges && (lineChanges.additions > 0 || lineChanges.deletions > 0)}
+            {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
               <LineChangeStats
-                additions={lineChanges.additions}
-                deletions={lineChanges.deletions}
+                additions={$lineChanges$.additions}
+                deletions={$lineChanges$.deletions}
                 size="xs"
               />
             {/if}

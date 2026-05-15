@@ -8,7 +8,11 @@
  * With collision suffix: word-word-N (e.g., "amber-forest-2", "auth-refactor-3")
  */
 
-import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
+import {
+  uniqueNamesGenerator,
+  adjectives,
+  animals,
+} from 'unique-names-generator';
 
 /**
  * Pattern for validating workspace slugs

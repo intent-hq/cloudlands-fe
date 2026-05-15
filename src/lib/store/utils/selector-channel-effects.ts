@@ -24,8 +24,17 @@
  *
  * These effects automatically fork themselves, so you don't need to wrap them in fork().
  */
-import { take, cancel, fork, getContext as getSagaContext } from "typed-redux-saga";
-import { eventChannel, type EventChannel, type Task } from "redux-saga";
+import {
+  take,
+  cancel,
+  fork,
+  getContext as getSagaContext,
+} from "typed-redux-saga";
+import {
+  eventChannel,
+  type EventChannel,
+  type Task,
+} from "redux-saga";
 import type { StoreSelector, StoreState } from "../types";
 import type { Readable } from "svelte/store";
 import { shallowEqual } from "fast-equals";

@@ -1,7 +1,5 @@
 import { Logger } from '$shared/logger';
-import {
-  shouldSuppressMonacoUnhandledRejection,
-} from './monaco-error-suppression';
+import { shouldSuppressMonacoUnhandledRejection } from './monaco-error-suppression';
 import {
   isSvelteErrorUrl,
   resolveSvelteError,

@@ -1,4 +1,7 @@
-import { invoke, isElectron } from '$lib/electron-bridge';
+import {
+  invoke,
+  isElectron,
+} from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('Clipboard');

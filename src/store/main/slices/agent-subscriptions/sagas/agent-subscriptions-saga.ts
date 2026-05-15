@@ -5,7 +5,10 @@
  * the main saga registry. Runtime worker forks remain inside their owning sagas.
  */
 
-import { call, delay } from "typed-redux-saga";
+import {
+  call,
+  delay,
+} from "typed-redux-saga";
 import { delegationGroupSaga } from "./delegation-group-saga";
 import { matchingSaga } from "./matching-saga";
 import { Logger } from "../../../../../shared/logger";

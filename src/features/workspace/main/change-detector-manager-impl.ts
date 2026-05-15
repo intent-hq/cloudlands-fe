@@ -1,6 +1,12 @@
-import { WorkspaceId as WorkspaceIdBrand, createAgentId } from '$shared/types/branded-ids';
+import {
+  WorkspaceId as WorkspaceIdBrand,
+  createAgentId,
+} from '$shared/types/branded-ids';
 import { ChangeDetectorRefactored as ChangeDetector } from './change-detector-refactored';
-import { DiffChunk, FileChange } from '../../../lib/store/slices/workspace/utils/change-detector.types';
+import {
+  DiffChunk,
+  FileChange,
+} from '../../../lib/store/slices/workspace/utils/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
 import { RemoteChangeDetector } from './remote-change-detector';
 import { EventEmitter } from 'events';
@@ -16,7 +22,10 @@ import {
   type WorkspaceDiffSummary,
   type WorkspaceDiffSummaryFile,
 } from '../../../shared/types';
-import { trackFileChanges, type FileLineChange } from '../../line-changes/line-changes-main-state';
+import {
+  trackFileChanges,
+  type FileLineChange,
+} from '../../line-changes/line-changes-main-state';
 
 interface WorkspaceInfo {
   id: string;

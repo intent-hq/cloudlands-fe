@@ -1,6 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { readable, writable } from 'svelte/store';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
+import {
+  readable,
+  writable,
+} from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
   selectedModel: 'gpt5.4',
@@ -74,9 +90,16 @@ const mockSvelteDispatch = vi.fn((action: { type?: string; payload?: unknown }) 
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', async () => {
   const { readable } = await import('svelte/store');
-  const selectAgentById = vi.fn(() => readable(undefined));
-  selectAgentById.select = vi.fn(() => undefined);
-  return { selectAgentById };
+  const selectAgentSession = vi.fn(() => readable(undefined));
+  selectAgentSession.select = vi.fn(() => undefined);
+  return { selectAgentSession };
+});
+
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  const selectAgentSession = vi.fn(() => readable(undefined));
+  selectAgentSession.select = vi.fn(() => undefined);
+  return { selectAgentSession };
 });
 
 vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
@@ -195,6 +218,9 @@ vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () =>
 
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: vi.fn(() => 'auggie'),
+  isPendingAgentSession: vi.fn((session: { isPending?: boolean; status?: string }) =>
+    session?.isPending === true || session?.status === 'pending',
+  ),
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({

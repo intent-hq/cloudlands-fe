@@ -21,7 +21,14 @@
  * `onHttpBridgeUnrecoverable`, this covers producer → consumer end to end.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const mockPersistence = {
   loadAgent: vi.fn(),
@@ -145,6 +152,8 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     handler.streamStartTimes = new Map();
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
+    handler.streamAssistantMessageIds = new Map();
+    handler.streamAssistantAppMessageIds = new Map();
     handler.streamWindowIds = new Map();
     handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();
@@ -205,6 +214,8 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     handler.streamStartTimes = new Map();
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
+    handler.streamAssistantMessageIds = new Map();
+    handler.streamAssistantAppMessageIds = new Map();
     handler.streamWindowIds = new Map();
     handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();
@@ -318,6 +329,8 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     handler.streamStartTimes = new Map();
     handler.streamSessionIds = new Map();
     handler.streamWorkspaceIds = new Map();
+    handler.streamAssistantMessageIds = new Map();
+    handler.streamAssistantAppMessageIds = new Map();
     handler.streamWindowIds = new Map();
     handler.streamGenerations = new Map();
     handler.streamHealthChecks = new Map();

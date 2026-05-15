@@ -4,12 +4,18 @@
  * Handles setup script generation and project type detection.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import {
+  ipcMain,
+  BrowserWindow,
+} from 'electron';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import type { ProjectType } from '../types';
-import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '../types';
+import {
+  SETUP_SCRIPT_TEMPLATES,
+  getTemplateContent,
+} from '../types';
 import { AugmentCLI } from '../../auggie/main/augment-cli';
 
 const logger = new Logger('SetupScriptsIPC');

@@ -1,5 +1,8 @@
 import { fork } from "typed-redux-saga";
-import { watchPipOpenedSaga, watchPipClosedSaga } from "./ipc-saga";
+import {
+  watchPipOpenedSaga,
+  watchPipClosedSaga,
+} from "./ipc-saga";
 import { pipActionsSaga } from "./pip-actions-saga";
 
 /**

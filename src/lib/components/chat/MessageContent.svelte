@@ -11,15 +11,15 @@
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import {
-    parseAgentMessage,
-    parseSuggestedPrompts,
-    groupParsedBlocks,
-    groupContentBlocks,
-    type ParsedContent,
-    type RenderBlock,
-    type ContentBlockGroup,
-    type RenderContentBlock,
-  } from '$lib/utils/messageParser';
+  parseAgentMessage,
+  parseSuggestedPrompts,
+  groupParsedBlocks,
+  groupContentBlocks,
+  type ParsedContent,
+  type RenderBlock,
+  type ContentBlockGroup,
+  type RenderContentBlock,
+} from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
 
   // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
@@ -28,9 +28,9 @@
   import { fly } from 'svelte/transition';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    openWorkspaceFile,
-    openWorkspaceNote,
-  } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
   const logger = createLogger('MessageContent');
 

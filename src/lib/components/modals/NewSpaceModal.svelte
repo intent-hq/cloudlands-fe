@@ -6,7 +6,10 @@
    */
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
 

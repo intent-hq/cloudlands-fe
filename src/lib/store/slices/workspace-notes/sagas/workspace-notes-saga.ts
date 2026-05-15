@@ -8,12 +8,15 @@ import { notesIpc } from "./notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import type { Note, WorkspaceId } from "$shared/types";
-import { fork, put, takeEvery, call } from "typed-redux-saga";
+import {
+  fork,
+  put,
+  takeEvery,
+  call,
+} from "typed-redux-saga";
 import { notesCrudSaga } from "./notes-crud-saga";
 import { selectNoteById } from "../workspace-notes-selectors";
-import {
-  workspaceUnmounted,
-} from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   applyNoteCreated,
   applyNoteDeleted,

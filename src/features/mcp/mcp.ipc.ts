@@ -5,7 +5,10 @@
  * Uses the new hub-based architecture.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import {
+  ipcMain,
+  BrowserWindow,
+} from 'electron';
 import {
   setupMcpHub,
   startWorkspaceServers,
@@ -17,7 +20,10 @@ import {
 // getWorkspaceEventService removed — Redux handles events now
 import { Logger } from '$shared/logger';
 import { MCP_CHANNELS } from '$shared/ipc/channels';
-import { createWorkspaceId, isValidWorkspaceId } from '$shared/types/branded-ids';
+import {
+  createWorkspaceId,
+  isValidWorkspaceId,
+} from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 import { workspaceService } from '../workspace/main/workspace.service';
 import { IPCRateLimiter } from '../ipc/ipc-validation';

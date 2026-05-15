@@ -4,7 +4,11 @@
  * Extends the base Logger to automatically track errors for AI agents
  */
 
-import { Logger, LogEntry, LoggerOptions } from './logger';
+import {
+  Logger,
+  LogEntry,
+  LoggerOptions,
+} from './logger';
 import { AgentErrorTracker } from './main/agent-error-tracker';
 import { isAppError } from './errors';
 

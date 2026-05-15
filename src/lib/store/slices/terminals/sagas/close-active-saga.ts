@@ -1,4 +1,9 @@
-import { call, put, select, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  select,
+  takeEvery,
+} from "typed-redux-saga";
 import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import {
   closeActiveTerminalRequested,

@@ -10,13 +10,21 @@
  *    (streaming or task not in terminal status)
  */
 
-import { fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  fork,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { Logger } from '$lib/utils/logger';
 import {
   selectStagedWorkingChanges,
   selectUnstagedWorkingChanges,
 } from '../../changes/changes-selectors';
-import { setChangesData, setChanges } from '../../changes/changes-slice';
+import {
+  setChangesData,
+  setChanges,
+} from '../../changes/changes-slice';
 import {
   setAutoCommitEnabled,
   loadAutoCommitSettings,
@@ -24,10 +32,14 @@ import {
 import { selectAutoCommitEnabled } from '../../workspace-settings/workspace-settings-selectors';
 import { applyTaskStatusChanged } from '../../workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
-import { recomputeAgentLocks, setAgentLockState } from '../agent-lock-slice';
-import { selectAgentById } from '../../workspace-agents/workspace-agents-selectors';
+import {
+  recomputeAgentLocks,
+  setAgentLockState,
+} from '../agent-lock-slice';
+
 import { selectAgentIsResponding } from '../../agent-session/agent-session-selectors';
 import type { TrackedChange } from '../../changes/changes-types';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const agentLockLogger = new Logger({ category: 'AgentLockSaga' });
 
@@ -44,7 +56,7 @@ function* isAgentActivelyWorking(
 ): SagaGenerator<boolean> {
   try {
     // Check streaming state from Redux
-    const session = yield* selectAgentById.effect(agentId);
+    const session = yield* selectAgentSession.effect(agentId);
     if (!session) return false;
 
     if (yield* selectAgentIsResponding.effect(agentId)) {

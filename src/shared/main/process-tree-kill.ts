@@ -9,7 +9,10 @@
  * (or similar) adapter, leading to massive memory leaks (80GB+ observed).
  */
 
-import { ChildProcess, exec } from 'child_process';
+import {
+  ChildProcess,
+  exec,
+} from 'child_process';
 import { promisify } from 'util';
 import { Logger } from '../logger';
 

@@ -1,5 +1,12 @@
 import { type Task } from "redux-saga";
-import { cancel, delay, fork, put, take, type SagaGenerator } from "typed-redux-saga";
+import {
+  cancel,
+  delay,
+  fork,
+  put,
+  take,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import type { StoreAction, StoreActionCreator } from "../types";
 
 /**

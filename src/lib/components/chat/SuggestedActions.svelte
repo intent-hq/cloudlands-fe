@@ -9,12 +9,12 @@
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-    faCode,
-    faLightbulb,
-    faBug,
-    faFileAlt,
-    type IconDefinition,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCode,
+  faLightbulb,
+  faBug,
+  faFileAlt,
+  type IconDefinition,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Suggestion {
     id: string;

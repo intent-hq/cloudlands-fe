@@ -9,7 +9,10 @@
   import { cubicOut } from 'svelte/easing';
   import Button from '$lib/components/ui/button/button.svelte';
   import Fa from 'svelte-fa';
-  import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     initialText: string;

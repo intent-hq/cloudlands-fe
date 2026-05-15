@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { BrowserWindow } from 'electron';
 
 const electronMocks = vi.hoisted(() => {
@@ -28,7 +35,10 @@ vi.mock('electron', () => ({
 }));
 
 import { EVENTS_CHANNELS } from '../../../../shared/ipc/channels';
-import { cleanupEventsIPC, setupEventsIPC } from '../events.ipc';
+import {
+  cleanupEventsIPC,
+  setupEventsIPC,
+} from '../events.ipc';
 import {
   rendererSubscriptions,
   windowCloseListeners,

@@ -13,7 +13,6 @@
 
 import { Logger } from '../../../shared/logger';
 import type { ContentBlock as UIContentBlock } from '../../../shared/types';
-import { noteLink } from '../../../shared/constants/intent-links';
 import type {
   ContentBlock as ACPContentBlock,
   Message as ACPMessage,
@@ -106,15 +105,6 @@ function parseACPContentBlock(block: ACPContentBlock | any): UIContentBlock | nu
         // Convert resource references to text with metadata
         const resource = block.resource;
         if (resource?.text) {
-          const noteResource = parseIntentNoteResource(resource.uri);
-          if (noteResource) {
-            const title = getResourceTitle(resource) || noteResource.noteId;
-            return {
-              type: 'text',
-              text: `${noteLink(title, noteResource.noteId, noteResource.workspaceId)}\n\n${resource.text}`,
-            } as UIContentBlock;
-          }
-
           return {
             type: 'text',
             text: `📄 ${resource.uri}\n\n${resource.text}`,
@@ -144,32 +134,6 @@ function parseACPContentBlock(block: ACPContentBlock | any): UIContentBlock | nu
     logger.error('Failed to parse ACP content block', error as Error, { block });
     return null;
   }
-}
-
-function getResourceTitle(resource: any): string | null {
-  const title = resource?._meta?.title || resource?.title || resource?.name;
-  return typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
-}
-
-function parseIntentNoteResource(uri: unknown): { noteId: string; workspaceId?: string } | null {
-  if (typeof uri !== 'string' || !uri.startsWith('intent://')) return null;
-
-  try {
-    const parsed = new URL(uri.replace('intent://', 'http://'));
-    const segments = parsed.pathname.replace(/^\/+/, '').split('/').filter(Boolean);
-
-    if (segments[0] === 'note' && segments[1]) {
-      return { noteId: segments[1] };
-    }
-
-    if (segments[1] === 'note' && segments[2]) {
-      return { workspaceId: segments[0], noteId: segments[2] };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 /**

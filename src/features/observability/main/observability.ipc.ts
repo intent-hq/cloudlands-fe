@@ -4,8 +4,15 @@
  * Provides IPC endpoints for accessing agent event data from the renderer process
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
-import { eventCollector, AgentEventFilter, AgentEvent } from '../event-collector';
+import {
+  ipcMain,
+  BrowserWindow,
+} from 'electron';
+import {
+  eventCollector,
+  AgentEventFilter,
+  AgentEvent,
+} from '../event-collector';
 import { Logger } from '../../../shared/logger';
 import { OBSERVABILITY_CHANNELS } from '../../../shared/ipc/channels';
 import * as fs from 'fs';

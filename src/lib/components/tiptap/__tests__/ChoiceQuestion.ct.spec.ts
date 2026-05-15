@@ -7,7 +7,10 @@
  * Should reuse the same patterns from choiceOption.
  */
 
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import {
+  test,
+  expect,
+} from '@playwright/experimental-ct-svelte';
 import ChoiceQuestionHarness from './ChoiceQuestionHarness.svelte';
 
 test.describe('Phase 2.3: ChoiceQuestion Node (TDD)', () => {

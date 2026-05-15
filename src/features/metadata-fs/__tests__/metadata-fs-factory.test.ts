@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 
 // Use vi.hoisted so mock fns are available inside the hoisted vi.mock factory
 const { mockExistsSync, mockReadFileSync } = vi.hoisted(() => ({
@@ -49,7 +55,10 @@ vi.mock('../main/cached-remote-metadata-fs', async (importOriginal) => {
   return { ...actual, CachedRemoteMetadataFS: SpiedCachedRemoteMetadataFS };
 });
 
-import { getMetadataFS, clearMetadataFSCache } from '../main/metadata-fs-factory';
+import {
+  getMetadataFS,
+  clearMetadataFSCache,
+} from '../main/metadata-fs-factory';
 import { LocalMetadataFS } from '../main/local-metadata-fs';
 import { CachedRemoteMetadataFS } from '../main/cached-remote-metadata-fs';
 import { WorkspaceConfig } from '$shared/main/config';

@@ -3,7 +3,11 @@
  * Tests the patch parsing and content manipulation logic used in unstageHunkContentBased
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 
 /**
  * Helper function to parse a hunk patch (same logic as used in unstageHunkContentBased)

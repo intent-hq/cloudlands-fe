@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    faCommentDots,
-    faCodePullRequest,
-    faSquarePen,
-    faCircleQuestion,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCommentDots,
+  faCodePullRequest,
+  faSquarePen,
+  faCircleQuestion,
+} from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
 
   interface Props {

@@ -20,7 +20,10 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { Task } from 'redux-saga';
-import { invokeWithTimeout, IpcTimeoutError } from '$lib/electron-bridge';
+import {
+  invokeWithTimeout,
+  IpcTimeoutError,
+} from '$lib/electron-bridge';
 import { Logger } from '$lib/utils/logger';
 import { TRACKING_CONFIG } from '$features/file-tracking/tracking.config';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';

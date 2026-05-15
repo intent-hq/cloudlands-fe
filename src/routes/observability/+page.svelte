@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import {
+  onMount,
+  onDestroy,
+} from 'svelte';
   import { formatDistanceToNow } from 'date-fns';
   import type {
     AgentEvent,
@@ -13,29 +16,29 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Fa from 'svelte-fa';
   import {
-    faRocket,
-    faCheckCircle,
-    faExclamationCircle,
-    faDownload,
-    faUpload,
-    faWrench,
-    faCheck,
-    faFile,
-    faEdit,
-    faTrash,
-    faCodeBranch,
-    faBrain,
-    faLightbulb,
-    faTriangleExclamation,
-    faCircle,
-    faStop,
-    faTerminal,
-    faServer,
-    faCog,
-    faPlug,
-    faPlugCircleXmark,
-    faFolderOpen,
-  } from '@fortawesome/free-solid-svg-icons';
+  faRocket,
+  faCheckCircle,
+  faExclamationCircle,
+  faDownload,
+  faUpload,
+  faWrench,
+  faCheck,
+  faFile,
+  faEdit,
+  faTrash,
+  faCodeBranch,
+  faBrain,
+  faLightbulb,
+  faTriangleExclamation,
+  faCircle,
+  faStop,
+  faTerminal,
+  faServer,
+  faCog,
+  faPlug,
+  faPlugCircleXmark,
+  faFolderOpen,
+} from '@fortawesome/free-solid-svg-icons';
   import Input from '$lib/components/ui/input/input.svelte';
 
   const logger = new Logger('ObservabilityDashboard');

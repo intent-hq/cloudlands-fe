@@ -5,7 +5,13 @@
  * and count-limited eviction.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import {
   registerProcess,
   deregisterProcess,

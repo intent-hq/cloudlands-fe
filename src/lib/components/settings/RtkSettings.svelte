@@ -7,15 +7,18 @@
    */
 
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { SETTINGS_CHANNELS, SYSTEM_CHANNELS } from '$shared/ipc/channels';
+  import {
+  SETTINGS_CHANNELS,
+  SYSTEM_CHANNELS,
+} from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    addTerminal,
-    openTerminalOverlay,
-    toggleTerminalOverlay,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  addTerminal,
+  openTerminalOverlay,
+  toggleTerminalOverlay,
+} from '$lib/store/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
 
   const dispatch = getDispatch();

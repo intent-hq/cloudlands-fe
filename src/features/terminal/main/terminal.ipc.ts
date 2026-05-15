@@ -38,7 +38,10 @@ import {
   TerminalProfessionalGetBufferSchema,
   TerminalCreateWithCommandSchema,
 } from '../../../main/ipc-schemas';
-import { sshManager, type SSHConnectionConfig } from '$shared/main/ssh-manager';
+import {
+  sshManager,
+  type SSHConnectionConfig,
+} from '$shared/main/ssh-manager';
 import { workspaceService } from '$features/workspace/main/workspace.service';
 import { WorkspaceConfig } from '$shared/main/config';
 import { createWorkspaceId } from '$shared/types/branded-ids';

@@ -10,9 +10,18 @@
  *  - Workspace removal (`clearWorkspace`) — lifecycle, not a subscription change.
  */
 
-import { call, cancel, delay, fork, take } from "typed-redux-saga";
+import {
+  call,
+  cancel,
+  delay,
+  fork,
+  take,
+} from "typed-redux-saga";
 import type { Task } from "redux-saga";
-import { deepEqual, shallowEqual } from "fast-equals";
+import {
+  deepEqual,
+  shallowEqual,
+} from "fast-equals";
 
 import {
   selectAllWorkspaceIds,

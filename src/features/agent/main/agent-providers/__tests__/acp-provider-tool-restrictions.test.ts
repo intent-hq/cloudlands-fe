@@ -5,7 +5,11 @@
  * applied when building auggie CLI arguments.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   BACKGROUND_AGENT_TOOL_DENYLISTS,
   FILE_WRITE_TOOLS,

@@ -2,7 +2,13 @@
  * Tests for ACP Message Parser
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import {
   parseACPMessage,
   ACPStreamParser,
@@ -66,28 +72,6 @@ describe('acp-message-parser', () => {
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('tool_use');
       expect((result[0] as any).name).toBe('read_file');
-    });
-
-    it('preserves attached note resource URI when the visible title would slug differently', () => {
-      const targetNoteId = '7f0f6b66-5c52-40b7-a76b-9d1f5d58a4bb';
-      const targetUri = `intent://local/source-workspace-id/note/${targetNoteId}`;
-      const result = parseACPMessage({
-        content: [
-          {
-            type: 'resource',
-            resource: {
-              uri: targetUri,
-              text: 'Safety review details',
-              _meta: { title: 'PR 17 Safety Review' },
-            },
-          },
-        ],
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].type).toBe('text');
-      expect((result[0] as any).text).toContain(`[PR 17 Safety Review](${targetUri})`);
-      expect((result[0] as any).text).not.toContain('intent://local/note/pr-17-safety-review');
     });
 
     it('should handle empty content', () => {

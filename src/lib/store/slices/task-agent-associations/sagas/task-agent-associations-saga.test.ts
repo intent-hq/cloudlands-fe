@@ -1,4 +1,7 @@
-import { describe, it } from "vitest";
+import {
+  describe,
+  it,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import {
   getLocalStorageJSON,
@@ -16,7 +19,10 @@ import {
   removeTaskAgentAssociation,
   TASK_AGENT_ASSOCIATIONS_STORAGE_PREFIX,
 } from "../task-agent-associations-slice";
-import { selectTaskAgentAssociationsByNoteId, selectAssociationsForNote } from "../task-agent-associations-selectors";
+import {
+  selectTaskAgentAssociationsByNoteId,
+  selectAssociationsForNote,
+} from "../task-agent-associations-selectors";
 import {
   dispatchAgentAssociationsRemovedEvent,
   dispatchTaskAssociationChangedEvent,

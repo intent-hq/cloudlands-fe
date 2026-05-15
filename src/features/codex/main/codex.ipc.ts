@@ -7,7 +7,10 @@
  */
 
 import { spawn } from 'child_process';
-import { BrowserWindow, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+} from 'electron';
 import * as os from 'os';
 import {
   CODEX_REASONING_EFFORTS,
@@ -22,7 +25,10 @@ import {
   resolveCodexModelListCommands,
   type CodexResolvedModelListCommand,
 } from './codex-resolver';
-import { getManagedCodexAcpStatus, type ManagedCodexAcpStatus } from './codex-acp-manager';
+import {
+  getManagedCodexAcpStatus,
+  type ManagedCodexAcpStatus,
+} from './codex-acp-manager';
 
 const logger = new Logger('CodexIPC');
 

@@ -8,7 +8,10 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import { ipcMain } from 'electron';
 import { githubService } from './github.service';
 import { Logger } from '../../../shared/logger';
-import { getGitStateManager, initializeGitStateManager } from '../git-state-manager-registry';
+import {
+  getGitStateManager,
+  initializeGitStateManager,
+} from '../git-state-manager-registry';
 import type { RemoteGitConfig } from './git-state-manager';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { GIT_TRACKING_CHANNELS } from '$shared/ipc/channels';

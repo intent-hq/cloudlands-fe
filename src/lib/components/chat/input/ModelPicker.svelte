@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import {
+  tick,
+  untrack,
+} from 'svelte';
   import { writable } from 'svelte/store';
 
   import { agentClient } from '$features/agent/agent.client';
@@ -8,12 +11,12 @@
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
   import {
-    Dropdown,
-    type DropdownGroup,
-    type DropdownGroupProps,
-    type DropdownItemProps,
-    type DropdownOption,
-  } from '$lib/components/ui/dropdown';
+  Dropdown,
+  type DropdownGroup,
+  type DropdownGroupProps,
+  type DropdownItemProps,
+  type DropdownOption,
+} from '$lib/components/ui/dropdown';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import { faSettings } from '$lib/icons/faSettings';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
@@ -25,56 +28,60 @@
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
 
   import {
-    selectSelectedModel,
-    selectAvailableModels,
-    selectModelFallbackInfo,
-    selectModelPickerCollapsedGroups,
-    selectIsLoadingModels,
-    selectLoadError,
-    selectAllProviderWarnings,
-  } from '$lib/store/slices/model/model-selectors';
+  selectSelectedModel,
+  selectAvailableModels,
+  selectModelFallbackInfo,
+  selectModelPickerCollapsedGroups,
+  selectIsLoadingModels,
+  selectLoadError,
+  selectAllProviderWarnings,
+} from '$lib/store/slices/model/model-selectors';
   import {
-    clearModelFallbackInfo,
-    requestHydrateModelFallbackInfo,
-    selectModel,
-    setLoadingStateForProvider,
-    setModelFallbackInfo,
-    setModelPickerGroupCollapsed,
-    setWorkspaceModel,
-  } from '$lib/store/slices/model/model-slice';
+  clearModelFallbackInfo,
+  requestHydrateModelFallbackInfo,
+  selectModel,
+  setLoadingStateForProvider,
+  setModelFallbackInfo,
+  setModelPickerGroupCollapsed,
+  setWorkspaceModel,
+} from '$lib/store/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$lib/store/slices/model/model-types';
+  import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import {
-    selectManagedInstallStatusByProvider,
-  } from '$lib/store/slices/agent-availability/agent-availability-selectors';
+  selectActiveProviderId,
+  selectEnabledProviderIds,
+} from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import {
-    selectActiveProviderId,
-    selectEnabledProviderIds,
-  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import {
-    getModelsForProvider,
-    getModelsForProviderForLoadingState,
-  } from '$lib/store/slices/model/model-utils';
+  getModelsForProvider,
+  getModelsForProviderForLoadingState,
+} from '$lib/store/slices/model/model-utils';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    ACP_PROVIDERS,
-    getDefaultProviderId,
-    getProviderConfig,
-    parseCompoundModelId,
-    resolvePreferredModel,
-  } from '$shared/config/provider-config';
+  ACP_PROVIDERS,
+  getDefaultProviderId,
+  getProviderConfig,
+  parseCompoundModelId,
+  resolvePreferredModel,
+} from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-  import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-  import { isUserProviderSettled, toDropdownOptions } from './model-picker-utils';
+  import {
+  formatProviderLoadError,
+  type ProviderLoadError,
+} from './model-picker-provider-errors';
+  import {
+  isUserProviderSettled,
+  toDropdownOptions,
+} from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import {
-    faCheck,
-    faChevronDown,
-    faLock,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faChevronDown,
+  faLock,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');

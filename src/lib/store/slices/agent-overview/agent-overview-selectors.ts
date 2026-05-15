@@ -8,10 +8,23 @@
 
 import { createSelector } from "../../utils/create-selector";
 import type { StoreState } from "../../types";
-import type { InteractionEvent, GraphState, GraphNode, GraphEdge, AgentNode, FileNode, NoteNode, TaskNode } from "$lib/components/agent-overview/types";
+import type { InteractionEvent,
+  GraphState,
+  GraphNode,
+  GraphEdge,
+  AgentNode,
+  FileNode,
+  NoteNode,
+  TaskNode } from "$lib/components/agent-overview/types";
 import type { FileLineChange } from "$lib/store/slices/changes/changes-types";
-import { selectWorkspaceFileChanges, selectAgentLineStats } from "$lib/store/slices/changes/changes-selectors";
-import { selectAgentIsResponding, selectAgentIsWaitingForOtherAgents } from "$lib/store/slices/agent-session/agent-session-selectors";
+import {
+  selectWorkspaceFileChanges,
+  selectAgentLineStats,
+} from "$lib/store/slices/changes/changes-selectors";
+import {
+  selectAgentIsResponding,
+  selectAgentIsWaitingForOtherAgents,
+} from "$lib/store/slices/agent-session/agent-session-selectors";
 import type { AgentOverviewWorkspaceState } from "./agent-overview-types";
 import { ACTIVE_EDGE_WINDOW_MS } from "$lib/components/agent-overview/constants";
 import {
@@ -23,7 +36,8 @@ import {
   extractDelegationBatchMap,
 } from "$lib/components/agent-overview/graph-helpers";
 import { getItems } from "$lib/store/utils/collection-utils";
-import type { AgentSession, Note } from "$shared/types";
+import type { AgentSession,
+  Note } from "$shared/types";
 import { selectAllWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 
 // ============================================================================
@@ -104,7 +118,7 @@ export const selectGraphState = createSelector(
 // computeGraphState — pure function (moved from old Svelte store)
 // ============================================================================
 
- 
+
 function computeGraphState(
   events: InteractionEvent[],
   agents: Record<string, AgentSession>,

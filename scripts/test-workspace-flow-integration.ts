@@ -105,9 +105,9 @@ class WorkspaceFlowIntegrationTest {
           const filePath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('initializeChatRequested') &&
-                 content.includes('chatState.messages') &&
-                 content.includes('chatState.isStreaming');
+          return content.includes('sendInitialMessageRequested') &&
+                 content.includes('agentMessages') &&
+                 content.includes('agentSessionIsStreaming');
         },
         critical: true,
       },
@@ -128,8 +128,8 @@ class WorkspaceFlowIntegrationTest {
           const filePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('upsertAgentSession') &&
-                 content.includes('replaceAgentMessages') &&
+          return content.includes('upsertSession') &&
+                 content.includes('replaceMessages') &&
                  content.includes('setAgentStreaming');
         },
         critical: true,

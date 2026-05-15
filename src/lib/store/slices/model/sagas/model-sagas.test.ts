@@ -1,4 +1,8 @@
-import { describe, it, vi } from 'vitest';
+import {
+  describe,
+  it,
+  vi,
+} from 'vitest';
 import { testSaga } from 'redux-saga-test-plan';
 
 vi.mock('typed-redux-saga', async () => await import('$lib/store/utils/test-helpers/typed-redux-saga-mock'));

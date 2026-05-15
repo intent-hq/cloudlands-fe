@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { faPaperPlane, faPencil } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faPaperPlane,
+  faPencil,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SuggestedPrompt } from '$shared/types';
   import { fade } from 'svelte/transition';

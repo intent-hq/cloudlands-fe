@@ -5,12 +5,12 @@
    */
   import Fa from 'svelte-fa';
   import {
-    faPlus,
-    faMinus,
-    faRotateLeft,
-    faFileAlt,
-    faArrowUpRightFromSquare,
-  } from '@fortawesome/free-solid-svg-icons';
+  faPlus,
+  faMinus,
+  faRotateLeft,
+  faFileAlt,
+  faArrowUpRightFromSquare,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import type { UIFileChange } from './types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';

@@ -4,7 +4,11 @@
  * Tests for channel definitions, validation, and type safety
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   AGENT_CHANNELS,
   WORKSPACE_CHANNELS,

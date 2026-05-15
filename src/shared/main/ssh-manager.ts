@@ -1,4 +1,8 @@
-import { Client, ConnectConfig, SFTPWrapper } from 'ssh2';
+import {
+  Client,
+  ConnectConfig,
+  SFTPWrapper,
+} from 'ssh2';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 

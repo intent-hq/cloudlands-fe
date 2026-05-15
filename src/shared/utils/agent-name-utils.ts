@@ -6,7 +6,10 @@
  * dictionaries (static data).
  */
 
-import { adjectives, animals } from 'unique-names-generator';
+import {
+  adjectives,
+  animals,
+} from 'unique-names-generator';
 
 /**
  * Create a Set for O(1) lookup of adjectives and animals.

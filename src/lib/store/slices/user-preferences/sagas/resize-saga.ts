@@ -1,6 +1,10 @@
 import { isElectron } from "$lib/electron-bridge";
 import { takeLatestFromWindowEvent } from "$lib/store/utils/ipc-channel";
-import { call, put, delay } from "typed-redux-saga";
+import {
+  call,
+  put,
+  delay,
+} from "typed-redux-saga";
 import { setZoomFactor } from "../user-preferences-slice";
 import { fetchZoomFactor } from "./init-saga";
 

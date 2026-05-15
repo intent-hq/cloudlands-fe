@@ -8,35 +8,41 @@
    * - Loading indicator
    * - Error handling
    */
-  import { onMount, tick } from 'svelte';
+  import {
+  onMount,
+  tick,
+} from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
-  import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
+  import {
+  BROWSER_PANEL_PARTITION,
+  BROWSER_PROTOCOLS,
+} from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    addRecentUrl,
-    clearBrowserTabZoomRequest,
-    updateUrlMetadata,
-  } from '$lib/store/slices/browser/browser-slice';
+  addRecentUrl,
+  clearBrowserTabZoomRequest,
+  updateUrlMetadata,
+} from '$lib/store/slices/browser/browser-slice';
   import { selectPendingBrowserZoom } from '$lib/store/slices/browser/browser-selectors';
   import {
-    createEmbeddedBrowserNavigationSyncState,
-    reconcileEmbeddedBrowserUrlProp,
-    recordEmbeddedBrowserNavigation,
-  } from './embedded-browser-navigation-sync';
+  createEmbeddedBrowserNavigationSyncState,
+  reconcileEmbeddedBrowserUrlProp,
+  recordEmbeddedBrowserNavigation,
+} from './embedded-browser-navigation-sync';
   import Fa from 'svelte-fa';
   import {
-    faArrowLeft,
-    faArrowRight,
-    faRefresh,
-    faExternalLinkAlt,
-    faLock,
-    faExclamationTriangle,
-    faTimes,
-    faCode,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowLeft,
+  faArrowRight,
+  faRefresh,
+  faExternalLinkAlt,
+  faLock,
+  faExclamationTriangle,
+  faTimes,
+  faCode,
+} from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
 
   const logger = createLogger('EmbeddedBrowser');

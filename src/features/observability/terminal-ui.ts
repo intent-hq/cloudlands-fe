@@ -7,7 +7,12 @@
 
 import * as blessed from 'blessed';
 import * as fs from 'fs';
-import { AgentEvent, AgentEventType, AgentEventFilter, eventCollector } from './event-collector';
+import {
+  AgentEvent,
+  AgentEventType,
+  AgentEventFilter,
+  eventCollector,
+} from './event-collector';
 import { formatDistanceToNow } from 'date-fns';
 import chalk from 'chalk';
 

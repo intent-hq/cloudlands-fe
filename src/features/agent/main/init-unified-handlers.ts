@@ -13,7 +13,10 @@ import { registerAgentHandlers } from './unified-agent-handlers';
 import { getAgentBackendAdapter } from './agent-backend-adapter';
 import { Logger } from '$shared/logger';
 import { registerValidationSchema } from '../../../main/ipc-validation-middleware';
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import {
+  AGENT_CHANNELS,
+  AGENT_BACKEND_CHANNELS,
+} from '$shared/ipc/channels';
 import {
   AgentCreateSchema,
   AgentGetSessionSchema,

@@ -1,8 +1,8 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import {
+  selectAgentSession,
   selectAgentIsResponding,
   selectAgentIsWaiting,
 } from '$lib/store/slices/agent-session/agent-session-selectors';
@@ -136,7 +136,7 @@ export function getAvatarStateFromStore(
 ): AvatarState {
   void workspaceId;
   const state = getReduxStore().getState();
-  const session = selectAgentById.select(state, agentId);
+  const session = selectAgentSession.select(state, agentId);
   if (!session) {
     return 'idle';
   }

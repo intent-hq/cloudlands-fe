@@ -56,7 +56,11 @@ import type {
   WorkspaceTaskStats,
   WorkspaceUIContext,
 } from '../../../shared/types';
-import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
+import {
+  AgentStatus,
+  PullRequestStatus,
+  WorkspaceStatus,
+} from '../../../shared/types';
 import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { agentPersistence } from '../../agent/main/agent-persistence';
 import {
@@ -72,12 +76,18 @@ import {
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
-import { getIntentServerPath, escapeShellArg } from '../../agent/main/agent-providers/acp-provider';
+import {
+  getIntentServerPath,
+  escapeShellArg,
+} from '../../agent/main/agent-providers/acp-provider';
 import type { NotesRepository } from '../../notes/main/notes.repository';
 import { notesService } from '../../notes/main/notes.service';
 import { FolderBasedNotesRepository } from '../../notes/main/storage';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
-import { appendSlugSuffix, extractBaseSlug } from '../../../shared/services/workspace-slug';
+import {
+  appendSlugSuffix,
+  extractBaseSlug,
+} from '../../../shared/services/workspace-slug';
 import { DiffSummaryRepository } from './diff-summary.repository';
 import {
   parseBranchName,
@@ -94,9 +104,18 @@ import {
 } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { FileSystemWorkspaceRepository } from './workspace.repository';
-import { getBranchPrefix, getWorktreesLocation } from './app-settings.service';
-import { getRepoBranchPrefix, getRepoSetupScript } from './repo-config.service';
-import { sshManager, type SSHConnectionConfig } from '../../../shared/main/ssh-manager';
+import {
+  getBranchPrefix,
+  getWorktreesLocation,
+} from './app-settings.service';
+import {
+  getRepoBranchPrefix,
+  getRepoSetupScript,
+} from './repo-config.service';
+import {
+  sshManager,
+  type SSHConnectionConfig,
+} from '../../../shared/main/ssh-manager';
 import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
 

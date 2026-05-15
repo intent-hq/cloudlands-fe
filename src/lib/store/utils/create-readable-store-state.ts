@@ -1,4 +1,7 @@
-import { type Readable, readable } from "svelte/store";
+import {
+  type Readable,
+  readable,
+} from "svelte/store";
 import type { ReduxStore, StoreState } from "../types";
 
 export const createStoreStateReadable = (store: ReduxStore): Readable<StoreState> => {

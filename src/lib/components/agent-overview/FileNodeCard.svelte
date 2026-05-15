@@ -6,7 +6,11 @@
    * Styled similarly to AgentCard with border and shadow.
    */
   import type { FileNode } from './types';
-  import { faFile, faPen, faEye } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faFile,
+  faPen,
+  faEye,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   interface Props {

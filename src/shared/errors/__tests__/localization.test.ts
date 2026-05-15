@@ -2,7 +2,12 @@
  * Tests for Error Localization Module
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+} from 'vitest';
 import {
   setLocale,
   getLocale,

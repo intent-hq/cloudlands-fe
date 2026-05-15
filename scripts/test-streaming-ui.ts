@@ -9,9 +9,7 @@
  * in different states and scenarios.
  */
 
-import { spawn } from 'child_process';
 import { Logger } from '../src/shared/logger.js';
-import type { ContentBlock } from '../src/shared/types/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -46,7 +44,7 @@ class StreamingUITester {
       const content = fs.readFileSync(componentPath, 'utf-8');
 
       // Check if isStreaming is properly passed to MarkdownViewer
-      const hasCorrectStreamingProp = content.includes('isStreaming={isStreaming && blockIndex === blocks.length - 1}');
+      const hasCorrectStreamingProp = content.includes('isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}');
 
       if (!hasCorrectStreamingProp) {
         logger.error('StreamingMessageContent does not pass isStreaming correctly to MarkdownViewer');
@@ -58,7 +56,7 @@ class StreamingUITester {
       const markdownContent = fs.readFileSync(markdownPath, 'utf-8');
 
       const hasStreamingProp = markdownContent.includes('isStreaming = false');
-      const hasThrottling = markdownContent.includes('throttledUpdateContent');
+      const hasThrottling = markdownContent.includes('scheduleStreamingUpdate');
 
       if (!hasStreamingProp || !hasThrottling) {
         logger.error('MarkdownViewer does not handle streaming properly');
@@ -115,27 +113,29 @@ class StreamingUITester {
     logger.info('Testing message persistence logic...');
 
     try {
-      // Check unified-state-store preserves messages
-      const storePath = path.join(__dirname, '../src/features/agent/services/unified-state-store.ts');
+      // Check Redux agent-session slice preserves messages
+      const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
       const storeContent = fs.readFileSync(storePath, 'utf-8');
 
       // Check if messages are preserved when updating agent
-      const hasMessagePreservation = storeContent.includes('session.messages || existingAgent?.messages || []');
+      const hasMessagePreservation = storeContent.includes('replaceMessages') &&
+        storeContent.includes('deduplicateAgentMessages') &&
+        storeContent.includes('mergeSessionMessages');
 
       if (!hasMessagePreservation) {
-        logger.error('unified-state-store does not preserve messages properly');
+        logger.error('agent-session slice does not preserve messages properly');
         return false;
       }
 
-      // Check sessionStore updateMessage triggers reactivity
-      const sessionStorePath = path.join(__dirname, '../src/features/agent/browser/index.ts');
-      const sessionStoreContent = fs.readFileSync(sessionStorePath, 'utf-8');
+      // Check stream saga updateMessage triggers Redux state updates
+      const streamSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
+      const streamSagaContent = fs.readFileSync(streamSagaPath, 'utf-8');
 
-      const hasReactiveUpdate = sessionStoreContent.includes('agent.messages[messageIndex] = {');
-      const hasStoreNotification = sessionStoreContent.includes('sessionStoreData.set({ sessions });');
+      const hasReactiveUpdate = streamSagaContent.includes('updateMessage(');
+      const hasStoreNotification = streamSagaContent.includes('replaceMessages(');
 
       if (!hasReactiveUpdate || !hasStoreNotification) {
-        logger.error('sessionStore.updateMessage does not trigger reactive updates');
+        logger.error('agent stream saga does not trigger Redux updates');
         return false;
       }
 
@@ -154,8 +154,8 @@ class StreamingUITester {
     logger.info('Testing rapid streaming updates handling...');
 
     try {
-      // Check if agent.service.ts accumulates text properly
-      const agentServicePath = path.join(__dirname, '../src/features/agent/agent.service.ts');
+      // Check if agent-stream-lifecycle accumulates text properly
+      const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
       const agentServiceContent = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for text buffer accumulation
@@ -163,20 +163,20 @@ class StreamingUITester {
       const hasBuildOrderedContentBlocks = agentServiceContent.includes('buildOrderedContentBlocks');
 
       if (!hasTextBuffer) {
-        logger.error('agent.service.ts does not accumulate text in buffer');
+        logger.error('agent-stream-lifecycle does not accumulate text in buffer');
         return false;
       }
 
       if (!hasBuildOrderedContentBlocks) {
-        logger.error('agent.service.ts does not use buildOrderedContentBlocks');
+        logger.error('agent-stream-lifecycle does not use buildOrderedContentBlocks');
         return false;
       }
 
-      // Check if updateMessage is called during streaming
-      const hasUpdateMessage = agentServiceContent.includes('sessionStore.updateMessage(agentId, lastMessage.id');
+      // Check if stream updates are dispatched during streaming
+      const hasUpdateMessage = agentServiceContent.includes('agentStreamUpdateReceived');
 
       if (!hasUpdateMessage) {
-        logger.error('agent.service.ts does not call updateMessage during streaming');
+        logger.error('agent-stream-lifecycle does not dispatch stream updates during streaming');
         return false;
       }
 

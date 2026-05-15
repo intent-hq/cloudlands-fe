@@ -1,5 +1,12 @@
 import { setLocalStorageJSON } from "$lib/store/utils/safe-local-storage-saga";
-import { call, delay, fork, takeEvery, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   cycleFontStyle,
   cycleNoteFontStyle,

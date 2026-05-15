@@ -19,19 +19,19 @@
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-    faWandMagicSparkles,
-    faXmark,
-    faFloppyDisk,
-    faChevronRight,
-  } from '@fortawesome/free-solid-svg-icons';
+  faWandMagicSparkles,
+  faXmark,
+  faFloppyDisk,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { v4 as uuidv4 } from 'uuid';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
-    dismissSetupScriptBannerGlobally,
-    saveScript,
-  } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+  dismissSetupScriptBannerGlobally,
+  saveScript,
+} from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { selectIsSetupScriptBannerDismissed } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectWorkspaceHasSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';

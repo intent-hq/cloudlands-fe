@@ -8,35 +8,47 @@
    * that can be independently tweaked for settings-specific needs.
    */
   import { onMount } from 'svelte';
-  import { invoke, shell } from '$lib/electron-bridge';
   import {
-    selectActiveProviderId,
-    selectEnabledProviders,
-  } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  invoke,
+  shell,
+} from '$lib/electron-bridge';
   import {
-    setActiveProvider,
-    setProviderEnabled,
-  } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { retryLoadModels, reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+  selectActiveProviderId,
+  selectEnabledProviders,
+} from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import {
+  setActiveProvider,
+  setProviderEnabled,
+} from '$lib/store/slices/provider-settings/provider-settings-slice';
+  import {
+  retryLoadModels,
+  reloadModelsForProvider,
+} from '$lib/store/slices/model/model-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
-  import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import {
-    MINIMUM_AUGGIE_VERSION,
-    MINIMUM_NODE_VERSION,
-    type InstallErrorType,
-  } from '$shared/constants/auggie';
+  ACP_PROVIDERS,
+  getProviderConfig,
+} from '$shared/config/provider-config';
+  import {
+  AUGGIE_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from '$shared/ipc/channels';
+  import {
+  MINIMUM_AUGGIE_VERSION,
+  MINIMUM_NODE_VERSION,
+  type InstallErrorType,
+} from '$shared/constants/auggie';
   import { createLogger } from '$lib/utils/client-logger';
   import { track } from '$lib/services/analytics';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
-    faCheck,
-    faCircleNotch,
-    faPaste,
-    faTerminal,
-    faXmark,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faCircleNotch,
+  faPaste,
+  faTerminal,
+  faXmark,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';

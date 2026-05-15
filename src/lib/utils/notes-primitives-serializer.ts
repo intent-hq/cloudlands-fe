@@ -10,7 +10,10 @@
 import type { JSONContent } from '@tiptap/core';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../shared/logger';
-import { type NotePrimitive, NotePrimitiveSchema } from '../../shared/types/notes-primitives';
+import {
+  type NotePrimitive,
+  NotePrimitiveSchema,
+} from '../../shared/types/notes-primitives';
 
 const logger = new Logger('NotesPrimitivesSerializer');
 

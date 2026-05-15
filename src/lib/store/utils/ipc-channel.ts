@@ -9,7 +9,11 @@ import type { NotUndefined } from "@redux-saga/types";
 import { listenSync } from "$lib/electron-bridge";
 import type { WindowEventName } from "$lib/utils/window-events";
 import type { ElectronEventName } from "$shared/ipc-registry";
-import { cancel, fork, take } from "typed-redux-saga";
+import {
+  cancel,
+  fork,
+  take,
+} from "typed-redux-saga";
 
 type WindowEventChannelOptions = {
   capture?: boolean;

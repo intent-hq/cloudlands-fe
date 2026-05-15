@@ -4,8 +4,19 @@
  * Tests to ensure proper cleanup and disposal of resources
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { combineReducers, legacy_createStore as createStore, type Store } from 'redux';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
+import {
+  combineReducers,
+  legacy_createStore as createStore,
+  type Store,
+} from 'redux';
 import { messageAccumulatorReducer } from '../../../store/main/slices/message-accumulator/message-accumulator-slice';
 
 // Create per-test store for the API

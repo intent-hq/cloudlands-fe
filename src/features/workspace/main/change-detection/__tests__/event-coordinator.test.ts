@@ -5,9 +5,19 @@
  * deduplication, and emission.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { EventCoordinator } from '../event-coordinator';
-import { WorkspaceEventType, type WorkspaceEvent } from '../../../events/types';
+import {
+  WorkspaceEventType,
+  type WorkspaceEvent,
+} from '../../../events/types';
 import type { ProcessedChange } from '../change-processor';
 
 // Note: EventCoordinator extends EventEmitter directly, no separate event-bus module is used

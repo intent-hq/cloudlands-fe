@@ -1,6 +1,9 @@
 <script lang="ts">
   import { ScrollArea as ScrollAreaPrimitive } from 'bits-ui';
-  import { cn, type WithoutChild } from '$lib/utils.js';
+  import {
+  cn,
+  type WithoutChild,
+} from '$lib/utils.js';
 
   interface Props extends WithoutChild<ScrollAreaPrimitive.ScrollbarProps> {
     children?: any;

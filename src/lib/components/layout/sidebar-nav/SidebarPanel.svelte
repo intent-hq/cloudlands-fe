@@ -5,11 +5,23 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faXmark, faThumbtack } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faXmark,
+  faThumbtack,
+} from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { selectPanelItem, selectPanelWidth, selectIsCardPinned, selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { toggleCardPinned, closePanel, setPanelWidth as setPanelWidthAction } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+  selectPanelItem,
+  selectPanelWidth,
+  selectIsCardPinned,
+  selectOnboardingActive,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+  toggleCardPinned,
+  closePanel,
+  setPanelWidth as setPanelWidthAction,
+} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   const dispatch = getDispatch();
   const panelItem$ = selectPanelItem();
@@ -20,11 +32,9 @@
   const MIN_WIDTH = 100;
   const MAX_WIDTH = 480;
 
-  const panelItem = $derived($panelItem$);
-  const panelWidth = $derived($panelWidth$);
 
   const panelMeta = $derived.by(() => {
-    switch (panelItem) {
+    switch ($panelItem$) {
       case 'home':
         return { title: 'Home', description: 'Your workspace dashboard' };
       case 'active':
@@ -40,18 +50,18 @@
 
   let isResizing = $state(false);
 
-  let liveWidth = $state(panelWidth);
+  let liveWidth = $state($panelWidth$);
 
   // Keep liveWidth in sync when panelWidth changes from Redux
   $effect(() => {
-    liveWidth = panelWidth;
+    liveWidth = $panelWidth$;
   });
 
   function handleResizeStart(e: MouseEvent) {
     e.preventDefault();
     isResizing = true;
     const startX = e.clientX;
-    const startWidth = panelWidth;
+    const startWidth = $panelWidth$;
 
     function onMouseMove(e: MouseEvent) {
       const delta = e.clientX - startX;
@@ -70,7 +80,7 @@
   }
 </script>
 
-{#if panelItem && !$onboardingActive$}
+{#if $panelItem$ && !$onboardingActive$}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
     <div class="sidebar-panel h-full flex flex-col relative" style="width: {liveWidth}px;" aria-label="Sidebar panel">
@@ -105,13 +115,13 @@
 
       <!-- Content -->
       <div class="sidebar-panel-content flex-1 min-h-0 overflow-y-auto">
-        {#if panelItem === 'home'}
+        {#if $panelItem$ === 'home'}
           <HomeCard />
-        {:else if panelItem === 'active'}
+        {:else if $panelItem$ === 'active'}
           <ActiveWorkspacesCard expanded={true} />
-        {:else if panelItem === 'all-workspaces'}
+        {:else if $panelItem$ === 'all-workspaces'}
           <AllWorkspacesCard expanded={true} />
-        {:else if panelItem === 'settings'}
+        {:else if $panelItem$ === 'settings'}
           <SettingsCard />
         {/if}
       </div>

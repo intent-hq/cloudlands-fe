@@ -19,24 +19,24 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { replaceWorkspaceList } from '$lib/store/slices/workspace/workspace-slice';
   import {
-    setWorkspaceInitializerDefaultParentPath,
-    setWorkspaceInitializerLastSelectedRepo,
-    setWorkspaceInitializerRecentRepos,
-    setWorkspaceInitializerRemoteSetups,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  setWorkspaceInitializerDefaultParentPath,
+  setWorkspaceInitializerLastSelectedRepo,
+  setWorkspaceInitializerRecentRepos,
+  setWorkspaceInitializerRemoteSetups,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
   import {
-    selectWorkspaceInitializerDefaultParentPath,
-    selectWorkspaceInitializerRecentRepos,
-    selectWorkspaceInitializerRemoteSetups,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  selectWorkspaceInitializerDefaultParentPath,
+  selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerRemoteSetups,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
-    faFolder,
-    faXmark,
-    faPlus,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  faFolder,
+  faXmark,
+  faPlus,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -168,7 +168,6 @@
   // REMOTE TAB STATE
   // ═══════════════════════════════════════════════════════════════════════════
   const remoteWorkspacesEnabled$ = selectIsFeatureEnabled('remote-workspaces');
-  let enableRemoteWorkspaces = $derived($remoteWorkspacesEnabled$);
   let remoteSetups = $state<RemoteSetup[]>($workspaceInitializerRemoteSetups$);
   let showAddRemoteModal = $state(false);
 
@@ -1210,7 +1209,7 @@
 
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'local' as TabId, label: 'Copy local repo' }, { id: 'github' as TabId, label: 'Clone from GitHub' }, { id: 'new' as TabId, label: 'New repo' }, ...(enableRemoteWorkspaces ? [{ id: 'remote' as TabId, label: 'Remote server' }] : [])] as tab}
+        {#each [{ id: 'local' as TabId, label: 'Copy local repo' }, { id: 'github' as TabId, label: 'Clone from GitHub' }, { id: 'new' as TabId, label: 'New repo' }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: 'Remote server' }] : [])] as tab}
           <button
             type="button"
             class="flex-1 px-3 py-1.5 text-sm rounded-md cursor-pointer transition-all {activeTab ===
@@ -1530,7 +1529,7 @@
   </Select.Root>
 </div>
 
-{#if enableRemoteWorkspaces}
+{#if $remoteWorkspacesEnabled$}
   <AddRemoteSetupModal
     isOpen={showAddRemoteModal}
     onclose={() => (showAddRemoteModal = false)}

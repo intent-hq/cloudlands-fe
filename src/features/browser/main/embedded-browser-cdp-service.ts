@@ -8,7 +8,10 @@
  * a network port - only the main process can access the debugger.
  */
 
-import { webContents, ipcMain } from 'electron';
+import {
+  webContents,
+  ipcMain,
+} from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';

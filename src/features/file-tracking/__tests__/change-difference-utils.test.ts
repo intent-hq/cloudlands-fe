@@ -5,13 +5,22 @@
  * ensuring the UI updates correctly when file tracking data changes.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   hasChangesDifference,
   hasTransitionsDifference,
   hasCommitsDifference,
 } from '../change-difference-utils';
-import { ChangeStage, type TrackedChange, type StageTransition, type CommitInfo } from '../types';
+import {
+  ChangeStage,
+  type TrackedChange,
+  type StageTransition,
+  type CommitInfo,
+} from '../types';
 
 // Helper to create a TrackedChange for testing
 function createChange(overrides: Partial<TrackedChange> & { relativePath: string }): TrackedChange {

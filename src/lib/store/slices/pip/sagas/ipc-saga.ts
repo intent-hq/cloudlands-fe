@@ -1,6 +1,9 @@
 import { put } from "typed-redux-saga";
 import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
-import { pipWindowOpened, pipWindowClosed } from "../pip-slice";
+import {
+  pipWindowOpened,
+  pipWindowClosed,
+} from "../pip-slice";
 
 /**
  * Watch for pip:opened IPC events and dispatch pipWindowOpened actions.

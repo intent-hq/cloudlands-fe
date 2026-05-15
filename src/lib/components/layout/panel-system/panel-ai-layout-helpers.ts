@@ -9,9 +9,9 @@
 
 import type { PanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import type { ClientLogger } from '$lib/utils/client-logger';
-import { agentService } from '$features/agent/agent-ipc-bridge';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
 export interface AILayoutTabConfig {
   type: string;
@@ -82,35 +82,17 @@ export async function openTabFromConfig(
           panelId,
         );
       } else {
-        // Create a new agent session first, then open the tab
+        // Request a new agent session; the workspace-agent saga opens the tab
+        // in the requested panel when creation succeeds.
         const agentName = tab.newAgentName || tab.title || `Agent ${panelIndex + 1}`;
         try {
-          const workspace = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
-          if (workspace) {
-            const newSession = await agentService.createSession(workspace, {
-              name: agentName,
-            });
-            if (newSession?.id) {
-              layoutManager.openTab(
-                {
-                  type: 'agent',
-                  title: agentName,
-                  closable: true,
-                  agentId: newSession.id,
-                  workspaceId,
-                },
-                panelId,
-              );
-              logger.info('Created new agent for layout', {
-                agentId: newSession.id,
-                name: agentName,
-              });
-            } else {
-              logger.error('Failed to create agent - no ID returned');
-            }
-          } else {
-            logger.error('Cannot create agent - workspace not found', { workspaceId });
-          }
+          getReduxStore().dispatch(createAgentFromConfigRequested(workspaceId, {
+            name: agentName,
+            workspaceId: WorkspaceId(workspaceId),
+            source: 'panel-ai-layout',
+            metadata: { source: 'panel-ai-layout' },
+          }, { openAgent: true, panelId }));
+          logger.info('Requested new agent for layout', { name: agentName, panelId });
         } catch (error) {
           logger.error('Failed to create agent for layout', { error, agentName });
         }

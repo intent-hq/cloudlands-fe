@@ -198,22 +198,21 @@ class WorkspaceCreationTest {
       }
 
       // Check for streaming state restoration
-      if (!chatPanelContent.includes('chatState.isStreaming')) {
+      if (!chatPanelContent.includes('agentSessionIsStreaming')) {
         warnings.push('ChatPanel may not restore streaming state');
       }
 
       // Check for message persistence
-      if (!chatPanelContent.includes('chatState.messages')) {
+      if (!chatPanelContent.includes('agentMessages')) {
         issues.push('ChatPanel does not restore messages on mount');
       }
 
-      // Check chat service
-      const chatServicePath = path.join(__dirname, '../src/features/agent/services/chat.service.ts');
-      const chatServiceContent = await fs.readFile(chatServicePath, 'utf-8');
+      // Initial-message dispatch is owned by the Redux chat-state slice and saga graph.
+      const chatStatePath = path.join(__dirname, '../src/lib/store/slices/chat-state/chat-state-slice.ts');
+      const chatStateContent = await fs.readFile(chatStatePath, 'utf-8');
 
-      // Check for initial message handling
-      if (!chatServiceContent.includes('initialMessage')) {
-        warnings.push('Chat service may not handle initial messages');
+      if (!chatStateContent.includes('sendInitialMessageRequested')) {
+        warnings.push('Chat state slice may not expose initial message handling');
       }
 
     } catch (error) {
@@ -255,12 +254,12 @@ class WorkspaceCreationTest {
       const storeContent = await fs.readFile(storePath, 'utf-8');
 
       // Check for state merging
-      if (!storeContent.includes('upsertAgentSession') || !storeContent.includes('existing')) {
+      if (!storeContent.includes('upsertSession') || !storeContent.includes('existing')) {
         issues.push('Agent session store does not properly merge existing agent state');
       }
 
       // Check for message preservation
-      if (!storeContent.includes('replaceAgentMessages') || !storeContent.includes('deduplicateMessages')) {
+      if (!storeContent.includes('replaceMessages') || !storeContent.includes('deduplicateAgentMessages')) {
         issues.push('Agent session store does not preserve messages during updates');
       }
 

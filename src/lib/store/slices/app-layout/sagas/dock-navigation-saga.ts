@@ -1,20 +1,34 @@
-import { openTerminalOverlay } from "$lib/store/slices/terminals/terminals-slice";
+import {
+  openTerminalOverlay,
+  createTerminalRequested,
+  type WorkspaceTerminal,
+} from "$lib/store/slices/terminals/terminals-slice";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { selectAgentIsResponding } from "$lib/store/slices/agent-session/agent-session-selectors";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
-import { createTerminalRequested, type WorkspaceTerminal, } from "$lib/store/slices/terminals/terminals-slice";
+
 import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
 import {
-    openWorkspaceDrawer,
-    type WorkspaceNavigationDrawerState,
+  openWorkspaceDrawer,
+  type WorkspaceNavigationDrawerState,
 } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
 import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
-import { isFocusInEditableElement, isFocusInTerminal } from "$lib/utils/keyboardShortcuts";
+import {
+  isFocusInEditableElement,
+  isFocusInTerminal,
+} from "$lib/utils/keyboardShortcuts";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
 import type { AgentSession } from "$shared/types";
-import { eventChannel, type EventChannel } from "redux-saga";
-import { call, put, take } from "typed-redux-saga";
+import {
+  eventChannel,
+  type EventChannel,
+} from "redux-saga";
+import {
+  call,
+  put,
+  take,
+} from "typed-redux-saga";
 type DockShortcutEvent = {
     type: "dock";
     direction: "next" | "previous";

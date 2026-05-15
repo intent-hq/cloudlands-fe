@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { combineReducers, createStore } from "redux";
+import {
+  describe,
+  it,
+  expect,
+} from "vitest";
+import {
+  combineReducers,
+  createStore,
+} from "redux";
 import {
   browserReducer,
   browserTabZoomRequested,

@@ -2,7 +2,11 @@
  * Tests for text-utils
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   getLastMeaningfulLine,
   getLastSentence,

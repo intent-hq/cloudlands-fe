@@ -2,7 +2,11 @@ import {
   getLocalStorageItem,
   getLocalStorageJSON,
 } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import {
   DEFAULT_EXPANDED_WIDTH,
   DEFAULT_DOCK_HEIGHT,

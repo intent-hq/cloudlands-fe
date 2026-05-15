@@ -1,6 +1,13 @@
 // @vitest-environment node
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 vi.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 vi.mock('$shared/services/unified-id.service', () => ({

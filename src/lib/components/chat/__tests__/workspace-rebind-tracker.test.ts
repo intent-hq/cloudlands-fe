@@ -1,4 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
 import { WorkspaceRebindTracker } from '../workspace-rebind-tracker';
 
 describe('WorkspaceRebindTracker', () => {
@@ -260,7 +265,7 @@ describe('WorkspaceRebindTracker', () => {
       // CRITICAL: hasWorkspaceChanged('ws-B') returns false because
       // recordRebind already updated the tracker to ws-B. Without
       // checking the waitForRebind return value, the send path would
-      // skip re-initialization and send against a stale chatService.
+      // skip re-initialization and send against a stale chat session.
       expect(tracker.hasWorkspaceChanged('ws-B')).toBe(false);
       expect(tracker.isRebinding).toBe(true);
 

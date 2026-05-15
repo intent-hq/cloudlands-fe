@@ -11,8 +11,14 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import { parsePatch, type DiffLine } from './patch-utils';
+  import {
+  faChevronDown,
+  faChevronRight,
+} from '@fortawesome/free-solid-svg-icons';
+  import {
+  parsePatch,
+  type DiffLine,
+} from './patch-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughAnnotationCard from './WalkthroughAnnotationCard.svelte';
 

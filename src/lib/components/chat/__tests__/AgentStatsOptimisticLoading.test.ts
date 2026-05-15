@@ -1,6 +1,17 @@
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import {
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import {
   AGENT_STATS_TOOLTIP_TITLE,
@@ -9,7 +20,6 @@ import {
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
-  const getSession = vi.fn();
   const subscribeToAgent = vi.fn();
   const statsState = {
     stats: undefined as unknown,
@@ -25,7 +35,7 @@ const mocks = vi.hoisted(() => {
     },
   });
 
-  return { dispatch, getSession, subscribeToAgent, statsState, agents, readable };
+  return { dispatch, subscribeToAgent, statsState, agents, readable };
 });
 
 vi.mock('$lib/components/ui/tooltip', async () => {
@@ -63,14 +73,6 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => mocks.dispatch,
 }));
-vi.mock('$features/agent/agent-ipc-bridge', () => ({
-  agentService: {
-    getSession: mocks.getSession,
-    renameSession: vi.fn(),
-    stopSession: vi.fn(),
-    deleteSessionWithUndo: vi.fn(),
-  },
-}));
 vi.mock('$features/agent/browser', () => ({ subscribeToAgent: mocks.subscribeToAgent }));
 vi.mock('$lib/store/slices/session-stats/session-stats-slice', () => ({
   fetchAgentStats: vi.fn((agentId: string, sessionId: string) => ({
@@ -84,13 +86,20 @@ vi.mock('$lib/store/slices/session-stats/session-stats-selectors', () => ({
   selectAgentStatsError: () => mocks.readable(() => mocks.statsState.error),
 }));
 vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentIsResponding: () => mocks.readable(() => false),
-  selectAgentIsWaiting: () => mocks.readable(() => false),
-}));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAgentById: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
+  selectAgentSession: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
     select: (_state: unknown, agentId: string) => mocks.agents[agentId],
   }),
+  selectAgentIsResponding: () => mocks.readable(() => false),
+  selectAgentIsWaiting: () => mocks.readable(() => false),
+  selectAgentSessionStreamingContent: () => mocks.readable(() => ''),
+}));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentSession: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
+    select: (_state: unknown, agentId: string) => mocks.agents[agentId],
+  }),
+  selectWorkspaceAgentSession: {
+    select: (_state: unknown, _wsId: string, agentId: string) => mocks.agents[agentId],
+  },
   selectInitialAgentId: () => mocks.readable(() => undefined),
 }));
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
@@ -159,7 +168,6 @@ const auggieSession = { id: 'agent-1', provider: 'auggie', acpSessionId: 'sess-1
 describe('agent stats optimistic tooltip loading', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mocks.getSession.mockReset().mockReturnValue(auggieSession);
     mocks.subscribeToAgent.mockReset().mockImplementation((_agentId, cb) => {
       cb(auggieSession);
       return () => {};
@@ -290,11 +298,11 @@ describe('agent stats optimistic tooltip loading', () => {
   });
 
   it('AgentTabType shows the stats action when provider falls back from acp to an Auggie model', async () => {
-    mocks.getSession.mockReturnValue({
+    mocks.agents['agent-1'] = {
       ...auggieSession,
       provider: 'acp',
       model: 'auggie:opus4.7',
-    });
+    };
     const AgentTabTypeHarness = (await import('./mocks/AgentTabTypeHarness.svelte')).default;
     const screen = render(AgentTabTypeHarness, {
       props: {
@@ -310,7 +318,7 @@ describe('agent stats optimistic tooltip loading', () => {
   });
 
   it('AgentTabType hides the stats action for non-Auggie agents', async () => {
-    mocks.getSession.mockReturnValue({ ...auggieSession, provider: 'opencode' });
+    mocks.agents['agent-1'] = { ...auggieSession, provider: 'opencode' };
     const AgentTabTypeHarness = (await import('./mocks/AgentTabTypeHarness.svelte')).default;
     const screen = render(AgentTabTypeHarness, {
       props: {

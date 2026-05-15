@@ -7,10 +7,10 @@
   import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import {
-    dismissPromoBanner,
-    recordPromoBannerInteraction,
-    type PromoBannerInteraction,
-  } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  dismissPromoBanner,
+  recordPromoBannerInteraction,
+  type PromoBannerInteraction,
+} from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectPromoBannerInteractions } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import type {
@@ -20,7 +20,10 @@
   } from '$lib/types/promotional-banner';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
-  import { faBell, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faBell,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';

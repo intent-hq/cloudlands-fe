@@ -7,7 +7,12 @@
  * - Dynamic fnm path scanning
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+} from 'vitest';
 import * as path from 'path';
 import { homedir } from 'os';
 
@@ -22,7 +27,11 @@ vi.mock('../logger', () => ({
 }));
 
 // Import after mocking
-import { AUGGIE_COMMON_PATHS, findAuggieAsync, existsAsync } from '../main/async-utils';
+import {
+  AUGGIE_COMMON_PATHS,
+  findAuggieAsync,
+  existsAsync,
+} from '../main/async-utils';
 
 describe('AUGGIE_COMMON_PATHS', () => {
   const homeDir = homedir();

@@ -1,8 +1,19 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  vi,
+} from 'vitest';
+import {
+  render,
+  fireEvent,
+  waitFor,
+  screen,
+} from '@testing-library/svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 
@@ -54,10 +65,6 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
 
 vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-selectors', () => ({
   selectUnreadNoteIds: mocks.selector(() => []),
-}));
-
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({

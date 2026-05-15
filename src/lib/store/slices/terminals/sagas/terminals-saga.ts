@@ -1,4 +1,9 @@
-import { call, cancel, fork, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  cancel,
+  fork,
+  takeEvery,
+} from "typed-redux-saga";
 import type { Task } from "redux-saga";
 import {
   initPersistenceSaga,
@@ -8,8 +13,14 @@ import {
   watchTerminalMetadataPersistence,
   watchWorkspaceState,
 } from "./persistence-saga";
-import { watchTerminalCreated, watchTerminalDisposed } from "./ipc-saga";
-import { watchSetWorkspace, watchOpenWithWorkspace } from "./workspace-init-saga";
+import {
+  watchTerminalCreated,
+  watchTerminalDisposed,
+} from "./ipc-saga";
+import {
+  watchSetWorkspace,
+  watchOpenWithWorkspace,
+} from "./workspace-init-saga";
 import { watchCloseActiveTerminal } from "./close-active-saga";
 import {
   workspaceMounted,

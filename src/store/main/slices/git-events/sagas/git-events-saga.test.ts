@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   GIT_EVENT_ACTION_MAP,
   GIT_EVENT_TYPES,

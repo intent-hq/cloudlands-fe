@@ -5,24 +5,24 @@
  * including memory management, cleanup, and concurrent operations.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
-import { MessagePruner } from '../../services/message-pruner';
 import { MemoryMonitor } from '../../../../shared/monitoring/memory-monitor';
 import { EventEmitter } from '../../../../shared/event-emitter';
-import type { AgentSession, AgentMessage } from '$shared/types';
 
 describe('Wave 3 System Integration', () => {
   let listenerManager: ListenerManager;
-  let messagePruner: MessagePruner;
   let memoryMonitor: MemoryMonitor;
 
   beforeEach(() => {
     listenerManager = new ListenerManager();
-    messagePruner = new MessagePruner({
-      maxMessagesPerSession: 100,
-      maxMessageAge: 1000 * 60 * 60,
-    });
     memoryMonitor = new MemoryMonitor({
       checkInterval: 100,
       warningThreshold: 100 * 1024 * 1024,
@@ -32,7 +32,6 @@ describe('Wave 3 System Integration', () => {
 
   afterEach(() => {
     listenerManager.cleanup();
-    messagePruner.stop();
     memoryMonitor.stop();
   });
 
@@ -49,35 +48,6 @@ describe('Wave 3 System Integration', () => {
     listenerManager.cleanup();
 
     expect(listenerManager.getListenerCount()).toBe(0);
-  });
-
-  it('should prune messages and maintain agent state', () => {
-    const agent: AgentSession = {
-      id: 'test-agent' as any,
-      backendSessionId: null,
-      workspaceId: 'test-workspace' as any,
-      name: 'Test Agent',
-      status: 'ready' as any,
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    // Add 150 messages
-    for (let i = 0; i < 150; i++) {
-      agent.messages.push({
-        id: `msg-${i}` as any,
-        role: i % 2 === 0 ? 'user' : 'assistant',
-        content: `Message ${i}`,
-        timestamp: new Date(),
-      });
-    }
-
-    expect(agent.messages.length).toBe(150);
-
-    messagePruner.pruneOldMessages(agent);
-
-    expect(agent.messages.length).toBeLessThanOrEqual(100);
   });
 
   it('should monitor memory and emit events', async () => {
@@ -116,45 +86,4 @@ describe('Wave 3 System Integration', () => {
     expect(listenerManager.getListenerCount()).toBe(0);
   });
 
-  it('should estimate and track memory usage', () => {
-    const agent: AgentSession = {
-      id: 'test-agent' as any,
-      backendSessionId: null,
-      workspaceId: 'test-workspace' as any,
-      name: 'Test Agent',
-      status: 'ready' as any,
-      messages: Array.from({ length: 50 }, (_, i) => ({
-        id: `msg-${i}` as any,
-        role: 'user' as const,
-        content: 'x'.repeat(1000),
-        timestamp: new Date(),
-      })),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const usage = messagePruner.estimateMemoryUsage(agent.messages);
-
-    expect(usage).toBeGreaterThan(50000); // At least 50KB
-  });
-
-  it('should clean up streaming metadata', () => {
-    const message: AgentMessage = {
-      id: 'msg-1' as any,
-      role: 'assistant',
-      content: 'Response',
-      timestamp: new Date(),
-      streamingComplete: true,
-      metadata: {
-        chunksReceived: 10,
-        firstChunkTime: Date.now(),
-        lastChunkTime: Date.now(),
-      },
-    };
-
-    messagePruner.pruneStreamingMetadata(message);
-
-    expect(message.metadata?.chunksReceived).toBeUndefined();
-    expect(message.metadata?.firstChunkTime).toBeUndefined();
-  });
 });

@@ -5,13 +5,21 @@ import {
 } from "$lib/store/utils/ipc-channel";
 import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
-import { call, delay, fork, put } from "typed-redux-saga";
+import {
+  call,
+  delay,
+  fork,
+  put,
+} from "typed-redux-saga";
 import type {
   OptimisticTaskStatusPayload,
   WorkspaceBackgroundEnrichmentEvent,
   WorkspaceUpdatedEvent,
 } from "../workspace-slice";
-import { applyOptimisticTaskStatusUpdate, updateWorkspaceEntity } from "../workspace-slice";
+import {
+  applyOptimisticTaskStatusUpdate,
+  updateWorkspaceEntity,
+} from "../workspace-slice";
 import { selectWorkspacePendingDeletions } from "../workspace-selectors";
 
 export const WORKSPACE_BEFORE_UNLOAD_POLL_MS = 60_000;

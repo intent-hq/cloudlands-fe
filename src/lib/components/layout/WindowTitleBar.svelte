@@ -24,28 +24,31 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { applyContentPreset } from '$features/layout/preset-executor';
   import {
-    selectPanelLayoutRoot,
-    selectCanGoBack,
-    selectCanGoForward,
-    selectActiveTab,
-  } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  selectPanelLayoutRoot,
+  selectCanGoBack,
+  selectCanGoForward,
+  selectActiveTab,
+} from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { PanelLayoutControls } from '$lib/components/layout/panel-system';
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import PromotionalBanner from '$lib/components/PromotionalBanner.svelte';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    selectUnreadAgentIds,
-    selectUnreadAgentIdsForWorkspace,
-  } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  selectUnreadAgentIds,
+  selectUnreadAgentIdsForWorkspace,
+} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { getLineStats, type LineStats } from '$features/file-tracking/file-tracking.client';
   import {
-    selectZoomFactor,
-    selectCounterScale,
-  } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  getLineStats,
+  type LineStats,
+} from '$features/file-tracking/file-tracking.client';
+  import {
+  selectZoomFactor,
+  selectCounterScale,
+} from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';

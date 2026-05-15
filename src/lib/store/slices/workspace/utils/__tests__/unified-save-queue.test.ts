@@ -2,7 +2,14 @@
  * Tests for UnifiedSaveQueue
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { UnifiedSaveQueue } from '../unified-save-queue';
 import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
 

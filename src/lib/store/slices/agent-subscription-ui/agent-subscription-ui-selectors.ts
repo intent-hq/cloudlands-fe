@@ -3,7 +3,10 @@
  */
 
 import { createSelector } from '../../utils/create-selector';
-import { makeKey, emptyEntry } from './agent-subscription-ui-slice';
+import {
+  makeKey,
+  emptyEntry,
+} from './agent-subscription-ui-slice';
 import type {
   AgentSubscriptionUIEntry,
   Subscription,

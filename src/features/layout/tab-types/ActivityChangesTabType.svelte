@@ -10,34 +10,45 @@
   import type { TabTypeComponentProps } from './registry';
   import type { WorkspaceEvent } from '$features/events/types';
   import { eventToTrackedChange } from '$features/file-tracking/change-converters';
-  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+  import {
+  ChangeStage,
+  type TrackedChange,
+} from '$features/file-tracking/types';
 
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-    openTab,
-    openTabInAdjacentOrSplit,
-  } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  openTab,
+  openTabInAdjacentOrSplit,
+} from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-    selectLineWrapping,
-    selectFoldUnchanged,
-    selectDiffSideBySide,
-  } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  selectLineWrapping,
+  selectFoldUnchanged,
+  selectDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import {
-    toggleLineWrapping,
-    toggleFoldUnchanged,
-    toggleDiffSideBySide,
-  } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+  toggleLineWrapping,
+  toggleFoldUnchanged,
+  toggleDiffSideBySide,
+} from '$lib/store/slices/ui-layout/ui-layout-slice';
+
   import { patchToContents } from '$lib/utils/diff-utils';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import Fa from 'svelte-fa';
-  import { faFile, faMap, faColumns, faTextWidth } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faFile,
+  faMap,
+  faColumns,
+  faTextWidth,
+} from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
 
   const lineWrapping = selectLineWrapping();

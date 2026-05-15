@@ -4,11 +4,11 @@
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
   import {
-    mcpOptions,
-    isServerInstalled,
-    normalizeServerName,
-    type McpInstallOption,
-  } from './mcp/mcp-options';
+  mcpOptions,
+  isServerInstalled,
+  normalizeServerName,
+  type McpInstallOption,
+} from './mcp/mcp-options';
   import McpServerCard from './mcp/McpServerCard.svelte';
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
@@ -19,12 +19,12 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
   import {
-    faCheck,
-    faCopy,
-    faPlus,
-    faRotateRight,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  faCheck,
+  faCopy,
+  faPlus,
+  faRotateRight,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from '$lib/components/ui/toast';
   import Header from '../ui/Header.svelte';
@@ -34,23 +34,23 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectMcpServersWithStatus,
-    selectMcpLoading,
-    selectMcpError,
-    selectMcpEnabled,
-    selectMcpServers,
-    selectMcpLastImportedCount,
-  } from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
+  selectMcpServersWithStatus,
+  selectMcpLoading,
+  selectMcpError,
+  selectMcpEnabled,
+  selectMcpServers,
+  selectMcpLastImportedCount,
+} from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
   import {
-    loadServers,
-    toggleEnabled,
-    toggleServer,
-    addServer,
-    removeServer,
-    updateServer,
-    importFromJson,
-    testServerConnection,
-  } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
+  loadServers,
+  toggleEnabled,
+  toggleServer,
+  addServer,
+  removeServer,
+  updateServer,
+  importFromJson,
+  testServerConnection,
+} from '$lib/store/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
   const dispatch = getDispatch();

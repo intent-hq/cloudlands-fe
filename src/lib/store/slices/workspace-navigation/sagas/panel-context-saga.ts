@@ -1,9 +1,20 @@
-import { clearCurrentlyViewed, markAsViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
+import {
+  clearCurrentlyViewed,
+  markAsViewed,
+} from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
-import { ChangeStage, type FileChangeStatus, type TrackedChange } from "$features/file-tracking/types";
+import {
+  ChangeStage,
+  type FileChangeStatus,
+  type TrackedChange,
+} from "$features/file-tracking/types";
 import type { WorkspaceUIContext } from "$shared/types";
 import { WorkspaceId } from "$shared/types/branded-ids";
-import { call, put, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  put,
+  takeEvery,
+} from "typed-redux-saga";
 import { selectWorkspaceNavigationState } from "../workspace-navigation-selectors";
 import {
   hydrateWorkspaceNavigation,

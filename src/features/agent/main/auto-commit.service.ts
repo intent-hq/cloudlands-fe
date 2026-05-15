@@ -31,8 +31,15 @@ import {
 } from '$shared/types/branded-ids';
 import { LineType } from '../../../shared/types';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { gitAutoCommitStarted, gitAutoCommitSucceeded, gitAutoCommitHookFailure } from '../../../store/main/slices/git-events/git-events-slice';
-import { isRandomAgentName, isGenericAgentName } from '../../../lib/utils/agent-name-generator';
+import {
+  gitAutoCommitStarted,
+  gitAutoCommitSucceeded,
+  gitAutoCommitHookFailure,
+} from '../../../store/main/slices/git-events/git-events-slice';
+import {
+  isRandomAgentName,
+  isGenericAgentName,
+} from '../../../lib/utils/agent-name-generator';
 import { backgroundGitOpsService } from '../../git/main/background-git-ops.service';
 
 const logger = new Logger({ category: 'AutoCommitService' });

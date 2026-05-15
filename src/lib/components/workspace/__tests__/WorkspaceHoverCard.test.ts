@@ -1,10 +1,23 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { AgentSession, Workspace } from '$shared/types';
-import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import {
+  PullRequestStatus,
+  WorkspaceStatusEnum,
+} from '$shared/types';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();

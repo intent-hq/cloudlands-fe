@@ -5,7 +5,10 @@
  * Bridges the auto-update service with the renderer process.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+} from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';

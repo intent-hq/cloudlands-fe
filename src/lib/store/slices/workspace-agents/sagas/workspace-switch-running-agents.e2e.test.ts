@@ -13,7 +13,7 @@
  *  3. Switch workspaces: workspaceUnmounted(A) + workspaceMounted(B) while
  *     both agents are still streaming/processing.
  *     - Task C: per-agent watchdog tasks must remain alive.
- *  4. Dispatch streaming chunks (addAgentMessage) for both agents.
+ *  4. Dispatch streaming chunks for both agents through agent-session actions.
  *  5. Dispatch streamCompleted for both agents.
  *     - Task B (sanity): every state-mutating action carries the agent's
  *       owning workspace id (ws-A), never the active one (ws-B).
@@ -22,11 +22,20 @@
  *     - Task A (sanity): sub-agent metadata still references the parent.
  *     - Parent message stream is intact (no dropped chunks).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import * as sagaEffects from "redux-saga/effects";
-import { runSaga, stdChannel } from "redux-saga";
-import type { AgentSession, AgentMessage } from "$shared/types";
-import { getItems, type Collection } from "../../../utils/collection-utils";
+import {
+  runSaga,
+  stdChannel,
+} from "redux-saga";
+import type { AgentSession } from "$shared/types";
 
 // -------------------------------------------------------------------------
 // Mocks — mirror chat-state-saga.test.ts so the saga runs in isolation.
@@ -82,19 +91,6 @@ vi.mock("$lib/utils/client-logger", () => ({
   }),
 }));
 
-vi.mock("$features/agent/services/chat.service", () => ({
-  getChatService: vi.fn(() => ({
-    flushPendingStreamingContent: vi.fn(),
-  })),
-}));
-
-vi.mock("$features/agent/agent-ipc-bridge", () => ({
-  agentService: {
-    getSession: vi.fn(),
-    restoreSession: vi.fn(),
-  },
-}));
-
 vi.mock("../../chat-state/sagas/initialize-chat-saga", () => ({
   initializeChatSaga: function* () { yield; },
 }));
@@ -108,12 +104,12 @@ vi.mock("../../chat-state/sagas/chat-lifecycle-saga", () => ({
 }));
 
 // Selectors the saga reads — forwarded to the live composed state below.
-const selectAgentByIdMock = vi.fn();
+const selectAgentSessionMock = vi.fn();
 const selectAllWorkspaceAgentsMock = vi.fn();
 vi.mock("../workspace-agents-selectors", () => ({
-  selectAgentById: {
-    select: (state: any, agentId: string) => selectAgentByIdMock(state, agentId),
-    effect: function* (agentId: string) { return yield sagaEffects.select(selectAgentByIdMock, agentId); },
+  selectAgentSession: {
+    select: (state: any, agentId: string) => selectAgentSessionMock(state, agentId),
+    effect: function* (agentId: string) { return yield sagaEffects.select(selectAgentSessionMock, agentId); },
   },
   selectAllWorkspaceAgents: {
     select: (state: any, wsId: string) => selectAllWorkspaceAgentsMock(state, wsId),
@@ -127,21 +123,20 @@ vi.mock("../workspace-agents-selectors", () => ({
 import {
   agentSessionReducer,
   initialState as agentSessionInitialState,
+  addMessage as addAgentSessionMessage,
+  upsertSession,
 } from "../../agent-session/agent-session-slice";
 import {
   chatStateReducer,
   initialState as chatStateInitialState,
+  chatSendStarted,
+  streamCompleted,
 } from "../../chat-state/chat-state-slice";
 import {
   workspaceAgentsReducer,
   initialState as workspaceAgentsInitialState,
-  upsertAgentSession,
-  addAgentMessage,
 } from "../workspace-agents-slice";
-import {
-  chatSendStarted,
-  streamCompleted,
-} from "../../chat-state/chat-state-slice";
+
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -191,7 +186,7 @@ function makeChunkMessage(agentId: string, index: number) {
 describe("workspace switch while agents are streaming (Task D)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    selectAgentByIdMock.mockReset();
+    selectAgentSessionMock.mockReset();
     selectAllWorkspaceAgentsMock.mockReset();
   });
 
@@ -223,7 +218,7 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     });
 
     // Wire selectors to read the current composed state.
-    selectAgentByIdMock.mockImplementation((_state: any, agentId: string) =>
+    selectAgentSessionMock.mockImplementation((_state: any, agentId: string) =>
       state.agentSessions.byAgentId[agentId],
     );
     selectAllWorkspaceAgentsMock.mockImplementation((_state: any, wsId: string) => {
@@ -252,8 +247,8 @@ describe("workspace switch while agents are streaming (Task D)", () => {
       name: "Sub",
       metadata: { createdByAgentId: PARENT_ID } as any,
     });
-    dispatch(upsertAgentSession(WS_A, parent));
-    dispatch(upsertAgentSession(WS_A, sub));
+    dispatch(upsertSession({ ...parent, workspaceId: WS_A as AgentSession["workspaceId"] }));
+    dispatch(upsertSession({ ...sub, workspaceId: WS_A as AgentSession["workspaceId"] }));
 
     // 2. Both agents start streaming.
     dispatch(chatSendStarted(PARENT_ID, WS_A));
@@ -287,15 +282,15 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     expect(parentTasksBeforeSwitch.every((t) => t.isRunning())).toBe(true);
     expect(subTasksBeforeSwitch.every((t) => t.isRunning())).toBe(true);
 
-    // 4. Dispatch chunks while we're on workspace B. Every action carries
-    //    the agents' owning workspace id (ws-A) — Task B sanity.
+    // 4. Dispatch chunks while we're on workspace B. Message updates are
+    //    agent-session scoped and do not depend on the active workspace.
     const parentChunks = [0, 1, 2, 3].map((i) => makeChunkMessage(PARENT_ID, i));
     const subChunks = [0, 1].map((i) => makeChunkMessage(SUB_ID, i));
     for (const msg of parentChunks) {
-      dispatch(addAgentMessage(WS_A, PARENT_ID, msg));
+      dispatch(addAgentSessionMessage(PARENT_ID, msg));
     }
     for (const msg of subChunks) {
-      dispatch(addAgentMessage(WS_A, SUB_ID, msg));
+      dispatch(addAgentSessionMessage(SUB_ID, msg));
     }
 
     // 5. Both streams complete.
@@ -317,25 +312,17 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     expect(subTasksBeforeSwitch.every((t) => !t.isRunning())).toBe(true);
 
     // Complete message stream is present on the parent session — no drops.
-    const parentMessages = getItems(
-      state.agentSessions.byAgentId[PARENT_ID].messages as unknown as Collection<AgentMessage, "id">,
-    );
+    const parentMessages = state.agentSessions.byAgentId[PARENT_ID].messages;
     expect(parentMessages.map((m) => m.id)).toEqual(parentChunks.map((c) => c.id));
 
-    const subMessages = getItems(
-      state.agentSessions.byAgentId[SUB_ID].messages as unknown as Collection<AgentMessage, "id">,
-    );
+    const subMessages = state.agentSessions.byAgentId[SUB_ID].messages;
     expect(subMessages.map((m) => m.id)).toEqual(subChunks.map((c) => c.id));
 
     // Task B sanity: every workspace-scoped action we dispatched was
     // addressed to the owning workspace, never to the "active" ws-B.
-    const ownedByWsA = dispatched.filter(
-      (a) =>
-        a.type === upsertAgentSession.type ||
-        a.type === addAgentMessage.type,
-    );
+    const ownedByWsA = dispatched.filter((a) => a.type === upsertSession.type);
     expect(ownedByWsA.length).toBeGreaterThan(0);
-    expect(ownedByWsA.every((a) => a.payload[0] === WS_A)).toBe(true);
+    expect(ownedByWsA.every((a) => a.payload[0].workspaceId === WS_A)).toBe(true);
 
     // 6. Switch back to A.
     dispatch(workspaceUnmounted(WS_B));
@@ -351,9 +338,7 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     expect(finalSub.metadata?.createdByAgentId).toBe(finalParent.id);
 
     // Parent message stream survives the switch back.
-    expect(
-      getItems(finalParent.messages as unknown as Collection<AgentMessage, "id">).map((m) => m.id),
-    ).toEqual(parentChunks.map((c) => c.id));
+    expect(finalParent.messages.map((m) => m.id)).toEqual(parentChunks.map((c) => c.id));
 
     // No stuck flags after the whole scenario.
     expect(finalParent.isStreaming).toBe(false);

@@ -1,20 +1,39 @@
-import { selectPanels, selectRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-selectors";
+import {
+  selectPanels,
+  selectRestoreStatus,
+} from "$lib/store/slices/panel-layout/panel-layout-selectors";
 import type { PanelLayoutRestoreStatus } from "$lib/store/slices/panel-layout/panel-layout-types";
 import {
-    openTabInAdjacentOrSplit,
-    setDeferSpecTab,
-    setRestoreStatus,
+  openTabInAdjacentOrSplit,
+  setDeferSpecTab,
+  setRestoreStatus,
 } from "$lib/store/slices/panel-layout/panel-layout-slice";
 import { selectSpec } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
-import { selectIsInitialSpecWriteInProgress } from "../../workspace-agents/workspace-agents-selectors";
+import {
+  selectIsInitialSpecWriteInProgress,
+  selectInitialAgentConfig,
+} from "../../workspace-agents/workspace-agents-selectors";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import type { Task } from "redux-saga";
-import { cancel, call, delay, fork, put, race, select, take, takeEvery } from "typed-redux-saga";
+import {
+  cancel,
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  select,
+  take,
+  takeEvery,
+} from "typed-redux-saga";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
-import { workspaceMounted, workspaceUnmounted, } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { clearInitialAgentConfig } from "../../workspace-agents/workspace-agents-slice";
-import { selectInitialAgentConfig } from "../../workspace-agents/workspace-agents-selectors";
+
 const specPanelTasks = new Map<string, Task[]>();
 const RESTORE_STATUS_TIMEOUT_MS = 500;
 const RESTORE_STATUS_POLL_INTERVAL_MS = 50;

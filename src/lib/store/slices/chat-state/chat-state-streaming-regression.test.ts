@@ -6,7 +6,11 @@
  * 1. OR-latch: isStreaming/isProcessing must always be cleared together
  * 2. RAF interleaving: chunk flush after completion must not revive streaming flags
  */
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import {
   agentSessionReducer,
   initialState as sessionInitialState,
@@ -18,10 +22,7 @@ import {
   chatInterrupted,
   chatStopCompleted,
   chatStuckStateCleared,
-  streamStarted,
-  streamChunkFlushed,
   streamCompleted,
-  streamErrored,
   streamTimedOut,
   chatStreamingReconciled,
 } from './chat-state-slice';
@@ -46,7 +47,6 @@ function getSession(state: ReturnType<typeof agentSessionReducer>, agentId: stri
 function midStreamState() {
   let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
   s = agentSessionReducer(s, chatSendStarted(AGENT));
-  s = agentSessionReducer(s, streamStarted(AGENT, { hasRestoredContent: false, existingContent: '' }));
   return s;
 }
 
@@ -60,12 +60,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
       midStreamState(),
       streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
     );
-    expect(getSession(s, AGENT).isStreaming).toBe(false);
-    expect(getSession(s, AGENT).isProcessing).toBe(false);
-  });
-
-  it('streamErrored clears both flags atomically', () => {
-    const s = agentSessionReducer(midStreamState(), streamErrored(AGENT, { error: 'boom' }));
     expect(getSession(s, AGENT).isStreaming).toBe(false);
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
@@ -105,7 +99,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
   it('no terminal action leaves flags diverged', () => {
     const terminals = [
       streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
-      streamErrored(AGENT, { error: 'err' }),
       chatSendFailed(AGENT, 'fail'),
       chatStopCompleted(AGENT),
       chatStuckStateCleared(AGENT),
@@ -125,14 +118,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
 // ============================================================================
 
 describe('RAF interleaving regression (agent-session)', () => {
-  it('streamChunkFlushed after streamCompleted does not revive flags', () => {
-    let s = midStreamState();
-    s = agentSessionReducer(s, streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }));
-    s = agentSessionReducer(s, streamChunkFlushed(AGENT, 'late chunk'));
-    expect(getSession(s, AGENT).isStreaming).toBe(false);
-    expect(getSession(s, AGENT).isProcessing).toBe(false);
-  });
-
   it('chatStreamingReconciled re-engages flags (by design)', () => {
     let s = midStreamState();
     s = agentSessionReducer(s, streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }));

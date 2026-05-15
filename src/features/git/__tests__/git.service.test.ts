@@ -3,7 +3,13 @@
  * Verifies git status parsing, particularly filename extraction
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import { GitService } from '../main/git.service';
 
 vi.mock('../../../shared/git/git-env', () => ({

@@ -1,4 +1,7 @@
-import { Mark, mergeAttributes } from '@tiptap/core';
+import {
+  Mark,
+  mergeAttributes,
+} from '@tiptap/core';
 
 export interface SuggestionOptions {
   HTMLAttributes: Record<string, any>;

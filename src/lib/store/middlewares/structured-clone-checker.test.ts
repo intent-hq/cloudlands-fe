@@ -1,5 +1,15 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createStructuredCloneCheckerMiddleware, CHECK_INTERVAL_MS } from "./structured-clone-checker";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+  afterEach,
+} from "vitest";
+import {
+  createStructuredCloneCheckerMiddleware,
+  CHECK_INTERVAL_MS,
+} from "./structured-clone-checker";
 
 /**
  * Helper: dispatches an action through the middleware, simulating a state

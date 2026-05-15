@@ -891,6 +891,8 @@ Sagas are preferred for:
 - **Action orchestration**: Listening to actions and dispatching others
 - **Separation of concerns**: Keep reducers pure and simple
 
+Sagas should also own shared/domain side-effect orchestration that might otherwise drift into service or lifecycle files. Keep those files as thin adapters that translate IPC, stream, or browser events into typed Redux actions. Redux selectors, reducers, pure utilities, and sagas should own state reads, target lookup policy, refresh/reconcile workflows, retries, debouncing, rate limiting, persistence calls, and follow-up dispatches.
+
 ### Creating a Saga
 
 ```typescript

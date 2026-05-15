@@ -11,7 +11,10 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { USER_ACTIVITY_CHANNELS } from '../../../shared/ipc/channels';
 import { UserActivityService } from './user-activity.service';
 import { FileSystemUserActivityRepository } from './user-activity.repository';
-import { WorkspaceId, NoteId } from '../../../shared/types/branded-ids';
+import {
+  WorkspaceId,
+  NoteId,
+} from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
 
 const logger = new Logger('UserActivityIPC');

@@ -5,7 +5,14 @@
  * deduplication, and event creation.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 import { ChangeProcessor } from '../change-processor';
 import type { FileChange } from '../change-processor';
 import type { GitDiffResult } from '../git-types';

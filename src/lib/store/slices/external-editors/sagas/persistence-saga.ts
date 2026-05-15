@@ -1,6 +1,14 @@
 import { setLocalStorageItem } from "$lib/store/utils/safe-local-storage-saga";
-import { call, put, takeEvery, type SagaGenerator } from "typed-redux-saga";
-import { selectHiddenEditorIds, selectOpenAction } from "../external-editors-selectors";
+import {
+  call,
+  put,
+  takeEvery,
+  type SagaGenerator,
+} from "typed-redux-saga";
+import {
+  selectHiddenEditorIds,
+  selectOpenAction,
+} from "../external-editors-selectors";
 import {
   normalizeHiddenEditorIds,
   setHiddenEditorIds,

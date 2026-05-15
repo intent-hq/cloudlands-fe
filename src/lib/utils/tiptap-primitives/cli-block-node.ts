@@ -4,7 +4,10 @@
  * Custom TipTap node for CLI command primitives
  */
 
-import { Node, mergeAttributes } from '@tiptap/core';
+import {
+  Node,
+  mergeAttributes,
+} from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { CliPrimitive } from '../../../shared/types/notes-primitives';
 import CliBlock from '../../components/notes/primitives/CliBlock.svelte';

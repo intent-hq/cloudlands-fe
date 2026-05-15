@@ -1,7 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
-import { selectNotificationVolume, selectSoundEnabled, selectSoundOnlyWhenUnfocused } from "$lib/store/slices/user-preferences/user-preferences-selectors";
+import {
+  selectNotificationVolume,
+  selectSoundEnabled,
+  selectSoundOnlyWhenUnfocused,
+} from "$lib/store/slices/user-preferences/user-preferences-selectors";
 
 vi.mock("typed-redux-saga", () => ({
   call: function* (fn: any, ...args: any[]) {

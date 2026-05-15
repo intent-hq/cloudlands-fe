@@ -7,8 +7,11 @@
    */
 
   import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
-  import { getAgentPeekData, truncateToLines } from '$lib/utils/agent-peek-utils';
-  import { selectAgentById } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import {
+  getAgentPeekData,
+  truncateToLines,
+} from '$lib/utils/agent-peek-utils';
+
   import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { getDispatch } from '$lib/store/utils/svelte-context';
@@ -21,11 +24,12 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-    faArrowRight,
-    faSpinner,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  faArrowRight,
+  faSpinner,
+  faExclamationTriangle,
+} from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
+import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 
   type DisplayMode = 'full' | 'compact' | 'icon';
 
@@ -52,10 +56,9 @@
   // triggers the disk restore; running it in an effect ensures we
   // re-dispatch when the active workspace or agentId changes while the
   // component stays mounted.
-  const agent$ = selectAgentById(agentId);
+  const agent$ = selectAgentSession(agentId);
   const agentIsResponding$ = selectAgentIsResponding(agentId);
-  const agent = $derived($agent$);
-  const agentData = $derived(getAgentPeekData(agent));
+  const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {
     const workspace = $activeWorkspace;
@@ -65,7 +68,6 @@
 
   // Get line change stats
   const lineStats$ = selectAgentLineStats(agentId);
-  const lineStats = $derived($lineStats$);
 
   const truncatedOneLine = $derived(
     agentData?.lastResponse ? truncateToLines(agentData.lastResponse, 1) : '',
@@ -88,7 +90,7 @@
   // Use $effect for time polling instead of onMount
   $effect(() => {
     // Only update time if agent is missing and comment is potentially recent
-    if (!agent && commentCreatedAt) {
+    if (!$agent$ && commentCreatedAt) {
       const createdAt = new Date(commentCreatedAt).getTime();
       const age = Date.now() - createdAt;
 
@@ -218,11 +220,11 @@
       {#if !isCollapsed}
         <div class="px-3 pb-2">
           <!-- Line change stats -->
-          {#if lineStats && (lineStats.additions > 0 || lineStats.deletions > 0)}
+          {#if $lineStats$ && ($lineStats$.additions > 0 || $lineStats$.deletions > 0)}
             <div class="flex items-center gap-1 mb-2">
               <LineChangeStats
-                additions={lineStats.additions}
-                deletions={lineStats.deletions}
+                additions={$lineStats$.additions}
+                deletions={$lineStats$.deletions}
                 size="xs"
                 showZero={false}
               />

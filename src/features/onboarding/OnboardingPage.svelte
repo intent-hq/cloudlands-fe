@@ -8,7 +8,10 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { onDestroy, onMount } from 'svelte';
+  import {
+  onDestroy,
+  onMount,
+} from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
@@ -18,15 +21,15 @@
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
-    selectOnboardingStep,
-    selectOnboardingState,
-  } from '$lib/store/slices/onboarding/onboarding-selectors';
+  selectOnboardingStep,
+  selectOnboardingState,
+} from '$lib/store/slices/onboarding/onboarding-selectors';
   import {
-    goToStep,
-    setProjectConfig,
-    setOnboardingWorkspaceId,
-    resetOnboarding,
-  } from '$lib/store/slices/onboarding/onboarding-slice';
+  goToStep,
+  setProjectConfig,
+  setOnboardingWorkspaceId,
+  resetOnboarding,
+} from '$lib/store/slices/onboarding/onboarding-slice';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -51,25 +54,28 @@
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import {
-    parseContextMentions,
-    parseFileMentions,
-    parseRuntimeMentions,
-    parseInlineImages,
-    extractLinearIssue,
-    extractSentryIssue,
-  } from '$features/onboarding/utils/parse-context-references';
+  parseContextMentions,
+  parseFileMentions,
+  parseRuntimeMentions,
+  parseInlineImages,
+  extractLinearIssue,
+  extractSentryIssue,
+} from '$features/onboarding/utils/parse-context-references';
   import {
-    setInitialAgentConfig,
-    setInitialAgentId,
-  } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  setInitialAgentConfig,
+  setInitialAgentId,
+} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
-  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
+  import {
+  SETUP_SCRIPT_TEMPLATES,
+  getTemplateContent,
+} from '$features/setup-scripts';
   import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
   import { setHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import {
-    cancelWorkspaceInitializerOnboardingFormStateDebounce,
-    debounceWorkspaceInitializerOnboardingFormState,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+  cancelWorkspaceInitializerOnboardingFormStateDebounce,
+  debounceWorkspaceInitializerOnboardingFormState,
+} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerHydrated } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { hydrateWorkspaceNavigation } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import { track } from '$lib/services/analytics';
@@ -79,10 +85,10 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
-    findEmbeddedPRBranch,
-    hasGitHubPRMention,
-    findPRNeedingBranchFetch,
-  } from '$features/onboarding/utils/detect-pr-branch';
+  findEmbeddedPRBranch,
+  hasGitHubPRMention,
+  findPRNeedingBranchFetch,
+} from '$features/onboarding/utils/detect-pr-branch';
   const logger = createLogger('onboarding-page');
 
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';

@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { runSaga } from "redux-saga";
 
 vi.mock(
@@ -16,7 +22,10 @@ vi.mock("$lib/utils/client-logger", () => ({
 }));
 
 import { handleLoadServers } from "./mcp-settings-saga";
-import { initialState, setDisabledServers } from "../mcp-settings-slice";
+import {
+  initialState,
+  setDisabledServers,
+} from "../mcp-settings-slice";
 
 const mockInvoke = vi.fn();
 

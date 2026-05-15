@@ -1,8 +1,19 @@
 import type { Workspace, WorkspaceId } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import { describe, expect, it } from "vitest";
-import { openTerminalOverlay, toggleTerminalOverlay } from "../terminals/terminals-slice";
-import { createCollection, getItem, getItems } from "../../utils/collection-utils";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  openTerminalOverlay,
+  toggleTerminalOverlay,
+} from "../terminals/terminals-slice";
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from "../../utils/collection-utils";
 import {
   applyOptimisticTaskStatusUpdate,
   cleanupRecency,

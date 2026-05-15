@@ -20,7 +20,10 @@
  * ```
  */
 
-import { URLStateManager, type URLStateDefinition } from '$lib/utils/url-state';
+import {
+  URLStateManager,
+  type URLStateDefinition,
+} from '$lib/utils/url-state';
 import { page } from '$app/stores';
 
 export interface UseURLStateOptions {

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
 import {
   eventReceived,

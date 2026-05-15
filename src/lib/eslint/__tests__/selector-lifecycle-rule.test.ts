@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { ESLint } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
@@ -92,7 +96,10 @@ describe('selector-lifecycle ESLint rule', () => {
   it('warns on get(selectThing()) but not on get(nonSelectorStore)', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { get, writable } from 'svelte/store';
+        import {
+  get,
+  writable,
+} from 'svelte/store';
         import { selectThing } from '$lib/store/slices/example/example-selectors';
 
         const plainStore = writable(1);
@@ -141,6 +148,31 @@ describe('selector-lifecycle ESLint rule', () => {
       </script>
 
       <Dialog onboarding={selectThing()} />
+    `);
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('warns on redundant readable aliases created with $derived($readable$)', async () => {
+    const messages = await lintSvelte(`
+      <script lang="ts">
+        const agentSessionIsStreaming$ = selectAgentSessionIsStreaming();
+        const isStreaming = $derived($agentSessionIsStreaming$);
+      </script>
+    `);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.message).toContain('Do not mirror readable values with $derived($readable$)');
+  });
+
+  it('allows computed derived expressions and $derived.by callbacks', async () => {
+    const messages = await lintSvelte(`
+      <script lang="ts">
+        const agentSessionIsStreaming$ = selectAgentSessionIsStreaming();
+        const hasPendingWork$ = selectHasPendingWork();
+        const isBusy = $derived($agentSessionIsStreaming$ || $hasPendingWork$);
+        const status = $derived.by(() => $agentSessionIsStreaming$ ? 'streaming' : 'idle');
+      </script>
     `);
 
     expect(messages).toHaveLength(0);

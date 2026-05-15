@@ -8,7 +8,14 @@
  * - Escapes backslashes and single quotes when passing to printf
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
@@ -151,7 +158,10 @@ vi.mock('../../workspace/main/provenance/attribution-engine', () => ({
   }),
 }));
 
-import { AcceptChangesService, isValidGitRemoteUrl } from '../main/accept-changes.service';
+import {
+  AcceptChangesService,
+  isValidGitRemoteUrl,
+} from '../main/accept-changes.service';
 
 describe('AcceptChangesService.exportFiles', () => {
   let service: AcceptChangesService;

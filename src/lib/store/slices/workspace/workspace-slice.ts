@@ -4,8 +4,14 @@ import type {
   Workspace,
 } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from "$shared/utils/task-stats";
-import { openTerminalOverlay, toggleTerminalOverlay } from "../terminals/terminals-slice";
+import {
+  EXCLUDED_STATUSES,
+  IN_PROGRESS_STATUSES,
+} from "$shared/utils/task-stats";
+import {
+  openTerminalOverlay,
+  toggleTerminalOverlay,
+} from "../terminals/terminals-slice";
 import { createAction } from "../../utils/create-action";
 import { createReducer } from "../../utils/create-reducer";
 import {
@@ -236,7 +242,7 @@ function clearBooleanMapEntry(
     return map;
   }
 
-   
+
   const { [key]: _, ...rest } = map;
   return rest;
 }
@@ -249,7 +255,7 @@ function clearPendingCreationEntry(
     return map;
   }
 
-   
+
   const { [key]: _, ...rest } = map;
   return rest;
 }

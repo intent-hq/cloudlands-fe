@@ -9,7 +9,10 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { selectSpecialistName, selectSpecialists } from '$lib/store/slices/specialists/specialists-selectors';
+  import {
+  selectSpecialistName,
+  selectSpecialists,
+} from '$lib/store/slices/specialists/specialists-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
 
   interface Props {
@@ -66,14 +69,14 @@
       <div
         class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full flex items-center justify-center"
       >
-        <span class="text-[7px] text-primary-foreground font-bold">★</span>
+        <span class="text-xs text-primary-foreground font-bold leading-none">★</span>
       </div>
     {/if}
   </div>
 
   <!-- Name -->
   <div class="text-center max-w-[80px]">
-    <p class="text-ui font-medium text-foreground/90 truncate">{node.name}</p>
+    <p class="text-ui font-medium text-foreground truncate">{node.name}</p>
     <!-- {#if specialist}
       <div class="flex items-center justify-center gap-0.5 mt-0.5">
         <SpecialistToolIcon {specialist} size={8} muted />

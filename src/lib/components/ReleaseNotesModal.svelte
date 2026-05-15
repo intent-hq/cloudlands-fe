@@ -6,9 +6,16 @@
    */
 
   import { Button } from '$lib/components/ui/button';
-  import { faCheck, faRocket, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faCheck,
+  faRocket,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade, fly } from 'svelte/transition';
+  import {
+  fade,
+  fly,
+} from 'svelte/transition';
 
   interface ReleaseNotes {
     version: string;

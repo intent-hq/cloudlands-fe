@@ -1,44 +1,27 @@
 /**
  * Chat Lifecycle Saga
  *
- * Handles DOM-level lifecycle concerns that were previously instance fields on ChatService:
- * - `visibilityChangeHandler` → eventChannel watching document.visibilitychange
- * - `connectionHandler` → eventChannel watching window online/offline
+ * Handles DOM-level lifecycle concerns that were previously instance fields on the chat service:
+ * - connection event listener → eventChannel watching window online/offline
  * - `disposed` flag → unnecessary, saga cancellation handles lifecycle
  * - `lastDestroyTimestamp` / `isRecentRemount()` → dead code, removed entirely
  *
  * These are global (not per-agent) because DOM events apply to the whole tab.
  */
 
-import { fork, take, type SagaGenerator } from 'typed-redux-saga';
-import { eventChannel, type EventChannel, END } from 'redux-saga';
+import {
+  fork,
+  take,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import {
+  eventChannel,
+  type EventChannel,
+  END,
+} from 'redux-saga';
 import { createLogger } from '$lib/utils/client-logger';
-import { getChatService } from '$features/agent/services/chat.service';
-import { selectAllAgentSessions } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('ChatLifecycleSaga');
-
-// ============================================================================
-// Visibility Change EventChannel
-// ============================================================================
-
-function createVisibilityChannel(): EventChannel<'visible' | 'hidden'> {
-  return eventChannel((emitter) => {
-    if (typeof document === 'undefined') {
-      emitter(END);
-      return () => {};
-    }
-
-    const handler = () => {
-      emitter(document.visibilityState as 'visible' | 'hidden');
-    };
-
-    document.addEventListener('visibilitychange', handler);
-    return () => {
-      document.removeEventListener('visibilitychange', handler);
-    };
-  });
-}
 
 // ============================================================================
 // Connection Change EventChannel
@@ -64,50 +47,9 @@ function createConnectionChannel(): EventChannel<boolean> {
   });
 }
 
-// ============================================================================
-// Visibility Watcher
-// ============================================================================
-
 /**
- * When the browser tab returns to the foreground, RAF callbacks resume but any
- * streaming content accumulated while backgrounded hasn't been flushed yet.
- * This saga forces a flush for every agent that is currently processing.
- */
-function* watchVisibilityChange(): SagaGenerator<void> {
-  const channel = createVisibilityChannel();
-  try {
-    while (true) {
-      const visibility: 'visible' | 'hidden' = yield* take(channel);
-      if (visibility === 'visible') {
-        const agentSessions = yield* selectAllAgentSessions.effect();
-        for (const session of agentSessions) {
-          if (session.isProcessing) {
-            const agentId = session.id;
-              try {
-                const chatService = getChatService(agentId);
-                chatService.flushPendingStreamingContent(agentId);
-              } catch (e) {
-                logger.debug('Failed to flush pending content on visibility restore', {
-                  agentId,
-                  error: e,
-                });
-              }
-          }
-        }
-      }
-    }
-  } finally {
-    channel.close();
-  }
-}
-
-// ============================================================================
-// Connection Watcher
-// ============================================================================
-
-/**
- * Logs connection status changes. Previously lived on ChatService as
- * `connectionHandler` + `handleConnectionChange` — pure logging, no state.
+ * Logs connection status changes. Previously lived on the chat service as
+ * a connection event listener plus `handleConnectionChange` — pure logging, no state.
  */
 function* watchConnectionChange(): SagaGenerator<void> {
   const channel = createConnectionChannel();
@@ -130,7 +72,6 @@ function* watchConnectionChange(): SagaGenerator<void> {
 // ============================================================================
 
 export function* chatLifecycleSaga(): SagaGenerator<void> {
-  yield* fork(watchVisibilityChange);
   yield* fork(watchConnectionChange);
 }
 

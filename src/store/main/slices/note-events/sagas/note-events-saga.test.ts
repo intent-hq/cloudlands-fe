@@ -1,15 +1,15 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import {
   noteCreated,
   NOTE_EVENT_ACTION_MAP,
   NOTE_EVENT_TYPES,
 } from "../note-events-slice";
-import {
-  WORKSPACE_LIFECYCLE_GLOBAL_BROADCAST_EVENTS,
-} from "../../workspace-lifecycle-events/workspace-lifecycle-events-slice";
-import {
-  terminalData,
-} from "../../terminal-events/terminal-events-slice";
+import { WORKSPACE_LIFECYCLE_GLOBAL_BROADCAST_EVENTS } from "../../workspace-lifecycle-events/workspace-lifecycle-events-slice";
+import { terminalData } from "../../terminal-events/terminal-events-slice";
 
 // ---------------------------------------------------------------------------
 // Slice structure tests

@@ -4,8 +4,15 @@
  * Ensures that generated slugs match the workspace ID validation schema.
  */
 
-import { describe, it, expect } from 'vitest';
-import { extractLocalSlug, generateLocalSlug } from '../main/local-slug-generator';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
+import {
+  extractLocalSlug,
+  generateLocalSlug,
+} from '../main/local-slug-generator';
 
 // The validation pattern from schemas.ts
 const VALID_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}(-[0-9]+)?$/;

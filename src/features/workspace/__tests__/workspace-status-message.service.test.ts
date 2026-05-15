@@ -1,7 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { WorkspaceStatus, type Workspace, type WorkspaceId } from '../../../shared/types';
+import {
+  WorkspaceStatus,
+  type Workspace,
+  type WorkspaceId,
+} from '../../../shared/types';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import { WorkspaceService } from '../main/workspace.service';
 

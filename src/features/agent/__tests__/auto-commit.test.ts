@@ -12,7 +12,14 @@
  * 5. Proper error handling and logging
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import type { AgentIdleEvent } from '../../events/types';
 
 // Mock the dependencies

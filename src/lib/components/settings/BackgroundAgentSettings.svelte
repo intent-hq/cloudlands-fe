@@ -8,18 +8,21 @@
    */
 
   import {
-    BACKGROUND_AGENT_TYPE_INFO,
-    setDefaultModel,
-    setTypeOverride,
-  } from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
+  BACKGROUND_AGENT_TYPE_INFO,
+  setDefaultModel,
+  setTypeOverride,
+} from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
   import {
-    selectBgDefaultModel,
-    selectBgTypeOverrides,
-    selectHasOverride,
-  } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
+  selectBgDefaultModel,
+  selectBgTypeOverrides,
+  selectHasOverride,
+} from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
   import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
+  import {
+  Dropdown,
+  type DropdownOption,
+} from '$lib/components/ui/dropdown';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';

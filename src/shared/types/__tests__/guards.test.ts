@@ -2,7 +2,11 @@
  * Tests for Type Guards
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import {
   isAgentSession,
   isAgentMessage,

@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
-import type { AgentMessage, AgentSession } from "$shared/types";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+import type { AgentSession } from "$shared/types";
 import type { InteractionEvent } from "$lib/components/agent-overview/types";
 import type { StoreState } from "../../types";
-import { createCollection } from "../../utils/collection-utils";
 import {
   agentOverviewReducer,
   initialState,
@@ -25,7 +28,7 @@ function makeOverviewState(session: AgentSession): StoreState {
       byAgentId: {
         [session.id]: {
           ...session,
-          messages: createCollection<AgentMessage, "id">("id", session.messages),
+          messages: session.messages,
         },
       },
     },

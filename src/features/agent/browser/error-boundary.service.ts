@@ -7,7 +7,10 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { toast } from 'svelte-sonner';
-import { AgentError, AgentErrorCode } from '../errors/agent-errors';
+import {
+  AgentError,
+  AgentErrorCode,
+} from '../errors/agent-errors';
 import { RETRY } from '$shared/constants';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { isFatalError } from '$shared/constants/agent-streaming';

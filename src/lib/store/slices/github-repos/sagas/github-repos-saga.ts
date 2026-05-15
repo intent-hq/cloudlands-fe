@@ -14,7 +14,13 @@
 import { invoke } from "$lib/electron-bridge";
 import { GITHUB_AUTH_CHANNELS } from "$features/github-auth/constants";
 import type { GithubRepo } from "$shared/augment-api/augment-api.client";
-import { call, put, select, takeLatest, type SagaGenerator } from "typed-redux-saga";
+import {
+  call,
+  put,
+  select,
+  takeLatest,
+  type SagaGenerator,
+} from "typed-redux-saga";
 import { takeLatestFromSelector } from "../../../utils/selector-channel-effects";
 import { selectGitHubAuthIsAuthenticated } from "../../github-auth/github-auth-selectors";
 import {

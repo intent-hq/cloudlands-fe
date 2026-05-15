@@ -2,7 +2,13 @@
  * Tests for GitHubService
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import { GitHubService } from '../main/github.service';
 
 // Mock the github-auth service

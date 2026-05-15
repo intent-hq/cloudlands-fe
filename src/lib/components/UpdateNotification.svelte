@@ -15,16 +15,16 @@
   import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
-    selectAutoUpdateToastVisible,
-    selectAutoUpdateStatus,
-    selectAutoUpdateDismissedAt,
-  } from '$lib/store/slices/auto-update/auto-update-selectors';
+  selectAutoUpdateToastVisible,
+  selectAutoUpdateStatus,
+  selectAutoUpdateDismissedAt,
+} from '$lib/store/slices/auto-update/auto-update-selectors';
   import {
-    hideToast,
-    showToast,
-    dismissDownloadedToast,
-    initAutoUpdate,
-  } from '$lib/store/slices/auto-update/auto-update-slice';
+  hideToast,
+  showToast,
+  dismissDownloadedToast,
+  initAutoUpdate,
+} from '$lib/store/slices/auto-update/auto-update-slice';
 
   const dispatch = getDispatch();
   const toastVisible$ = selectAutoUpdateToastVisible();

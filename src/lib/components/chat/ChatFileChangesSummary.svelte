@@ -11,14 +11,17 @@
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import type { AgentMessage } from '$shared/types';
   import {
-    getFileChangesFromMessages,
-    getFileChangesFromMessage,
-    type ChatFileChangeSummary,
-  } from '$lib/utils/get-file-changes-from-messages';
+  getFileChangesFromMessages,
+  getFileChangesFromMessage,
+  type ChatFileChangeSummary,
+} from '$lib/utils/get-file-changes-from-messages';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { openWorkspaceChatChanges, type JsonValue } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  
+  import {
+  openWorkspaceChatChanges,
+  type JsonValue,
+} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+
 interface Props {
     /** Single message to show changes for (per-turn mode) */
     message?: AgentMessage;

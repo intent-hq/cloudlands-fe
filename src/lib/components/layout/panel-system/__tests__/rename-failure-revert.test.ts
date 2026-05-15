@@ -2,7 +2,7 @@
  * Regression tests for the rename-failure revert path used by
  * `PanelLayout.svelte` and `AgentCard.svelte`.
  *
- * When `agentService.renameSession` rejects, both call sites used to discard
+ * When `renameSession` rejects, both call sites used to discard
  * the promise with `void`, leaving the optimistic Redux/tab-title update in
  * place while disk kept the old name. These tests reproduce the fixed handler
  * logic against the real `renameWithUndo` + `reversibleActions.execute`
@@ -14,7 +14,14 @@
  *      the undo toast.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 
 vi.mock('svelte-sonner', () => ({
   toast: {
@@ -27,7 +34,10 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { toast } from 'svelte-sonner';
-import { renameWithUndo, reversibleActions } from '$lib/utils/reversible-actions';
+import {
+  renameWithUndo,
+  reversibleActions,
+} from '$lib/utils/reversible-actions';
 
 /**
  * Reproduces the `handleTabRename` agent branch from PanelLayout.svelte
@@ -87,7 +97,7 @@ function runAgentRenameWithUndo(opts: {
 
 /**
  * Reproduces AgentCard.svelte's `saveEdit()` rename path — a direct optimistic
- * dispatch followed by `agentService.renameSession(...).catch(...)` that
+ * dispatch followed by `renameSession(...).catch(...)` that
  * reverts Redux to the previously captured name + `nameExplicitlySet` flag.
  */
 async function runAgentCardSaveEdit(opts: {

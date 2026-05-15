@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { sanitizeCommandForDisplay } from '../sanitize-credentials';
 
 describe('sanitizeCommandForDisplay', () => {

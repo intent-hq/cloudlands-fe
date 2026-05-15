@@ -1,6 +1,9 @@
 import { invoke } from "$lib/electron-bridge";
 import { AUGGIE_CHANNELS } from "$shared/ipc/channels";
-import { call, put } from "typed-redux-saga";
+import {
+  call,
+  put,
+} from "typed-redux-saga";
 import { setSystemStatus } from "../system-status-slice";
 
 type SystemStatusResponse = {

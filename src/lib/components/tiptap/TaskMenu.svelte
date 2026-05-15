@@ -31,7 +31,10 @@
    */
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faRobot, faList } from '@fortawesome/free-solid-svg-icons';
+  import {
+  faRobot,
+  faList,
+} from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     id: string; // Must match popovertarget attribute on trigger button

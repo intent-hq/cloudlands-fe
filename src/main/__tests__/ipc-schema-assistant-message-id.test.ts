@@ -7,7 +7,11 @@
  * - Accepts payloads without assistantMessageId (field is optional)
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { AgentBackendStreamMessageSchema } from '../ipc-schemas';
 import { v4 as uuidv4 } from 'uuid';
 

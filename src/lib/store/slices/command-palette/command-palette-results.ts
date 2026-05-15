@@ -3,7 +3,11 @@
  * Extracted from the component so it is testable outside Svelte.
  */
 
-import { fuzzyScore, type WorkspaceObject, type WorkspaceObjectType } from "./command-palette-utils";
+import {
+  fuzzyScore,
+  type WorkspaceObject,
+  type WorkspaceObjectType,
+} from "./command-palette-utils";
 
 export interface PaletteCommand {
   id: string;
@@ -110,7 +114,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
       }))
       .filter((item: any) => item._score !== -Infinity)
       .sort((a: any, b: any) => (b._score as number) - (a._score as number))
-       
+
       .map(({ _score, ...rest }: any) => rest)
       .slice(0, 20);
 

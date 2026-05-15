@@ -4,7 +4,13 @@
  * Tests for type-safe IPC handler registration and execution
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+} from 'vitest';
 import type { AgentIpc, IpcResponse } from '$shared/ipc/contracts';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -43,7 +49,10 @@ vi.mock('electron', () => {
   };
 });
 
-import { registerAgentHandlers, type IAgentBackendService } from '../unified-agent-handlers';
+import {
+  registerAgentHandlers,
+  type IAgentBackendService,
+} from '../unified-agent-handlers';
 import { ipcMain } from 'electron';
 
 describe('Unified Agent Handlers', () => {

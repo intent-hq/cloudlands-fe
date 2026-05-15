@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { ChangeStage } from "$features/file-tracking/types";
 import type { TrackedChange, StageTransition, CommitInfo, MainPanelViewState } from "./changes-types";
 import type { StoreState } from "../../types";

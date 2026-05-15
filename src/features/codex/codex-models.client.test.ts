@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 const invoke = vi.hoisted(() => vi.fn());
 const logger = vi.hoisted(() => ({
@@ -15,7 +21,10 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => logger,
 }));
 
-import { getCodexModels, getCodexModelsWithMetadata } from './codex-models.client';
+import {
+  getCodexModels,
+  getCodexModelsWithMetadata,
+} from './codex-models.client';
 
 describe('codex-models.client', () => {
   beforeEach(() => {

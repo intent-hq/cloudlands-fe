@@ -8,7 +8,10 @@
  * Uses dynamic imports to keep Electron deps out of test bundles.
  */
 
-import { call, takeEvery } from "typed-redux-saga";
+import {
+  call,
+  takeEvery,
+} from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import { workspaceEventAccepted } from "../workspace-events-slice";
 

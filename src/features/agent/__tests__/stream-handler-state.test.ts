@@ -10,7 +10,14 @@
  * 3. Handler state isolation between messages
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
 
 // Mock window.electronAPI
 const mockElectronAPI = {

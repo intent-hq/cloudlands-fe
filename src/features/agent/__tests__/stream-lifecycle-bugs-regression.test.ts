@@ -7,21 +7,30 @@
  *   at the NEW handler before any chunks. Without the guard, this prematurely
  *   cleans up the new handler → all subsequent chunks are dropped.
  *
- * Bug 9: Double dispatch of upsertAgentSession in stream complete handler.
- *   The same dispatch was called twice in a row with identical arguments.
+ * Saga migration: stream lifecycle should forward raw updates while sagas own
+ *   Redux-state-dependent missing-target refresh/reconcile behavior.
  *
  * These tests use structural source-code analysis to verify the production
  * code contains the correct guard conditions and dispatch patterns, rather
  * than reimplementing the logic locally.
  */
 
-import { describe, it, expect } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+} from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 // Read the production source once for all structural tests
 const SOURCE_PATH = resolve(__dirname, '../agent-stream-lifecycle.ts');
 const source = readFileSync(SOURCE_PATH, 'utf-8');
+const SAGA_SOURCE_PATH = resolve(
+  __dirname,
+  '../../../lib/store/slices/agent-session/sagas/agent-stream-saga.ts',
+);
+const sagaSource = readFileSync(SAGA_SOURCE_PATH, 'utf-8');
 
 describe('Bug 8: Stale complete from interrupted stream', () => {
   // -----------------------------------------------------------------------
@@ -40,13 +49,17 @@ describe('Bug 8: Stale complete from interrupted stream', () => {
 
     // Verify the guard triggers a `return` (skip the event)
     // The pattern: guard condition → logger.info → return
-    const guardPattern = /if\s*\(\s*!hasReceivedFirstChunk\s*&&\s*chunkCount\s*<=\s*1\s*&&\s*!data\.message\s*&&\s*!data\.finishReason\s*\)/;
+    const guardPattern =
+      /if\s*\(\s*!hasReceivedFirstChunk\s*&&\s*chunkCount\s*<=\s*1\s*&&\s*!data\.message\s*&&\s*!data\.finishReason\s*\)/;
     expect(source).toMatch(guardPattern);
 
     // After the guard, there must be a `return;` statement
     const guardMatch = source.match(guardPattern);
     expect(guardMatch).not.toBeNull();
-    const afterGuard = source.slice(guardMatch!.index! + guardMatch![0].length, guardMatch!.index! + guardMatch![0].length + 500);
+    const afterGuard = source.slice(
+      guardMatch!.index! + guardMatch![0].length,
+      guardMatch!.index! + guardMatch![0].length + 500,
+    );
     expect(afterGuard).toContain('return;');
   });
 
@@ -57,10 +70,8 @@ describe('Bug 8: Stale complete from interrupted stream', () => {
     expect(completeBlockMatches.length).toBeGreaterThanOrEqual(1);
 
     // The guard should appear AFTER a complete type check
-    const guardIdx = source.indexOf('!hasReceivedFirstChunk && chunkCount <= 1');
-    const lastCompleteBeforeGuard = completeBlockMatches
-      .filter(m => m.index! < guardIdx)
-      .pop();
+    const guardIdx = source.search(/!hasReceivedFirstChunk\s*&&\s*chunkCount <= 1/);
+    const lastCompleteBeforeGuard = completeBlockMatches.filter((m) => m.index! < guardIdx).pop();
     expect(lastCompleteBeforeGuard).toBeDefined();
   });
 
@@ -137,139 +148,115 @@ describe('Bug 8: Stale complete from interrupted stream', () => {
     expect(chunkCount).toBe(3); // 1 complete + 2 chunks
 
     // Real complete: hasReceivedFirstChunk=true, so guard does NOT skip
-    handler({ type: 'complete', streamId: 'new-stream-2', message: { id: 'msg-1' }, finishReason: 'end_turn' });
+    handler({
+      type: 'complete',
+      streamId: 'new-stream-2',
+      message: { id: 'msg-1' },
+      finishReason: 'end_turn',
+    });
     expect(handlerCleaned).toBe(true);
   });
 });
 
-describe('Bug 9: Double dispatch of upsertAgentSession', () => {
-  it('main completion path dispatches upsertAgentSession exactly once (not twice)', () => {
-    // The Bug 9 fix removed a duplicate dispatch in the primary success path
-    // of the sendMessage stream handler's complete branch.
-    // The primary path is: streamSession has messages → updatedSession.messages.length > 0
-    // → setAgentStreaming(false) → updatedSession.isStreaming = false → dispatch(upsertAgentSession(...))
-    // There must be exactly ONE upsertAgentSession dispatch between
-    // "updatedSession.isStreaming = false" and the "dispatchStreamEvent" call.
-
-    const sendMessageIdx = source.indexOf('export async function sendMessage(');
-    expect(sendMessageIdx).toBeGreaterThan(-1);
-    const sendMessageBody = source.slice(sendMessageIdx);
-
-    // Find the complete handler within sendMessage
-    const completeIdx = sendMessageBody.indexOf("data.type === 'complete'");
-    expect(completeIdx).toBeGreaterThan(-1);
-
-    // Find the primary completion path section:
-    // Between "updatedSession.isStreaming = false" and "dispatchStreamEvent"
-    const afterComplete = sendMessageBody.slice(completeIdx);
-    const isStreamingFalseIdx = afterComplete.indexOf('updatedSession.isStreaming = false');
-    expect(isStreamingFalseIdx).toBeGreaterThan(-1);
-
-    const afterIsStreamingFalse = afterComplete.slice(isStreamingFalseIdx);
-    const dispatchStreamEventIdx = afterIsStreamingFalse.indexOf('dispatchStreamEvent(');
-    expect(dispatchStreamEventIdx).toBeGreaterThan(-1);
-
-    // The section between isStreaming=false and dispatchStreamEvent should have
-    // exactly ONE upsertAgentSession call
-    const primaryPath = afterIsStreamingFalse.slice(0, dispatchStreamEventIdx);
-    const upsertMatches = primaryPath.match(/dispatch\(upsertAgentSession\(/g);
-    const upsertCount = upsertMatches ? upsertMatches.length : 0;
-
-    // CRITICAL: Must be exactly 1. The bug was having 2 back-to-back calls.
-    expect(upsertCount).toBe(1);
+describe('Stream lifecycle is a thin stream adapter', () => {
+  it('does not read Redux state or own stale refresh helpers', () => {
+    expect(source).not.toContain('getReduxStore().getState');
+    expect(source).not.toContain('getAgentSession(');
+    expect(source).not.toContain('selectActiveWorkspaceId');
+    expect(source).not.toContain('requestRefreshThenMaybeFallback');
+    expect(source).not.toContain('requestRestoredRefreshThenMaybeFallback');
+    expect(source).not.toContain('persistenceService.loadSession');
+    expect(source).not.toContain('STALE_STREAM_SESSION_REFRESH_COOLDOWN_MS');
   });
 
-  it('the upsertAgentSession dispatch is preceded by isStreaming = false assignment', () => {
-    const sendMessageIdx = source.indexOf('export async function sendMessage(');
-    const sendMessageBody = source.slice(sendMessageIdx);
-    const completeIdx = sendMessageBody.indexOf("data.type === 'complete'");
-    const afterComplete = sendMessageBody.slice(completeIdx);
-
-    // Verify the pattern: isStreaming = false THEN dispatch(upsertAgentSession(
-    const isStreamingIdx = afterComplete.indexOf('updatedSession.isStreaming = false');
-    const firstUpsertAfter = afterComplete.indexOf('dispatch(upsertAgentSession(', isStreamingIdx);
-    expect(firstUpsertAfter).toBeGreaterThan(isStreamingIdx);
-
-    // And the setAgentStreaming(false) comes before the upsert
-    const setStreamingIdx = afterComplete.indexOf('setAgentStreaming(workspace.id, agentId, false)');
-    expect(setStreamingIdx).toBeGreaterThan(-1);
-    expect(setStreamingIdx).toBeLessThan(firstUpsertAfter);
-  });
-});
-
-describe('Reconnect placeholder ID reuse is guarded (PR 485 follow-up)', () => {
-  // When reconnecting to an in-flight stream we may inherit an `existingMessage`
-  // from the session. Reusing its ID for a fresh streaming placeholder is only
-  // safe when (a) that message is itself still streaming AND (b) its ID uses
-  // the canonical `msg_` prefix. Otherwise we risk either colliding with a
-  // finalized message of the same ID or persisting a legacy ID format.
-  it('production code derives a guarded `reusableExistingMessageId` helper', () => {
-    expect(source).toContain('reusableExistingMessageId');
-    expect(source).toMatch(/existingMessage\?\.isStreaming/);
-    expect(source).toContain("existingMessage.id.startsWith('msg_')");
-  });
-
-  it('placeholder creation sites use `pickPlaceholderId(reusableExistingMessageId, …)`', () => {
-    // Both placeholder-creation branches (chunk and content-blocks) must route
-    // through `pickPlaceholderId`, which re-validates the captured snapshot
-    // against the current messages list at placeholder-creation time. Direct
-    // use of `reusableExistingMessageId || …` would keep the stale-snapshot
-    // bug alive (the snapshot can refer to a now-finalized message).
-    const pickUses = source.match(/pickPlaceholderId\(reusableExistingMessageId, [A-Za-z.]+\.messages\)/g);
-    expect(pickUses).not.toBeNull();
-    expect(pickUses!.length).toBeGreaterThanOrEqual(2);
-
-    // And the old unguarded patterns must be gone from these call sites.
-    expect(source).not.toMatch(/existingMessage\?\.id \|\| createMessageId\('msg_' \+ uuidv4\(\)\)/);
-    expect(source).not.toMatch(/reusableExistingMessageId \|\| createMessageId\('msg_' \+ uuidv4\(\)\)/);
-  });
-
-  // Behavioral verification: the guard logic itself.
-  function shouldReuseId(msg?: { isStreaming?: boolean; id?: string }): boolean {
-    return Boolean(
-      msg?.isStreaming && typeof msg.id === 'string' && msg.id.startsWith('msg_'),
+  it('sendMessage stream branches emit only canonical raw saga-owned update actions', () => {
+    const sendMessageIdx = source.indexOf('export async function sendMessage');
+    const streamHandlerIdx = source.indexOf(
+      'const streamHandler = (data: StreamHandlerData)',
+      sendMessageIdx,
     );
-  }
+    const chunkIdx = source.indexOf("data.type === 'chunk'", streamHandlerIdx);
+    const contentBlocksIdx = source.indexOf("data.type === 'content-blocks'", streamHandlerIdx);
+    const completeIdx = source.indexOf("data.type === 'complete'", streamHandlerIdx);
+    const statusIdx = source.indexOf("data.type === 'status'", completeIdx);
+    const errorIdx = source.indexOf("data.type === 'error'", statusIdx);
 
-  it('reuses id only when message is streaming AND canonical', () => {
-    expect(shouldReuseId({ isStreaming: true, id: 'msg_abc' })).toBe(true);
-    expect(shouldReuseId({ isStreaming: true, id: 'legacy-123' })).toBe(false);
-    expect(shouldReuseId({ isStreaming: false, id: 'msg_abc' })).toBe(false);
-    expect(shouldReuseId({ isStreaming: false, id: 'legacy-123' })).toBe(false);
-    expect(shouldReuseId(undefined)).toBe(false);
-    expect(shouldReuseId({})).toBe(false);
+    const chunkBranch = source.slice(chunkIdx, contentBlocksIdx);
+    const contentBlocksBranch = source.slice(contentBlocksIdx, completeIdx);
+    const completeBranch = source.slice(completeIdx, statusIdx);
+    const statusBranch = source.slice(statusIdx, errorIdx);
+
+    for (const branch of [chunkBranch, contentBlocksBranch, completeBranch]) {
+      expect(branch).toContain('agentStreamUpdateReceived({');
+      expect(branch).not.toContain('dispatchAgentStream(');
+      expect(branch).not.toContain('upsertSession(');
+      expect(branch).not.toContain('updateMessage(');
+    }
+    expect(chunkBranch).toContain("eventType: 'chunk'");
+    expect(contentBlocksBranch).toContain("eventType: 'content-blocks'");
+    expect(completeBranch).toContain("eventType: 'complete'");
+    expect(statusBranch).toContain('dispatchStreamStatusEvent({');
+    expect(statusBranch).not.toContain('agentStreamUpdateReceived({');
+    expect(source).toContain('streamStatusReceived(');
+  });
+
+  it('restored stream branches emit source=restored saga-owned updates', () => {
+    expect(source).not.toContain('export function registerStreamHandlerForSession');
+    const restoredIdx = source.indexOf('function registerStreamHandlerForSession');
+    expect(restoredIdx).toBeGreaterThanOrEqual(0);
+    const helperIdx = source.indexOf('const emitStreamUpdate', restoredIdx);
+    const listenerIdx = source.indexOf('const streamListenerId = window.electronAPI.on', helperIdx);
+    const restoredBody = source.slice(restoredIdx, listenerIdx);
+    const chunkIdx = restoredBody.indexOf("data.type === 'chunk'");
+    const contentBlocksIdx = restoredBody.indexOf("data.type === 'content-blocks'");
+    const completeIdx = restoredBody.indexOf("data.type === 'complete'");
+    const statusIdx = restoredBody.indexOf("data.type === 'status'");
+    const errorIdx = restoredBody.indexOf("data.type === 'error'", statusIdx);
+    const chunkBranch = restoredBody.slice(chunkIdx, contentBlocksIdx);
+    const contentBlocksBranch = restoredBody.slice(contentBlocksIdx, completeIdx);
+    const completeBranch = restoredBody.slice(completeIdx, statusIdx);
+    const statusBranch = restoredBody.slice(statusIdx, errorIdx);
+
+    expect(restoredBody).toContain("source: 'restored'");
+    expect(restoredBody).toContain('agentStreamUpdateReceived({');
+    for (const branch of [chunkBranch, contentBlocksBranch, completeBranch]) {
+      expect(branch).not.toContain('dispatchStreamStatusEvent({');
+    }
+    expect(restoredBody).not.toContain('dispatchAgentStream(');
+    expect(restoredBody).toContain("emitStreamUpdate('chunk', data)");
+    expect(restoredBody).toContain("emitStreamUpdate('content-blocks', data)");
+    expect(restoredBody).toContain("emitStreamUpdate('complete', data)");
+    expect(statusBranch).toContain('dispatchStreamStatusEvent({');
+    expect(statusBranch).not.toContain('agentStreamUpdateReceived({');
+    expect(restoredBody).toContain('dispatchStreamStatusEvent({');
+    expect(restoredBody).not.toContain('getAgentSession(');
+    expect(restoredBody).not.toContain('requestRestoredRefreshThenMaybeFallback');
   });
 });
 
-describe('Reconnect avoids retargeting finalized assistant messages', () => {
-  const reconnectIdx = source.indexOf('export async function reconnectToBackendStreams');
-  const sendMessageIdx = source.indexOf('export async function sendMessage', reconnectIdx);
-  const reconnectBody = source.slice(reconnectIdx, sendMessageIdx);
-
-  it('selects only actively streaming assistant messages for reconnect reuse', () => {
-    expect(reconnectIdx).toBeGreaterThan(-1);
-    expect(reconnectBody).toContain("m.role === 'assistant' && m.isStreaming === true");
-    expect(reconnectBody).not.toContain('assistantMessages[assistantMessages.length - 1]');
-    expect(reconnectBody).not.toMatch(/existingMessage && !existingMessage\.isStreaming/);
+describe('Saga-owned missing-target refresh orchestration', () => {
+  it('coalesces/rate-limits bypass-cache stale session refreshes before fallback', () => {
+    expect(sagaSource).toContain('STALE_STREAM_SESSION_REFRESH_COOLDOWN_MS');
+    expect(sagaSource).toContain('staleStreamSessionRefreshes');
+    expect(sagaSource).toContain('staleStreamSessionRefreshesInFlight');
+    expect(sagaSource).toContain('persistenceService.loadSession');
+    expect(sagaSource).toContain('bypassCache: true');
+    expect(sagaSource).toContain(
+      'Created fallback streaming placeholder after refresh missed target',
+    );
   });
 
-  it('restores backend accumulated content into a fresh streaming placeholder', () => {
-    expect(reconnectBody).toContain('restoredStreamingMessage');
-    expect(reconnectBody).toContain('createMessageId(`msg_${uuidv4()}`)');
-    expect(reconnectBody).toContain('messages: [...(session.messages || []), restoredStreamingMessage]');
-    expect(reconnectBody).toContain('existingMessage = restoredStreamingMessage');
+  it('uses canonical target matching in saga instead of last-assistant retargeting', () => {
+    expect(sagaSource).toContain('function findAssistantUpdateTarget');
+    expect(sagaSource).toContain('message.isStreaming === true');
+    expect(sagaSource).toContain('message.id === payload.assistantMessageId');
+    expect(sagaSource).toContain('message.appMessageId === payload.assistantAppMessageId');
+    expect(sagaSource).not.toContain('idx === updatedSession.messages.length - 1');
+    expect(sagaSource).not.toContain('assistantMessages[assistantMessages.length - 1]');
   });
 
-  function reconnectCandidate(messages: Array<{ role: string; isStreaming?: boolean }>) {
-    return messages.find((m) => m.role === 'assistant' && m.isStreaming === true);
-  }
-
-  it('reconnect does not mark finalized assistant messages as streaming targets', () => {
-    const messages = [
-      { role: 'user' },
-      { role: 'assistant', isStreaming: false },
-    ];
-
-    expect(reconnectCandidate(messages)).toBeUndefined();
+  it('keeps fallback placeholder ID decisions in the saga', () => {
+    expect(source).not.toContain('pickPlaceholderId(');
+    expect(sagaSource).toContain('pickPlaceholderId(payload.assistantMessageId');
   });
 });

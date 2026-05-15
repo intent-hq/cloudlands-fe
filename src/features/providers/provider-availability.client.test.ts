@@ -1,6 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { ProviderAvailabilityResult } from './provider-availability.client';
-import { clearProviderAvailabilityCache, getProviderAvailability } from './provider-availability.client';
+import {
+  clearProviderAvailabilityCache,
+  getProviderAvailability,
+} from './provider-availability.client';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
