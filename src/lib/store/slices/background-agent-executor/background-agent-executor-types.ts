@@ -106,9 +106,11 @@ export const emptyWorkspaceState: BackgroundAgentExecutorWorkspaceState = {
 };
 
 /** Default config for each executor type (keyed by string for flexibility) */
+const COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS = 300_000;
+
 export const EXECUTOR_CONFIGS: Record<string, { resultTag: string; timeout: number; name: string; agentType: string }> = {
-  commit: { resultTag: 'COMMIT_MESSAGE', timeout: 120000, name: 'Commit Message Generator', agentType: 'commit-message' },
-  'commit-merge': { resultTag: 'COMMIT_MESSAGE', timeout: 120000, name: 'Merge Commit Generator', agentType: 'commit-message' },
+  commit: { resultTag: 'COMMIT_MESSAGE', timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS, name: 'Commit Message Generator', agentType: 'commit-message' },
+  'commit-merge': { resultTag: 'COMMIT_MESSAGE', timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS, name: 'Merge Commit Generator', agentType: 'commit-message' },
   pr: { resultTag: 'PR_DESCRIPTION', timeout: 180000, name: 'PR Description Generator', agentType: 'pr-description' },
   review: { resultTag: 'CODE_REVIEW', timeout: 120000, name: 'Code Review Assistant', agentType: 'code-review' },
   walkthrough: { resultTag: 'CODE_WALKTHROUGH', timeout: 120000, name: 'Code Walkthrough Generator', agentType: 'code-walkthrough' },

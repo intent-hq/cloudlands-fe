@@ -17,9 +17,16 @@ import {
   type AgentSession,
 } from '$shared/types';
 
+let currentState: any;
+
 const { getReduxStoreMock } = vi.hoisted(() => ({
   getReduxStoreMock: vi.fn(),
 }));
+
+const fakeStore = {
+  getState: () => currentState,
+  subscribe: vi.fn(() => vi.fn()),
+};
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   getReduxStore: getReduxStoreMock,
@@ -46,7 +53,44 @@ vi.mock('$lib/utils/client-logger', () => ({
   }),
 }));
 
+vi.mock('svelte-sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    warning: vi.fn(),
+  },
+}));
+
+import { EXECUTOR_CONFIGS } from '../background-agent-executor-types';
 import { createAgentStateChannel } from './background-agent-executor-saga';
+
+const wsId = 'ws-1';
+const agentId = 'agent-1';
+
+function makeMessageSimple(text: string): AgentMessage {
+  return {
+    id: 'msg-1',
+    role: 'assistant',
+    contentBlocks: [{ type: 'text', text }],
+    timestamp: '2026-05-13T00:00:00.000Z',
+  } as AgentMessage;
+}
+
+function setAgentState(status: AgentStatus, messages: AgentMessage[] = []): void {
+  currentState = {
+    agentSessions: {
+      byAgentId: {
+        [agentId]: {
+          id: agentId,
+          workspaceId: wsId,
+          status,
+          messages,
+        },
+      },
+    },
+  };
+}
+
+// --- Main branch helpers (channel tests) ---
 
 type AgentStateEvent = {
   messages: AgentMessage[];
@@ -54,9 +98,6 @@ type AgentStateEvent = {
   isError: boolean;
   isStreaming: boolean;
 };
-
-const agentId = 'agent-1';
-const workspaceId = 'ws-1';
 
 function makeMessage(id: string, role: AgentMessage['role'] = 'assistant'): AgentMessage {
   return {
@@ -73,7 +114,7 @@ function makeSession(overrides: Partial<AgentSession> = {}) {
   return {
     id: agentId as AgentSession['id'],
     backendSessionId: null,
-    workspaceId: workspaceId as AgentSession['workspaceId'],
+    workspaceId: wsId as AgentSession['workspaceId'],
     name: 'Background Agent',
     status: AgentStatus.Active,
     createdAt: '2026-05-13T00:00:00.000Z',
@@ -87,7 +128,7 @@ function makeStoreState(session: ReturnType<typeof makeSession>): StoreState {
   return {
     agentSessions: {
       byAgentId: { [agentId]: session },
-      agentIdsByWorkspace: { [workspaceId]: [agentId] },
+      agentIdsByWorkspace: { [wsId]: [agentId] },
     },
   } as unknown as StoreState;
 }
@@ -134,6 +175,40 @@ function collectChannelEvents(channel: EventChannel<AgentStateEvent>) {
   return { events, get ended() { return ended; } };
 }
 
+// --- Tests ---
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  currentState = { agentSessions: { byAgentId: {} } };
+  getReduxStoreMock.mockReturnValue(fakeStore);
+});
+
+describe('EXECUTOR_CONFIGS', () => {
+  it('uses the extended 300s timeout for commit-message executors', () => {
+    expect(EXECUTOR_CONFIGS.commit.timeout).toBe(300_000);
+    expect(EXECUTOR_CONFIGS['commit-merge'].timeout).toBe(300_000);
+  });
+});
+
+describe('createAgentStateChannel (initial snapshot)', () => {
+  it('delivers an already-complete agent snapshot emitted during initial subscription', async () => {
+    setAgentState(AgentStatus.Idle, [
+      makeMessageSimple('<<<COMMIT_MESSAGE>>>fix: commit<<<\/COMMIT_MESSAGE>>>'),
+    ]);
+
+    const channel = createAgentStateChannel(agentId, wsId);
+    const event = await new Promise<any>((resolve) => channel.take(resolve));
+
+    expect(event.isComplete).toBe(true);
+    expect(event.messages).toHaveLength(1);
+    expect(event.messages[0].id).toBe('msg-1');
+
+    channel.close();
+  });
+});
+
+
+
 describe('createAgentStateChannel', () => {
   beforeEach(() => {
     getReduxStoreMock.mockReset();
@@ -145,13 +220,14 @@ describe('createAgentStateChannel', () => {
 
   it('emits active progress while selectAgentIsResponding is true', () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, workspaceId);
+    const channel = createAgentStateChannel(agentId, wsId);
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({ isStreaming: true, messages: [makeMessage('m1', 'user')] }));
 
-    expect(collected.events).toHaveLength(1);
-    expect(collected.events[0]).toMatchObject({
+    // Initial processUpdate emits one event, then setSession triggers another
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({
       isComplete: false,
       isError: false,
       isStreaming: true,
@@ -163,7 +239,7 @@ describe('createAgentStateChannel', () => {
 
   it('completes when responding stops and messages are available', () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, workspaceId);
+    const channel = createAgentStateChannel(agentId, wsId);
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({
@@ -174,19 +250,20 @@ describe('createAgentStateChannel', () => {
       messages: [makeMessage('m1')],
     }));
 
-    expect(collected.events).toHaveLength(1);
-    expect(collected.events[0]).toMatchObject({
+    // Initial processUpdate emits one event, then setSession triggers a terminal event
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({
       isComplete: true,
       isError: false,
       isStreaming: false,
     });
-    expect(collected.events[0].messages.map((message) => message.id)).toEqual(['m1']);
+    expect(collected.events[1].messages.map((message) => message.id)).toEqual(['m1']);
     expect(collected.ended).toBe(true);
   });
 
   it('emits explicit agent errors as terminal errors before completion', () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, workspaceId);
+    const channel = createAgentStateChannel(agentId, wsId);
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({
@@ -197,8 +274,9 @@ describe('createAgentStateChannel', () => {
       messages: [makeMessage('m1')],
     }));
 
-    expect(collected.events).toHaveLength(1);
-    expect(collected.events[0]).toMatchObject({
+    // Initial processUpdate emits one event, then setSession triggers a terminal error event
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({
       isComplete: false,
       isError: true,
       isStreaming: false,
@@ -209,14 +287,15 @@ describe('createAgentStateChannel', () => {
   it('cleans up after one terminal event and does not leave timers behind', () => {
     vi.useFakeTimers();
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, workspaceId);
+    const channel = createAgentStateChannel(agentId, wsId);
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({ status: AgentStatus.Idle, messages: [makeMessage('m1')] }));
     harness.setSession(makeSession({ status: AgentStatus.Idle, messages: [makeMessage('m2')] }));
 
-    expect(collected.events).toHaveLength(1);
-    expect(collected.events[0]).toMatchObject({ isComplete: true, isError: false });
+    // Initial processUpdate emits one event, then first setSession triggers terminal, second is ignored
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
     expect(collected.ended).toBe(true);
     expect(harness.listeners.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);

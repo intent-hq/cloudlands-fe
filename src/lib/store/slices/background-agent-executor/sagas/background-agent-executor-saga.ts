@@ -22,6 +22,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import {
+  buffers,
   eventChannel,
   END,
   type EventChannel,
@@ -35,6 +36,10 @@ import {
   getValidatedModelForType,
   type BackgroundAgentType,
 } from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
+import {
+  selectBgDefaultModel,
+  selectBgTypeOverrides,
+} from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
 import { loadModels } from '$lib/store/slices/model/model-slice';
 import { getGroupedModels } from '$lib/store/slices/model/model-utils';
 import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
@@ -202,7 +207,7 @@ export function createAgentStateChannel(
       isClosed = true;
       unsubscribe();
     };
-  });
+  }, buffers.expanding<{ messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean }>());
 }
 
 // ============================================================================
@@ -260,14 +265,15 @@ function* handleExecute(action: ReturnType<typeof executeBackgroundAgent>): Saga
     const groupedModels = getGroupedModels(activeProviderId, providerAvailableModels);
     const flattenedModels = groupedModels.flatMap((group: any) => group.models);
     const availableModels = flattenedModels.length > 0 ? flattenedModels : providerAvailableModels;
-    const bgState = (getReduxStore().getState() as StoreState).backgroundAgentSettings;
+    const defaultModel = yield* selectBgDefaultModel.effect();
+    const typeOverrides = yield* selectBgTypeOverrides.effect();
     // Map executor types to background agent setting types (e.g., 'commit-merge' → 'commit')
-    const settingsTypeMap: Record<string, string> = { 'commit-merge': 'commit' };
+    const settingsTypeMap: Record<string, BackgroundAgentType> = { 'commit-merge': 'commit' };
     const settingsType = (settingsTypeMap[executorType] || executorType) as BackgroundAgentType;
     const modelResult = getValidatedModelForType(
       settingsType,
-      bgState.defaultModel,
-      bgState.typeOverrides,
+      defaultModel,
+      typeOverrides,
       availableModels,
     );
 
