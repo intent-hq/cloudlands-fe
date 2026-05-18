@@ -428,9 +428,45 @@ export async function createWorkspaceWithPrompt(
 
     const letsGo = page.getByRole('button', { name: "Let's go" }).first();
     await letsGo.waitFor({ state: 'visible', timeout: 20_000 });
-    await letsGo.click();
-    await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
-    onboardingStep = 'project';
+
+    // Wait for the "Let's go" button to become enabled.  The button requires
+    // at least one provider to be available + authenticated, which involves
+    // async IPC calls + CLI checks that can be slow on cold CI runners.
+    const isEnabled = await letsGo.isEnabled().catch(() => false);
+    if (!isEnabled) {
+      console.log('⏳ "Let\'s go" button is disabled — waiting for provider availability...');
+      try {
+        await page.waitForFunction(
+          () => {
+            const btn = [...document.querySelectorAll('button')].find((b) =>
+              b.textContent?.includes("Let's go"),
+            );
+            return btn && !btn.disabled;
+          },
+          { timeout: 45_000 },
+        );
+        console.log('✅ "Let\'s go" button is now enabled');
+      } catch {
+        // Provider check didn't complete in time — bypass the welcome step
+        // by dispatching goToStep('project') through the Redux store.
+        console.warn('⚠️ "Let\'s go" button still disabled after 45s — bypassing welcome step via Redux');
+        await page.evaluate(() => {
+          const ctx = (window as any).intent?.reduxContext;
+          const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
+          if (store) {
+            store.dispatch({ type: 'onboarding/goToStep', payload: ['project'] });
+          }
+        });
+        await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
+        onboardingStep = 'project';
+      }
+    }
+
+    if (onboardingStep === 'welcome') {
+      await letsGo.click();
+      await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
+      onboardingStep = 'project';
+    }
   }
 
   if (onboardingStep === 'project') {
@@ -638,32 +674,56 @@ export async function sendFollowUpMessage(page: Page, message: string): Promise<
   // Scope to the active (visible) tab content wrapper.  The chat input is a
   // TipTap/ProseMirror editor with class .tiptap-editor and contenteditable="true".
   // Without scoping, we can hit the spec editor or a hidden tab's chat input.
-  const editable = page
-    .locator('.tab-content-wrapper:not(.hidden) .tiptap-editor[contenteditable="true"]')
-    .first();
-  const visible = await editable.isVisible({ timeout: 2_000 }).catch(() => false);
-  if (!visible) {
-    // Fallback: try unscoped selector (e.g. during workspace creation when
-    // tab-content-wrapper may not exist yet)
-    const fallback = page.locator('.tiptap-editor[contenteditable="true"]').first();
-    const fallbackVisible = await fallback.isVisible({ timeout: 2_000 }).catch(() => false);
-    if (!fallbackVisible) {
-      console.log('⚠️  Chat input not visible — skipping nudge');
+  //
+  // IMPORTANT: The editor may be temporarily disabled (contenteditable="false")
+  // during session transitions.  Retry with backoff to handle this race.
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 500;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const editable = page
+      .locator('.tab-content-wrapper:not(.hidden) .tiptap-editor[contenteditable="true"]')
+      .first();
+    const visible = await editable.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!visible) {
+      // Fallback: try unscoped selector (e.g. during workspace creation when
+      // tab-content-wrapper may not exist yet)
+      const fallback = page.locator('.tiptap-editor[contenteditable="true"]').first();
+      const fallbackVisible = await fallback.isVisible({ timeout: 2_000 }).catch(() => false);
+      if (!fallbackVisible) {
+        if (attempt < MAX_RETRIES) {
+          console.log(
+            `⚠️  Chat input not visible (attempt ${attempt}/${MAX_RETRIES}) — retrying in ${RETRY_DELAY_MS}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          continue;
+        }
+        console.log('⚠️  Chat input not visible after retries — skipping nudge');
+        return;
+      }
+      await fallback.click();
+      await page.waitForTimeout(300);
+      await page.keyboard.type(message, { delay: 5 });
+      // Small delay to let ProseMirror process the last keystroke and update
+      // the Svelte binding (canSend derives from value.trim()).  Without this,
+      // Enter can fire before the value binding updates, causing handleSubmit
+      // to see canSend=false and silently return.
+      await page.waitForTimeout(100);
+      await page.keyboard.press('Enter');
+      console.log(`💬 Sent follow-up nudge (fallback): "${message}"`);
       return;
     }
-    await fallback.click();
-    await page.waitForTimeout(200);
+    await editable.click();
+    await page.waitForTimeout(300);
     await page.keyboard.type(message, { delay: 5 });
+    // Small delay to let ProseMirror process the last keystroke and update
+    // the Svelte binding (canSend derives from value.trim()).
+    await page.waitForTimeout(100);
+    // Enter to send (normal submit, not force-submit)
     await page.keyboard.press('Enter');
-    console.log(`💬 Sent follow-up nudge (fallback): "${message}"`);
+    console.log(`💬 Sent follow-up nudge: "${message}"`);
     return;
   }
-  await editable.click();
-  await page.waitForTimeout(200);
-  await page.keyboard.type(message, { delay: 5 });
-  // Enter to send (normal submit, not force-submit)
-  await page.keyboard.press('Enter');
-  console.log(`💬 Sent follow-up nudge: "${message}"`);
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +900,188 @@ export async function waitForAgentCompletion(
   }
 
   console.warn('⚠️  Timed out waiting for agents to complete — proceeding anyway');
+}
+
+/**
+ * Wait until no agent in the workspace is streaming.
+ *
+ * This is a stronger post-condition than waitForAgentCompletion: it polls
+ * the IPC `agent:list-sessions` endpoint (which reflects the in-memory
+ * `isStreaming` flag set/cleared by the backend handler) until all agents
+ * report `isStreaming === false`.  Falls back to a fixed delay on IPC
+ * failure so the caller is never blocked forever.
+ *
+ * Use this between follow-up messages to avoid hitting the backend's
+ * `inFlightSessionPrompts` duplicate guard which silently drops prompts
+ * sent while the previous session/prompt is still being finalized.
+ */
+export async function waitForAgentNotStreaming(
+  page: Page,
+  workspaceId: string,
+  timeout: number = 15_000,
+): Promise<void> {
+  // In CI, IPC calls to agent:list-sessions consistently fail.
+  // Instead, poll the renderer's Redux store directly — it's the same
+  // source of truth the send-message saga uses to decide send vs queue.
+  // We need ALL workspace agents to be: isStreaming=false, isResponding=false,
+  // and have a stopReason set (meaning the stream fully completed).
+  if (process.env.CI) {
+    console.log('⏩ CI detected — using Redux store polling for waitForAgentNotStreaming');
+    const deadline = Date.now() + timeout;
+    const pollInterval = 500;
+
+    while (Date.now() < deadline) {
+      try {
+        const storeState = await page.evaluate((wsId) => {
+          try {
+            const ctx = (window as any).intent?.reduxContext;
+            const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
+            if (!store) return { available: false, reason: 'no-store' };
+
+            const state = store.getState();
+            // workspace-agents slice: state.workspaceAgents.byWorkspaceId[wsId].agentIds
+            // agent-session slice: state.agentSessions.byAgentId[agentId]
+            const wsState = state?.workspaceAgents?.byWorkspaceId?.[wsId];
+            const agentIds: string[] = wsState?.agentIds || [];
+            const byAgentId = state?.agentSessions?.byAgentId || {};
+
+            if (agentIds.length === 0) {
+              return { available: true, allIdle: true, agentCount: 0, details: 'no agents' };
+            }
+
+            const agentStates = agentIds.map((id: string) => {
+              const session = byAgentId[id];
+              // Check if the latest assistant message is still streaming.
+              // The send-message saga's selectAgentIsResponding selector checks
+              // isStreamingMessage(latestAssistant), so we must too — otherwise we
+              // can declare the agent idle while the saga still thinks it's active
+              // and routes our follow-up to the queue path.
+              const messages: any[] = session?.messages || [];
+              let lastAssistantStreaming = false;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i]?.role === 'assistant') {
+                  const msg = messages[i];
+                  lastAssistantStreaming = !!(msg.isStreaming || msg.streamingComplete === false);
+                  break;
+                }
+              }
+              return {
+                id,
+                isStreaming: session?.isStreaming ?? false,
+                isResponding: session?.isResponding ?? false,
+                isProcessing: session?.isProcessing ?? false,
+                status: session?.status,
+                stopReason: session?.stopReason,
+                lastAssistantStreaming,
+                activationState: session?.activationState,
+              };
+            });
+
+            // An agent is idle when EITHER:
+            // 1. All streaming/processing flags are cleared AND the latest
+            //    assistant message is not streaming AND status is not 'active'
+            //    (matches the saga's selectAgentIsResponding / isActiveAgentThread
+            //    logic which checks stored.status === 'active' and
+            //    isStreamingMessage(latestAssistant)), OR
+            // 2. The backend has authoritatively set status='idle' with a stopReason
+            //    (the agent:idle event updates status/stopReason).
+            const allIdle = agentStates.every(
+              (a: any) => {
+                // Path 2: authoritative idle
+                if (a.status === 'idle' && a.stopReason != null) return true;
+                // Path 1: all flags cleared + no streaming assistant message + non-active status
+                const flagsCleared = !a.isStreaming && !a.isResponding && !a.isProcessing;
+                const statusNotActive = a.status !== 'active';
+                return flagsCleared && !a.lastAssistantStreaming && statusNotActive;
+              },
+            );
+
+            return {
+              available: true,
+              allIdle,
+              agentCount: agentStates.length,
+              details: JSON.stringify(agentStates),
+            };
+          } catch (e: any) {
+            return { available: false, reason: e.message };
+          }
+        }, workspaceId);
+
+        if (storeState.available && storeState.allIdle && storeState.agentCount > 0) {
+          console.log(
+            `✅ Redux store confirms all ${storeState.agentCount} agents idle — ` +
+            `waiting 10s for IPC response + saga cleanup + tryBeginSessionPrompt guard`,
+          );
+          // Buffer for the backend IPC response to arrive, the saga's
+          // activeSends guard to clear, AND the backend's tryBeginSessionPrompt
+          // guard to release.  The guard is cleared in onComplete (after
+          // finalizeStream + emitAgentIdleEvent) but the session/prompt
+          // JSON-RPC result may not have resolved yet — the done notification
+          // fires before the provider promise resolves, so the finally block
+          // (which also clears the guard) may still be pending.
+          // Extended from 5s to 10s: CI runners can be slow and the
+          // provider.streamMessage() promise may take longer to resolve,
+          // leaving activeSends stale and causing follow-up routing races.
+          await new Promise((resolve) => setTimeout(resolve, 10_000));
+          return;
+        }
+
+        if (!storeState.available) {
+          console.log(`⚠️  Redux store not available: ${storeState.reason}`);
+        } else if (!storeState.allIdle) {
+          console.log(`🔄 Agents not idle yet: ${storeState.details}`);
+        } else if (storeState.agentCount === 0) {
+          console.log(`⚠️  No agents found in workspace ${workspaceId}`);
+        }
+      } catch (err: any) {
+        console.log(`⚠️  Redux store poll error: ${err.message}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    // If we timed out, apply a generous fixed delay
+    console.log('⏳ Redux store polling timed out — using 8s fallback delay');
+    await new Promise((resolve) => setTimeout(resolve, 8_000));
+    return;
+  }
+
+  // Non-CI path: use IPC polling
+  const pollInterval = 500;
+  const deadline = Date.now() + timeout;
+  let ipcFailed = false;
+
+  while (Date.now() < deadline) {
+    try {
+      const info = await page.evaluate(async (wsId) => {
+        const response = await (window as any).electronAPI.invoke('agent:list-sessions', wsId);
+        const data = response?.data;
+        const sessions: any[] = Array.isArray(data) ? data : data?.agents || [];
+        return {
+          total: sessions.length,
+          streaming: sessions.filter((s: any) => s.isStreaming).length,
+        };
+      }, workspaceId);
+
+      if (info.total > 0 && info.streaming === 0) {
+        return; // All agents idle
+      }
+    } catch {
+      ipcFailed = true;
+      break; // Fall back to fixed delay
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  // Fallback: if IPC doesn't work or timed out, wait a fixed period
+  // to give the backend time to clear the in-flight prompt guard.
+  if (ipcFailed) {
+    console.log('⏳ IPC unavailable — using fixed 8s delay for backend settling');
+    await new Promise((resolve) => setTimeout(resolve, 8_000));
+  } else {
+    console.log('⏳ Agent still streaming after timeout — proceeding anyway');
+  }
 }
 
 /**

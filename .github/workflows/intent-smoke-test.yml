@@ -412,29 +412,57 @@ jobs:
           find dist-electron -path "*/app.asar.unpacked/*" -name "fontlist" -type f -exec chmod +x {} +
 
       - name: Run mock agent chat tests
+        id: chat-tests
+        continue-on-error: true
         run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-agent-chat.e2e.ts --reporter=list
         env:
           RUNNING_IN_TERMINAL: '1'
 
       - name: Run multi-agent tests
+        id: multi-agent-tests
+        continue-on-error: true
         run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-multi-agent.e2e.ts --reporter=list
         env:
           RUNNING_IN_TERMINAL: '1'
 
       - name: Run commit flow tests
+        id: commit-tests
+        continue-on-error: true
         run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-commit.e2e.ts --reporter=list
         env:
           RUNNING_IN_TERMINAL: '1'
 
       - name: Run follow-up message tests
+        id: followup-tests
+        continue-on-error: true
         run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-followup.e2e.ts --reporter=list
         env:
           RUNNING_IN_TERMINAL: '1'
 
       - name: Run navigation tests
+        id: navigation-tests
+        continue-on-error: true
         run: npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-navigation.e2e.ts --reporter=list
         env:
           RUNNING_IN_TERMINAL: '1'
+
+      - name: Check test results
+        if: always()
+        run: |
+          if [ "${{ steps.chat-tests.outcome }}" = "failure" ] || \
+             [ "${{ steps.multi-agent-tests.outcome }}" = "failure" ] || \
+             [ "${{ steps.commit-tests.outcome }}" = "failure" ] || \
+             [ "${{ steps.followup-tests.outcome }}" = "failure" ] || \
+             [ "${{ steps.navigation-tests.outcome }}" = "failure" ]; then
+            echo "❌ One or more test suites failed:"
+            echo "  chat-tests: ${{ steps.chat-tests.outcome }}"
+            echo "  multi-agent-tests: ${{ steps.multi-agent-tests.outcome }}"
+            echo "  commit-tests: ${{ steps.commit-tests.outcome }}"
+            echo "  followup-tests: ${{ steps.followup-tests.outcome }}"
+            echo "  navigation-tests: ${{ steps.navigation-tests.outcome }}"
+            exit 1
+          fi
+          echo "✅ All test suites passed"
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4

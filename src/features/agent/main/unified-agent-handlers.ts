@@ -295,7 +295,11 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         workspacePath: validated.workspacePath,
         name: validated.name || generateRandomAgentName(),
         agentId: validated.agentId ? restoreAgentId(validated.agentId as string) : undefined,
-        skipInitialPrompt: true,
+        // When an initialMessage is provided, allow the backend to send it
+        // immediately (fire-and-forget). The frontend handler may not be ready
+        // yet, but the response is persisted to disk by handleSendMessage and
+        // loaded when the chat panel opens later via initializeChatSaga.
+        skipInitialPrompt: !validated.initialMessage?.trim(),
       };
       const response = await backend.createAgent(restoredRequest);
       return formatIpcSuccess(response);

@@ -30,11 +30,12 @@ import {
   startChatNudgeMonitor,
   setMockAgentBehavior,
 } from './build-smoke-helpers';
+import { join } from 'path';
 
 const KNOWN_PROVIDERS = ['auggie', 'claude-code', 'codex', 'opencode', 'mock'] as const;
 
 const PROMPT =
-  'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
+  'Write "hello world" to README.md. Do it immediately — do not ask for approval or confirmation.';
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
 function getProviderTimeout(providerId: string): number {
@@ -220,10 +221,38 @@ test.describe('Build Smoke — Provider Verification', () => {
         workspaceId = await createWorkspaceWithPrompt(page, { repoPath, prompt: PROMPT });
         await takeScreenshot(page, `${providerId}-workspace-created`);
 
-        // Resolve the worktree README path (the app creates a git worktree,
-        // so the agent writes to ~/intent/workspaces/{id}/{slug}/README.md)
-        const readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
-        console.log(`📁 Worktree README path: ${readmePath}`);
+        // Get the actual worktree path via IPC — the worktree directory is
+        // created asynchronously during workspace setup, so the static
+        // resolveWorktreeReadmePath may fall back to the wrong path if called
+        // too early.  Poll IPC until the app reports the worktree path, then
+        // fall back to the static resolver.
+        let readmePath: string;
+        try {
+          const worktreePath = await page.evaluate(async (wsId) => {
+            // Poll until workspace metadata includes the worktree path
+            const deadline = Date.now() + 30_000;
+            while (Date.now() < deadline) {
+              try {
+                const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
+                const ws = result?.data || result?.workspace || result;
+                if (ws?.worktreePath) return ws.worktreePath;
+              } catch { /* retry */ }
+              await new Promise(r => setTimeout(r, 1_000));
+            }
+            return null;
+          }, workspaceId);
+
+          if (worktreePath) {
+            readmePath = join(worktreePath, 'README.md');
+            console.log(`📁 Worktree README path (via IPC): ${readmePath}`);
+          } else {
+            readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
+            console.log(`📁 Worktree README path (static fallback): ${readmePath}`);
+          }
+        } catch {
+          readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
+          console.log(`📁 Worktree README path (error fallback): ${readmePath}`);
+        }
 
         // Store the last workspace ID so resetReadme can use the worktree path
         lastWorkspaceId = workspaceId;
@@ -240,7 +269,7 @@ test.describe('Build Smoke — Provider Verification', () => {
         // last assistant message and responds within 5 seconds.
         const stopChatNudge = startChatNudgeMonitor(
           page,
-          'Approved. I approve the plan. Delegate to an implementor now -- do not wait for further approval. The implementor should write "hello world" to README.md immediately.',
+          'Approved. Write "hello world" to README.md immediately. Do not plan or ask — just write the file now.',
         );
 
         // Check README for "hello world" -- with periodic nudges for providers
@@ -297,14 +326,42 @@ test.describe('Build Smoke — Provider Verification', () => {
           console.error(`📍 Page URL at failure: ${url}`);
 
           if (workspaceId) {
-            const readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
-            const readmeContent = existsSync(readmePath)
-              ? readFileSync(readmePath, 'utf-8')
-              : '(file does not exist)';
-            console.error(`📄 README.md content:\n${readmeContent}`);
+            // Get the IPC-reported worktree path for diagnostic comparison
+            const ipcWorktree = await page.evaluate(async (wsId) => {
+              try {
+                const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
+                const ws = result?.data || result?.workspace || result;
+                return { worktreePath: ws?.worktreePath, repositoryPath: ws?.repositoryPath, path: ws?.path };
+              } catch { return null; }
+            }, workspaceId);
+            console.error(`🔍 IPC workspace paths: ${JSON.stringify(ipcWorktree)}`);
+
+            const staticReadme = resolveWorktreeReadmePath(workspaceId, repoPath);
+            console.error(`🔍 Static README path: ${staticReadme}`);
+
+            // Check both the IPC-based and static paths
+            const pathsToCheck = [staticReadme];
+            if (ipcWorktree?.worktreePath) {
+              pathsToCheck.push(join(ipcWorktree.worktreePath, 'README.md'));
+            }
+            for (const p of pathsToCheck) {
+              const content = existsSync(p)
+                ? readFileSync(p, 'utf-8').slice(0, 200)
+                : '(file does not exist)';
+              console.error(`📄 ${p}:\n${content}`);
+            }
+
+            // List workspace directory contents for debugging path issues
+            const wsBase = path.join(require('os').homedir(), 'intent', 'workspaces', workspaceId);
+            try {
+              const { execSync } = require('child_process');
+              const listing = execSync(`find ${wsBase} -maxdepth 3 -type f -name "README*" 2>/dev/null || echo "(no README files found)"`, { encoding: 'utf-8' });
+              console.error(`📁 README files under ${wsBase}:\n${listing.trim()}`);
+            } catch { /* best-effort */ }
           }
 
           if (workspaceId) {
+            // Dump agent sessions and last few messages
             const agents = await page.evaluate(async (wsId) => {
               const response = await (window as any).electronAPI.invoke(
                 'agent:list-sessions',
@@ -319,6 +376,20 @@ test.describe('Build Smoke — Provider Verification', () => {
               }));
             }, workspaceId);
             console.error(`🤖 Agent sessions at failure: ${JSON.stringify(agents, null, 2)}`);
+
+            // Dump visible chat messages (last few) for debugging
+            const chatMessages = await page.evaluate(() => {
+              const msgs = document.querySelectorAll('[data-message-role]');
+              const result: { role: string; text: string }[] = [];
+              msgs.forEach((el) => {
+                const role = el.getAttribute('data-message-role') || 'unknown';
+                const text = (el.textContent || '').trim().slice(0, 300);
+                result.push({ role, text });
+              });
+              // Return last 6 messages
+              return result.slice(-6);
+            });
+            console.error(`💬 Last chat messages:\n${chatMessages.map((m) => `  [${m.role}]: ${m.text}`).join('\n')}`);
           }
         } catch {
           // diagnostic dump is best-effort

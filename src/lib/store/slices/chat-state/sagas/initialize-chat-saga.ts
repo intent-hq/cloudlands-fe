@@ -48,6 +48,7 @@ import { selectAgentMessages } from '../../agent-session/agent-session-selectors
 import { selectChatStateOrDefault } from '../chat-state-selectors';
 import { waitFor } from '../../store-utility/sagas/waitFor';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import { compareMessageCompleteness } from '$shared/utils/message-comparator';
 import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
 import type {
   InitializeChatOptions,
@@ -112,6 +113,13 @@ function getTextLength(blocks: ContentBlock[]): number {
       return sum;
     }, 0) || 0
   );
+}
+
+function isDiskMessageRicher(inMemory: AgentMessage, disk: AgentMessage): boolean {
+  // Use the shared comparator which checks block count *and* text length,
+  // not just text length — so tool_use/tool_result blocks and streaming
+  // metadata are properly accounted for.
+  return compareMessageCompleteness({ messages: [inMemory] }, { messages: [disk] }) === -1;
 }
 
 function showErrorToast(message: string): void {
@@ -390,21 +398,37 @@ function* handleInitializeChat(
             messages = diskSession.messages;
             session = { ...session, messages };
           } else {
-            // Check if disk has messages the frontend is missing
-            const inMemoryIds = new Set(messages.map((m) => m.id));
-            const missingFromDisk = diskSession.messages.filter((m) => !inMemoryIds.has(m.id));
-            if (missingFromDisk.length > 0) {
+            // Check if disk has messages the frontend is missing or richer copies
+            // of same-ID messages. Completed child agents can persist the final
+            // assistant response while Redux still holds an empty/stale placeholder
+            // with the same ID, so ID-only reconciliation is insufficient.
+            const inMemoryById = new Map(messages.map((m) => [m.id, m]));
+            const missingFromDisk = diskSession.messages.filter((m) => !inMemoryById.has(m.id));
+            const richerFromDisk = diskSession.messages.filter((m) => {
+              const inMemory = inMemoryById.get(m.id);
+              return inMemory ? isDiskMessageRicher(inMemory, m) : false;
+            });
+            if (missingFromDisk.length > 0 || richerFromDisk.length > 0) {
               logger.info('Merging disk messages missing from in-memory state', {
                 agentId,
                 inMemoryCount: messages.length,
                 diskCount: diskSession.messages.length,
                 missingCount: missingFromDisk.length,
+                richerCount: richerFromDisk.length,
               });
               // Use disk message order as canonical, then append any in-memory-only
               // messages (e.g., optimistic sends not yet persisted to disk)
               const diskIds = new Set(diskSession.messages.map((m) => m.id));
               const inMemoryOnly = messages.filter((m) => !diskIds.has(m.id));
-              messages = [...diskSession.messages, ...inMemoryOnly];
+              messages = [
+                ...diskSession.messages.map((diskMessage) => {
+                  const inMemory = inMemoryById.get(diskMessage.id);
+                  return inMemory && !isDiskMessageRicher(inMemory, diskMessage)
+                    ? inMemory
+                    : diskMessage;
+                }),
+                ...inMemoryOnly,
+              ];
               session = { ...session, messages };
             }
           }
@@ -474,6 +498,7 @@ function* handleInitializeChat(
 
     // Step 7b: Request backend-owned queue hydration, then dispatch chatInitialized to Redux (streaming/UI flags only)
     yield* put(hydrateAgentQueueRequested(agentId));
+
     yield* put(
       chatInitialized(agentId, {
         isStreaming: isCurrentlyStreaming,

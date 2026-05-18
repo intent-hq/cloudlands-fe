@@ -579,6 +579,61 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     expect(messageIds).toEqual(['msg-1', 'msg-2', 'msg-3']);
   });
 
+  it("uses richer same-id assistant messages from disk when Redux has stale placeholders", async () => {
+    const { initializeChatSaga } = await import("./initialize-chat-saga");
+
+    const userMsg = makeMsg("msg-1", "user", "Implement the feature");
+    const staleAssistant = makeMsg("msg-2", "assistant", "");
+    const completedAssistant = makeMsg("msg-2", "assistant", "Implementation complete. All tests pass.");
+    const existingSession = {
+      id: "agent-1",
+      workspaceId: "ws-1",
+      name: "Child Agent",
+      status: "idle",
+      isStreaming: false,
+      messages: [userMsg, staleAssistant],
+      model: "test-model",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockSelectAgentById.mockReturnValue(existingSession);
+    mockSelectAgentMessages.mockReturnValue([userMsg, staleAssistant]);
+    mockLoadSession.mockResolvedValue({
+      ...existingSession,
+      messages: [userMsg, completedAssistant],
+    });
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({
+          chatState: { byAgentId: {} },
+          agentSessions: { byAgentId: { "agent-1": existingSession } },
+          workspaceAgents: { byWorkspaceId: {} },
+        }),
+      },
+      initializeChatSaga as any,
+    );
+
+    channel.put(initializeChatRequested("agent-1", { wsId: "ws-1" }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const upsertActions = dispatched.filter((a) => a.type === "agentSessions/upsertSession");
+    const [upsertedSession] = upsertActions[upsertActions.length - 1].payload;
+    expect(upsertedSession.messages.map((m: any) => m.id)).toEqual(["msg-1", "msg-2"]);
+    expect(upsertedSession.messages[1].contentBlocks[0].text).toContain("Implementation complete");
+  });
+
   it('does NOT call disk load when actively streaming', async () => {
     const { initializeChatSaga } = await import('./initialize-chat-saga');
 

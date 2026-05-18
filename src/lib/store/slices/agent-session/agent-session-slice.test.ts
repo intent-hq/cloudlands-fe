@@ -42,6 +42,7 @@ import {
 import {
   chatSendFailed,
   chatSendStarted,
+  chatInitialized,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -1461,6 +1462,128 @@ describe('upsertSession — preserves isProcessing/isStreaming from placeholder 
 
     expect(state.byAgentId['a1'].isProcessing).toBeFalsy();
     expect(state.byAgentId['a1'].isStreaming).toBeFalsy();
+  });
+});
+
+// ===========================================================================
+// Regression: chatInitialized must not re-set isStreaming after agent:idle
+// ===========================================================================
+
+describe('chatInitialized — does not override agent:idle cleanup', () => {
+  it('does NOT re-set isStreaming=true when session is authoritatively idle', () => {
+    // Simulate the race condition:
+    // 1. chatSendStarted sets isStreaming=true
+    // 2. agent:idle event clears isStreaming and sets status='idle', stopReason='end_turn'
+    // 3. chatInitialized arrives with stale isStreaming=true from saga
+
+    // Step 1: Start streaming
+    let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+    expect(state.byAgentId['a1'].isStreaming).toBe(true);
+
+    // Step 2: agent:idle event clears streaming
+    state = agentSessionReducer(state, eventReceived('ws-1', {
+      id: 'evt-1',
+      type: 'agent:idle',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      workspaceId: 'ws-1',
+      data: {
+        agentId: 'a1',
+        status: 'idle',
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'end_turn',
+      },
+    } as any));
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].status).toBe('idle');
+    expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
+
+    // Step 3: chatInitialized arrives with stale isStreaming=true — no-op
+    state = agentSessionReducer(state, chatInitialized('a1', {
+      isStreaming: true,
+      lastAttemptedMessage: null,
+    }));
+
+    // isStreaming must remain false — chatInitialized never sets isStreaming=true
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+  });
+
+  it('chatInitialized with isStreaming=true is a no-op (does not change existing flags)', () => {
+    // chatInitialized only clears streaming, never sets it.
+    // When saga says streaming=true, the existing value is preserved unchanged.
+    const session = makeSession('a1', 'ws-1', {
+      status: 'responding',
+      isStreaming: true,
+      isProcessing: true,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(session));
+
+    state = agentSessionReducer(state, chatInitialized('a1', {
+      isStreaming: true,
+      lastAttemptedMessage: null,
+    }));
+
+    // isStreaming stays true — it was already true from chatSendStarted/upsertSession
+    expect(state.byAgentId['a1'].isStreaming).toBe(true);
+    expect(state.byAgentId['a1'].isProcessing).toBe(true);
+  });
+
+  it('chatInitialized with isStreaming=false clears streaming flags', () => {
+    // When the saga determines the agent is NOT streaming,
+    // chatInitialized propagates the clear.
+    const session = makeSession('a1', 'ws-1', {
+      status: 'idle',
+      isStreaming: true,
+      isProcessing: true,
+    });
+    let state = agentSessionReducer(initialState, upsertSession(session));
+
+    state = agentSessionReducer(state, chatInitialized('a1', {
+      isStreaming: false,
+      lastAttemptedMessage: null,
+    }));
+
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
+  });
+
+  it('upsertSession does not re-introduce isStreaming=true on authoritatively idle session', () => {
+    // Simulate: agent:idle clears flags, then saga dispatches upsertSession with stale data
+    // Step 1: Start streaming
+    let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+    expect(state.byAgentId['a1'].isStreaming).toBe(true);
+
+    // Step 2: agent:idle clears streaming
+    state = agentSessionReducer(state, eventReceived('ws-1', {
+      id: 'evt-1',
+      type: 'agent:idle',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      workspaceId: 'ws-1',
+      data: {
+        agentId: 'a1',
+        status: 'idle',
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'end_turn',
+      },
+    } as any));
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+
+    // Step 3: Saga dispatches upsertSession with stale isStreaming=true
+    const staleSession = makeSession('a1', 'ws-1', {
+      status: 'idle',
+      isStreaming: true,
+      isProcessing: true,
+      stopReason: 'end_turn',
+    });
+    state = agentSessionReducer(state, upsertSession(staleSession));
+
+    // isStreaming must remain false — upsertSession guard preserves idle cleanup
+    expect(state.byAgentId['a1'].isStreaming).toBe(false);
+    expect(state.byAgentId['a1'].isProcessing).toBe(false);
   });
 });
 

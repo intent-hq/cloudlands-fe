@@ -57,7 +57,6 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
     console.log(
       `📝 Electron logs: main=${launched.logPaths.mainProcess}, renderer=${launched.logPaths.renderer}`,
     );
-
   });
 
   test.afterAll(async () => {
@@ -207,13 +206,15 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
 
       // 3e. Wait for child agent to complete streaming
       await waitForAgentCompletion(page, workspaceId, 60_000);
+      // In CI, IPC agent polling can fail before the child finishes. The mock child agent
+      // takes ~4.5s (3s delay + 1.5s chunk delay), so wait long enough before opening it.
+      await page.waitForTimeout(6_000);
       console.log('✅ All agents completed');
 
       // 3f. Agent status indicator — both agents finished streaming.
       //     The AgentCard avatar's green dot (bg-green-500) may lag behind
       //     the chat panel's streaming state, so use a generous timeout.
-      const parentRunningDot = page
-        .locator(`[data-agent-id="${parentAgentId}"] .bg-green-500`);
+      const parentRunningDot = page.locator(`[data-agent-id="${parentAgentId}"] .bg-green-500`);
       await expect(parentRunningDot).toHaveCount(0, { timeout: 15_000 });
       console.log('✅ Parent agent avatar is not in running state');
 
@@ -254,7 +255,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
 
       await takeScreenshot(page, 'multi-agent-complete');
     } finally {
-      await archiveAndGoHome(page, workspaceId).catch(() => { });
+      await archiveAndGoHome(page, workspaceId).catch(() => {});
     }
   });
 });

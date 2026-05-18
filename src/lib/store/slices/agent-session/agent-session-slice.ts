@@ -1,5 +1,6 @@
 import { shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage } from '$shared/types';
+import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields } from '$features/events/types';
 import {
   createAction,
@@ -218,14 +219,20 @@ function canonicalSessionUpdates(fields: CanonicalAgentStatusFields): CanonicalA
   if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
   updates.stopReason = fields.stopReason;
 
-  const status = typeof fields.status === 'string' ? fields.status.toLowerCase() : undefined;
+  // When the status indicates a terminal/idle state, default streaming flags
+  // to false unless the caller explicitly provided them.
+  // Compare against both AgentStatus enum values (PascalCase) and lowercase
+  // variants from IPC events — no runtime .toLowerCase() transformation.
+  const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+    'idle', 'Idle',
+    'completed', 'Completed',
+    'failed',
+    'error',
+    'deleted',
+  ]);
   if (
     fields.isActive === false ||
-    status === 'idle' ||
-    status === 'completed' ||
-    status === 'failed' ||
-    status === 'error' ||
-    status === 'deleted'
+    (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
   ) {
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
@@ -579,6 +586,22 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       if (existing.isProcessing && finalSession.isProcessing === undefined) {
         finalSession.isProcessing = true;
       }
+
+      // Guard: if agent:idle/streamCompleted already cleared the streaming
+      // flags (existing is authoritatively idle), don't let stale incoming
+      // data from an async saga re-introduce isStreaming=true.
+      // Only chatSendStarted should transition idle→streaming.
+      // Cast to string for comparison: the typed status is AgentStatus but
+      // IPC events may set it to lowercase 'idle' via type assertion.
+      const existingStatus = existing.status as string;
+      if (
+        (existingStatus === AgentStatus.Idle || existingStatus === 'idle') &&
+        existing.stopReason &&
+        !existing.isStreaming
+      ) {
+        finalSession.isStreaming = false;
+        finalSession.isProcessing = false;
+      }
     }
 
     let next = setSession(state, agentId, finalSession);
@@ -768,13 +791,17 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   .with(chatInitialized, (state, { payload: [agentId, data] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
-    // Preserve existing isProcessing if already true and new data says not streaming.
-    // This handles the initial-agent case where setAgentStreaming(true) was dispatched
-    // during workspace init, and chatInitialized arrives before real streaming starts.
-    const isStreaming = data.isStreaming || (session.isStreaming ?? false);
-    const isProcessing = data.isStreaming || (session.isProcessing ?? false);
-    if (session.isStreaming === isStreaming && session.isProcessing === isProcessing) return state;
-    return updateSessionFields(state, agentId, { isStreaming, isProcessing });
+    // chatInitialized may only CLEAR streaming flags, never SET them.
+    // Setting isStreaming=true is chatSendStarted's responsibility.
+    // The saga captures a streaming-state snapshot that can be stale by
+    // the time chatInitialized is dispatched — if agent:idle already
+    // cleared the flags, re-introducing isStreaming=true causes the UI
+    // to think the agent is still streaming and blocks follow-up messages.
+    if (!data.isStreaming) {
+      if (!session.isStreaming && !session.isProcessing) return state;
+      return updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false });
+    }
+    return state;
   })
   .with(streamCompleted, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),

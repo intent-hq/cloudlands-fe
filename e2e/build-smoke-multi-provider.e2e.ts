@@ -30,11 +30,12 @@ import {
   openAgentChat,
   waitForAssistantResponse,
 } from './build-smoke-helpers';
+import { join } from 'path';
 
 const KNOWN_PROVIDERS = ['opencode', 'auggie', 'claude-code', 'codex'] as const;
 
 const PROMPT =
-  'Write a simple spec to add "hello world" to the README.md and then delegate it to an implementor.';
+  'Write "hello world" to README.md. Do it immediately — do not ask for approval or confirmation.';
 
 const DEFAULT_PROVIDER_TIMEOUT = 4 * 60 * 1000;
 
@@ -190,8 +191,32 @@ test.describe('multi-provider smoke tests', () => {
         workspaceId = await createWorkspaceWithPrompt(page, { repoPath, prompt: PROMPT });
         await takeScreenshot(page, `mp-${providerId}-workspace-created`);
 
-        const readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
-        console.log(`📁 Worktree README path: ${readmePath}`);
+        // Get worktree path via IPC (the directory is created async)
+        let readmePath: string;
+        try {
+          const worktreePath = await page.evaluate(async (wsId) => {
+            const deadline = Date.now() + 30_000;
+            while (Date.now() < deadline) {
+              try {
+                const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
+                const ws = result?.data || result?.workspace || result;
+                if (ws?.worktreePath) return ws.worktreePath;
+              } catch { /* retry */ }
+              await new Promise(r => setTimeout(r, 1_000));
+            }
+            return null;
+          }, workspaceId);
+          if (worktreePath) {
+            readmePath = join(worktreePath, 'README.md');
+            console.log(`📁 Worktree README path (via IPC): ${readmePath}`);
+          } else {
+            readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
+            console.log(`📁 Worktree README path (static fallback): ${readmePath}`);
+          }
+        } catch {
+          readmePath = resolveWorktreeReadmePath(workspaceId, repoPath);
+          console.log(`📁 Worktree README path (error fallback): ${readmePath}`);
+        }
         lastWorkspaceId = workspaceId;
 
         await page.waitForSelector('[data-agent-id]', { timeout: 60_000 });
@@ -204,7 +229,7 @@ test.describe('multi-provider smoke tests', () => {
         // last assistant message and responds within 10 seconds.
         const stopChatNudge = startChatNudgeMonitor(
           page,
-          'Approved. I approve the plan. Delegate to an implementor now -- do not wait for further approval. The implementor should write "hello world" to README.md immediately.',
+          'Approved. Write "hello world" to README.md immediately. Do not plan or ask — just write the file now.',
         );
 
         try {

@@ -3565,6 +3565,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // the queue gets priority over event-triggered streams.
           this.finalizeStream(request.agentId, request.workspaceId, 'complete', streamGeneration);
 
+          // CRITICAL: Clear the in-flight session prompt guard NOW, not in the
+          // finally block. The finally block only runs when handleSendMessage()
+          // returns — which requires provider.streamMessage() to fully resolve.
+          // But this onComplete callback fires BEFORE the provider promise resolves
+          // (the done notification arrives before the session/prompt result).
+          // If the renderer sees agent:idle (emitted below) and sends a follow-up
+          // before the finally block runs, tryBeginSessionPrompt() silently drops
+          // the follow-up because it still sees an in-flight prompt. Clearing
+          // here ensures the guard is open as soon as the stream is truly done.
+          if (inFlightPromptKey) {
+            this.finishSessionPrompt(request.agentId, inFlightPromptKey);
+          }
+
           // Track definitive agent outcome (backend ground truth)
           trackMain('Agent Outcome', {
             agent_id: request.agentId,
