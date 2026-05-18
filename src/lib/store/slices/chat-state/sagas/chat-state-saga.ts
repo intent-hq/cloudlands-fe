@@ -68,6 +68,7 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { sanitizeStatusEvents } from '../chat-state-serialization';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import { AgentActivationState } from '$shared/types/agent-session';
 
 const logger = createLogger('ChatStateSaga');
 
@@ -167,6 +168,19 @@ function* stateReconciliationLoop(agentId: string): SagaGenerator<void> {
     const sessionForReconcile = yield* selectAgentSession.effect(agentId);
     if (!sessionForReconcile?.isProcessing) {
       return;
+    }
+
+    // Activation guard: while the agent is still activating (pre-stream phase),
+    // the backend has no active stream yet — that's expected, not a stuck state.
+    // Skip both the safety-timeout and the threshold branches, and reset
+    // failureCount so we don't carry false positives across the activation→active boundary.
+    const isActivating =
+      sessionForReconcile.activationState === AgentActivationState.PENDING
+      || sessionForReconcile.activationState === AgentActivationState.ACTIVATING
+      || sessionForReconcile.backendSessionId == null;
+    if (isActivating) {
+      failureCount = 0;
+      continue;
     }
 
     // Get current session dynamically from agent-session slice

@@ -160,6 +160,7 @@ import {
   STATE_RECONCILIATION_INTERVAL_MS,
   type StatusEvent,
 } from "../chat-state-types";
+import { AgentActivationState } from "$shared/types/agent-session";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
@@ -284,6 +285,241 @@ describe("chat-state-saga: reconciliation loop termination (P2-4)", () => {
     );
     expect(stuckCleared.length).toBe(0);
   });
+});
+
+describe("stateReconciliationLoop activation guard (bug reproduction)", () => {
+  let originalElectronAPI: any;
+  let invokeMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    invokeMock = vi.fn(async (channel: string) => {
+      if (channel === "agent:get-active-streams") {
+        return { data: [] };
+      }
+      return { data: undefined };
+    });
+    originalElectronAPI = (window as any).electronAPI;
+    (window as any).electronAPI = { invoke: invokeMock };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    (window as any).electronAPI = originalElectronAPI;
+  });
+
+  function makeChatState(streamingStartTime: number | null) {
+    return {
+      isStreaming: false,
+      isProcessing: true,
+      isInterrupting: false,
+      error: null,
+      isStalled: false,
+      lastChunkTime: null,
+      receivedFirstChunk: false,
+      streamingStartTime,
+      lastAttemptedMessage: null,
+      modelUnavailable: null,
+      statusEvents: [],
+      trackedWorkspaceId: "ws-1",
+      isRebinding: false,
+      lastMessageTime: 0,
+      lastChunkReceivedAt: 0,
+    };
+  }
+
+  function startSaga(getState: () => any) {
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+    let chatStateSagaRef: any;
+    return import("./chat-state-saga").then(({ chatStateSaga }) => {
+      chatStateSagaRef = chatStateSaga;
+      runSaga(
+        {
+          channel,
+          dispatch: (action: any) => {
+            dispatched.push(action);
+            channel.put(action);
+          },
+          getState,
+        },
+        chatStateSagaRef,
+      );
+      return { dispatched, channel };
+    });
+  }
+
+  // ACTIVATION GUARD: chatStuckStateCleared must not fire while the agent is still activating.
+  it(
+    "does not dispatch chatStuckStateCleared while the agent is still activating (PENDING, no backendSessionId)",
+    async () => {
+      const session = {
+        id: "agent-1",
+        backendSessionId: null,
+        workspaceId: "ws-1",
+        isProcessing: true,
+        isStreaming: false,
+        isResponding: false,
+        activationState: AgentActivationState.PENDING,
+        messages: [],
+      };
+      const getState = () => ({
+        chatState: { byAgentId: { "agent-1": makeChatState(Date.now()) } },
+        agentSessions: { byAgentId: { "agent-1": session } },
+        workspaceAgents: { byWorkspaceId: {} },
+      });
+
+      const { dispatched, channel } = await startSaga(getState);
+      channel.put(chatSendStarted("agent-1", "ws-1"));
+
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+      }
+
+      const stuckCleared = dispatched.filter(
+        (a) => a.type === chatStuckStateCleared.type,
+      );
+      expect(stuckCleared.length).toBe(0);
+    },
+  );
+
+  it(
+    "does not dispatch chatStuckStateCleared while the agent is in ACTIVATING state",
+    async () => {
+      const session = {
+        id: "agent-1",
+        backendSessionId: null,
+        workspaceId: "ws-1",
+        isProcessing: true,
+        isStreaming: false,
+        isResponding: false,
+        activationState: AgentActivationState.ACTIVATING,
+        messages: [],
+      };
+      const getState = () => ({
+        chatState: { byAgentId: { "agent-1": makeChatState(Date.now()) } },
+        agentSessions: { byAgentId: { "agent-1": session } },
+        workspaceAgents: { byWorkspaceId: {} },
+      });
+
+      const { dispatched, channel } = await startSaga(getState);
+      channel.put(chatSendStarted("agent-1", "ws-1"));
+
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+      }
+
+      const stuckCleared = dispatched.filter(
+        (a) => a.type === chatStuckStateCleared.type,
+      );
+      expect(stuckCleared.length).toBe(0);
+    },
+  );
+
+  it(
+    "does not dispatch chatStuckStateCleared when backendSessionId is null even without activationState set",
+    async () => {
+      const session = {
+        id: "agent-1",
+        backendSessionId: null,
+        workspaceId: "ws-1",
+        isProcessing: true,
+        isStreaming: false,
+        isResponding: false,
+        messages: [],
+      };
+      const getState = () => ({
+        chatState: { byAgentId: { "agent-1": makeChatState(Date.now()) } },
+        agentSessions: { byAgentId: { "agent-1": session } },
+        workspaceAgents: { byWorkspaceId: {} },
+      });
+
+      const { dispatched, channel } = await startSaga(getState);
+      channel.put(chatSendStarted("agent-1", "ws-1"));
+
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+      }
+
+      const stuckCleared = dispatched.filter(
+        (a) => a.type === chatStuckStateCleared.type,
+      );
+      expect(stuckCleared.length).toBe(0);
+    },
+  );
+
+  it(
+    "still dispatches chatStuckStateCleared post-activation when there is no active stream (regression guard)",
+    async () => {
+      const session = {
+        id: "agent-1",
+        backendSessionId: "some-id",
+        workspaceId: "ws-1",
+        isProcessing: true,
+        isStreaming: false,
+        isResponding: false,
+        activationState: AgentActivationState.ACTIVE,
+        messages: [],
+      };
+      const getState = () => ({
+        chatState: { byAgentId: { "agent-1": makeChatState(Date.now()) } },
+        agentSessions: { byAgentId: { "agent-1": session } },
+        workspaceAgents: { byWorkspaceId: {} },
+      });
+
+      const { dispatched, channel } = await startSaga(getState);
+      channel.put(chatSendStarted("agent-1", "ws-1"));
+
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+      }
+
+      const stuckCleared = dispatched.filter(
+        (a) => a.type === chatStuckStateCleared.type,
+      );
+      expect(stuckCleared.length).toBeGreaterThan(0);
+    },
+  );
+
+  it(
+    "resets failureCount across the activation→active boundary so a single post-activation tick isn't enough",
+    async () => {
+      const session: any = {
+        id: "agent-1",
+        backendSessionId: null,
+        workspaceId: "ws-1",
+        isProcessing: true,
+        isStreaming: false,
+        isResponding: false,
+        activationState: AgentActivationState.PENDING,
+        messages: [],
+      };
+      const getState = () => ({
+        chatState: { byAgentId: { "agent-1": makeChatState(Date.now()) } },
+        agentSessions: { byAgentId: { "agent-1": session } },
+        workspaceAgents: { byWorkspaceId: {} },
+      });
+
+      const { dispatched, channel } = await startSaga(getState);
+      channel.put(chatSendStarted("agent-1", "ws-1"));
+
+      // One pre-activation tick — guard skips, failureCount stays 0.
+      await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+
+      // Flip the session to ACTIVE with a backendSessionId.
+      session.activationState = AgentActivationState.ACTIVE;
+      session.backendSessionId = "some-id";
+
+      // Only one post-activation tick — failureCount restarts from 0 and must
+      // not yet have reached STATE_RECONCILIATION_FAILURE_THRESHOLD.
+      await vi.advanceTimersByTimeAsync(STATE_RECONCILIATION_INTERVAL_MS + 50);
+
+      const stuckCleared = dispatched.filter(
+        (a) => a.type === chatStuckStateCleared.type,
+      );
+      expect(stuckCleared.length).toBe(0);
+    },
+  );
 });
 
 describe("chat-state-saga: per-agentId dedup (P2-5)", () => {
