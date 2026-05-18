@@ -263,6 +263,65 @@ describe('handleStreamingSafetyCheck — Task B regression', () => {
   });
 });
 
+describe('handleAgentStreamUpdate — content-hash fallback target matching', () => {
+  beforeEach(() => {
+    loadSessionMock.mockClear();
+    loadSessionMock.mockResolvedValue(null);
+  });
+
+  it('complete event matches existing message via content-hash when IDs diverge', async () => {
+    // Simulates the race: local placeholder has a UUID id, streaming flag already
+    // cleared, but the content matches the complete event's payload.
+    const existingMessage: AgentMessage = {
+      id: 'local-uuid-placeholder',
+      appMessageId: 'app_local',
+      role: 'assistant',
+      timestamp: '2026-05-08T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello world' }],
+      isStreaming: false,
+      streamingComplete: false,
+    } as AgentMessage;
+    const session: AgentSession = {
+      id: 'agent-content-hash',
+      name: 'Agent',
+      workspaceId: 'ws-A' as any,
+      messages: [existingMessage],
+      isStreaming: false,
+    } as AgentSession;
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => makeState(session, 'ws-A') },
+      handleAgentStreamUpdate,
+      agentStreamUpdateReceived({
+        workspaceId: 'ws-A',
+        agentId: 'agent-content-hash',
+        handlerSessionId: 'agent-content-hash',
+        source: 'restored',
+        eventType: 'complete',
+        assistantMessageId: 'msg_canonical',
+        assistantAppMessageId: 'app_canonical',
+        contentBlocks: [{ type: 'text', text: 'Hello world' }],
+        completeMessage: {
+          id: 'msg_canonical',
+          role: 'assistant',
+          appMessageId: 'app_canonical',
+          timestamp: '2026-05-08T00:00:01.000Z',
+          contentBlocks: [{ type: 'text', text: 'Hello world' }],
+        },
+      }),
+    ).toPromise();
+
+    // Should complete via the content-hash match — no disk refresh needed
+    expect(loadSessionMock).not.toHaveBeenCalled();
+    // The message list should be replaced (id changed from placeholder to canonical)
+    const replaceActions = dispatched.filter((a) => a.type === replaceMessages.type);
+    expect(replaceActions).toHaveLength(1);
+    // Streaming should be cleared
+    expect(dispatched.some((a) => a.type === setAgentStreaming.type && a.payload[1] === false)).toBe(true);
+  });
+});
+
 describe('handleAgentStreamUpdate — saga-owned missing target reconciliation', () => {
   beforeEach(() => {
     loadSessionMock.mockClear();

@@ -155,7 +155,28 @@ function findAssistantUpdateTarget(
   );
   if (appMessageIdMatch) return appMessageIdMatch;
 
-  return assistantMessages.find((message) => message.isStreaming === true);
+  const streamingMatch = assistantMessages.find((message) => message.isStreaming === true);
+  if (streamingMatch) return streamingMatch;
+
+  // Content-hash fallback: when IDs diverge (local placeholder vs canonical msg_*)
+  // and the streaming flag was already cleared, match by content + timestamp so the
+  // complete event can land on the right message instead of triggering the full
+  // refresh-and-fallback path.
+  if (payload.eventType === 'complete' && completeMessage) {
+    const incomingHash = computeMessageContentHash({
+      role: 'assistant',
+      contentBlocks: getPayloadContentBlocks(payload),
+    } as AgentMessage);
+    if (incomingHash) {
+      const contentMatch = assistantMessages.find((message) => {
+        if (computeMessageContentHash(message) !== incomingHash) return false;
+        return isTimestampClose(message.timestamp, completeMessage.timestamp);
+      });
+      if (contentMatch) return contentMatch;
+    }
+  }
+
+  return undefined;
 }
 
 function getPayloadContentBlocks(payload: AgentStreamUpdatePayload): ContentBlock[] | undefined {
