@@ -146,7 +146,7 @@ export function* discoverPRsForBranch(
           repo: workspace.repositoryName,
           options: {
             state: "open",
-            per_page: 100,
+            per_page: 30,
           },
           force,
         });

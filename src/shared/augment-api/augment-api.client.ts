@@ -991,6 +991,20 @@ export class AugmentApiClient {
       per_page?: number;
     },
   ): Promise<GithubPullRequest[]> {
+    // Cap per_page to keep responses below the github-api tool's ~256KB
+    // truncation threshold. With details:true each PR runs ~4–5KB, so 30
+    // gives us headroom while still returning the fields the PR list UI
+    // needs (head_ref, base_ref, head_sha, merged, draft, counts).
+    const PR_LIST_PAGE_SIZE_CAP = 30;
+    let effectivePerPage = options?.per_page;
+    if (effectivePerPage !== undefined && effectivePerPage > PR_LIST_PAGE_SIZE_CAP) {
+      logger.debug('Clamping listGitHubPullRequests per_page to cap', {
+        requested: effectivePerPage,
+        cap: PR_LIST_PAGE_SIZE_CAP,
+      });
+      effectivePerPage = PR_LIST_PAGE_SIZE_CAP;
+    }
+
     // Build query params for GitHub API
     const params = new URLSearchParams();
     if (options?.state) params.set('state', options.state);
@@ -998,7 +1012,7 @@ export class AugmentApiClient {
     if (options?.base) params.set('base', options.base);
     if (options?.sort) params.set('sort', options.sort);
     if (options?.direction) params.set('direction', options.direction);
-    if (options?.per_page) params.set('per_page', options.per_page.toString());
+    if (effectivePerPage) params.set('per_page', effectivePerPage.toString());
 
     const queryString = params.toString();
     const path = `/repos/${owner}/${repo}/pulls${queryString ? `?${queryString}` : ''}`;
