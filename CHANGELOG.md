@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.12
+
+- Notes now have a raw view toggle so you can see and edit the underlying Markdown source.
+- Panel search bars have been consolidated into a single, consistent UI across chat, notes, and other panels.
+- If your configured default provider isn't installed, Intent now auto-selects an available one instead of leaving you stuck.
+- Upgraded to Electron 41 for security and performance improvements.
+- Fixes: embedded browser no longer reloads the page during in-app navigation on single-page sites, duplicate or missing assistant messages when agents reconnect or activate, follow-up messages occasionally getting dropped right after an agent finished streaming, and a timeout edge case in the auto-commit message generator.
+
 ## 0.3.11
 
 - New "Open in…" toggles in workspace settings let you hide editors you don't use from the Open In menu and combo button.
