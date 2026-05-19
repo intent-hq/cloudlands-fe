@@ -92,6 +92,7 @@ export function* handleLoadEventsRequested(action: ReturnType<typeof loadEventsR
   try {
     const result: EventsQueryResponse = yield* call(invoke<EventsQueryResponse>, 'events:query', {
       workspaceId,
+      filters: [],
       limit: 100,
     });
 
