@@ -4,12 +4,11 @@
   onDestroy,
   type Snippet,
 } from 'svelte';
-  import { init } from '../init';
+  import { initAppStore } from '../init';
   import { type PreloadedStoreState } from '../types';
   import { STORE_CONTEXT } from '../constants';
   import { getStoreContext } from '../utils/svelte-context';
-  import { sagaNames } from '../sagas';
-  import { runSaga } from './run-saga';
+  import { startAllAppSagas } from '../store';
 
   export function initStore(initialState?: PreloadedStoreState): () => void {
     const existingStoreContext = getStoreContext();
@@ -17,10 +16,10 @@
       return () => {};
     }
 
-    const storeContext = init(initialState);
+    const storeContext = initAppStore(initialState);
 
-    // Start all registered sagas synchronously to avoid race conditions
-    const stopHandlers = sagaNames.map((name) => runSaga(storeContext.store, name));
+    // Start all registered app sagas through the configured package Store API.
+    const stopHandlers = startAllAppSagas();
 
     setContext(STORE_CONTEXT, storeContext);
 

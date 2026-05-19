@@ -1,18 +1,11 @@
 import type { SagaName } from '../types';
-import {
-  startSaga,
-  stopSaga,
-} from '../slices/saga-manager/saga-manager-slice';
-import type { ReduxStore } from '../types';
+import { appStore } from '../store';
 
 /**
- * Start a saga by dispatching startSaga and return a cleanup function that dispatches stopSaga.
- * Used by both initStore (to start all sagas synchronously) and RunSaga.svelte.
+ * Start a saga through the configured package Store and return its cleanup function.
+ * Used by RunSaga.svelte for mount-scoped saga lifetimes.
  */
-export function runSaga(store: ReduxStore, sagaName: SagaName): () => void {
-  store.dispatch(startSaga(sagaName));
-  return () => {
-    store.dispatch(stopSaga(sagaName));
-  };
+export function runSaga(sagaName: SagaName): () => void {
+  return appStore.runSaga(sagaName);
 }
 
