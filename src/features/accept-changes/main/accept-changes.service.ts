@@ -970,12 +970,16 @@ export class AcceptChangesService {
               });
               // Clear the stale PR association from workspace
               try {
+                const updatedPullRequests = (workspace.pullRequests || []).filter(
+                  (p) => p.number !== storedPRNumber,
+                );
                 const clearedWorkspace = {
                   ...workspace,
                   prNumber: undefined,
                   prUrl: undefined,
                   prStatus: undefined,
                   activePullRequest: undefined,
+                  pullRequests: updatedPullRequests,
                   updatedAt: new Date().toISOString(),
                 };
                 await this.workspaceRepository.save(clearedWorkspace);
@@ -987,6 +991,7 @@ export class AcceptChangesService {
                     prNumber: undefined,
                     prUrl: undefined,
                     prStatus: undefined,
+                    pullRequests: updatedPullRequests,
                   },
                 }));
               } catch (clearError) {

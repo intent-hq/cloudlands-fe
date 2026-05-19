@@ -53,6 +53,9 @@ vi.mock("typed-redux-saga", () => ({
   getContext: function* (key: string) {
     return yield sagaEffects.getContext(key);
   },
+  setContext: function* (props: any) {
+    return yield sagaEffects.setContext(props);
+  },
 }));
 
 vi.mock("$lib/electron-bridge", () => ({
@@ -89,9 +92,14 @@ import {
 } from "../pr-status-slice";
 import { selectPRStatusLastRefreshTime } from "../pr-status-selectors";
 import { selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
+import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
 import { init } from "$lib/store/init";
 import { invoke } from "$lib/electron-bridge";
 import { discoverPRsForBranch } from "./pr-status-saga";
+import {
+  PullRequestStatus,
+  type PullRequestInfo,
+} from "$shared/types";
 
 // Access the handleRefreshPRStatus handler through the module
 // We'll test via the saga's takeLatest behavior
@@ -108,6 +116,21 @@ const mockWorkspace = {
   activePullRequest: null,
   baseRef: "main",
 };
+
+const timestamp = "2026-01-01T00:00:00.000Z";
+
+function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+  return {
+    id: "42",
+    number: 42,
+    url: "https://example.com/pull/42",
+    title: "Test PR",
+    status: PullRequestStatus.Open,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...overrides,
+  };
+}
 
 describe("PR Status Saga", () => {
   const FIXED_NOW = 1000000;
@@ -164,6 +187,42 @@ describe("PR Status Saga", () => {
         ])
         .dispatch(refreshPRStatusRequested("ws-1", true, false))
         .put(prStatusRefreshCompleted("ws-1", false, "Missing repository info"))
+        .silentRun(100);
+    });
+
+    it("dispatches activePullRequest null when a tracked PR refreshes as merged", async () => {
+      const { storeState } = init();
+      const { prStatusSaga } = await import("./pr-status-saga");
+      const openPR = makePR({ status: PullRequestStatus.Open });
+      const mergedPR = makePR({
+        status: PullRequestStatus.Merged,
+        mergedAt: "2026-01-02T00:00:00.000Z",
+      });
+      const workspace = {
+        ...mockWorkspace,
+        prNumber: openPR.number,
+        prStatus: PullRequestStatus.Open,
+        prUrl: openPR.url,
+        pullRequests: [openPR],
+        activePullRequest: openPR,
+      };
+
+      await expectSaga(prStatusSaga)
+        .provide([
+          [matchers.getContext("readableStoreState"), storeState],
+          [matchers.select.selector(selectPRStatusLastRefreshTime.select), null],
+          [matchers.select.selector(selectWorkspaceById.select), workspace],
+          [matchers.call.fn(discoverPRsForBranch), { success: true, prs: [mergedPR] }],
+          [matchers.call.fn(invoke), { success: true, data: mergedPR }],
+        ])
+        .dispatch(refreshPRStatusRequested("ws-1", true, false))
+        .put(updateWorkspaceEntity("ws-1", {
+          prStatus: PullRequestStatus.Merged,
+          prNumber: mergedPR.number,
+          prUrl: mergedPR.url,
+          activePullRequest: null,
+          pullRequests: [mergedPR],
+        }))
         .silentRun(100);
     });
   });

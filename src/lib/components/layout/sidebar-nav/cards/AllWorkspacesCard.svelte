@@ -109,6 +109,7 @@
     const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), ws.id);
     const hasMergedPR =
       ws.prStatus === PullRequestStatus.Merged ||
+      activePR?.status === PullRequestStatus.Merged ||
       pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
     if (hasMergedPR) return 'pr_merged';
     const hasOpenPR =
@@ -117,7 +118,8 @@
       pullRequests.some(
         (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
       ) ||
-      activePR != null;
+      activePR?.status === PullRequestStatus.Open ||
+      activePR?.status === PullRequestStatus.Draft;
     if (hasOpenPR) {
       if (activePR && activePR.status === PullRequestStatus.Open) {
         if (checkPRMergeable(activePR)) return 'pr_ready';

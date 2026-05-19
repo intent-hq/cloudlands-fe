@@ -18,7 +18,10 @@ import {
 } from 'vitest';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
-import { WorkspaceStatus } from '$shared/types';
+import {
+  PullRequestStatus,
+  WorkspaceStatus,
+} from '$shared/types';
 
 // Mock dependencies before importing the service
 const mockExecAsync = vi.fn();
@@ -38,9 +41,11 @@ vi.mock('fs/promises', () => ({
 }));
 
 const mockFindById = vi.fn();
+const mockSave = vi.fn();
 vi.mock('../../workspace/main/workspace.repository', () => ({
   FileSystemWorkspaceRepository: class {
     findById = (...args: any[]) => mockFindById(...args);
+    save = (...args: any[]) => mockSave(...args);
   },
 }));
 
@@ -634,6 +639,65 @@ describe('AcceptChangesService.execute - PR operation completion', () => {
     expect(mockCompleteOperation).toHaveBeenCalledWith('pr-op-id', {
       prNumber: 55,
       prUrl: 'https://github.com/testowner/testrepo/pull/55',
+    });
+  });
+
+  it('clears stale stored PR from pullRequests when source branch mismatches workspace branch', async () => {
+    const stalePR = {
+      id: '99',
+      number: 99,
+      url: 'https://github.com/testowner/testrepo/pull/99',
+      title: 'Stale PR',
+      status: PullRequestStatus.Open,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    };
+    const otherPR = {
+      ...stalePR,
+      id: '100',
+      number: 100,
+      url: 'https://github.com/testowner/testrepo/pull/100',
+    };
+    mockFindById.mockResolvedValue({
+      ...testWorkspace,
+      prNumber: stalePR.number,
+      prUrl: stalePR.url,
+      prStatus: PullRequestStatus.Open,
+      activePullRequest: stalePR,
+      pullRequests: [stalePR, otherPR],
+    });
+    mockGetPullRequests.mockResolvedValue([]);
+    mockGetPullRequest.mockResolvedValue({
+      number: stalePR.number,
+      url: stalePR.url,
+      htmlUrl: stalePR.url,
+      title: stalePR.title,
+      state: 'open',
+      sourceBranch: 'other-branch',
+    });
+    mockSave.mockResolvedValue(undefined);
+
+    await service.getWorkspaceGitStatus(workspaceId);
+
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
+      pullRequests: [otherPR],
+      prNumber: undefined,
+      prUrl: undefined,
+      prStatus: undefined,
+      activePullRequest: undefined,
+    }));
+    expect(mockMainDispatch).toHaveBeenCalledWith({
+      type: 'workspaceUpdated',
+      payload: [{
+        workspaceId,
+        changes: {
+          activePullRequest: undefined,
+          prNumber: undefined,
+          prUrl: undefined,
+          prStatus: undefined,
+          pullRequests: [otherPR],
+        },
+      }],
     });
   });
 });

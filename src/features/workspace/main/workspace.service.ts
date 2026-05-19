@@ -152,6 +152,10 @@ type BackgroundEnrichmentWorkspaceUpdates = Partial<
     | 'repositoryOwner'
     | 'repositoryName'
     | 'activePullRequest'
+    | 'prStatus'
+    | 'prNumber'
+    | 'prUrl'
+    | 'pullRequests'
     | 'diffSummary'
     | 'agentSummary'
     | 'taskStats'
@@ -2744,21 +2748,26 @@ task:
                     workspaceBranch: updatedWorkspace.branch,
                   },
                 );
+                const updatedPullRequests = (updatedWorkspace.pullRequests || []).filter(
+                  (p) => p.number !== pr.number,
+                );
                 updatedWorkspace = {
                   ...updatedWorkspace,
                   prNumber: undefined,
                   prUrl: undefined,
                   prStatus: undefined,
                   activePullRequest: undefined,
-                  pullRequests: (updatedWorkspace.pullRequests || []).filter(
-                    (p) => p.number !== pr.number,
-                  ),
+                  pullRequests: updatedPullRequests,
                 };
                 updated = true;
                 await this.saveWorkspace(updatedWorkspace);
                 await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
                   ...rendererUpdates,
                   activePullRequest: undefined,
+                  prNumber: undefined,
+                  prUrl: undefined,
+                  prStatus: undefined,
+                  pullRequests: updatedPullRequests,
                 });
                 return;
               }
@@ -2834,6 +2843,12 @@ task:
             }
 
             rendererUpdates.activePullRequest = enrichedPR;
+            if (enrichedPR.status !== pr.status) {
+              rendererUpdates.prStatus = enrichedPR.status;
+            }
+            if (updatedWorkspace.pullRequests) {
+              rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
+            }
             updated = true;
             logger.debug('Enriched PR status for workspace', {
               workspaceId,
@@ -2999,15 +3014,25 @@ task:
               },
             );
             // Clear the stale PR association
+            const updatedPullRequests = (workspace.pullRequests || []).filter(
+              (p) => p.number !== pr.number,
+            );
             const clearedWorkspace = {
               ...workspace,
               prNumber: undefined,
               prUrl: undefined,
               prStatus: undefined,
               activePullRequest: undefined,
-              pullRequests: (workspace.pullRequests || []).filter((p) => p.number !== pr.number),
+              pullRequests: updatedPullRequests,
             };
             await this.saveWorkspace(clearedWorkspace);
+            await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
+              activePullRequest: undefined,
+              prNumber: undefined,
+              prUrl: undefined,
+              prStatus: undefined,
+              pullRequests: updatedPullRequests,
+            });
             return;
           }
 
@@ -3076,9 +3101,23 @@ task:
         await this.saveWorkspace(updatedWorkspace);
 
         // Broadcast to renderer windows using the same format as background enrichment
-        await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
+        const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
           activePullRequest: enrichedPR,
-        });
+        };
+        if (enrichedPR.status !== pr.status) {
+          rendererUpdates.prStatus = enrichedPR.status;
+        }
+        if (updatedWorkspace.prNumber !== workspace.prNumber) {
+          rendererUpdates.prNumber = updatedWorkspace.prNumber;
+        }
+        if (updatedWorkspace.prUrl !== workspace.prUrl) {
+          rendererUpdates.prUrl = updatedWorkspace.prUrl;
+        }
+        if (updatedWorkspace.pullRequests) {
+          rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
+        }
+
+        await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
 
         logger.info('Periodic PR refresh: updated workspace', {
           workspaceId,

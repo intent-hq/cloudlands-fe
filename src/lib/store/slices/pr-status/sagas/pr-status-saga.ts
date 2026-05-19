@@ -292,6 +292,7 @@ function* handleRefreshPRStatus(action: ReturnType<typeof refreshPRStatusRequest
     const prStatus = legacyPR?.status ?? null;
     const prNumber = legacyPR?.number ?? null;
     const prUrl = legacyPR?.url ?? null;
+    const sanitizedActivePR = newActivePR === null ? null : sanitizeForIpc(newActivePR);
 
     // Step 5: Update workspace via IPC
     yield* call(invoke, "workspace:update", {
@@ -299,7 +300,7 @@ function* handleRefreshPRStatus(action: ReturnType<typeof refreshPRStatusRequest
       prStatus,
       prNumber,
       prUrl,
-      activePullRequest: sanitizeForIpc(newActivePR),
+      activePullRequest: sanitizedActivePR,
       pullRequests: sanitizeForIpc(mergedPRs),
     });
 
@@ -308,7 +309,7 @@ function* handleRefreshPRStatus(action: ReturnType<typeof refreshPRStatusRequest
       prStatus: prStatus ?? undefined,
       prNumber: prNumber ?? undefined,
       prUrl: prUrl ?? undefined,
-      activePullRequest: sanitizeForIpc(newActivePR) ?? undefined,
+      activePullRequest: sanitizedActivePR,
       pullRequests: sanitizeForIpc(mergedPRs),
     }));
 

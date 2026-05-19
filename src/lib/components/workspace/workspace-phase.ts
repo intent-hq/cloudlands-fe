@@ -76,14 +76,17 @@ export function deriveWorkspacePhase(
   const prs = workspace.pullRequests || [];
   const active = opts?.hasActiveAgents ?? false;
   const specCreating = opts?.isAgentCreatingSpec ?? false;
+  const activePRStatus = workspace.activePullRequest?.status;
   const hasMerged =
     workspace.prStatus === PullRequestStatus.Merged ||
+    activePRStatus === PullRequestStatus.Merged ||
     prs.some((p) => p.status === PullRequestStatus.Merged);
   const hasOpen =
     workspace.prStatus === PullRequestStatus.Open ||
     workspace.prStatus === PullRequestStatus.Draft ||
     prs.some((p) => p.status === PullRequestStatus.Open || p.status === PullRequestStatus.Draft) ||
-    !!workspace.activePullRequest;
+    activePRStatus === PullRequestStatus.Open ||
+    activePRStatus === PullRequestStatus.Draft;
   const t = workspace.taskStats?.total ?? 0;
   const c = workspace.taskStats?.completed ?? 0;
   const ip = workspace.taskStats?.inProgress ?? 0;
@@ -148,16 +151,20 @@ export function deriveWorkspaceStats(ws: Workspace): WorkspacePhaseStats {
   const t = ws.taskStats?.total ?? 0;
   const c = ws.taskStats?.completed ?? 0;
   const ip = ws.taskStats?.inProgress ?? 0;
+  const activePRStatus = ws.activePullRequest?.status;
   const hasMerged =
     ws.prStatus === PullRequestStatus.Merged ||
+    activePRStatus === PullRequestStatus.Merged ||
     prs.some((p) => p.status === PullRequestStatus.Merged);
   const hasOpen =
     ws.prStatus === PullRequestStatus.Open ||
     ws.prStatus === PullRequestStatus.Draft ||
     prs.some((p) => p.status === PullRequestStatus.Open || p.status === PullRequestStatus.Draft) ||
-    !!ws.activePullRequest;
+    activePRStatus === PullRequestStatus.Open ||
+    activePRStatus === PullRequestStatus.Draft;
   const hasClosed =
     ws.prStatus === PullRequestStatus.Closed ||
+    activePRStatus === PullRequestStatus.Closed ||
     prs.some((p) => p.status === PullRequestStatus.Closed);
   const activePR =
     prs.find(

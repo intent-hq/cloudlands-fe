@@ -234,7 +234,7 @@ export interface Workspace {
   prNumber?: number;
   prStatus?: PullRequestStatus;
   pullRequests?: PullRequestInfo[];
-  activePullRequest?: PullRequestInfo;
+  activePullRequest?: PullRequestInfo | null;
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
