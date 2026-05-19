@@ -1,14 +1,20 @@
 ---
 name: redux-store
 description: >-
-  Use for Redux/state work: slices, reducers, selectors, sagas, collections,
-  IPC/listeners, component integration, shared state, store migration,
-  persistence, tests, selector/getDispatch bugs.
+  DEPRECATED legacy Redux/store guidance. Historical reference only; for new
+  Redux/Svelte state work use the svelte-redux-toolkit skill set instead.
 ---
 
-# Redux Store Skill
+# Redux Store Skill (Deprecated)
 
-Use for app state tasks. Before coding, read `resources/index.md`.
+> **Deprecated:** This legacy skill is retained for historical reference only.
+> Future agents should use the `svelte-redux-toolkit` skill set for new
+> Redux/Svelte state work, including slices, selectors, sagas, component wiring,
+> migration touchpoints, tests, and selector/getDispatch guidance.
+
+Legacy guidance remains below. If you are consulting it for context, first read
+`resources/index.md`, then prefer the current `svelte-redux-toolkit` skills for
+implementation decisions.
 
 Critical rules:
 - Custom Redux only; never use RTK (`createSlice`, `configureStore`, `createAsyncThunk`).
