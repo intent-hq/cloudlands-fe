@@ -102,7 +102,7 @@ const ALLOWED_ATTRIBUTES = {
     'data-anchor-id',
     'data-anchor-type',
   ],
-  div: ['data-comment-anchor', 'data-comment-id', 'data-mermaid-code', 'data-type'],
+  div: ['data-comment-anchor', 'data-comment-id', 'data-mermaid-code', 'data-diff-code', 'data-type'],
   // Task list attributes
   li: ['data-type', 'data-checked'],
   ul: ['data-type'],
@@ -212,6 +212,7 @@ export function sanitizeMarkdownHTML(html: string): string {
       'data-anchor-type', // Comment anchor attributes
       'data-comment-anchor', // Div attributes
       'data-mermaid-code', // Mermaid diagram code
+      'data-diff-code', // Diff block code
       'data-type',
       'data-checked',
       'data-status',

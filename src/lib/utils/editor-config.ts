@@ -35,6 +35,7 @@ import {
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 import { dispatchWindowEvent } from './window-events';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
+import { DiffBlock } from '$lib/components/tiptap/DiffBlock';
 import { safeLowlight } from './safe-lowlight';
 import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
@@ -358,6 +359,9 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         // Mermaid diagram block extension - must be BEFORE CodeBlockLowlight
         // so it can intercept mermaid code blocks during parsing
         MermaidBlock,
+        // Diff block extension - must be BEFORE CodeBlockLowlight
+        // so it can intercept diff code blocks during parsing
+        DiffBlock,
         CodeBlockLowlight.configure({
           lowlight,
           HTMLAttributes: {

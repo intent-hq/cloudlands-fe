@@ -5,7 +5,9 @@
 } from 'marked';
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
+  import { DiffViewer } from '$lib/components/ui/diff';
   import { createLogger } from '$lib/utils/client-logger';
+  import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
@@ -25,7 +27,7 @@
 
 
   interface RenderedBlock {
-    type: 'html' | 'code' | 'augment-snippet' | 'mermaid';
+    type: 'html' | 'code' | 'augment-snippet' | 'mermaid' | 'diff';
     content: string;
     language?: string;
     id?: string;
@@ -47,6 +49,17 @@
       if (lang === 'mermaid') {
         const codeBlock: RenderedBlock = {
           type: 'mermaid',
+          content: text,
+          id,
+        };
+        codeBlocksMap.set(id, codeBlock);
+        return `<div data-code-block="${id}"></div>`;
+      }
+
+      // Check if this is a diff block
+      if (lang === 'diff') {
+        const codeBlock: RenderedBlock = {
+          type: 'diff',
           content: text,
           id,
         };
@@ -267,6 +280,8 @@
       {#await MermaidRenderer then module}
         <module.default code={block.content} />
       {/await}
+    {:else if block.type === 'diff'}
+      <DiffViewer patch={withSyntheticDiffHeaders(block.content)} fileName="diff.patch" showHeader={false} />
     {:else if block.type === 'code'}
       <CodeBlock code={block.content} language={block.language || 'plaintext'} />
     {:else}

@@ -61,6 +61,12 @@ export const createTiptapTaskListMarked = () => {
           return `<div data-type="mermaid-block" data-mermaid-code="${base64Code}"></div>\n`;
         }
 
+        if (token.lang === 'diff') {
+          const rawCode = token.text || '';
+          const base64Code = btoa(unescape(encodeURIComponent(rawCode)));
+          return `<div data-type="diff-block" data-diff-code="${base64Code}"></div>\n`;
+        }
+
         // Generate proper <pre><code> tags for other code blocks
         // IMPORTANT: Escape HTML entities to prevent code from being interpreted as HTML
         const lang = token.lang || '';

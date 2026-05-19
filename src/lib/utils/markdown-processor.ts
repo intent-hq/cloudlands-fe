@@ -6,6 +6,7 @@ import { sanitizeMarkdownHTML } from './html-sanitizer';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
+import { decodeDiffContent } from './diff-patch-utils';
 
 const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
@@ -1592,6 +1593,11 @@ export function processHTMLToMarkdown(
         // If decode fails, use as-is
       }
       return `\`\`\`mermaid\n${decodedCode}\n\`\`\`\n\n`;
+    } else if (el.tagName === 'DIV' && el.getAttribute('data-type') === 'diff-block') {
+      // Handle diff blocks - convert back to markdown diff code block
+      const diffCode = el.getAttribute('data-diff-code') || '';
+      const decodedCode = decodeDiffContent(diffCode);
+      return `\`\`\`diff\n${decodedCode}\n\`\`\`\n\n`;
     } else if (el.tagName === 'DIV' && el.hasAttribute('data-primitive-type')) {
       // Handle ws-block primitives from markdown processing - convert back to markdown ws-block format
       const primitiveDataAttr = el.getAttribute('data-primitive');

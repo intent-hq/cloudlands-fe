@@ -36,6 +36,12 @@
   max-width: calc(100cqw - 2 * var(--breakout-padding));
 }
 
+/* Code blocks: don't expand beyond prose column width — keeps them
+   visually aligned with surrounding text at wide viewports. */
+.tiptap-editor.ProseMirror > pre {
+  width: 100%;
+}
+
 /* Table wrapper: scroll container so wide tables scroll within the breakout area */
 .tiptap-editor.ProseMirror > .tableWrapper {
   overflow-x: auto;
