@@ -17,19 +17,29 @@ import {
   type AgentSession,
 } from '$shared/types';
 
-let currentState: any;
+const { stateRef, listeners, appStoreMock } = vi.hoisted(() => {
+  const stateRef = { current: { agentSessions: { byAgentId: {} } } as any };
+  const listeners = new Set<() => void>();
+  const appStoreMock = {
+    dispatch: vi.fn(),
+    get state() {
+      return stateRef.current;
+    },
+    getReadableState: vi.fn(() => ({
+      subscribe: vi.fn((listener: () => void) => {
+        listeners.add(listener);
+        listener();
+        return () => listeners.delete(listener);
+      }),
+    })),
+  };
 
-const { getReduxStoreMock } = vi.hoisted(() => ({
-  getReduxStoreMock: vi.fn(),
-}));
+  return { stateRef, listeners, appStoreMock };
+});
 
-const fakeStore = {
-  getState: () => currentState,
-  subscribe: vi.fn(() => vi.fn()),
-};
-
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: getReduxStoreMock,
+vi.mock('$lib/store/store', () => ({
+  appStore: appStoreMock,
+  store: appStoreMock,
 }));
 
 vi.mock('$features/agent/services/agent-factory', () => ({
@@ -76,7 +86,7 @@ function makeMessageSimple(text: string): AgentMessage {
 }
 
 function setAgentState(status: AgentStatus, messages: AgentMessage[] = []): void {
-  currentState = {
+  stateRef.current = {
     agentSessions: {
       byAgentId: {
         [agentId]: {
@@ -135,21 +145,14 @@ function makeStoreState(session: ReturnType<typeof makeSession>): StoreState {
 
 function createStoreHarness(initialSession: ReturnType<typeof makeSession>) {
   let state = makeStoreState(initialSession);
-  const listeners = new Set<() => void>();
-  const store = {
-    getState: vi.fn(() => state),
-    subscribe: vi.fn((listener: () => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    }),
-  };
-
-  getReduxStoreMock.mockReturnValue(store);
+  stateRef.current = state;
+  listeners.clear();
 
   return {
     listeners,
     setSession(session: ReturnType<typeof makeSession>) {
       state = makeStoreState(session);
+      stateRef.current = state;
       for (const listener of [...listeners]) listener();
     },
   };
@@ -179,8 +182,8 @@ function collectChannelEvents(channel: EventChannel<AgentStateEvent>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  currentState = { agentSessions: { byAgentId: {} } };
-  getReduxStoreMock.mockReturnValue(fakeStore);
+  listeners.clear();
+  stateRef.current = { agentSessions: { byAgentId: {} } };
 });
 
 describe('EXECUTOR_CONFIGS', () => {
@@ -211,7 +214,7 @@ describe('createAgentStateChannel (initial snapshot)', () => {
 
 describe('createAgentStateChannel', () => {
   beforeEach(() => {
-    getReduxStoreMock.mockReset();
+    listeners.clear();
   });
 
   afterEach(() => {

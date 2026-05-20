@@ -12,13 +12,13 @@ import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   selectSpecialists,
   selectSpecialistById,
 } from '$lib/store/slices/specialists/specialists-selectors';
 import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
+import { store as appStore } from '$lib/store/store';
 
 // Cache for workspace repo paths to avoid repeated IPC calls
 const workspaceRepoPathCache = new Map<string, string>();
@@ -628,9 +628,8 @@ export class TerminalProvider implements Provider {
     try {
       const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
       const { selectTerminals, selectTerminalDisplayName } = await import('$lib/store/slices/terminals/terminals-selectors');
-      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-      const store = getReduxStore();
-      const state = store.getState();
+      const store = appStore;
+      const state = store.state;
 
       if (!context.workspaceId) {
         return [];
@@ -707,14 +706,13 @@ export class ScriptProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
       const { selectScriptEntries } = await import('$lib/store/slices/scripts/scripts-selectors');
 
       if (!context.workspaceId) {
         return [];
       }
 
-      const scripts = selectScriptEntries.select(getReduxStore().getState());
+      const scripts = selectScriptEntries.select(appStore.state);
       if (scripts.length === 0) {
         return [];
       }
@@ -772,7 +770,7 @@ export class SpecialistProvider implements Provider {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const specialists = selectSpecialists.select(getReduxStore().getState());
+      const specialists = selectSpecialists.select(appStore.state);
       if (!specialists || specialists.length === 0) {
         return [];
       }
@@ -824,7 +822,7 @@ export class AgentProvider implements Provider {
         return [];
       }
 
-      const allAgents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+      const allAgents = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
       if (allAgents.length === 0) {
         return [];
       }
@@ -841,7 +839,7 @@ export class AgentProvider implements Provider {
         // Look up specialist name: try session metadata first, then resolve from store
         let specialistName = (session.metadata as any)?.specialistName || '';
         if (specialistId && !specialistName) {
-          const info = selectSpecialistById.select(getReduxStore().getState(), specialistId);
+          const info = selectSpecialistById.select(appStore.state, specialistId);
           if (info) {
             specialistName = info.name;
           }
