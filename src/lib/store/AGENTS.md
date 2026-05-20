@@ -4,7 +4,7 @@ Use these rules when creating or editing code in `src/lib/store/` so Redux state
 
 ## 1. Import Boundaries
 
-- Components (`*.svelte`, component-level `*.ts`) may only import actions from `*-slice.ts`, selectors from `*-selectors.ts`, types from `*-types.ts`, `getDispatch` from `$lib/store/utils/svelte-context`, and `getReduxStore` from `$lib/store/redux-dispatch-bridge` (for one-time reads in event handlers only).
+- Components (`*.svelte`, component-level `*.ts`) may only import actions from `*-slice.ts`, selectors from `*-selectors.ts`, types from `*-types.ts`, `getDispatch` from `$lib/store/utils/svelte-context`, and the configured `store` from `$lib/store/store` as `appStore` (for one-time reads in event handlers only).
 - Components must never import saga files (`sagas/*.ts`), operation files, reducer internals, store init/setup modules, or collection utils directly.
 - Access collection data through selectors, not by importing `collection-utils` in components.
 - Services and non-component code may import actions and selectors.
@@ -51,8 +51,8 @@ import { createCollection, getItem, getItems } from "svelte-redux-toolkit/utils/
 - Never call `selector()` or `getDispatch()` inside event handlers or callbacks.
 
 ```ts
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
-const value = selectWorkspaceThing.select(getReduxStore().getState(), workspaceId);
+import { store as appStore } from "$lib/store/store";
+const value = selectWorkspaceThing.select(appStore.state, workspaceId);
 ```
 
 ## 6. Side Effects Belong in Sagas

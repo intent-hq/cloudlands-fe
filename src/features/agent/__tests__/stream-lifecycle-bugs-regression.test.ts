@@ -160,7 +160,7 @@ describe('Bug 8: Stale complete from interrupted stream', () => {
 
 describe('Stream lifecycle is a thin stream adapter', () => {
   it('does not read Redux state or own stale refresh helpers', () => {
-    expect(source).not.toContain('getReduxStore().getState');
+    expect(source).not.toContain('selector.select(appStore.state');
     expect(source).not.toContain('getAgentSession(');
     expect(source).not.toContain('selectActiveWorkspaceId');
     expect(source).not.toContain('requestRefreshThenMaybeFallback');

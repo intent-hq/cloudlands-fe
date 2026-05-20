@@ -7,10 +7,6 @@ import {
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from "./constants";
 import { store } from "./configured-store";
-import {
-  initReduxDispatchBridge,
-  initReduxStoreBridge,
-} from "./redux-dispatch-bridge";
 import type {
   PreloadedStoreState,
   ReduxStore,
@@ -26,16 +22,38 @@ export type AppStore = typeof store;
 export type AppStoreState = StoreInstanceState<typeof store>;
 export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state">;
 
+type StoreDebugIntent = {
+  reduxContext?: ReduxStoreContext | ReduxStoreContext[];
+  debug?: {
+    toggleReduxLogs?: () => void;
+    toggleStateReferenceChecks?: () => void;
+    toggleStructuredCloneChecks?: () => void;
+  };
+  enableReduxLogging?: () => void;
+  disableReduxLogging?: () => void;
+};
+
+type StoreDebugWindow = Window & typeof globalThis & {
+  intent?: StoreDebugIntent;
+  isStorybook?: boolean;
+};
+
 const cleanUpWindow = (context: ReduxStoreContext) => {
-  if (typeof window === "undefined" || !window.intent?.reduxContext) {
+  if (typeof window === "undefined") {
     return;
   }
 
-  if (window.intent.reduxContext === context) {
-    window.intent.reduxContext = undefined;
+  const debugWindow = window as StoreDebugWindow;
+
+  if (!debugWindow.intent?.reduxContext) {
+    return;
   }
-  if (Array.isArray(window.intent.reduxContext)) {
-    window.intent.reduxContext = window.intent.reduxContext.filter((existingContext) => {
+
+  if (debugWindow.intent.reduxContext === context) {
+    debugWindow.intent.reduxContext = undefined;
+  }
+  if (Array.isArray(debugWindow.intent.reduxContext)) {
+    debugWindow.intent.reduxContext = debugWindow.intent.reduxContext.filter((existingContext) => {
       return existingContext !== context;
     });
   }
@@ -46,24 +64,26 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
     return;
   }
 
-  window.intent = window.intent || {};
+  const debugWindow = window as StoreDebugWindow;
 
-  if (window.intent.reduxContext === storeContext) {
+  debugWindow.intent = debugWindow.intent || {};
+
+  if (debugWindow.intent.reduxContext === storeContext) {
     console.log("Context is exposed already");
-  } else if (!window.intent.reduxContext) {
-    window.intent.reduxContext = storeContext;
+  } else if (!debugWindow.intent.reduxContext) {
+    debugWindow.intent.reduxContext = storeContext;
   } else {
     const list: ReduxStoreContext[] = [];
-    window.intent.reduxContext = list.concat(window.intent.reduxContext).concat(storeContext);
-    if (window.isStorybook) {
-      console.log("Multiple Redux stores initialized:", window.intent.reduxContext);
+    debugWindow.intent.reduxContext = list.concat(debugWindow.intent.reduxContext).concat(storeContext);
+    if (debugWindow.isStorybook) {
+      console.log("Multiple Redux stores initialized:", debugWindow.intent.reduxContext);
     } else {
-      console.error("Multiple Redux stores initialized:", window.intent.reduxContext);
+      console.error("Multiple Redux stores initialized:", debugWindow.intent.reduxContext);
     }
   }
 
-  if (!window.intent.debug) {
-    window.intent.debug = {};
+  if (!debugWindow.intent.debug) {
+    debugWindow.intent.debug = {};
   }
 
   const parseStoredBoolean = (value: string | null): boolean | undefined => {
@@ -89,26 +109,26 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
     console.log("Redux logging preference updated. Reload to take effect.");
   };
 
-  window.intent.enableReduxLogging = () => {
+  debugWindow.intent.enableReduxLogging = () => {
     safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "true");
     logReduxLoggingReloadMessage();
   };
 
-  window.intent.disableReduxLogging = () => {
+  debugWindow.intent.disableReduxLogging = () => {
     safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "false");
     logReduxLoggingReloadMessage();
   };
 
-  window.intent.debug.toggleReduxLogs = () => {
+  debugWindow.intent.debug.toggleReduxLogs = () => {
     toggleBooleanLsKey(REDUX_DEBUG_LS_KEY);
     logReduxLoggingReloadMessage();
   };
 
-  window.intent.debug.toggleStateReferenceChecks = () => {
+  debugWindow.intent.debug.toggleStateReferenceChecks = () => {
     togglePresenceLsKey(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY);
   };
 
-  window.intent.debug.toggleStructuredCloneChecks = () => {
+  debugWindow.intent.debug.toggleStructuredCloneChecks = () => {
     togglePresenceLsKey(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY);
   };
 };
@@ -144,9 +164,6 @@ export const initAppStore = (
 ): ReduxStoreContext => {
   const disposeConfiguredStore = configuredStore.init(loadedState);
   const store = createReduxStoreBridgeAdapter(configuredStore);
-
-  initReduxDispatchBridge(store.dispatch);
-  initReduxStoreBridge(store);
 
   const storeContext: ReduxStoreContext = {
     store,

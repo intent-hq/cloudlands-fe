@@ -109,7 +109,7 @@ function shouldClearUnreadForLoadedWorkspace(wsId: string): boolean {
  * Replicates the component-local `openAgentInLayout` using direct layout manager calls.
  *
  * Generator: reads `panels` via `yield* selectPanels.effect(wsId)` so saga-context
- * code never calls `selector.select(getReduxStore().getState(), …)`.
+ * code never performs one-time selector reads from the configured app store.
  */
 function* openAgentInLayout(
   agentId: string,

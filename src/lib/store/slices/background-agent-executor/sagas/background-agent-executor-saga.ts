@@ -68,6 +68,7 @@ import { debounceWithKeySaga } from 'svelte-redux-toolkit/utils/sagas/debounce-s
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { store as appStore } from '$lib/store/store';
 
 import {
   executeBackgroundAgent,
@@ -96,7 +97,6 @@ import {
 import { selectExecutorState } from '../background-agent-executor-selectors';
 import { prepareContext } from '../utils/context-preparation';
 import { extractResultFromMessages } from '../utils/result-extraction';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('BgExecutorSaga');
@@ -220,7 +220,7 @@ export function createAgentStateChannel(
     const processUpdate = () => {
       if (isClosed) return;
 
-      const state = getReduxStore().getState();
+      const state = appStore.state;
       const session = selectAgentSession.select(state, agentId);
       if (!session) return;
 
@@ -237,11 +237,11 @@ export function createAgentStateChannel(
     };
 
     // Subscribe to Redux store changes for agent state updates
-    const store = getReduxStore();
-    let previousSession = selectAgentSession.select(store.getState(), agentId);
+    const store = appStore;
+    let previousSession = selectAgentSession.select(store.state, agentId);
 
-    const unsubscribe = store.subscribe(() => {
-      const currentSession = selectAgentSession.select(store.getState(), agentId);
+    const unsubscribe = store.getReadableState().subscribe(() => {
+      const currentSession = selectAgentSession.select(store.state, agentId);
       if (currentSession !== previousSession) {
         previousSession = currentSession;
         processUpdate();
