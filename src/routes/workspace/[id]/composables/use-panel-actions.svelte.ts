@@ -9,9 +9,10 @@ import { createAgentTypeId } from '$shared/types/agent.types';
 import { createLogger } from '$lib/utils/client-logger';
 import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
 import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
-import { getDispatch } from '$lib/store/utils/svelte-context';
+
 import type { Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
+  import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('panel-actions');
 
@@ -29,7 +30,6 @@ export interface UsePanelActionsOptions {
 }
 
 export function usePanelActions(options: UsePanelActionsOptions) {
-  const dispatch = getDispatch();
   async function openFile(filePath: string) {
     await options.workspaceState()?.openFile(filePath);
   }
@@ -103,7 +103,7 @@ export function usePanelActions(options: UsePanelActionsOptions) {
 
     // Open the Quake-style terminal overlay
     if (workspace?.id) {
-      dispatch(openTerminalOverlay(workspace.id, terminalId));
+      appStore.dispatch(openTerminalOverlay(workspace.id, terminalId));
     }
   }
 
@@ -142,7 +142,7 @@ export function usePanelActions(options: UsePanelActionsOptions) {
           source: 'progress-card-action',
         },
       });
-      dispatch(launchAction);
+      appStore.dispatch(launchAction);
       const agent = await launchAction.promise;
 
       // Add to recently created agents to prevent drawer from auto-closing
