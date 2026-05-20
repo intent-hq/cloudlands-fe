@@ -51,9 +51,18 @@ vi.mock('$lib/store/utils/svelte-context', () => ({
 }));
 
 const reduxDispatch = vi.fn();
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: reduxDispatch }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  const dispatch = (...args: any[]) => {
+    mocks.dispatch(...args);
+    return reduxDispatch(...args);
+  };
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch,
+  });
+});
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),

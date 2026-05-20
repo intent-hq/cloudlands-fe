@@ -110,7 +110,8 @@ vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+vi.mock('$lib/store/slices/changes/changes-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
   stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/stageByPathRequested', payload: [wsId, paths] })),
   unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/unstageByPathRequested', payload: [wsId, paths] })),
@@ -168,7 +169,8 @@ vi.mock('$lib/store/slices/git/git-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', () => ({
+vi.mock('$lib/store/slices/git/git-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
   gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
   gitPull: vi.fn((...args: any[]) => ({ type: 'git/pull', payload: args })),
@@ -233,9 +235,16 @@ vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
 }));
 
 const mockDispatch = vi.fn();
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: mockDispatch }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  const createLegacyStore = () => ({ getState: () => ({}), dispatch: mockDispatch });
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mockDispatch,
+    getLegacyStore: createLegacyStore,
+  });
+});
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: createMockFtSelector(() => mockFileTrackingStore.currentWorkspaceId),
@@ -286,7 +295,8 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', () => ({
+vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   recomputeAgentLocks: vi.fn((wsId: string) => ({
     type: 'agentLock/recomputeAgentLocks',
     payload: [wsId],
@@ -306,7 +316,8 @@ vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/github-auth/github-auth-slice', () => ({
+vi.mock('$lib/store/slices/github-auth/github-auth-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
 }));
 
@@ -318,7 +329,8 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
   ),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   executeBackgroundAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
   reconnectAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reconnect', payload: args })),
@@ -355,7 +367,8 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/pr-status/pr-status-slice', () => ({
+vi.mock('$lib/store/slices/pr-status/pr-status-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   refreshPRStatusRequested: vi.fn((...args: any[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
   startPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/startPolling', payload: args })),
   stopPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/stopPolling', payload: args })),
@@ -375,7 +388,8 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
+vi.mock('$lib/store/slices/terminals/terminals-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   addTerminal: vi.fn((...args: any[]) => ({ type: 'terminals/addTerminal', payload: args })),
   openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/open', payload: args })),
   toggleTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/toggle', payload: args })),
@@ -388,14 +402,18 @@ vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () 
   };
 });
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
+vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
   syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({}));
+vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+}));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+vi.mock('$lib/store/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
