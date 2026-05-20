@@ -21,12 +21,13 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
 
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$lib/store/store';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -91,7 +92,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   );
   const targetAgentName = $derived.by(() => {
     if (!isAgentMessage || !parsedResult?.toAgentId) return null;
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const workspaceId = selectActiveWorkspaceId.select(state);
     const session = workspaceId
       ? selectAgentSession.select(state, parsedResult.toAgentId)
@@ -189,7 +190,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
             if (openInAdjacentPanel) {
               const sourcePanelId = getPanelIdFromEvent(e);
               if (workspaceId && toolDisplay.noteId) {
-                getReduxStore().dispatch(
+                appStore.dispatch(
                   openWorkspaceNote(workspaceId, toolDisplay.noteId, {
                     openInAdjacentPanel,
                     sourcePanelId,
@@ -229,7 +230,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
               const openInAdjacentPanel = e.metaKey || e.ctrlKey;
               const sourcePanelId = getPanelIdFromEvent(e);
               if (workspaceId && toolDisplay.filePath) {
-                getReduxStore().dispatch(
+                appStore.dispatch(
                   openWorkspaceFile(workspaceId, toolDisplay.filePath, {
                     line: toolDisplay.fileLine ?? undefined,
                     openInAdjacentPanel,
