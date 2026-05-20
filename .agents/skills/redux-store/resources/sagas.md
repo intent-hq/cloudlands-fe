@@ -52,7 +52,7 @@ A function that is reached from a saga must follow the same rule as the saga its
 - **Be a generator** (`function*`) and read state via `yield* selector.effect(...)`, or
 - **Receive state through its arguments** — the calling saga does the `yield* selector.effect(...)` and passes the value in.
 
-Never call `selector.select(getReduxStore().getState(), ...)` from saga-context code. That bypasses saga effect machinery, breaks `expectSaga.provide()` testing, and can read stale state mid-saga.
+Never call `selector.select(store.state, ...)` from saga-context code. That bypasses saga effect machinery, breaks `expectSaga.provide()` testing, and can read stale state mid-saga.
 
 This rule applies transitively: a non-generator helper called from a saga that itself calls another helper that reads state must propagate the same fix down the chain.
 
@@ -62,7 +62,7 @@ This rule applies transitively: a non-generator helper called from a saga that i
 | Non-generator helper called from a saga | Convert helper to `function*` (use `yield* effect` inside), **or** lift the read to the caller and pass state in as an argument |
 | Async callback registered from a saga (e.g. event listener) | Lift the read into the registering saga; pass values via closure/argument. The callback must not call `.select()` itself |
 
-(Component event handlers and other non-saga code paths are not affected — they continue to use `.select(getReduxStore().getState(), ...)` per Section 4.)
+(Component event handlers and other non-saga code paths are not affected — current Store-first guidance uses `.select(store.state, ...)` with the configured app `Store` per `svelte-redux-toolkit/selector-lifecycle`.)
 
 ### Selector Channel Effects — reacting to state changes in sagas
 
