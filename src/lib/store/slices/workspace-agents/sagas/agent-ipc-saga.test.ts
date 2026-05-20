@@ -33,7 +33,6 @@ const {
   ensureStreamHandlerMock,
   invokeMock,
   clearKeysForAgentMock,
-  appStoreDispatchMock,
   toastWarningMock,
   toastDismissMock,
   trackMock,
@@ -48,7 +47,6 @@ const {
   ensureStreamHandlerMock: vi.fn(async () => ({ created: false })),
   invokeMock: vi.fn(async () => ({ success: true })),
   clearKeysForAgentMock: vi.fn(async () => {}),
-  appStoreDispatchMock: vi.fn(),
   toastWarningMock: vi.fn(() => "toast-1"),
   toastDismissMock: vi.fn(),
   trackMock: vi.fn(),
@@ -122,15 +120,6 @@ vi.mock("$features/agent/browser/services/request-deduplicator.service", () => (
 vi.mock("$lib/electron-bridge", () => ({
   invoke: invokeMock,
 }));
-
-vi.mock("$lib/store/store", async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: appStoreDispatchMock,
-  });
-});
 
 vi.mock("svelte-sonner", () => ({
   toast: {
@@ -250,6 +239,7 @@ import {
   handleStopAgentSessionRequested,
   handleUndoAgentDeletionRequested,
   watchAgentCreatedIpcSaga,
+  watchAgentDeletionCallbackSaga,
   watchAgentIdleSaga,
   watchBackendStreamReconnectSaga,
   watchBeforeUnloadSaga,
@@ -1026,6 +1016,7 @@ describe("agentIpcSaga lifecycle registrations", () => {
     expect(saga.next().value).toEqual(
       sagaEffects.takeEvery(flushPendingAgentDeletionsRequested, handleFlushPendingAgentDeletionsRequested),
     );
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentDeletionCallbackSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentIdleSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchStreamStartingSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchPrepareHandlerSaga));
@@ -1186,6 +1177,69 @@ describe("migrated agent IPC lifecycle handlers", () => {
     ]);
     expect(toastDismissMock).toHaveBeenCalledWith("toast-1");
     expect(undoDispatched.find((a) => a.type === undoAgentDeletionRequested.success.type)?.payload.response).toBe(true);
+  });
+
+  it("bridges delete undo toast callbacks through a saga-owned channel", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, name: "Undo Me" });
+    selectState.results = [session, session];
+    const bridgedActions: any[] = [];
+    const bridgeTask = runSaga(
+      { dispatch: (a: any) => bridgedActions.push(a), getState: () => ({}) },
+      watchAgentDeletionCallbackSaga,
+    );
+
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAgentWithUndoRequested("ws-A", "agent-1", "Undo Me"),
+    ).toPromise();
+
+    const toastOptions = toastWarningMock.mock.calls[0]?.[1] as { action?: { onClick?: () => void } };
+    toastOptions.action?.onClick?.();
+    await Promise.resolve();
+
+    expect(bridgedActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: undoAgentDeletionRequested.type,
+          payload: ["ws-A", "agent-1"],
+        }),
+      ]),
+    );
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleUndoAgentDeletionRequested,
+      undoAgentDeletionRequested("ws-A", "agent-1"),
+    ).toPromise();
+    bridgeTask.cancel();
+    await bridgeTask.toPromise();
+  });
+
+  it("bridges delete commit timeouts through a saga-owned channel", async () => {
+    const session = makeSession({ workspaceId: "ws-A" as any, name: "Commit Me" });
+    selectState.results = [session, session];
+    const bridgedActions: any[] = [];
+    const bridgeTask = runSaga(
+      { dispatch: (a: any) => bridgedActions.push(a), getState: () => ({}) },
+      watchAgentDeletionCallbackSaga,
+    );
+
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleDeleteAgentWithUndoRequested,
+      deleteAgentWithUndoRequested("ws-A", "agent-1", "Commit Me"),
+    ).toPromise();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(bridgedActions).toContainEqual(commitPendingAgentDeletionRequested("ws-A", "agent-1"));
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleCommitPendingAgentDeletionRequested,
+      commitPendingAgentDeletionRequested("ws-A", "agent-1"),
+    ).toPromise();
+    bridgeTask.cancel();
+    await bridgeTask.toPromise();
   });
 
   it("flushes pending agent deletions", async () => {

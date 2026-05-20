@@ -21,11 +21,17 @@ vi.mock("$lib/utils/client-logger", () => ({
   }),
 }));
 
-import { handleLoadServers } from "./mcp-settings-saga";
+import {
+  handleLoadServers,
+  handleMcpServerError,
+} from "./mcp-settings-saga";
 import {
   initialState,
   setDisabledServers,
+  setServerErrorMessage,
+  setServerStatus,
 } from "../mcp-settings-slice";
+import type { McpServerConfig } from "../mcp-settings-types";
 
 const mockInvoke = vi.fn();
 
@@ -89,5 +95,41 @@ describe("handleLoadServers", () => {
     const dispatched = await collectLoadActions({ success: true, data: ["alpha", 42, " beta "] });
 
     expect(dispatched).toContainEqual(setDisabledServers({ alpha: true, beta: true }));
+  });
+});
+
+describe("handleMcpServerError", () => {
+  it("dispatches status and message updates for direct server-name errors", async () => {
+    const dispatched: DispatchedAction[] = [];
+
+    await runSaga(
+      { dispatch: (action: DispatchedAction) => dispatched.push(action), getState: () => ({}) },
+      handleMcpServerError,
+      { serverName: "alpha", errorMessage: "401 Unauthorized" },
+    ).toPromise();
+
+    expect(dispatched).toContainEqual(setServerStatus("alpha", "auth_required"));
+    expect(dispatched).toContainEqual(
+      setServerErrorMessage("alpha", "Authentication required — check your credentials or reauthenticate"),
+    );
+  });
+
+  it("matches command errors against MCP servers through selector effects", async () => {
+    const dispatched: DispatchedAction[] = [];
+    const servers: McpServerConfig[] = [
+      { name: "stdio-server", type: "stdio", command: "node", args: ["server.js"] },
+    ];
+
+    await runSaga(
+      {
+        dispatch: (action: DispatchedAction) => dispatched.push(action),
+        getState: () => ({ mcpSettings: { ...initialState, servers } }),
+      },
+      handleMcpServerError,
+      { command: "/usr/bin/node server.js", errorMessage: "spawn failed" },
+    ).toPromise();
+
+    expect(dispatched).toContainEqual(setServerStatus("stdio-server", "error"));
+    expect(dispatched).toContainEqual(setServerErrorMessage("stdio-server", "spawn failed"));
   });
 });
