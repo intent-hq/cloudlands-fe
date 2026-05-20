@@ -48,13 +48,6 @@ vi.mock('$lib/store/utils/svelte-context', () => ({
 
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const createLegacyStore = () => ({ getState: () => ({}), dispatch: mocks.dispatch });
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: mocks.dispatch,
-    getLegacyStore: createLegacyStore,
-  });
 });
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
