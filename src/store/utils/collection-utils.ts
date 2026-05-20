@@ -31,5 +31,5 @@ export {
   findLastItem,
   filterItems,
   getRefsCount,
-} from "$lib/store/utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
