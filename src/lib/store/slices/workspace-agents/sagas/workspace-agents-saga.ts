@@ -8,7 +8,6 @@ import type { AgentSession } from "$shared/types";
 import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
 import {
   takeEveryFromElectronChannel,
@@ -73,6 +72,7 @@ import { loadAgentsFromDiskSaga } from "./agent-loading-saga";
 import { watchAgentCreationSaga } from "./agent-creation-saga";
 import { watchEnsureAgentSessionLoadedSaga } from "./ensure-agent-session-saga";
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import { store as appStore } from '$lib/store/store';
 
 
 type MaybeWrappedPayload<T> = T | { payload: T };
@@ -213,7 +213,7 @@ export function* watchWaitingForFirstMessageSaga() {
 }
 
 function* checkDrawerGuard(wsId: string) {
-  const state = getReduxStore().getState();
+  const state = appStore.state;
   const drawerState = selectWorkspaceNavigationDrawer.select(state, wsId);
   if (!drawerState?.open || !drawerState.itemId) {
     return;
@@ -273,21 +273,21 @@ function* checkDrawerGuard(wsId: string) {
 
 function createDrawerGuardChannel(wsId: string): EventChannel<boolean> {
   return eventChannel<boolean>((emitter) => {
-    const store = getReduxStore();
+    const store = appStore;
 
-    let previousAgents = selectAllWorkspaceAgents.select(store.getState(), wsId);
-    let previousAgentsLoaded = selectAgentsLoaded.select(store.getState(), wsId);
-    let previousInitialAgentId = selectInitialAgentId.select(store.getState(), wsId);
-    let previousRecentlyCreatedAgents = selectRecentlyCreatedAgents.select(store.getState(), wsId);
-    let previousTerminals = selectLoadedWorkspaceTerminals.select(store.getState(), wsId);
-    let previousTerminalsLoaded = selectTerminalsLoaded.select(store.getState(), wsId);
+    let previousAgents = selectAllWorkspaceAgents.select(store.state, wsId);
+    let previousAgentsLoaded = selectAgentsLoaded.select(store.state, wsId);
+    let previousInitialAgentId = selectInitialAgentId.select(store.state, wsId);
+    let previousRecentlyCreatedAgents = selectRecentlyCreatedAgents.select(store.state, wsId);
+    let previousTerminals = selectLoadedWorkspaceTerminals.select(store.state, wsId);
+    let previousTerminalsLoaded = selectTerminalsLoaded.select(store.state, wsId);
     let previousRecentlyCreatedTerminals = selectRecentlyCreatedTerminals.select(
-      store.getState(),
+      store.state,
       wsId
     );
 
-    const unsubscribe = store.subscribe(() => {
-      const state = store.getState();
+    const unsubscribe = store.getReadableState().subscribe(() => {
+      const state = store.state;
       const nextAgents = selectAllWorkspaceAgents.select(state, wsId);
       const nextAgentsLoaded = selectAgentsLoaded.select(state, wsId);
       const nextInitialAgentId = selectInitialAgentId.select(state, wsId);
