@@ -33,22 +33,14 @@ vi.mock('$lib/components/ui/tooltip/link-tooltip-state.svelte', () => ({
   hideLinkTooltip: vi.fn(),
 }));
 
-const reduxDispatchMock = vi.fn();
-vi.mock('$lib/store/store', () => {
-  const createLegacyStore = () => ({ dispatch: reduxDispatchMock, getState: () => ({}) });
-  const appStore = {
-    get state() {
-      return ({});
-    },
+const reduxDispatchMock = vi.hoisted(() => vi.fn());
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
     dispatch: reduxDispatchMock,
-    getReadableState: () => ({
-      subscribe: (listener: () => void) => {
-        listener();
-        return createLegacyStore()?.subscribe?.(listener) ?? (() => {});
-      },
-    }),
-  };
-  return { appStore, store: appStore };
+  });
 });
 
 describe('handleLink – devspace://terminal routing', () => {

@@ -237,12 +237,10 @@ vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
 const mockDispatch = vi.fn();
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const createLegacyStore = () => ({ getState: () => ({}), dispatch: mockDispatch });
 
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: mockDispatch,
-    getLegacyStore: createLegacyStore,
   });
 });
 
@@ -302,8 +300,6 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', async (importOriginal) 
     payload: [wsId],
   })),
 }));
-
-
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));
 
@@ -911,7 +907,6 @@ describe('SidebarChangesPanel', () => {
       });
     });
   });
-
 
   // ═══════════════════════════════════════════════════════════════════════════
   // INTERACTION TESTS
@@ -1546,7 +1541,6 @@ describe('SidebarChangesPanel', () => {
 
       // Clear mocks to isolate assertions to this interaction
       mockDispatch.mockClear();
-
 
       await fireEvent.click(commitBtn!);
 

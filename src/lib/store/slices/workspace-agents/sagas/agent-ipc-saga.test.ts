@@ -33,7 +33,7 @@ const {
   ensureStreamHandlerMock,
   invokeMock,
   clearKeysForAgentMock,
-  getReduxStoreDispatchMock,
+  appStoreDispatchMock,
   toastWarningMock,
   toastDismissMock,
   trackMock,
@@ -48,7 +48,7 @@ const {
   ensureStreamHandlerMock: vi.fn(async () => ({ created: false })),
   invokeMock: vi.fn(async () => ({ success: true })),
   clearKeysForAgentMock: vi.fn(async () => {}),
-  getReduxStoreDispatchMock: vi.fn(),
+  appStoreDispatchMock: vi.fn(),
   toastWarningMock: vi.fn(() => "toast-1"),
   toastDismissMock: vi.fn(),
   trackMock: vi.fn(),
@@ -123,9 +123,14 @@ vi.mock("$lib/electron-bridge", () => ({
   invoke: invokeMock,
 }));
 
-vi.mock("$lib/store/redux-dispatch-bridge", () => ({
-  getReduxStore: () => ({ dispatch: getReduxStoreDispatchMock }),
-}));
+vi.mock("$lib/store/store", async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: appStoreDispatchMock,
+  });
+});
 
 vi.mock("svelte-sonner", () => ({
   toast: {
@@ -582,7 +587,6 @@ describe("handleQueueCancelled", () => {
   });
 });
 
-
 describe("handleExistingSessionUpdate — content-hash collision", () => {
   const baseTime = new Date("2025-01-15T12:00:00Z");
   const makeMsg = (id: string, text: string, offsetMs = 0): AgentMessage => ({
@@ -733,7 +737,6 @@ describe("handleExistingSessionUpdate — in-place replacement preserves order",
     expect(removeOps.length).toBe(0);
   });
 });
-
 
 // ============================================================================
 // handleAgentIdle — backend authoritative "turn done" reconciliation

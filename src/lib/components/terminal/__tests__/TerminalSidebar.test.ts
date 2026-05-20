@@ -58,14 +58,17 @@ vi.mock('$lib/store/slices/scripts/scripts-selectors', () => ({
     { select: () => scriptEntries.value },
   ),
 }));
-vi.mock('$lib/store/slices/scripts/scripts-slice', () => ({
+vi.mock('$lib/store/slices/scripts/scripts-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/store/slices/scripts/scripts-slice')>()),
   refreshScripts: vi.fn((...args: any[]) => ({ type: 'scripts/refreshScripts', payload: args })),
   removeScript: vi.fn((...args: any[]) => ({ type: 'scripts/removeScript', payload: args })),
   upsertScript: vi.fn((...args: any[]) => ({ type: 'scripts/upsertScript', payload: args })),
 }));
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({
       scripts: {
         byWorkspaceId: {
           'ws-1': {
@@ -78,8 +81,8 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
       },
       workspace: { activeWorkspaceId: 'ws-1' },
     }),
-  }),
-}));
+  });
+});
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => ({
     subscribe: (fn: (value: any) => void) => {
@@ -121,7 +124,8 @@ vi.mock('$lib/store/slices/terminals/terminals-selectors', () => ({
   selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
   selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
 }));
-vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
+vi.mock('$lib/store/slices/terminals/terminals-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/store/slices/terminals/terminals-slice')>()),
   removeTerminal: vi.fn(),
 }));
 

@@ -1,13 +1,6 @@
-type StoreMockSource = {
-  getState?: () => unknown;
-  dispatch?: (...args: any[]) => unknown;
-  subscribe?: (listener: () => void) => () => void;
-};
-
 type AppStoreMockOptions = {
   state?: unknown | (() => unknown);
   dispatch?: (...args: any[]) => unknown;
-  getLegacyStore?: () => StoreMockSource | undefined;
 };
 
 const noop = () => {};
@@ -23,16 +16,15 @@ export const createStoreMockModule = <TStore extends object>(appStore: TStore) =
 export const createAppStoreMock = ({
   state,
   dispatch,
-  getLegacyStore,
 }: AppStoreMockOptions = {}) => ({
   get state() {
-    return getLegacyStore?.()?.getState?.() ?? resolveState(state);
+    return resolveState(state);
   },
-  dispatch: (...args: any[]) => (dispatch ?? getLegacyStore?.()?.dispatch ?? noop)(...args),
+  dispatch: (...args: any[]) => (dispatch ?? noop)(...args),
   getReadableState: () => ({
     subscribe: (listener: () => void) => {
       listener();
-      return getLegacyStore?.()?.subscribe?.(listener) ?? noop;
+      return noop;
     },
   }),
 });

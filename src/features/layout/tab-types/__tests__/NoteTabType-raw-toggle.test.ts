@@ -93,9 +93,14 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$lib/store/utils/svelte-context', () => ({ getDispatch: () => mockState.dispatch }));
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: mockState.dispatch }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mockState.dispatch,
+  });
+});
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
 }));
