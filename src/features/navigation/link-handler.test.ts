@@ -34,9 +34,22 @@ vi.mock('$lib/components/ui/tooltip/link-tooltip-state.svelte', () => ({
 }));
 
 const reduxDispatchMock = vi.fn();
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ dispatch: reduxDispatchMock, getState: () => ({}) }),
-}));
+vi.mock('$lib/store/store', () => {
+  const createLegacyStore = () => ({ dispatch: reduxDispatchMock, getState: () => ({}) });
+  const appStore = {
+    get state() {
+      return ({});
+    },
+    dispatch: reduxDispatchMock,
+    getReadableState: () => ({
+      subscribe: (listener: () => void) => {
+        listener();
+        return createLegacyStore()?.subscribe?.(listener) ?? (() => {});
+      },
+    }),
+  };
+  return { appStore, store: appStore };
+});
 
 describe('handleLink – devspace://terminal routing', () => {
   beforeEach(() => {
