@@ -86,12 +86,12 @@ The root saga registry in `src/lib/store/sagas.ts` now owns many responsibilitie
 
 ## Selector and Dispatch Lifecycle
 
-Both `getDispatch()` and selector readable calls (`selectFoo()`) use Svelte's `getContext()` internally, which is **only available during component initialization** (synchronous top-level `<script>` execution).
+Selector readable calls (`selectFoo()`) use Svelte context internally, so create them only during component initialization (synchronous top-level `<script>` execution). Dispatch and one-time state reads go through the configured app `Store` instance.
 
 **Rules:**
-1. Call `getDispatch()` and selector readables at the top level of `<script>`, never inside event handlers, callbacks, or async functions
-2. For one-time state reads inside event handlers, use `selector.select(getReduxStore().getState(), ...args)`
-3. For dispatching inside event handlers, store the dispatch function at init: `const dispatch = getDispatch()`
+1. Call selector readables at the top level of `<script>`, never inside event handlers, callbacks, or async functions
+2. For one-time state reads inside event handlers, use `selector.select(appStore.state, ...args)`
+3. For dispatching inside event handlers, use `appStore.dispatch(action)` from the initialized app `Store`
 
 ## Current Component Map
 
