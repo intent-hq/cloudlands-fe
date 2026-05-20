@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
 
   const sagaMiddleware = Object.assign(createPassthroughMiddleware(), { run: vi.fn() });
   const batchingMiddleware = createPassthroughMiddleware();
+  const sagaCrashSentryMiddleware = createPassthroughMiddleware();
   const sentryMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => {
   return {
     createSagaMiddleware: vi.fn(() => sagaMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
+    createSagaCrashSentryMiddleware: vi.fn(() => sagaCrashSentryMiddleware),
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -31,6 +33,7 @@ const mocks = vi.hoisted(() => {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     sagaMiddleware,
     batchingMiddleware,
+    sagaCrashSentryMiddleware,
     sentryMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -41,6 +44,9 @@ const mocks = vi.hoisted(() => {
 vi.mock("redux-saga", () => ({ default: mocks.createSagaMiddleware }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
+vi.mock("./middlewares/saga-crash-sentry", () => ({
+  createSagaCrashSentryMiddleware: mocks.createSagaCrashSentryMiddleware,
+}));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
   createSentryBreadcrumbsMiddleware: mocks.createSentryBreadcrumbsMiddleware,
 }));
@@ -62,6 +68,22 @@ const setLocalStorageEntries = (entries: Record<string, string | null | undefine
   localStorageGetItem.mockImplementation((key: string) => entries[key] ?? null);
 };
 
+async function initStoreForReduxLoggingTests() {
+  const { initAppStore } = await import("./store");
+  const readableState = {
+    subscribe: (run: (state: Record<string, never>) => void) => {
+      run({});
+      return () => {};
+    },
+  };
+  return initAppStore(undefined, {
+    init: vi.fn(() => vi.fn()),
+    getReadableState: vi.fn(() => readableState),
+    dispatch: vi.fn((action: unknown) => action),
+    state: {},
+  } as any);
+}
+
 describe("store middleware Redux logging gating", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -72,15 +94,18 @@ describe("store middleware Redux logging gating", () => {
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
-  it("does not add the logger middleware when the debug flag is off", async () => {
+  it("adds the logger middleware automatically in the Vitest dev environment", async () => {
     const { middleware } = await import("./middleware");
 
-    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
+      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
+      mocks.loggerMiddleware,
     ]);
   });
 
@@ -94,7 +119,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
+      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
   });
@@ -109,6 +136,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
+      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -126,6 +154,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
+      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -160,6 +189,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
+      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -178,9 +208,7 @@ describe("window.intent Redux logging interface", () => {
   });
 
   it("registers enableReduxLogging and disableReduxLogging on window.intent", async () => {
-    const { init } = await import("./init");
-
-    const storeContext = init();
+    const storeContext = await initStoreForReduxLoggingTests();
 
     expect(window.intent?.enableReduxLogging).toBeTypeOf("function");
     expect(window.intent?.disableReduxLogging).toBeTypeOf("function");
@@ -192,9 +220,7 @@ describe("window.intent Redux logging interface", () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      const { init } = await import("./init");
-
-      const storeContext = init();
+      const storeContext = await initStoreForReduxLoggingTests();
 
       window.intent?.enableReduxLogging?.();
       expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "true");
@@ -222,9 +248,7 @@ describe("window.intent Redux logging interface", () => {
       entries[key] = null;
     });
 
-    const { init } = await import("./init");
-
-    const storeContext = init();
+    const storeContext = await initStoreForReduxLoggingTests();
 
     window.intent?.debug?.toggleReduxLogs?.();
     expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "true");
