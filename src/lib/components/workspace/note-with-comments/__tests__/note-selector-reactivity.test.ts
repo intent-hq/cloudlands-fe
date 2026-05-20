@@ -26,11 +26,8 @@ import {
   loadWorkspaceNotesSucceeded,
   workspaceNotesReducer,
 } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
-import type {
-  GenericAction,
-  ReduxStore,
-  StoreState,
-} from "$lib/store/types";
+import type { GenericAction } from "svelte-redux-toolkit/types";
+import type { StoreState } from "$lib/store/types";
 import {
   ContentType,
   NoteVisibility,
@@ -39,7 +36,7 @@ import {
 
 const WS_1 = "ws-1";
 
-const createdStores: Store[] = [];
+const createdStores: Store<any, any, any>[] = [];
 
 function createTestStore() {
   const store = new Store(reducers);
@@ -53,7 +50,8 @@ function createTestStore() {
     set(state);
     return () => subscribers.delete(listener);
   });
-  const reduxStore: ReduxStore = {
+
+  const testReduxRuntime = {
     dispatch: ((action: GenericAction) => {
       state = {
         ...state,
@@ -61,17 +59,22 @@ function createTestStore() {
       } as StoreState;
       subscribers.forEach((listener) => listener());
       return action;
-    }) as ReduxStore["dispatch"],
+    }) as Store<any, any, any>["dispatch"],
     getState: () => state,
-    subscribe: (listener) => {
+    subscribe: (listener: () => void) => {
       subscribers.add(listener);
       return () => subscribers.delete(listener);
     },
     replaceReducer: () => undefined,
   };
 
-  (store as unknown as { storeContext: { store: ReduxStore; storeState: Readable<StoreState> } }).storeContext = {
-    store: reduxStore,
+  (store as unknown as {
+    storeContext: {
+      store: typeof testReduxRuntime;
+      storeState: Readable<StoreState>;
+    };
+  }).storeContext = {
+    store: testReduxRuntime,
     storeState: readableState,
   };
   createdStores.push(store);

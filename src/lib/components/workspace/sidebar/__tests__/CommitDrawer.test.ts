@@ -36,10 +36,6 @@ const mocks = vi.hoisted(() => {
   return { dispatch, sidebarChanges, executorState, selector };
 });
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mocks.dispatch,
-}));
-
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ dispatch: mocks.dispatch });

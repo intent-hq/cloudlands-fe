@@ -88,7 +88,7 @@ import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash
 
 /**
  * All app-owned sagas. Add new sagas here as slices are migrated.
- * saga-registration.ts registers this map before Store initialization.
+ * saga-registration.ts registers this map when app sagas start.
  */
 export const sagas = {
   providerSettingsSaga,

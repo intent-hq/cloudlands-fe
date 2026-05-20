@@ -4,7 +4,7 @@ import {
   expectTypeOf,
   test,
 } from "vitest";
-import type { PayloadModifier } from "$lib/store/types";
+import type { PayloadModifier } from "svelte-redux-toolkit/types";
 import {
   createAction,
   type MainStoreAction,
