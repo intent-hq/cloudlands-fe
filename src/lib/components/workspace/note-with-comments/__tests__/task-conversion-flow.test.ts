@@ -31,6 +31,7 @@ const {
   resetNotes,
   replaceNotes,
   getNoteById,
+  mockSelectorStore,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -83,6 +84,19 @@ const {
     },
   });
 
+  const mockSelectorStore = {
+    createSelector: (selectorFunc: (...args: any[]) => any) => {
+      const readableSelector = Object.assign(() => constantReadable(undefined), {
+        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
+        effect: (...args: any[]) => selectorFunc({}, ...args),
+        withStore: () => constantReadable(undefined),
+      });
+      return readableSelector;
+    },
+    dispatch: mockDispatch,
+    state: {},
+  };
+
   return {
     mockDispatch,
     mockInvoke,
@@ -106,6 +120,7 @@ const {
     getNoteById(noteId: string) {
       return state.notesById[noteId];
     },
+    mockSelectorStore,
   };
 });
 
@@ -256,30 +271,12 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 }));
 
 vi.mock('$lib/store/store', () => ({
-  appStore: {
-    createSelector: (selectorFunc: (...args: any[]) => any) => {
-      const readableSelector = Object.assign(() => constantReadable(undefined), {
-        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
-        effect: (...args: any[]) => selectorFunc({}, ...args),
-        withStore: () => constantReadable(undefined),
-      });
-      return readableSelector;
-    },
-    dispatch: mockDispatch,
-    state: {},
-  },
-  store: {
-    createSelector: (selectorFunc: (...args: any[]) => any) => {
-      const readableSelector = Object.assign(() => constantReadable(undefined), {
-        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
-        effect: (...args: any[]) => selectorFunc({}, ...args),
-        withStore: () => constantReadable(undefined),
-      });
-      return readableSelector;
-    },
-    dispatch: mockDispatch,
-    state: {},
-  },
+  appStore: mockSelectorStore,
+  store: mockSelectorStore,
+}));
+
+vi.mock('$lib/store/configured-store', () => ({
+  store: mockSelectorStore,
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
