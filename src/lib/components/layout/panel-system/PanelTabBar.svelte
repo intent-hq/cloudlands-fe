@@ -43,11 +43,11 @@
   startDrag,
   endDrag,
 } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
   filterSpecialistsByGitHubAuth,
@@ -76,6 +76,7 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
 import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -158,7 +159,6 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     onSplitVertical,
   }: Props = $props();
 
-  const dispatch = getDispatch();
   const isDragging = selectIsDragging();
   const allPermissionRequests = selectPermissionRequests();
 
@@ -218,7 +218,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
         return 'Spec';
       }
       // Look up the note from the store
-      const note = selectNoteById.select(getReduxStore().getState(), workspaceId, tab.noteId);
+      const note = selectNoteById.select(appStore.state, workspaceId, tab.noteId);
       if (note) {
         return note.title || 'Untitled';
       }
@@ -256,7 +256,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const specialistId = agent?.metadata?.specialist || (agent as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
     // Use unified specialist lookup from store (includes team specialists like product-voice, dev-partner)
-    return selectSpecialistName.select(getReduxStore().getState(), specialistId);
+    return selectSpecialistName.select(appStore.state, specialistId);
   }
 
   /**
@@ -268,7 +268,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     if (!agent) return 'idle';
 
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const isWaiting = selectAgentIsWaiting.select(state, tab.agentId);
     const isResponding = selectAgentIsResponding.select(state, tab.agentId);
 
@@ -306,7 +306,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (!path) return null;
 
     // Get workspace to make path relative
-    const workspace = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
+    const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
     const workspacePath = workspace?.worktreePath || workspace?.repositoryPath || '';
 
     // Make relative to workspace (with directory boundary check)
@@ -705,7 +705,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ tabId, panelId }));
 
     // Update global drag state
-    dispatch(startDrag());
+    appStore.dispatch(startDrag());
 
     // Make the dragged element semi-transparent
     const target = e.target as HTMLElement;
@@ -723,7 +723,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     dragOverContainer = false;
 
     // Update global drag state - this ensures all panels reset their drop zone state
-    dispatch(endDrag());
+    appStore.dispatch(endDrag());
   }
 
   // Check if a tab drag is happening (from this panel or another)
@@ -1072,7 +1072,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (!sidebarTabId) return;
 
     // Request the sidebar to locate this item via Redux
-    dispatch(
+    appStore.dispatch(
       locateItemInSidebarRequested(workspaceId, {
         sidebarTabId,
         type: tab.type,

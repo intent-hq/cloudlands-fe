@@ -17,13 +17,14 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
 } from '$lib/store/slices/agent-session/agent-session-selectors';
   import Header from '../ui/Header.svelte';
   import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     agents?: AgentSession[];
@@ -81,7 +82,7 @@
   function isAgentRunning(agentId: string): boolean {
     // Reference activeStreamsVersion for reactivity while deriving from canonical selectors.
     activeStreamsVersion;
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const isWaiting = selectAgentIsWaiting.select(state, agentId);
     const isResponding = selectAgentIsResponding.select(state, agentId);
     return isResponding && !isWaiting;
@@ -119,7 +120,7 @@
 
   // Helper to get avatar state for an agent
   function getAgentAvatarState(agent: AgentSession) {
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const isWaiting = selectAgentIsWaiting.select(state, agent.id);
     const isRunning = isAgentRunning(agent.id);
     return getAvatarState({

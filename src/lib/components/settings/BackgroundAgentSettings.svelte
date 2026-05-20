@@ -28,7 +28,6 @@
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$lib/store/store';
 
-  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
   const availableModels$ = selectAvailableModels();
   const defaultModel = selectBgDefaultModel();
   const typeOverrides$ = selectBgTypeOverrides();
@@ -63,7 +62,7 @@
 
     // Update store (convert sentinel value to empty string)
     const storeValue = value === USE_DEFAULT_VALUE ? '' : value;
-    dispatch(setTypeOverride({ type, model: storeValue }));
+    appStore.dispatch(setTypeOverride({ type, model: storeValue }));
   }
 
   // Model options for override dropdowns - includes "Use default" option
@@ -90,7 +89,7 @@
   <div class="shrink-0 w-72">
     <ModelPicker
       selectedModel={$defaultModel}
-      onModelChange={(model) => dispatch(setDefaultModel(model))}
+      onModelChange={(model) => appStore.dispatch(setDefaultModel(model))}
       showManageLink={false}
       showDefaultOption={false}
       variant="default"

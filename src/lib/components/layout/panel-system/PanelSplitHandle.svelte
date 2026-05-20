@@ -24,7 +24,8 @@
   type HandleDropZoneType,
   type SerializableRect,
 } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   /** Position relative to the split for container-level insertion */
   export type HandleDropZone = 'before' | 'after';
@@ -58,7 +59,6 @@
     onResizeEnd,
     onTabDropToHandle,
   }: Props = $props();
-  const dispatch = getDispatch();
 
   let isDragging = $state(false);
   let startPos = $state(0);
@@ -251,7 +251,7 @@
         bottom: r.bottom,
         left: r.left,
       });
-      dispatch(
+      appStore.dispatch(
         setActiveHandleDrop({
           handleRect: toRect(handleRect),
           containerRect: toRect(containerRect),
@@ -268,7 +268,7 @@
 
     isTabDragOver = false;
     currentZoneInfo = null;
-    dispatch(setActiveHandleDrop(null));
+    appStore.dispatch(setActiveHandleDrop(null));
   }
 
   function handleTabDrop(e: DragEvent) {
@@ -278,7 +278,7 @@
     const zoneInfo = currentZoneInfo;
     isTabDragOver = false;
     currentZoneInfo = null;
-    dispatch(setActiveHandleDrop(null));
+    appStore.dispatch(setActiveHandleDrop(null));
 
     if (!zoneInfo) return;
 

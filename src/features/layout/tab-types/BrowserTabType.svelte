@@ -12,13 +12,13 @@
   updateTabTitle,
   updateTabFavicon,
 } from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import { updateContextItem } from '$lib/store/slices/context/context-slice';
+  import { store as appStore } from '$lib/store/store';
 
   let { tab, workspaceId, isActive, isPanelFocused, onFocus }: TabTypeComponentProps = $props();
 
-  const dispatch = getDispatch();
 
   // Browser URL from tab data
   const browserUrl = $derived(tab.browserUrl ?? 'https://google.com');
@@ -33,23 +33,23 @@
     isFocused={isPanelFocused}
     onNavigate={(newUrl: string) => {
       // Update the tab's browserUrl so it stays in sync with actual location
-      getReduxStore().dispatch(updateTabBrowserUrl(workspaceId, tab.id, newUrl));
+      appStore.dispatch(updateTabBrowserUrl(workspaceId, tab.id, newUrl));
       // Update context store item if this tab is linked to one
       if (tab.contextItemId) {
-        dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));
+        appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));
       }
     }}
     onTitleChange={(title: string) => {
       // Update the tab title in the panel layout
-      getReduxStore().dispatch(updateTabTitle(workspaceId, tab.id, title));
+      appStore.dispatch(updateTabTitle(workspaceId, tab.id, title));
       // Update context store item title if this tab is linked to one
       if (tab.contextItemId) {
-        dispatch(updateContextItem(workspaceId, tab.contextItemId, { title }));
+        appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { title }));
       }
     }}
     onFaviconChange={(faviconUrl: string) => {
       // Update the tab's favicon URL in the panel layout
-      getReduxStore().dispatch(updateTabFavicon(workspaceId, tab.id, faviconUrl));
+      appStore.dispatch(updateTabFavicon(workspaceId, tab.id, faviconUrl));
     }}
     {onFocus}
   />

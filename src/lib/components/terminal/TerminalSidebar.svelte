@@ -5,7 +5,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import type { ScriptCategory,
   ScriptMode,
   ScriptWithState } from '$features/scripts/types';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectScriptEntries } from '$lib/store/slices/scripts/scripts-selectors';
   import {
   refreshScripts,
@@ -35,7 +35,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { removeTerminal } from '$lib/store/slices/terminals/terminals-slice';
 
   const activeWorkspace = selectActiveWorkspace();
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
@@ -53,6 +53,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -116,7 +117,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let pendingScrollScriptId = $state<string | null>(null);
 
   async function handleDetectionResult(parsed: any): Promise<void> {
-    const snapshot = selectScriptEntries.select(getReduxStore().getState()).map((s) => {
+    const snapshot = selectScriptEntries.select(appStore.state).map((s) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { runtime, ...scriptDef } = s;
       return { ...scriptDef };
@@ -133,14 +134,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let removedCount = 0;
 
       const autoDetectedIds = new Set(
-        selectScriptEntries.select(getReduxStore().getState()).filter((s) => s.source === 'auto-detected').map((s) => s.id),
+        selectScriptEntries.select(appStore.state).filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
             await scriptsClient.remove(workspaceId, scriptId);
-            sidebarDispatch(removeScript(workspaceId, scriptId));
+            appStore.dispatch(removeScript(workspaceId, scriptId));
             removedCount++;
           }
         }
@@ -176,28 +177,28 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               source: 'auto-detected',
             });
             if (createResult.success && createResult.data) {
-              sidebarDispatch(upsertScript(workspaceId, createResult.data));
+              appStore.dispatch(upsertScript(workspaceId, createResult.data));
               addedCount++;
             }
           }
         }
       }
 
-      sidebarDispatch(refreshScripts(workspaceId));
+      appStore.dispatch(refreshScripts(workspaceId));
 
       const parts: string[] = [];
       if (addedCount > 0) parts.push(`+${addedCount} added`);
       if (updatedCount > 0) parts.push(`~${updatedCount} updated`);
       if (removedCount > 0) parts.push(`-${removedCount} removed`);
 
-      showAgentAssist = selectScriptEntries.select(getReduxStore().getState()).length === 0;
+      showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
 
       if (parts.length > 0) {
         toast.success(`Scripts updated: ${parts.join(', ')}`, {
           action: {
             label: 'Undo',
             onClick: async () => {
-              for (const s of selectScriptEntries.select(getReduxStore().getState())) {
+              for (const s of selectScriptEntries.select(appStore.state)) {
                 await scriptsClient.remove(workspaceId, s.id);
               }
               for (const s of snapshot) {
@@ -212,7 +213,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   autoStart: s.autoStart,
                 });
               }
-              sidebarDispatch(refreshScripts(workspaceId));
+              appStore.dispatch(refreshScripts(workspaceId));
               toast.success('Scripts restored');
             },
           },
@@ -227,7 +228,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Fallback: old flat array format — deduplicate
     if (Array.isArray(parsed)) {
       const existingKeys = new Set(
-        selectScriptEntries.select(getReduxStore().getState()).map((s) => `${s.name}::${s.command}`),
+        selectScriptEntries.select(appStore.state).map((s) => `${s.name}::${s.command}`),
       );
 
       let createdCount = 0;
@@ -246,13 +247,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             source: 'auto-detected',
           });
           if (createResult.success && createResult.data) {
-            sidebarDispatch(upsertScript(workspaceId, createResult.data));
+            appStore.dispatch(upsertScript(workspaceId, createResult.data));
             createdCount++;
           }
         }
       }
 
-      showAgentAssist = selectScriptEntries.select(getReduxStore().getState()).length === 0;
+      showAgentAssist = selectScriptEntries.select(appStore.state).length === 0;
 
       if (createdCount > 0) {
         toast.success(`Detected ${createdCount} new script${createdCount === 1 ? '' : 's'}`);
@@ -285,9 +286,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     },
     onError: async () => {
       // Try to salvage JSON from the agent's raw messages via Redux
-      const currentAgentId = selectExecutorAgentId.select(getReduxStore().getState(), workspaceId, 'script-detect');
+      const currentAgentId = selectExecutorAgentId.select(appStore.state, workspaceId, 'script-detect');
       const agentSession = currentAgentId
-        ? selectAgentSession.select(getReduxStore().getState(), currentAgentId)
+        ? selectAgentSession.select(appStore.state, currentAgentId)
         : undefined;
       const messages = agentSession?.messages;
       if (messages && messages.length > 0) {
@@ -333,7 +334,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         throw new Error(result.error || 'Local script detection failed');
       }
 
-      sidebarDispatch(refreshScripts(workspaceId));
+      appStore.dispatch(refreshScripts(workspaceId));
       // Use the detected count from the IPC response (number of scripts found
       // in project manifests) rather than the total store count which includes
       // user-created scripts. Default to 0 so agent assist is shown when the
@@ -349,7 +350,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         toast.info('No scripts found locally. You can try agent-assisted detection.');
       }
       logger.info('Local detection complete', {
-        totalScripts: selectScriptEntries.select(getReduxStore().getState()).length,
+        totalScripts: selectScriptEntries.select(appStore.state).length,
         detectedCount,
         source: options.source ?? 'primary',
       });
@@ -366,7 +367,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   function buildExistingScriptsContext(): string {
-    const existingScripts = selectScriptEntries.select(getReduxStore().getState()).map((s) => ({
+    const existingScripts = selectScriptEntries.select(appStore.state).map((s) => ({
       id: s.id,
       name: s.name,
       command: s.command,
@@ -398,7 +399,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const COLLAPSED_SCRIPT_LIMIT = 6;
 
   // Store bindings
-  const sidebarDispatch = getDispatch();
   const _sidebarTerminals = selectTerminalsSelector();
   const _sidebarActiveTerminalId = selectActiveTerminalIdSelector();
   const scriptEntries$ = selectScriptEntries();
@@ -505,7 +505,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(scriptId: string) {
     await scriptsClient.remove(workspaceId, scriptId);
-    sidebarDispatch(removeScript(workspaceId, scriptId));
+    appStore.dispatch(removeScript(workspaceId, scriptId));
     if (selectedScriptId === scriptId) {
       onSelectScript?.(null);
     }
@@ -552,7 +552,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       source: 'user',
     });
     if (result.success && result.data) {
-      sidebarDispatch(upsertScript(workspaceId, result.data));
+      appStore.dispatch(upsertScript(workspaceId, result.data));
       onSelectScript?.(result.data.id);
       newName = '';
       newCommand = '';
@@ -598,7 +598,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     // Range select with Shift+click
     if (event && event.shiftKey && lastClickedScriptId) {
       event.preventDefault();
-      const scripts = sortScripts(selectScriptEntries.select(getReduxStore().getState()));
+      const scripts = sortScripts(selectScriptEntries.select(appStore.state));
       const lastIndex = scripts.findIndex((s) => s.id === lastClickedScriptId);
       const currentIndex = scripts.findIndex((s) => s.id === scriptId);
       if (lastIndex !== -1 && currentIndex !== -1) {
@@ -647,7 +647,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       const idsToDelete = Array.from(selectedScriptIds);
       for (const id of idsToDelete) {
         await scriptsClient.remove(workspaceId, id);
-        sidebarDispatch(removeScript(workspaceId, id));
+        appStore.dispatch(removeScript(workspaceId, id));
         if (selectedScriptId === id) {
           onSelectScript?.(null);
         }
@@ -698,7 +698,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
       scriptsClient.update(workspaceId, editingScriptId, { name: editingScriptName.trim() });
-      sidebarDispatch(refreshScripts(workspaceId));
+      appStore.dispatch(refreshScripts(workspaceId));
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -760,7 +760,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // Scroll started script into view once it transitions to running
   $effect(() => {
     if (pendingScrollScriptId) {
-      const script = selectScriptEntries.select(getReduxStore().getState()).find((s) => s.id === pendingScrollScriptId);
+      const script = selectScriptEntries.select(appStore.state).find((s) => s.id === pendingScrollScriptId);
       if (script?.runtime.status === 'running') {
         const id = pendingScrollScriptId;
         pendingScrollScriptId = null;
@@ -856,7 +856,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 e.stopPropagation();
                 const wsId = $activeWorkspace?.id;
                 if (wsId) {
-                  getReduxStore().dispatch(
+                  appStore.dispatch(
                     openAgentTabRequested(wsId, { agentId: $_scriptDetectAgentId$ }),
                   );
                 }
@@ -1169,7 +1169,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     label: 'Close Terminal',
                     onClick: (e) => {
                       e.stopPropagation();
-                      if (workspaceId) sidebarDispatch(removeTerminal(workspaceId, term.id));
+                      if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, term.id));
                     },
                   },
                 ]}

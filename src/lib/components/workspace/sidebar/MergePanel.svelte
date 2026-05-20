@@ -49,7 +49,6 @@
   import Fa from 'svelte-fa';
 	import { store as appStore } from '$lib/store/store';
 
-  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
 
   interface Props {
     workspaceId: string;
@@ -131,7 +130,7 @@
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
     if (result.ok) {
-      dispatch(setWorkspaceEntity(result.data));
+      appStore.dispatch(setWorkspaceEntity(result.data));
     }
     return result;
   }
@@ -142,23 +141,23 @@
 
   async function handleAutoFillMerge() {
     if (isGeneratingMerge) {
-      dispatch(cancelExecution(workspaceId, 'commit-merge'));
+      appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
       const state = appStore.state;
       const ws = selectWorkspaceById.select(state, workspaceId);
       if (ws) {
-        dispatch(executeBackgroundAgent(ws.id, 'commit-merge'));
+        appStore.dispatch(executeBackgroundAgent(ws.id, 'commit-merge'));
       }
     }
   }
 
   function handleStopGeneratingMerge() {
-    dispatch(cancelExecution(workspaceId, 'commit-merge'));
-    dispatch(setSidebarMergeWhenReady(workspaceId, false));
+    appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
+    appStore.dispatch(setSidebarMergeWhenReady(workspaceId, false));
   }
 
   function toggleMergeWhenReady() {
-    dispatch(setSidebarMergeWhenReady(workspaceId, !$mergeWhenReady$));
+    appStore.dispatch(setSidebarMergeWhenReady(workspaceId, !$mergeWhenReady$));
   }
 
   function viewMergeThoughtProcess(e?: MouseEvent) {
@@ -225,7 +224,7 @@
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
             await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
-            dispatch(ftClearOlderCommits(workspaceId));
+            appStore.dispatch(ftClearOlderCommits(workspaceId));
           } catch { console.error('Failed to update baseCommitSha after auto-rebase'); }
         }
         if (result.result?.autoRebased) {
@@ -280,7 +279,7 @@
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId)),
-            Promise.resolve(dispatch(refreshPRStatusRequested(workspaceId, true, false))),
+            Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
         toast.success(`PR #${openPR.number} merged on GitHub`);

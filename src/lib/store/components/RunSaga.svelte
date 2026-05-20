@@ -13,7 +13,7 @@
 
   $effect.pre(() => {
     if (!storeContext) return;
-    return runSaga(storeContext.store, sagaName);
+    return runSaga(sagaName);
   });
 </script>
 

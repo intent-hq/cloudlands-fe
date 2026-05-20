@@ -20,7 +20,7 @@
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
@@ -31,7 +31,7 @@
   selectUnreadAgentIdsForWorkspace,
 } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   closeAll,
   togglePinWorkspace,
@@ -42,12 +42,12 @@
   compareWorkspaceActivityDisplayTimeDesc,
   getWorkspaceActivityDisplayTime,
 } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
   }
 
-  const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
@@ -106,7 +106,7 @@
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
     const pullRequests = ws.pullRequests || [];
-    const activePR = selectWorkspaceActivePullRequest.select(getReduxStore().getState(), ws.id);
+    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, ws.id);
     const hasMergedPR =
       ws.prStatus === PullRequestStatus.Merged ||
       activePR?.status === PullRequestStatus.Merged ||
@@ -212,7 +212,7 @@
 
   function getUnreadAgentIds(ws: Workspace): string[] {
     void $unreadAgentIds$;
-    return selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), ws.id);
+    return selectUnreadAgentIdsForWorkspace.select(appStore.state, ws.id);
   }
 
   function isUnread(ws: Workspace): boolean {
@@ -233,18 +233,18 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    dispatch(closeAll(false));
+    appStore.dispatch(closeAll(false));
     goto(route);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    dispatch(togglePinWorkspace(workspaceId));
+    appStore.dispatch(togglePinWorkspace(workspaceId));
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    dispatch(clearWorkspaceUnread(workspaceId));
+    appStore.dispatch(clearWorkspaceUnread(workspaceId));
   }
 
   // Flat ordered list of workspace IDs matching the current view mode's display order
@@ -319,7 +319,7 @@
             {$viewMode$ === mode
             ? 'bg-background text-foreground font-medium shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
+          onclick={() => appStore.dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
         >
           {label}
         </button>

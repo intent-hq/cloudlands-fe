@@ -8,7 +8,8 @@
 
   import { createLogger } from '$lib/utils/client-logger';
   import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   const logger = createLogger('SpecWritingOnboarding');
 
@@ -20,7 +21,6 @@
 
   let { agentId, workspaceId }: Props = $props();
 
-  const dispatch = getDispatch();
 
   let isStopping = $state(false);
 
@@ -31,7 +31,7 @@
     try {
       logger.info('User stopping coordinator', { agentId });
       const action = stopAgentSessionRequested(workspaceId, agentId);
-      dispatch(action);
+      appStore.dispatch(action);
       await action.promise;
     } catch (error) {
       logger.error('Failed to stop coordinator', error as Error, { agentId });

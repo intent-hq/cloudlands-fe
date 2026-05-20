@@ -37,7 +37,7 @@
   type TerminalTab,
 } from '$lib/store/slices/terminals/terminals-slice';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import Terminal from './Terminal.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -54,9 +54,9 @@
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { store as appStore } from '$lib/store/store';
 
   // Store bindings
-  const dispatch = getDispatch();
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
   const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
@@ -106,7 +106,7 @@
 
   function finishEditing() {
     if (editingTerminalId) {
-      dispatch(renameTerminal(ROOT_WORKSPACE_ID, editingTerminalId, editingValue));
+      appStore.dispatch(renameTerminal(ROOT_WORKSPACE_ID, editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -144,7 +144,7 @@
 
   function finishEditingHeaderName() {
     if (isEditingHeaderName && $activeTerminalId) {
-      dispatch(renameTerminal(ROOT_WORKSPACE_ID, $activeTerminalId, headerEditValue));
+      appStore.dispatch(renameTerminal(ROOT_WORKSPACE_ID, $activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -171,16 +171,16 @@
   // ============================================================================
 
   function handleClose() {
-    dispatch(closeTerminalOverlay(ROOT_WORKSPACE_ID));
+    appStore.dispatch(closeTerminalOverlay(ROOT_WORKSPACE_ID));
   }
 
   let overlayContainer = $state<HTMLDivElement>();
 
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
-    dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${$terminals.length + 1}`));
+    appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${$terminals.length + 1}`));
     if (!$isOpen) {
-      dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
+      appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
     // Focus the overlay container immediately so keyboard shortcuts
     // route to the terminal before xterm is ready
@@ -191,7 +191,7 @@
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    dispatch(removeTerminal(ROOT_WORKSPACE_ID, termId));
+    appStore.dispatch(removeTerminal(ROOT_WORKSPACE_ID, termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -215,9 +215,9 @@
       if (termId === $activeTerminalId && $isOpen) {
         handleClose();
       } else {
-        dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, termId));
+        appStore.dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, termId));
         if (!$isOpen) {
-          dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
+          appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
         }
       }
     }, 200);
@@ -236,7 +236,7 @@
     if (!$activeTerminalId || $terminals.length <= 1) return;
     const currentIndex = $terminals.findIndex((t: TerminalTab) => t.id === $activeTerminalId);
     const nextIndex = (currentIndex + direction + $terminals.length) % $terminals.length;
-    dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, $terminals[nextIndex].id));
+    appStore.dispatch(selectTerminalAction(ROOT_WORKSPACE_ID, $terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -256,7 +256,7 @@
     if (!isResizing) return;
     const windowHeight = window.innerHeight;
     const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    dispatch(setTerminalOverlayHeight(newHeight));
+    appStore.dispatch(setTerminalOverlayHeight(newHeight));
   }
 
   function stopResize() {

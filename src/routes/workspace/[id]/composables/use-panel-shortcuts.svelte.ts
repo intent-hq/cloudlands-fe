@@ -31,7 +31,8 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
-import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
 const logger = createLogger('PanelShortcuts');
 
@@ -53,7 +54,6 @@ export interface UsePanelShortcutsOptions {
 }
 
 export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
-  const dispatch = getDispatch();
 
   $effect(() => {
     if (typeof window === 'undefined') return;
@@ -104,7 +104,7 @@ export function usePanelShortcuts(options: UsePanelShortcutsOptions) {
       if (event.key === 'b' && !event.shiftKey && !event.altKey) {
         event.preventDefault();
         logger.debug('Toggling workspace left sidebar');
-        dispatch(toggleSidebar());
+        appStore.dispatch(toggleSidebar());
         return;
       }
 

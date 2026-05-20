@@ -36,7 +36,7 @@
   type PanelContextItem,
   type SelectionContextItem,
 } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   getMentionSystem,
   type MentionCandidate,
@@ -44,6 +44,7 @@
 } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import Input from '$lib/components/ui/input/input.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     panels: PanelContextItem[];
@@ -71,7 +72,6 @@
     class: className = '',
   }: Props = $props();
 
-  const contextDispatch = getDispatch();
 
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
@@ -254,7 +254,7 @@
     }
 
     // Add to the store as a checked context item
-    contextDispatch(addSearchedItem({
+    appStore.dispatch(addSearchedItem({
       id: result.id,
       type: itemType,
       label: result.label,

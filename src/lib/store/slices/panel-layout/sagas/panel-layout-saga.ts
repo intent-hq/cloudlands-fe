@@ -17,7 +17,6 @@ import {
   takeEvery,
   type SagaGenerator,
 } from "typed-redux-saga";
-import { clearPanelLayoutAdapter } from "$features/layout/panel-layout-adapter";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -98,6 +97,11 @@ function getStorageKey(wsId: string): string {
 }
 
 const restoredWorkspaceIds = new Set<string>();
+
+async function loadClearPanelLayoutAdapter() {
+  const { clearPanelLayoutAdapter } = await import("$features/layout/panel-layout-adapter");
+  return clearPanelLayoutAdapter;
+}
 
 function isValidMountedWorkspaceId(wsId: string): boolean {
   return !!wsId && wsId !== "new" && !wsId.startsWith("optimistic-") && wsId !== "undefined";
@@ -357,7 +361,8 @@ function* watchClearLayout() {
 export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
-  clearPanelLayoutAdapter(wsId);
+  const clearPanelLayoutAdapter = yield* call(loadClearPanelLayoutAdapter);
+  yield* call(clearPanelLayoutAdapter, wsId);
 }
 
 function* watchWorkspaceUnmounted() {

@@ -24,8 +24,8 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsClient } from '$features/scripts/scripts.client';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
+
   import {
   selectScriptById,
   selectScriptRuntime,
@@ -35,8 +35,8 @@
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
 
   interface Props {
     scriptId: string;
@@ -152,7 +152,7 @@
 
   function loadBufferedOutput(): void {
     if (!xterm) return;
-    const lines = selectScriptOutput.select(getReduxStore().getState(), scriptId);
+    const lines = selectScriptOutput.select(appStore.state, scriptId);
     if (lines.length > 0) {
       const text = lines.map((l) => l.text).join('\n');
       xterm.write(text);
@@ -199,7 +199,7 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleDelete(): Promise<void> {
     await scriptsClient.remove(workspaceId, scriptId);
-    dispatch(removeScript(workspaceId, scriptId));
+    appStore.dispatch(removeScript(workspaceId, scriptId));
     onDelete?.();
   }
 
@@ -211,7 +211,7 @@
       return;
     }
 
-    const lines = selectScriptOutput.select(getReduxStore().getState(), scriptId);
+    const lines = selectScriptOutput.select(appStore.state, scriptId);
     const lastLines = lines
       .slice(-100)
       .map((l) => l.text)
@@ -223,7 +223,7 @@
     const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
-      dispatch(createAgentFromConfigRequested(workspaceId, {
+      appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
         name: `Fix: ${$script$?.name ?? 'script'}`,
         workspaceId: WorkspaceId(workspaceId),
         initialMessage: prompt,

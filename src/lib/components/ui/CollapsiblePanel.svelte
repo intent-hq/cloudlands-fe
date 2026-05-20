@@ -8,7 +8,8 @@
   setCollapsiblePanelCollapsed,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   interface Props {
     title: string;
@@ -38,7 +39,6 @@
     children,
   }: Props = $props();
 
-  const dispatch = getDispatch();
   const persistedCollapsed = selectCollapsiblePanelCollapsed(storageKey ?? '');
 
   let collapsed = $state($persistedCollapsed ?? defaultCollapsed);
@@ -53,14 +53,14 @@
 
   onMount(() => {
     if (storageKey) {
-      dispatch(requestCollapsiblePanelCollapsed(storageKey));
+      appStore.dispatch(requestCollapsiblePanelCollapsed(storageKey));
     }
   });
 
   function toggleCollapsed() {
     collapsed = !collapsed;
     if (storageKey) {
-      dispatch(setCollapsiblePanelCollapsed(storageKey, collapsed));
+      appStore.dispatch(setCollapsiblePanelCollapsed(storageKey, collapsed));
     }
   }
 

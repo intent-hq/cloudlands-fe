@@ -32,11 +32,7 @@
   selectNoteById,
   selectNotesVersion,
 } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import {
-  getReduxStore,
-  getReduxDispatch,
-  dispatch as reduxDispatch,
-} from '$lib/store/redux-dispatch-bridge';
+
   import {
   reloadNotes,
   updateTaskStatus,
@@ -53,6 +49,7 @@
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -103,7 +100,7 @@
     void $notesVersion;
     const wsId = $activeWorkspaceId;
     if (!wsId) return null;
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     return selectNoteById.select(state, wsId, linkedTaskNoteId) ?? null;
   });
 
@@ -162,7 +159,7 @@
     try {
       const workspaceId = linkedTaskNote?.workspaceId;
       if (!workspaceId) return;
-      getReduxDispatch()(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
+      appStore.dispatch(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
     } catch (error) {
       logger.error('Failed to update linked task status', error);
     }
@@ -285,7 +282,7 @@
     // if the task lives in a different workspace), fall back to the active workspace.
     const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
     if (!wsId) return;
-    reduxDispatch(delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false));
+    appStore.dispatch(delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false));
   }
 
   function convertToInlineTask() {
@@ -326,7 +323,7 @@
 
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
-    const reduxState = getReduxStore().getState();
+    const reduxState = appStore.state;
     const currentNoteId = selectSelectedNoteId.select(reduxState, wsId);
     if (!currentNoteId) return;
     const currentNote = selectNoteById.select(reduxState, wsId, currentNoteId);
@@ -360,7 +357,7 @@
       const tr = editor.state.tr;
       tr.replaceWith(pos, pos + node.nodeSize, newTaskItem);
       editor.view.dispatch(tr);
-      reduxDispatch(reloadNotes(currentNote.workspaceId));
+      appStore.dispatch(reloadNotes(currentNote.workspaceId));
     } catch (error) {
       logger.error('Failed to convert checkbox to Task Note', error);
     }

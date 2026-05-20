@@ -13,20 +13,20 @@
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectDraftPrompt } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   closeAll,
   setShowCreateModal,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { compareWorkspaceActivityDisplayTimeDesc } from '$shared/utils/workspace-activity-time';
   import Header from '$lib/components/ui/Header.svelte';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const draftPrompt$ = selectDraftPrompt();
   const workspaceItems = selectWorkspaceItems();
 
@@ -68,7 +68,7 @@
   });
 
   function openModal(initialRepo?: { repoPath?: string; owner?: string; name?: string }, event?: MouseEvent) {
-    dispatch(closeAll(false));
+    appStore.dispatch(closeAll(false));
     if (initialRepo?.repoPath) {
       sessionStorage.setItem(
         'workspace-prefill',
@@ -85,19 +85,19 @@
       return;
     }
 
-    dispatch(setShowCreateModal(true));
+    appStore.dispatch(setShowCreateModal(true));
   }
 
   function openWithDraft() {
-    const currentDraft = selectDraftPrompt.select(getReduxStore().getState());
+    const currentDraft = selectDraftPrompt.select(appStore.state);
     if (currentDraft.trim()) {
       sessionStorage.setItem(
         'workspace-prefill',
         JSON.stringify({ prompt: currentDraft }),
       );
     }
-    dispatch(closeAll(false));
-    dispatch(setShowCreateModal(true));
+    appStore.dispatch(closeAll(false));
+    appStore.dispatch(setShowCreateModal(true));
   }
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {

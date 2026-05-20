@@ -24,7 +24,7 @@
   selectInstalledEditorsFiltered,
   selectOpenAction,
 } from '$lib/store/slices/external-editors/external-editors-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';
   import {
@@ -38,6 +38,7 @@
   faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('OpenComboButton');
   /** Icon mapping from editor ID to Svelte component */
@@ -105,7 +106,6 @@
     variant === 'sidebar' ? 'bg-sidebar hover:bg-sidebar/80' : 'bg-background hover:bg-muted',
   );
 
-  const dispatch = getDispatch();
   const openAction = selectOpenAction();
   const installedEditors$ = selectInstalledEditorsFiltered();
 
@@ -113,7 +113,7 @@
 
   // Fetch installed editors when component mounts
   onMount(() => {
-    dispatch(fetchEditors());
+    appStore.dispatch(fetchEditors());
   });
 
   /** Convert installed editor to action config */
@@ -265,7 +265,7 @@
   }
 
   function handleActionClick(actionId: OpenAction) {
-    dispatch(setOpenAction(actionId));
+    appStore.dispatch(setOpenAction(actionId));
     executeAction(actionId);
     dropdownOpen = false;
   }

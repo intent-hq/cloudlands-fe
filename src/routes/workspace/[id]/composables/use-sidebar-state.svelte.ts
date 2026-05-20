@@ -16,10 +16,7 @@ import {
   selectNotesLoading,
 } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 import { initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import {
-  dispatch as reduxDispatch,
-  getReduxStore,
-} from '$lib/store/redux-dispatch-bridge';
+
 import {
   stageByPathRequested,
   unstageByPathRequested,
@@ -32,6 +29,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
 import type { Note, Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
+  import { store as appStore } from '$lib/store/store';
 
 export interface UseSidebarStateOptions {
   workspace: Workspace | null;
@@ -48,7 +46,7 @@ export function useSidebarState(options: UseSidebarStateOptions) {
 
   // Subscribe to notes from Redux store
   // (can't use $store syntax in .svelte.ts files)
-  const reduxStore = getReduxStore();
+  const reduxStore = appStore;
   let _sidebarNotes = $state<Note[]>([]);
   let _sidebarNotesLoading = $state(false);
   $effect(() => {
@@ -71,8 +69,8 @@ export function useSidebarState(options: UseSidebarStateOptions) {
   // (can't use $store syntax in .svelte.ts files)
   const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
   const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
-  let _sidebarStagedChanges = $state<TrackedChange[]>(selectCurrentStagedWorkingChanges.select(getReduxStore().getState()));
-  let _sidebarUnstagedChanges = $state<TrackedChange[]>(selectCurrentUnstagedWorkingChanges.select(getReduxStore().getState()));
+  let _sidebarStagedChanges = $state<TrackedChange[]>(selectCurrentStagedWorkingChanges.select(appStore.state));
+  let _sidebarUnstagedChanges = $state<TrackedChange[]>(selectCurrentUnstagedWorkingChanges.select(appStore.state));
   $effect(() => {
     const unsub1 = ftStagedChanges$.subscribe((value) => {
       _sidebarStagedChanges = value;
@@ -103,7 +101,7 @@ export function useSidebarState(options: UseSidebarStateOptions) {
   $effect(() => {
     const workspace = options.workspace;
     if (!workspace?.id || !useSleekSidebar) return;
-    const allEvents = selectWorkspaceEvents.select(getReduxStore().getState(), workspace.id);
+    const allEvents = selectWorkspaceEvents.select(appStore.state, workspace.id);
     // Take the 10 most recent events (events are stored oldest-first, so slice from end)
     const newEvents = allEvents.slice(-10).reverse();
     // Only update if the event IDs actually changed to avoid infinite re-render loops
@@ -130,7 +128,7 @@ export function useSidebarState(options: UseSidebarStateOptions) {
         lastInitializedWorkspaceId = workspace.id;
         // Capture the selected note ID without creating a reactive dependency
         const selectedNoteId = untrack(() => state?.mainPanel.selectedNoteId);
-        reduxDispatch(initializeNotes(
+        appStore.dispatch(initializeNotes(
           workspace.id,
           selectedNoteId ?? undefined,
         ));
@@ -157,17 +155,17 @@ export function useSidebarState(options: UseSidebarStateOptions) {
 
   async function handleStageChange(change: TrackedChange) {
     const filePath = change.relativePath || change.file;
-    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    const wsId = appStore.state.workspace.activeWorkspaceId;
     if (filePath && wsId) {
-      getReduxStore().dispatch(stageByPathRequested(wsId, [filePath]));
+      appStore.dispatch(stageByPathRequested(wsId, [filePath]));
     }
   }
 
   async function handleUnstageChange(change: TrackedChange) {
     const filePath = change.relativePath || change.file;
-    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    const wsId = appStore.state.workspace.activeWorkspaceId;
     if (filePath && wsId) {
-      getReduxStore().dispatch(unstageByPathRequested(wsId, [filePath]));
+      appStore.dispatch(unstageByPathRequested(wsId, [filePath]));
     }
   }
 
@@ -176,10 +174,10 @@ export function useSidebarState(options: UseSidebarStateOptions) {
     // Use optimistic revert - UI updates immediately, toast shows right away
     toast.warning('Changes reverted');
 
-    const wsId = getReduxStore().getState().workspace.activeWorkspaceId;
+    const wsId = appStore.state.workspace.activeWorkspaceId;
     if (!wsId) return;
     // Dispatch revert action - saga handles optimistic update + rollback on failure
-    getReduxStore().dispatch(revertChangeRequested(wsId, change));
+    appStore.dispatch(revertChangeRequested(wsId, change));
   }
 
   function handleOpenPR(url: string) {

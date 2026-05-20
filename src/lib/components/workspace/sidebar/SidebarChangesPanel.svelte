@@ -42,7 +42,7 @@
   addTerminal,
   openTerminalOverlay,
 } from '$lib/store/slices/terminals/terminals-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
 
 
 
@@ -56,7 +56,7 @@
   import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
   import { openWorkspaceLocalChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
 
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
@@ -83,8 +83,8 @@
   import FileChangesSection from './FileChangesSection.svelte';
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -260,14 +260,14 @@
 
     untrack(() => {
       if (shouldClearResetFlag) {
-        const current = selectPostMergeState.select(getReduxStore().getState(), workspaceId);
+        const current = selectPostMergeState.select(appStore.state, workspaceId);
         if (current.hasResetToTrunk) {
-          dispatch(setPostMergeState(workspaceId, { ...current, hasResetToTrunk: false }));
+          appStore.dispatch(setPostMergeState(workspaceId, { ...current, hasResetToTrunk: false }));
         }
       }
       if (shouldClearMerge) {
-        const current = selectPostMergeState.select(getReduxStore().getState(), workspaceId);
-        dispatch(
+        const current = selectPostMergeState.select(appStore.state, workspaceId);
+        appStore.dispatch(
           setPostMergeState(workspaceId, {
             ...current,
             isMergedToTrunk: false,
@@ -281,12 +281,12 @@
 
   // Initialize GitHub auth state on mount
   onMount(() => {
-    dispatch(initializeGitHubAuth());
+    appStore.dispatch(initializeGitHubAuth());
 
     // Check if store is already loaded for this workspace on mount
     // This handles the case where the accordion is expanded after the store has already initialized
-    const storeWsId = selectActiveWorkspaceId.select(getReduxStore().getState());
-    const storeLoading = selectFtLoading.select(getReduxStore().getState(), workspaceId);
+    const storeWsId = selectActiveWorkspaceId.select(appStore.state);
+    const storeLoading = selectFtLoading.select(appStore.state, workspaceId);
     if (!storeLoading && storeWsId === workspaceId) {
       logger.debug(
         '[SidebarChangesPanel] Store already loaded on mount, setting hasLoadedForWorkspace',
@@ -325,8 +325,8 @@
     if (workspaceChanged) {
       lastWorkspaceId = workspaceId;
       // Sync workspace settings for the new workspace
-      dispatch(syncWorkspaceSettings(workspaceId as string));
-      dispatch(recomputeAgentLocks(workspaceId as string));
+      appStore.dispatch(syncWorkspaceSettings(workspaceId as string));
+      appStore.dispatch(recomputeAgentLocks(workspaceId as string));
       // Reset form state that is workspace-specific to prevent leaking between workspaces
       targetBranch = '';
       // Post-merge state is now read from Redux via selectPostMergeState — no manual restoration needed
@@ -366,7 +366,7 @@
   // Handle manual git status refresh
   async function handleRefreshGitStatus() {
     if (isRefreshingGitStatus) return;
-    dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', true));
+    appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', true));
     const refreshStart = Date.now();
 
     // Timeout for git refresh operations (90 seconds)
@@ -390,10 +390,10 @@
       // Race the refresh operations against the timeout
       await Promise.race([
         Promise.all([
-          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
-          getReduxStore().dispatch(refreshRequested(workspaceId)),
+          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+          appStore.dispatch(refreshRequested(workspaceId)),
           // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection
-          Promise.resolve(dispatch(refreshAcceptChangesStatus(workspaceId))),
+          Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId))),
         ]),
         timeoutPromise,
       ]);
@@ -415,7 +415,7 @@
       if (elapsed < 300) {
         await new Promise((resolve) => setTimeout(resolve, 300 - elapsed));
       }
-      dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', false));
+      appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', false));
     }
   }
 
@@ -452,7 +452,7 @@
     }
 
     logger.debug('[SidebarChangesPanel] Auto-discovering PRs', { workspaceId });
-    dispatch(refreshPRStatusRequested(workspaceId, false, false));
+    appStore.dispatch(refreshPRStatusRequested(workspaceId, false, false));
   });
 
   // Auto-close drawers when reactive conditions change
@@ -499,7 +499,7 @@
 
       // Handle pending auto-actions
       if (pending) {
-        dispatch(setPendingAutoAction(workspaceId, null));
+        appStore.dispatch(setPendingAutoAction(workspaceId, null));
         if (pending.action === 'commit') {
           isCommitting = true;
           handleCommit(pending.workspaceId);
@@ -554,7 +554,7 @@
 
   // Open all changes in main panel
   function handleOpenAllChanges() {
-    getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId));
+    appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
   }
 
   // Multi-select state for bulk staging/unstaging
@@ -889,8 +889,8 @@
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
         const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
-        dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
-        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
+        appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
+        appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Rebase started in terminal', {
           description: 'After rebase completes, retry the merge.',

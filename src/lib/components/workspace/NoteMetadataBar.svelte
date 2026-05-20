@@ -15,7 +15,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   type ChatFileChange,
 } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
@@ -26,10 +26,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   restoreAgentSessionRequested,
   runAgentForNoteRequested,
 } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import {
-  getDispatch,
-  readableProp,
-} from '$lib/store/utils/svelte-context';
+  import { readableProp } from '$lib/store/utils/readable-prop';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('NoteMetadataBar');
 
@@ -42,7 +40,6 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     note: Note;
   } = $props();
 
-  const dispatch = getDispatch();
   const workspaceId$ = readableProp(() => workspaceId as string);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
@@ -70,7 +67,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     // Keep this derived value reactive to agent session loads while resolving
     // agent details through selector-backed Redux reads below.
     const _workspaceAgents = $workspaceAgents$;
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const uniqueAgentIds = [...new Set(assignedAgentIds)];
     return uniqueAgentIds.sort((a, b) => {
       const agentA = selectAgentSession.select(state, a);
@@ -85,7 +82,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     // Keep assigned-agent display reactive to agent loads without scanning the
     // workspace agent list for an ID lookup.
     const _workspaceAgents = $workspaceAgents$;
-    const session = selectAgentSession.select(getReduxStore().getState(), agentId);
+    const session = selectAgentSession.select(appStore.state, agentId);
     return session?.name || 'Agent';
   }
 
@@ -107,7 +104,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
         loadAttemptedAgents.add(agentId);
       }
       for (const agentId of missingAgentIds) {
-        dispatch(ensureAgentSessionLoaded(workspace.id, agentId));
+        appStore.dispatch(ensureAgentSessionLoaded(workspace.id, agentId));
       }
     }
   });
@@ -116,7 +113,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-    dispatch(
+    appStore.dispatch(
       openAgentTabRequested(workspaceId, {
         agentId,
         sourcePanelId,
@@ -127,22 +124,22 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
-    dispatch(runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'));
+    appStore.dispatch(runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'));
   }
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
     const allMessages: AgentMessage[] = [];
-    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    const workspace = selectActiveWorkspace.select(appStore.state);
 
     for (const agentId of assignedAgents) {
       try {
         let agent: AgentSession | null | undefined = selectAgentSession.select(
-          getReduxStore().getState(),
+          appStore.state,
           agentId,
         );
         if (!agent && workspace) {
           const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
-          dispatch(restoreAction);
+          appStore.dispatch(restoreAction);
           agent = await restoreAction.promise;
         }
         if (agent?.messages) {
@@ -163,7 +160,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       const changes = await getAggregateChanges();
       if (changes.length === 0) return;
 
-      dispatch(
+      appStore.dispatch(
         openWorkspaceChatChanges(
           workspaceId as string,
           changes as never,

@@ -30,7 +30,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
-  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
+
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
@@ -81,6 +81,7 @@
   compareWorkspaceActivityDisplayTimeDesc,
   getWorkspaceActivityDisplayTime,
 } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('CommandPalette');
 
@@ -264,7 +265,7 @@
 
     // Initialize browser store for this workspace (untracked to avoid triggering effects)
     untrack(() => {
-      reduxDispatch(initBrowserWorkspace(wsId));
+      appStore.dispatch(initBrowserWorkspace(wsId));
     });
 
     // Load non-Redux terminal metadata for this workspace.
@@ -527,7 +528,7 @@
   }
 
   function recordMRUFile(path: string) {
-    reduxDispatch(recordPaletteFileMru(path, Date.now()));
+    appStore.dispatch(recordPaletteFileMru(path, Date.now()));
   }
 
   function rankByMRU<T extends { path?: string }>(items: T[]): T[] {
@@ -653,19 +654,19 @@
 
     // Handle workspace objects
     if (item.type) {
-      reduxDispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
+      appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
 
       switch (item.type) {
         case 'agent':
           if (workspaceId) {
-            reduxDispatch(
+            appStore.dispatch(
               openAgentTabRequested(workspaceId, { agentId: item.id, openInAdjacentPanel }),
             );
           }
           break;
         case 'note':
           if (workspaceId) {
-            reduxDispatch(
+            appStore.dispatch(
               openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }),
             );
           }
@@ -677,14 +678,14 @@
           break;
         case 'terminal':
           if (workspaceId) {
-            reduxDispatch(
+            appStore.dispatch(
               openTerminalTabRequested(workspaceId, { terminalId: item.id }),
             );
           }
           break;
         case 'browser':
           if (item.url && workspaceId) {
-            reduxDispatch(openWorkspaceBrowser(workspaceId, item.url));
+            appStore.dispatch(openWorkspaceBrowser(workspaceId, item.url));
           }
           break;
         case 'file':
@@ -710,7 +711,7 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        reduxDispatch(setShowCreateModal(true));
+        appStore.dispatch(setShowCreateModal(true));
         return true;
       case 'settings':
         navigateToSettings();
@@ -739,32 +740,32 @@
         return true;
       case 'new-agent':
         if (workspaceId) {
-          reduxDispatch(createAgentRequested(workspaceId));
+          appStore.dispatch(createAgentRequested(workspaceId));
         }
         return true;
       case 'new-terminal':
         if (workspaceId) {
-          reduxDispatch(createTerminalRequested(workspaceId));
+          appStore.dispatch(createTerminalRequested(workspaceId));
         }
         return true;
       case 'new-note':
         if (workspaceId) {
-          reduxDispatch(createNoteRequested(workspaceId));
+          appStore.dispatch(createNoteRequested(workspaceId));
         }
         return true;
       case 'new-file':
         if (workspaceId) {
-          reduxDispatch(commandPaletteNewFileRequested(workspaceId));
+          appStore.dispatch(commandPaletteNewFileRequested(workspaceId));
         }
         return true;
       case 'open-url':
         // Open a browser panel with default URL
         if (workspaceId) {
-          reduxDispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
+          appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
       case 'show-onboarding':
-        reduxDispatch(resetOnboarding());
+        appStore.dispatch(resetOnboarding());
         goto('/workspace/new');
         return true;
       default:

@@ -25,7 +25,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   ChangeStage,
   type TrackedChange,
 } from '$features/file-tracking/types';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
@@ -41,6 +41,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   openWorkspaceDiff,
   type JsonValue,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('NoteCodeChangesCard');
 
@@ -83,17 +84,17 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     isLoading = true;
     try {
       const allMessages: AgentMessage[] = [];
-      const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+      const workspace = selectActiveWorkspace.select(appStore.state);
 
       for (const agentId of assignedAgentIds) {
         try {
           let agent: AgentSession | null | undefined = selectAgentSession.select(
-            getReduxStore().getState(),
+            appStore.state,
             agentId,
           );
           if (!agent && workspace) {
             const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
-            getReduxStore().dispatch(restoreAction);
+            appStore.dispatch(restoreAction);
             agent = await restoreAction.promise;
           }
           if (agent?.messages) {
@@ -195,7 +196,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
           : undefined,
     };
 
-    getReduxStore().dispatch(
+    appStore.dispatch(
       openWorkspaceDiff(workspaceId, changeData, {
         changeId: trackedChange?.id || `chat-change-${change.filePath}`,
         filePath: change.filePath,
@@ -204,7 +205,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   }
 
   function handleViewAllClick() {
-    getReduxStore().dispatch(
+    appStore.dispatch(
       openWorkspaceChatChanges(workspaceId, changes as unknown as JsonValue[], `Changes from: ${note.title || 'Task'}`, {
         isAggregate: true,
       }),

@@ -19,7 +19,7 @@
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
@@ -31,7 +31,7 @@
 } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
   import {
   closeSwitcher,
@@ -51,8 +51,8 @@
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const switcherState = selectSwitcherState();
   const switcherWorkspaceIds = selectSwitcherWorkspaceIds();
   const workspaces = selectWorkspaceItems();
@@ -104,8 +104,8 @@
 
   /** Navigate to the clicked workspace and close the switcher. */
   function handleWorkspaceClick(workspace: Workspace) {
-    dispatch(confirmSelection());
-    dispatch(closeSwitcher());
+    appStore.dispatch(confirmSelection());
+    appStore.dispatch(closeSwitcher());
 
     if (workspace.id !== $currentWorkspaceId) {
       void goto(`/workspace/${workspace.id}`);
@@ -135,7 +135,7 @@
     // Reference version counters for reactivity
     void activeStreamsVersion;
     void $unreadAgentIds$;
-    const reduxState = getReduxStore().getState();
+    const reduxState = appStore.state;
     const summary = ws.agentSummary;
     const summaryAgents = summary?.agents || [];
     if (summaryAgents.length === 0) return [];

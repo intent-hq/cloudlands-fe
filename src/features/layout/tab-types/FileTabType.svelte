@@ -8,7 +8,7 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectFileContent,
   selectFileError,
@@ -66,6 +66,7 @@
   getFileExtension,
 } from '$lib/services/analytics';
   import { writable } from 'svelte/store';
+  import { store as appStore } from '$lib/store/store';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
@@ -184,7 +185,7 @@
     const wsId = workspaceId;
 
     if (filePath && absolutePath && wsId) {
-      dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
     }
   });
 
@@ -194,12 +195,12 @@
 
   function setFileContentFromEditor(content: string) {
     if (!tab.filePath || !workspaceId) return;
-    dispatch(updateFileContent(workspaceId, tab.filePath, content));
+    appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
   }
 
   function saveFileContent() {
     if (!tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving) return;
-    dispatch(saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent));
+    appStore.dispatch(saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent));
   }
 
   // Fetch line changes for diff indicators
@@ -266,7 +267,7 @@
     const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
     const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-    dispatch(
+    appStore.dispatch(
       openWorkspaceDiff(workspaceId, fileChange, {
         filePath: tab.filePath,
         changeId: fileChange.id,
@@ -284,7 +285,7 @@
     const fileName = filePath.split('/').pop() || 'file';
     // Capture current content so we can restore on undo
     const savedContent =
-      selectFileContent.select(getReduxStore().getState(), workspaceId, filePath) ?? '';
+      selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
 
     await deleteWithUndo(
       `"${fileName}"`,
@@ -298,7 +299,7 @@
           throw new Error(result?.error || 'Failed to delete file');
         }
         // Close the tab
-        dispatch(closeTab(workspaceId, tab.id));
+        appStore.dispatch(closeTab(workspaceId, tab.id));
         dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
         track('Deleted File', {
           workspace_id: workspaceId,
@@ -307,7 +308,7 @@
       },
       async () => {
         // Undo action — re-create the file with saved content
-        dispatch(
+        appStore.dispatch(
           saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent, {
             intent: 'restore',
           }),
@@ -366,7 +367,7 @@
       <Button
         variant="ghost-light"
         size="icon-xs"
-        onclick={() => dispatch(toggleDiffIndicators())}
+        onclick={() => appStore.dispatch(toggleDiffIndicators())}
         tooltip={$diffIndicators ? 'Hide diff indicators' : 'Show diff indicators'}
         tooltipSide="bottom"
         aria-pressed={$diffIndicators}
@@ -377,7 +378,7 @@
       <Button
         variant="ghost-light"
         size="icon-xs"
-        onclick={() => dispatch(toggleLineWrapping())}
+        onclick={() => appStore.dispatch(toggleLineWrapping())}
         tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
         tooltipSide="bottom"
         aria-pressed={$lineWrapping}

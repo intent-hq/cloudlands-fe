@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   interface Props {
     workspaceId: string;
@@ -17,7 +18,6 @@
 
   let { workspaceId, noteId, content, editable = true, isPanelFocused = false }: Props = $props();
 
-  const dispatch = getDispatch();
   const lineWrapping = selectLineWrapping();
   const currentContent = $derived(content ?? '');
   const noteFilePath = $derived(`.workspace/notes/${noteId}.md`);
@@ -99,7 +99,7 @@
     if (!target.workspaceId || !target.noteId || target.content === target.lastSavedContent) return;
 
     const note = selectNoteById.select(
-      getReduxStore().getState(),
+      appStore.state,
       target.workspaceId,
       target.noteId,
     );
@@ -108,7 +108,7 @@
     if (target.workspaceId === workspaceId && target.noteId === noteId) {
       lastSavedContent = target.content;
     }
-    dispatch(updateNoteContent(target.workspaceId, target.noteId, target.content));
+    appStore.dispatch(updateNoteContent(target.workspaceId, target.noteId, target.content));
   }
 
   export function flushPendingSave(): void {

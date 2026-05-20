@@ -38,8 +38,9 @@ import {
 } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
 import type { AgentExecutorContext } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
 import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
-import { getDispatch } from '$lib/store/utils/svelte-context';
+
 import type { Workspace } from '$shared/types';
+  import { store as appStore } from '$lib/store/store';
 
 export interface UseBackgroundAgentOptions {
   autoExecute?: boolean; // Execute immediately when workspace is available
@@ -66,25 +67,24 @@ export function useBackgroundAgent(
   options: UseBackgroundAgentOptions = {},
 ): UseBackgroundAgentReturn {
   const { autoExecute, workspace: initialWorkspace } = options;
-  const dispatch = getDispatch();
 
   // We need a workspaceId to scope the selector. Use provided workspace or empty.
   const wsId = initialWorkspace?.id ?? '';
 
   // Auto-execute if requested
   if (autoExecute && initialWorkspace) {
-    dispatch(executeBackgroundAgent(initialWorkspace.id, type));
+    appStore.dispatch(executeBackgroundAgent(initialWorkspace.id, type));
   }
 
   return {
     execute: (workspace: Workspace, context?: AgentExecutorContext) => {
-      dispatch(executeBackgroundAgent(workspace.id, type, context));
+      appStore.dispatch(executeBackgroundAgent(workspace.id, type, context));
     },
     cancel: () => {
-      if (wsId) dispatch(cancelExecution(wsId, type));
+      if (wsId) appStore.dispatch(cancelExecution(wsId, type));
     },
     reset: () => {
-      if (wsId) dispatch(resetExecutor(wsId, type));
+      if (wsId) appStore.dispatch(resetExecutor(wsId, type));
     },
   };
 }

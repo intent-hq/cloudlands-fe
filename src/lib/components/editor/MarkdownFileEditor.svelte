@@ -21,8 +21,9 @@
   } from '$lib/utils/markdown-processor';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     /** Markdown content (two-way bindable) */
@@ -107,9 +108,9 @@
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
         const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-        const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+        const wsId = selectActiveWorkspaceId.select(appStore.state);
         if (wsId) {
-          getReduxStore().dispatch(
+          appStore.dispatch(
             openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
           );
         }

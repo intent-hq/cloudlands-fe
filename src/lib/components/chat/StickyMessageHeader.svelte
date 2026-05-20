@@ -16,9 +16,10 @@
   import { extractAllContent } from '$shared/types/agent-message.conversion';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     message: AgentMessage;
@@ -105,8 +106,8 @@
         segments.push({ type: 'mention', mentionType: provider, label: title, identifier: identifier || undefined, icon: faFile });
       } else if (captured.startsWith('note/')) {
         const noteId = captured.slice(5);
-        const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '';
-        const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+        const wsId = selectActiveWorkspaceId.select(appStore.state) ?? '';
+        const allNotes = selectAllNotes.select(appStore.state, wsId);
         const n = allNotes.find((n) => n.id === noteId) ?? null;
         segments.push({ type: 'mention', mentionType: noteId === 'spec' ? 'spec' : 'note', label: n?.title || noteId, icon: noteId === 'spec' ? faClipboard : faNoteSticky });
       } else {

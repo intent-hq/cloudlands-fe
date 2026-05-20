@@ -47,7 +47,7 @@
   createLogger,
 } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
   fetchReadyTasks,
@@ -70,7 +70,7 @@
   hasRunningAgents,
   getRunningAgentNames,
 } from '$lib/utils/delete-warning-utils';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import {
   loadWorkspacesRequested,
@@ -80,6 +80,7 @@
   selectWorkspaceById,
   selectWorkspaceActivePullRequest,
 } from '$lib/store/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -95,8 +96,7 @@
 
   let { workspaceId, onOpenNote, onAcceptChanges, compact = false, onClick }: Props = $props();
 
-  // ✅ At component init — getDispatch and selectors use getContext()
-  const dispatch = getDispatch();
+  // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const sidebarSide$ = selectSidebarSide();
   const notes = $derived(selectAllNotes(workspaceId));
   const workspace = $derived(selectWorkspaceById(workspaceId ?? ''));
@@ -313,7 +313,7 @@
       // Navigate immediately to avoid UI stalling
       goto('/');
 
-      getReduxStore().dispatch(requestDeleteWorkspace($workspace.id));
+      appStore.dispatch(requestDeleteWorkspace($workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
     } finally {
@@ -328,7 +328,7 @@
 
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
-      getReduxStore().dispatch(loadWorkspacesRequested());
+      appStore.dispatch(loadWorkspacesRequested());
       toast.warning(`Archived space ${workspaceTitle}`, {
         duration: 15000,
         action: {
@@ -336,7 +336,7 @@
           onClick: async () => {
             const undoResult = await workspaceClient.unarchive($workspace.id);
             if (undoResult.ok) {
-              getReduxStore().dispatch(loadWorkspacesRequested());
+              appStore.dispatch(loadWorkspacesRequested());
             }
           },
         },
@@ -354,7 +354,7 @@
 
     const result = await workspaceClient.unarchive($workspace.id);
     if (result.ok) {
-      getReduxStore().dispatch(loadWorkspacesRequested());
+      appStore.dispatch(loadWorkspacesRequested());
       toast.success(`Unarchived space ${workspaceTitle}`);
     } else {
       toast.error('Failed to unarchive space');
@@ -383,7 +383,7 @@
     if (newTitle !== $workspace.title) {
       const result = await workspaceClient.update({ id: $workspace.id, title: newTitle });
       if (result.ok) {
-        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+        appStore.dispatch(setWorkspaceEntity(result.data));
       }
     }
     isEditingTitle = false;
@@ -438,7 +438,7 @@
         statusMessage: newStatusMessage,
       });
       if (result.ok) {
-        getReduxStore().dispatch(setWorkspaceEntity(result.data));
+        appStore.dispatch(setWorkspaceEntity(result.data));
       } else {
         logger.error('Failed to update workspace status', { error: result.error });
         editedStatusMessage = $workspace.statusMessage || '';
@@ -473,7 +473,7 @@
     iconSnippet: sidebarSideIconSnippet,
     dividerBefore: true,
     onClick: () => {
-      dispatch(toggleSidebarSide());
+      appStore.dispatch(toggleSidebarSide());
     },
   });
 
@@ -518,7 +518,7 @@
       const fetchKey = workspaceId + ':' + $notes.length;
       if (fetchKey !== lastFetchReadyTasksKey) {
         lastFetchReadyTasksKey = fetchKey;
-        dispatch(fetchReadyTasks(workspaceId));
+        appStore.dispatch(fetchReadyTasks(workspaceId));
       }
     }
   });
@@ -555,7 +555,7 @@
       if (readyTaskIds) {
         const filtered = $notes.filter((n) => readyTaskIds.includes(n.id as string));
         const deduped = deduplicateNotes(filtered);
-        dispatch(applyReadyTasks(mountedWorkspaceId, deduped));
+        appStore.dispatch(applyReadyTasks(mountedWorkspaceId, deduped));
         // Reset index if current is out of bounds
         if (currentReadyIndex >= deduped.length) {
           currentReadyIndex = Math.max(0, deduped.length - 1);

@@ -33,7 +33,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   selectActiveStreamsVersion,
   selectPanelItem,
@@ -52,14 +52,14 @@
   clearDeferredLeave,
   setShowCreateModal,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
 } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { isWorkspaceActivityWithin } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
@@ -79,7 +79,7 @@
     // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
     void $unreadAgentIds$;
     const now = Date.now();
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     let count = 0;
     for (const ws of $workspaceItems) {
       if (ws.status === WorkspaceStatusEnum.Archived || ws.status === WorkspaceStatusEnum.Deleted)
@@ -126,15 +126,15 @@
     const isOpen = $contextMenuOpen$;
     if (prevContextMenuOpen && !isOpen) {
       // Context menu just closed — process any deferred leave
-      const state = getReduxStore().getState();
+      const state = appStore.state;
       const deferredLeave = state.sidebarNav.deferredLeave;
-      dispatch(clearDeferredLeave());
+      appStore.dispatch(clearDeferredLeave());
 
       if (deferredLeave && !selectIsCardPinned.select(state)) {
         leaveTimeout = setTimeout(() => {
-          dispatch(setHoveredItem(null));
+          appStore.dispatch(setHoveredItem(null));
           if (deferredLeave === 'card') {
-            dispatch(setExpandedItem(null));
+            appStore.dispatch(setExpandedItem(null));
           }
         }, 200);
       }
@@ -151,11 +151,11 @@
       clearTimeout(hoverTimeout);
     }
     // Cancel any deferred leave — pointer is back on the nav
-    dispatch(clearDeferredLeave());
+    appStore.dispatch(clearDeferredLeave());
 
     // If an expanded item is open, switch immediately
     if ($expandedItem$) {
-      dispatch(setHoveredItem(item));
+      appStore.dispatch(setHoveredItem(item));
       return;
     }
 
@@ -164,7 +164,7 @@
 
     // Otherwise delay hover card appearance
     hoverTimeout = setTimeout(() => {
-      dispatch(setHoveredItem(item));
+      appStore.dispatch(setHoveredItem(item));
     }, 120);
   }
 
@@ -179,20 +179,20 @@
 
     // Context menu open — defer the leave so we can process it when the menu closes
     if ($contextMenuOpen$) {
-      dispatch(setDeferredLeave('nav'));
+      appStore.dispatch(setDeferredLeave('nav'));
       return;
     }
 
     // Set deferred leave so the hover card can cancel it if the pointer
     // crosses the gap and enters the card before the timeout fires.
-    dispatch(setDeferredLeave('nav'));
+    appStore.dispatch(setDeferredLeave('nav'));
 
     leaveTimeout = setTimeout(() => {
       // Only close if the deferred leave wasn't cleared (e.g. by the card's mouseenter)
-      const state = getReduxStore().getState();
+      const state = appStore.state;
       if (state.sidebarNav.deferredLeave === 'nav') {
-        dispatch(clearDeferredLeave());
-        dispatch(setHoveredItem(null));
+        appStore.dispatch(clearDeferredLeave());
+        appStore.dispatch(setHoveredItem(null));
         // Don't clear expandedItem on mouse leave - it stays until clicked elsewhere
       }
     }, 200);
@@ -200,10 +200,10 @@
 
   function handleClick(id: SidebarNavItem, event?: MouseEvent) {
     if (id === 'home') {
-      dispatch(closeAll(false));
+      appStore.dispatch(closeAll(false));
       goto('/');
     } else if (id === 'settings') {
-      dispatch(closeAll(false));
+      appStore.dispatch(closeAll(false));
       const isOnSettings = page.url.pathname.startsWith('/settings');
       if (isOnSettings) {
         navigateBackFromSettings();
@@ -211,7 +211,7 @@
         navigateToSettings();
       }
     } else if (id === 'new-workspace') {
-      dispatch(closeAll(false));
+      appStore.dispatch(closeAll(false));
       // Command-click (or Ctrl-click on non-Mac) opens in new window
       if (event?.metaKey || event?.ctrlKey) {
         invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/workspace/new' }).catch(() => {
@@ -220,10 +220,10 @@
         });
         return;
       }
-      dispatch(setShowCreateModal(true));
+      appStore.dispatch(setShowCreateModal(true));
     } else {
       // Toggle the persistent sidebar panel
-      dispatch(togglePanel(id));
+      appStore.dispatch(togglePanel(id));
     }
   }
 

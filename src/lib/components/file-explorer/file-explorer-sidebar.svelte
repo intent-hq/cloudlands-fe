@@ -20,8 +20,8 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import type { FileNode } from '$shared/types';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import {
   initializeFileExplorer,
   setWorkspacePathRequested,
@@ -36,6 +36,7 @@
   selectIsPathExpanded,
   selectIsPathLoading,
 } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspacePath: string;
@@ -46,9 +47,8 @@
 
   let { workspacePath, workspaceId, onFileSelect, selectedFile = $bindable('') }: Props = $props();
 
-  // Capture dispatch at component init time (getDispatch reads Svelte context,
+  // Capture dispatch at component init time (store.dispatch reads the configured app store,
   // which is only valid during component initialization).
-  const dispatch = getDispatch();
 
   const wsIdStore = writable(workspaceId || workspacePath || '');
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);
@@ -99,7 +99,7 @@
       selectedFile = node.path;
       onFileSelect?.(node.path);
     } else {
-      dispatch(toggleDirectoryRequested(effectiveWsId, node.path));
+      appStore.dispatch(toggleDirectoryRequested(effectiveWsId, node.path));
     }
   }
 
@@ -126,7 +126,7 @@
     // Dispatch initialization — the file-explorer saga owns IPC listeners
     // (file:changed, workspace-changes, file-tracking:changes-updated) and
     // will refresh state when those events fire for the active workspace.
-    dispatch(
+    appStore.dispatch(
       initializeFileExplorer(effectiveWsId, { workspacePath, workspaceId }),
     );
   });
@@ -139,7 +139,7 @@
   // React to workspace path changes
   $effect(() => {
     if (workspacePath) {
-      dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
+      appStore.dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
     }
   });
 </script>
@@ -151,7 +151,7 @@
       <Button
         size="icon"
         variant="ghost"
-        onclick={() => dispatch(refreshFileExplorer(effectiveWsId))}
+        onclick={() => appStore.dispatch(refreshFileExplorer(effectiveWsId))}
         title="Refresh"
       >
         <Fa icon={faArrowsRotate} size="1x" class="w-4 h-4" />
@@ -176,7 +176,7 @@
             {:else if $rootNode$}
               {#snippet FileTreeItem(node: FileNode, depth: number)}
                 {@const wsId = workspaceId || workspacePath || ''}
-                {@const nodeExpanded = selectIsPathExpanded.select(getReduxStore().getState(), wsId, node.path)}
+                {@const nodeExpanded = selectIsPathExpanded.select(appStore.state, wsId, node.path)}
                 {@const isIgnored = node.isGitignored === true}
                 {@const Icon =
                   node.type === 'directory'
@@ -194,7 +194,7 @@
                   >
                     {#if node.type === 'directory'}
                       <span class="w-4 h-4 flex items-center justify-center mr-1">
-                        {#if selectIsPathLoading.select(getReduxStore().getState(), wsId, node.path)}
+                        {#if selectIsPathLoading.select(appStore.state, wsId, node.path)}
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
                         {:else if node.children && node.children.length > 0}
                           <Fa

@@ -24,7 +24,6 @@ import {
   reloadNotes,
   assignAgentToTask,
 } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import {
   WorkspaceId,
@@ -106,6 +105,11 @@ const AGENT_ACTIVATION_MAX_RETRIES = 3;
 const initialAgentActivationLocks = new Set<string>();
 const agentActivationWaiters = new Map<string, Array<ReturnType<typeof activateAgentRequested>>>();
 type CreateAgentFromConfigRequestAction = ReturnType<typeof createAgentFromConfigRequested>;
+
+async function loadTerminalManager() {
+  const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
+  return terminalManager;
+}
 
 function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
   return !!session && ((session.messages?.length ?? 0) > 0 || session.status !== AgentStatus.Pending);
@@ -966,7 +970,8 @@ export function* handleCreateTerminalRequestedSaga(wsId: string) {
 
   const terminalId = unifiedIdService.generateTerminalId();
   yield* put(addTerminal(wsId, terminalId, 'Terminal'));
-  terminalManager.saveTerminalMetadata(terminalId, wsId, 'Terminal');
+  const terminalManager = yield* call(loadTerminalManager);
+  yield* call([terminalManager, terminalManager.saveTerminalMetadata], terminalId, wsId, 'Terminal');
   yield* put(markTerminalRecentlyCreated(wsId, terminalId));
 
   // Open terminal via panel layout

@@ -7,7 +7,7 @@
    * Also displays user-defined MCP servers with per-workspace toggles.
    */
   import type { ContextItem, ContextProvider } from '$features/context/types';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   initContextForWorkspace,
   addContextItem,
@@ -19,6 +19,7 @@
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { handleLink } from '$features/navigation/link-handler';
   import { writable } from 'svelte/store';
+  import { store as appStore } from '$lib/store/store';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Note } from '$shared/types';
@@ -61,14 +62,13 @@
   let pickerOpen = $state(false);
   let pickerProvider = $state<ContextProvider>('linear');
 
-  const dispatch = getDispatch();
 
   // Initialize context store for this workspace
   let lastInitWorkspaceId: string | undefined;
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      dispatch(initContextForWorkspace(workspaceId));
+      appStore.dispatch(initContextForWorkspace(workspaceId));
     }
   });
 
@@ -89,7 +89,7 @@
       createdAt: now,
       updatedAt: now,
     } as ContextItem;
-    dispatch(addContextItem(workspaceId, newItem));
+    appStore.dispatch(addContextItem(workspaceId, newItem));
     return newItem;
   }
 
@@ -301,7 +301,7 @@
           isActive={isItemActive(item)}
           onClick={handleContextItemClick}
           onExternalOpen={handleExternalOpen}
-          onDelete={(item) => dispatch(removeContextItem(workspaceId, item.id))}
+          onDelete={(item) => appStore.dispatch(removeContextItem(workspaceId, item.id))}
         />
       {/each}
     {/if}

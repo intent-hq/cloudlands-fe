@@ -35,7 +35,6 @@
     children?: any;
   } = $props();
 
-  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
   const persistedLayout = selectResizablePanelGroupLayout(storageKey ?? '');
 
   function isPersistedLayoutCompatible(): boolean {
@@ -113,7 +112,7 @@
 
   function savePanelSizes() {
     if (storageKey) {
-      dispatch(setResizablePanelGroupLayout(storageKey, {
+      appStore.dispatch(setResizablePanelGroupLayout(storageKey, {
         sizes: [...panelSizes],
         collapsed: Array.from(collapsedPanels),
       }));
@@ -358,7 +357,7 @@
   // Initialize on mount
   onMount(() => {
     if (storageKey) {
-      dispatch(requestResizablePanelGroupLayout(storageKey));
+      appStore.dispatch(requestResizablePanelGroupLayout(storageKey));
     }
     initializePanelSizes();
     // Set up resize observer

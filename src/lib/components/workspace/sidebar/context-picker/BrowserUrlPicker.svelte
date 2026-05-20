@@ -13,12 +13,13 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import {
   addRecentUrl,
   initBrowserWorkspace,
 } from '$lib/store/slices/browser/browser-slice';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -28,7 +29,6 @@
 
   let { workspaceId, onSelect, onClose }: Props = $props();
 
-  const dispatch = getDispatch();
   const recentUrls$ = selectBrowserRecentUrls(workspaceId);
 
   let urlInput = $state('');
@@ -78,7 +78,7 @@
     urlError = '';
 
     // Add to browser store for history
-    dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
+    appStore.dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
 
     onSelect({
       type: 'browser-url',
@@ -110,7 +110,7 @@
   }
 
   onMount(() => {
-    dispatch(initBrowserWorkspace(workspaceId));
+    appStore.dispatch(initBrowserWorkspace(workspaceId));
   });
 </script>
 

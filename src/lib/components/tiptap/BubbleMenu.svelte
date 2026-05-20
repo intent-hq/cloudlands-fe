@@ -23,12 +23,12 @@
 } from '$features/agent/agent-context';
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
 
   interface Props {
     editor: Editor | null;
@@ -246,7 +246,7 @@
         },
         { openAgent: true },
       );
-      dispatch(launchAction);
+      appStore.dispatch(launchAction);
       const agentData = await launchAction.promise;
 
       logger.info('[BubbleMenu] Agent created successfully', {

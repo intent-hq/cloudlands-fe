@@ -7,10 +7,11 @@
 
 import { openWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
-import { getDispatch } from '$lib/store/utils/svelte-context';
+
 import { createLogger } from '$lib/utils/client-logger';
 import { fromStore } from 'svelte/store';
 import type { WorkspacePageStateManager } from './workspace-page-state.svelte';
+  import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('tab-management');
 
@@ -22,7 +23,6 @@ export interface UseTabManagementOptions {
 }
 
 export function useTabManagement(options: UseTabManagementOptions) {
-  const dispatch = getDispatch();
   const pendingCreations = selectWorkspacePendingCreations();
   const pendingCreationsValue = fromStore(pendingCreations);
 
@@ -41,7 +41,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
 
     if (workspaceId && !tabOpened) {
       try {
-        dispatch(openWorkspaceTab(workspaceId));
+        appStore.dispatch(openWorkspaceTab(workspaceId));
         tabOpened = true;
       } catch (error) {
         logger.error('Failed to open workspace tab', { workspaceId, error });

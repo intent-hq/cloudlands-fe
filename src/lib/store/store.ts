@@ -10,8 +10,10 @@ import {
   sagaNames,
   sagas,
 } from "./sagas";
+import { setConfiguredSelectorStore } from "./utils/create-selector";
 
 export const store = new Store(reducers, sagas, middleware as unknown as StoreMiddleware[]);
+setConfiguredSelectorStore(store);
 export const appStore = store;
 
 export type AppStore = typeof store;

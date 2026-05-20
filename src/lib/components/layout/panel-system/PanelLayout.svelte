@@ -53,10 +53,7 @@
   invoke,
   listenSync,
 } from '$lib/electron-bridge';
-  import {
-  getReduxStore,
-  dispatch,
-} from '$lib/store/redux-dispatch-bridge';
+
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
   selectPanelLayoutRoot,
@@ -72,6 +69,7 @@
   import { closeActiveTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('PanelLayout');
   const isCollapsed = selectIsCollapsed();
@@ -363,12 +361,12 @@
         oldName,
         newName,
         () => {
-          dispatch(updateNoteTitle(workspaceId, noteId, newName));
+          appStore.dispatch(updateNoteTitle(workspaceId, noteId, newName));
           // Update the tab title in the layout manager
           layoutManager.updateTabTitle(tab.id, newName);
         },
         () => {
-          dispatch(updateNoteTitle(workspaceId, noteId, oldName));
+          appStore.dispatch(updateNoteTitle(workspaceId, noteId, oldName));
           layoutManager.updateTabTitle(tab.id, oldName);
         },
       );
@@ -379,14 +377,14 @@
       // restore the exact disk state. Auto-named sessions have
       // nameExplicitlySet: false; hardcoding true here would diverge Redux
       // from disk and permanently block MCP/automatic naming on failure.
-      const preRenameSession = selectAgentSession.select(getReduxStore().getState(), agentId);
+      const preRenameSession = selectAgentSession.select(appStore.state, agentId);
       const oldNameExplicitlySet = preRenameSession?.nameExplicitlySet ?? false;
       await renameWithUndo(
         'agent',
         oldName,
         newName,
         async () => {
-          getReduxStore().dispatch(
+          appStore.dispatch(
             updateAgentSessionFields(agentId, {
               name: newName,
               nameExplicitlySet: true,
@@ -397,13 +395,13 @@
           // pick it up immediately (full saveSession would stall for minutes).
           try {
             const action = renameAgentSessionRequested(workspaceId, agentId, newName);
-            getReduxStore().dispatch(action);
+            appStore.dispatch(action);
             await action.promise;
           } catch (err) {
             // Revert optimistic UI so tab title and Redux match disk, then
             // rethrow so ReversibleActionManager surfaces the error toast
             // and skips the undo toast.
-            getReduxStore().dispatch(
+            appStore.dispatch(
               updateAgentSessionFields(agentId, {
                 name: oldName,
                 nameExplicitlySet: oldNameExplicitlySet,
@@ -416,7 +414,7 @@
         async () => {
           // Undo: restore old name with the captured nameExplicitlySet so
           // Redux matches what disk held before the rename.
-          getReduxStore().dispatch(
+          appStore.dispatch(
             updateAgentSessionFields(agentId, {
               name: oldName,
               nameExplicitlySet: oldNameExplicitlySet,
@@ -425,12 +423,12 @@
           layoutManager.updateTabTitle(tab.id, oldName);
           try {
             const action = renameAgentSessionRequested(workspaceId, agentId, oldName);
-            getReduxStore().dispatch(action);
+            appStore.dispatch(action);
             await action.promise;
           } catch (err) {
             // Revert the revert: undo failed, so restore the new name in the UI
             // and rethrow so the user sees the error.
-            getReduxStore().dispatch(
+            appStore.dispatch(
               updateAgentSessionFields(agentId, {
                 name: newName,
                 nameExplicitlySet: true,
@@ -521,7 +519,7 @@
     // Mod+\ - Split horizontally
     if (isMod && e.key === '\\' && !e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'horizontal');
       }
@@ -531,7 +529,7 @@
     // Mod+Shift+\ - Split vertically
     if (isMod && e.key === '\\' && e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), workspaceId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'vertical');
       }
@@ -576,9 +574,9 @@
       if (get(terminalOverlayOpen) && terminalAreaFocused) {
         e.preventDefault();
         e.stopPropagation();
-        const activeWsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+        const activeWsId = selectActiveWorkspaceId.select(appStore.state);
         if (activeWsId) {
-          dispatch(closeActiveTerminalRequested(activeWsId));
+          appStore.dispatch(closeActiveTerminalRequested(activeWsId));
         }
         return;
       }
@@ -587,7 +585,7 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
+      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
       logger.debug('Cmd+W pressed', {
         hasFocusedPanel: !!panel,
         activeTabId: panel?.activeTabId,
@@ -615,7 +613,7 @@
     // Cmd+PageDown - Next tab in focused panel
     // Cmd+PageUp - Previous tab in focused panel
     if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
+      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
       if (panel && panel.tabs.length > 1) {
         e.preventDefault();
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
@@ -659,11 +657,11 @@
       }
 
       // Handle panel cycling
-      const panelIds = selectPanelIds.select(getReduxStore().getState(), workspaceId);
+      const panelIds = selectPanelIds.select(appStore.state, workspaceId);
       if (panelIds.length > 1) {
         e.preventDefault();
         const currentFocusedId = selectFocusedPanelId.select(
-          getReduxStore().getState(),
+          appStore.state,
           workspaceId,
         );
         const currentIndex = currentFocusedId ? panelIds.indexOf(currentFocusedId) : -1;
@@ -687,7 +685,7 @@
 
     // Mod+1-9 - Switch to tab by index (only if tab exists)
     if (isMod && e.key >= '1' && e.key <= '9') {
-      const panel = selectFocusedPanel.select(getReduxStore().getState(), workspaceId);
+      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
       if (panel) {
         const tabIndex = parseInt(e.key) - 1;
         if (tabIndex < panel.tabs.length) {
@@ -797,14 +795,14 @@
         logger.warn('browser:focus-tab received without tabId', { event });
         return;
       }
-      dispatch(focusBrowserTabRequested(workspaceId, tabId));
+      appStore.dispatch(focusBrowserTabRequested(workspaceId, tabId));
     });
 
     // Listen for browser tab list requests from main process
     const unsubBrowserListTabs = listenSync('browser:list-tabs-request', () => {
       // Collect all browser tabs from the panel layout
       const browserTabs = selectAllTabs
-        .select(getReduxStore().getState(), workspaceId)
+        .select(appStore.state, workspaceId)
         .filter((t) => t.type === 'browser')
         .map((t) => ({
           tabId: t.id,

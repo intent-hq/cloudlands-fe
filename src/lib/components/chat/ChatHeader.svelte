@@ -19,13 +19,14 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectSpecialists,
   selectUserOverrides,
   selectSpecialistById,
   selectEffectiveModel,
 } from '$lib/store/slices/specialists/specialists-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;
@@ -58,14 +59,14 @@
     if (!session || isPendingAgentSession(session)) return null;
     const specialistId = session.metadata?.specialist || session.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return selectSpecialistById.select(getReduxStore().getState(), specialistId);
+    return selectSpecialistById.select(appStore.state, specialistId);
   });
 
   // Get effective model for specialist with proper reactivity
   // Access overridesLoaded to establish reactivity - when overrides load, this will re-evaluate
   const specialistEffectiveModel = $derived.by(() => {
     if (!specialistInfo) return '';
-    return selectEffectiveModel.select(getReduxStore().getState(), specialistInfo.id);
+    return selectEffectiveModel.select(appStore.state, specialistInfo.id);
   });
 
   const models = [
