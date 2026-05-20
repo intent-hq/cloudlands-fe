@@ -3,9 +3,8 @@
   defines order of execution
 */
 
-import { type Middleware } from "redux";
 import createSagaMiddleware, { type Saga } from "redux-saga";
-import { type StoreState } from "./types";
+import type { StoreMiddleware } from "svelte-redux-toolkit/types";
 import {
   REDUX_DEBUG_LS_KEY,
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
@@ -57,8 +56,8 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
   return { enabled: enableReduxLogger, webviewName };
 }
 
-function buildMiddleware(): Middleware<any, StoreState, any>[] {
-  const baseMiddleware: Middleware<any, StoreState, any>[] = [
+function buildMiddleware(): StoreMiddleware[] {
+  const baseMiddleware: StoreMiddleware[] = [
     // Guard must be first — reject actions tagged for the wrong store immediately
     createStoreGuardMiddleware("renderer"),
     // No action types to batch yet — add action types here as slices are added
@@ -70,7 +69,7 @@ function buildMiddleware(): Middleware<any, StoreState, any>[] {
 
   // Debug middlewares need to be added AFTER batching middleware
   // so they see the actual state changes, not the batched actions
-  const debugMiddlewares: Middleware<any, StoreState, any>[] = [];
+  const debugMiddlewares: StoreMiddleware[] = [];
 
   if (typeof window !== "undefined") {
     if (safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STATE_REFS_KEY)) {
@@ -91,4 +90,4 @@ function buildMiddleware(): Middleware<any, StoreState, any>[] {
   return [...baseMiddleware, ...debugMiddlewares];
 }
 
-export const middleware: Middleware<any, StoreState, any>[] = buildMiddleware();
+export const middleware: StoreMiddleware[] = buildMiddleware();
