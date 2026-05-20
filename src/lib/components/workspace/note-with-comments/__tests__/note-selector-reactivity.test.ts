@@ -8,17 +8,30 @@
  * The fix passes writable stores so the selector re-evaluates when noteId changes.
  */
 import {
+  afterEach,
   describe,
   it,
   expect,
 } from "vitest";
+import { Store } from "svelte-redux-toolkit/store";
 import {
   get,
+  readable,
   writable,
+  type Readable,
 } from "svelte/store";
-import { init } from "$lib/store/init";
+import { reducers } from "$lib/store/reducer";
+import { setConfiguredSelectorStore } from "$lib/store/utils/create-selector";
 import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
-import { loadWorkspaceNotesSucceeded } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
+import {
+  loadWorkspaceNotesSucceeded,
+  workspaceNotesReducer,
+} from "$lib/store/slices/workspace-notes/workspace-notes-slice";
+import type {
+  GenericAction,
+  ReduxStore,
+  StoreState,
+} from "$lib/store/types";
 import {
   ContentType,
   NoteVisibility,
@@ -26,6 +39,53 @@ import {
 } from "$shared/types";
 
 const WS_1 = "ws-1";
+
+const createdStores: Store[] = [];
+
+function createTestStore() {
+  const store = new Store(reducers);
+  let state = {
+    workspaceNotes: workspaceNotesReducer(undefined, { type: "@@INIT" }),
+  } as StoreState;
+  const subscribers = new Set<() => void>();
+  const readableState: Readable<StoreState> = readable(state, (set) => {
+    const listener = () => set(state);
+    subscribers.add(listener);
+    set(state);
+    return () => subscribers.delete(listener);
+  });
+  const reduxStore: ReduxStore = {
+    dispatch: ((action: GenericAction) => {
+      state = {
+        ...state,
+        workspaceNotes: workspaceNotesReducer(state.workspaceNotes, action),
+      } as StoreState;
+      subscribers.forEach((listener) => listener());
+      return action;
+    }) as ReduxStore["dispatch"],
+    getState: () => state,
+    subscribe: (listener) => {
+      subscribers.add(listener);
+      return () => subscribers.delete(listener);
+    },
+    replaceReducer: () => undefined,
+  };
+
+  (store as unknown as { storeContext: { store: ReduxStore; storeState: Readable<StoreState> } }).storeContext = {
+    store: reduxStore,
+    storeState: readableState,
+  };
+  setConfiguredSelectorStore(store);
+  createdStores.push(store);
+  return store;
+}
+
+afterEach(() => {
+  for (const store of createdStores) {
+    store.dispose();
+  }
+  createdStores.length = 0;
+});
 
 function mockNote(id: string, workspaceId = WS_1): Note {
   return {
@@ -45,7 +105,7 @@ function mockNote(id: string, workspaceId = WS_1): Note {
 
 describe("selectNoteById reactivity with writable store args", () => {
   it("returns the correct note when noteId writable store changes", () => {
-    const { store } = init();
+    const store = createTestStore();
 
     // Load two notes into the store
     store.dispatch(
@@ -78,7 +138,7 @@ describe("selectNoteById reactivity with writable store args", () => {
   });
 
   it("returns undefined when noteId writable is set to a non-existent note", () => {
-    const { store } = init();
+    const store = createTestStore();
 
     store.dispatch(
       loadWorkspaceNotesSucceeded([WS_1], {
@@ -98,7 +158,7 @@ describe("selectNoteById reactivity with writable store args", () => {
   });
 
   it("returns undefined when workspaceId writable is cleared", () => {
-    const { store } = init();
+    const store = createTestStore();
 
     store.dispatch(
       loadWorkspaceNotesSucceeded([WS_1], {

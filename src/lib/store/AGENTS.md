@@ -24,22 +24,22 @@ Use these rules when creating or editing code in `src/lib/store/` so Redux state
 - If entities need ID-based lookup, store them as `Collection<T, K>`, not `T[]`.
 - Do not use `.find()`, `.findIndex()`, or `.some()` over entity arrays in reducers/selectors when `getItem()` can do O(1) lookup.
 - Use `getItem(collection, id)` for lookup and `getItems(collection)` when you need the ordered list.
-- In slice files, import collection helpers from `../../utils/collection-utils`.
+- In slice files, import package-owned collection helpers from `svelte-redux-toolkit/utils/collections/collection-utils`.
 
 ```ts
-import { createCollection, getItem, getItems } from "../../utils/collection-utils";
+import { createCollection, getItem, getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 ```
 
-- Reference: `src/lib/store/utils/collection-utils.ts`
+- Reference: package export `svelte-redux-toolkit/utils/collections/collection-utils`.
 
 ## 4. Use Existing Utilities (Don't Reinvent)
 
 - `createWorkspaceScopedHelpers(emptyState)` from `../../utils/workspace-scoped` — standard `byWorkspaceId` get/set/clear helpers.
-- `createBooleanPreference({ sliceName, field, ... })` from `../../utils/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
+- `createBooleanPreference({ sliceName, field, ... })` from `svelte-redux-toolkit/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
 - `takeEveryFromElectronChannel` / `takeEveryFromWindowEvent` from `../../../utils/ipc-channel` in saga files — standard IPC and window listener loops with cleanup.
 - `getLocalStorageJSON` / `setLocalStorageJSON` from `../../../utils/safe-local-storage-saga` in saga files — safe persistence helpers for sagas.
-- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `../../utils/collection-utils` — immutable collection CRUD and lookup.
-- `debounceSaga` from `../../../utils/debounce-saga` in saga files — debounce wrapper actions instead of hand-rolled timers.
+- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `svelte-redux-toolkit/utils/collections/collection-utils` — immutable collection CRUD and lookup.
+- `debounceSaga` / `debounceWithKeySaga` from `svelte-redux-toolkit/utils/sagas/debounce-saga` in saga files — debounce wrapper actions instead of hand-rolled timers.
 - If a prompt says `getAllItems`, use `getItems` here; `getItems` is the real helper in this codebase.
 
 ## 5. Selector Lifecycle Rules
@@ -66,11 +66,11 @@ const value = selectWorkspaceThing.select(getReduxStore().getState(), workspaceI
 ## 7. Action Naming
 
 - Always namespace action types as `"sliceName/actionName"`.
-- Use `createAction` from `../../utils/create-action` in slice files.
+- Use `createAction` from `svelte-redux-toolkit/utils/store/create-action` in renderer slice files.
 - For multiple arguments, use tuple types instead of untyped arrays or object payloads by default.
 
 ```ts
-import { createAction } from "../../utils/create-action";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
 export const setEnabled = createAction<[wsId: string, value: boolean]>("example/setEnabled");
 ```
 

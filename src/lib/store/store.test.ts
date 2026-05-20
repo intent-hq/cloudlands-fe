@@ -10,7 +10,7 @@ import {
 import {
   createReduxStoreBridgeAdapter,
   initAppStore,
-} from "./init";
+} from "./store";
 import { reducers } from "./reducer";
 import {
   getReduxDispatch,

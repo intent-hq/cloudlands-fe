@@ -6,7 +6,8 @@ import type {
 import {
   getItems,
   type Collection,
-} from "./collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { select } from "typed-redux-saga";
 
 type ConfiguredSelectorStore = {
   createSelector: (selectorFunc: StoreSelectorCallback<any, any[]>) => StoreSelector<any, any[]>;
@@ -14,9 +15,11 @@ type ConfiguredSelectorStore = {
 
 let configuredSelectorStore: ConfiguredSelectorStore | null = null;
 
-// Compatibility shim for legacy local imports. `src/lib/store/store.ts` registers
-// the configured Store after constructing it, avoiding a store <-> selector cycle.
-// Every selector surface below delegates to the Store-created selector lazily.
+// Compatibility shim for legacy local imports. `src/lib/store/store.ts` owns the
+// configured Store and registers it here immediately after construction. Directly
+// importing that Store here creates a store -> sagas -> selectors -> this file ->
+// store cycle while selector modules are defining exports, so the shim stays lazy.
+// Every selector surface below delegates to the Store-created selector.
 export function setConfiguredSelectorStore(store: unknown): void {
   configuredSelectorStore = store as ConfiguredSelectorStore;
 }
@@ -43,8 +46,8 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
   const readableSelector = ((...args) => getStoreBoundSelector()(...args)) as StoreSelector<R, ARGS>;
 
   readableSelector.withStore = (store) => (...args) => getStoreBoundSelector().withStore(store)(...args);
-  readableSelector.select = ((state, ...args) => getStoreBoundSelector().select(state, ...args)) as StoreSelector<R, ARGS>["select"];
-  readableSelector.effect = ((...args) => getStoreBoundSelector().effect(...args)) as StoreSelector<R, ARGS>["effect"];
+  readableSelector.select = selectorFunc as StoreSelector<R, ARGS>["select"];
+  readableSelector.effect = ((...args) => select(selectorFunc, ...args)) as StoreSelector<R, ARGS>["effect"];
 
   return readableSelector;
 };

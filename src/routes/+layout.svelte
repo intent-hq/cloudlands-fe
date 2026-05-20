@@ -103,6 +103,7 @@
   import {
   onDestroy,
   onMount,
+  setContext,
   untrack,
 } from 'svelte';
 
@@ -125,9 +126,32 @@
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import Store, { initStore } from '$lib/store/components/Store.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { STORE_CONTEXT } from '$lib/store/constants';
+  import { getStoreContext } from '$lib/store/utils/svelte-context';
+  import {
+  initAppStore,
+  startAllAppSagas,
+  store as appStore,
+} from '$lib/store/store';
   const logger = createLogger('+layout');
+
+  function initStore(): () => void {
+    if (getStoreContext()) {
+      return () => {};
+    }
+
+    const storeContext = initAppStore();
+    const stopHandlers = startAllAppSagas();
+    setContext(STORE_CONTEXT, storeContext);
+
+    return () => {
+      setContext(STORE_CONTEXT, null);
+      for (const stop of stopHandlers) {
+        stop();
+      }
+      storeContext.dispose();
+    };
+  }
 
   const disposeStore = initStore();
   onDestroy(disposeStore);
@@ -979,7 +1003,6 @@
 </script>
 
 <TooltipProvider>
-  <Store>
     <!-- Main Layout with Title Bar -->
     <div
       class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
@@ -1113,7 +1136,6 @@
     {#if import.meta.env.DEV}
       <DebugPanel />
     {/if}
-  </Store>
 </TooltipProvider>
 
 <style>
