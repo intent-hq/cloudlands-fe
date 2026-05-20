@@ -5,7 +5,7 @@ import type {
   WorkspaceEvent,
 } from "$features/events/types";
 import type { AgentSession } from "$shared/types";
-import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
+import { initWorkspace } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
@@ -121,7 +121,7 @@ export function* initializeFileTrackingForWorkspaceSaga(wsId: string) {
     return;
   }
 
-  yield* put(initFileTracking(wsId));
+  yield* put(initWorkspace(wsId));
   yield* delay(50);
 
   // Load initial git status via Redux. Ongoing git updates are owned by gitStatusSaga.

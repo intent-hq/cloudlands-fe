@@ -8,7 +8,7 @@ import {
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
-import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
+import { initWorkspace } from "$lib/store/slices/changes/changes-slice";
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -452,7 +452,7 @@ describe("workspaceAgentsSaga", () => {
     // Should dispatch initFileTracking first
     const initEffect = iterator.next().value as any;
     expect(initEffect.type).toBe("PUT");
-    expect(initEffect.payload.action).toEqual(initFileTracking("ws-file-tracking"));
+    expect(initEffect.payload.action).toEqual(initWorkspace("ws-file-tracking"));
 
     // Then delay
     expect(iterator.next()).toEqual({
