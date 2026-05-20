@@ -18,7 +18,7 @@
   selectHasOverride,
 } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   Dropdown,
   type DropdownOption,
@@ -26,8 +26,9 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
+  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
   const availableModels$ = selectAvailableModels();
   const defaultModel = selectBgDefaultModel();
   const typeOverrides$ = selectBgTypeOverrides();
