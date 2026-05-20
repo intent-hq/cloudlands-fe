@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { Readable } from "svelte/store";
 import { readable } from "svelte/store";
 import {
@@ -21,9 +23,12 @@ import {
   sagas,
 } from "./sagas";
 import {
-  appStore,
+  registeredAppStore,
   startAllAppSagas,
-  type AppStoreRuntime,
+  type RegisteredAppStoreRuntime,
+} from "./saga-registration";
+import {
+  appStore,
 } from "./store";
 import type { GenericAction, StoreState } from "./types";
 
@@ -51,13 +56,21 @@ function createFakeStoreRuntime(initialState = { storeUtility: { updatesLocked: 
     },
     runSaga: vi.fn(() => vi.fn()),
     dispose,
-  } satisfies AppStoreRuntime & { dispose: ReturnType<typeof vi.fn> };
+  } satisfies RegisteredAppStoreRuntime & { dispose: ReturnType<typeof vi.fn> };
 }
 
 describe("configured app Store", () => {
+  it("constructs the core Store without importing app sagas", () => {
+    const source = readFileSync("src/lib/store/store.ts", "utf8");
+
+    expect(source).not.toContain('from "./sagas"');
+    expect(source).toContain("new Store(reducers, middleware as unknown as StoreMiddleware[])");
+    expect(source).not.toContain("new Store(reducers, sagas");
+  });
+
   it("registers existing reducer and saga maps on one package Store instance", () => {
     const registeredReducers = appStore.getReducers();
-    const registeredSagas = appStore.getSagas();
+    const registeredSagas = registeredAppStore.getSagas();
 
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);
@@ -65,13 +78,14 @@ describe("configured app Store", () => {
     for (const [name, saga] of Object.entries(sagas)) {
       expect(registeredSagas[name]).toBe(saga);
     }
-    expect(appStore.getSagaNames()).toEqual(sagaNames);
+    expect(registeredAppStore).toBe(appStore);
+    expect(registeredAppStore.getSagaNames()).toEqual(sagaNames);
   });
 
   it("starts every registered app saga through Store.runSaga by name", () => {
     const runtime = createFakeStoreRuntime();
 
-    const stopHandlers = startAllAppSagas(runtime as unknown as typeof appStore);
+    const stopHandlers = startAllAppSagas(runtime);
 
     expect(runtime.runSaga).toHaveBeenCalledTimes(sagaNames.length);
     sagaNames.forEach((name, index) => {

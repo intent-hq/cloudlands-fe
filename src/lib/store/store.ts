@@ -16,10 +16,6 @@ import {
   initReduxDispatchBridge,
   initReduxStoreBridge,
 } from "./redux-dispatch-bridge";
-import {
-  sagaNames,
-  sagas,
-} from "./sagas";
 import type {
   PreloadedStoreState,
   ReduxStore,
@@ -30,17 +26,18 @@ import type {
 import { setConfiguredSelectorStore } from "./utils/create-selector";
 import { safeLocalStorage } from "../utils/safe-storage";
 
-export const store = new Store(reducers, sagas, middleware as unknown as StoreMiddleware[]);
-setConfiguredSelectorStore(store);
+const configuredStore = new Store(reducers, middleware as unknown as StoreMiddleware[]);
+setConfiguredSelectorStore(configuredStore);
+export const store = configuredStore as typeof configuredStore & {
+  runSaga: (sagaName: SagaName) => () => void;
+};
 export const appStore = store;
 
 export type AppStore = typeof store;
 export type AppStoreState = StoreInstanceState<typeof store>;
-export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state" | "runSaga">;
-
-export function startAllAppSagas(configuredStore: Pick<AppStore, "runSaga"> = store): Array<() => void> {
-  return sagaNames.map((name) => configuredStore.runSaga(name));
-}
+export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state"> & {
+  runSaga: (sagaName: SagaName) => () => void;
+};
 
 const cleanUpWindow = (context: ReduxStoreContext) => {
   if (typeof window === "undefined" || !window.intent?.reduxContext) {
