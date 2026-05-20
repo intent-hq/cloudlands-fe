@@ -1,5 +1,4 @@
 import { goto } from "$app/navigation";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import {
   selectNotificationVolume,
   selectSoundEnabled,
@@ -15,6 +14,7 @@ import {
   fork,
   select,
 } from "typed-redux-saga";
+import { store as appStore } from '$lib/store/store';
 
 type BackgroundAgentSpawnedEvent = {
   workspaceId: string;
@@ -35,7 +35,7 @@ type NotificationNavigateEvent = {
 async function showBackgroundAgentSpawnedToast(data: BackgroundAgentSpawnedEvent): Promise<void> {
   try {
     const { toast } = await import("svelte-sonner");
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
     const currentWorkspace = selectActiveWorkspace.select(state);
     const workspaceTitle = eventWorkspace?.title || "Space";
