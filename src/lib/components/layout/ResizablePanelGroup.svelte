@@ -9,7 +9,8 @@
   type ResizablePanelGroupLayoutState,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectResizablePanelGroupLayout } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   interface Panel {
     id: string;
@@ -34,7 +35,7 @@
     children?: any;
   } = $props();
 
-  const dispatch = getDispatch();
+  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
   const persistedLayout = selectResizablePanelGroupLayout(storageKey ?? '');
 
   function isPersistedLayoutCompatible(): boolean {
