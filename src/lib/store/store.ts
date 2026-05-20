@@ -1,4 +1,3 @@
-import type { StoreInstanceState } from "svelte-redux-toolkit/types";
 import type { Readable } from "svelte/store";
 
 import {
@@ -6,8 +5,9 @@ import {
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from "./constants";
-import { store } from "./configured-store";
+import { store as configuredStore } from "./configured-store";
 import type {
+  CreateSelector,
   PreloadedStoreState,
   ReduxStore,
   ReduxStoreContext,
@@ -15,11 +15,14 @@ import type {
 } from "./types";
 import { safeLocalStorage } from "../utils/safe-storage";
 
-export { store };
+export type AppStore = Omit<typeof configuredStore, "createSelector"> & {
+  createSelector: CreateSelector;
+};
+
+export const store = configuredStore as unknown as AppStore;
 export const appStore = store;
 
-export type AppStore = typeof store;
-export type AppStoreState = StoreInstanceState<typeof store>;
+export type AppStoreState = StoreState;
 export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state">;
 
 type StoreDebugIntent = {
