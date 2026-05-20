@@ -80,9 +80,14 @@ vi.mock('$lib/store/slices/model/model-slice', () => ({
   reloadModelsForProvider: vi.fn(() => ({ type: 'model/reloadModelsForProvider' })),
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxDispatch: vi.fn(() => vi.fn()),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => {},
+    dispatch: vi.fn(),
+  });
+});
 
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: vi.fn(() => ({
