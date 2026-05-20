@@ -7,7 +7,7 @@
    */
   import { writable } from 'svelte/store';
   import type { McpServerConfig } from '$lib/store/slices/mcp-settings/mcp-settings-types';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   loadServers,
   toggleWorkspaceMcpServer,
@@ -29,6 +29,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -43,7 +44,6 @@
   });
 
   // ✅ At component init — these use getContext() internally
-  const dispatch = getDispatch();
   const servers$ = selectMcpServers();
   const disabledServerNames$ = selectWorkspaceDisabledMcpServerNamesByWorkspaceId(workspaceIdStore);
   const serverErrors$ = selectMcpErrorMessages();
@@ -74,7 +74,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      dispatch(loadServers());
+      appStore.dispatch(loadServers());
     }
   });
 
@@ -110,7 +110,7 @@
   // Get description for server type
 
   function handleToggle(serverName: string, enabled: boolean) {
-    dispatch(toggleWorkspaceMcpServer(workspaceId, serverName, enabled));
+    appStore.dispatch(toggleWorkspaceMcpServer(workspaceId, serverName, enabled));
   }
 
   function handleFaviconError(serverName: string) {
