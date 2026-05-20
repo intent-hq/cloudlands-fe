@@ -3,7 +3,7 @@ import {
   takeEveryFromElectronChannel,
   takeEveryFromListenSync,
 } from "$lib/store/utils/ipc-channel";
-import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
+import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import {
   call,

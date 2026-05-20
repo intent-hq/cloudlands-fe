@@ -31,7 +31,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("$lib/store/utils/selector-channel-effects",
+vi.mock("svelte-redux-toolkit/utils/sagas/selector-channel-effects",
   () => ({
   takeLatestFromSelector: function* () {
     // No-op for these tests — return a fake task object.

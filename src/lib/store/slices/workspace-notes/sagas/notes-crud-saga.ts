@@ -58,7 +58,7 @@ import {
 } from "../workspace-notes-slice";
 import { markNoteRead } from "../../note-read-tracking/note-read-tracking-slice";
 import { Logger } from "$shared/logger";
-import { getItem } from "$lib/store/utils/collection-utils";
+import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { selectWorkspaceNotesState } from "../workspace-notes-selectors";
 import {
   isFullNote,

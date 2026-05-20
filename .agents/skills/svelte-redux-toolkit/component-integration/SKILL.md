@@ -2,7 +2,7 @@
 name: svelte-redux-toolkit/component-integration
 description: >-
   Wire the Store class into a Svelte 5 app. Create a Store instance with
-  constructor reducer/saga maps plus optional addMiddleware, call
+  constructor reducer maps, register app sagas, configure optional middleware, call
   store.init() + onDestroy in the root layout, dispatch through the configured
   Store instance, and use selectFoo() at component init with $selectorResult$
   in templates. Start app sagas through store.runSaga(name). Source:
@@ -31,8 +31,15 @@ triggers:
 From `src/store.ts`:
 
 ```typescript
-export class Store<TReducers extends ReducersMap = {}, TSagas extends SagasMap = {}> {
-  constructor(reducersMap?: TReducers, sagasMap?: TSagas);
+export class Store<
+  TStateMap extends StoreStateMap = {},
+  TSagas extends SagasMap = {},
+  TReducers extends StoreReducersInput<TStateMap> = StoreReducersInput<TStateMap>,
+> {
+  constructor(reducersMap?: TReducers, middleware?: StoreMiddleware | StoreMiddleware[]);
+  registerSagas<TRegisteredSagas extends SagasMap>(
+    sagasMap: TRegisteredSagas
+  ): Store<TStateMap, TSagas & TRegisteredSagas, TReducers>;
   addMiddleware(middleware: StoreMiddleware | StoreMiddleware[]): void;
   getReducers(): StoreReducersMap<TReducers>;
   getSagas(): TSagas;
@@ -63,17 +70,17 @@ export class Store<TReducers extends ReducersMap = {}, TSagas extends SagasMap =
 
 Key rules:
 
-- Pass app-owned reducers in the first constructor map and app-owned sagas in the second constructor map: `new Store(reducersMap?, sagasMap?)`.
-- For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor maps preserve reducer-state inference without an explicit `: Store` annotation or mutating registration calls.
+- Pass app-owned reducers in the constructor map and app-owned sagas to `Store.registerSagas(sagasMap)`.
+- For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference, and chaining `registerSagas(...)` preserves saga-name inference, without an explicit `: Store` annotation.
 - Use `store.createSelector(...)` for app-local selectors that should infer that configured store's `StoreState<typeof store>`; generic/shared selector helpers should accept a configured `Store` instead of importing a standalone selector factory.
-- Register only app-owned reducers/sagas in constructor maps. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Internal reducer domains can appear in `StoreState<typeof store>`, but `getSagas()` and `getSagaNames()` expose only app-owned sagas. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
+- Register only app-owned reducers in constructor maps and app-owned sagas through `registerSagas(...)`. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Internal reducer domains can appear in `StoreState<typeof store>`, but `getSagas()` and `getSagaNames()` expose only app-owned sagas. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
 - Custom middlewares are **prepended** before the base store middleware chain.
 - `init()` snapshots the app-owned saga registry, builds the Redux store/readable state, and starts the package-owned manager. Registered app sagas are **not** started automatically — start each one explicitly via `store.runSaga(name)`, usually from `onMount` in a component/layout. It accepts an app saga name string only — no function-form variant and no direct `@internal_sagaManager` usage.
 - `initDevTool()` is a separate, explicit devtools registration step after `init()` when inspection hooks are needed; `dispose()` cleans up that registration along with Store-owned tasks.
 
 ## 2. Setup — root layout bootstrap
 
-Create a single `Store` instance with app-owned reducer/saga maps at module scope:
+Create a single `Store` instance with app-owned reducers and registered app sagas at module scope:
 
 ```typescript
 // src/lib/store/store.ts
@@ -82,10 +89,7 @@ import type { StoreState } from "svelte-redux-toolkit/types";
 import { counterReducer } from "./slices/counter/counter-slice";
 import { counterSaga }    from "./slices/counter/sagas/counter-saga";
 
-export const store = new Store(
-  { counter: counterReducer },
-  { counterSaga }
-);
+export const store = new Store({ counter: counterReducer }).registerSagas({ counterSaga });
 export type AppState = StoreState<typeof store>;
 ```
 
@@ -108,7 +112,7 @@ Pass `store.init(initialState)` when the app needs preloaded state. `store.init(
 
 ## 3. Starting registered sagas — `store.runSaga`
 
-`store.init()` starts the package-owned saga manager but does **not** auto-start constructor-registered app sagas. Every app saga provided in the Store constructor saga map must be started explicitly by name. The manager is not in the Store saga registry, and consumers should not start or register `@internal_sagaManager` directly. `store.runSaga(name)` accepts a **registered app saga name string only** — there is no function-form variant.
+`store.init()` starts the package-owned saga manager but does **not** auto-start registered app sagas. Every app saga provided through `Store.registerSagas(...)` must be started explicitly by name. The manager is not in the Store saga registry, and consumers should not start or register `@internal_sagaManager` directly. `store.runSaga(name)` accepts a **registered app saga name string only** — there is no function-form variant.
 
 ### Mount-scoped — `onMount(() => store.runSaga(name))`
 

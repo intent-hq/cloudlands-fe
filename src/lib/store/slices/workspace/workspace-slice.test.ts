@@ -13,7 +13,7 @@ import {
   createCollection,
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import {
   applyOptimisticTaskStatusUpdate,
   cleanupRecency,

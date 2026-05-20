@@ -1,7 +1,7 @@
 import type { FileNode, FileGitStatus, EnvironmentConfig } from "$shared/types";
 import { shallowEqual } from "fast-equals";
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { FileExplorerWorkspaceState, FileExplorerState } from "./file-explorer-types";
 import { setChildrenAtPath } from "./file-explorer-utils";

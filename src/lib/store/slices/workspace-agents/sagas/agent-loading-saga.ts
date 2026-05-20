@@ -25,7 +25,6 @@ import {
   delay,
   put,
 } from 'typed-redux-saga';
-import { lockReactiveSelectors } from '../../store-utility/sagas/lock-reactive-selectors';
 import {
   markAgentRecentlyCreated,
   setAgents,
@@ -167,9 +166,8 @@ export function* waitForPanelLayoutRestore(wsId: string) {
  * Race-prevention strategy (mount-race hardening):
  * 1. `isLoadingAgents` is set BEFORE the async work begins, acting as a saga-level
  *    guard that prevents duplicate concurrent loads for the same workspace.
- * 2. Final state publication (`setAgents` + `setAgentsLoaded`) is wrapped in
- *    `lockReactiveSelectors` so the sidebar never observes an intermediate state
- *    where agents are set but `agentsLoaded` is still false (or vice-versa).
+ * 2. Final state publication keeps `setAgents` before `setAgentsLoaded` so the
+ *    sidebar observes a populated agent list before the loaded flag flips true.
  */
 export function* loadAgentsFromDiskSaga(wsId: string) {
   if (typeof window === 'undefined') return;
@@ -229,11 +227,9 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     // Publish agents and loaded flag atomically so the sidebar never
     // sees an intermediate state (agents set but loaded still false,
     // or loaded true with stale/empty agents).
-    yield* lockReactiveSelectors(function* () {
-      yield* put(bulkUpsertSessions(filteredAgents));
-      yield* put(setAgents(wsId, filteredAgents));
-      yield* put(setAgentsLoaded(wsId, true));
-    });
+    yield* put(bulkUpsertSessions(filteredAgents));
+    yield* put(setAgents(wsId, filteredAgents));
+    yield* put(setAgentsLoaded(wsId, true));
     if (shouldClearUnreadForLoadedWorkspace(wsId)) {
       yield* put(clearWorkspaceUnread(wsId));
     }
@@ -260,13 +256,10 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
       yield* cleanupSessionStorageKeys(wsId);
     }
   } catch {
-    // Even on error, batch the state publication to avoid a transient
-    // empty-agents-but-not-loaded sidebar flash.
-    yield* lockReactiveSelectors(function* () {
-      yield* put(removeWorkspaceSessions(wsId));
-      yield* put(setAgents(wsId, []));
-      yield* put(setAgentsLoaded(wsId, true));
-    });
+    // Even on error, publish empty agents before marking the list loaded.
+    yield* put(removeWorkspaceSessions(wsId));
+    yield* put(setAgents(wsId, []));
+    yield* put(setAgentsLoaded(wsId, true));
   } finally {
     yield* put(setIsLoadingAgents(wsId, false));
   }

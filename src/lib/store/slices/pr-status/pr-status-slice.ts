@@ -6,8 +6,8 @@
  * tracks refresh metadata (loading, rate-limiting, errors).
  */
 
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { PRStatusWorkspaceState, PRStatusState } from "./pr-status-types";
 

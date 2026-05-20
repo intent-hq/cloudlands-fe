@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => {
 
   const sagaMiddleware = Object.assign(createPassthroughMiddleware(), { run: vi.fn() });
   const batchingMiddleware = createPassthroughMiddleware();
-  const sagaCrashSentryMiddleware = createPassthroughMiddleware();
   const sentryMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -25,7 +24,6 @@ const mocks = vi.hoisted(() => {
   return {
     createSagaMiddleware: vi.fn(() => sagaMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
-    createSagaCrashSentryMiddleware: vi.fn(() => sagaCrashSentryMiddleware),
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -33,7 +31,6 @@ const mocks = vi.hoisted(() => {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     sagaMiddleware,
     batchingMiddleware,
-    sagaCrashSentryMiddleware,
     sentryMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -44,9 +41,6 @@ const mocks = vi.hoisted(() => {
 vi.mock("redux-saga", () => ({ default: mocks.createSagaMiddleware }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
-vi.mock("./middlewares/saga-crash-sentry", () => ({
-  createSagaCrashSentryMiddleware: mocks.createSagaCrashSentryMiddleware,
-}));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
   createSentryBreadcrumbsMiddleware: mocks.createSentryBreadcrumbsMiddleware,
 }));
@@ -102,7 +96,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
-      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -119,7 +112,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
-      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -136,7 +128,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
-      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -154,7 +145,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
-      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -189,7 +179,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
-      mocks.sagaCrashSentryMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);

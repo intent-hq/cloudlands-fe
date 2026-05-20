@@ -4,7 +4,7 @@ import { createSelector } from "../../utils/create-selector";
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { type WorkspaceRecencyState } from "./workspace-slice";
 import { selectIsNewlyCreatedWorkspace } from "../workspace-agents/workspace-agents-selectors";
 import {

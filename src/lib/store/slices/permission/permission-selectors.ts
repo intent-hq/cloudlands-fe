@@ -2,7 +2,7 @@ import { createSelector } from "../../utils/create-selector";
 import {
   getItems,
   type Collection,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { PermissionRequest } from "./permission-slice";
 
 export const selectPermissionRequestsCollection = createSelector(

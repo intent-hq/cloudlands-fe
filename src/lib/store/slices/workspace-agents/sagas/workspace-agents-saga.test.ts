@@ -102,22 +102,6 @@ vi.mock("$lib/store/redux-dispatch-bridge", () => ({
   getReduxStore: () => ({ getState: getReduxStateMock, dispatch: vi.fn() }),
 }));
 
-// lockReactiveSelectors: pass-through mock that executes the handler directly.
-// In tests we track the lock/unlock actions to verify batching.
-const { lockUpdatesMock, unlockUpdatesMock } = vi.hoisted(() => {
-  const lockUpdatesMock = { type: "storeUtility/lockUpdates", payload: [] };
-  const unlockUpdatesMock = { type: "storeUtility/unlockUpdates", payload: [] };
-  return { lockUpdatesMock, unlockUpdatesMock };
-});
-
-vi.mock("../../store-utility/sagas/lock-reactive-selectors", () => ({
-  lockReactiveSelectors: function* (handler: () => Generator) {
-    yield sagaEffects.put(lockUpdatesMock);
-    yield* handler();
-    yield sagaEffects.put(unlockUpdatesMock);
-  },
-}));
-
 import type { AgentSession, AgentStatus } from "$shared/types";
 import {
   workspaceMounted,
@@ -732,7 +716,7 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     expect(putEffect.payload.action).toEqual(setIsLoadingAgents("ws-guard", true));
   });
 
-  it("publishes agents and agentsLoaded atomically inside lockReactiveSelectors (regression: sidebar empty-state flash)", async () => {
+  it("publishes agents before agentsLoaded (regression: sidebar empty-state flash)", async () => {
     vi.useFakeTimers();
 
     try {
@@ -755,22 +739,15 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       await vi.runAllTimersAsync();
       await task.toPromise().catch(() => {});
 
-      // Verify that lockUpdates appears before setAgents and setAgentsLoaded,
-      // and unlockUpdates appears after them — proving atomic publication.
+      // Verify that setAgents appears before setAgentsLoaded and later side effects.
       const actionTypes = dispatched.map((a: any) => a.type);
-      const lockIdx = actionTypes.indexOf("storeUtility/lockUpdates");
       const setAgentsIdx = actionTypes.indexOf("workspaceAgents/setAgents");
       const setLoadedIdx = actionTypes.indexOf("workspaceAgents/setAgentsLoaded");
-      const unlockIdx = actionTypes.indexOf("storeUtility/unlockUpdates");
       const clearUnreadIdx = actionTypes.indexOf("unreadTracking/clearWorkspaceUnread");
 
-      // All four actions must be present
-      expect(lockIdx).toBeGreaterThanOrEqual(0);
-      expect(setAgentsIdx).toBeGreaterThan(lockIdx);
-      expect(setLoadedIdx).toBeGreaterThan(lockIdx);
-      expect(unlockIdx).toBeGreaterThan(setAgentsIdx);
-      expect(unlockIdx).toBeGreaterThan(setLoadedIdx);
-      expect(clearUnreadIdx).toBeGreaterThan(unlockIdx);
+      expect(setAgentsIdx).toBeGreaterThanOrEqual(0);
+      expect(setLoadedIdx).toBeGreaterThan(setAgentsIdx);
+      expect(clearUnreadIdx).toBeGreaterThan(setLoadedIdx);
       expect(dispatched[clearUnreadIdx]).toEqual(clearWorkspaceUnread("ws-atomic"));
     } finally {
       vi.useRealTimers();
@@ -793,8 +770,6 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     expect((gen.next(null).value as any).type).toBe("CALL");
     expect((gen.next([]).value as any).type).toBe("SELECT");
     expect((gen.next([]).value as any).type).toBe("PUT");
-    expect((gen.next().value as any).type).toBe("PUT");
-    expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
 

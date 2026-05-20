@@ -9,7 +9,7 @@ import {
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { CommentThread } from "./comments-types";
 

@@ -1,7 +1,8 @@
 /**
  * Root sagas registry.
  * Each saga is registered here and managed by the saga manager.
- * Sagas are started/stopped via initStore() or the RunSaga component.
+ * Sagas are registered through saga-registration.ts and started/stopped via
+ * Store.runSaga(name) or the RunSaga component.
  */
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
@@ -83,12 +84,11 @@ import { agentStreamSaga } from "./slices/agent-session/sagas/agent-stream-saga"
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
+import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
 
 /**
- * All registered sagas.
- * Add new sagas here as slices are migrated.
- *
- * All sagas are started synchronously by initStore() during store initialization.
+ * All app-owned sagas. Add new sagas here as slices are migrated.
+ * saga-registration.ts registers this map before Store initialization.
  */
 export const sagas = {
   providerSettingsSaga,
@@ -168,6 +168,7 @@ export const sagas = {
   agentSubscriptionUISaga,
   agentAvailabilitySaga,
   sessionStatsSaga,
+  sagaCrashSentrySaga,
 } as const;
 
 // SagaName is defined in ./types.ts as an explicit string literal union to

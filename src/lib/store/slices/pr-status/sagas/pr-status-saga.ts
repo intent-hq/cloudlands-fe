@@ -30,7 +30,7 @@ import {
   selectWorkspaceById,
   selectActiveWorkspace,
 } from "$lib/store/slices/workspace/workspace-selectors";
-import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
+import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
 import {
   PullRequestStatus,

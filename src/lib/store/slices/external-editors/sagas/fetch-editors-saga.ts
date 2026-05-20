@@ -2,7 +2,7 @@ import { invoke } from "$lib/electron-bridge";
 import {
   getItems,
   isCollection,
-} from "$lib/store/utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,

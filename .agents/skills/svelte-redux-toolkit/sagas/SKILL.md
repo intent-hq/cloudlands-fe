@@ -43,7 +43,7 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 - Pass action creators directly to `take`, `takeEvery`, `takeLatest`, and `takeLeading`; do not pass `.type`.
 - Read state through named selectors with `.effect(...)` inside sagas.
 - Search before adding watchers: trigger action, worker name, registration name, and operation terms must have one canonical owner unless fan-out is intentional and documented.
-- Register app-owned sagas in the Store constructor saga map and start them explicitly with `store.runSaga(name)`.
+- Register app-owned sagas with `Store.registerSagas(sagasMap)` and start them explicitly with `store.runSaga(name)`.
 - Close manually-created channels in `finally`.
 - Handle async action failures with `.failure(error)` and normalize non-`Error` throws.
 - Keep retried work idempotent when using `retryWithTimeout`.

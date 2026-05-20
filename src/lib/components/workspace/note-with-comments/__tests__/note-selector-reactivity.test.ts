@@ -21,7 +21,6 @@ import {
   type Readable,
 } from "svelte/store";
 import { reducers } from "$lib/store/reducer";
-import { setConfiguredSelectorStore } from "$lib/store/utils/create-selector";
 import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
 import {
   loadWorkspaceNotesSucceeded,
@@ -75,7 +74,6 @@ function createTestStore() {
     store: reduxStore,
     storeState: readableState,
   };
-  setConfiguredSelectorStore(store);
   createdStores.push(store);
   return store;
 }

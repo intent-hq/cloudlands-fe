@@ -5,8 +5,8 @@ import type { CanonicalAgentStatusFields } from '$features/events/types';
 import {
   createAction,
   createAsyncAction,
-} from '../../utils/create-action';
-import { createReducer } from '../../utils/create-reducer';
+} from 'svelte-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
 import type {
   AgentSessionForkOptions,
   AgentSessionLaunchConfig,

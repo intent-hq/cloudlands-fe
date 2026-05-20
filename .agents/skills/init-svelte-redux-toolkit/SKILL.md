@@ -3,7 +3,7 @@ name: init-svelte-redux-toolkit
 description: >-
   Bootstrap a new SvelteKit project with the full Redux + Saga state management
   architecture from the svelte-redux-toolkit package. Covers dependency installation,
-  creating Store constructor maps, wiring the provider component,
+  creating the Store reducer map and registering app sagas, wiring the provider component,
   building a first example slice, and verifying the setup.
 triggers:
   - init redux
@@ -65,7 +65,7 @@ npm uninstall redux redux-saga typed-redux-saga fast-equals # only if your app n
 
 See `docs/INSTALLATION.md` for full install, cleanup, and maintainer validation guidance.
 
-## Step 2 — Create the Store with Constructor Maps
+## Step 2 — Create the Store and Register App Sagas
 
 Create `src/lib/store/store.ts`:
 
@@ -73,7 +73,7 @@ Create `src/lib/store/store.ts`:
 /**
  * Store Instance
  *
- * Create a Store with app-owned reducer and saga maps here.
+ * Create a Store with app-owned reducers and register app sagas here.
  * Each reducer-map key becomes an app state domain name (e.g., state.counter).
  * Export AppState from StoreState<typeof store> after constructing the store.
  */
@@ -84,18 +84,15 @@ import type { StoreState } from 'svelte-redux-toolkit/types';
 // import { counterReducer } from './slices/counter/counter-slice';
 // import { counterSaga } from './slices/counter/sagas/counter-saga';
 
-export const store = new Store(
-  {
-    // counter: counterReducer,
-  },
-  {
-    // counterSaga,
-  }
-);
+export const store = new Store({
+  // counter: counterReducer,
+}).registerSagas({
+  // counterSaga,
+});
 export type AppState = StoreState<typeof store>;
 ```
 
-The `Store` class manages reducer and saga registries internally from constructor maps — no separate registry files or mutating registration calls are needed. Constructor maps preserve `StoreState<typeof store>` inference without an explicit `: Store` annotation. Package-owned slices are mounted by default under reserved `@internal_` domains such as `@internal_storeUtility`; those domains can appear in the inferred type, but application code should not register reducers with that prefix or depend on those internal state shapes directly.
+The `Store` class accepts app reducer maps in the constructor and app saga maps through `Store.registerSagas(...)` — no separate registry files are needed. Chaining `registerSagas(...)` preserves `StoreState<typeof store>` and saga-name inference without an explicit `: Store` annotation. Package-owned slices are mounted by default under reserved `@internal_` domains such as `@internal_storeUtility`; those domains can appear in the inferred type, but application code should not register reducers with that prefix or depend on those internal state shapes directly.
 
 ## Step 3 — Wire the Store into Root Layout
 
@@ -201,7 +198,7 @@ export function* counterSaga() {
 }
 ```
 
-### 4d. Add the slice to constructor maps and start its saga
+### 4d. Add the reducer, register the saga, and start it
 
 Update `src/lib/store/store.ts`:
 
@@ -209,10 +206,7 @@ Update `src/lib/store/store.ts`:
 import { counterReducer } from './slices/counter/counter-slice';
 import { counterSaga } from './slices/counter/sagas/counter-saga';
 
-export const store = new Store(
-  { counter: counterReducer },
-  { counterSaga }
-);
+export const store = new Store({ counter: counterReducer }).registerSagas({ counterSaga });
 ```
 
 Registration alone does **not** run the saga. Start it explicitly by name in your root layout after `store.init()`:

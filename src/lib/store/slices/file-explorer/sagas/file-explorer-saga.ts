@@ -96,7 +96,7 @@ import {
   takeEveryFromElectronChannel,
   takeEveryFromWindowEvent,
 } from "$lib/store/utils/ipc-channel";
-import { debounceSaga } from "$lib/store/utils/debounce-saga";
+import { debounceSaga } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
 
 const logger = new Logger("FileExplorerSaga");
 

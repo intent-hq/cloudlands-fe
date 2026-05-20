@@ -29,7 +29,7 @@ import {
 import {
   takeEveryFromSelector,
   type SelectorChannelPayload,
-} from "../../../utils/selector-channel-effects";
+} from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { removeFileContentEntry } from "../../files/files-slice";
 import {

@@ -44,24 +44,15 @@ Source rules:
 
 ## Required gate sequence
 
-Run these gates on every implementation or documentation diff before acceptance.
-Automated gates are blocking when they are required for the diff scope. If
-implementor evidence for a required safe gate is missing, stale, incomplete, or
-contradicts the current diff, the verifier must run that gate directly when the
-workspace can run it safely, then report the command, exit code, and key output.
-Do not accept failed gates or “not applicable” claims without a documented,
-scope-specific reason.
+Run these gates on every implementation or documentation diff before acceptance.Automated gates are blocking when they are required for the diff scope. Ifimplementor evidence for a required safe gate is missing, stale, incomplete, orcontradicts the current diff, the verifier must run that gate directly when theworkspace can run it safely, then report the command, exit code, and key output.Do not accept failed gates or “not applicable” claims without a documented,scope-specific reason.
 
 1. **Instruction compliance gate** — verify the implementor followed the applicable task instructions, skills, and docs, and reported evidence.
 2. **Refactor cleanup gate** — verify moved, renamed, or split modules did not leave unjustified pass-through wrappers.
 3. **Utility reuse gate** — verify new helpers/utilities were preceded by reuse discovery and are not duplicates.
 4. **State integrity gate** — verify Redux state is canonical only and selectors derive computed values.
 5. **Canonical owner gate** — verify actions, selectors, and sagas have one owner/implementation.
-6. **Automated gate selection** — require and, when evidence is missing or stale,
-   run the safe automated gates that match the diff scope.
-7. **Verifier-guided semantic gate** — keep noisy migration completeness,
-   semantic test adequacy, and lifecycle intent judgments in reviewer evidence
-   instead of treating them as brittle CI-only checks.
+6. **Automated gate selection** — require and, when evidence is missing or stale,run the safe automated gates that match the diff scope.
+7. **Verifier-guided semantic gate** — keep noisy migration completeness,semantic test adequacy, and lifecycle intent judgments in reviewer evidenceinstead of treating them as brittle CI-only checks.
 
 If any gate fails, request changes. Do not accept “looks good” without evidence for all gates.
 
@@ -196,47 +187,22 @@ export const report: VerifierReport = {
 
 ### Automated gate selection rules
 
-Use this repository's maintainer `npm run ...` scripts when reviewing package
-repo diffs. When verifying a consuming app that has installed the package, use
-the package CLI equivalents such as `npx svelte-redux-toolkit validate-architecture`
-or `npm exec svelte-redux-toolkit -- validate-architecture`.
+Use this repository's maintainer `npm run ...` scripts when reviewing packagerepo diffs. When verifying a consuming app that has installed the package, usethe package CLI equivalents such as `npx svelte-redux-toolkit validate-architecture`or `npm exec svelte-redux-toolkit -- validate-architecture`.
 
-- **Always require `git status --short`** before the final decision to identify
-  modified, staged, deleted, and untracked files that affect review scope.
-- **Always require `git diff --check`** for any local diff before acceptance;
-  whitespace errors block acceptance until fixed or explicitly scoped out by the
-  user.
-- **Require `npm run validate:skill-examples`** for changes under `skills/`,
-  skill artifacts, Markdown guidance, fenced examples, or docs that route agents
-  through skill examples.
-- **Require `npm run validate:architecture`** for Redux state, actions,
-  selectors, sagas, reducer/slice behavior, component/store import boundaries,
-  localStorage access, collection state, pass-through wrappers, package test
-  patterns, or skills/docs that govern those areas.
-- **Require `npm test`** for runtime source changes, test changes, behavioral
-  fixes, refactors, or anything whose acceptance depends on executable behavior.
-  Use focused tests when they cover the change; require the broader test suite
-  for final package behavior review when dependencies are available.
-- **Require `npm run build`** for public exports, package entrypoints,
-  TypeScript/Svelte source, build configuration, or docs claiming build/release
-  readiness.
-- **Require `npm run validate:release`** for release/package validation,
-  package manifests, export surface changes, build-script changes, final release
-  smoke checks, or when the task asks for release readiness. Treat it as a
-  blocking aggregate gate and still report any nested gate diagnostics.
+- **Always require **`git status --short` before the final decision to identifymodified, staged, deleted, and untracked files that affect review scope.
+- **Always require **`git diff --check` for any local diff before acceptance;whitespace errors block acceptance until fixed or explicitly scoped out by theuser.
+- **Require **`npm run validate:skill-examples` for changes under `skills/`,skill artifacts, Markdown guidance, fenced examples, or docs that route agentsthrough skill examples.
+- **Require **`npm run validate:architecture` for Redux state, actions,selectors, sagas, reducer/slice behavior, component/store import boundaries,localStorage access, collection state, pass-through wrappers, package testpatterns, or skills/docs that govern those areas.
+- **Require **`npm test` for runtime source changes, test changes, behavioralfixes, refactors, or anything whose acceptance depends on executable behavior.Use focused tests when they cover the change; require the broader test suitefor final package behavior review when dependencies are available.
+- **Require **`npm run build` for public exports, package entrypoints,TypeScript/Svelte source, build configuration, or docs claiming build/releasereadiness.
+- **Require **`npm run validate:release` for release/package validation,package manifests, export surface changes, build-script changes, final releasesmoke checks, or when the task asks for release readiness. Treat it as ablocking aggregate gate and still report any nested gate diagnostics.
 
 Missing or stale evidence rules:
 
-- Evidence is stale when the command predates relevant file changes, was run on a
-  different diff, omits required output/exit code, or excludes files that the
-  task requires reviewing.
-- Safe automated gates above should be run by the verifier directly when stale
-  or missing, unless dependencies are unavailable or the command would exceed
-  the approved task scope. Document that blocker with exact diagnostics.
-- Verifier-guided semantic checks are not replacement evidence for required
-  automated gates; they supplement them.
-- Do not request or invent new CI gates for broad semantic adequacy unless the
-  user explicitly approves that scope expansion.
+- Evidence is stale when the command predates relevant file changes, was run on adifferent diff, omits required output/exit code, or excludes files that thetask requires reviewing.
+- Safe automated gates above should be run by the verifier directly when staleor missing, unless dependencies are unavailable or the command would exceedthe approved task scope. Document that blocker with exact diagnostics.
+- Verifier-guided semantic checks are not replacement evidence for requiredautomated gates; they supplement them.
+- Do not request or invent new CI gates for broad semantic adequacy unless theuser explicitly approves that scope expansion.
 
 ## Gate 1 — instruction compliance
 
@@ -311,7 +277,7 @@ Pass/fail checks:
 - **PASS** — implementor reported search terms/paths for state, actions, selectors, and sagas before adding new owners.
 - **PASS** — new action creators live in one owning slice and other files import them.
 - **PASS** — selectors are imported/composed instead of copied.
-- **PASS** — each trigger action has one watcher owner, and each Store constructor saga-map name is unique.
+- **PASS** — each trigger action has one watcher owner, and each `Store.registerSagas(...)` saga name is unique.
 - **FAIL** — the same `createAction`/`createAsyncAction` type string appears in multiple owner modules.
 - **FAIL** — two selectors expose the same name/body without a documented canonical owner.
 - **FAIL** — two saga watchers own the same trigger action or registration name without a documented fan-out reason.
@@ -320,101 +286,49 @@ Verifier output must say either “canonical action/selector/saga owners verifie
 
 ## Gate 6 — automated architecture validation
 
-For changes touching Redux state, `createAction`/`createAsyncAction`, selectors,
-saga watchers/registrations, component/store imports, localStorage access,
-reducers/slices, collection state, RTK/custom API boundaries, pass-through
-wrappers, test files that exercise selectors or typed-redux-saga mocks, or the
-skills/docs governing those areas, hard-fail the review unless current evidence
-shows `npm run validate:architecture` passed or the verifier ran it directly and
-reported the result. If the command cannot run or fails for unrelated existing
-files, preserve the exact diagnostics and classify whether they are in-scope;
-do not claim success.
+For changes touching Redux state, `createAction`/`createAsyncAction`, selectors,saga watchers/registrations, component/store imports, localStorage access,reducers/slices, collection state, RTK/custom API boundaries, pass-throughwrappers, test files that exercise selectors or typed-redux-saga mocks, or theskills/docs governing those areas, hard-fail the review unless current evidenceshows `npm run validate:architecture` passed or the verifier ran it directly andreported the result. If the command cannot run or fails for unrelated existingfiles, preserve the exact diagnostics and classify whether they are in-scope;do not claim success.
 
 Wave 3 coverage summary:
 
-- G9 selector call modes: direct selector invocation in unsafe contexts and
-  inline `waitFor((state) => ...)` selectors.
-- G10 typed-redux-saga effect style: bare `yield` for typed saga effects where
-  `yield*` is required.
-- G11 channel lifecycle: auto-forking helper misuse and raw channels without
-  detectable cleanup.
-- G14 file structure/naming: low-noise state type, selector export/file, and
-  action type shape rules.
-- G15 high-signal test patterns: selector tests using `.select(state)` and typed
-  saga `call` mocks preserving the `Array.isArray` tuple guard.
+- G9 selector call modes: direct selector invocation in unsafe contexts andinline `waitFor((state) => ...)` selectors.
+- G10 typed-redux-saga effect style: bare `yield` for typed saga effects where`yield*` is required.
+- G11 channel lifecycle: auto-forking helper misuse and raw channels withoutdetectable cleanup.
+- G14 file structure/naming: low-noise state type, selector export/file, andaction type shape rules.
+- G15 high-signal test patterns: selector tests using `.select(state)` and typedsaga `call` mocks preserving the `Array.isArray` tuple guard.
 
-Noisy semantic questions, such as whether a migration is complete or whether a
-test suite is behaviorally sufficient, remain verifier-led. Review diffs,
-searches, and task context rather than requesting new blocking CI rules unless
-the user approved them.
+Noisy semantic questions, such as whether a migration is complete or whether atest suite is behaviorally sufficient, remain verifier-led. Review diffs,searches, and task context rather than requesting new blocking CI rules unlessthe user approved them.
 
 Pass/fail checks:
 
-- **PASS** — command evidence shows exit code 0 and
-  `[architecture-validation] no architecture gate violations found`.
-- **PASS** — `npm run validate:release` evidence is present when release/package
-  validation is part of the task; it runs the architecture gate first.
-- **PASS** — any `architecture-gate-ignore-next-line` or
-  `architecture-gate-ignore-file` comment names the relevant rule when possible
-  and includes a concrete migration, compatibility, or external-data reason.
-- **PASS** — known diagnostics are classified by command exit code, for example
-  existing `vite-plugin-dts` messages remain non-blocking only when build and
-  release validation exit 0.
-- **PASS** — unrelated tracked or untracked status is reported separately and not
-  staged unless that cleanup or package-manager work was explicitly approved.
-- **FAIL** — required architecture evidence is missing or stale and the verifier
-  did not run the safe gate or document why it could not run.
-- **FAIL** — violations are omitted from the handoff or described only as “looks
-  okay” without command output.
-- **FAIL** — an ignore comment masks derived/duplicated Redux state or duplicate
-  actions/selectors/sagas without a reviewed reason and owner plan.
-- **FAIL** — new action types are unnamespaced, Redux state uses non-serializable
-  types, components import saga/reducer internals, sagas use
-  `takeEvery(action.type, ...)`, sagas read inline selectors, or direct
-  `window.localStorage` usage appears outside the safe helper layer without a
-  reviewed exception.
-- **FAIL** — RTK helpers, shared `*.store.svelte.ts` stores, object arrays in
-  collection state, collection-internal mutations, initialState runtime objects,
-  reducer side effects/nondeterminism, lifecycle Redux store access, or thin
-  pass-through wrappers appear without a reviewed rule-specific exception and a
-  migration/compatibility/sunset reason.
-- **FAIL** — direct selector call-mode misuse, inline `waitFor` selectors, bare
-  typed saga `yield`, channel lifecycle leaks, low-noise file-structure naming
-  violations, or high-signal test-pattern violations appear without passing gate
-  evidence or a reviewed rule-specific exception.
-- **FAIL** — a verifier asks CI to enforce broad semantic adequacy or migration
-  completeness without explicit approval for a new gate.
+- **PASS** — command evidence shows exit code 0 and`[architecture-validation] no architecture gate violations found`.
+- **PASS** — `npm run validate:release` evidence is present when release/packagevalidation is part of the task; it runs the architecture gate first.
+- **PASS** — any `architecture-gate-ignore-next-line` or`architecture-gate-ignore-file` comment names the relevant rule when possibleand includes a concrete migration, compatibility, or external-data reason.
+- **PASS** — known diagnostics are classified by command exit code, for exampleexisting `vite-plugin-dts` messages remain non-blocking only when build andrelease validation exit 0.
+- **PASS** — unrelated tracked or untracked status is reported separately and notstaged unless that cleanup or package-manager work was explicitly approved.
+- **FAIL** — required architecture evidence is missing or stale and the verifierdid not run the safe gate or document why it could not run.
+- **FAIL** — violations are omitted from the handoff or described only as “looksokay” without command output.
+- **FAIL** — an ignore comment masks derived/duplicated Redux state or duplicateactions/selectors/sagas without a reviewed reason and owner plan.
+- **FAIL** — new action types are unnamespaced, Redux state uses non-serializabletypes, components import saga/reducer internals, sagas use`takeEvery(action.type, ...)`, sagas read inline selectors, or direct`window.localStorage` usage appears outside the safe helper layer without areviewed exception.
+- **FAIL** — RTK helpers, shared `*.store.svelte.ts` stores, object arrays incollection state, collection-internal mutations, initialState runtime objects,reducer side effects/nondeterminism, lifecycle Redux store access, or thinpass-through wrappers appear without a reviewed rule-specific exception and amigration/compatibility/sunset reason.
+- **FAIL** — direct selector call-mode misuse, inline `waitFor` selectors, baretyped saga `yield`, channel lifecycle leaks, low-noise file-structure namingviolations, or high-signal test-pattern violations appear without passing gateevidence or a reviewed rule-specific exception.
+- **FAIL** — a verifier asks CI to enforce broad semantic adequacy or migrationcompleteness without explicit approval for a new gate.
 
-Verifier output must cite the architecture gate result, inspect any ignore
-comments, and either say “architecture gate passed with no violations” or list
-the violations/exceptions that block approval, including exact diagnostics for
-unrelated existing or untracked files.
+Verifier output must cite the architecture gate result, inspect any ignorecomments, and either say “architecture gate passed with no violations” or listthe violations/exceptions that block approval, including exact diagnostics forunrelated existing or untracked files.
 
 ## Gate 7 — verifier-guided semantic checks
 
-Some rules are intentionally manual because they need task context or behavioral
-judgment. Do not fail a diff only because CI lacks a broad semantic rule;
-instead record the searches, diff review, and reasoning that prove the outcome
-is safe.
+Some rules are intentionally manual because they need task context or behavioraljudgment. Do not fail a diff only because CI lacks a broad semantic rule;instead record the searches, diff review, and reasoning that prove the outcomeis safe.
 
 Pass/fail checks:
 
-- **PASS** — verifier reviewed migration completeness, lifecycle intent, or test
-  adequacy with concrete evidence when those risks apply.
-- **PASS** — manual findings are classified as accepted, follow-up, or blocker
-  with a reason tied to task scope.
-- **PASS** — manual checks supplement, but do not replace, required automated
-  gate evidence.
-- **FAIL** — verifier approves noisy semantic work based only on the architecture
-  command without reviewing the relevant behavior or tests.
-- **FAIL** — verifier treats a manual judgment as a reason to skip a required
-  safe automated gate without documenting why the gate is out of scope or
-  unavailable.
-- **FAIL** — verifier requests a new CI gate for a semantic/noisy preference when
-  the task only approved verifier-guided review.
+- **PASS** — verifier reviewed migration completeness, lifecycle intent, or testadequacy with concrete evidence when those risks apply.
+- **PASS** — manual findings are classified as accepted, follow-up, or blockerwith a reason tied to task scope.
+- **PASS** — manual checks supplement, but do not replace, required automatedgate evidence.
+- **FAIL** — verifier approves noisy semantic work based only on the architecturecommand without reviewing the relevant behavior or tests.
+- **FAIL** — verifier treats a manual judgment as a reason to skip a requiredsafe automated gate without documenting why the gate is out of scope orunavailable.
+- **FAIL** — verifier requests a new CI gate for a semantic/noisy preference whenthe task only approved verifier-guided review.
 
-Verifier output must state whether any semantic checks were required and, if so,
-summarize the evidence or follow-up.
+Verifier output must state whether any semantic checks were required and, if so,summarize the evidence or follow-up.
 
 ## Completion report requirement
 
@@ -425,21 +339,16 @@ Every verifier completion report must include:
 3. Utility reuse result and evidence.
 4. State integrity result and evidence.
 5. Canonical action/selector/saga owner result and evidence.
-6. Automated gate results required by the diff scope, including `git status
-   --short`, `git diff --check`, `npm run validate:skill-examples`, `npm run
-   validate:architecture`, `npm test`, `npm run build`, and `npm run
-   validate:release` when applicable. Include command, exit code, and key output
-   for each gate run by the verifier or inspected from implementor evidence.
+6. Automated gate results required by the diff scope, including `git status --short`, `git diff --check`, `npm run validate:skill-examples`, `npm run validate:architecture`, `npm test`, `npm run build`, and `npm run validate:release` when applicable. Include command, exit code, and key outputfor each gate run by the verifier or inspected from implementor evidence.
 7. Architecture gate result and any reviewed ignore-comment exceptions.
-8. Semantic/verifier-guided checks reviewed, including any intentionally manual
-   findings and why they should not become blocking CI for this task.
+8. Semantic/verifier-guided checks reviewed, including any intentionally manualfindings and why they should not become blocking CI for this task.
 
 Acceptance is blocked if any result is missing, failed, or lacks evidence, unless the user explicitly approves the exception.
 
 ## Examples retained/added
 
 | # | Example | Kind |
-| ---: | --- | --- |
+| --- | --- | --- |
 | 1 | Verifier handoff evidence object | Evidence |
 | 2 | Instruction citation checklist | Evidence |
 | 3 | Utility reuse discovery evidence | Evidence |

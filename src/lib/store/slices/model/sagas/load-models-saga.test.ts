@@ -15,7 +15,7 @@ vi.mock('../model-utils', () => ({
   getModelsForProviderForLoadingState: vi.fn(),
 }));
 
-import { createCollection } from '$lib/store/utils/collection-utils';
+import { createCollection } from 'svelte-redux-toolkit/utils/collections/collection-utils';
 import { getModelsForProviderForLoadingState } from '../model-utils';
 import {
   MAX_AUTO_RETRIES,

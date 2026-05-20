@@ -7,7 +7,7 @@ import {
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 function getActiveWs(state: StoreState) {
   const wsId = state.workspace.activeWorkspaceId;

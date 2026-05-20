@@ -1,7 +1,7 @@
 import {
   getItems,
   type Collection,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { createSelector } from "../../utils/create-selector";
 import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
 

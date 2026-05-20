@@ -13,7 +13,7 @@ import {
   openWorkspaceDrawer,
   type WorkspaceNavigationDrawerState,
 } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
-import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
+import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import {
   isFocusInEditableElement,
   isFocusInTerminal,

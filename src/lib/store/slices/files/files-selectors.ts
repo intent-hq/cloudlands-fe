@@ -2,7 +2,7 @@ import { createSelector } from "../../utils/create-selector";
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { emptyFilesWorkspaceState } from "./files-slice";
 import type { FileContentEntry, FilesWorkspaceState } from "./files-types";
 

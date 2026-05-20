@@ -6,8 +6,8 @@
  * Agent sessions are derived from the canonical agent-session slice via selectors.
  */
 
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { AgentOverviewState, AgentOverviewWorkspaceState } from "./agent-overview-types";
 import type { InteractionEvent } from "$lib/components/agent-overview/types";

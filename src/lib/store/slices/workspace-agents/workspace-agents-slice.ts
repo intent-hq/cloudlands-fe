@@ -3,8 +3,8 @@ import type { UnifiedAgentConfig } from "$shared/types/agent.types";
 import {
   createAction,
   createAsyncAction,
-} from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+} from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";

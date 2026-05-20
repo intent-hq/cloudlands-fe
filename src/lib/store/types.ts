@@ -1,6 +1,5 @@
 import type { Middleware, Store, UnknownAction } from 'redux';
 import type { Readable } from 'svelte/store';
-import type { Saga, Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
 import type { reducers } from './reducer';
 
@@ -91,24 +90,8 @@ export type SagaName =
   | 'agentStreamSaga'
   | 'agentSubscriptionUISaga'
   | 'agentAvailabilitySaga'
-  | 'sessionStatsSaga';
-
-// ============================================================================
-// Saga Status Types
-// ============================================================================
-
-export type SagaCrashRecord = {
-  /** Epoch milliseconds when the saga crashed */
-  crashedAt: number;
-  /** Error message string (serializable) */
-  error: string;
-};
-
-export type SagaStatusRecord = {
-  isRunning: boolean;
-  launchedAtTs: number | null;
-  crashes: SagaCrashRecord[];
-};
+  | 'sessionStatsSaga'
+  | 'sagaCrashSentrySaga';
 
 // ============================================================================
 // Action Types
@@ -195,8 +178,6 @@ export type ReduxStoreContext = {
   store: ReduxStore;
   storeState: Readable<StoreState>;
   dispose: () => void;
-  runSaga: <S extends Saga>(saga: S, ...args: Parameters<S>) => Task;
-  tasks?: Record<SagaName, SagaStatusRecord>;
 };
 
 // ============================================================================

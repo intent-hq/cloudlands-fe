@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { getItem } from "../../utils/collection-utils";
+import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   applyExternalFileContent,

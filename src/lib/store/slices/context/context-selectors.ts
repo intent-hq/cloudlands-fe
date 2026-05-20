@@ -1,5 +1,5 @@
 import { createSelector } from "../../utils/create-selector";
-import { getItems } from "../../utils/collection-utils";
+import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { emptyWorkspaceContextState } from "./context-slice";
 import type { ContextItem } from "$features/context/types";
 import type { ContextWorkspaceState } from "./context-types";

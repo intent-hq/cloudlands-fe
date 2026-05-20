@@ -21,6 +21,8 @@ import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 export const sagaMiddleware = createSagaMiddleware();
 
+const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+
 export const runSaga = <S extends Saga>(saga: S, ...args: Parameters<S>) => {
   return sagaMiddleware.run(saga, ...args);
 };
@@ -49,7 +51,7 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
     }
   }
 
-  const enableReduxLogger = globallyEnabled ?? localStorageEnabled ?? import.meta.env.DEV;
+  const enableReduxLogger = globallyEnabled ?? localStorageEnabled ?? isDevBuild();
   const webviewName = globallyEnabled ? (window as any).intentFlags?.webviewName : "";
 
   return { enabled: enableReduxLogger, webviewName };
@@ -75,7 +77,7 @@ function buildMiddleware(): Middleware<any, StoreState, any>[] {
       debugMiddlewares.push(createReferenceChangeDetectorMiddleware());
     }
 
-    if (import.meta.env.DEV || safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
+    if (isDevBuild() || safeLocalStorage.getItem(REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY)) {
       debugMiddlewares.push(createStructuredCloneCheckerMiddleware());
     }
 

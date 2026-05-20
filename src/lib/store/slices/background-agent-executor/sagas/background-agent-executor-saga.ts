@@ -64,7 +64,7 @@ import {
   setLocalStorageJSON,
   getLocalStorageJSON,
 } from '$lib/store/utils/safe-local-storage-saga';
-import { debounceWithKeySaga } from '$lib/store/utils/debounce-saga';
+import { debounceWithKeySaga } from 'svelte-redux-toolkit/utils/sagas/debounce-saga';
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';

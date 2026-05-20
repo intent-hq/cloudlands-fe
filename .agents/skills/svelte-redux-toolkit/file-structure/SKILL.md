@@ -3,8 +3,8 @@ name: svelte-redux-toolkit/file-structure
 description: >-
   Per-slice directory layout ({name}-types.ts, {name}-slice.ts,
   {name}-selectors.ts, sagas/{name}-saga.ts plus tests). Saga-only slices skip
-  reducer registration. Register reducers and app sagas in the Store constructor
-  maps; store.init()
+  reducer registration. Register reducers in the Store constructor map and app
+  sagas with Store.registerSagas(...); store.init()
   wires the Redux store and package saga manager but does NOT auto-start
   registered app sagas — start each one explicitly via store.runSaga(name).
   Do not manually register package @internal_ sagas.
@@ -49,14 +49,11 @@ import type { StoreState } from 'svelte-redux-toolkit/types';
 import { mySliceReducer } from './slices/my-slice/my-slice-slice';
 import { mySliceSaga } from './slices/my-slice/sagas/my-slice-saga';
 
-export const store = new Store(
-  { mySlice: mySliceReducer },
-  { mySliceSaga }
-);
+export const store = new Store({ mySlice: mySliceReducer }).registerSagas({ mySliceSaga });
 export type AppState = StoreState<typeof store>;
 ```
 
-Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor maps preserve reducer-state inference without an explicit `: Store` annotation or mutating registration calls. Register only app-owned reducers and sagas. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
+Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference, and chaining `registerSagas(...)` preserves saga-name inference, without an explicit `: Store` annotation. Register only app-owned reducers and sagas. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
 
 Then in the root layout — initialize the store, and start each registered saga explicitly by name:
 
@@ -99,10 +96,7 @@ export function* triggersSaga() {
 
 ```typescript
 // src/store.ts
-export const store = new Store(
-  {},
-  { triggersSaga }
-); // no reducer map entry
+export const store = new Store({}).registerSagas({ triggersSaga }); // no reducer map entry
 ```
 
 ### Naming conventions
@@ -123,18 +117,12 @@ Empty reducers add state-tree noise and run on every action; saga-only slices de
 ```typescript
 // WRONG
 export const noopReducer = createReducer({}).build();
-export const store = new Store(
-  { triggers: noopReducer },
-  { triggersSaga }
-);
+export const store = new Store({ triggers: noopReducer }).registerSagas({ triggersSaga });
 ```
 
 ```typescript
-// CORRECT — no reducer map entry; only the saga map entry
-export const store = new Store(
-  {},
-  { triggersSaga }
-);
+// CORRECT — no reducer map entry; only the registered saga
+export const store = new Store({}).registerSagas({ triggersSaga });
 ```
 
 Source: `skills/svelte-redux-toolkit/SKILL.md` §9 (Saga-only slices) · **Priority: MEDIUM**

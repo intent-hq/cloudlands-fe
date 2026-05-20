@@ -3,7 +3,7 @@ import {
   findItem,
   getItems,
   type Collection,
-} from '../../utils/collection-utils';
+} from 'svelte-redux-toolkit/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import {

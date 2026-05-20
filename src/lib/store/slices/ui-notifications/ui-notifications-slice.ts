@@ -1,4 +1,4 @@
-import { createReducer } from "../../utils/create-reducer";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 
 export type UiNotificationsState = Record<string, never>;
 

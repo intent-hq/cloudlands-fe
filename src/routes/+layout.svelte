@@ -129,10 +129,12 @@
   import { STORE_CONTEXT } from '$lib/store/constants';
   import { getStoreContext } from '$lib/store/utils/svelte-context';
   import {
-  initAppStore,
-  startAllAppSagas,
-  store as appStore,
-} from '$lib/store/store';
+    store as appStore,
+  } from '$lib/store/store';
+  import {
+    initRegisteredAppStore,
+    startAllAppSagas,
+  } from '$lib/store/saga-registration';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
@@ -140,7 +142,7 @@
       return () => {};
     }
 
-    const storeContext = initAppStore();
+    const storeContext = initRegisteredAppStore();
     const stopHandlers = startAllAppSagas();
     setContext(STORE_CONTEXT, storeContext);
 

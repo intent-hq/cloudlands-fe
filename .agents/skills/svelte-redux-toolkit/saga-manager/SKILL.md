@@ -46,7 +46,7 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 ## Setup — where the manager fits
 
 - `Store.init()` starts the package-owned saga manager internally, bound to the app saga registry snapshot.
-- App sagas are registered in the second `new Store(reducersMap?, sagasMap?)` argument and started explicitly with `store.runSaga(name)`.
+- App sagas are registered with `Store.registerSagas(sagasMap)` and started explicitly with `store.runSaga(name)`.
 - `store.runSaga(name)` dispatches `startSaga(name)` and returns a cancel function that dispatches `stopSaga(name)`; the manager listens for those lifecycle actions.
 - `Store.dispose()` and the disposer returned by `Store.init()` tear down the initialized Store runtime and stop Store-owned saga tasks, including running app sagas forked by the manager.
 - The reserved manager name is `@internal_sagaManager`; do not register, run, or expose it as an app saga.
@@ -82,13 +82,13 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 
 ## Examples
 
-### 1. Register app sagas in the Store constructor and start them explicitly
+### 1. Register app sagas with `registerSagas(...)` and start them explicitly
 
 ```ts
 import { onMount } from "svelte";
 import { Store } from "svelte-redux-toolkit/store";
 
-export const store = new Store({ todos: todosReducer }, { syncTodos: syncTodosSaga });
+export const store = new Store({ todos: todosReducer }).registerSagas({ syncTodos: syncTodosSaga });
 store.init();
 
 onMount(() => store.runSaga("syncTodos"));

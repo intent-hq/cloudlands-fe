@@ -6,7 +6,7 @@
  */
 
 import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../../utils/create-reducer";
+import { createReducer } from "../../utils/create-reducer";
 import type { ContentBlock } from "../../../../shared/types";
 import { buildOrderedContentBlocks } from "../../../../shared/utils/content-block-utils";
 import type {

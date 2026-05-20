@@ -14,6 +14,7 @@ import {
   sagaNames,
   sagas,
 } from "./sagas";
+import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
 
 describe("renderer saga registry", () => {
   it("registers workspace navigation static child sagas independently", () => {
@@ -32,5 +33,10 @@ describe("renderer saga registry", () => {
       "panelContextSaga",
     ]));
     expect(sagaNames).not.toContain("workspaceNavigationSaga");
+  });
+
+  it("registers saga crash Sentry forwarding as an app saga", () => {
+    expect(sagas.sagaCrashSentrySaga).toBe(sagaCrashSentrySaga);
+    expect(sagaNames).toContain("sagaCrashSentrySaga");
   });
 });

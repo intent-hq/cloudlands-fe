@@ -33,7 +33,7 @@ import {
 } from "./store";
 import type { GenericAction, StoreState } from "./types";
 
-function createFakeStoreRuntime(initialState = { storeUtility: { updatesLocked: false } } as StoreState) {
+function createFakeStoreRuntime(initialState = {} as StoreState) {
   let state = initialState;
   const subscribers = new Set<(value: StoreState) => void>();
   const readableState: Readable<StoreState> = readable(state, (set) => {
@@ -80,6 +80,11 @@ describe("configured app Store", () => {
   it("registers existing reducer and saga maps on one package Store instance", () => {
     const registeredReducers = appStore.getReducers();
     const registeredSagas = registeredAppStore.getSagas();
+
+    expect(reducers).not.toHaveProperty("storeUtility");
+    expect(registeredReducers).not.toHaveProperty("storeUtility");
+    expect(registeredReducers).toHaveProperty("@internal_storeUtility");
+    expect(registeredReducers).toHaveProperty("@internal_sagaManager");
 
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);

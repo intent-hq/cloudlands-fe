@@ -161,7 +161,7 @@ import { todosReducer } from "./slices/todos/todos-slice";
 import { selectTodo } from "./slices/todos/todos-selectors";
 import { todosSaga } from "./slices/todos/sagas/todos-saga";
 
-const store = new Store({ todos: todosReducer }, { todosSaga });
+const store = new Store({ todos: todosReducer }).registerSagas({ todosSaga });
 const dispose = store.init();
 
 store.dispatch(renameTodo("todo-1", "Ship docs"));

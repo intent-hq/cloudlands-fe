@@ -6,12 +6,12 @@
  * populate the collection. The slice is automatically re-loaded on GitHub
  * auth changes and cleared on sign-out. Components never call IPC directly.
  */
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 /**
  * Normalized repo shape stored in the Collection. `id` is derived at the

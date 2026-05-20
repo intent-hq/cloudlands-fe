@@ -35,7 +35,7 @@ import {
   extractTaskChangesFromMessages,
   extractDelegationBatchMap,
 } from "$lib/components/agent-overview/graph-helpers";
-import { getItems } from "$lib/store/utils/collection-utils";
+import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { AgentSession,
   Note } from "$shared/types";
 import { selectAllWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";

@@ -1,4 +1,4 @@
-import { getItems } from "../../utils/collection-utils";
+import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { createSelector } from "../../utils/create-selector";
 import { emptyChatChangesWorkspaceState } from "./chat-changes-slice";
 import type { AgentFileRefreshEntry, ChatChangesWorkspaceState } from "./chat-changes-types";

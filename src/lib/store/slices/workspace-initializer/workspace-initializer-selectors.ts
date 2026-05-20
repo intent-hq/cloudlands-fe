@@ -1,5 +1,5 @@
 import { createSelector } from "../../utils/create-selector";
-import { getItems } from "../../utils/collection-utils";
+import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 export const selectWorkspaceInitializerState = createSelector(
   (state) => state.workspaceInitializer,

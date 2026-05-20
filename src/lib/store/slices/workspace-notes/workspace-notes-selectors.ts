@@ -10,7 +10,7 @@ import { createSelector } from "../../utils/create-selector";
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { emptyWorkspaceNotesState } from "./workspace-notes-slice";
 import type { NoteVersionsState, ReadyTasksState, WorkspaceNotesWorkspaceState } from "./workspace-notes-types";
 

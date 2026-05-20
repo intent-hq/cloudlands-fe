@@ -5,7 +5,7 @@ import {
   createCollection,
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { AgentQueueEntryState } from "./agent-queue-types";
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {
