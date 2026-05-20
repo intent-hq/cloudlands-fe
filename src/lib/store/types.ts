@@ -1,6 +1,10 @@
-import type { Middleware, Store, UnknownAction } from 'redux';
+import type { Store, UnknownAction } from 'redux';
 import type { Readable } from 'svelte/store';
-import type { reducers } from './reducer';
+import type {
+  PreloadedStoreState as ToolkitPreloadedStoreState,
+  StoreState as ToolkitStoreState,
+} from 'svelte-redux-toolkit/types';
+import type { store as configuredStore } from './configured-store';
 
 /**
  * SagaName is declared as an explicit string literal union to avoid importing
@@ -157,44 +161,13 @@ export type MiddlewareFunction = (
   api: { dispatch: ReduxStore["dispatch"]; getState: ReduxStore["getState"] }
 ) => GenericAction | Promise<GenericAction> | void;
 
-export type StoreMiddleware = Middleware<any, StoreState, any>;
-
 // ============================================================================
 // Store Types
 // ============================================================================
 
-export type ReducersMap = typeof reducers;
-export type StateDomain = keyof ReducersMap;
-export type AppReducerState = {
-  [K in keyof ReducersMap]: ReturnType<ReducersMap[K]>;
-};
-export type InternalStoreUtilityState = {
-  updatesLocked: boolean;
-};
+export type StoreState = ToolkitStoreState<typeof configuredStore>;
 
-export type InternalSagaCrashReport = {
-  crashedAtTs: number;
-  error: {
-    name: string;
-    message: string;
-    stack?: string;
-  };
-};
-
-export type InternalSagaCrashState = Record<
-  string,
-  {
-    reports: InternalSagaCrashReport[];
-    omittedCount: number;
-  }
->;
-
-export type StoreState = AppReducerState & {
-  '@internal_storeUtility': InternalStoreUtilityState;
-  '@internal_sagaManager': InternalSagaCrashState;
-};
-
-export type PreloadedStoreState = Partial<StoreState>;
+export type PreloadedStoreState = ToolkitPreloadedStoreState<StoreState>;
 
 export type ReduxStore = Store<StoreState, UnknownAction>;
 
