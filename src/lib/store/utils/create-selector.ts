@@ -4,10 +4,14 @@ import type {
   ReduxStore,
   ReduxStoreContext,
   StoreSelector,
-  ReadableArgs,
   StoreSelectorCallback,
+  ReadableArgs,
+  StoreReadableStateSource,
 } from "../types";
-import type { Collection } from "./collection-utils";
+import {
+  getItems,
+  type Collection,
+} from "./collection-utils";
 import type { Readable } from "svelte/store";
 import { select } from "typed-redux-saga";
 import { createCachedSelector } from "../../../store/utils/create-cached-selector";
@@ -50,12 +54,24 @@ function requireSvelteDeps(): SvelteDeps {
 
 export { createCachedSelector };
 
-const isReadable = <T = any>(arg: unknown): arg is Readable<T> => {
-  if (!arg || typeof arg !== "object") {
-    return false;
-  }
+const SELECTOR_OUTSIDE_COMPONENT_MESSAGE =
+  "Selector called outside component initialization. " +
+  "The readable form of selectors (e.g., selectFoo()) can only be called " +
+  "during component init (top-level <script> block). For event handlers, " +
+  "callbacks, or async functions, use selector.select(store.state, ...args) instead.";
 
-  return "subscribe" in arg && typeof arg.subscribe === "function";
+const assertReadableSelectorLifecycle = (): void => {
+  const deps = requireSvelteDeps();
+
+  try {
+    deps.getStoreContext();
+  } catch (error) {
+    if (deps.isLifecycleOutsideComponentError(error)) {
+      throw new Error(SELECTOR_OUTSIDE_COMPONENT_MESSAGE, { cause: error });
+    }
+
+    throw error;
+  }
 };
 
 export const createSelector: CreateSelector = <ARGS extends any[], R>(
@@ -69,7 +85,6 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
     ...restArgs: ReadableArgs<ARGS>
   ): Readable<R> => {
       const deps = requireSvelteDeps();
-      // Cached selector here is lockable, means it will return prev value when store is locked for updates
       const cachedSelector = createCachedSelector<StoreState, ARGS, R>(selectorFunc, {
         lockUpdatesPredicate: (state) => state.storeUtility.updatesLocked,
       });
@@ -86,7 +101,8 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
       return deps.createThrottledReadable(source);
     };
 
-  const readableSelector: StoreSelector<R, ARGS> = (...restArgs: ReadableArgs<ARGS>) => {
+  const readableSelector: StoreSelector<R, ARGS> = ((...restArgs: ReadableArgs<ARGS>) => {
+    assertReadableSelectorLifecycle();
     const deps = requireSvelteDeps();
     let context: ReduxStoreContext | undefined;
 
@@ -94,13 +110,7 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
       context = deps.getStoreContext();
     } catch (error) {
       if (deps.isLifecycleOutsideComponentError(error)) {
-        throw new Error(
-          "Selector called outside component initialization. " +
-          "The readable form of selectors (e.g., selectFoo()) can only be called " +
-          "during component init (top-level <script> block). For event handlers, " +
-          "callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead.",
-          { cause: error }
-        );
+        throw new Error(SELECTOR_OUTSIDE_COMPONENT_MESSAGE, { cause: error });
       }
 
       throw error;
@@ -114,15 +124,17 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
       return boundSelector(deps.createStoreStateReadable(store), ...restArgs);
     }
     return boundSelector(context.storeState, ...restArgs);
-  };
+  }) as StoreSelector<R, ARGS>;
 
   readableSelector.withStore =
-    (store: ReduxStore) =>
+    (store: StoreReadableStateSource<StoreState> | ReduxStore) =>
       (...args: ReadableArgs<ARGS>) => {
         const deps = requireSvelteDeps();
-        return boundSelector(deps.createStoreStateReadable(store), ...args);
+        const storeState = hasReadableStoreState(store)
+          ? store.getReadableState()
+          : deps.createStoreStateReadable(store);
+        return boundSelector(storeState, ...args);
       };
-
   readableSelector.select = selectorFunc;
   readableSelector.effect = (...args: ARGS) => {
     return select(selectorFunc, ...args);
@@ -131,13 +143,30 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
   return readableSelector;
 };
 
+const isReadable = <T = any>(arg: unknown): arg is Readable<T> => {
+  if (!arg || typeof arg !== "object") {
+    return false;
+  }
+
+  return "subscribe" in arg && typeof arg.subscribe === "function";
+};
+
+const hasReadableStoreState = (store: unknown): store is StoreReadableStateSource<StoreState> => {
+  return (
+    !!store &&
+    typeof store === "object" &&
+    "getReadableState" in store &&
+    typeof store.getReadableState === "function"
+  );
+};
+
 export const createCollectionItemSelector = <ITEM extends object, K extends keyof ITEM & string>(
   collectionSelector: StoreSelectorCallback<Collection<ITEM, K>, any[]>
 ) => {
   return createSelector<[itemId: ITEM[K] & string], ITEM | undefined>(
     (state, itemId: ITEM[K] & string): ITEM | undefined => {
       if (!itemId) return undefined;
-      const collection = collectionSelector(state);
+      const collection = collectionSelector(state as StoreState);
       return collection.map[itemId];
     }
   );
@@ -152,8 +181,7 @@ export const createCollectionItemsListSelector = <
   itemFilter?: F
 ) => {
   return createSelector((state): ITEM[] => {
-    const { map, ids } = collectionSelector(state);
-    const list = ids.map((id) => map[id]);
+    const list = getItems(collectionSelector(state as StoreState));
     return itemFilter ? list.filter(itemFilter) : list;
   });
 };

@@ -224,8 +224,12 @@ export type StoreSelectorSelect<R, ARGS extends any[] = []> = StoreSelectorCallb
 
 export type StoreSelectorEffect<R, ARGS extends any[] = []> = (...args: ARGS) => SagaGenerator<R>;
 
+export type StoreReadableStateSource<TState = StoreState> = {
+  getReadableState(): Readable<TState>;
+};
+
 export type StoreSelectorWithStore<R, ARGS extends any[] = []> = (
-  store: ReduxStore
+  store: StoreReadableStateSource<StoreState> | ReduxStore
 ) => StoreSelectorReadable<R, ARGS>;
 
 export type StoreSelector<R, ARGS extends any[] = []> = StoreSelectorReadable<R, ARGS> & {

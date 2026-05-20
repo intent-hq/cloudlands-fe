@@ -255,6 +255,33 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
   dispatch: mockDispatch,
 }));
 
+vi.mock('$lib/store/store', () => ({
+  appStore: {
+    createSelector: (selectorFunc: (...args: any[]) => any) => {
+      const readableSelector = Object.assign(() => constantReadable(undefined), {
+        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
+        effect: (...args: any[]) => selectorFunc({}, ...args),
+        withStore: () => constantReadable(undefined),
+      });
+      return readableSelector;
+    },
+    dispatch: mockDispatch,
+    state: {},
+  },
+  store: {
+    createSelector: (selectorFunc: (...args: any[]) => any) => {
+      const readableSelector = Object.assign(() => constantReadable(undefined), {
+        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
+        effect: (...args: any[]) => selectorFunc({}, ...args),
+        withStore: () => constantReadable(undefined),
+      });
+      return readableSelector;
+    },
+    dispatch: mockDispatch,
+    state: {},
+  },
+}));
+
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => constantReadable('ws-1'),
 }));

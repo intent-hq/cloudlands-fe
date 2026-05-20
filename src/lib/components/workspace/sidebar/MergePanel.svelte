@@ -23,8 +23,8 @@
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import { selectSidebarMergeWhenReady } from '$lib/store/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -47,8 +47,9 @@
   writable,
 } from 'svelte/store';
   import Fa from 'svelte-fa';
+	import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
+  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
 
   interface Props {
     workspaceId: string;
@@ -143,7 +144,7 @@
     if (isGeneratingMerge) {
       dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
-      const state = getReduxStore().getState();
+      const state = appStore.state;
       const ws = selectWorkspaceById.select(state, workspaceId);
       if (ws) {
         dispatch(executeBackgroundAgent(ws.id, 'commit-merge'));
@@ -165,7 +166,7 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: mergeAgentId,
           sourcePanelId,
@@ -217,8 +218,8 @@
         onCommitMessageChange?.('');
         try {
           await Promise.all([
-            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
-            getReduxStore().dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+            appStore.dispatch(refreshRequested(workspaceId)),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
         if (result.result?.autoRebased && result.result?.newBaseSha) {
@@ -277,8 +278,8 @@
         onMergeComplete?.();
         try {
           await Promise.all([
-            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
-            getReduxStore().dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+            appStore.dispatch(refreshRequested(workspaceId)),
             Promise.resolve(dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }

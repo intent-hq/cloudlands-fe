@@ -23,10 +23,7 @@
 } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
-  import {
-  getReduxStore,
-  dispatch,
-} from '$lib/store/redux-dispatch-bridge';
+
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import {
   selectLineWrapping,
@@ -50,6 +47,7 @@
   faTextWidth,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
+  import { store as appStore } from '$lib/store/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -168,10 +166,10 @@
       filePath,
       workspaceId,
     };
-    const store = getReduxStore();
+    const store = appStore;
     if (openInAdjacentPanel) {
       store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
-      const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
+      const focusedId = selectFocusedPanelId.select(store.state, workspaceId);
       if (focusedId) {
         store.dispatch(requestPanelFocus(workspaceId, focusedId));
       }
@@ -217,7 +215,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleLineWrapping())}
+    onclick={() => appStore.dispatch(toggleLineWrapping())}
     tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
@@ -228,7 +226,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleFoldUnchanged())}
+    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
@@ -241,7 +239,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleDiffSideBySide())}
+    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
     tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}

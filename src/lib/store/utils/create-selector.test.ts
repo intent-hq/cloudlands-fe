@@ -156,7 +156,7 @@ describe("createSelector", () => {
       const selector = createSelector((state: StoreState) => state.storeUtility.updatesLocked);
 
       expect(() => selector()).toThrowError(
-        "Selector called outside component initialization. The readable form of selectors (e.g., selectFoo()) can only be called during component init (top-level <script> block). For event handlers, callbacks, or async functions, use selector.select(getReduxStore().getState(), ...args) instead."
+        "Selector called outside component initialization. The readable form of selectors (e.g., selectFoo()) can only be called during component init (top-level <script> block). For event handlers, callbacks, or async functions, use selector.select(store.state, ...args) instead."
       );
     });
 

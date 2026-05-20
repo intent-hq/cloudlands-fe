@@ -40,7 +40,7 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
 
   if (hadError) {
     localStorageEnabled = false;
-  } else if (localStorageValue !== null) {
+  } else if (localStorageValue != null && localStorageValue !== "undefined") {
     try {
       localStorageEnabled = !!JSON.parse(localStorageValue);
     } catch (error) {
