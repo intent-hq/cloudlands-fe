@@ -16,7 +16,7 @@
   toggleHiddenEditor,
   type InstalledEditor,
 } from '$lib/store/slices/external-editors/external-editors-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   faCode,
   faFolder,
@@ -24,7 +24,8 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  const dispatch = getDispatch();
+  import { store as appStore } from '$lib/store/store';
+  const dispatch = (action: Parameters<typeof appStore.dispatch>[0]) => appStore.dispatch(action);
   const installedEditors$ = selectInstalledEditors();
   const hiddenEditorIds$ = selectHiddenEditorIds();
 
