@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { initializeLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
   import { initializeSentryAuth } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
@@ -30,13 +30,11 @@
     { icon: 'sentry', name: 'Sentry', description: 'Create spaces directly from issues.' },
   ] as const;
 
-  const dispatch = getDispatch();
-
   onMount(() => {
     // Initialize all stores in parallel
-    dispatch(initializeGitHubAuth());
-    dispatch(initializeLinearAuth());
-    dispatch(initializeSentryAuth());
+    appStore.dispatch(initializeGitHubAuth());
+    appStore.dispatch(initializeLinearAuth());
+    appStore.dispatch(initializeSentryAuth());
     isLoading = false;
   });
 </script>
