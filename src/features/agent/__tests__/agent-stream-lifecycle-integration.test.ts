@@ -99,12 +99,14 @@ vi.mock('../browser/services/error-recovery.service', () => ({
   DEFAULT_STRATEGIES: {},
 }));
 vi.mock('$shared/constants/agent-streaming', () => ({ AGENT_STREAMING_CONFIG: {} }));
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: vi.fn(() => ({
-    getState: vi.fn(() => ({ workspaceAgents: { byWorkspaceId: {} } })),
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => vi.fn(),
     dispatch: mocks.reduxDispatch,
-  })),
-}));
+  });
+});
 vi.mock('$lib/services/analytics', () => ({ track: vi.fn() }));
 vi.mock('$features/agent/services/error-handler', () => ({
   errorHandler: { handleError: vi.fn(), track: vi.fn() },
