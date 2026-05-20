@@ -13,7 +13,7 @@ import {
 } from 'vitest';
 import type { Readable } from 'svelte/store';
 import ReadablePropHarness from './ReadablePropHarness.test.svelte';
-import { readableProp } from './svelte-context';
+import { readableProp } from './readable-prop';
 
 describe('readableProp', () => {
   afterEach(() => {

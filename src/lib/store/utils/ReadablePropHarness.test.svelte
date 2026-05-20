@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { readableProp } from './svelte-context';
+  import { readableProp } from './readable-prop';
 
   let { value }: { value: string } = $props();
 
