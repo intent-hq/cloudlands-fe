@@ -16,10 +16,6 @@ import {
 import { store } from "./configured-store";
 import { reducers } from "./reducer";
 import {
-  getReduxDispatch,
-  getReduxStore,
-} from "./redux-dispatch-bridge";
-import {
   sagaNames,
   sagas,
 } from "./sagas";
@@ -70,11 +66,11 @@ describe("configured app Store", () => {
     expect(appStore).toBe(store);
   });
 
-  it("keeps the selector utility bound directly to the configured Store", () => {
-    const source = readFileSync("src/lib/store/utils/create-selector.ts", "utf8");
+  it("creates selectors directly from the configured Store", () => {
+    const state = {} as StoreState;
+    const selectStoreState = appStore.createSelector((state) => state);
 
-    expect(source).toContain('import { store } from "../configured-store"');
-    expect(source).toContain("store.createSelector(selectorFunc)");
+    expect(selectStoreState.select(state)).toBe(state);
   });
 
   it("registers existing reducer and saga maps on one package Store instance", () => {
@@ -109,15 +105,13 @@ describe("configured app Store", () => {
   });
 });
 
-describe("app Store initialization bridge", () => {
-  it("initializes the configured Store and exposes dispatch/state bridge access", () => {
+describe("app Store initialization", () => {
+  it("initializes the configured Store and exposes dispatch/state through context", () => {
     const runtime = createFakeStoreRuntime();
 
     const context = initAppStore(undefined, runtime);
 
     expect(runtime.init).toHaveBeenCalledOnce();
-    expect(getReduxStore()).toBe(context.store);
-    expect(getReduxDispatch()).toBe(context.store.dispatch);
 
     const action = { type: "test/action", payload: undefined };
     expect(context.store.dispatch(action)).toBe(action);

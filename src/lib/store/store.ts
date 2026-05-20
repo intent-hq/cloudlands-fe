@@ -7,7 +7,6 @@ import {
 } from "./constants";
 import { store as configuredStore } from "./configured-store";
 import type {
-  CreateSelector,
   PreloadedStoreState,
   ReduxStore,
   ReduxStoreContext,
@@ -15,12 +14,10 @@ import type {
 } from "./types";
 import { safeLocalStorage } from "../utils/safe-storage";
 
-export type AppStore = Omit<typeof configuredStore, "createSelector"> & {
-  createSelector: CreateSelector;
-};
-
-export const store = configuredStore as unknown as AppStore;
+export const store = configuredStore;
 export const appStore = store;
+
+export type AppStore = typeof store;
 
 export type AppStoreState = StoreState;
 export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state">;

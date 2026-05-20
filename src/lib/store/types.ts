@@ -1,6 +1,5 @@
 import type { Middleware, Store, UnknownAction } from 'redux';
 import type { Readable } from 'svelte/store';
-import type { SagaGenerator } from 'typed-redux-saga';
 import type { reducers } from './reducer';
 
 /**
@@ -166,8 +165,33 @@ export type StoreMiddleware = Middleware<any, StoreState, any>;
 
 export type ReducersMap = typeof reducers;
 export type StateDomain = keyof ReducersMap;
-export type StoreState = {
+export type AppReducerState = {
   [K in keyof ReducersMap]: ReturnType<ReducersMap[K]>;
+};
+export type InternalStoreUtilityState = {
+  updatesLocked: boolean;
+};
+
+export type InternalSagaCrashReport = {
+  crashedAtTs: number;
+  error: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+};
+
+export type InternalSagaCrashState = Record<
+  string,
+  {
+    reports: InternalSagaCrashReport[];
+    omittedCount: number;
+  }
+>;
+
+export type StoreState = AppReducerState & {
+  '@internal_storeUtility': InternalStoreUtilityState;
+  '@internal_sagaManager': InternalSagaCrashState;
 };
 
 export type PreloadedStoreState = Partial<StoreState>;
@@ -179,47 +203,3 @@ export type ReduxStoreContext = {
   storeState: Readable<StoreState>;
   dispose: () => void;
 };
-
-// ============================================================================
-// Selector Types
-// ============================================================================
-
-/**
- * Converts an args tuple so that each element can be either a plain value or a Readable.
- * Used by selectors to accept reactive arguments in Svelte components.
- */
-export type ReadableArgs<ARGS extends any[]> = {
-  [K in keyof ARGS]: ARGS[K] | Readable<ARGS[K]>;
-};
-
-export type StoreSelectorCallback<R, ARGS extends any[] = []> = (
-  state: StoreState,
-  ...args: ARGS
-) => R;
-
-export type StoreSelectorReadable<R, ARGS extends any[] = []> = (
-  ...args: ReadableArgs<ARGS>
-) => Readable<R>;
-
-export type StoreSelectorSelect<R, ARGS extends any[] = []> = StoreSelectorCallback<R, ARGS>;
-
-export type StoreSelectorEffect<R, ARGS extends any[] = []> = (...args: ARGS) => SagaGenerator<R>;
-
-export type StoreReadableStateSource<TState = StoreState> = {
-  getReadableState(): Readable<TState>;
-};
-
-export type StoreSelectorWithStore<R, ARGS extends any[] = []> = (
-  store: StoreReadableStateSource<StoreState> | ReduxStore
-) => StoreSelectorReadable<R, ARGS>;
-
-export type StoreSelector<R, ARGS extends any[] = []> = StoreSelectorReadable<R, ARGS> & {
-  withStore: StoreSelectorWithStore<R, ARGS>;
-  select: StoreSelectorSelect<R, ARGS>;
-  effect: StoreSelectorEffect<R, ARGS>;
-};
-
-export type CreateSelector = <ARGS extends any[] = [], R = unknown>(
-  selectorFunc: StoreSelectorCallback<R, ARGS>
-) => StoreSelector<R, ARGS>;
-
