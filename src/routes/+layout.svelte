@@ -103,7 +103,6 @@
   import {
   onDestroy,
   onMount,
-  setContext,
   untrack,
 } from 'svelte';
 
@@ -126,8 +125,6 @@
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import { STORE_CONTEXT } from '$lib/store/constants';
-  import { getStoreContext } from '$lib/store/utils/svelte-context';
   import {
     store as appStore,
   } from '$lib/store/store';
@@ -138,16 +135,10 @@
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
-    if (getStoreContext()) {
-      return () => {};
-    }
-
     const storeContext = initRegisteredAppStore();
     const stopHandlers = startAllAppSagas();
-    setContext(STORE_CONTEXT, storeContext);
 
     return () => {
-      setContext(STORE_CONTEXT, null);
       for (const stop of stopHandlers) {
         stop();
       }

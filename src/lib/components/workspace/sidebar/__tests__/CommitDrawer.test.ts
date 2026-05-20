@@ -38,14 +38,19 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('$lib/store/utils/svelte-context', () => ({
   getDispatch: () => mocks.dispatch,
-  getStoreContext: vi.fn(),
 }));
+
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ dispatch: mocks.dispatch });
+});
 
 vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectSidebarCommitWhenReady: mocks.selector(() => mocks.sidebarChanges.commitWhenReady),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+vi.mock('$lib/store/slices/changes/changes-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/store/slices/changes/changes-slice')>()),
   setSidebarCommitWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarCommitWhenReady', payload: args })),
 }));
 
@@ -53,7 +58,8 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
   selectExecutorState: mocks.selector(() => mocks.executorState),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/store/slices/background-agent-executor/background-agent-executor-slice')>()),
   executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
 }));
