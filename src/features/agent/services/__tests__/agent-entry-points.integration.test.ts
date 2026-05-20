@@ -20,19 +20,12 @@ import { UnifiedAgentFactory } from '../agent-factory';
 // Mock configured app Store
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const createLegacyStore = () => ({
-    getState: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
-    dispatch: vi.fn(),
-  });
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
     dispatch: vi.fn(),
-    getLegacyStore: createLegacyStore,
   });
 });
-
-
 
 // Mock the backend creation
 vi.mock('../agent-factory', async () => {
