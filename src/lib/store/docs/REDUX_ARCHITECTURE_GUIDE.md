@@ -1111,15 +1111,12 @@ export const sagas = {
 
 ### Starting Sagas
 
-Sagas are started using the `<RunSaga>` component:
+Registered app sagas are started from the root layout with `startAllAppSagas()`:
 
-```svelte
-<script>
-  import RunSaga from "$lib/store/components/RunSaga.svelte";
-</script>
+```typescript
+import { startAllAppSagas } from "$lib/store/saga-registration";
 
-<RunSaga sagaName="context" />
-<RunSaga sagaName="mySaga" />
+const stopHandlers = startAllAppSagas();
 ```
 
 ### Saga Context
