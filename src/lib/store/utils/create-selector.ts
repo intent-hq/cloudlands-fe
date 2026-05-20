@@ -7,7 +7,6 @@ import {
   getItems,
   type Collection,
 } from "./collection-utils";
-import { select } from "typed-redux-saga";
 
 type ConfiguredSelectorStore = {
   createSelector: (selectorFunc: StoreSelectorCallback<any, any[]>) => StoreSelector<any, any[]>;
@@ -15,6 +14,9 @@ type ConfiguredSelectorStore = {
 
 let configuredSelectorStore: ConfiguredSelectorStore | null = null;
 
+// Compatibility shim for legacy local imports. `src/lib/store/store.ts` registers
+// the configured Store after constructing it, avoiding a store <-> selector cycle.
+// Every selector surface below delegates to the Store-created selector lazily.
 export function setConfiguredSelectorStore(store: unknown): void {
   configuredSelectorStore = store as ConfiguredSelectorStore;
 }
@@ -41,8 +43,8 @@ export const createSelector: CreateSelector = <ARGS extends any[], R>(
   const readableSelector = ((...args) => getStoreBoundSelector()(...args)) as StoreSelector<R, ARGS>;
 
   readableSelector.withStore = (store) => (...args) => getStoreBoundSelector().withStore(store)(...args);
-  readableSelector.select = selectorFunc as StoreSelector<R, ARGS>["select"];
-  readableSelector.effect = ((...args: ARGS) => select(selectorFunc, ...args)) as StoreSelector<R, ARGS>["effect"];
+  readableSelector.select = ((state, ...args) => getStoreBoundSelector().select(state, ...args)) as StoreSelector<R, ARGS>["select"];
+  readableSelector.effect = ((...args) => getStoreBoundSelector().effect(...args)) as StoreSelector<R, ARGS>["effect"];
 
   return readableSelector;
 };
