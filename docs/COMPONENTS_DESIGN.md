@@ -9,7 +9,7 @@ Every Svelte component's `<script>` block should follow this ordering. Separate 
 1. **Imports** — external packages, then internal modules
 2. **Props** — component prop declarations (`let { ... } = $props()`)
 3. **Variable declarations** — local state, constants
-4. **Selector calls and derived variables** — Redux selectors via `selector()`, `$derived` expressions
+4. **Selector calls and derived variables** — selector readables via `selectThing()`, `$derived` expressions
 5. **Handler declarations** — event handlers, callbacks
 6. **`onMount` handling** — setup that runs once after first render
 7. **Effects** — `$effect` blocks for reactive side effects
@@ -18,24 +18,25 @@ Every Svelte component's `<script>` block should follow this ordering. Separate 
 ```svelte
 <script lang="ts">
   // 1. Imports
-  import { selector, getDispatch } from '$lib/store';
-  import { someSelector } from './selectors';
+  import { onDestroy, onMount } from 'svelte';
+  import { store as appStore } from '$lib/store/store';
+  import { someAction } from './some-slice';
+  import { selectSomeItem } from './selectors';
   import ChildComponent from './ChildComponent.svelte';
 
   // 2. Props
   let { id, label } = $props<{ id: string; label: string }>();
 
   // 3. Variable declarations
-  const dispatch = getDispatch();
   let localCount = $state(0);
 
   // 4. Selectors and derived
-  const item = selector(someSelector, id);
-  const displayName = $derived(item.name ?? label);
+  const item$ = selectSomeItem(id);
+  const displayName = $derived($item$?.name ?? label);
 
   // 5. Handlers
   function handleClick() {
-    dispatch(someAction(id));
+    appStore.dispatch(someAction(id));
   }
 
   // 6. onMount
@@ -45,7 +46,7 @@ Every Svelte component's `<script>` block should follow this ordering. Separate 
 
   // 7. Effects
   $effect(() => {
-    if (item.status === 'ready') {
+    if ($item$?.status === 'ready') {
       localCount += 1;
     }
   });
@@ -88,17 +89,17 @@ Business logic, IPC listeners, and async workflows belong in Redux sagas — not
 <!-- ❌ Complex effect chains in component -->
 $effect(() => {
   window.api.onSomeEvent((data) => {
-    dispatch(processData(data));
+    appStore.dispatch(processData(data));
     if (data.needsRefresh) {
-      dispatch(fetchMore());
+      appStore.dispatch(fetchMore());
     }
   });
 });
 
 <!-- ✅ One dispatch, saga handles the rest -->
 $effect(() => {
-  dispatch(subscribeToEvent());
-  return () => dispatch(unsubscribeFromEvent());
+  appStore.dispatch(subscribeToEvent());
+  return () => appStore.dispatch(unsubscribeFromEvent());
 });
 ```
 
