@@ -1,22 +1,22 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 
-export const selectNodeVersionOk = createSelector((state) => {
+export const selectNodeVersionOk = store.createSelector((state) => {
   return state.systemStatus.nodeVersionOk;
 });
 
-export const selectNodeVersion = createSelector((state) => {
+export const selectNodeVersion = store.createSelector((state) => {
   return state.systemStatus.nodeVersion;
 });
 
-export const selectAuggieInstalled = createSelector((state) => {
+export const selectAuggieInstalled = store.createSelector((state) => {
   return state.systemStatus.auggieInstalled;
 });
 
-export const selectBinaryInstallAvailable = createSelector((state) => {
+export const selectBinaryInstallAvailable = store.createSelector((state) => {
   return state.systemStatus.binaryInstallAvailable;
 });
 
-export const selectShowNodeWarning = createSelector((state) => {
+export const selectShowNodeWarning = store.createSelector((state) => {
   return (
     state.systemStatus.nodeVersionOk === false &&
     !state.systemStatus.auggieInstalled &&
