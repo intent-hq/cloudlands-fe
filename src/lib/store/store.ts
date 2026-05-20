@@ -1,8 +1,4 @@
-import { Store } from "svelte-redux-toolkit/store";
-import type {
-  StoreInstanceState,
-  StoreMiddleware,
-} from "svelte-redux-toolkit/types";
+import type { StoreInstanceState } from "svelte-redux-toolkit/types";
 import type { Readable } from "svelte/store";
 
 import {
@@ -10,8 +6,7 @@ import {
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from "./constants";
-import { middleware } from "./middleware";
-import { reducers } from "./reducer";
+import { store } from "./configured-store";
 import {
   initReduxDispatchBridge,
   initReduxStoreBridge,
@@ -20,24 +15,16 @@ import type {
   PreloadedStoreState,
   ReduxStore,
   ReduxStoreContext,
-  SagaName,
   StoreState,
 } from "./types";
-import { setConfiguredSelectorStore } from "./utils/create-selector";
 import { safeLocalStorage } from "../utils/safe-storage";
 
-const configuredStore = new Store(reducers, middleware as unknown as StoreMiddleware[]);
-setConfiguredSelectorStore(configuredStore);
-export const store = configuredStore as typeof configuredStore & {
-  runSaga: (sagaName: SagaName) => () => void;
-};
+export { store };
 export const appStore = store;
 
 export type AppStore = typeof store;
 export type AppStoreState = StoreInstanceState<typeof store>;
-export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state"> & {
-  runSaga: (sagaName: SagaName) => () => void;
-};
+export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state">;
 
 const cleanUpWindow = (context: ReduxStoreContext) => {
   if (typeof window === "undefined" || !window.intent?.reduxContext) {
@@ -168,7 +155,6 @@ export const initAppStore = (
       cleanUpWindow(storeContext);
       disposeConfiguredStore();
     },
-    runSaga: ((sagaName: SagaName) => configuredStore.runSaga(sagaName)) as unknown as ReduxStoreContext["runSaga"],
   };
 
   exposeStoreContextDebug(storeContext);

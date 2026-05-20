@@ -13,6 +13,7 @@ import {
   createReduxStoreBridgeAdapter,
   initAppStore,
 } from "./store";
+import { store } from "./configured-store";
 import { reducers } from "./reducer";
 import {
   getReduxDispatch,
@@ -61,11 +62,19 @@ function createFakeStoreRuntime(initialState = { storeUtility: { updatesLocked: 
 
 describe("configured app Store", () => {
   it("constructs the core Store without importing app sagas", () => {
-    const source = readFileSync("src/lib/store/store.ts", "utf8");
+    const source = readFileSync("src/lib/store/configured-store.ts", "utf8");
 
     expect(source).not.toContain('from "./sagas"');
     expect(source).toContain("new Store(reducers, middleware as unknown as StoreMiddleware[])");
     expect(source).not.toContain("new Store(reducers, sagas");
+    expect(appStore).toBe(store);
+  });
+
+  it("keeps the selector utility bound directly to the configured Store", () => {
+    const source = readFileSync("src/lib/store/utils/create-selector.ts", "utf8");
+
+    expect(source).toContain('import { store } from "../configured-store"');
+    expect(source).toContain("store.createSelector(selectorFunc)");
   });
 
   it("registers existing reducer and saga maps on one package Store instance", () => {

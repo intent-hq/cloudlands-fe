@@ -16,17 +16,22 @@ triggers:
 ---
 # Migration — Cleanup and Rollback
 
-> Step 10 of the checklist, plus the rollback recipe. Run this once per slice,only after the new slice passes tests and the UI flows have been verified.
+> Step 10 of the checklist, plus the rollback recipe. Run this once per slice,
+> only after the new slice passes tests and the UI flows have been verified.
 
 ## Remove Old Store Files
 
 Delete the old store file only after tests and UI checks pass. Verify zero references with targeted searches such as `grep -rn "{old-store}.store" src/` and `grep -rn "from.*stores/{old-store}" src/`; both must return no results.
 
-Do not replace the deleted store with a barrel, re-export, or proxy module thatkeeps the old import path alive. After a migration or refactor, the old modulepath must be removed, inlined into the new owner, or explicitly kept as acompatibility shim.
+Do not replace the deleted store with a barrel, re-export, or proxy module that
+keeps the old import path alive. After a migration or refactor, the old module
+path must be removed, inlined into the new owner, or explicitly kept as a
+compatibility shim.
 
 ## Pass-Through Wrapper Guard
 
-Check every old path touched by the migration, not only the `.store.svelte.ts`file. Thin wrappers include:
+Check every old path touched by the migration, not only the `.store.svelte.ts`
+file. Thin wrappers include:
 
 - `export { ... } from "new/path"` or `export * from "new/path"`
 - imports from the new file followed by identical exports
@@ -38,7 +43,8 @@ Intentional shims must be rare and documented next to the shim with:
 2. The sunset/removal condition
 3. The new import path callers should use
 
-Verifier output must say either “no pass-through wrappers” or list eachdocumented compatibility shim and its removal condition.
+Verifier output must say either “no pass-through wrappers” or list each
+documented compatibility shim and its removal condition.
 
 ## Rollback Strategy
 
@@ -51,20 +57,22 @@ If a migration needs to be reverted:
 
 ### Reverting a migration
 
-Rollback restores the old store file and affected components from git history, removes the new slice directory, and removes the matching reducer/saga constructor entries from the app Store setup.
+Rollback restores the old store file and affected components from git history, removes the new slice directory, and removes the matching reducer constructor entry plus `registerSagas(...)` saga entry from the app Store setup.
 
 ### Minimizing risk
 
 - **Run all existing tests** after each store migration
 - **Manually test affected UI flows** before committing
 - **Keep PRs small** — one store = one PR
-- **Verify zero references** to the old store before deleting it:`grep -rn "{old-store}" src/ --include="*.ts" --include="*.svelte"`
+- **Verify zero references** to the old store before deleting it:
+  `grep -rn "{old-store}" src/ --include="*.ts" --include="*.svelte"`
 
 ## Final Checklist Per Slice
 
 - [ ] Reducer registered in `reducer.ts`
 - [ ] Saga registered in `sagas.ts`
-- [ ] All consuming components updated(see `skills/migrate-to-svelte-redux-toolkit/component-migration/SKILL.md`)
+- [ ] All consuming components updated
+  (see `skills/migrate-to-svelte-redux-toolkit/component-migration/SKILL.md`)
 - [ ] All tests pass
 - [ ] Manual UI verification done on affected flows
 - [ ] Old `.store.svelte.ts` file deleted

@@ -4,7 +4,7 @@ import {
   it,
 } from "vitest";
 import type { StoreState } from "../../types";
-import { createCollection } from "../../utils/collection-utils";
+import { createCollection } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { TerminalOverlayState, TerminalTab } from "./terminals-slice";
 import {
   selectWorkspaceHasSetupTerminal,
