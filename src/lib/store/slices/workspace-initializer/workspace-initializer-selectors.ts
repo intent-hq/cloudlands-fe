@@ -1,46 +1,46 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
 
-export const selectWorkspaceInitializerState = createSelector(
+export const selectWorkspaceInitializerState = store.createSelector(
   (state) => state.workspaceInitializer,
 );
 
-export const selectWorkspaceInitializerHydrated = createSelector(
+export const selectWorkspaceInitializerHydrated = store.createSelector(
   (state) => state.workspaceInitializer.hydrated,
 );
 
-export const selectCompactWorkspaceInitializerFormState = createSelector(
+export const selectCompactWorkspaceInitializerFormState = store.createSelector(
   (state) => state.workspaceInitializer.compactFormState,
 );
 
-export const selectWorkspaceInitializerOnboardingFormState = createSelector(
+export const selectWorkspaceInitializerOnboardingFormState = store.createSelector(
   (state) => state.workspaceInitializer.onboardingFormState,
 );
 
-export const selectWorkspaceInitializerLastSelectedRepo = createSelector(
+export const selectWorkspaceInitializerLastSelectedRepo = store.createSelector(
   (state) => state.workspaceInitializer.lastSelectedRepo,
 );
 
-export const selectWorkspaceInitializerBranchByRepo = createSelector(
+export const selectWorkspaceInitializerBranchByRepo = store.createSelector(
   (state) => state.workspaceInitializer.branchByRepo,
 );
 
-export const selectWorkspaceInitializerBranchForRepo = createSelector(
+export const selectWorkspaceInitializerBranchForRepo = store.createSelector(
   (state, repoPath: string) => state.workspaceInitializer.branchByRepo[repoPath] || "",
 );
 
-export const selectWorkspaceInitializerDefaultParentPath = createSelector(
+export const selectWorkspaceInitializerDefaultParentPath = store.createSelector(
   (state) => state.workspaceInitializer.defaultParentPath,
 );
 
-export const selectWorkspaceInitializerRecentRepos = createSelector(
+export const selectWorkspaceInitializerRecentRepos = store.createSelector(
   (state) => getItems(state.workspaceInitializer.recentRepos),
 );
 
-export const selectWorkspaceInitializerRemoteSetups = createSelector(
+export const selectWorkspaceInitializerRemoteSetups = store.createSelector(
   (state) => getItems(state.workspaceInitializer.remoteSetups),
 );
 
-export const selectWorkspaceInitializerLastSubmittedAgent = createSelector(
+export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector(
   (state) => state.workspaceInitializer.lastSubmittedAgent,
 );
