@@ -1,14 +1,14 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import {
   SYSTEM_DEFAULT_FONT,
   type FontOption,
 } from "./user-preferences-slice";
 
-export const selectAgentFontStyle = createSelector((state) => {
+export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
 });
 
-export const selectAgentFontStyleLabel = createSelector((state) => {
+export const selectAgentFontStyleLabel = store.createSelector((state) => {
   switch (state.userPreferences.agentFontStyle) {
     case "sans":
       return "Sans-serif";
@@ -19,43 +19,43 @@ export const selectAgentFontStyleLabel = createSelector((state) => {
   }
 });
 
-export const selectIsAgentMonospace = createSelector((state) => {
+export const selectIsAgentMonospace = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle === "monospace";
 });
 
-export const selectBetaUpdatesEnabled = createSelector((state) => {
+export const selectBetaUpdatesEnabled = store.createSelector((state) => {
   return state.userPreferences.betaUpdatesEnabled;
 });
 
-export const selectSpellcheckEnabled = createSelector((state) => {
+export const selectSpellcheckEnabled = store.createSelector((state) => {
   return state.userPreferences.spellcheckEnabled;
 });
 
-export const selectZoomFactor = createSelector((state) => {
+export const selectZoomFactor = store.createSelector((state) => {
   return state.userPreferences.zoomFactor;
 });
 
-export const selectShowArchived = createSelector((state) => {
+export const selectShowArchived = store.createSelector((state) => {
   return state.userPreferences.showArchived;
 });
 
-export const selectGroupByRepo = createSelector((state) => {
+export const selectGroupByRepo = store.createSelector((state) => {
   return state.userPreferences.groupByRepo;
 });
 
-export const selectHasCompletedProviderSetup = createSelector((state) => {
+export const selectHasCompletedProviderSetup = store.createSelector((state) => {
   return state.userPreferences.hasCompletedProviderSetup;
 });
 
-export const selectCounterScale = createSelector((state) => {
+export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
 
-export const selectNoteFontStyle = createSelector((state) => {
+export const selectNoteFontStyle = store.createSelector((state) => {
   return state.userPreferences.noteFontStyle;
 });
 
-export const selectNoteFontStyleLabel = createSelector((state) => {
+export const selectNoteFontStyleLabel = store.createSelector((state) => {
   switch (state.userPreferences.noteFontStyle) {
     case "sans":
       return "Sans-serif";
@@ -66,19 +66,19 @@ export const selectNoteFontStyleLabel = createSelector((state) => {
   }
 });
 
-export const selectIsNoteMonospace = createSelector((state) => {
+export const selectIsNoteMonospace = store.createSelector((state) => {
   return state.userPreferences.noteFontStyle === "monospace";
 });
 
-export const selectCodeFontFamily = createSelector((state) => {
+export const selectCodeFontFamily = store.createSelector((state) => {
   return state.userPreferences.codeFontFamily;
 });
 
-export const selectSystemFonts = createSelector((state) => {
+export const selectSystemFonts = store.createSelector((state) => {
   return state.userPreferences.systemFonts;
 });
 
-export const selectCodeFontFamilyCSS = createSelector((state) => {
+export const selectCodeFontFamilyCSS = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === "system-default") {
     return SYSTEM_DEFAULT_FONT;
@@ -86,7 +86,7 @@ export const selectCodeFontFamilyCSS = createSelector((state) => {
   return `'${codeFontFamily}', monospace`;
 });
 
-export const selectCodeFontFamilyLabel = createSelector((state) => {
+export const selectCodeFontFamilyLabel = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === "system-default") {
     return "System Default";
@@ -94,7 +94,7 @@ export const selectCodeFontFamilyLabel = createSelector((state) => {
   return codeFontFamily;
 });
 
-export const selectCodeFontOptions = createSelector((state) => {
+export const selectCodeFontOptions = store.createSelector((state) => {
   const { systemFonts } = state.userPreferences;
   const options: FontOption[] = [
     { value: "system-default", label: "System Default", fontFamily: SYSTEM_DEFAULT_FONT },
@@ -111,30 +111,30 @@ export const selectCodeFontOptions = createSelector((state) => {
   return options;
 });
 
-export const selectNotificationEnabled = createSelector((state) => {
+export const selectNotificationEnabled = store.createSelector((state) => {
   return state.userPreferences.enabled;
 });
 
-export const selectSoundEnabled = createSelector((state) => {
+export const selectSoundEnabled = store.createSelector((state) => {
   return state.userPreferences.soundEnabled;
 });
 
-export const selectSoundOnlyWhenUnfocused = createSelector((state) => {
+export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
   return state.userPreferences.soundOnlyWhenUnfocused;
 });
 
-export const selectNotificationVolume = createSelector((state) => {
+export const selectNotificationVolume = store.createSelector((state) => {
   return state.userPreferences.volume;
 });
 
-export const selectActivityLogPresets = createSelector((state) => {
+export const selectActivityLogPresets = store.createSelector((state) => {
   return state.userPreferences.activityLogPresets;
 });
 
-export const selectPromoBannerInteractions = createSelector((state) => {
+export const selectPromoBannerInteractions = store.createSelector((state) => {
   return state.userPreferences.promoBannerInteractions;
 });
 
-export const selectPromoBannerInteractionRecord = createSelector((state, bannerId: string) => {
+export const selectPromoBannerInteractionRecord = store.createSelector((state, bannerId: string) => {
   return state.userPreferences.promoBannerInteractions[bannerId] ?? null;
 });

@@ -2,7 +2,7 @@
  * Message Accumulator Redux Slice (Main Process)
  *
  * Manages serializable state for streaming message accumulation.
- * Non-serializable state (TextEncoder, timer IDs) lives in the saga.
+ * TextEncoder is kept outside Redux; periodic stale cleanup lives in the saga.
  */
 
 import { createAction } from "../../utils/create-action";

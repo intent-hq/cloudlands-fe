@@ -34,7 +34,7 @@ const providerWarnings$ = writable<Record<string, string>>({});
 const sessionVersion$ = writable(0);
 const sessions = new Map<string, Session>();
 
-const mockReduxDispatch = vi.fn((action: { type?: string; payload?: unknown }) => {
+const mockReduxDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
   if (action.type === 'agentSessions/updateSession' && Array.isArray(action.payload)) {
     const [agentId, updates] = action.payload as [string, Partial<Session>];
     sessions.set(agentId, {
@@ -44,7 +44,7 @@ const mockReduxDispatch = vi.fn((action: { type?: string; payload?: unknown }) =
     sessionVersion$.update((value) => value + 1);
   }
   return action;
-});
+}));
 
 function selectorForSession(
   agentIdOrStore: string | { subscribe: (run: (value: string) => void) => () => void },
@@ -109,17 +109,14 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({ sessions }),
-    dispatch: mockReduxDispatch,
-  }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => vi.fn(),
-  getStoreContext: () => undefined,
-}));
+  return createAppStoreMockModule({
+    state: () => ({ sessions }),
+    dispatch: mockReduxDispatch,
+  });
+});
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => {
   const selectAgentSession = Object.assign(
@@ -214,7 +211,7 @@ vi.mock('$shared/types/agent-session', () => ({
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { store as appStore } from '$lib/store/store';
 import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
 import { getModelsForProviderForLoadingState } from '$lib/store/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
@@ -284,7 +281,7 @@ describe('ModelPicker trigger label regressions', () => {
 
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('auggie');
 
-    getReduxStore().dispatch(
+    appStore.dispatch(
       updateAgentSessionFields('agent-1', {
         provider: 'anthropic',
         model: 'anthropic:claude-opus-4-7',

@@ -1,4 +1,4 @@
-import { createSelector } from '../../utils/create-selector';
+import { store } from "../../store";
 import {
   findItem,
   getItems,
@@ -18,38 +18,38 @@ function getEffectiveProviderId(state: any, providerId?: string): string {
 }
 
 /** Select the currently selected model value */
-export const selectSelectedModel = createSelector((state, providerId?: string): string => {
+export const selectSelectedModel = store.createSelector((state, providerId?: string): string => {
   const effectiveProviderId = getEffectiveProviderId(state, providerId);
   return state.model.providerModels[effectiveProviderId] ?? MODEL_DEFAULTS.UI_INITIAL_MODEL;
 });
 
-export const selectAvailableModelsCollection = createSelector(
+export const selectAvailableModelsCollection = store.createSelector(
   (state): Collection<AuggieModel, 'value'> => {
     return state.model.availableModels;
   },
 );
 
-export const selectAvailableModels = createSelector((state): AuggieModel[] => {
+export const selectAvailableModels = store.createSelector((state): AuggieModel[] => {
   return getItems(selectAvailableModelsCollection.select(state));
 });
 
-export const selectProviderLoadingState = createSelector(
+export const selectProviderLoadingState = store.createSelector(
   (state, providerId?: string): ModelLoadingState | null => {
     const effectiveProviderId = getEffectiveProviderId(state, providerId);
     return state.model.loadingState[effectiveProviderId] ?? null;
   },
 );
 
-export const selectIsLoadingModels = createSelector((state, providerId?: string): boolean => {
+export const selectIsLoadingModels = store.createSelector((state, providerId?: string): boolean => {
   return selectProviderLoadingState.select(state, providerId)?.status === 'loading';
 });
 
-export const selectModelsLoaded = createSelector((state, providerId?: string): boolean => {
+export const selectModelsLoaded = store.createSelector((state, providerId?: string): boolean => {
   return selectProviderLoadingState.select(state, providerId)?.status === 'success';
 });
 
 /** Select the load error message */
-export const selectLoadError = createSelector((state, providerId?: string): string | null => {
+export const selectLoadError = store.createSelector((state, providerId?: string): string | null => {
   const loadingState = selectProviderLoadingState.select(state, providerId);
   if (loadingState?.status !== 'error') {
     return null;
@@ -58,13 +58,13 @@ export const selectLoadError = createSelector((state, providerId?: string): stri
   return loadingState.error ?? null;
 });
 
-export const selectProviderWarning = createSelector(
+export const selectProviderWarning = store.createSelector(
   (state, providerId?: string): string | undefined => {
     return selectProviderLoadingState.select(state, providerId)?.warning;
   },
 );
 
-export const selectAllProviderWarnings = createSelector((state): Record<string, string> => {
+export const selectAllProviderWarnings = store.createSelector((state): Record<string, string> => {
   const warnings: Record<string, string> = {};
 
   for (const [providerId, loadingState] of Object.entries(state.model.loadingState)) {
@@ -76,7 +76,7 @@ export const selectAllProviderWarnings = createSelector((state): Record<string, 
   return warnings;
 });
 
-export const selectRetryAttempt = createSelector((state, providerId?: string): number => {
+export const selectRetryAttempt = store.createSelector((state, providerId?: string): number => {
   return selectProviderLoadingState.select(state, providerId)?.retryAttempt ?? 0;
 });
 
@@ -85,12 +85,12 @@ export const selectIsLoadingModelsForProvider = selectIsLoadingModels;
 export const selectModelsLoadedForProvider = selectModelsLoaded;
 
 /** Select all workspace models */
-export const selectWorkspaceModels = createSelector((state): Record<string, string> => {
+export const selectWorkspaceModels = store.createSelector((state): Record<string, string> => {
   return state.model.workspaceModels;
 });
 
 /** Select all provider models */
-export const selectProviderModels = createSelector((state): Record<string, string> => {
+export const selectProviderModels = store.createSelector((state): Record<string, string> => {
   return state.model.providerModels;
 });
 
@@ -98,7 +98,7 @@ export const selectProviderModels = createSelector((state): Record<string, strin
  * Select the display label for a model value.
  * Handles both simple model IDs and compound IDs.
  */
-export const selectModelLabel = createSelector((state, modelValue: string): string => {
+export const selectModelLabel = store.createSelector((state, modelValue: string): string => {
   if (!modelValue) return modelValue;
 
   const availableModels = selectAvailableModelsCollection.select(state);
@@ -112,7 +112,7 @@ export const selectModelLabel = createSelector((state, modelValue: string): stri
 });
 
 /** Select the label for the currently selected model */
-export const selectCurrentModelLabel = createSelector((state): string => {
+export const selectCurrentModelLabel = store.createSelector((state): string => {
   const selectedModel = selectSelectedModel.select(state);
   if (!selectedModel) return selectedModel;
 
@@ -130,13 +130,13 @@ export const selectCurrentModelLabel = createSelector((state): string => {
  * Select the default model for a specific workspace.
  * Falls back to the global selected model if no workspace-specific model is set.
  */
-export const selectWorkspaceDefaultModel = createSelector((state, workspaceId: string): string => {
+export const selectWorkspaceDefaultModel = store.createSelector((state, workspaceId: string): string => {
   const workspaceModel = state.model.workspaceModels[workspaceId];
   return workspaceModel || selectSelectedModel.select(state);
 });
 
 /** Select whether a workspace has a specific default model set */
-export const selectHasWorkspaceDefaultModel = createSelector(
+export const selectHasWorkspaceDefaultModel = store.createSelector(
   (state, workspaceId: string): boolean => {
     return workspaceId in state.model.workspaceModels;
   },
@@ -146,7 +146,7 @@ export const selectHasWorkspaceDefaultModel = createSelector(
  * Select models grouped by provider.
  * Returns a single group with the active provider's models.
  */
-export const selectGroupedModels = createSelector(
+export const selectGroupedModels = store.createSelector(
   (
     state,
     activeProviderId: string,
@@ -172,16 +172,16 @@ export const selectGroupedModels = createSelector(
   },
 );
 
-export const selectModelPickerCollapsedGroups = createSelector((state): string[] => {
+export const selectModelPickerCollapsedGroups = store.createSelector((state): string[] => {
   return state.model.modelPickerCollapsedGroups;
 });
 
-export const selectIsModelPickerGroupCollapsed = createSelector(
+export const selectIsModelPickerGroupCollapsed = store.createSelector(
   (state, groupKey: string): boolean => {
     return state.model.modelPickerCollapsedGroups.includes(groupKey);
   },
 );
 
-export const selectModelFallbackInfo = createSelector((state, agentId: string) => {
+export const selectModelFallbackInfo = store.createSelector((state, agentId: string) => {
   return state.model.fallbackInfoByAgentId[agentId] ?? null;
 });

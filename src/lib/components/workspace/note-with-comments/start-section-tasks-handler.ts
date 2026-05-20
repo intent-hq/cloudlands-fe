@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
+import type { Store } from 'svelte-redux-toolkit/store';
 
 import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-import type { ReduxStore } from '$lib/store/types';
 
 import type { LoggerLike } from './logger.types';
 
@@ -27,7 +27,7 @@ export async function runStartSectionTasks({
     html: string,
     options?: { preserveAnchors?: boolean },
   ) => string | Promise<string>;
-  dispatch: ReduxStore['dispatch'];
+  dispatch: Store<any, any, any>['dispatch'];
   setLastKnownContent: (value: string) => void;
   logger: LoggerLike;
 }): Promise<void> {

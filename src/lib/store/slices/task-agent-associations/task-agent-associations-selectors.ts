@@ -1,16 +1,16 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import type { TaskAgentAssociation } from "./task-agent-associations-types";
 
-export const selectTaskAgentAssociationsByNoteId = createSelector(
+export const selectTaskAgentAssociationsByNoteId = store.createSelector(
   (state, workspaceId: string) => state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId ?? {},
 );
 
-export const selectAssociationsForNote = createSelector(
+export const selectAssociationsForNote = store.createSelector(
   (state, workspaceId: string, noteId: string): TaskAgentAssociation[] =>
     Object.values(state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId[noteId] ?? {}),
 );
 
-export const selectTaskAgentAssociation = createSelector(
+export const selectTaskAgentAssociation = store.createSelector(
   (state, workspaceId: string, noteId: string, taskKeyOrText: string): TaskAgentAssociation | undefined => {
     const noteAssociations = state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId[noteId];
     if (!noteAssociations) return undefined;
@@ -19,7 +19,7 @@ export const selectTaskAgentAssociation = createSelector(
   },
 );
 
-export const selectTasksForAgent = createSelector(
+export const selectTasksForAgent = store.createSelector(
   (state, workspaceId: string, agentId: string): TaskAgentAssociation[] => {
     const byNoteId = state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId ?? {};
     return Object.values(byNoteId)

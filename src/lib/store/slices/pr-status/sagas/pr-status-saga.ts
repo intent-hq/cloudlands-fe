@@ -485,7 +485,7 @@ function* watchWindowFocus(): SagaGenerator<void> {
  * startPRPolling / stopPRPolling.
  */
 function* watchActiveWorkspacePRPolling(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(
+  yield* takeLatestFromSelector<Workspace | undefined>(
     selectActiveWorkspace,
     function* ({ payload: workspace }) {
       const wsId = workspace?.id;

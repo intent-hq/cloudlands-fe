@@ -5,7 +5,7 @@ import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { FileExplorerWorkspaceState, FileExplorerState } from "./file-explorer-types";
 import { setChildrenAtPath } from "./file-explorer-utils";
-import type { StoreAction } from "../../types";
+import type { StoreAction } from "svelte-redux-toolkit/types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 

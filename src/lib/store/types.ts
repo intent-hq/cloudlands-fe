@@ -1,5 +1,4 @@
-import type { Store, UnknownAction } from 'redux';
-import type { Readable } from 'svelte/store';
+import type { Store } from 'svelte-redux-toolkit/store';
 import type {
   PreloadedStoreState as ToolkitPreloadedStoreState,
   StoreState as ToolkitStoreState,
@@ -97,71 +96,6 @@ export type SagaName =
   | 'sagaCrashSentrySaga';
 
 // ============================================================================
-// Action Types
-// ============================================================================
-
-export type StoreAction<PL = undefined> = {
-  type: string;
-  payload: PL;
-};
-
-export type GenericAction = StoreAction<any>;
-
-export type PayloadModifier<ARGS extends any[], PL> = (...args: ARGS) => PL;
-
-export type StoreActionCreator<ARGS extends any[] = [], PL = ARGS> = {
-  (...args: ARGS): StoreAction<PL>;
-  type: string;
-  toString: () => string;
-};
-
-export type SuccessResponse<PL, R> = {
-  request: PL;
-  response: R;
-};
-
-export type ErrorResponse<PL> = {
-  request: PL;
-  /** Error message string (serializable) */
-  error: string;
-};
-
-/**
- * Async action object returned by a StoreAsyncActionCreator.
- *
- * NOTE: The `promise` field intentionally holds a non-serializable Promise.
- * This is an architectural pattern — the promise is used by sagas and middleware
- * to coordinate async flows and is never persisted to Redux state. Serialization
- * checks should allowlist StoreAsyncAction's `promise` field.
- */
-export type StoreAsyncAction<PL = undefined, R = unknown> = {
-  type: string;
-  asyncActionType: string;
-  payload: PL;
-  promise: Promise<R>;
-  success: StoreActionCreator<[R], SuccessResponse<PL, R>>;
-  failure: StoreActionCreator<[string], ErrorResponse<PL>>;
-};
-
-export type StoreAsyncActionCreator<ARGS extends any[] = [], PL = ARGS, R = unknown> = {
-  (...args: ARGS): StoreAsyncAction<PL, R>;
-  type: string;
-  asyncActionType: string;
-  success: StoreActionCreator<[R], SuccessResponse<PL, R>>;
-  failure: StoreActionCreator<[string], ErrorResponse<PL>>;
-  toString: () => string;
-};
-
-// ============================================================================
-// Middleware Types
-// ============================================================================
-
-export type MiddlewareFunction = (
-  action: GenericAction,
-  api: { dispatch: ReduxStore["dispatch"]; getState: ReduxStore["getState"] }
-) => GenericAction | Promise<GenericAction> | void;
-
-// ============================================================================
 // Store Types
 // ============================================================================
 
@@ -169,10 +103,7 @@ export type StoreState = ToolkitStoreState<typeof configuredStore>;
 
 export type PreloadedStoreState = ToolkitPreloadedStoreState<StoreState>;
 
-export type ReduxStore = Store<StoreState, UnknownAction>;
-
 export type ReduxStoreContext = {
-  store: ReduxStore;
-  storeState: Readable<StoreState>;
+  store: Store<any, any, any>;
   dispose: () => void;
 };

@@ -1,6 +1,6 @@
 import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
 import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
-import type { StoreActionCreator } from '../../types';
+import type { StoreActionCreator } from 'svelte-redux-toolkit/types';
 import type {
   ChatAgentState,
   ChatStateSlice,

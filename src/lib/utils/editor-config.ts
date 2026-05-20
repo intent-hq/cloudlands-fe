@@ -37,7 +37,6 @@ import { dispatchWindowEvent } from './window-events';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
 import { DiffBlock } from '$lib/components/tiptap/DiffBlock';
 import { safeLowlight } from './safe-lowlight';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   selectComments,
   selectCommentById,
@@ -73,6 +72,7 @@ import { handleLink } from '$features/navigation/link-handler';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
+import { store as appStore } from '$lib/store/store';
 const lowlight = safeLowlight;
 
 // Extend Mention to parse our span[data-mention] chips back into nodes
@@ -935,12 +935,12 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         return [
           createCommentDecorationsPlugin({
             getComments: () => {
-              const comments = selectComments.select(getReduxStore().getState());
+              const comments = selectComments.select(appStore.state);
               return comments;
             },
             onCommentClick,
             getCommentStatus: (commentId) => {
-              const comment = selectCommentById.select(getReduxStore().getState(), commentId);
+              const comment = selectCommentById.select(appStore.state, commentId);
               return comment?.status || 'open';
             },
           }),
@@ -1112,7 +1112,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               filePath = filePath.slice(1);
             }
             if (filePath && workspace?.id) {
-              getReduxStore().dispatch(
+              appStore.dispatch(
                 openWorkspaceFile(workspace.id, filePath, {
                   line: meta.startLine,
                   openInAdjacentPanel,
@@ -1123,7 +1123,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           } else if (mentionType === 'note' || mentionType === 'note-range') {
             // Open note in main content area
             if (mentionId && workspace?.id) {
-              getReduxStore().dispatch(
+              appStore.dispatch(
                 openWorkspaceNote(workspace.id, mentionId, {
                   openInAdjacentPanel,
                   sourcePanelId,
@@ -1148,7 +1148,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           event.preventDefault();
           const openInAdjacentPanel = event.metaKey || event.ctrlKey;
           logger.debug('[EditorConfig] File path clicked', { filePath, openInAdjacentPanel });
-          getReduxStore().dispatch(
+          appStore.dispatch(
             openWorkspaceFile(workspace.id, filePath, { openInAdjacentPanel }),
           );
           return true;

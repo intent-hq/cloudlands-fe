@@ -110,11 +110,6 @@ vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
   }),
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mockSvelteDispatch,
-  getStoreContext: () => undefined,
-}));
-
 vi.mock('$lib/store/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(() =>
     Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }]),

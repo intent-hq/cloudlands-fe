@@ -17,23 +17,35 @@ import {
   expect,
   beforeEach,
   afterEach,
-  beforeAll,
   vi,
 } from 'vitest';
+
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  const { commentsReducer, initialState } = await vi.importActual<typeof import('$lib/store/slices/comments/comments-slice')>(
+    '$lib/store/slices/comments/comments-slice'
+  );
+  let state = { comments: initialState };
+
+  const mockStore = {
+    dispatch: (action: unknown) => {
+      state = { comments: commentsReducer(state.comments, action as never) };
+      return action;
+    },
+    get state() {
+      return state;
+    },
+  };
+
+  return createStoreMockModule(mockStore);
+});
+
 import { CommentManagerV2 } from '../comment-manager-v2';
-import {
-  getReduxStore,
-  dispatch as reduxDispatch,
-  initReduxDispatchBridge,
-  initReduxStoreBridge,
-} from '$lib/store/redux-dispatch-bridge';
+import { store as appStore } from '$lib/store/store';
 import {
   loadCommentsAction,
-  commentsReducer,
-  initialState as commentsInitialState,
 } from '$lib/store/slices/comments/comments-slice';
 import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
-import { createStore } from 'redux';
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import {
@@ -74,23 +86,6 @@ vi.mock('../../../store/main/slices/note-events/note-events-slice', () => ({
 vi.mock('../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
   emitWorkspaceEvent: vi.fn((payload: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload })),
 }));
-
-// Set up a minimal Redux store with comments reducer for tests
-function createTestReduxStore() {
-  const rootReducer = (state: any = { comments: commentsInitialState }, action: any) => ({
-    ...state,
-    comments: commentsReducer(state.comments, action),
-  });
-  return createStore(rootReducer);
-}
-
-let testStore: ReturnType<typeof createTestReduxStore>;
-
-beforeAll(() => {
-  testStore = createTestReduxStore();
-  initReduxDispatchBridge(testStore.dispatch);
-  initReduxStoreBridge(testStore as any);
-});
 
 describe('V3 Integration Tests - Real Version History', () => {
   let notesService: NotesService;
@@ -257,7 +252,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       expect(success).toBe(true);
 
       // Add comment to store
-      reduxDispatch(loadCommentsAction([comment]));
+      appStore.dispatch(loadCommentsAction([comment]));
 
       // Get HTML with anchors
       const htmlWithAnchors = getEditorHTML(editor);
@@ -328,7 +323,7 @@ describe('V3 Integration Tests - Real Version History', () => {
 
       // Insert anchors
       insertAnchorsAtPosition(editor, comment.id, 15, 27);
-      reduxDispatch(loadCommentsAction([comment]));
+      appStore.dispatch(loadCommentsAction([comment]));
 
       // Save version with anchors
       const htmlWithAnchors = getEditorHTML(editor);
@@ -346,7 +341,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       await manager.scanAnchorHealth();
 
       // Verify comment is orphaned
-      const orphanedComment = selectCommentById.select(getReduxStore().getState(), comment.id);
+      const orphanedComment = selectCommentById.select(appStore.state, comment.id);
       expect(orphanedComment?.isOrphaned).toBe(true);
 
       // Step 3: Attempt recovery
@@ -366,7 +361,7 @@ describe('V3 Integration Tests - Real Version History', () => {
       expect(result.method).toMatch(/exact-match|fuzzy-match/);
 
       // Verify anchors are back and comment is no longer orphaned
-      const recoveredComment = selectCommentById.select(getReduxStore().getState(), comment.id);
+      const recoveredComment = selectCommentById.select(appStore.state, comment.id);
       expect(recoveredComment?.isOrphaned).toBe(false);
     });
   });

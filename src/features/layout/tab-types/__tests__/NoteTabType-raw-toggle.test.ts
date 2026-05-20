@@ -92,7 +92,6 @@ vi.mock('$lib/services/analytics', () => ({ track: vi.fn() }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
-vi.mock('$lib/store/utils/svelte-context', () => ({ getDispatch: () => mockState.dispatch }));
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 

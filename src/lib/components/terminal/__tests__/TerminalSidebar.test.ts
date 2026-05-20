@@ -81,6 +81,7 @@ vi.mock('$lib/store/store', async () => {
       },
       workspace: { activeWorkspaceId: 'ws-1' },
     }),
+    dispatch: mockDispatch,
   });
 });
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
@@ -106,9 +107,6 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
   }),
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mockDispatch,
-}));
 vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorIsRunning: Object.assign(
     () => ({ subscribe: (fn: any) => { fn(false); return () => { }; } }),

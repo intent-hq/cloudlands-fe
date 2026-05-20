@@ -1,5 +1,5 @@
-import { createAction as baseCreateAction } from "$lib/store/utils/create-action";
-import type { PayloadModifier, StoreAction, StoreActionCreator } from "$lib/store/types";
+import { createAction as baseCreateAction } from "svelte-redux-toolkit/utils/store/create-action";
+import type { PayloadModifier, StoreAction, StoreActionCreator } from "svelte-redux-toolkit/types";
 
 export type MainStoreAction<PL = undefined> = StoreAction<PL> & {
   __store: "main";

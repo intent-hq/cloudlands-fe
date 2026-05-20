@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 
 vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
   const { commentsReducer, initialState } = await vi.importActual<typeof import('$lib/store/slices/comments/comments-slice')>(
     '$lib/store/slices/comments/comments-slice'
   );
@@ -30,7 +31,7 @@ vi.mock('$lib/store/store', async () => {
     },
   };
 
-  return { store: mockStore, appStore: mockStore };
+  return createStoreMockModule(mockStore);
 });
 
 import { Editor } from '@tiptap/core';

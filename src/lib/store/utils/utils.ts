@@ -1,9 +1,6 @@
 /**
  * Pure utility functions with NO Svelte dependency.
  * Safe to import from both the renderer and the main process.
- *
- * Svelte-dependent helpers (getDispatch, getStoreContext) live in
- * ./svelte-context.ts — do NOT add Svelte imports here.
  */
 
 /**

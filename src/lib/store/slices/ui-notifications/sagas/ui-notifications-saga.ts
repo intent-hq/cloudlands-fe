@@ -12,9 +12,7 @@ import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import {
   call,
   fork,
-  select,
 } from "typed-redux-saga";
-import { store as appStore } from '$lib/store/store';
 
 type BackgroundAgentSpawnedEvent = {
   workspaceId: string;
@@ -32,15 +30,13 @@ type NotificationNavigateEvent = {
   workspaceId: string;
 };
 
-async function showBackgroundAgentSpawnedToast(data: BackgroundAgentSpawnedEvent): Promise<void> {
+async function showBackgroundAgentSpawnedToast(
+  data: BackgroundAgentSpawnedEvent,
+  workspaceTitle: string,
+  shouldShowOpenAction: boolean,
+): Promise<void> {
   try {
     const { toast } = await import("svelte-sonner");
-    const state = appStore.state;
-    const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
-    const currentWorkspace = selectActiveWorkspace.select(state);
-    const workspaceTitle = eventWorkspace?.title || "Space";
-    const shouldShowOpenAction = !!currentWorkspace && currentWorkspace.id !== data.workspaceId;
-
     const toastOptions: {
       description: string;
       duration: number;
@@ -79,7 +75,11 @@ export function* watchBackgroundAgentSpawnedSaga() {
   yield* takeEveryFromElectronChannel<BackgroundAgentSpawnedEvent>(
     "background-agent:spawned",
     function* (data) {
-      yield* call(showBackgroundAgentSpawnedToast, data);
+      const eventWorkspace = yield* selectWorkspaceById.effect(data.workspaceId);
+      const currentWorkspace = yield* selectActiveWorkspace.effect();
+      const workspaceTitle = eventWorkspace?.title || "Space";
+      const shouldShowOpenAction = !!currentWorkspace && currentWorkspace.id !== data.workspaceId;
+      yield* call(showBackgroundAgentSpawnedToast, data, workspaceTitle, shouldShowOpenAction);
     },
   );
 }
@@ -88,18 +88,18 @@ export function* watchNotificationShowSaga() {
   if (typeof window === "undefined" || !window.electronAPI) return;
 
   yield* takeEveryFromElectronChannel<NotificationShowEvent>("notification:show", function* (data) {
-    const soundEnabled: boolean = yield* select(selectSoundEnabled.select);
+    const soundEnabled: boolean = yield* selectSoundEnabled.effect();
 
     if (!soundEnabled) {
       return;
     }
 
-    const soundOnlyWhenUnfocused: boolean = yield* select(selectSoundOnlyWhenUnfocused.select);
+    const soundOnlyWhenUnfocused: boolean = yield* selectSoundOnlyWhenUnfocused.effect();
     if (soundOnlyWhenUnfocused && document.hasFocus()) {
       return;
     }
 
-    const volume: number = yield* select(selectNotificationVolume.select);
+    const volume: number = yield* selectNotificationVolume.effect();
     yield* call(playSoundForNotification, data.agentName, volume);
   });
 }

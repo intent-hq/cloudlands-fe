@@ -42,7 +42,7 @@ import {
 /**
  * Reproduces the `handleTabRename` agent branch from PanelLayout.svelte
  * without mounting the Svelte component. The captured dispatch / updateTabTitle
- * spies stand in for `getReduxStore().dispatch` and
+ * spies stand in for `appStore.dispatch` and
  * `layoutManager.updateTabTitle`.
  */
 function runAgentRenameWithUndo(opts: {

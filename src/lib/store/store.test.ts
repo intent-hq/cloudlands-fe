@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import type { Readable } from "svelte/store";
 import { readable } from "svelte/store";
+import type { Store } from "svelte-redux-toolkit/store";
 import {
   describe,
   expect,
@@ -10,24 +11,20 @@ import {
 } from "vitest";
 
 import {
-  createReduxStoreBridgeAdapter,
   initAppStore,
+  store as appStore,
 } from "./store";
-import { store } from "./configured-store";
+import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
 import {
   sagaNames,
   sagas,
 } from "./sagas";
 import {
-  registeredAppStore,
   startAllAppSagas,
-  type RegisteredAppStoreRuntime,
 } from "./saga-registration";
-import {
-  appStore,
-} from "./store";
-import type { GenericAction, StoreState } from "./types";
+import type { GenericAction } from "svelte-redux-toolkit/types";
+import type { StoreState } from "./types";
 
 function createFakeStoreRuntime(initialState = {} as StoreState) {
   let state = initialState;
@@ -44,7 +41,7 @@ function createFakeStoreRuntime(initialState = {} as StoreState) {
     return action;
   });
 
-  return {
+  const runtime = {
     init: vi.fn(() => dispose),
     getReadableState: vi.fn(() => readableState),
     dispatch,
@@ -52,8 +49,11 @@ function createFakeStoreRuntime(initialState = {} as StoreState) {
       return state;
     },
     runSaga: vi.fn(() => vi.fn()),
+    registerSagas: vi.fn(() => runtime as unknown as Store<any, any, any>),
     dispose,
-  } satisfies RegisteredAppStoreRuntime & { dispose: ReturnType<typeof vi.fn> };
+  };
+
+  return runtime;
 }
 
 describe("configured app Store", () => {
@@ -63,7 +63,7 @@ describe("configured app Store", () => {
     expect(source).not.toContain('from "./sagas"');
     expect(source).toContain("new Store(reducers, middleware as unknown as StoreMiddleware[])");
     expect(source).not.toContain("new Store(reducers, sagas");
-    expect(appStore).toBe(store);
+    expect(appStore).toBe(configuredStore);
   });
 
   it("creates selectors directly from the configured Store", () => {
@@ -75,7 +75,8 @@ describe("configured app Store", () => {
 
   it("registers existing reducer and saga maps on one package Store instance", () => {
     const registeredReducers = appStore.getReducers();
-    const registeredSagas = registeredAppStore.getSagas();
+    const storeWithSagas = appStore.registerSagas(sagas);
+    const registeredSagas = storeWithSagas.getSagas();
 
     expect(reducers).not.toHaveProperty("storeUtility");
     expect(registeredReducers).not.toHaveProperty("storeUtility");
@@ -88,15 +89,16 @@ describe("configured app Store", () => {
     for (const [name, saga] of Object.entries(sagas)) {
       expect(registeredSagas[name]).toBe(saga);
     }
-    expect(registeredAppStore).toBe(appStore);
-    expect(registeredAppStore.getSagaNames()).toEqual(sagaNames);
+    expect(storeWithSagas).toBe(appStore);
+    expect(storeWithSagas.getSagaNames()).toEqual(sagaNames);
   });
 
   it("starts every registered app saga through Store.runSaga by name", () => {
     const runtime = createFakeStoreRuntime();
 
-    const stopHandlers = startAllAppSagas(runtime);
+    const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any, any>);
 
+    expect(runtime.registerSagas).toHaveBeenCalledWith(sagas);
     expect(runtime.runSaga).toHaveBeenCalledTimes(sagaNames.length);
     sagaNames.forEach((name, index) => {
       expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, name);
@@ -109,32 +111,19 @@ describe("app Store initialization", () => {
   it("initializes the configured Store and exposes dispatch/state through context", () => {
     const runtime = createFakeStoreRuntime();
 
-    const context = initAppStore(undefined, runtime);
+    const context = initAppStore(undefined, runtime as unknown as Store<any, any, any>);
 
     expect(runtime.init).toHaveBeenCalledOnce();
+    expect(context.store).toBe(runtime);
+    expect("storeState" in context).toBe(false);
 
     const action = { type: "test/action", payload: undefined };
     expect(context.store.dispatch(action)).toBe(action);
     expect(runtime.dispatch).toHaveBeenCalledWith(action);
-    expect(context.store.getState()).toBe(runtime.state);
+    expect(context.store.state).toBe(runtime.state);
+    expect(context.store.getReadableState()).toBe(runtime.getReadableState());
 
     context.dispose();
     expect(runtime.dispose).toHaveBeenCalledOnce();
-  });
-
-  it("adapts Store readable state subscriptions without firing on initial subscribe", () => {
-    const runtime = createFakeStoreRuntime();
-    const adapter = createReduxStoreBridgeAdapter(runtime);
-    const listener = vi.fn();
-
-    const unsubscribe = adapter.subscribe(listener);
-    expect(listener).not.toHaveBeenCalled();
-
-    adapter.dispatch({ type: "test/update", payload: undefined });
-    expect(listener).toHaveBeenCalledOnce();
-
-    unsubscribe();
-    adapter.dispatch({ type: "test/updateAgain", payload: undefined });
-    expect(listener).toHaveBeenCalledOnce();
   });
 });

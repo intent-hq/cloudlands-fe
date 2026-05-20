@@ -1,4 +1,4 @@
-import type { Readable } from "svelte/store";
+import type { Store } from "svelte-redux-toolkit/store";
 
 import {
   REDUX_DEBUG_LS_KEY,
@@ -8,19 +8,11 @@ import {
 import { store as configuredStore } from "./configured-store";
 import type {
   PreloadedStoreState,
-  ReduxStore,
   ReduxStoreContext,
-  StoreState,
 } from "./types";
 import { safeLocalStorage } from "../utils/safe-storage";
 
-export const store = configuredStore;
-export const appStore = store;
-
-export type AppStore = typeof store;
-
-export type AppStoreState = StoreState;
-export type AppStoreRuntime = Pick<AppStore, "init" | "getReadableState" | "dispatch" | "state">;
+export { store } from "./configured-store";
 
 type StoreDebugIntent = {
   reduxContext?: ReduxStoreContext | ReduxStoreContext[];
@@ -133,41 +125,14 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
   };
 };
 
-export const createReduxStoreBridgeAdapter = (configuredStore: AppStoreRuntime = appStore): ReduxStore => {
-  const dispatch: ReduxStore["dispatch"] = ((action) => configuredStore.dispatch(action)) as ReduxStore["dispatch"];
-  const getState: ReduxStore["getState"] = () => configuredStore.state as StoreState;
-  const subscribe: ReduxStore["subscribe"] = (listener) => {
-    let didEmitInitialValue = false;
-
-    return (configuredStore.getReadableState() as Readable<StoreState>).subscribe(() => {
-      if (didEmitInitialValue) {
-        listener();
-      } else {
-        didEmitInitialValue = true;
-      }
-    });
-  };
-
-  return {
-    dispatch,
-    getState,
-    subscribe,
-    replaceReducer: () => {
-      throw new Error("replaceReducer is not supported by the configured app Store bridge.");
-    },
-  } as unknown as ReduxStore;
-};
-
 export const initAppStore = (
   loadedState?: PreloadedStoreState,
-  configuredStore: AppStoreRuntime = appStore
+  storeRuntime: Store<any, any, any> = configuredStore,
 ): ReduxStoreContext => {
-  const disposeConfiguredStore = configuredStore.init(loadedState);
-  const store = createReduxStoreBridgeAdapter(configuredStore);
+  const disposeConfiguredStore = storeRuntime.init(loadedState);
 
   const storeContext: ReduxStoreContext = {
-    store,
-    storeState: configuredStore.getReadableState() as Readable<StoreState>,
+    store: storeRuntime,
     dispose: () => {
       cleanUpWindow(storeContext);
       disposeConfiguredStore();

@@ -41,9 +41,14 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   },
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: vi.fn() }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: vi.fn(),
+  });
+});
 
 vi.mock('$lib/utils/agent-name-generator', () => ({
   generateSpecialistAgentName: (_base: string, _existing: string[]) => 'Agent',

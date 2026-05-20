@@ -19,9 +19,13 @@ const {
   selectAgentIsWaitingMock: vi.fn(),
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: getStateMock }),
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => getStateMock(),
+  });
+});
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentSession: {

@@ -42,12 +42,13 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
   },
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mocks.dispatch,
-}));
-
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({

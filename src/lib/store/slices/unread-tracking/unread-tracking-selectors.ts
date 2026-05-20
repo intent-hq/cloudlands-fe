@@ -2,26 +2,26 @@
  * Selectors for the unread-tracking slice.
  */
 
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import { selectAgentSessionWorkspaceId } from "../agent-session/agent-session-selectors";
 
 /** Whether a specific agent has unread messages. */
-export const selectAgentHasUnread = createSelector(
+export const selectAgentHasUnread = store.createSelector(
   (state, agentId: string) => state.unreadTracking.unreadAgentIds.includes(agentId)
 );
 
 /** Total count of agents with unread messages. */
-export const selectUnreadCount = createSelector(
+export const selectUnreadCount = store.createSelector(
   (state) => state.unreadTracking.unreadAgentIds.length
 );
 
 /** All agent IDs with unread messages. */
-export const selectUnreadAgentIds = createSelector(
+export const selectUnreadAgentIds = store.createSelector(
   (state) => state.unreadTracking.unreadAgentIds
 );
 
 /** Unread agent IDs for a specific workspace. */
-export const selectUnreadAgentIdsForWorkspace = createSelector(
+export const selectUnreadAgentIdsForWorkspace = store.createSelector(
   (state, workspaceId: string) => {
     return state.unreadTracking.unreadAgentIds.filter(
       (id) => selectAgentSessionWorkspaceId.select(state, id) === workspaceId
@@ -30,7 +30,7 @@ export const selectUnreadAgentIdsForWorkspace = createSelector(
 );
 
 /** Unread agent IDs grouped by workspace. */
-export const selectUnreadAgentIdsByWorkspace = createSelector(
+export const selectUnreadAgentIdsByWorkspace = store.createSelector(
   (state): Record<string, string[]> => {
     const { unreadAgentIds } = state.unreadTracking;
     const result: Record<string, string[]> = {};
@@ -47,7 +47,7 @@ export const selectUnreadAgentIdsByWorkspace = createSelector(
 );
 
 /** The currently viewed agent ID. */
-export const selectCurrentlyViewedAgentId = createSelector(
+export const selectCurrentlyViewedAgentId = store.createSelector(
   (state) => state.unreadTracking.currentlyViewedAgentId
 );
 

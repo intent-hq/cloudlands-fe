@@ -2,38 +2,38 @@
  * Agent Availability Selectors
  */
 
-import { createSelector } from '../../utils/create-selector';
+import { store } from "../../store";
 import type { ManagedInstallStatus } from './agent-availability-types';
 
-export const selectProviderStatusMap = createSelector(
+export const selectProviderStatusMap = store.createSelector(
   (state) => state.agentAvailability.providerStatusMap,
 );
 
-export const selectProviderLoadingMap = createSelector(
+export const selectProviderLoadingMap = store.createSelector(
   (state) => state.agentAvailability.providerLoadingMap,
 );
 
-export const selectProviderUserInfoLoadingMap = createSelector(
+export const selectProviderUserInfoLoadingMap = store.createSelector(
   (state) => state.agentAvailability.providerUserInfoLoadingMap,
 );
 
-export const selectHasCheckedOnce = createSelector(
+export const selectHasCheckedOnce = store.createSelector(
   (state) => state.agentAvailability.hasCheckedOnce,
 );
 
-export const selectWatchedTerminalIds = createSelector(
+export const selectWatchedTerminalIds = store.createSelector(
   (state) => state.agentAvailability.watchedTerminalIds,
 );
 
-export const selectIsAnyProviderLoading = createSelector((state) =>
+export const selectIsAnyProviderLoading = store.createSelector((state) =>
   Object.values(state.agentAvailability.providerLoadingMap).some((v) => v),
 );
 
-export const selectHasAnyAvailableProvider = createSelector((state) =>
+export const selectHasAnyAvailableProvider = store.createSelector((state) =>
   Object.values(state.agentAvailability.providerStatusMap).some((s) => s?.available),
 );
 
-export const selectManagedInstallStatusByProvider = createSelector(
+export const selectManagedInstallStatusByProvider = store.createSelector(
   (state, providerId: string): ManagedInstallStatus | null => {
     const status = state.agentAvailability.providerStatusMap[providerId];
     if (!status?.managedInstallState) return null;
@@ -47,6 +47,6 @@ export const selectManagedInstallStatusByProvider = createSelector(
   },
 );
 
-export const selectCodexManagedInstallStatus = createSelector((state) =>
+export const selectCodexManagedInstallStatus = store.createSelector((state) =>
   selectManagedInstallStatusByProvider.select(state, 'codex'),
 );

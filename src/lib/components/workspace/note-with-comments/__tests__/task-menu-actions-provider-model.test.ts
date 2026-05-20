@@ -59,10 +59,10 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
 
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const createLegacyStore = () => appStoreFactoryMock();
 
   return createAppStoreMockModule({
-    getLegacyStore: createLegacyStore,
+    state: () => appStoreFactoryMock()?.getState?.() ?? {},
+    dispatch: (...args: any[]) => appStoreFactoryMock()?.dispatch?.(...args),
   });
 });
 

@@ -11,9 +11,9 @@
  */
 
 import { toast } from 'svelte-sonner';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 import { noteUrl } from '$shared/constants/intent-links';
+import { store as appStore } from '$lib/store/store';
 
 export interface WorkspacesLinkInfo {
   type: 'note' | 'task' | 'unknown';
@@ -224,7 +224,7 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
   const { navigateToNote: navigateToNoteUtil } = await import('./workspace-navigation');
   const { goto } = await import('$app/navigation');
 
-  const currentWorkspace = selectCurrentWorkspace.select(getReduxStore().getState());
+  const currentWorkspace = selectCurrentWorkspace.select(appStore.state);
 
   // If the link includes a workspace ID, we can navigate even without a current workspace
   // (e.g., clicking a cross-workspace link from the home page)

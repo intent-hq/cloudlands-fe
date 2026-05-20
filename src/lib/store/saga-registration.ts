@@ -1,33 +1,17 @@
-import type { StoreSagaName } from "svelte-redux-toolkit/types";
+import type { Store } from "svelte-redux-toolkit/store";
 
-import {
-  appStore,
-  initAppStore,
-} from "./store";
 import {
   sagaNames,
   sagas,
 } from "./sagas";
-import type { PreloadedStoreState } from "./types";
+import type { SagaName } from "./types";
 
-export const registeredAppStore = appStore.registerSagas(sagas);
-
-export type RegisteredAppStore = typeof registeredAppStore;
-export type RegisteredSagaName = StoreSagaName<RegisteredAppStore>;
-export type RegisteredAppStoreRuntime = Pick<
-  RegisteredAppStore,
-  "init" | "getReadableState" | "dispatch" | "state" | "runSaga"
->;
-
-export const registeredSagaNames: RegisteredSagaName[] = sagaNames;
+export const registeredSagaNames: SagaName[] = sagaNames;
 
 export function startAllAppSagas(
-  configuredStore: Pick<RegisteredAppStore, "runSaga"> = registeredAppStore
+  storeArg: Store<any, any, any>
 ): Array<() => void> {
-  return registeredSagaNames.map((name) => configuredStore.runSaga(name));
-}
+  const registeredStore = storeArg.registerSagas(sagas);
 
-export const initRegisteredAppStore = (
-  loadedState?: PreloadedStoreState,
-  configuredStore: RegisteredAppStoreRuntime = registeredAppStore
-) => initAppStore(loadedState, configuredStore);
+  return registeredSagaNames.map((name) => registeredStore.runSaga(name));
+}

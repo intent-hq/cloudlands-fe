@@ -126,17 +126,17 @@
   import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import {
+    initAppStore,
     store as appStore,
   } from '$lib/store/store';
   import {
-    initRegisteredAppStore,
     startAllAppSagas,
   } from '$lib/store/saga-registration';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
-    const storeContext = initRegisteredAppStore();
-    const stopHandlers = startAllAppSagas();
+    const storeContext = initAppStore();
+    const stopHandlers = startAllAppSagas(appStore);
 
     return () => {
       for (const stop of stopHandlers) {

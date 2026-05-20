@@ -95,7 +95,7 @@ declare module "svelte-redux-toolkit/utils/store/create-action" {
 
 declare module "svelte-redux-toolkit/utils/sagas/selector-channel-effects" {
   import type { EventChannel, Task } from "redux-saga";
-  import type { StoreSelector } from "$lib/store/types";
+  import type { StoreSelector } from "svelte-redux-toolkit/types";
 
   export type SelectorChannelPayload<R> = {
     payload: R;
@@ -105,36 +105,36 @@ declare module "svelte-redux-toolkit/utils/sagas/selector-channel-effects" {
   export type SelectorWorkerSaga<R> = (payload: SelectorChannelPayload<R>) => Generator<any, void, any>;
 
   export function createChannelFromSelector<R, ARGS extends any[]>(
-    selector: StoreSelector<R, ARGS>,
+    selector: StoreSelector<R, ARGS, any>,
     ...args: ARGS
   ): Generator<any, EventChannel<SelectorChannelPayload<R>>, any>;
 
   export function takeEveryFromSelector<R>(
-    selector: StoreSelector<R, []>,
+    selector: StoreSelector<R, [], any>,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;
   export function takeEveryFromSelector<R, ARGS extends any[]>(
-    selector: StoreSelector<R, ARGS>,
+    selector: StoreSelector<R, ARGS, any>,
     args: ARGS,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;
 
   export function takeLatestFromSelector<R>(
-    selector: StoreSelector<R, []>,
+    selector: StoreSelector<R, [], any>,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;
   export function takeLatestFromSelector<R, ARGS extends any[]>(
-    selector: StoreSelector<R, ARGS>,
+    selector: StoreSelector<R, ARGS, any>,
     args: ARGS,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;
 
   export function takeLeadingFromSelector<R>(
-    selector: StoreSelector<R, []>,
+    selector: StoreSelector<R, [], any>,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;
   export function takeLeadingFromSelector<R, ARGS extends any[]>(
-    selector: StoreSelector<R, ARGS>,
+    selector: StoreSelector<R, ARGS, any>,
     args: ARGS,
     worker: SelectorWorkerSaga<R>,
   ): Generator<any, Task, any>;

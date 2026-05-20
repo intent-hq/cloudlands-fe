@@ -1,26 +1,26 @@
+import { store } from "../../store";
 /**
  * Release Notes — Selectors
  */
 
-import { createSelector } from "../../utils/create-selector";
 
-export const selectReleaseNotes = createSelector(
+export const selectReleaseNotes = store.createSelector(
   (state) => state.releaseNotes.releaseNotes,
 );
 
-export const selectShowReleaseNotesModal = createSelector(
+export const selectShowReleaseNotesModal = store.createSelector(
   (state) => state.releaseNotes.showModal,
 );
 
-export const selectReleaseNotesLoading = createSelector(
+export const selectReleaseNotesLoading = store.createSelector(
   (state) => state.releaseNotes.loading,
 );
 
-export const selectReleaseNotesError = createSelector(
+export const selectReleaseNotesError = store.createSelector(
   (state) => state.releaseNotes.error,
 );
 
-export const selectReleaseNotesInitialized = createSelector(
+export const selectReleaseNotesInitialized = store.createSelector(
   (state) => state.releaseNotes.initialized,
 );
 

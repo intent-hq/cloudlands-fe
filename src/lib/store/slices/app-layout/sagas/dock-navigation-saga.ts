@@ -3,7 +3,6 @@ import {
   createTerminalRequested,
   type WorkspaceTerminal,
 } from "$lib/store/slices/terminals/terminals-slice";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { selectAgentIsResponding } from "$lib/store/slices/agent-session/agent-session-selectors";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
@@ -46,11 +45,9 @@ function isMacPlatform(): boolean {
     // @ts-expect-error Electron platform detection differs across runtimes
     return navigator.userAgentData?.platform === "macOS" || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
-function isCurrentAgentStreaming(drawerState: WorkspaceNavigationDrawerState): boolean {
+function getCurrentDrawerAgentId(drawerState: WorkspaceNavigationDrawerState): string | null {
     const currentAgentId = drawerState.type === "agent" ? drawerState.itemId : null;
-    if (!currentAgentId)
-        return false;
-    return selectAgentIsResponding.select(getReduxStore().getState(), currentAgentId);
+    return currentAgentId || null;
 }
 function getDockItems(agents: AgentSession[], terminals: WorkspaceTerminal[]): DockItem[] {
     return [
@@ -91,9 +88,6 @@ export function createDockNavigationChannel(
                     return;
                 if (isFocusInTerminal(target))
                     return;
-                if (isCurrentAgentStreaming(getDrawerState())) {
-                    return;
-                }
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                     event.preventDefault();
                     emit({
@@ -138,7 +132,7 @@ export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
     // calling the forbidden direct-selector pattern from inside a callback.
     let drawerStateRef: WorkspaceNavigationDrawerState =
         yield* selectWorkspaceNavigationDrawer.effect(wsId);
-    yield* takeLatestFromSelector(
+    yield* takeLatestFromSelector<WorkspaceNavigationDrawerState, [string]>(
         selectWorkspaceNavigationDrawer,
         [wsId],
         function* ({ payload }) {
@@ -160,6 +154,10 @@ export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
             const agents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
             const terminals: WorkspaceTerminal[] = yield* selectLoadedWorkspaceTerminals.effect(wsId);
             const drawerState: WorkspaceNavigationDrawerState = yield* selectWorkspaceNavigationDrawer.effect(wsId);
+            const currentAgentId = getCurrentDrawerAgentId(drawerState);
+            if (currentAgentId && (yield* selectAgentIsResponding.effect(currentAgentId))) {
+                continue;
+            }
             const nextItem = getNextDockItem(drawerState, getDockItems(agents, terminals), shortcut.direction);
             if (!nextItem)
                 continue;

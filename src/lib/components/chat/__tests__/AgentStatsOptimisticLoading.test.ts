@@ -67,12 +67,14 @@ vi.mock('$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte', asy
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: mocks.dispatch }),
-}));
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mocks.dispatch,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+  });
+});
 vi.mock('$features/agent/browser', () => ({ subscribeToAgent: mocks.subscribeToAgent }));
 vi.mock('$lib/store/slices/session-stats/session-stats-slice', () => ({
   fetchAgentStats: vi.fn((agentId: string, sessionId: string) => ({

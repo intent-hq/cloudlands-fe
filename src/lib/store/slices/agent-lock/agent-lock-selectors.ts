@@ -4,7 +4,7 @@
  * Selectors for agent/file lock state accessed by workspace ID.
  */
 
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import { emptyWorkspaceState } from "./agent-lock-slice";
 import type { AgentLockWorkspaceState } from "./agent-lock-types";
 
@@ -12,7 +12,7 @@ import type { AgentLockWorkspaceState } from "./agent-lock-types";
 // Per-workspace base selector
 // ============================================================================
 
-export const selectAgentLockState = createSelector(
+export const selectAgentLockState = store.createSelector(
   (state, workspaceId: string): AgentLockWorkspaceState =>
     state.agentLock.byWorkspaceId[workspaceId] ?? emptyWorkspaceState,
 );
@@ -22,19 +22,19 @@ export const selectAgentLockState = createSelector(
 // ============================================================================
 
 /** Select the record of locked agent IDs for a workspace */
-export const selectLockedAgentIds = createSelector(
+export const selectLockedAgentIds = store.createSelector(
   (state, workspaceId: string): Record<string, true> =>
     state.agentLock.byWorkspaceId[workspaceId]?.lockedAgentIds ?? emptyRecord,
 );
 
 /** Select the record of locked file paths for a workspace */
-export const selectLockedFilePaths = createSelector(
+export const selectLockedFilePaths = store.createSelector(
   (state, workspaceId: string): Record<string, true> =>
     state.agentLock.byWorkspaceId[workspaceId]?.lockedFilePaths ?? emptyRecord,
 );
 
 /** Check if a specific agent is locked */
-export const selectIsAgentLocked = createSelector(
+export const selectIsAgentLocked = store.createSelector(
   (state, workspaceId: string, agentId: string): boolean => {
     const ws = state.agentLock.byWorkspaceId[workspaceId];
     if (!ws) return false;
@@ -43,7 +43,7 @@ export const selectIsAgentLocked = createSelector(
 );
 
 /** Check if a specific file path is locked */
-export const selectIsFileLocked = createSelector(
+export const selectIsFileLocked = store.createSelector(
   (state, workspaceId: string, filePath: string): boolean => {
     const ws = state.agentLock.byWorkspaceId[workspaceId];
     if (!ws) return false;

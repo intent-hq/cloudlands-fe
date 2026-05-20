@@ -8,7 +8,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
   import {
   selectLinearIsAuthenticated,
   selectLinearIsAuthenticating,
@@ -28,7 +28,6 @@
 
   let { skipInitialize = false }: Props = $props();
 
-  const dispatch = getDispatch();
   const isAuthenticated$ = selectLinearIsAuthenticated();
   const isAuthenticating$ = selectLinearIsAuthenticating();
   const error$ = selectLinearError();
@@ -40,7 +39,7 @@
 
   onMount(async () => {
     if (!skipInitialize) {
-      dispatch(initializeLinearAuth());
+      appStore.dispatch(initializeLinearAuth());
     }
     await loadFilter();
   });
@@ -81,12 +80,12 @@
   }
 
   function handleLinearConnect() {
-    dispatch(startLinearAuth());
+    appStore.dispatch(startLinearAuth());
   }
 
   function handleLinearDisconnect() {
     isDisconnectingLinear = true;
-    dispatch(logoutLinear());
+    appStore.dispatch(logoutLinear());
     // Reset local flag after a short delay since logout is async via saga
     setTimeout(() => {
       isDisconnectingLinear = false;
@@ -94,7 +93,7 @@
   }
 
   function handleLinearReconnect() {
-    dispatch(startLinearAuth());
+    appStore.dispatch(startLinearAuth());
   }
 </script>
 

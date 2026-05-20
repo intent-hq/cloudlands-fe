@@ -4,7 +4,7 @@
  * Selectors for workspace-scoped git state.
  */
 
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import {
   defaultGitOperationFlags,
   getGitWorkspaceState,
@@ -24,105 +24,105 @@ const defaultPostMergeState: PostMergeState = {
 
 // ── Raw state selectors ──
 
-export const selectGitWorkspaceState = createSelector(
+export const selectGitWorkspaceState = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId)
 );
 
-export const selectGitStatus = createSelector(
+export const selectGitStatus = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).status
 );
 
-export const selectGitDiffs = createSelector(
+export const selectGitDiffs = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).diffs
 );
 
-export const selectGitLoading = createSelector(
+export const selectGitLoading = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).loading
 );
 
-export const selectGitError = createSelector(
+export const selectGitError = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).error
 );
 
-export const selectGitBranch = createSelector(
+export const selectGitBranch = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).branch
 );
 
-export const selectGitAhead = createSelector(
+export const selectGitAhead = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).ahead
 );
 
-export const selectGitBehind = createSelector(
+export const selectGitBehind = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind
 );
 
 // ── Derived selectors ──
 
-export const selectGitHasChanges = createSelector(
+export const selectGitHasChanges = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status ? status.files.length > 0 : false;
   }
 );
 
-export const selectGitHasUnstagedChanges = createSelector(
+export const selectGitHasUnstagedChanges = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.files.some((f) => !f.staged) || false;
   }
 );
 
-export const selectGitHasStagedChanges = createSelector(
+export const selectGitHasStagedChanges = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.files.some((f) => f.staged) || false;
   }
 );
 
-export const selectGitHasUnpushedCommits = createSelector(
+export const selectGitHasUnpushedCommits = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).ahead > 0
 );
 
-export const selectGitHasUnpulledCommits = createSelector(
+export const selectGitHasUnpulledCommits = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).behind > 0
 );
 
-export const selectGitUnstagedFiles = createSelector(
+export const selectGitUnstagedFiles = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.files.filter((f) => !f.staged) || [];
   }
 );
 
-export const selectGitStagedFiles = createSelector(
+export const selectGitStagedFiles = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.files.filter((f) => f.staged) || [];
   }
 );
 
-export const selectGitModifiedFiles = createSelector(
+export const selectGitModifiedFiles = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.files || [];
   }
 );
 
-export const selectGitStagedCount = createSelector(
+export const selectGitStagedCount = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status ? status.files.filter((f) => f.staged).length : 0;
   }
 );
 
-export const selectGitUnstagedCount = createSelector(
+export const selectGitUnstagedCount = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status ? status.files.filter((f) => !f.staged).length : 0;
   }
 );
 
-export const selectGitIsDiverged = createSelector(
+export const selectGitIsDiverged = store.createSelector(
   (state, wsId: string) => {
     const status = getGitWorkspaceState(state.git, wsId).status;
     return status?.diverged ?? false;
@@ -131,33 +131,33 @@ export const selectGitIsDiverged = createSelector(
 
 // ── Git operation event selectors (absorbed from git-operations) ──
 
-export const selectLastGitOperation = createSelector((state) => {
+export const selectLastGitOperation = store.createSelector((state) => {
   return state.git.lastGitOperation;
 });
 
-export const selectLastGitError = createSelector((state) => {
+export const selectLastGitError = store.createSelector((state) => {
   return state.git.lastGitError;
 });
 
-export const selectLastAutoCommitHookFailure = createSelector((state) => {
+export const selectLastAutoCommitHookFailure = store.createSelector((state) => {
   return state.git.lastAutoCommitHookFailure;
 });
 
 // ── Sidebar post-merge / git operation flag selectors (moved from transient-ui) ──
 
-export const selectPostMergeState = createSelector(
+export const selectPostMergeState = store.createSelector(
   (state, wsId: string): PostMergeState =>
     getGitWorkspaceState(state.git, wsId).postMergeState ?? defaultPostMergeState
 );
 
-export const selectGitOperationFlags = createSelector(
+export const selectGitOperationFlags = store.createSelector(
   (state, wsId: string) => {
     const ws = getGitWorkspaceState(state.git, wsId);
     return ws.gitOperations ?? defaultGitOperationFlags;
   }
 );
 
-export const selectGitOperationFlag = createSelector(
+export const selectGitOperationFlag = store.createSelector(
   (state, wsId: string, flag: GitOperationFlagName): boolean => {
     const ws = getGitWorkspaceState(state.git, wsId);
     return (ws.gitOperations ?? defaultGitOperationFlags)[flag];

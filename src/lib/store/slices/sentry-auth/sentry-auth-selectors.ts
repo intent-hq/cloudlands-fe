@@ -1,38 +1,38 @@
+import { store } from "../../store";
 /**
  * Sentry Auth Selectors
  */
 
-import { createSelector } from "../../utils/create-selector";
 
-export const selectSentryIsAuthenticated = createSelector(
+export const selectSentryIsAuthenticated = store.createSelector(
   (state) => state.sentryAuth.isAuthenticated,
 );
 
-export const selectSentryOrganization = createSelector(
+export const selectSentryOrganization = store.createSelector(
   (state) => state.sentryAuth.organization,
 );
 
-export const selectSentryIsConnecting = createSelector(
+export const selectSentryIsConnecting = store.createSelector(
   (state) => state.sentryAuth.isConnecting,
 );
 
-export const selectSentryError = createSelector(
+export const selectSentryError = store.createSelector(
   (state) => state.sentryAuth.error,
 );
 
-export const selectSentryProjects = createSelector(
+export const selectSentryProjects = store.createSelector(
   (state) => state.sentryAuth.projects,
 );
 
-export const selectSentryIsLoadingProjects = createSelector(
+export const selectSentryIsLoadingProjects = store.createSelector(
   (state) => state.sentryAuth.isLoadingProjects,
 );
 
-export const selectSentryIssues = createSelector(
+export const selectSentryIssues = store.createSelector(
   (state) => state.sentryAuth.issues,
 );
 
-export const selectSentryIsLoadingIssues = createSelector(
+export const selectSentryIsLoadingIssues = store.createSelector(
   (state) => state.sentryAuth.isLoadingIssues,
 );
 

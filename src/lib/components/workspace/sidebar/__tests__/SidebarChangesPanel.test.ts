@@ -414,11 +414,6 @@ vi.mock('$lib/store/slices/workspace/workspace-slice', async (importOriginal) =>
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: vi.fn(() => vi.fn()),
-  getStoreContext: vi.fn(),
-}));
-
 vi.mock('$lib/services/analytics', () => ({
   track: vi.fn(),
   getFileExtension: vi.fn().mockReturnValue('.ts'),

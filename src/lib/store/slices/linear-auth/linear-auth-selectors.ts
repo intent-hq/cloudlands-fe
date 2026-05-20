@@ -1,30 +1,30 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 
-export const selectLinearIsAuthenticated = createSelector(
+export const selectLinearIsAuthenticated = store.createSelector(
   (state) => state.linearAuth.isAuthenticated,
 );
 
-export const selectLinearRequiresAugmentAuth = createSelector(
+export const selectLinearRequiresAugmentAuth = store.createSelector(
   (state) => state.linearAuth.requiresAugmentAuth,
 );
 
-export const selectLinearIsAuthenticating = createSelector(
+export const selectLinearIsAuthenticating = store.createSelector(
   (state) => state.linearAuth.isAuthenticating,
 );
 
-export const selectLinearOauthUrl = createSelector(
+export const selectLinearOauthUrl = store.createSelector(
   (state) => state.linearAuth.oauthUrl,
 );
 
-export const selectLinearError = createSelector(
+export const selectLinearError = store.createSelector(
   (state) => state.linearAuth.error,
 );
 
-export const selectLinearIssues = createSelector(
+export const selectLinearIssues = store.createSelector(
   (state) => state.linearAuth.issues,
 );
 
-export const selectLinearIsLoadingIssues = createSelector(
+export const selectLinearIsLoadingIssues = store.createSelector(
   (state) => state.linearAuth.isLoadingIssues,
 );
 

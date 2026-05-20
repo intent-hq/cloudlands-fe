@@ -1,3 +1,4 @@
+import { store as appStore } from '$lib/store/store';
 /**
  * Parse RichTextarea mentions into structured context references
  * for workspace creation.
@@ -160,12 +161,11 @@ export async function parseRuntimeMentions(
 
     if (mention.type === 'script') {
       try {
-        const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
-        const { selectScriptOutput, selectScriptById, selectScriptRuntime } = await import(
+                const { selectScriptOutput, selectScriptById, selectScriptRuntime } = await import(
           '$lib/store/slices/scripts/scripts-selectors'
         );
         const scriptId = mention.id ?? '';
-        const state = getReduxStore().getState();
+        const state = appStore.state;
         const outputLines = selectScriptOutput.select(state, scriptId);
         const script = selectScriptById.select(state, scriptId);
         const runtime = selectScriptRuntime.select(state, scriptId);
