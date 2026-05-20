@@ -2,7 +2,7 @@
  * Root sagas registry.
  * Each saga is registered here and managed by the saga manager.
  * Sagas are registered through saga-registration.ts and started/stopped via
- * Store.runSaga(name) or the RunSaga component.
+ * Store.runSaga(name).
  */
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
