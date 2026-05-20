@@ -21,9 +21,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('ReferenceBlock');
 
@@ -256,7 +257,7 @@
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
 
     if (workspaceId) {
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openWorkspaceFile(workspaceId, filePath, { line, openInAdjacentPanel, sourcePanelId }),
       );
     }
@@ -281,7 +282,7 @@
             onclick={(e) => {
               e.stopPropagation();
               if (workspaceId) {
-                getReduxStore().dispatch(
+                appStore.dispatch(
                   openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
                 );
               }
