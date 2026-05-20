@@ -2,12 +2,18 @@
 
 Use these rules when creating or editing code in `src/lib/store/` so Redux state stays serializable, normalized, and saga-driven.
 
+## Source of Truth
+
+- Primary active Redux architecture guidance lives in `.agents/skills/svelte-redux-toolkit/**` and `.agents/skills/migrate-to-svelte-redux-toolkit/**`; read the applicable skill files before changing Redux state, selectors, sagas, component wiring, or migration docs.
+- This file is a repository-local companion checklist for `src/lib/store/`. Keep it concise and defer to the Redux skills for current architecture rules, API details, migration workflow, and verifier expectations.
+- If this file appears to conflict with the Redux skills, follow the skills and report the instruction drift instead of extending local guidance.
+
 ## 1. Import Boundaries
 
-- Components (`*.svelte`, component-level `*.ts`) may only import actions from `*-slice.ts`, selectors from `*-selectors.ts`, types from `*-types.ts`, `getDispatch` from `$lib/store/utils/svelte-context`, and the configured `store` from `$lib/store/store` as `appStore` (for one-time reads in event handlers only).
+- Components (`*.svelte`, component-level `*.ts`) may only import actions from `*-slice.ts`, selectors from `*-selectors.ts`, types from `*-types.ts`, and the configured `store` from `$lib/store/store` as `appStore` for dispatch and one-time reads in event handlers.
 - Components must never import saga files (`sagas/*.ts`), operation files, reducer internals, store init/setup modules, or collection utils directly.
 - Access collection data through selectors, not by importing `collection-utils` in components.
-- Services and non-component code may import actions and selectors.
+- Services and non-component code may import actions, selectors, and the configured app `store` when they need explicit dispatch or one-time reads.
 - Sagas may import anything within the store directory.
 
 ## 2. State Must Be Serializable
@@ -48,7 +54,7 @@ import { createCollection, getItem, getItems } from "svelte-redux-toolkit/utils/
 - `selector.select(state, ...args)` is for event handlers, callbacks, async functions, tests, and any one-time read when you already have state.
 - `selector.effect(...args)` is for sagas.
 - To react to selector changes, use saga selector-channel helpers such as `takeLatestFromSelector`, `takeEveryFromSelector`, or `takeLeadingFromSelector`.
-- Never call `selector()` or `getDispatch()` inside event handlers or callbacks.
+- Never call `selector()` inside event handlers or callbacks; use `selector.select(appStore.state, ...args)` for reads and `appStore.dispatch(action)` for dispatch.
 
 ```ts
 import { store as appStore } from "$lib/store/store";
