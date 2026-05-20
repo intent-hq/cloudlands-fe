@@ -14,7 +14,6 @@ import {
   selectInitialAgentConfig,
 } from "../../workspace-agents/workspace-agents-selectors";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import type { Task } from "redux-saga";
 import {
   cancel,
@@ -23,7 +22,6 @@ import {
   fork,
   put,
   race,
-  select,
   take,
   takeEvery,
 } from "typed-redux-saga";
@@ -47,7 +45,7 @@ const specSlideInCompleted = new Set<string>();
  * will slide in reactively once spec generation actually starts.
  *
  * Generator: reads Redux state via `yield* selector.effect(...)` so saga-context
- * code never calls `selector.select(getReduxStore().getState(), …)`.
+ * code never calls `selector.select(configuredStore.state, …)`.
  */
 export function* shouldDeferSpecPanel(wsId: string) {
     if (specSlideInCompleted.has(wsId)) {
@@ -96,8 +94,8 @@ export function* shouldDeferSpecPanel(wsId: string) {
     }
     return false;
 }
-function cleanupDeferralKeys(wsId: string) {
-    getReduxStore().dispatch(clearInitialAgentConfig(wsId));
+function* cleanupDeferralKeys(wsId: string) {
+    yield* put(clearInitialAgentConfig(wsId));
     sessionStorage.removeItem(`workspace:${wsId}:agent-config`);
     sessionStorage.removeItem(`workspace:${wsId}:initial-agent-pending`);
     specSlideInCompleted.add(wsId);
@@ -147,25 +145,25 @@ function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayout
 }
 function* slideInSpecPanel(wsId: string) {
     if (yield* isSpecAlreadyOpen(wsId)) {
-        cleanupDeferralKeys(wsId);
+        yield* cleanupDeferralKeys(wsId);
         return;
     }
     yield* put(setDeferSpecTab(wsId, false));
     yield* put(openTabInAdjacentOrSplit(wsId, { type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true }));
-    cleanupDeferralKeys(wsId);
+    yield* cleanupDeferralKeys(wsId);
 }
 function* openSpecNormally(wsId: string, isDeferring: boolean) {
     if (yield* isSpecAlreadyOpen(wsId)) {
         if (isDeferring) {
             yield* put(setDeferSpecTab(wsId, false));
         }
-        cleanupDeferralKeys(wsId);
+        yield* cleanupDeferralKeys(wsId);
         return;
     }
     if (isDeferring)
         yield* put(setDeferSpecTab(wsId, false));
     yield* put(openTabInAdjacentOrSplit(wsId, { type: "note", title: "Spec", noteId: SPEC_NOTE_ID, closable: true }, undefined));
-    cleanupDeferralKeys(wsId);
+    yield* cleanupDeferralKeys(wsId);
 }
 /**
  * Core spec-panel watcher for a single workspace.
@@ -197,7 +195,7 @@ export function* watchSpecPanelForWorkspace(wsId: string) {
     finally {
         // Safety: always clear deferSpecTab on any exit (success, crash, cancellation)
         yield* put(setDeferSpecTab(wsId, false));
-        cleanupDeferralKeys(wsId);
+        yield* cleanupDeferralKeys(wsId);
     }
 }
 /**
@@ -209,11 +207,11 @@ export function* specPanelForWorkspaceSaga(action: ReturnType<typeof workspaceMo
     const specAlreadyOpen: boolean = yield* call(isSpecAlreadyOpen, wsId);
     if (specAlreadyOpen) {
         yield* put(setDeferSpecTab(wsId, false));
-        cleanupDeferralKeys(wsId);
+        yield* cleanupDeferralKeys(wsId);
         return;
     }
     if (restoreStatus === "restored") {
-        cleanupDeferralKeys(wsId);
+        yield* cleanupDeferralKeys(wsId);
         return;
     }
     // Set up deferral if needed (equivalent to the $effect that set deferSpecTab)
@@ -247,7 +245,7 @@ export function* cancelSpecPanelForWorkspaceSaga(action: ReturnType<typeof works
  */
 /** @internal Exported for testing only. */
 export function* retroactiveSpecPanelMountCheckSaga() {
-    const activeWsId = yield* select(selectActiveWorkspaceId.select);
+    const activeWsId = yield* selectActiveWorkspaceId.effect();
 
     if (!activeWsId) {
         return;

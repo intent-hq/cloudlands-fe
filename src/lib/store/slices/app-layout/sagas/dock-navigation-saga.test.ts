@@ -40,13 +40,13 @@ vi.mock("svelte-redux-toolkit/utils/sagas/selector-channel-effects",
   }));
 
 const { eventChannelMock,
-  getReduxStoreMock,
+  appStoreFactoryMock,
   isFocusInEditableElementMock,
   isFocusInTerminalMock,
   isRespondingMock } =
   vi.hoisted(() => ({
     eventChannelMock: vi.fn(),
-  getReduxStoreMock: vi.fn(),
+  appStoreFactoryMock: vi.fn(),
   isFocusInEditableElementMock: vi.fn(),
   isFocusInTerminalMock: vi.fn(),
   isRespondingMock: vi.fn(),
@@ -59,10 +59,14 @@ vi.mock("redux-saga",
   eventChannel: eventChannelMock };
 });
 
-vi.mock("$lib/store/redux-dispatch-bridge",
-  () => ({
-  getReduxStore: getReduxStoreMock,
-  }));
+vi.mock("$lib/store/store", async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => appStoreFactoryMock()?.getState?.() ?? {},
+    dispatch: (...args: any[]) => appStoreFactoryMock()?.dispatch?.(...args),
+  });
+});
 
 vi.mock("$lib/utils/keyboardShortcuts",
   () => ({
@@ -74,8 +78,50 @@ vi.mock("$lib/store/slices/agent-session/agent-session-selectors",
   () => ({
   selectAgentIsResponding: {
     select: isRespondingMock,
+    effect: function* (...args: any[]) {
+      return yield sagaEffects.select(isRespondingMock, ...args);
+    },
   },
   }));
+
+vi.mock("$lib/store/slices/workspace-agents/workspace-agents-selectors", async () => {
+  const actual = await vi.importActual<typeof import("$lib/store/slices/workspace-agents/workspace-agents-selectors")>("$lib/store/slices/workspace-agents/workspace-agents-selectors");
+  return {
+    ...actual,
+    selectForegroundWorkspaceAgents: {
+      ...actual.selectForegroundWorkspaceAgents,
+      effect: function* (...args: any[]) {
+        return yield sagaEffects.select(actual.selectForegroundWorkspaceAgents.select, ...args);
+      },
+    },
+  };
+});
+
+vi.mock("$lib/store/slices/terminals/terminals-selectors", async () => {
+  const actual = await vi.importActual<typeof import("$lib/store/slices/terminals/terminals-selectors")>("$lib/store/slices/terminals/terminals-selectors");
+  return {
+    ...actual,
+    selectLoadedWorkspaceTerminals: {
+      ...actual.selectLoadedWorkspaceTerminals,
+      effect: function* (...args: any[]) {
+        return yield sagaEffects.select(actual.selectLoadedWorkspaceTerminals.select, ...args);
+      },
+    },
+  };
+});
+
+vi.mock("$lib/store/slices/workspace-navigation/workspace-navigation-selectors", async () => {
+  const actual = await vi.importActual<typeof import("$lib/store/slices/workspace-navigation/workspace-navigation-selectors")>("$lib/store/slices/workspace-navigation/workspace-navigation-selectors");
+  return {
+    ...actual,
+    selectWorkspaceNavigationDrawer: {
+      ...actual.selectWorkspaceNavigationDrawer,
+      effect: function* (...args: any[]) {
+        return yield sagaEffects.select(actual.selectWorkspaceNavigationDrawer.select, ...args);
+      },
+    },
+  };
+});
 
 import {
   openTerminalOverlay,
@@ -119,7 +165,7 @@ describe("dockNavigationSaga", () => {
         },
       },
     };
-    getReduxStoreMock.mockReturnValue({ getState: () => currentState });
+    appStoreFactoryMock.mockReturnValue({ getState: () => currentState });
     isFocusInEditableElementMock.mockReturnValue(false);
     isFocusInTerminalMock.mockReturnValue(false);
     isRespondingMock.mockReturnValue(false);
@@ -191,33 +237,21 @@ describe("dockNavigationSaga", () => {
   });
 
   it("blocks dock navigation when the current agent is streaming", () => {
-    currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer = {
-      open: true,
-      type: "agent",
-      itemId: "agent-1",
-    };
-    const emit = vi.fn();
+    const channel = createMockChannel();
+    eventChannelMock.mockReturnValue(channel);
 
-    eventChannelMock.mockImplementation((subscriber) => {
-      subscriber(emit);
-      return { close: vi.fn() };
+    const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
+
+    iterator.next();
+    iterator.next({ open: true, type: "agent", itemId: "agent-1" });
+    iterator.next({ type: "dock", direction: "previous" });
+    iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
+    iterator.next([]);
+    expect(iterator.next({ open: true, type: "agent", itemId: "agent-1" })).toEqual({
+      value: sagaEffects.select(isRespondingMock, "agent-1"),
+      done: false,
     });
-    isRespondingMock.mockReturnValue(true);
-
-    createDockNavigationChannel("ws-1", getDrawerStateForWs1);
-    const keydown = windowStub.addEventListener.mock.calls[0][1];
-    keydown({
-      altKey: true,
-      ctrlKey: false,
-      metaKey: false,
-      shiftKey: false,
-      key: "ArrowUp",
-      target: null,
-      preventDefault: vi.fn(),
-      stopPropagation: vi.fn(),
-    } as any);
-
-    expect(emit).not.toHaveBeenCalled();
+    expect(iterator.next(true)).toEqual({ value: sagaEffects.take(channel), done: false });
   });
 
   it("opens the next agent drawer item", () => {
@@ -269,6 +303,10 @@ describe("dockNavigationSaga", () => {
       done: false,
     });
     expect(iterator.next({ open: true, type: "agent", itemId: "agent-1" })).toEqual({
+      value: sagaEffects.select(isRespondingMock, "agent-1"),
+      done: false,
+    });
+    expect(iterator.next(false)).toEqual({
       value: sagaEffects.put(openTerminalOverlay("ws-1", "terminal-1")),
       done: false,
     });

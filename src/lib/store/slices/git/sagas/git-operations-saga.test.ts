@@ -18,6 +18,9 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
+  select: function* (selector: any, ...args: any[]) {
+    return yield sagaEffects.select(selector, ...args);
+  },
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
   },
@@ -36,6 +39,10 @@ import {
   setLastGitError,
   setLastGitOperation,
 } from "../git-slice";
+import {
+  selectActiveWorkspace,
+  selectWorkspaceById,
+} from "../../workspace/workspace-selectors";
 import {
   gitOperationsSaga,
   watchAutoCommitHookFailureSaga,
@@ -84,9 +91,17 @@ describe("gitOperationsSaga", () => {
       done: false,
     });
 
-    const effect = handlerIterator.next().value as any;
+    expect(handlerIterator.next()).toEqual({
+      value: sagaEffects.select(selectWorkspaceById.select, "ws-1"),
+      done: false,
+    });
+    expect(handlerIterator.next({ id: "ws-1", title: "Repo Space" })).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    const effect = handlerIterator.next({ id: "ws-2" }).value as any;
     expect(effect.type).toBe("CALL");
-    expect(effect.payload.args).toEqual([data]);
+    expect(effect.payload.args).toEqual([data, "Repo Space", true]);
   });
 
   it("records failed git operations before handling side effects", () => {
@@ -106,9 +121,17 @@ describe("gitOperationsSaga", () => {
       done: false,
     });
 
-    const effect = handlerIterator.next().value as any;
+    expect(handlerIterator.next()).toEqual({
+      value: sagaEffects.select(selectWorkspaceById.select, "ws-1"),
+      done: false,
+    });
+    expect(handlerIterator.next({ id: "ws-1", title: "Repo Space" })).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    const effect = handlerIterator.next({ id: "ws-2" }).value as any;
     expect(effect.type).toBe("CALL");
-    expect(effect.payload.args).toEqual([data]);
+    expect(effect.payload.args).toEqual([data, "Repo Space", "ws-2"]);
   });
 
   it("records auto-commit hook failures before handling side effects", () => {
