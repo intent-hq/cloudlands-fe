@@ -8,8 +8,10 @@ import {
 } from 'vitest';
 import {
   END,
+  runSaga,
   type EventChannel,
 } from 'redux-saga';
+import type { SelectorChannelPayload } from 'svelte-redux-toolkit/saga';
 import type { StoreState } from '$lib/store/types';
 import {
   AgentStatus,
@@ -19,28 +21,48 @@ import {
 
 const { stateRef, listeners, appStoreMock } = vi.hoisted(() => {
   const stateRef = { current: { agentSessions: { byAgentId: {} } } as any };
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(state: any) => void>();
   const appStoreMock = {
     dispatch: vi.fn(),
     get state() {
       return stateRef.current;
     },
     getReadableState: vi.fn(() => ({
-      subscribe: vi.fn((listener: () => void) => {
+      subscribe: vi.fn((listener: (state: any) => void) => {
         listeners.add(listener);
-        listener();
+        listener(stateRef.current);
         return () => listeners.delete(listener);
       }),
     })),
+    createSelector: vi.fn((selectorFunc: (state: any, ...args: any[]) => any) => {
+      const selector = Object.assign(
+        (...args: any[]) => ({
+          subscribe: (listener: (value: any) => void) => {
+            const emit = (state: any) => listener(selectorFunc(state, ...args));
+            listeners.add(emit);
+            emit(stateRef.current);
+            return () => listeners.delete(emit);
+          },
+        }),
+        {
+          select: selectorFunc,
+          effect: (...args: any[]) => selectorFunc(stateRef.current, ...args),
+          withStore: () => selector,
+        },
+      );
+
+      return selector;
+    }),
   };
 
   return { stateRef, listeners, appStoreMock };
 });
 
-vi.mock('$lib/store/store', () => ({
-  appStore: appStoreMock,
-  store: appStoreMock,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createStoreMockModule(appStoreMock);
+});
 
 vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: vi.fn() },
@@ -76,37 +98,11 @@ import { createAgentStateChannel } from './background-agent-executor-saga';
 const wsId = 'ws-1';
 const agentId = 'agent-1';
 
-function makeMessageSimple(text: string): AgentMessage {
-  return {
-    id: 'msg-1',
-    role: 'assistant',
-    contentBlocks: [{ type: 'text', text }],
-    timestamp: '2026-05-13T00:00:00.000Z',
-  } as AgentMessage;
-}
-
-function setAgentState(status: AgentStatus, messages: AgentMessage[] = []): void {
-  stateRef.current = {
-    agentSessions: {
-      byAgentId: {
-        [agentId]: {
-          id: agentId,
-          workspaceId: wsId,
-          status,
-          messages,
-        },
-      },
-    },
-  };
-}
-
 // --- Main branch helpers (channel tests) ---
 
 type AgentStateEvent = {
-  messages: AgentMessage[];
-  isComplete: boolean;
-  isError: boolean;
-  isStreaming: boolean;
+  payload: AgentSession | undefined;
+  prevPayload: AgentSession | undefined | null;
 };
 
 function makeMessage(id: string, role: AgentMessage['role'] = 'assistant'): AgentMessage {
@@ -153,12 +149,14 @@ function createStoreHarness(initialSession: ReturnType<typeof makeSession>) {
     setSession(session: ReturnType<typeof makeSession>) {
       state = makeStoreState(session);
       stateRef.current = state;
-      for (const listener of [...listeners]) listener();
+      for (const listener of [...listeners]) listener(state);
     },
   };
 }
 
-function collectChannelEvents(channel: EventChannel<AgentStateEvent>) {
+function collectChannelEvents(
+  channel: EventChannel<SelectorChannelPayload<AgentSession | undefined>>,
+) {
   const events: AgentStateEvent[] = [];
   let ended = false;
 
@@ -178,6 +176,15 @@ function collectChannelEvents(channel: EventChannel<AgentStateEvent>) {
   return { events, get ended() { return ended; } };
 }
 
+async function createTestAgentStateChannel() {
+  return await runSaga(
+    { context: { readableStoreState: appStoreMock.getReadableState() } },
+    createAgentStateChannel,
+    agentId,
+    wsId,
+  ).toPromise() as EventChannel<SelectorChannelPayload<AgentSession | undefined>>;
+}
+
 // --- Tests ---
 
 beforeEach(() => {
@@ -193,25 +200,6 @@ describe('EXECUTOR_CONFIGS', () => {
   });
 });
 
-describe('createAgentStateChannel (initial snapshot)', () => {
-  it('delivers an already-complete agent snapshot emitted during initial subscription', async () => {
-    setAgentState(AgentStatus.Idle, [
-      makeMessageSimple('<<<COMMIT_MESSAGE>>>fix: commit<<<\/COMMIT_MESSAGE>>>'),
-    ]);
-
-    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
-    const event = await new Promise<any>((resolve) => channel.take(resolve));
-
-    expect(event.isComplete).toBe(true);
-    expect(event.messages).toHaveLength(1);
-    expect(event.messages[0].id).toBe('msg-1');
-
-    channel.close();
-  });
-});
-
-
-
 describe('createAgentStateChannel', () => {
   beforeEach(() => {
     listeners.clear();
@@ -221,28 +209,23 @@ describe('createAgentStateChannel', () => {
     vi.useRealTimers();
   });
 
-  it('emits active progress while selectAgentIsResponding is true', () => {
+  it('emits agent session selector updates without reading the configured Store directly', async () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
+    const channel = await createTestAgentStateChannel();
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({ isStreaming: true, messages: [makeMessage('m1', 'user')] }));
 
-    // Initial processUpdate emits one event, then setSession triggers another
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({
-      isComplete: false,
-      isError: false,
-      isStreaming: true,
-    });
+    expect(collected.events).toHaveLength(1);
+    expect(collected.events[0].payload?.messages.map((message) => message.id)).toEqual(['m1']);
     expect(collected.ended).toBe(false);
 
     channel.close();
   });
 
-  it('completes when responding stops and messages are available', () => {
+  it('emits completion session changes and leaves terminal handling to the monitor saga', async () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, wsId);
+    const channel = await createTestAgentStateChannel();
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({
@@ -253,69 +236,17 @@ describe('createAgentStateChannel', () => {
       messages: [makeMessage('m1')],
     }));
 
-    // Initial processUpdate emits one event, then setSession triggers a terminal event
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({
-      isComplete: true,
-      isError: false,
-      isStreaming: false,
-    });
-    expect(collected.events[1].messages.map((message) => message.id)).toEqual(['m1']);
-    expect(collected.ended).toBe(true);
+    expect(collected.events).toHaveLength(1);
+    expect(collected.events[0].payload?.messages.map((message) => message.id)).toEqual(['m1']);
+    expect(collected.events[0].payload?.status).toBe(AgentStatus.Idle);
+    expect(collected.ended).toBe(false);
+
+    channel.close();
   });
 
-  it('uses the idle summary as an assistant fallback when stream messages are missing', () => {
-    const harness = createStoreHarness(makeSession({
-      isStreaming: true,
-      messages: [makeMessage('user-1', 'user')],
-    }));
-    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
-    const collected = collectChannelEvents(channel);
-
-    harness.setSession(makeSession({
-      status: AgentStatus.Idle,
-      isStreaming: false,
-      isProcessing: false,
-      isResponding: false,
-      messages: [makeMessage('user-1', 'user')],
-      lastAgentResponse: '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>',
-    }));
-
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
-    expect(collected.events[1].messages.map((message) => message.role)).toEqual(['user', 'assistant']);
-    expect(collected.events[1].messages[1].contentBlocks).toEqual([
-      { type: 'text', text: '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>' },
-    ]);
-    expect(collected.ended).toBe(true);
-  });
-
-  it('does not synthesize an assistant fallback when the expected result tag is missing', () => {
-    const harness = createStoreHarness(makeSession({
-      isStreaming: true,
-      messages: [makeMessage('user-1', 'user')],
-    }));
-    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
-    const collected = collectChannelEvents(channel);
-
-    harness.setSession(makeSession({
-      status: AgentStatus.Idle,
-      isStreaming: false,
-      isProcessing: false,
-      isResponding: false,
-      messages: [makeMessage('user-1', 'user')],
-      lastAgentResponse: 'Generated a normal summary without the requested tag.',
-    }));
-
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
-    expect(collected.events[1].messages.map((message) => message.role)).toEqual(['user']);
-    expect(collected.ended).toBe(true);
-  });
-
-  it('emits explicit agent errors as terminal errors before completion', () => {
+  it('emits explicit agent error session changes', async () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, wsId);
+    const channel = await createTestAgentStateChannel();
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({
@@ -326,28 +257,25 @@ describe('createAgentStateChannel', () => {
       messages: [makeMessage('m1')],
     }));
 
-    // Initial processUpdate emits one event, then setSession triggers a terminal error event
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({
-      isComplete: false,
-      isError: true,
-      isStreaming: false,
-    });
-    expect(collected.ended).toBe(true);
+    expect(collected.events).toHaveLength(1);
+    expect(collected.events[0].payload?.status).toBe(AgentStatus.Error);
+    expect(collected.ended).toBe(false);
+
+    channel.close();
   });
 
-  it('cleans up after one terminal event and does not leave timers behind', () => {
+  it('closes the selector channel subscription and does not leave timers behind', async () => {
     vi.useFakeTimers();
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, wsId);
+    const channel = await createTestAgentStateChannel();
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({ status: AgentStatus.Idle, messages: [makeMessage('m1')] }));
+    channel.close();
     harness.setSession(makeSession({ status: AgentStatus.Idle, messages: [makeMessage('m2')] }));
 
-    // Initial processUpdate emits one event, then first setSession triggers terminal, second is ignored
-    expect(collected.events).toHaveLength(2);
-    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
+    expect(collected.events).toHaveLength(1);
+    expect(collected.events[0].payload?.messages.map((message) => message.id)).toEqual(['m1']);
     expect(collected.ended).toBe(true);
     expect(harness.listeners.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);

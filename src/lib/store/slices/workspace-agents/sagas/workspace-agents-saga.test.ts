@@ -98,9 +98,42 @@ vi.mock("$lib/store/slices/app-layout/sagas/spec-panel-saga", () => ({
   },
 }));
 
-vi.mock("$lib/store/redux-dispatch-bridge", () => ({
-  getReduxStore: () => ({ getState: getReduxStateMock, dispatch: vi.fn() }),
-}));
+vi.mock("$lib/store/store", async () => {
+  const effects = await import("redux-saga/effects");
+  const appStore = {
+    get state() {
+      return getReduxStateMock();
+    },
+    dispatch: vi.fn(),
+    getReadableState: () => ({
+      subscribe: (listener: (state: any) => void) => {
+        listener(getReduxStateMock());
+        return () => {};
+      },
+    }),
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => {
+      const selector = Object.assign(
+        (...args: any[]) => ({
+          subscribe: (listener: (value: any) => void) => {
+            listener(selectorFunc(getReduxStateMock(), ...args));
+            return () => {};
+          },
+        }),
+        {
+          select: selectorFunc,
+          effect: function* (...args: any[]) {
+            return yield effects.select(selectorFunc, ...args);
+          },
+          withStore: () => selector,
+        },
+      );
+
+      return selector;
+    },
+  };
+
+  return { appStore, store: appStore };
+});
 
 import type { AgentSession, AgentStatus } from "$shared/types";
 import {
@@ -135,11 +168,11 @@ import {
 } from "./agent-loading-saga";
 import {
   cancelWorkspaceAgentEventsForWorkspaceSaga,
+  initializeFileTrackingForWorkspaceSaga,
   recoverLateInitialAgentHydrationSaga,
   retroactiveWorkspaceMountCheckSaga,
   watchAgentDeletedSaga,
   watchAgentRestoredSaga,
-  watchFileTrackingLifecycleSaga,
   watchLateInitialAgentHydrationRecoverySaga,
   watchAgentRenamedSaga,
   watchWaitingForFirstMessageSaga,
@@ -189,8 +222,8 @@ describe("workspaceAgentsSaga", () => {
     expect(effect.type).toBe("ALL");
   });
 
-  it("registers agent watchers on mount and cancels them from the workspace unmount handler", () => {
-    const fileTrackingTask = { type: "file-tracking-task" } as const;
+  it("runs one-shot file tracking setup on mount and only tracks cancellable workspace tasks", () => {
+    const fileTrackingInitTask = { type: "file-tracking-init-task" } as const;
     const drawerGuardTask = { type: "drawer-guard-task" } as const;
     const iterator = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-1"));
 
@@ -201,11 +234,11 @@ describe("workspaceAgentsSaga", () => {
     });
 
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchFileTrackingLifecycleSaga, "ws-1"),
+      value: sagaEffects.fork(initializeFileTrackingForWorkspaceSaga, "ws-1"),
       done: false,
     });
 
-    const drawerGuardEffect = iterator.next(fileTrackingTask).value as any;
+    const drawerGuardEffect = iterator.next(fileTrackingInitTask).value as any;
     expect(drawerGuardEffect.type).toBe("FORK");
 
     expect(iterator.next(drawerGuardTask)).toEqual({
@@ -219,10 +252,6 @@ describe("workspaceAgentsSaga", () => {
 
     expect(cancelIterator.next()).toEqual({
       value: sagaEffects.put(clearCurrentlyViewed()),
-      done: false,
-    });
-    expect(cancelIterator.next()).toEqual({
-      value: cancelEffect(fileTrackingTask),
       done: false,
     });
     expect(cancelIterator.next()).toEqual({
@@ -353,7 +382,6 @@ describe("workspaceAgentsSaga", () => {
     expect(noWorkspace.next()).toEqual({ value: undefined, done: true });
   });
 
-
   it("renames an agent when agent:renamed is received (global, uses payload workspaceId)", () => {
     const iterator = watchAgentRenamedSaga();
 
@@ -419,7 +447,7 @@ describe("workspaceAgentsSaga", () => {
   });
 
   it("initializes file tracking on mount and dispatches loadGitStatus", () => {
-    const iterator = watchFileTrackingLifecycleSaga("ws-file-tracking");
+    const iterator = initializeFileTrackingForWorkspaceSaga("ws-file-tracking");
 
     // Should dispatch initFileTracking first
     const initEffect = iterator.next().value as any;
@@ -437,18 +465,11 @@ describe("workspaceAgentsSaga", () => {
     expect(putEffect.type).toBe("PUT");
     expect(putEffect.payload.action).toEqual(loadGitStatus("ws-file-tracking"));
 
-    // Should enter keep-alive loop
-    const keepAliveEffect = iterator.next().value as any;
-    expect(keepAliveEffect).toEqual(sagaEffects.delay(60_000));
-
-    expect(iterator.return(undefined)).toEqual({
-      value: undefined,
-      done: true,
-    });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
   });
 
   it("skips file tracking setup for invalid workspace ids", () => {
-    const iterator = watchFileTrackingLifecycleSaga("new");
+    const iterator = initializeFileTrackingForWorkspaceSaga("new");
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(setWorkspaceMock).not.toHaveBeenCalled();
