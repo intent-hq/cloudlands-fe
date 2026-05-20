@@ -86,7 +86,7 @@ import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
-import { getItem } from "$lib/store/utils/collection-utils";
+import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import {
   clearWorkspacePendingDeletion,
   initialState as workspaceInitialState,
