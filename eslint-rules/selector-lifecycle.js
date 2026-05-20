@@ -9,13 +9,10 @@ const SELECTOR_IMPORT_SOURCE_PATTERN = /selectors/;
 const DERIVED_RUNE_NAMES = new Set(['$derived']);
 
 const SELECTOR_NESTED_MESSAGE =
-  'Selector readables from *-selectors files must be created during component initialization (top-level <script>). Create the selector store once and reuse it in callbacks, handlers, and async functions.';
-
-const GET_DISPATCH_MESSAGE =
-  'getDispatch() must be called during component initialization (top-level <script>). Capture dispatch once and reuse it in callbacks, handlers, and async functions.';
+  'Selector readables from *-selectors files must be created during component initialization (top-level <script>). For one-off reads in callbacks, handlers, and async functions, use selector.select(store.state, ...) with the configured Store instance.';
 
 const GET_SELECTOR_MESSAGE =
-  'Do not wrap selector readables with svelte/store get(). Create the selector readable during component initialization and use it reactively, or use selector.select(...) with Redux state when you need a one-off read.';
+  'Do not wrap selector readables with svelte/store get(). Create the selector readable during component initialization and use it reactively, or use selector.select(store.state, ...) with the configured Store instance when you need a one-off read.';
 
 const REDUNDANT_DERIVED_READABLE_MESSAGE =
   'Do not mirror readable values with $derived($readable$). Use the readable value directly instead.';
@@ -159,8 +156,6 @@ export default {
   create(context) {
     const svelteStoreGetNames = new Set();
     const selectorNames = new Set();
-    const getDispatchNames = new Set();
-
     return {
       ImportDeclaration(node) {
         const source = node.source.value;
@@ -174,10 +169,6 @@ export default {
             svelteStoreGetNames.add(specifier.local.name);
           }
 
-          if (specifier.imported.name === 'getDispatch') {
-            getDispatchNames.add(specifier.local.name);
-          }
-
           if (isSelectorImportSource(source) && specifier.imported.name.startsWith('select')) {
             selectorNames.add(specifier.local.name);
           }
@@ -185,11 +176,6 @@ export default {
       },
 
       CallExpression(node) {
-        if (isTrackedIdentifier(node.callee, getDispatchNames) && isRestrictedLifecycleContext(node)) {
-          context.report({ node, message: GET_DISPATCH_MESSAGE });
-          return;
-        }
-
         if (isTrackedIdentifier(node.callee, svelteStoreGetNames) && isSelectorCall(node.arguments[0], selectorNames)) {
           context.report({ node, message: GET_SELECTOR_MESSAGE });
           return;

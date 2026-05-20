@@ -21,7 +21,6 @@ import {
 } from '$shared/types';
 
 const {
-  mockDispatch,
   mockInvoke,
   mockTrack,
   mockLogger,
@@ -258,22 +257,11 @@ vi.mock('$lib/services/analytics', () => ({
   track: mockTrack,
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mockDispatch,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({}),
-  }),
-  getReduxDispatch: () => mockDispatch,
-  dispatch: mockDispatch,
-}));
-
-vi.mock('$lib/store/store', () => ({
-  appStore: mockSelectorStore,
-  store: mockSelectorStore,
-}));
+  return createStoreMockModule(mockSelectorStore);
+});
 
 vi.mock('$lib/store/configured-store', () => ({
   store: mockSelectorStore,

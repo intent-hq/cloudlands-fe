@@ -73,9 +73,6 @@ vi.mock('$features/agent/browser', () => ({
     return () => {};
   },
 }));
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mockState.dispatch,
-}));
 vi.mock('$lib/store/store', async () => {
   const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 
