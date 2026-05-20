@@ -27,7 +27,8 @@ const { storeRef } = vi.hoisted(() => ({
   storeRef: { current: null as Store | null },
 }));
 
-vi.mock('$lib/store/store', () => {
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
   const mockStore = {
     dispatch: (action: unknown) => storeRef.current?.dispatch(action as never),
     get state() {
@@ -41,10 +42,7 @@ vi.mock('$lib/store/store', () => {
     }),
   };
 
-  return {
-    store: mockStore,
-    appStore: mockStore,
-  };
+  return createStoreMockModule(mockStore);
 });
 
 import {
