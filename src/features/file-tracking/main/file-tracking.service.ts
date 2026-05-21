@@ -45,6 +45,58 @@ async function execGitCommandLocal(args: string[], cwd: string): Promise<void> {
 
 const logger = new Logger({ category: 'FileTrackingService' });
 
+function hasSameStableAttribution(
+  existing: TrackedChange,
+  incoming: Omit<TrackedChange, 'id'>,
+): boolean {
+  const existingAgent = existing.attribution?.agent;
+  const incomingAgent = incoming.attribution?.agent;
+
+  return (
+    existing.attribution?.manual === incoming.attribution?.manual &&
+    existingAgent?.agentId === incomingAgent?.agentId &&
+    existingAgent?.agentName === incomingAgent?.agentName &&
+    existingAgent?.sessionId === incomingAgent?.sessionId &&
+    existingAgent?.turnNumber === incomingAgent?.turnNumber &&
+    existingAgent?.messageId === incomingAgent?.messageId &&
+    existingAgent?.toolCallId === incomingAgent?.toolCallId
+  );
+}
+
+function hasSameContentMetadata(
+  existing: TrackedChange,
+  incoming: Omit<TrackedChange, 'id'>,
+): boolean {
+  return (
+    existing.content?.oldContentSha === incoming.content?.oldContentSha &&
+    existing.content?.oldContent === incoming.content?.oldContent &&
+    existing.content?.newContentSha === incoming.content?.newContentSha &&
+    existing.content?.newContent === incoming.content?.newContent &&
+    existing.content?.diffSha === incoming.content?.diffSha &&
+    existing.content?.diff === incoming.content?.diff &&
+    existing.content?.isFullFileContent === incoming.content?.isFullFileContent
+  );
+}
+
+function hasMaterialTrackedChangeUpdate(
+  existing: TrackedChange,
+  incoming: Omit<TrackedChange, 'id'>,
+): boolean {
+  return (
+    existing.file !== incoming.file ||
+    existing.relativePath !== incoming.relativePath ||
+    existing.stage !== incoming.stage ||
+    existing.status !== incoming.status ||
+    existing.stats?.additions !== incoming.stats?.additions ||
+    existing.stats?.deletions !== incoming.stats?.deletions ||
+    existing.stats?.binary !== incoming.stats?.binary ||
+    existing.commitHash !== incoming.commitHash ||
+    existing.prNumber !== incoming.prNumber ||
+    !hasSameStableAttribution(existing, incoming) ||
+    !hasSameContentMetadata(existing, incoming)
+  );
+}
+
 /**
  * Service for managing file changes through git workflow stages.
  * Provides comprehensive tracking of file modifications, staging, and commits
@@ -225,7 +277,7 @@ export class FileTrackingService {
         }
         // Files that had any entries removed (partial trim or full eviction)
         const affectedFiles = [...beforeCounts.keys()].filter(
-          (f) => (afterCounts.get(f) ?? 0) < beforeCounts.get(f)!
+          (f) => (afterCounts.get(f) ?? 0) < beforeCounts.get(f)!,
         );
         await this.storage.saveTrackedChanges(cleanedChanges);
         logger.info('Cleaned up old tracked changes', {
@@ -408,13 +460,17 @@ export class FileTrackingService {
 
       if (existingIndex >= 0) {
         // Update existing change at the same stage, preserving the ID
+        const existingChange = changes[existingIndex];
+        const timestamp = hasMaterialTrackedChangeUpdate(existingChange, change)
+          ? (change.attribution?.timestamp ?? Date.now())
+          : existingChange.attribution.timestamp;
         trackedChange = {
-          ...changes[existingIndex],
+          ...existingChange,
           ...change,
           attribution: {
-            ...changes[existingIndex].attribution,
+            ...existingChange.attribution,
             ...change.attribution,
-            timestamp: Date.now(),
+            timestamp,
           },
         };
         changes[existingIndex] = trackedChange;
@@ -481,6 +537,9 @@ export class FileTrackingService {
 
         if (existing) {
           // Update existing change at the same stage, preserving the ID
+          const timestamp = hasMaterialTrackedChangeUpdate(existing, change)
+            ? (change.attribution?.timestamp ?? Date.now())
+            : existing.attribution.timestamp;
           trackedChange = {
             ...existing,
             ...change,
@@ -488,7 +547,7 @@ export class FileTrackingService {
             attribution: {
               ...existing.attribution,
               ...change.attribution,
-              timestamp: Date.now(),
+              timestamp,
             },
           };
         } else {
@@ -1072,7 +1131,6 @@ export class FileTrackingService {
   isGitRepo(): boolean {
     return this.storage.getIsGitRepo();
   }
-
 
   /**
    * Clear all tracked changes.

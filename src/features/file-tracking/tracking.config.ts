@@ -79,6 +79,7 @@ export const TRACKING_CONFIG = {
       '.venv',
       'virtualenv',
       'node_modules',
+      'google-cloud-sdk',
       '__pycache__',
       '.pytest_cache',
       '.mypy_cache',

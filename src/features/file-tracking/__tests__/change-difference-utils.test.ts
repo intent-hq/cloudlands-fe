@@ -113,8 +113,8 @@ describe('hasChangesDifference', () => {
     });
   });
 
-  describe('ID differences (FIX for reactivity issue)', () => {
-    it('should return true when change ID differs', () => {
+  describe('volatile backend metadata differences', () => {
+    it('should return false when only change ID differs', () => {
       const timestamp = Date.now();
       const existing = [
         createChange({
@@ -127,18 +127,16 @@ describe('hasChangesDifference', () => {
       const incoming = [
         createChange({
           relativePath: 'file.ts',
-          id: 'new-id', // Different ID indicates new change object from backend
+          id: 'new-id',
           stats: { additions: 10, deletions: 5 }, // Same stats
           attribution: { timestamp }, // Same timestamp
         }),
       ];
 
-      expect(hasChangesDifference(existing, incoming)).toBe(true);
+      expect(hasChangesDifference(existing, incoming)).toBe(false);
     });
-  });
 
-  describe('attribution timestamp differences (FIX for reactivity issue)', () => {
-    it('should return true when attribution timestamp differs', () => {
+    it('should return false when only attribution timestamp differs', () => {
       const existing = [
         createChange({
           relativePath: 'file.ts',
@@ -152,7 +150,62 @@ describe('hasChangesDifference', () => {
           relativePath: 'file.ts',
           id: 'same-id', // Same ID
           stats: { additions: 10, deletions: 5 }, // Same stats
-          attribution: { timestamp: 2000 }, // Different timestamp - file was modified
+          attribution: { timestamp: 2000 },
+        }),
+      ];
+
+      expect(hasChangesDifference(existing, incoming)).toBe(false);
+    });
+
+    it('should return true when stable attribution metadata differs', () => {
+      const existing = [
+        createChange({
+          relativePath: 'file.ts',
+          id: 'same-id',
+          stats: { additions: 10, deletions: 5 },
+          attribution: { manual: true, timestamp: 1000 },
+        }),
+      ];
+      const incoming = [
+        createChange({
+          relativePath: 'file.ts',
+          id: 'same-id',
+          stats: { additions: 10, deletions: 5 },
+          attribution: { manual: false, timestamp: 2000 },
+        }),
+      ];
+
+      expect(hasChangesDifference(existing, incoming)).toBe(true);
+    });
+  });
+
+  describe('status and content differences', () => {
+    it('should return true when file status changes', () => {
+      const timestamp = Date.now();
+      const existing = [
+        createChange({ relativePath: 'file.ts', status: 'modified', attribution: { timestamp } }),
+      ];
+      const incoming = [
+        createChange({ relativePath: 'file.ts', status: 'deleted', attribution: { timestamp } }),
+      ];
+
+      expect(hasChangesDifference(existing, incoming)).toBe(true);
+    });
+
+    it('should return true when content metadata changes', () => {
+      const timestamp = Date.now();
+      const existing = [
+        createChange({
+          relativePath: 'file.ts',
+          attribution: { timestamp },
+          content: { diffSha: 'old-sha', isFullFileContent: true },
+        }),
+      ];
+      const incoming = [
+        createChange({
+          relativePath: 'file.ts',
+          attribution: { timestamp },
+          content: { diffSha: 'new-sha', isFullFileContent: true },
         }),
       ];
 
@@ -249,7 +302,7 @@ describe('hasChangesDifference', () => {
       expect(hasChangesDifference(existing, incoming)).toBe(true);
     });
 
-    it('should handle undefined attribution timestamp', () => {
+    it('should ignore timestamp-only attribution presence', () => {
       const existing = [
         createChange({
           relativePath: 'file.ts',
@@ -267,7 +320,7 @@ describe('hasChangesDifference', () => {
         }),
       ];
 
-      expect(hasChangesDifference(existing, incoming)).toBe(true);
+      expect(hasChangesDifference(existing, incoming)).toBe(false);
     });
   });
 });

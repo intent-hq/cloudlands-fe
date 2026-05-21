@@ -16,8 +16,10 @@ import type { TrackedChange, StageTransition, CommitInfo } from './types';
  * - Array length
  * - File path + stage combinations
  * - Stats (additions/deletions)
- * - Change ID (indicates new change object from backend)
- * - Attribution timestamp (indicates file was modified)
+ * - Status and stable attribution/content metadata
+ *
+ * Ignores volatile backend-generated change IDs and attribution timestamps so
+ * semantically identical change lists do not trigger redundant UI updates.
  */
 export function hasChangesDifference(
   existing: TrackedChange[],
@@ -34,24 +36,55 @@ export function hasChangesDifference(
     const existingChange = existingByPathAndStage.get(key);
 
     if (!existingChange) return true;
+    // Check if path or status changed
+    if (existingChange.file !== newChange.file || existingChange.status !== newChange.status) {
+      return true;
+    }
     // Check if stats changed
     if (
       existingChange.stats?.additions !== newChange.stats?.additions ||
-      existingChange.stats?.deletions !== newChange.stats?.deletions
+      existingChange.stats?.deletions !== newChange.stats?.deletions ||
+      existingChange.stats?.binary !== newChange.stats?.binary
     ) {
       return true;
     }
-    // Check if ID changed (indicates a new change object from backend)
-    if (existingChange.id !== newChange.id) {
+    // Check stable attribution metadata while ignoring volatile timestamps
+    if (!hasSameStableAttribution(existingChange, newChange)) {
       return true;
     }
-    // Check if attribution timestamp changed (indicates file was modified)
-    if (existingChange.attribution?.timestamp !== newChange.attribution?.timestamp) {
+    if (!hasSameContentMetadata(existingChange, newChange)) {
       return true;
     }
   }
 
   return false;
+}
+
+function hasSameStableAttribution(existing: TrackedChange, incoming: TrackedChange): boolean {
+  const existingAgent = existing.attribution?.agent;
+  const incomingAgent = incoming.attribution?.agent;
+
+  return (
+    existing.attribution?.manual === incoming.attribution?.manual &&
+    existingAgent?.agentId === incomingAgent?.agentId &&
+    existingAgent?.agentName === incomingAgent?.agentName &&
+    existingAgent?.sessionId === incomingAgent?.sessionId &&
+    existingAgent?.turnNumber === incomingAgent?.turnNumber &&
+    existingAgent?.messageId === incomingAgent?.messageId &&
+    existingAgent?.toolCallId === incomingAgent?.toolCallId
+  );
+}
+
+function hasSameContentMetadata(existing: TrackedChange, incoming: TrackedChange): boolean {
+  return (
+    existing.content?.oldContentSha === incoming.content?.oldContentSha &&
+    existing.content?.oldContent === incoming.content?.oldContent &&
+    existing.content?.newContentSha === incoming.content?.newContentSha &&
+    existing.content?.newContent === incoming.content?.newContent &&
+    existing.content?.diffSha === incoming.content?.diffSha &&
+    existing.content?.diff === incoming.content?.diff &&
+    existing.content?.isFullFileContent === incoming.content?.isFullFileContent
+  );
 }
 
 /**

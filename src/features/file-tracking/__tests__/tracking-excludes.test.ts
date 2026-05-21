@@ -19,6 +19,7 @@ describe('tracking-excludes', () => {
         '.venv',
         'virtualenv',
         'node_modules',
+        'google-cloud-sdk',
         '__pycache__',
         '.pytest_cache',
         '.mypy_cache',
@@ -35,6 +36,7 @@ describe('tracking-excludes', () => {
       '.venv/lib/python3.11/site-packages/pkg.py',
       'services/api/virtualenv/lib/python3.11/site-packages/pkg.py',
       'node_modules/pkg/index.js',
+      'google-cloud-sdk/platform/gsutil/gslib/__init__.py',
       'src\\__pycache__\\module.pyc',
       'pkg/.tox/py311/tmp.py',
       'pkg/.nox/session/tmp.py',
@@ -50,6 +52,7 @@ describe('tracking-excludes', () => {
       'environment/config.py',
       'src/virtualenv-tools/index.ts',
       'packages/node_modules_utils.ts',
+      'tools/google-cloud-sdk-helper.ts',
       'cache/.toxicity/config',
     ];
 
@@ -65,6 +68,12 @@ describe('tracking-excludes', () => {
     expect(
       shouldExcludeFromDefaultFileTracking({ path: 'venv/lib/pkg.py', statusCode: '??' }),
     ).toBe(true);
+    expect(
+      shouldExcludeFromDefaultFileTracking({
+        path: 'google-cloud-sdk/platform/gsutil/gslib/__init__.py',
+        statusCode: '??',
+      }),
+    ).toBe(true);
 
     expect(
       shouldExcludeFromDefaultFileTracking({ path: '.venv/lib/pkg.py', statusCode: ' M' }),
@@ -74,6 +83,12 @@ describe('tracking-excludes', () => {
     ).toBe(false);
     expect(
       shouldExcludeFromDefaultFileTracking({ path: '.venv/lib/pkg.py', statusCode: 'D ' }),
+    ).toBe(false);
+    expect(
+      shouldExcludeFromDefaultFileTracking({
+        path: 'google-cloud-sdk/platform/gsutil/gslib/__init__.py',
+        statusCode: ' M',
+      }),
     ).toBe(false);
 
     expect(
@@ -99,6 +114,7 @@ describe('tracking-excludes', () => {
       { path: 'venv/a.py', action: 'Create' },
       { path: '.venv/b.py', action: 'Create' },
       { path: 'node_modules/c.js', action: 'Create' },
+      { path: 'google-cloud-sdk/platform/gsutil/d.py', action: 'Create' },
       { path: '__pycache__/d.pyc', action: 'Create' },
       { path: '.pytest_cache/e', action: 'Create' },
       { path: '.mypy_cache/f', action: 'Create' },
@@ -109,8 +125,8 @@ describe('tracking-excludes', () => {
     const summary = summarizeDefaultFileTrackingExcludes(skipped.map((item) => item.path));
 
     expect(kept.map((item) => item.path)).toEqual(['src/venv_utils.ts']);
-    expect(skipped).toHaveLength(6);
-    expect(summary.skippedCount).toBe(6);
+    expect(skipped).toHaveLength(7);
+    expect(summary.skippedCount).toBe(7);
     expect(summary.skippedSample).toHaveLength(5);
   });
 });

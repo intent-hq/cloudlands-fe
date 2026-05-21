@@ -67,6 +67,11 @@ describe('GitIntegrationService default file-tracking excludes', () => {
             stage: ChangeStage.Unstaged,
           },
           { path: '__pycache__/module.pyc', action: 'Create', stage: ChangeStage.Unstaged },
+          {
+            path: 'google-cloud-sdk/platform/gsutil/gslib/__init__.py',
+            action: 'Create',
+            stage: ChangeStage.Unstaged,
+          },
           { path: 'src/venv_utils.ts', action: 'Create', stage: ChangeStage.Unstaged },
           {
             path: 'node_modules/local-package/index.ts',
