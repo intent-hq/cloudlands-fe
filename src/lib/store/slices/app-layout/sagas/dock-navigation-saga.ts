@@ -75,8 +75,8 @@ function dispatchNavigateMessageEvent(direction: "next" | "previous"): void {
     dispatchWindowEvent("navigate-message", { direction });
 }
 export function createDockNavigationChannel(
-    wsId: string,
-    getDrawerState: () => WorkspaceNavigationDrawerState,
+    _wsId: string,
+    _getDrawerState: () => WorkspaceNavigationDrawerState,
 ): EventChannel<DockShortcutEvent> {
     return eventChannel((emit) => {
         const isMac = isMacPlatform();

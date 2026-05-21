@@ -42,7 +42,6 @@ const {
   takeEveryFromElectronChannelMock,
   takeEveryFromWindowEventMock,
   createDockNavigationWatcherMock,
-  dispatchMock,
   getFileExtensionMock,
   appStoreFactoryMock,
   getPanelLayoutManagerMock,

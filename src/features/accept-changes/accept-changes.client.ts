@@ -128,7 +128,7 @@ export class AcceptChangesClient {
       );
     }
 
-    return response.data!;
+    return response.data as AcceptChangesResult;
   }
 
   /**
@@ -164,7 +164,7 @@ export class AcceptChangesClient {
       );
     }
 
-    return response.data!;
+    return response.data as AcceptChangesResult;
   }
 
   /**
@@ -196,7 +196,7 @@ export class AcceptChangesClient {
       );
     }
 
-    return response.data!;
+    return response.data as ExportFilesResult;
   }
 
   /**
