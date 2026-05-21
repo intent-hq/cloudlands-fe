@@ -21,6 +21,7 @@ import {
   sagas,
 } from "./sagas";
 import {
+  registeredSagaNames,
   startAllAppSagas,
 } from "./saga-registration";
 import type { GenericAction } from "svelte-redux-toolkit/types";
@@ -49,7 +50,6 @@ function createFakeStoreRuntime(initialState = {} as StoreState) {
       return state;
     },
     runSaga: vi.fn(() => vi.fn()),
-    registerSagas: vi.fn(() => runtime as unknown as Store<any, any, any>),
     dispose,
   };
 
@@ -73,10 +73,8 @@ describe("configured app Store", () => {
     expect(selectStoreState.select(state)).toBe(state);
   });
 
-  it("registers existing reducer and saga maps on one package Store instance", () => {
+  it("keeps app reducers on the configured package Store and app saga names external", () => {
     const registeredReducers = appStore.getReducers();
-    const storeWithSagas = appStore.registerSagas(sagas);
-    const registeredSagas = storeWithSagas.getSagas();
 
     expect(reducers).not.toHaveProperty("storeUtility");
     expect(registeredReducers).not.toHaveProperty("storeUtility");
@@ -86,24 +84,21 @@ describe("configured app Store", () => {
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);
     }
-    for (const [name, saga] of Object.entries(sagas)) {
-      expect(registeredSagas[name]).toBe(saga);
-    }
-    expect(storeWithSagas).toBe(appStore);
-    expect(storeWithSagas.getSagaNames()).toEqual(sagaNames);
+    expect(registeredSagaNames).toEqual(sagaNames);
+    expect(registeredSagaNames).toEqual(Object.keys(sagas));
   });
 
-  it("starts every registered app saga through Store.runSaga by name", () => {
+  it("starts every registered app saga through Store.runSaga by function", () => {
     const runtime = createFakeStoreRuntime();
 
-    const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any, any>);
+    const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any>);
+    const sagasList = Object.values(sagas);
 
-    expect(runtime.registerSagas).toHaveBeenCalledWith(sagas);
-    expect(runtime.runSaga).toHaveBeenCalledTimes(sagaNames.length);
-    sagaNames.forEach((name, index) => {
-      expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, name);
+    expect(runtime.runSaga).toHaveBeenCalledTimes(sagasList.length);
+    sagasList.forEach((saga, index) => {
+      expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, saga);
     });
-    expect(stopHandlers).toHaveLength(sagaNames.length);
+    expect(stopHandlers).toHaveLength(sagasList.length);
   });
 });
 
@@ -111,7 +106,7 @@ describe("app Store initialization", () => {
   it("initializes the configured Store and exposes dispatch/state through context", () => {
     const runtime = createFakeStoreRuntime();
 
-    const context = initAppStore(undefined, runtime as unknown as Store<any, any, any>);
+    const context = initAppStore(undefined, runtime as unknown as Store<any, any>);
 
     expect(runtime.init).toHaveBeenCalledOnce();
     expect(context.store).toBe(runtime);
