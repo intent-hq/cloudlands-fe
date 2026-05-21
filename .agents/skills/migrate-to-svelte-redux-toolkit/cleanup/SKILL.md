@@ -57,7 +57,7 @@ If a migration needs to be reverted:
 
 ### Reverting a migration
 
-Rollback restores the old store file and affected components from git history, removes the new slice directory, and removes the matching reducer constructor entry plus `registerSagas(...)` saga entry from the app Store setup.
+Rollback restores the old store file and affected components from git history, removes the new slice directory, removes the matching reducer constructor entry, and removes any matching `store.runSaga(sagaFn)` startup call from the app Store setup.
 
 ### Minimizing risk
 
@@ -209,3 +209,4 @@ export const cartCleanupReport: SliceCleanupReport = {
 | Compatibility shim exception | Document a temporary compatibility shim when one is required |
 | Unsafe cleanup | Bad: delete while consumers still import the old store |
 | Final handoff evidence | Produce final per-slice cleanup evidence |
+

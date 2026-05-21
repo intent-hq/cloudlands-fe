@@ -2,10 +2,10 @@
 name: svelte-redux-toolkit/component-integration
 description: >-
   Wire the Store class into a Svelte 5 app. Create a Store instance with
-  constructor reducer maps, register app sagas, configure optional middleware, call
+  constructor reducer maps, configure optional middleware, call
   store.init() + onDestroy in the root layout, dispatch through the configured
   Store instance, and use selectFoo() at component init with $selectorResult$
-  in templates. Start app sagas through store.runSaga(name). Source:
+  in templates. Start app sagas through store.runSaga(sagaFn). Source:
   src/store.ts and skills/svelte-redux-toolkit/SKILL.md §7.
 type: sub-skill
 library: svelte-redux-toolkit
@@ -33,17 +33,11 @@ From `src/store.ts`:
 ```typescript
 export class Store<
   TStateMap extends StoreStateMap = {},
-  TSagas extends SagasMap = {},
   TReducers extends StoreReducersInput<TStateMap> = StoreReducersInput<TStateMap>,
 > {
   constructor(reducersMap?: TReducers, middleware?: StoreMiddleware | StoreMiddleware[]);
-  registerSagas<TRegisteredSagas extends SagasMap>(
-    sagasMap: TRegisteredSagas
-  ): Store<TStateMap, TSagas & TRegisteredSagas, TReducers>;
   addMiddleware(middleware: StoreMiddleware | StoreMiddleware[]): void;
   getReducers(): StoreReducersMap<TReducers>;
-  getSagas(): TSagas;
-  getSagaNames(): SagaName<TSagas>[];
   get state(): StoreState<this>;
   get dispatch(): Store["dispatch"];
   createSelector<ARGS extends any[] = [], R = unknown>(
@@ -51,7 +45,7 @@ export class Store<
   ): StoreSelector<R, ARGS, StoreState<this>>;
 
   // Initialize Store-owned Redux/readable state, bind the saga manager orchestrator,
-  // and return a disposer equivalent to store.dispose(). Does NOT start any registered sagas.
+  // and return a disposer equivalent to store.dispose(). Does NOT start app sagas.
   // If a store context already exists, returns a noop.
   init(initialState?: PreloadedStoreState): () => void;
 
@@ -62,34 +56,33 @@ export class Store<
   // Safe to call before init(); equivalent to the init() returned disposer.
   dispose(): void;
 
-  // Start a registered saga by name. Returns a cancel function that stops it.
-  // Throws if init() has not been called or the name is not registered.
-  runSaga(name: string): () => void;
+  // Start a saga function. Returns a cancel function that stops it.
+  // Throws if init() has not been called or the derived name is reserved.
+  runSaga(saga: Saga): () => void;
 }
 ```
 
 Key rules:
 
-- Pass app-owned reducers in the constructor map and app-owned sagas to `Store.registerSagas(sagasMap)`.
-- For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference, and chaining `registerSagas(...)` preserves saga-name inference, without an explicit `: Store` annotation.
+- Pass app-owned reducers in the constructor map and start app-owned sagas with `store.runSaga(sagaFn)` after `store.init()`.
+- For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation.
 - Use `store.createSelector(...)` for app-local selectors that should infer that configured store's `StoreState<typeof store>`; generic/shared selector helpers should accept a configured `Store` instead of importing a standalone selector factory.
-- Register only app-owned reducers in constructor maps and app-owned sagas through `registerSagas(...)`. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Internal reducer domains can appear in `StoreState<typeof store>`, but `getSagas()` and `getSagaNames()` expose only app-owned sagas. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
+- Register only app-owned reducers in constructor maps. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization. Internal reducer domains can appear in `StoreState<typeof store>`. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
 - Custom middlewares are **prepended** before the base store middleware chain.
-- `init()` snapshots the app-owned saga registry, builds the Redux store/readable state, and starts the package-owned manager. Registered app sagas are **not** started automatically — start each one explicitly via `store.runSaga(name)`, usually from `onMount` in a component/layout. It accepts an app saga name string only — no function-form variant and no direct `@internal_sagaManager` usage.
+- `init()` builds the Redux store/readable state and starts the package-owned manager. App sagas are **not** started automatically — start each one explicitly via `store.runSaga(sagaFn)`, usually from `onMount` in a component/layout. It derives the manager name from the saga function and rejects direct `@internal_sagaManager` usage.
 - `initDevTool()` is a separate, explicit devtools registration step after `init()` when inspection hooks are needed; `dispose()` cleans up that registration along with Store-owned tasks.
 
 ## 2. Setup — root layout bootstrap
 
-Create a single `Store` instance with app-owned reducers and registered app sagas at module scope:
+Create a single `Store` instance with app-owned reducers at module scope:
 
 ```typescript
 // src/lib/store/store.ts
 import { Store } from "svelte-redux-toolkit/store";
 import type { StoreState } from "svelte-redux-toolkit/types";
 import { counterReducer } from "./slices/counter/counter-slice";
-import { counterSaga }    from "./slices/counter/sagas/counter-saga";
 
-export const store = new Store({ counter: counterReducer }).registerSagas({ counterSaga });
+export const store = new Store({ counter: counterReducer });
 export type AppState = StoreState<typeof store>;
 ```
 
@@ -110,11 +103,11 @@ Bootstrap in `+layout.svelte` by initializing the configured Store instance and 
 
 Pass `store.init(initialState)` when the app needs preloaded state. `store.init()` should run during root component initialization so the Store-owned runtime is ready before children use selectors or dispatch through the Store; `onDestroy(dispose)` handles teardown. The returned disposer calls `store.dispose()`, so the existing `const dispose = store.init(); onDestroy(dispose);` pattern remains valid and preferred in Svelte roots. Use direct `store.dispose()` only when non-component code or tests own the whole Store lifetime.
 
-## 3. Starting registered sagas — `store.runSaga`
+## 3. Starting app sagas — `store.runSaga`
 
-`store.init()` starts the package-owned saga manager but does **not** auto-start registered app sagas. Every app saga provided through `Store.registerSagas(...)` must be started explicitly by name. The manager is not in the Store saga registry, and consumers should not start or register `@internal_sagaManager` directly. `store.runSaga(name)` accepts a **registered app saga name string only** — there is no function-form variant.
+`store.init()` starts the package-owned saga manager but does **not** auto-start app sagas. Every app saga must be started explicitly by function. Consumers should not start `@internal_sagaManager` directly. `store.runSaga(sagaFn)` derives a manager name from the saga function.
 
-### Mount-scoped — `onMount(() => store.runSaga(name))`
+### Mount-scoped — `onMount(() => store.runSaga(sagaFn))`
 
 Call from `onMount` to tie the saga's lifetime to that mount (most app-wide sagas run in the root layout, next to `store.init()`):
 
@@ -122,26 +115,27 @@ Call from `onMount` to tie the saga's lifetime to that mount (most app-wide saga
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store/store";
+  import { editorSaga } from "$lib/store/slices/editor/sagas/editor-saga";
 
-  onMount(() => store.runSaga("editorSaga"));
+  onMount(() => store.runSaga(editorSaga));
 </script>
 ```
 
 Svelte calls the returned cancel function when the component unmounts.
 
-### Imperative — `store.runSaga(name)`
+### Imperative — `store.runSaga(sagaFn)`
 
 For non-component code (services, tests, IPC handlers), start a saga directly and keep the returned cancel function:
 
 ```ts
-const cancel = store.runSaga("editorSaga");
+const cancel = store.runSaga(editorSaga);
 // later:
 cancel();
 ```
 
-`store.runSaga(name)` throws if `init()` has not been called or the saga name is not in the registry.
+`store.runSaga(sagaFn)` throws if `init()` has not been called or the derived saga name is reserved for package internals.
 
-Full Store teardown is separate from per-saga cancellation: `store.dispose()` and the disposer returned by `store.init()` tear down the initialized Store runtime and stop saga tasks owned by that Store. Continue to use the cancel function returned by `store.runSaga(name)` for normal mount-scoped or operation-scoped saga cleanup.
+Full Store teardown is separate from per-saga cancellation: `store.dispose()` and the disposer returned by `store.init()` tear down the initialized Store runtime and stop saga tasks owned by that Store. Continue to use the cancel function returned by `store.runSaga(sagaFn)` for normal mount-scoped or operation-scoped saga cleanup.
 
 ## 4. Using state in components
 

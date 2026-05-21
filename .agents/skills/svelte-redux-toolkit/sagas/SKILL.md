@@ -43,7 +43,7 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 - Pass action creators directly to `take`, `takeEvery`, `takeLatest`, and `takeLeading`; do not pass `.type`.
 - Read state through named selectors with `.effect(...)` inside sagas.
 - Search before adding watchers: trigger action, worker name, registration name, and operation terms must have one canonical owner unless fan-out is intentional and documented.
-- Register app-owned sagas with `Store.registerSagas(sagasMap)` and start them explicitly with `store.runSaga(name)`.
+- Start app-owned sagas explicitly with `store.runSaga(sagaFn)` after `store.init()`.
 - Close manually-created channels in `finally`.
 - Handle async action failures with `.failure(error)` and normalize non-`Error` throws.
 - Keep retried work idempotent when using `retryWithTimeout`.
@@ -66,7 +66,7 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 - For wrapper-action debouncing, use the public `debounceSaga(debounceAction, ms)` helper.
 - For transient failures, use `retryWithTimeout` and branch on all outcomes: `success`, `retries-exhausted`, and `timeout`.
 - For async generators, use `wrapStreamingGenerator` from saga code and handle stream errors locally at the call site if app reporting is needed.
-- For saga lifetimes, call `store.runSaga(name)` from `onMount` when component/layout lifetime owns the work, or from services/tests when imperative control owns the returned cancel function. Use `store.dispose()` only for whole-Store teardown; it stops running saga tasks owned by the initialized Store context.
+- For saga lifetimes, call `store.runSaga(sagaFn)` from `onMount` when component/layout lifetime owns the work, or from services/tests when imperative control owns the returned cancel function. Use `store.dispose()` only for whole-Store teardown; it stops running saga tasks owned by the initialized Store context.
 - For saga manager crash records, cleanup, serialized storage, auto-restart, or backoff behavior, use the dedicated `svelte-redux-toolkit/saga-manager` skill instead of expanding this general saga checklist.
 
 ## Examples

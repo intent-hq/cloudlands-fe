@@ -270,17 +270,17 @@ Verifier output must say either “canonical Redux state only” or list every d
 
 ## Gate 5 — canonical action/selector/saga owners
 
-Hard-fail duplicate action type strings, copied selector implementations, parallel saga watchers, or duplicate saga registration names unless the handoff documents an intentional fan-out owner.
+Hard-fail duplicate action type strings, copied selector implementations, parallel saga watchers, or duplicate derived saga function names unless the handoff documents an intentional fan-out owner.
 
 Pass/fail checks:
 
 - **PASS** — implementor reported search terms/paths for state, actions, selectors, and sagas before adding new owners.
 - **PASS** — new action creators live in one owning slice and other files import them.
 - **PASS** — selectors are imported/composed instead of copied.
-- **PASS** — each trigger action has one watcher owner, and each `Store.registerSagas(...)` saga name is unique.
+- **PASS** — each trigger action has one watcher owner, and each saga function name used with `store.runSaga(sagaFn)` is unique or intentionally reuses the same implementation.
 - **FAIL** — the same `createAction`/`createAsyncAction` type string appears in multiple owner modules.
 - **FAIL** — two selectors expose the same name/body without a documented canonical owner.
-- **FAIL** — two saga watchers own the same trigger action or registration name without a documented fan-out reason.
+- **FAIL** — two saga watchers own the same trigger action or derived saga name without a documented fan-out reason.
 
 Verifier output must say either “canonical action/selector/saga owners verified” or list each duplicate owner and the canonical file to keep.
 
