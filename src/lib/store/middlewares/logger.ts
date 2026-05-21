@@ -35,8 +35,7 @@ function getActionTitleStyle(stateChanged: boolean): string {
 
 type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 
-type LazyLoggerPayload = {
-  action: unknown;
+type LazyStatePayload = {
   prevState: unknown;
   nextState: unknown;
   changes: StateDiff;
@@ -107,14 +106,10 @@ function createStateDiff(prevState: unknown, nextState: unknown): StateDiff {
   return changes;
 }
 
-function createLazyLoggerPayload(action: unknown, prevState: unknown, nextState: unknown): LazyLoggerPayload {
-  const lazyPayload: Partial<LazyLoggerPayload> = {};
+function createLazyStatePayload(prevState: unknown, nextState: unknown): LazyStatePayload {
+  const lazyPayload: Partial<LazyStatePayload> = {};
 
   Object.defineProperties(lazyPayload, {
-    action: {
-      get: () => action,
-      enumerable: true,
-    },
     prevState: {
       get: () => prevState,
       enumerable: true,
@@ -129,21 +124,20 @@ function createLazyLoggerPayload(action: unknown, prevState: unknown, nextState:
     },
   });
 
-  return lazyPayload as LazyLoggerPayload;
+  return lazyPayload as LazyStatePayload;
 }
 
-function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state (no changes)" | "changes"): string {
+function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state" | "state (no changes)"): string {
   switch (label) {
     case "prev state":
       return "color: #9E9E9E; font-weight: bold";
     case "action":
       return "color: #03A9F4; font-weight: bold";
     case "next state":
+    case "state":
       return "color: #4CAF50; font-weight: bold";
     case "state (no changes)":
       return "color: #9E9E9E; font-weight: lighter";
-    case "changes":
-      return "color: #FF9800; font-weight: bold";
   }
 }
 
@@ -166,7 +160,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
   %cprev state%c  — state before action
   %caction%c      — dispatched action
   %cnext state%c  — state after action
-  %cchanges%c     — lazy action/state/diff payload (click to expand)
+  %cstate%c       — lazy state/diff payload (click to expand)
   %cstate (no changes)%c — state unchanged
 
 %cConsole API:%c
@@ -188,7 +182,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
       "",
       "color: #4CAF50; font-weight: bold",
       "",
-      "color: #FF9800; font-weight: bold",
+      "color: #4CAF50; font-weight: bold",
       "",
       "color: #9E9E9E; font-weight: lighter",
       "",
@@ -207,15 +201,16 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const nextState = storeApi.getState();
     const stateChanged = prevState !== nextState;
     const title = getActionTitle(action);
-    const lazyPayload = createLazyLoggerPayload(action, prevState, nextState);
+    const lazyStatePayload = createLazyStatePayload(prevState, nextState);
 
     console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
 
     if (!stateChanged) {
-      console.log("%c action    ", getLogLabelStyle("action"), lazyPayload);
-      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
+      console.log("%c action    ", getLogLabelStyle("action"), action);
+      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyStatePayload);
     } else {
-      console.log("%c changes  ", getLogLabelStyle("changes"), lazyPayload);
+      console.log("%c action    ", getLogLabelStyle("action"), action);
+      console.log("%c state    ", getLogLabelStyle("state"), lazyStatePayload);
     }
 
     console.groupEnd();
