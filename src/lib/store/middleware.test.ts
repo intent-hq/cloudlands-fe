@@ -251,13 +251,14 @@ describe("window.intent Redux logging interface", () => {
   });
 });
 
-type LazyStatePayloadForTest = {
+type LazyLoggerPayloadForTest = {
+  action: unknown;
   prevState: unknown;
   nextState: unknown;
   changes: Record<string, { prev: unknown; next: unknown }>;
 };
 
-function expectEnumerableGetter(object: unknown, property: keyof LazyStatePayloadForTest) {
+function expectEnumerableGetter(object: unknown, property: keyof LazyLoggerPayloadForTest) {
   const descriptor = Object.getOwnPropertyDescriptor(object, property);
 
   expect(descriptor?.get).toEqual(expect.any(Function));
@@ -284,7 +285,7 @@ describe("createLoggerMiddleware", () => {
     expect(consoleLog).toHaveBeenCalledTimes(1);
   });
 
-  it("logs changed state with the raw action and a lazy state payload in a collapsed group", async () => {
+  it("logs changed state with a single lazy payload in a collapsed group", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
@@ -316,23 +317,23 @@ describe("createLoggerMiddleware", () => {
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
-    expect(consoleLog).toHaveBeenCalledTimes(2);
+    expect(consoleLog).toHaveBeenCalledTimes(1);
 
-    const lazyStatePayload = consoleLog.mock.calls[1]?.[2] as LazyStatePayloadForTest;
+    const lazyPayload = consoleLog.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
 
-    expect(consoleLog.mock.calls[0]).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold", action]);
-    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
-    expect(lazyStatePayload).not.toBe(action);
-    expect(lazyStatePayload).not.toBe(prevState);
-    expect(lazyStatePayload).not.toBe(nextState);
-    expect(Object.keys(lazyStatePayload)).toEqual(["prevState", "nextState", "changes"]);
-    expect(Object.getOwnPropertyDescriptor(lazyStatePayload, "action")).toBeUndefined();
-    expectEnumerableGetter(lazyStatePayload, "prevState");
-    expectEnumerableGetter(lazyStatePayload, "nextState");
-    expectEnumerableGetter(lazyStatePayload, "changes");
-    expect(lazyStatePayload.prevState).toBe(prevState);
-    expect(lazyStatePayload.nextState).toBe(nextState);
-    expect(lazyStatePayload.changes).toEqual({
+    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(lazyPayload).not.toBe(action);
+    expect(lazyPayload).not.toBe(prevState);
+    expect(lazyPayload).not.toBe(nextState);
+    expect(Object.keys(lazyPayload)).toEqual(["action", "prevState", "nextState", "changes"]);
+    expectEnumerableGetter(lazyPayload, "action");
+    expectEnumerableGetter(lazyPayload, "prevState");
+    expectEnumerableGetter(lazyPayload, "nextState");
+    expectEnumerableGetter(lazyPayload, "changes");
+    expect(lazyPayload.action).toBe(action);
+    expect(lazyPayload.prevState).toBe(prevState);
+    expect(lazyPayload.nextState).toBe(nextState);
+    expect(lazyPayload.changes).toEqual({
       count: { prev: 1, next: 2 },
       "todos.byId.todo-1.title": { prev: "Draft", next: "Done" },
       "todos.byId.todo-1.tags[1]": { prev: "soon", next: "shipped" },
@@ -362,21 +363,23 @@ describe("createLoggerMiddleware", () => {
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
-    expect(consoleLog.mock.calls).toHaveLength(2);
-    expect(consoleLog.mock.calls[0]).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold", action]);
-    expect(consoleLog.mock.calls.slice(1).map((call) => call.slice(0, 2))).toEqual([
+    expect(consoleLog.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ["%c action    ", "color: #03A9F4; font-weight: bold"],
       ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter"],
     ]);
 
-    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyStatePayloadForTest;
+    const actionPayload = consoleLog.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
+    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
 
+    expect(actionPayload).toBe(statePayload);
     expect(statePayload).not.toBe(action);
     expect(statePayload).not.toBe(state);
-    expect(Object.keys(statePayload)).toEqual(["prevState", "nextState", "changes"]);
-    expect(Object.getOwnPropertyDescriptor(statePayload, "action")).toBeUndefined();
+    expect(Object.keys(statePayload)).toEqual(["action", "prevState", "nextState", "changes"]);
+    expectEnumerableGetter(statePayload, "action");
     expectEnumerableGetter(statePayload, "prevState");
     expectEnumerableGetter(statePayload, "nextState");
     expectEnumerableGetter(statePayload, "changes");
+    expect(statePayload.action).toBe(action);
     expect(statePayload.prevState).toBe(state);
     expect(statePayload.nextState).toBe(state);
     expect(statePayload.changes).toEqual({});

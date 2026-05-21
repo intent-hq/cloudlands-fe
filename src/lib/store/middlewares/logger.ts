@@ -35,7 +35,8 @@ function getActionTitleStyle(stateChanged: boolean): string {
 
 type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 
-type LazyStatePayload = {
+type LazyLoggerPayload = {
+  action: unknown;
   prevState: unknown;
   nextState: unknown;
   changes: StateDiff;
@@ -106,10 +107,14 @@ function createStateDiff(prevState: unknown, nextState: unknown): StateDiff {
   return changes;
 }
 
-function createLazyStatePayload(prevState: unknown, nextState: unknown): LazyStatePayload {
-  const lazyPayload: Partial<LazyStatePayload> = {};
+function createLazyLoggerPayload(action: unknown, prevState: unknown, nextState: unknown): LazyLoggerPayload {
+  const lazyPayload: Partial<LazyLoggerPayload> = {};
 
   Object.defineProperties(lazyPayload, {
+    action: {
+      get: () => action,
+      enumerable: true,
+    },
     prevState: {
       get: () => prevState,
       enumerable: true,
@@ -124,7 +129,7 @@ function createLazyStatePayload(prevState: unknown, nextState: unknown): LazySta
     },
   });
 
-  return lazyPayload as LazyStatePayload;
+  return lazyPayload as LazyLoggerPayload;
 }
 
 function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state" | "state (no changes)"): string {
@@ -201,16 +206,15 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const nextState = storeApi.getState();
     const stateChanged = prevState !== nextState;
     const title = getActionTitle(action);
-    const lazyStatePayload = createLazyStatePayload(prevState, nextState);
+    const lazyPayload = createLazyLoggerPayload(action, prevState, nextState);
 
     console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
 
     if (!stateChanged) {
-      console.log("%c action    ", getLogLabelStyle("action"), action);
-      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyStatePayload);
+      console.log("%c action    ", getLogLabelStyle("action"), lazyPayload);
+      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
     } else {
-      console.log("%c action    ", getLogLabelStyle("action"), action);
-      console.log("%c state    ", getLogLabelStyle("state"), lazyStatePayload);
+      console.log("%c state    ", getLogLabelStyle("state"), lazyPayload);
     }
 
     console.groupEnd();
