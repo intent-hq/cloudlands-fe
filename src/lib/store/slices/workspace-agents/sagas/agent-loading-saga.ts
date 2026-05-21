@@ -61,14 +61,36 @@ const INITIAL_AGENT_ACTIVATION_TIMEOUT_MS = 60_000;
 function* waitForAgentSession(
   agentId: string,
   timeoutMs = AGENT_RESTORE_TIMEOUT_MS,
+  isReady: (session: AgentSession) => boolean = () => true,
 ) {
   const maxAttempts = Math.ceil(timeoutMs / AGENT_RESTORE_POLL_MS);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
-    if (session) return session;
+    if (session && isReady(session)) return session;
     yield* delay(AGENT_RESTORE_POLL_MS);
   }
   return null;
+}
+
+function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
+  return !!session?.backendSessionId && String(session.status).toLowerCase() !== 'pending';
+}
+
+function getStoredAgentBackendSessionId(agent: StoredAgent): string | null {
+  return (
+    (agent as any).backendSessionId ??
+    (agent as any).sessionId ??
+    (agent as any).backendAgentId ??
+    null
+  );
+}
+
+function storedAgentHasInitialPrompt(agent: StoredAgent): boolean {
+  const prompt =
+    (agent as any).metadata?.initialMessage ??
+    (agent as any).config?.metadata?.initialMessage ??
+    (agent as any).config?.prompt;
+  return typeof prompt === 'string' ? prompt.trim().length > 0 : !!prompt;
 }
 
 function buildInitialActivationConfig(
@@ -279,8 +301,8 @@ export function* restoreInitialAgent(
   if (initialAgentOnDisk) {
     // Use workspace-scoped Redux selector for race-safe lookup
     const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(initialAgentId);
-    const isAlreadyActive = existingSession && !(existingSession as any).isPending;
-    if (!isAlreadyActive && !existingSession) {
+    const isAlreadyUsable = hasUsableInitialAgentSession(existingSession);
+    if (!isAlreadyUsable) {
       // Check if this is a pending agent from workspace creation that needs
       // its initial message sent. The backend creates these with status Pending
       // and stores initialMessage in metadata — resumeSession would just load
@@ -288,13 +310,15 @@ export function* restoreInitialAgent(
       const diskMeta = (initialAgentOnDisk as any).metadata;
       const diskMessages = (initialAgentOnDisk as any).messages;
       const hasExistingMessages = Array.isArray(diskMessages) && diskMessages.length > 0;
+      const diskBackendSessionId = getStoredAgentBackendSessionId(initialAgentOnDisk);
       const isPendingWithMessage =
-        diskMeta?.initialMessage &&
+        storedAgentHasInitialPrompt(initialAgentOnDisk) &&
         !hasExistingMessages &&
-        ((initialAgentOnDisk as any).status === 'pending' ||
-          !(initialAgentOnDisk as any).backendSessionId);
+        (String((initialAgentOnDisk as any).status).toLowerCase() === 'pending' ||
+          !diskBackendSessionId ||
+          !hasUsableInitialAgentSession(existingSession));
       try {
-        let restored: AgentSession | null;
+        let restored: AgentSession | null | undefined;
         if (isPendingWithMessage) {
           // Dispatch the saga-owned activation request so backend creation and
           // first-message sending happen through the Redux creation flow.
@@ -318,12 +342,15 @@ export function* restoreInitialAgent(
           restored = yield* waitForAgentSession(
             initialAgentId,
             INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
+            hasUsableInitialAgentSession,
           );
-        } else {
+        } else if (!existingSession) {
           // Agent has messages or an active backend session — restore it via
           // the saga-owned disk-load action and observe Redux for the result.
           yield* put(ensureAgentSessionLoaded(wsId, initialAgentId));
           restored = yield* waitForAgentSession(initialAgentId);
+        } else {
+          restored = existingSession;
         }
         if (restored) {
           yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
@@ -347,6 +374,7 @@ export function* restoreInitialAgent(
       const newSession: AgentSession | null = yield* waitForAgentSession(
         initialAgentId,
         INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
+        hasUsableInitialAgentSession,
       );
       if (newSession) {
         yield* put(markAgentRecentlyCreated(wsId, initialAgentId));

@@ -544,8 +544,17 @@ describe('new saga-owned agent creation request handlers', () => {
   });
 
   it('routes initial-agent activation through the saga-owned factory call', () => {
-    const gen = handleActivateInitialAgentRequestedSaga('ws-init', 'agent-init', {
-      id: 'agent-init',
+    const agentId = 'agent-init-route';
+    const existing = {
+      id: agentId,
+      workspaceId: 'ws-init',
+      name: 'Initial Agent',
+      backendSessionId: null,
+      status: AgentStatus.Pending,
+      messages: [],
+    } as AgentSession;
+    const gen = handleActivateInitialAgentRequestedSaga('ws-init', agentId, {
+      id: agentId,
       workspaceId: 'ws-init' as any,
       name: 'Initial Agent',
       model: 'sonnet',
@@ -558,10 +567,121 @@ describe('new saga-owned agent creation request handlers', () => {
     expect((step.value as any).type).toBe('SELECT');
     step = gen.next([]);
     expect((step.value as any).type).toBe('SELECT');
-    step = gen.next(undefined);
+    step = gen.next(existing);
+    expect((step.value as any).type).toBe('PUT');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: agentId,
+      backendSessionId: null,
+      activationState: AgentActivationState.ACTIVATING,
+    });
+    step = gen.next();
     expect((step.value as any).type).toBe('RACE');
     expect((step.value as any).payload).toHaveProperty('result');
     expect((step.value as any).payload).toHaveProperty('timeout');
+    const createCall = (step.value as any).payload.result.next().value;
+    const createConfig = createCall.payload.args[1];
+    expect(createConfig).toMatchObject({
+      id: agentId,
+      initialMessage: 'hello',
+      skipInitialPrompt: true,
+    });
+    step = gen.next({
+      result: {
+        success: true,
+        agent: { ...existing, backendSessionId: 'backend-init', status: AgentStatus.Idle },
+      },
+    });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
+    step = gen.next();
+    expect((step.value as any).type).toBe('CALL');
+    expect(gen.next().done).toBe(true);
+  });
+
+  it('replaces a pending initial session with the activated backend session', () => {
+    const agentId = 'agent-init-replace';
+    const existing = {
+      id: agentId,
+      workspaceId: 'ws-init',
+      name: 'Initial Agent',
+      backendSessionId: null,
+      status: AgentStatus.Pending,
+      messages: [],
+    } as AgentSession;
+    const created = {
+      ...existing,
+      backendSessionId: 'backend-init',
+      status: AgentStatus.Idle,
+    } as AgentSession;
+    const gen = handleActivateInitialAgentRequestedSaga('ws-init', agentId, {
+      id: agentId,
+      workspaceId: 'ws-init' as any,
+      name: 'Initial Agent',
+      model: 'sonnet',
+      initialMessage: 'hello',
+    });
+
+    let step = gen.next();
+    step = gen.next(makeWorkspace('ws-init'));
+    step = gen.next([existing]);
+    step = gen.next(existing);
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    step = gen.next();
+    expect((step.value as any).type).toBe('RACE');
+    step = gen.next({ result: { success: true, agent: created } });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: agentId,
+      backendSessionId: 'backend-init',
+      activationState: AgentActivationState.ACTIVE,
+      workspaceId: 'ws-init',
+    });
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
+    step = gen.next();
+    expect((step.value as any).type).toBe('CALL');
+    expect(gen.next().done).toBe(true);
+  });
+
+  it('records an actionable error session when initial activation times out', () => {
+    const agentId = 'agent-init-timeout';
+    const existing = {
+      id: agentId,
+      workspaceId: 'ws-init',
+      name: 'Initial Agent',
+      backendSessionId: null,
+      status: AgentStatus.Pending,
+      messages: [],
+    } as AgentSession;
+    const gen = handleActivateInitialAgentRequestedSaga('ws-init', agentId, {
+      id: agentId,
+      workspaceId: 'ws-init' as any,
+      name: 'Initial Agent',
+      model: 'sonnet',
+      initialMessage: 'hello',
+    });
+
+    let step = gen.next();
+    step = gen.next(makeWorkspace('ws-init'));
+    step = gen.next([existing]);
+    step = gen.next(existing);
+    expect((step.value as any).payload.action.payload[0].activationState).toBe(AgentActivationState.ACTIVATING);
+    step = gen.next();
+    expect((step.value as any).type).toBe('RACE');
+    step = gen.next({ timeout: true });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: agentId,
+      backendSessionId: null,
+      activationState: AgentActivationState.ERROR,
+      lastActivationError: 'Timed out activating initial agent from Redux request',
+    });
+    expect(gen.next().done).toBe(true);
   });
 
   it('creates forked agents in the saga with cloned history metadata', () => {
