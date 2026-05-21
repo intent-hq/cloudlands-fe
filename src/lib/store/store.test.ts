@@ -17,13 +17,11 @@ import {
 import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
 import {
+  registeredSagaNames,
   sagaNames,
   sagas,
-} from "./sagas";
-import {
-  registeredSagaNames,
   startAllAppSagas,
-} from "./saga-registration";
+} from "./sagas";
 import type { GenericAction } from "svelte-redux-toolkit/types";
 import type { StoreState } from "./types";
 
@@ -73,7 +71,7 @@ describe("configured app Store", () => {
     expect(selectStoreState.select(state)).toBe(state);
   });
 
-  it("keeps app reducers on the configured package Store and app saga names external", () => {
+  it("keeps app reducers on the configured package Store and derives app saga names from the registry", () => {
     const registeredReducers = appStore.getReducers();
 
     expect(reducers).not.toHaveProperty("storeUtility");
@@ -85,20 +83,21 @@ describe("configured app Store", () => {
       expect(registeredReducers[name]).toBe(reducer);
     }
     expect(registeredSagaNames).toEqual(sagaNames);
-    expect(registeredSagaNames).toEqual(Object.keys(sagas));
+    expect(sagaNames).toEqual(sagas.map(({ name }) => name));
+    expect(new Set(sagaNames).size).toBe(sagaNames.length);
+    expect(sagas.every(({ saga }) => typeof saga === "function")).toBe(true);
   });
 
-  it("starts every registered app saga through Store.runSaga by function", () => {
+  it("starts every registered app saga through Store.runSaga in registry order", () => {
     const runtime = createFakeStoreRuntime();
 
     const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any>);
-    const sagasList = Object.values(sagas);
 
-    expect(runtime.runSaga).toHaveBeenCalledTimes(sagasList.length);
-    sagasList.forEach((saga, index) => {
+    expect(runtime.runSaga).toHaveBeenCalledTimes(sagas.length);
+    sagas.forEach(({ saga }, index) => {
       expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, saga);
     });
-    expect(stopHandlers).toHaveLength(sagasList.length);
+    expect(stopHandlers).toHaveLength(sagas.length);
   });
 });
 
