@@ -68,7 +68,6 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
     console.log(
       `📝 Electron logs: main=${launched.logPaths.mainProcess}, renderer=${launched.logPaths.renderer}`,
     );
-
   });
 
   test.afterAll(async () => {
@@ -135,7 +134,9 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
       // For user messages, there's also a .user-message child with the same attribute.
       // Use .user-message for users and .message-nav-target for assistants (only one element each).
       const userMessages = page.locator('[data-message-role="user"].user-message:visible');
-      const assistantMessages = page.locator('[data-message-role="assistant"].message-nav-target:visible');
+      const assistantMessages = page.locator(
+        '[data-message-role="assistant"].message-nav-target:visible',
+      );
 
       // Wait for the initial agent response by checking for the actual
       // assistant message containing our expected mock text.  This is much
@@ -147,9 +148,9 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
       // The mock agent streams "Acknowledged. Ready for next instruction."
       // so we wait for that text to appear in an assistant message.
       console.log('⏳ Waiting for initial assistant response with expected content...');
-      await expect(
-        assistantMessages.filter({ hasText: 'Acknowledged' }).first(),
-      ).toBeVisible({ timeout: 90_000 });
+      await expect(assistantMessages.filter({ hasText: 'Acknowledged' }).first()).toBeVisible({
+        timeout: 90_000,
+      });
       console.log('✅ Initial prompt completed — assistant message with expected content visible');
 
       const initialUserCount = await userMessages.count();
@@ -174,32 +175,43 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
 
       // Send follow-up messages with retry logic.
       // The follow-up send path involves multiple async stages (saga → IPC → ACP provider)
-      // and can fail silently in CI.  When no assistant response appears within 20s,
-      // we dump Redux diagnostics and resend the message.
+      // and can fail silently in CI.  Only resend when the user message itself never
+      // appears; if the app already accepted the message, keep waiting for the
+      // assistant response instead of duplicating the same follow-up.
       for (let i = 1; i <= NUM_FOLLOWUPS; i++) {
         const followUpText = `Follow-up message ${i} of ${NUM_FOLLOWUPS}`;
         const expectedUserCount = initialUserCount + i;
         const expectedAssistantCount = initialAssistantCount + i;
         const MAX_SEND_ATTEMPTS = 3;
         let assistantAppeared = false;
+        let shouldSendMessage = true;
 
         for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
-          await sendFollowUpMessage(page, followUpText);
-          console.log(`📤 Sent follow-up ${i}/${NUM_FOLLOWUPS} (attempt ${attempt}/${MAX_SEND_ATTEMPTS})`);
+          if (shouldSendMessage) {
+            await sendFollowUpMessage(page, followUpText);
+            console.log(
+              `📤 Sent follow-up ${i}/${NUM_FOLLOWUPS} (attempt ${attempt}/${MAX_SEND_ATTEMPTS})`,
+            );
+          } else {
+            console.log(
+              `⏳ Re-checking follow-up ${i}/${NUM_FOLLOWUPS} response ` +
+                `(attempt ${attempt}/${MAX_SEND_ATTEMPTS})`,
+            );
+          }
 
           // Wait 20s per attempt for the assistant response (shorter than full 45s to leave room for retries)
           const perAttemptTimeout = attempt < MAX_SEND_ATTEMPTS ? 20_000 : 45_000;
           try {
-            // On retries, user message count may be higher (duplicate sends) — just
-            // check that we have AT LEAST the expected count.
-            await expect(userMessages).toHaveCount(expectedUserCount, { timeout: 10_000 }).catch(() => {
-              // Tolerate extra user messages from retries
+            await expect(userMessages).toHaveCount(expectedUserCount, { timeout: 10_000 });
+            await expect(assistantMessages).toHaveCount(expectedAssistantCount, {
+              timeout: perAttemptTimeout,
             });
-            await expect(assistantMessages).toHaveCount(expectedAssistantCount, { timeout: perAttemptTimeout });
             assistantAppeared = true;
             break;
           } catch {
             // Dump Redux diagnostics before retrying
+            const visibleUserCount = await userMessages.count();
+            const visibleAssistantCount = await assistantMessages.count();
             const diagState = await page.evaluate((wsId) => {
               try {
                 const ctx = (window as any).intent?.reduxContext;
@@ -225,9 +237,21 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
                     lastMsgStreaming: s?.messages?.[s.messages.length - 1]?.isStreaming,
                   };
                 });
-              } catch (e: any) { return { error: e.message }; }
+              } catch (e: any) {
+                return { error: e.message };
+              }
             }, workspaceId);
-            console.log(`⚠️  Follow-up ${i} attempt ${attempt} timed out. Redux state:`, JSON.stringify(diagState));
+            shouldSendMessage = visibleUserCount < expectedUserCount;
+            console.log(
+              `⚠️  Follow-up ${i} attempt ${attempt} timed out. ` +
+                `Visible counts: ${visibleUserCount} user + ${visibleAssistantCount} assistant. ` +
+                `Redux state: ${JSON.stringify(diagState)}`,
+            );
+            if (!shouldSendMessage) {
+              console.log(
+                'ℹ️  Follow-up user message is already visible — not resending duplicate text',
+              );
+            }
             if (attempt < MAX_SEND_ATTEMPTS) {
               // Wait for agent to settle before retrying
               await waitForAgentNotStreaming(page, workspaceId, 15_000);
@@ -256,7 +280,9 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
       const finalAssistantCount = initialAssistantCount + NUM_FOLLOWUPS;
       await expect(userMessages).toHaveCount(finalUserCount, { timeout: 5_000 });
       await expect(assistantMessages).toHaveCount(finalAssistantCount, { timeout: 5_000 });
-      console.log(`✅ Final count: ${finalUserCount} user + ${finalAssistantCount} assistant messages`);
+      console.log(
+        `✅ Final count: ${finalUserCount} user + ${finalAssistantCount} assistant messages`,
+      );
 
       // Last assistant message should contain the mock response
       const lastAssistant = assistantMessages.last();
@@ -287,10 +313,10 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
       await takeScreenshot(page, 'followup-10-rounds-complete');
     } catch (err) {
       // Capture failure screenshot for debugging in CI artifacts
-      await takeScreenshot(page, 'followup-FAILURE').catch(() => { });
+      await takeScreenshot(page, 'followup-FAILURE').catch(() => {});
       throw err;
     } finally {
-      await archiveAndGoHome(page, workspaceId).catch(() => { });
+      await archiveAndGoHome(page, workspaceId).catch(() => {});
     }
   });
 });

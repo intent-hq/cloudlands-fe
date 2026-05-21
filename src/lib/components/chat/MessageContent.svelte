@@ -10,6 +10,7 @@
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import {
   parseAgentMessage,
   parseSuggestedPrompts,
@@ -22,8 +23,6 @@
 } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
 
-  // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
-  const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
   import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
@@ -289,9 +288,7 @@
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}
     <div class="mermaid-block my-2">
-      {#await MermaidRenderer then module}
-        <module.default code={parsedBlock.content || ''} />
-      {/await}
+      <MermaidRenderer code={parsedBlock.content || ''} />
     </div>
   {:else if parsedBlock.type === 'code'}
     <CodeBlock

@@ -12,10 +12,16 @@ import { type WorkspaceEvent } from '../../events/types';
 import { getAttributionEngine } from './provenance/attribution-engine';
 import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
 import type { Actor } from '../../../shared/types';
-import type { FileChange, DiffChunk } from '../../../lib/store/slices/workspace/utils/change-detector.types';
+import type {
+  FileChange,
+  DiffChunk,
+} from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 // Re-export types for compatibility
-export type { FileChange, DiffChunk } from '../../../lib/store/slices/workspace/utils/change-detector.types';
+export type {
+  FileChange,
+  DiffChunk,
+} from '../../../lib/store/slices/workspace/utils/change-detector.types';
 
 // Import modular components
 import {
@@ -90,15 +96,20 @@ export class ChangeDetectorRefactored extends EventEmitter {
   // Polling
   private gitPollingTimer: NodeJS.Timeout | null = null;
   private debouncedPollTimer: NodeJS.Timeout | null = null;
-  private intervalChangedHandler: (({ newInterval }: { newInterval: number }) => void) | null = null;
+  private intervalChangedHandler: (({ newInterval }: { newInterval: number }) => void) | null =
+    null;
   private fileWatcherActiveOnStart: boolean = false;
   private readonly DEBOUNCE_DELAY_MS = 300;
+  private readonly FOLLOW_UP_POLL_INTERVAL_MS = 2000;
+  private readonly FOLLOW_UP_POLL_WINDOW_MS = 15000;
   private lastGitPoll: string | null = null;
   private lastGitStatus: GitStatus | null = null;
   private gitPollErrorCount: number = 0;
   private lastActivityTime: number = Date.now();
   private isPollingGitStatus: boolean = false;
   private pollRequestedWhilePolling: boolean = false;
+  private followUpPollTimer: NodeJS.Timeout | null = null;
+  private followUpPollUntil: number = 0;
   private readonly IDLE_THRESHOLD = 60000; // 1 minute of inactivity
   private isIdle = false;
 
@@ -431,11 +442,44 @@ export class ChangeDetectorRefactored extends EventEmitter {
       clearTimeout(this.debouncedPollTimer);
       this.debouncedPollTimer = null;
     }
+    if (this.followUpPollTimer) {
+      clearTimeout(this.followUpPollTimer);
+      this.followUpPollTimer = null;
+    }
+    this.followUpPollUntil = 0;
     if (this.gitPollingTimer) {
       clearInterval(this.gitPollingTimer);
       this.gitPollingTimer = null;
       logger.debug('Git polling stopped');
     }
+  }
+
+  private scheduleFollowUpPolling(): void {
+    this.followUpPollUntil = Math.max(
+      this.followUpPollUntil,
+      Date.now() + this.FOLLOW_UP_POLL_WINDOW_MS,
+    );
+    this.scheduleNextFollowUpPoll();
+  }
+
+  private scheduleNextFollowUpPoll(): void {
+    if (this.followUpPollTimer || Date.now() >= this.followUpPollUntil) return;
+
+    this.followUpPollTimer = setTimeout(() => {
+      this.followUpPollTimer = null;
+      if (!this.isRunning) return;
+
+      this.pollGitStatus()
+        .catch((error) => {
+          logger.debug('Follow-up git poll failed', {
+            workspaceId: this.workspaceId,
+            error: (error as Error).message,
+          });
+        })
+        .finally(() => {
+          this.scheduleNextFollowUpPoll();
+        });
+    }, this.FOLLOW_UP_POLL_INTERVAL_MS);
   }
 
   /**
@@ -510,6 +554,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
           // Handle processed changes
           if (processed.length > 0) {
+            this.scheduleFollowUpPolling();
             await this.eventCoordinator.handleChangesBatch(processed);
             this.performanceMonitor.recordEvent();
 
@@ -523,6 +568,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
               const action = change.change.action;
               if (action === 'Modify' || action === 'Create') {
                 const absolutePath = `${this.workspacePath}/${change.change.path}`;
+	                // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
                 this.emitFileContentChangedToRenderer(absolutePath, change.change.path);
               }
             }
@@ -584,9 +630,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * Shared helper used by both detectGitChanges() and getCurrentChanges()
    * to ensure consistent handling of all file types (staged, unstaged, untracked, deleted, renamed).
    */
-  private buildChangesFromStatus(
-    status: GitStatus,
-  ): Array<{
+  private buildChangesFromStatus(status: GitStatus): Array<{
     path: string;
     action: 'Create' | 'Modify' | 'Delete' | 'Rename';
     stage: 'staged' | 'unstaged';
@@ -790,6 +834,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
     // Emit file:content-changed event to renderer for real-time file viewer updates
     // This ensures the file viewer updates when files are edited externally
     if (action === 'Modify' || action === 'Create') {
+	      // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
       this.emitFileContentChangedToRenderer(event.path, event.relativePath);
     }
 
@@ -970,13 +1015,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
       const agentChange = changes.find((c) => c.change.actor?.type === 'agent');
       const provenance: DiffChunk['provenance'] = agentChange?.change.actor
         ? {
-          source: 'agent',
-          agentId: agentChange.change.actor.id,
-          agentName: agentChange.change.actor.name,
-        }
+            source: 'agent',
+            agentId: agentChange.change.actor.id,
+            agentName: agentChange.change.actor.name,
+          }
         : {
-          source: 'git',
-        };
+            source: 'git',
+          };
 
       const diffChunk: DiffChunk = {
         id: uuidv4(),
@@ -1012,7 +1057,12 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
       // Include all files that exist on disk for snapshot taking
       // (stagedDeleted files are already deleted, so they don't need snapshots)
-      const allFiles = [...status.staged, ...status.stagedAdded, ...status.unstaged, ...status.untracked];
+      const allFiles = [
+        ...status.staged,
+        ...status.stagedAdded,
+        ...status.unstaged,
+        ...status.untracked,
+      ];
 
       const snapshotStart = Date.now();
       await this.snapshotManager.takeSnapshots(allFiles, false);
@@ -1238,13 +1288,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
       const provenance: DiffChunk['provenance'] =
         foundAgentId !== null
           ? {
-            source: 'agent',
-            agentId: foundAgentId,
-            agentName: foundAgentName || 'Agent',
-          }
+              source: 'agent',
+              agentId: foundAgentId,
+              agentName: foundAgentName || 'Agent',
+            }
           : {
-            source: 'git',
-          };
+              source: 'git',
+            };
 
       return {
         id: uuidv4(),

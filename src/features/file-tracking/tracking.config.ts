@@ -36,7 +36,7 @@ export const TRACKING_CONFIG = {
 
     // File watching
     disableFileWatcher: false,
-    gitPollingOnly: true, // Native @parcel/watcher crashes the process (libc++abi Napi::Error)
+    gitPollingOnly: false,
 
     // Ignored patterns (in addition to .gitignore)
     additionalIgnorePatterns: ['.workspace-notes/**', '.workspace-notes.backup/**'],

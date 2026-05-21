@@ -10,6 +10,7 @@
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import Fa from 'svelte-fa';
   import {
   faCode,
@@ -37,9 +38,6 @@
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-
-  // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
-  const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
 
   const logger = createLogger('StreamingMessageContent');
 
@@ -487,9 +485,7 @@
       </div>
     {:else if parsedBlock.type === 'mermaid'}
       <div class="mermaid-block my-8">
-        {#await MermaidRenderer then module}
-          <module.default code={parsedBlock.content || ''} />
-        {/await}
+        <MermaidRenderer code={parsedBlock.content || ''} />
       </div>
     {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
       {@const patchData = parsedBlock.metadata.patchData}

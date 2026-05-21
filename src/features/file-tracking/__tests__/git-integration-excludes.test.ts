@@ -171,3 +171,71 @@ describe('GitIntegrationService default file-tracking excludes', () => {
     expect(trackingCalls[0][1]).toMatchObject({ file: 'environment/config.py' });
   });
 });
+
+describe('GitIntegrationService startup catch-up', () => {
+  let fileTrackingService: any;
+  let service: GitIntegrationService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUuid.mockReturnValue('tracked-change-startup');
+    fileTrackingService = {
+      getChanges: vi.fn().mockResolvedValue({ changes: [] }),
+      trackChangesBatch: vi.fn().mockResolvedValue([]),
+      clearFileStageEntriesBatch: vi.fn().mockResolvedValue(undefined),
+    };
+    service = new GitIntegrationService('workspace-1', '/workspace', fileTrackingService);
+  });
+
+  it('preserves fresh-workspace initial sync skip when the detector has not seen changes', async () => {
+    const detector = {
+      on: vi.fn(),
+      getStats: vi.fn(() => ({ totalChangesDetected: 0 })),
+      getCurrentChanges: vi.fn(),
+    };
+
+    await service.startListening(detector, { skipInitialSync: true });
+
+    expect(detector.on).toHaveBeenCalledWith('changes', expect.any(Function));
+    expect(detector.getCurrentChanges).not.toHaveBeenCalled();
+    expect(fileTrackingService.trackChangesBatch).not.toHaveBeenCalled();
+  });
+
+  it('syncs once when fresh-workspace polling saw changes before the listener attached', async () => {
+    const detector = {
+      on: vi.fn(),
+      getStats: vi.fn(() => ({ totalChangesDetected: 1 })),
+      getCurrentChanges: vi.fn().mockResolvedValue({
+        id: 'missed-change',
+        provenance: { source: 'git' },
+        files: [
+          {
+            path: 'src/app.ts',
+            action: 'Modify',
+            stage: ChangeStage.Unstaged,
+            additions: 1,
+            deletions: 1,
+            content: 'fresh content',
+          },
+        ],
+      }),
+    };
+    const changesTracked = vi.fn();
+    service.on('changes-tracked', changesTracked);
+
+    await service.startListening(detector, { skipInitialSync: true });
+
+    expect(detector.getCurrentChanges).toHaveBeenCalledTimes(1);
+    expect(fileTrackingService.trackChangesBatch).toHaveBeenCalledTimes(1);
+    expect(fileTrackingService.trackChangesBatch.mock.calls[0][0][0]).toMatchObject({
+      file: 'src/app.ts',
+      stage: ChangeStage.Unstaged,
+      content: { newContent: 'fresh content' },
+    });
+    expect(changesTracked).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      changeCount: 1,
+      source: 'git',
+    });
+  });
+});

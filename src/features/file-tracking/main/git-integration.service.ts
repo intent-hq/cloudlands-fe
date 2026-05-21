@@ -163,21 +163,38 @@ export class GitIntegrationService extends EventEmitter {
 
     logger.debug('Started listening to git changes', { workspaceId: this.workspaceId });
 
-    // Do an initial sync (skip for fresh workspaces with no changes)
-    if (options?.skipInitialSync) {
+    // Do an initial sync (skip for fresh workspaces with no changes).  If the
+    // detector already saw changes before this listener was attached, catch up
+    // once: the detector may have de-duplicated that dirty state already, so it
+    // may not emit another 'changes' event until the file changes again.
+    const detectedBeforeListener = this.getDetectedChangeCount();
+    if (options?.skipInitialSync && detectedBeforeListener === 0) {
       logger.debug('Skipping initial sync (fresh workspace)', {
         workspaceId: this.workspaceId,
         totalDurationMs: Date.now() - startTime,
       });
     } else {
       const syncStart = Date.now();
-      await this.syncCurrentState();
+      await this.syncCurrentState(
+        options?.skipInitialSync ? true : false,
+        !options?.skipInitialSync,
+      );
       logger.debug('Initial syncCurrentState completed', {
         workspaceId: this.workspaceId,
+        caughtUpMissedDetectorChanges: !!options?.skipInitialSync,
+        detectedBeforeListener,
         syncDurationMs: Date.now() - syncStart,
         totalDurationMs: Date.now() - startTime,
       });
     }
+  }
+
+  private getDetectedChangeCount(): number {
+    if (!this.changeDetector || typeof this.changeDetector.getStats !== 'function') {
+      return 0;
+    }
+    const stats = this.changeDetector.getStats();
+    return typeof stats?.totalChangesDetected === 'number' ? stats.totalChangesDetected : 0;
   }
 
   /**

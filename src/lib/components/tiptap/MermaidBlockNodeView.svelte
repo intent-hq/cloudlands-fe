@@ -15,9 +15,7 @@
   onMount,
 } from 'svelte';
   import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
-
-  // Dynamically import MermaidRenderer to reduce bundle size
-  const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
+  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
 
   // TipTap NodeViewProps
   let { node, selected, updateAttributes }: NodeViewProps = $props();
@@ -213,13 +211,7 @@
   <div class="mermaid-block" class:selected class:dark-mode={$isDarkTheme}>
     <!-- Diagram -->
     <div bind:this={diagramContainerEl}>
-      {#await MermaidRenderer}
-        <div class="mermaid-loading"><div class="loading-spinner"></div></div>
-      {:then module}
-        <module.default code={displayCode} showExpandButton={false} />
-      {:catch}
-        <div class="mermaid-error">Failed to load diagram</div>
-      {/await}
+      <MermaidRenderer code={displayCode} showExpandButton={false} />
     </div>
 
     <!-- Code editor -->

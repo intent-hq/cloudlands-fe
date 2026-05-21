@@ -103,6 +103,10 @@ export const refreshFileContentRequested = createAction<
   [wsId: string, path: string, absolutePath: string, options?: FileContentReadOptions]
 >("files/refreshFileContentRequested");
 
+export const refreshOpenFileContentForPathsRequested = createAction<
+  [wsId: string, paths: string[]]
+>("files/refreshOpenFileContentForPathsRequested");
+
 export const updateFileContent = createAction<[wsId: string, path: string, content: string]>(
   "files/updateFileContent",
 );

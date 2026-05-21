@@ -1158,6 +1158,7 @@ export const EVENT_CHANNELS = [
   'file:deleted',
   'file:renamed',
   'file:content-changed',
+  'watcher:file-changed',
   'note:created',
   'note:updated',
   'note:deleted',

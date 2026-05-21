@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectSaga } from 'redux-saga-test-plan';
 import * as matchers from 'redux-saga-test-plan/matchers';
 import * as sagaEffects from 'redux-saga/effects';
@@ -15,6 +9,9 @@ vi.mock('typed-redux-saga', () => ({
     return yield Array.isArray(fnOrDescriptor)
       ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
       : sagaEffects.call(fnOrDescriptor, ...args);
+  },
+  delay: function* (ms: number) {
+    return yield sagaEffects.delay(ms);
   },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
@@ -76,6 +73,7 @@ import {
   loadFileContentFailed,
   loadFileContentRequested,
   loadFileContentSucceeded,
+  refreshOpenFileContentForPathsRequested,
   refreshFileContentRequested,
   saveFileContentFailed,
   saveFileContentRequested,
@@ -84,12 +82,16 @@ import {
 import {
   filesSaga,
   handleAgentFileChangedEvent,
+  handleFileChangedEvent,
   handleFileContentChangedEvent,
   handleLoadFileContentRequested,
+  handleRefreshOpenFileContentForPathsRequested,
   handleRefreshFileContentRequested,
   handleSaveFileContentRequested,
   watchAgentFileChangedGlobal,
+  watchFileChangedGlobal,
   watchGlobalFileContentChanged,
+	watchWatcherFileChanged,
 } from './files-saga';
 
 const WS_ID = 'ws-1';
@@ -126,17 +128,22 @@ function stateWithFiles(
 ) {
   const byWorkspaceId: Record<string, unknown> = {};
   for (const entry of entries) {
-    byWorkspaceId[entry.workspaceId] = {
+    const workspaceState = (byWorkspaceId[entry.workspaceId] ?? {
       ...emptyFilesWorkspaceState,
       files: {
         idField: 'path',
-        ids: [entry.path],
-        map: {
-          [entry.path]: createFileEntry(entry.path, entry.absolutePath, entry.content),
-        },
+        ids: [],
+        map: {},
         refsCount: {},
       },
-    };
+    }) as any;
+    workspaceState.files.ids.push(entry.path);
+    workspaceState.files.map[entry.path] = createFileEntry(
+      entry.path,
+      entry.absolutePath,
+      entry.content,
+    );
+    byWorkspaceId[entry.workspaceId] = workspaceState;
   }
 
   return {
@@ -146,7 +153,10 @@ function stateWithFiles(
   } as any;
 }
 
-function filesRootReducer(state: { files: ReturnType<typeof filesReducer> } | undefined, action: any) {
+function filesRootReducer(
+  state: { files: ReturnType<typeof filesReducer> } | undefined,
+  action: any,
+) {
   return {
     files: filesReducer(state?.files, action),
   };
@@ -176,6 +186,14 @@ describe('filesSaga', () => {
     expect((globalAgentEffect.value as any)?.type).toBe('FORK');
     expect((globalAgentEffect.value as any)?.payload?.fn).toBe(watchAgentFileChangedGlobal);
 
+    const fileChangedEffect = iterator.next();
+    expect((fileChangedEffect.value as any)?.type).toBe('FORK');
+    expect((fileChangedEffect.value as any)?.payload?.fn).toBe(watchFileChangedGlobal);
+
+    const watcherFileChangedEffect = iterator.next();
+    expect((watcherFileChangedEffect.value as any)?.type).toBe('FORK');
+    expect((watcherFileChangedEffect.value as any)?.payload?.fn).toBe(watchWatcherFileChanged);
+
     const loadEffect = iterator.next();
     expect((loadEffect.value as any)?.type).toBe('FORK');
     expect((loadEffect.value as any)?.payload?.args?.[0]).toBe(loadFileContentRequested);
@@ -186,6 +204,15 @@ describe('filesSaga', () => {
     expect((refreshEffect.value as any)?.payload?.args?.[0]).toBe(refreshFileContentRequested);
     expect((refreshEffect.value as any)?.payload?.args?.[1]).toBe(
       handleRefreshFileContentRequested,
+    );
+
+    const refreshPathsEffect = iterator.next();
+    expect((refreshPathsEffect.value as any)?.type).toBe('FORK');
+    expect((refreshPathsEffect.value as any)?.payload?.args?.[0]).toBe(
+      refreshOpenFileContentForPathsRequested,
+    );
+    expect((refreshPathsEffect.value as any)?.payload?.args?.[1]).toBe(
+      handleRefreshOpenFileContentForPathsRequested,
     );
 
     const saveEffect = iterator.next();
@@ -264,6 +291,125 @@ describe('filesSaga', () => {
       .silentRun(50);
 
     expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('subscribes to file:changed workspace events and refreshes matching open files', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+
+    await expectSaga(watchFileChangedGlobal)
+      .withState(stateWithFiles())
+      .provide([
+        provideChannelEvents(channel, [
+          { workspaceId: WS_ID, data: { path: PATH, relativePath: PATH, action: 'modify' } },
+        ]),
+      ])
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(50);
+
+    expect(createElectronChannelMock).toHaveBeenCalledTimes(1);
+    expect(createElectronChannelMock).toHaveBeenCalledWith('file:changed');
+  });
+
+  it('subscribes to watcher:file-changed and refreshes matching open files', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+
+    await expectSaga(watchWatcherFileChanged)
+      .withState(stateWithFiles())
+      .provide([
+        provideChannelEvents(channel, [
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'change' },
+        ]),
+      ])
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(150);
+
+    expect(createElectronChannelMock).toHaveBeenCalledTimes(1);
+    expect(createElectronChannelMock).toHaveBeenCalledWith('watcher:file-changed');
+  });
+
+  it('ignores watcher:file-changed events for files that are not open', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+
+    const result = await expectSaga(watchWatcherFileChanged)
+      .withState(stateWithFiles())
+      .provide([
+        provideChannelEvents(channel, [
+          {
+            workspaceId: WS_ID,
+            path: '/repo/src/unopened.ts',
+            relativePath: 'src/unopened.ts',
+            type: 'change',
+          },
+        ]),
+      ])
+      .silentRun(150);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('skips watcher:file-changed refreshes while the open entry is saving', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+    const state = stateWithFiles();
+    state.files.byWorkspaceId[WS_ID].files.map[PATH].saving = true;
+
+    const result = await expectSaga(watchWatcherFileChanged)
+      .withState(state)
+      .provide([
+        provideChannelEvents(channel, [
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'change' },
+        ]),
+      ])
+      .silentRun(150);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('skips watcher:file-changed refreshes when the open entry has pending edits', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+    const state = stateWithFiles();
+    state.files.byWorkspaceId[WS_ID].files.map[PATH].localContent = 'local edit';
+
+    const result = await expectSaga(watchWatcherFileChanged)
+      .withState(state)
+      .provide([
+        provideChannelEvents(channel, [
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'change' },
+        ]),
+      ])
+      .silentRun(150);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('debounces duplicate watcher:file-changed events for the same path', async () => {
+    const channel = createSagaChannel();
+    createElectronChannelMock.mockReturnValue(channel);
+    const initialState = { ...stateWithFiles(), refreshCount: 0 } as any;
+
+    const result = await expectSaga(watchWatcherFileChanged)
+      .withReducer((state = initialState, action: any) => ({
+        ...state,
+        refreshCount:
+          action.type === refreshFileContentRequested.type
+            ? state.refreshCount + 1
+            : state.refreshCount,
+      }))
+      .provide([
+        provideChannelEvents(channel, [
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'change' },
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'change' },
+          { workspaceId: WS_ID, path: ABS_PATH, relativePath: PATH, type: 'add' },
+        ]),
+      ])
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(150);
+
+    expect((result as any).storeState.refreshCount).toBe(1);
   });
 
   it('loads content for simultaneous requests for different files', async () => {
@@ -355,6 +501,92 @@ describe('filesSaga', () => {
       .silentRun(50);
   });
 
+  it('refreshes clean open files from changes/git refresh paths and applies disk content', async () => {
+    await expectSaga(filesSaga)
+      .withState(stateWithFiles())
+      .provide([
+        [matchers.call.fn(invoke), { success: true, data: { content: 'fresh from refresh' } }],
+      ])
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .put(applyExternalFileContent(WS_ID, PATH, 'fresh from refresh', false, false))
+      .dispatch(refreshOpenFileContentForPathsRequested(WS_ID, [PATH, 'src/unopened.ts']))
+      .silentRun(50);
+  });
+
+  it('applies two sequential disk refreshes for the same clean open file', async () => {
+    const refreshedContents = ['fresh external one', 'fresh external two'];
+    let readIndex = 0;
+
+    const result = await expectSaga(filesSaga)
+      .withReducer(filesRootReducer, stateWithFiles())
+      .provide([
+        {
+          call(effect: any, next: () => unknown) {
+            if (effect.fn === invoke && effect.args[0] === 'file:read') {
+              return {
+                success: true,
+                data: { content: refreshedContents[readIndex++] },
+              };
+            }
+            return next();
+          },
+        },
+      ])
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .put(applyExternalFileContent(WS_ID, PATH, 'fresh external one', false, false))
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .put(applyExternalFileContent(WS_ID, PATH, 'fresh external two', false, false))
+      .dispatch(refreshOpenFileContentForPathsRequested(WS_ID, [PATH]))
+      .dispatch(refreshOpenFileContentForPathsRequested(WS_ID, [PATH]))
+      .silentRun(50);
+
+    const entry = (result as any).storeState.files.byWorkspaceId[WS_ID].files.map[PATH];
+    expect(readIndex).toBe(2);
+    expect(entry.localContent).toBe('fresh external two');
+    expect(entry.originalContent).toBe('fresh external two');
+    expect(entry.lastUpdated).toBe(3);
+  });
+
+  it('matches user-issue README changes by relative path when the open entry path is absolute', async () => {
+    const readmePath = 'README.md';
+    const readmeAbsolutePath = '/Users/example/repos/user-issue-2/README.md';
+
+    await expectSaga(handleRefreshOpenFileContentForPathsRequested, {
+      type: refreshOpenFileContentForPathsRequested.type,
+      payload: [WS_ID, [readmePath]],
+    })
+      .withState(
+        stateWithFiles([
+          {
+            workspaceId: WS_ID,
+            path: readmeAbsolutePath,
+            absolutePath: readmeAbsolutePath,
+            content: '# Project\n',
+          },
+        ]),
+      )
+      .put(refreshFileContentRequested(WS_ID, readmeAbsolutePath, readmeAbsolutePath))
+      .silentRun(50);
+  });
+
+  it('does not refresh dirty or saving open files from changes/git refresh paths', async () => {
+    const state = stateWithFiles([
+      { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' },
+      { workspaceId: WS_ID, path: PATH_2, absolutePath: ABS_PATH_2, content: 'other' },
+    ]);
+    state.files.byWorkspaceId[WS_ID].files.map[PATH].localContent = 'local edit';
+    state.files.byWorkspaceId[WS_ID].files.map[PATH_2].saving = true;
+
+    const result = await expectSaga(
+      handleRefreshOpenFileContentForPathsRequested,
+      refreshOpenFileContentForPathsRequested(WS_ID, [PATH, PATH_2]),
+    )
+      .withState(state)
+      .silentRun(50);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
   it('passes refresh file read options and stores truncated responses', async () => {
     await expectSaga(
       handleRefreshFileContentRequested,
@@ -401,7 +633,9 @@ describe('filesSaga', () => {
       saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'edited'),
     )
       .withState(
-        stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' }]),
+        stateWithFiles([
+          { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' },
+        ]),
       )
       .provide([
         {
@@ -439,7 +673,9 @@ describe('filesSaga', () => {
       saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'edited'),
     )
       .withState(
-        stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' }]),
+        stateWithFiles([
+          { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' },
+        ]),
       )
       .provide([
         {
@@ -472,7 +708,9 @@ describe('filesSaga', () => {
       saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'restored', { intent: 'restore' }),
     )
       .withState(
-        stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' }]),
+        stateWithFiles([
+          { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' },
+        ]),
       )
       .provide([
         {
@@ -509,7 +747,9 @@ describe('filesSaga', () => {
       handleSaveFileContentRequested,
       saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'new content'),
     )
-      .withState(stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: '' }]))
+      .withState(
+        stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: '' }]),
+      )
       .provide([
         {
           call(effect: any, next: () => unknown) {
@@ -539,7 +779,9 @@ describe('filesSaga', () => {
       saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'edited'),
     )
       .withState(
-        stateWithFiles([{ workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'some content' }]),
+        stateWithFiles([
+          { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'some content' },
+        ]),
       )
       .provide([
         {
@@ -646,13 +888,91 @@ describe('filesSaga', () => {
       .silentRun(50);
   });
 
-  it('refreshes matching files for agent file changes', async () => {
+  it('matches content-bearing events by relative path when the open entry has an absolute path', async () => {
+    await expectSaga(handleFileContentChangedEvent, WS_ID, {
+      workspaceId: WS_ID,
+      relativePath: PATH,
+      content: 'external-relative',
+    })
+      .withState(stateWithFiles())
+      .put(applyExternalFileContent(WS_ID, PATH, 'external-relative', false))
+      .silentRun(50);
+  });
+
+  it('updates the disk baseline from content-bearing events while preserving dirty local content', async () => {
+    const state = stateWithFiles([
+      { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH, content: 'original' },
+    ]);
+    state.files.byWorkspaceId[WS_ID].files.map[PATH].localContent = 'local edit';
+
+    const result = await expectSaga(handleFileContentChangedEvent, WS_ID, {
+      workspaceId: WS_ID,
+      path: ABS_PATH,
+      content: 'external baseline',
+    })
+      .withReducer(filesRootReducer, state)
+      .put(applyExternalFileContent(WS_ID, PATH, 'external baseline', false))
+      .silentRun(50);
+
+    const entry = (result as any).storeState.files.byWorkspaceId[WS_ID].files.map[PATH];
+    expect(entry.localContent).toBe('local edit');
+    expect(entry.originalContent).toBe('external baseline');
+    expect(entry.lastUpdated).toBe(2);
+  });
+
+  it('refreshes matching files for agent file changes by absolute path', async () => {
     await expectSaga(handleAgentFileChangedEvent, {
       workspaceId: WS_ID,
       filePath: ABS_PATH,
     })
       .withState(stateWithFiles())
       .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(50);
+  });
+
+  it('refreshes matching files for content-less file:changed events by relative path', async () => {
+    await expectSaga(handleFileChangedEvent, {
+      workspaceId: WS_ID,
+      data: { path: PATH, action: 'modify' },
+    })
+      .withState(stateWithFiles())
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(50);
+  });
+
+  it('refreshes matching files from summarized file:changed events', async () => {
+    await expectSaga(handleFileChangedEvent, {
+      workspaceId: WS_ID,
+      data: {
+        files: [
+          { path: 'src/unopened.ts', action: 'Modify' },
+          { path: PATH, action: 'Modify' },
+        ],
+      },
+    })
+      .withState(stateWithFiles())
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .silentRun(50);
+  });
+
+  it('refreshes all matching open files from a multi-file content-less event', async () => {
+    await expectSaga(handleFileChangedEvent, {
+      workspaceId: WS_ID,
+      data: {
+        files: [
+          { path: PATH, action: 'Modify' },
+          { path: PATH_2, action: 'Modify' },
+        ],
+      },
+    })
+      .withState(
+        stateWithFiles([
+          { workspaceId: WS_ID, path: PATH, absolutePath: ABS_PATH },
+          { workspaceId: WS_ID, path: PATH_2, absolutePath: ABS_PATH_2 },
+        ]),
+      )
+      .put(refreshFileContentRequested(WS_ID, PATH, ABS_PATH))
+      .put(refreshFileContentRequested(WS_ID, PATH_2, ABS_PATH_2))
       .silentRun(50);
   });
 
@@ -666,6 +986,31 @@ describe('filesSaga', () => {
       content: 'external',
     })
       .withState(state)
+      .silentRun(50);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('ignores content-less file:changed events while the file is saving', async () => {
+    const state = stateWithFiles();
+    state.files.byWorkspaceId[WS_ID].files.map[PATH].saving = true;
+
+    const result = await expectSaga(handleFileChangedEvent, {
+      workspaceId: WS_ID,
+      data: { path: PATH, action: 'modify' },
+    })
+      .withState(state)
+      .silentRun(50);
+
+    expect(result.effects.put ?? []).toEqual([]);
+  });
+
+  it('does not refresh open files for delete-only file:changed events', async () => {
+    const result = await expectSaga(handleFileChangedEvent, {
+      workspaceId: WS_ID,
+      data: { path: PATH, action: 'delete' },
+    })
+      .withState(stateWithFiles())
       .silentRun(50);
 
     expect(result.effects.put ?? []).toEqual([]);
@@ -686,5 +1031,6 @@ describe('filesSaga', () => {
   it('exposes global listener sagas for fork wiring', () => {
     expect(watchGlobalFileContentChanged.name).toBe('watchGlobalFileContentChanged');
     expect(watchAgentFileChangedGlobal.name).toBe('watchAgentFileChangedGlobal');
+    expect(watchFileChangedGlobal.name).toBe('watchFileChangedGlobal');
   });
 });

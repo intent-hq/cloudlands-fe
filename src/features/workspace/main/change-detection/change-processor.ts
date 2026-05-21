@@ -6,15 +6,9 @@
  */
 
 import { EventEmitter } from '$shared/utils/event-emitter';
-import {
-  readFile,
-  stat,
-} from 'fs/promises';
-import {
-  join,
-  relative,
-  isAbsolute,
-} from 'path';
+import { createHash } from 'crypto';
+import { readFile, stat } from 'fs/promises';
+import { join, relative, isAbsolute } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
   extractChangesFromDiff,
@@ -134,7 +128,7 @@ export class ChangeProcessor extends EventEmitter {
 
       // Create change key and hash for tracking
       const changeKey = `${filePath}:${action}:${stage || 'unstaged'}`;
-      const changeHash = `${action}:${diff?.additions || 0}:${diff?.deletions || 0}`;
+      const changeHash = await this.buildChangeHash(filePath, action, diff);
 
       // Check if this is a known persistent change (like unstaged modifications)
       const tracked = this.trackedChanges.get(changeKey);
@@ -293,6 +287,58 @@ export class ChangeProcessor extends EventEmitter {
       logger.error(`Error processing file change for ${filePath}:`, error);
       return null;
     }
+  }
+
+  /**
+   * Build a change fingerprint for duplicate suppression.
+   *
+   * Git polling can see the same dirty file over and over, so we still need to
+   * dedupe persistent changes.  The fingerprint must include actual content or
+   * diff identity, not just addition/deletion counts, because external writers
+   * can replace a file with different same-size/same-line-count content.
+   */
+  private async buildChangeHash(
+    filePath: string,
+    action: FileChange['action'],
+    diff?: GitDiffResult,
+  ): Promise<string> {
+    const additions = diff?.additions || 0;
+    const deletions = diff?.deletions || 0;
+    const diffHash = diff?.diff ? this.hashString(diff.diff) : 'no-diff';
+    const contentHash = await this.getContentFingerprint(
+      filePath,
+      action,
+      diff?.diff !== undefined,
+    );
+
+    return `${action}:${additions}:${deletions}:${diffHash}:${contentHash}`;
+  }
+
+  private async getContentFingerprint(
+    filePath: string,
+    action: FileChange['action'],
+    hasDiffText: boolean,
+  ): Promise<string> {
+    if (action === 'Delete' || hasDiffText || isBinaryExtension(filePath)) {
+      return 'content:not-read';
+    }
+
+    try {
+      const fullPath = join(this.workspacePath, filePath);
+      const fileStats = await stat(fullPath);
+
+      if (fileStats.size > MAX_TRACKABLE_CONTENT_SIZE) {
+        return `large:${fileStats.size}:${fileStats.mtimeMs}`;
+      }
+
+      return `content:${this.hashString(await readFile(fullPath, 'utf-8'))}`;
+    } catch {
+      return 'content:unavailable';
+    }
+  }
+
+  private hashString(value: string): string {
+    return createHash('sha1').update(value).digest('hex');
   }
 
   /**

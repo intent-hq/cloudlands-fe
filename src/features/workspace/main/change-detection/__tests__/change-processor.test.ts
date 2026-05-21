@@ -5,14 +5,8 @@
  * deduplication, and event creation.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFile, stat } from 'fs/promises';
 import { ChangeProcessor } from '../change-processor';
 import type { FileChange } from '../change-processor';
 import type { GitDiffResult } from '../git-types';
@@ -72,6 +66,10 @@ describe('ChangeProcessor', () => {
   beforeEach(async () => {
     // Reset mocks
     vi.clearAllMocks();
+    vi.mocked(readFile).mockReset().mockResolvedValue('file content');
+    vi.mocked(stat)
+      .mockReset()
+      .mockResolvedValue({ size: 12, mtimeMs: 1 } as any);
     // Reset shouldIgnore to default behavior
     mockShouldIgnore.mockReset().mockReturnValue(false);
 
@@ -217,6 +215,42 @@ describe('ChangeProcessor', () => {
       expect(result2).toBeDefined(); // Should process the updated change
       expect(result2?.change.additions).toBe(10);
       expect(result2?.change.deletions).toBe(5);
+    });
+
+    it('should process updated changes when diff text changes but counts stay the same', async () => {
+      const diff1 = {
+        additions: 1,
+        deletions: 1,
+        diff: '- old line\n+ new line from cli',
+      } as GitDiffResult;
+
+      const diff2 = {
+        additions: 1,
+        deletions: 1,
+        diff: '- old line\n+ new line from script',
+      } as GitDiffResult;
+
+      const result1 = await processor.processFileChange('test.txt', 'Modify', diff1);
+      const result2 = await processor.processFileChange('test.txt', 'Modify', diff2);
+
+      expect(result1).toBeDefined();
+      expect(result2).toBeDefined();
+      expect(result2?.change.diff).toBe(diff2.diff);
+    });
+
+    it('should process untracked create updates when content changes but line count stays the same', async () => {
+      vi.mocked(stat).mockResolvedValue({ size: 6, mtimeMs: 1 } as any);
+      vi.mocked(readFile)
+        .mockResolvedValueOnce('one\n')
+        .mockResolvedValueOnce('one\n')
+        .mockResolvedValueOnce('two\n')
+        .mockResolvedValueOnce('two\n');
+
+      const result1 = await processor.processFileChange('new-file.txt', 'Create');
+      const result2 = await processor.processFileChange('new-file.txt', 'Create');
+
+      expect(result1).toBeDefined();
+      expect(result2).toBeDefined();
     });
   });
 

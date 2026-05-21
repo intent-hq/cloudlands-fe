@@ -88,13 +88,21 @@ function* watchAgentFileChanged(wsId: string) {
   );
 }
 
+export function* handleWorkspaceChangesEvent(
+  wsId: string,
+  data: { workspaceId?: string },
+): SagaGenerator<void> {
+  if (data.workspaceId !== wsId) return;
+  yield* delay(config.updateDebounce);
+  yield* call(doSyncWithGit, wsId, true);
+  yield* call(doLoadWorkspaceData, wsId);
+}
+
 function* watchWorkspaceChanges(wsId: string) {
   yield* takeEveryFromElectronChannel<{ workspaceId?: string }>(
     'workspace-changes',
     function* (data) {
-      if (data.workspaceId !== wsId) return;
-      yield* delay(config.updateDebounce);
-      yield* call(doLoadWorkspaceData, wsId);
+      yield* call(handleWorkspaceChangesEvent, wsId, data);
     },
   );
 }

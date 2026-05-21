@@ -1,6 +1,6 @@
-import type { Collection } from "../../utils/collection-utils";
+import type { Collection } from '../../utils/collection-utils';
 
-export type FileContentSource = "agent" | "external" | "user";
+export type FileContentSource = 'agent' | 'external' | 'user';
 
 export type FileContentEntry = {
   path: string;
@@ -21,11 +21,11 @@ export type FileContentReadOptions = {
 };
 
 export type FileContentSaveOptions = {
-  intent?: "save" | "restore";
+  intent?: 'save' | 'restore';
 };
 
 export type FilesWorkspaceState = {
-  files: Collection<FileContentEntry, "path">;
+  files: Collection<FileContentEntry, 'path'>;
 };
 
 export type FilesState = {
@@ -52,9 +52,26 @@ export type FileContentChangedEvent = {
   source?: FileContentSource;
 };
 
+export type WatcherFileChangedEvent = {
+  workspaceId: string;
+  path: string;
+  relativePath: string;
+  type: 'change' | 'add';
+};
+
 export type AgentFileChangedEvent = {
   workspaceId?: string;
   filePath?: string;
   path?: string;
   source?: FileContentSource;
+};
+
+export type FileChangedEvent = {
+  workspaceId?: string;
+  data?: {
+    path?: string;
+    relativePath?: string;
+    action?: string;
+    files?: Array<string | { path?: string; relativePath?: string; action?: string }>;
+  };
 };

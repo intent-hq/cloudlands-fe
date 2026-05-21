@@ -65,6 +65,8 @@
     placeholder?: string;
     /** Whether this editor's panel is currently focused. When false, global events like go-to-line are ignored. Defaults to true for backward compatibility. */
     isPanelFocused?: boolean;
+    /** Monotonic version for authoritative external content refreshes. Forces visible sync even during agent-follow mode. */
+    externalContentVersion?: number;
   }
 
   let {
@@ -88,6 +90,7 @@
     filePath,
     placeholder,
     isPanelFocused = true,
+    externalContentVersion = 0,
   }: Props = $props();
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
@@ -181,6 +184,8 @@
   let editorModel: monaco.editor.ITextModel | null = null;
   let editorReady = $state(false);
   const isFollowing$ = selectIsFollowing();
+  let isFollowingAgent = $derived($isFollowing$);
+  let lastSyncedExternalContentVersion = $state(0);
   const modelUriInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // Track decoration IDs for line changes
@@ -391,11 +396,14 @@
   $effect(() => {
     // Explicitly access value to create dependency
     const val = toEditorContent(value);
+    const contentVersion = externalContentVersion;
+    const hasNewExternalContent = contentVersion !== lastSyncedExternalContentVersion;
     if (editor) {
       const currentValue = editor.getValue();
       if (currentValue !== val) {
-        // If following an agent, don't update immediately - let animation handle it
-        if (!$isFollowing$) {
+        // If following an agent, don't update routine bound-value echoes immediately - let animation handle them.
+        // Authoritative file refreshes carry an external content version and must still update the visible editor.
+        if (!isFollowingAgent || hasNewExternalContent) {
           // Save cursor position before updating
           const position = editor.getPosition();
           editor.setValue(val);
@@ -404,6 +412,9 @@
             editor.setPosition(position);
           }
         }
+      }
+      if (hasNewExternalContent && editor.getValue() === val) {
+        lastSyncedExternalContentVersion = contentVersion;
       }
     }
   });
@@ -427,7 +438,7 @@
 
   // Handle agent typing animations
   $effect(() => {
-    if (!editor || !$isFollowing$) return;
+    if (!editor || !isFollowingAgent) return;
 
     const handleAnimationEvent = (event: Event) => {
       const detail = (event as CustomEvent).detail as
@@ -953,7 +964,7 @@
       </div>
     </div>
   {:else}
-    {#if $isFollowing$}
+    {#if isFollowingAgent}
       <AgentTypingAnimation
         bind:content={value}
         onContentChange={(newContent) => (value = newContent)}

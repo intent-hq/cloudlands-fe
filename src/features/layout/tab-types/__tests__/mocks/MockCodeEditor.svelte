@@ -6,6 +6,7 @@
     filePath = '',
     lineWrapping = false,
     isPanelFocused = false,
+    externalContentVersion = 0,
   } = $props();
 
   const initialValue = value;
@@ -19,6 +20,7 @@
   data-file-path={filePath}
   data-line-wrapping={lineWrapping}
   data-panel-focused={isPanelFocused}
+  data-external-content-version={externalContentVersion}
   data-initial-value={initialValue}
   bind:value
 ></textarea>

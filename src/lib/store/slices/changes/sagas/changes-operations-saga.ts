@@ -8,20 +8,9 @@
  * saga-local closure variables, NOT in Redux state.
  */
 
-import {
-  call,
-  put,
-  takeEvery,
-  delay,
-  fork,
-  type SagaGenerator,
-} from "typed-redux-saga";
-import {
-  invoke,
-  invokeWithTimeout,
-  IpcTimeoutError,
-} from "$lib/electron-bridge";
-import { Logger } from "$lib/utils/logger";
+import { call, put, takeEvery, delay, fork, type SagaGenerator } from 'typed-redux-saga';
+import { invoke, invokeWithTimeout, IpcTimeoutError } from '$lib/electron-bridge';
+import { Logger } from '$lib/utils/logger';
 import {
   setChanges,
   setChangesData,
@@ -45,24 +34,25 @@ import {
   trackChangeRequested,
   clearTrackedChangesRequested,
   loadOlderCommitsRequested,
-} from "../changes-slice";
+} from '../changes-slice';
 import {
   selectFileTrackingChanges,
   selectFileTrackingTransitions,
   selectFileTrackingCommits,
   selectFileTrackingBoundarySha,
   selectCurrentWorkspaceId,
-} from "../changes-selectors";
-import { ChangeStage } from "$features/file-tracking/types";
-import type { TrackedChange, StageTransition, CommitInfo } from "../changes-types";
-import { FILE_TRACKING_CHANNELS } from "$shared/ipc/channels";
+} from '../changes-selectors';
+import { ChangeStage } from '$features/file-tracking/types';
+import type { TrackedChange, StageTransition, CommitInfo } from '../changes-types';
+import { FILE_TRACKING_CHANNELS } from '$shared/ipc/channels';
 import {
   hasChangesDifference,
   hasTransitionsDifference,
   hasCommitsDifference,
-} from "$features/file-tracking/change-difference-utils";
+} from '$features/file-tracking/change-difference-utils';
+import { refreshOpenFileContentForPathsRequested } from '../../files/files-slice';
 
-const logger = new Logger({ category: "FileTrackingOpsSaga" });
+const logger = new Logger({ category: 'FileTrackingOpsSaga' });
 
 const IPC_SYNC_TIMEOUT_MS = 30000;
 const IPC_LOAD_TIMEOUT_MS = 30000;
@@ -112,6 +102,17 @@ function clearPendingState(changeIds: string[], pendingPaths: string[]): void {
   });
 }
 
+function getRefreshableWorkingTreePaths(changes: TrackedChange[]): string[] {
+  const paths = new Set<string>();
+  for (const change of changes) {
+    if (change.stage !== ChangeStage.Unstaged) continue;
+    if (change.status === 'deleted') continue;
+    const path = change.relativePath || change.file;
+    if (path) paths.add(path);
+  }
+  return [...paths];
+}
+
 // ---------------------------------------------------------------------------
 // syncWithGit
 // ---------------------------------------------------------------------------
@@ -140,12 +141,17 @@ export function* doSyncWithGit(wsId: string, force: boolean): SagaGenerator<void
   syncInProgress = true;
 
   try {
-    yield* call(invokeWithTimeout, "file-tracking:sync", { workspaceId: wsId, force }, IPC_SYNC_TIMEOUT_MS);
+    yield* call(
+      invokeWithTimeout,
+      'file-tracking:sync',
+      { workspaceId: wsId, force },
+      IPC_SYNC_TIMEOUT_MS,
+    );
   } catch (error) {
     if (error instanceof IpcTimeoutError) {
-      logger.warn("Git sync timed out", { wsId, timeoutMs: IPC_SYNC_TIMEOUT_MS });
+      logger.warn('Git sync timed out', { wsId, timeoutMs: IPC_SYNC_TIMEOUT_MS });
     } else {
-      logger.error("Failed to sync with git", error as Error, { wsId });
+      logger.error('Failed to sync with git', error as Error, { wsId });
     }
   } finally {
     syncInProgress = false;
@@ -163,7 +169,9 @@ export function* doSyncWithGit(wsId: string, force: boolean): SagaGenerator<void
 // loadWorkspaceData
 // ---------------------------------------------------------------------------
 
-function* handleLoadWorkspaceData(action: ReturnType<typeof loadWorkspaceDataRequested>): SagaGenerator<void> {
+function* handleLoadWorkspaceData(
+  action: ReturnType<typeof loadWorkspaceDataRequested>,
+): SagaGenerator<void> {
   const wsId = action.payload[0];
   yield* call(doLoadWorkspaceData, wsId);
 }
@@ -172,7 +180,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
   if (!wsId) return;
 
   if (hasPendingOperations()) {
-    logger.debug("Skipping loadWorkspaceData - pending stage operations");
+    logger.debug('Skipping loadWorkspaceData - pending stage operations');
     return;
   }
 
@@ -184,25 +192,24 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
   loadInProgress = true;
 
   try {
-    const [changesResponse, transitionsResponse, commitsResponse] = (yield* call(
-      () =>
-        Promise.all([
-          invokeWithTimeout(
-            "file-tracking:load",
-            { workspaceId: wsId },
-            IPC_LOAD_TIMEOUT_MS
-          ) as Promise<{ changes: TrackedChange[]; truncated: boolean; totalCount: number } | null>,
-          invokeWithTimeout(
-            "file-tracking:load-transitions",
-            { workspaceId: wsId },
-            IPC_LOAD_TIMEOUT_MS
-          ) as Promise<StageTransition[] | null>,
-          invokeWithTimeout(
-            FILE_TRACKING_CHANNELS.LOAD_COMMITS,
-            { workspaceId: wsId, limit: 50 },
-            IPC_LOAD_TIMEOUT_MS
-          ) as Promise<{ commits: CommitInfo[]; boundarySha?: string } | null>,
-        ])
+    const [changesResponse, transitionsResponse, commitsResponse] = (yield* call(() =>
+      Promise.all([
+        invokeWithTimeout(
+          'file-tracking:load',
+          { workspaceId: wsId },
+          IPC_LOAD_TIMEOUT_MS,
+        ) as Promise<{ changes: TrackedChange[]; truncated: boolean; totalCount: number } | null>,
+        invokeWithTimeout(
+          'file-tracking:load-transitions',
+          { workspaceId: wsId },
+          IPC_LOAD_TIMEOUT_MS,
+        ) as Promise<StageTransition[] | null>,
+        invokeWithTimeout(
+          FILE_TRACKING_CHANNELS.LOAD_COMMITS,
+          { workspaceId: wsId, limit: 50 },
+          IPC_LOAD_TIMEOUT_MS,
+        ) as Promise<{ commits: CommitInfo[]; boundarySha?: string } | null>,
+      ]),
     )) as [
       { changes: TrackedChange[]; truncated: boolean; totalCount: number } | null,
       StageTransition[] | null,
@@ -227,7 +234,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
       const lastOpTime = recentOperationPaths.get(c.relativePath);
       if (lastOpTime && now - lastOpTime < OPERATION_COOLDOWN_MS) {
         const existingChange = existingChanges.find(
-          (existing) => existing.relativePath === c.relativePath && existing.stage === c.stage
+          (existing) => existing.relativePath === c.relativePath && existing.stage === c.stage,
         );
         if (!existingChange) return false;
       }
@@ -250,6 +257,11 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     if (hasChanges) {
       yield* put(setChangesData(wsId, filteredChanges, isTruncated, totalCount));
     }
+    const refreshablePaths = getRefreshableWorkingTreePaths(filteredChanges);
+    if (refreshablePaths.length > 0) {
+	      // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
+      yield* put(refreshOpenFileContentForPathsRequested(wsId, refreshablePaths));
+    }
     if (hasTransitionChanges) {
       yield* put(setTransitions(wsId, newTransitions));
     }
@@ -262,9 +274,9 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     const currentWsId = yield* selectCurrentWorkspaceId.effect();
     if (currentWsId === wsId) {
       if (error instanceof IpcTimeoutError) {
-        yield* put(setError(wsId, "Loading timed out - please try refreshing"));
+        yield* put(setError(wsId, 'Loading timed out - please try refreshing'));
       } else {
-        yield* put(setError(wsId, error instanceof Error ? error.message : "Failed to load data"));
+        yield* put(setError(wsId, error instanceof Error ? error.message : 'Failed to load data'));
       }
     }
   } finally {
@@ -277,9 +289,6 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
   }
 }
-
-
-
 
 // ---------------------------------------------------------------------------
 // refresh
@@ -305,7 +314,9 @@ function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenera
 // stageChanges
 // ---------------------------------------------------------------------------
 
-function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): SagaGenerator<void> {
+function* handleStageChanges(
+  action: ReturnType<typeof stageChangesRequested>,
+): SagaGenerator<void> {
   const { wsId, changeIds, changesFromUI } = action.payload;
   if (!wsId) return;
 
@@ -321,7 +332,7 @@ function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): 
     if (existing) {
       pendingPaths.push(existing.relativePath);
       pendingStageOperationsByPath.add(existing.relativePath);
-    } else if (id.startsWith("git-") && changesFromUI) {
+    } else if (id.startsWith('git-') && changesFromUI) {
       const uiChange = changesFromUI.find((c) => c.id === id);
       if (uiChange) {
         syntheticChangesToAdd.push({ ...uiChange, stage: ChangeStage.Staged });
@@ -336,7 +347,7 @@ function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): 
   for (const c of existingChanges) {
     if (changeIds.includes(c.id) && c.stage === ChangeStage.Unstaged) {
       const hasExistingStaged = existingChanges.some(
-        (other) => other.relativePath === c.relativePath && other.stage === ChangeStage.Staged
+        (other) => other.relativePath === c.relativePath && other.stage === ChangeStage.Staged,
       );
       if (hasExistingStaged) continue;
       updatedChanges.push({ ...c, stage: ChangeStage.Staged });
@@ -346,7 +357,7 @@ function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): 
   }
   for (const syntheticChange of syntheticChangesToAdd) {
     const hasExistingStaged = updatedChanges.some(
-      (c) => c.relativePath === syntheticChange.relativePath && c.stage === ChangeStage.Staged
+      (c) => c.relativePath === syntheticChange.relativePath && c.stage === ChangeStage.Staged,
     );
     if (!hasExistingStaged) updatedChanges.push(syntheticChange);
   }
@@ -354,7 +365,7 @@ function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): 
   yield* put(setChanges(wsId, updatedChanges));
 
   try {
-    const response = (yield* call(invoke, "file-tracking:stage-changes", {
+    const response = (yield* call(invoke, 'file-tracking:stage-changes', {
       workspaceId: wsId,
       changeIds,
     })) as { ok: boolean; error?: string };
@@ -369,12 +380,13 @@ function* handleStageChanges(action: ReturnType<typeof stageChangesRequested>): 
   }
 }
 
-
 // ---------------------------------------------------------------------------
 // unstageChanges
 // ---------------------------------------------------------------------------
 
-function* handleUnstageChanges(action: ReturnType<typeof unstageChangesRequested>): SagaGenerator<void> {
+function* handleUnstageChanges(
+  action: ReturnType<typeof unstageChangesRequested>,
+): SagaGenerator<void> {
   const { wsId, changeIds, changesFromUI } = action.payload;
   if (!wsId) return;
 
@@ -390,7 +402,7 @@ function* handleUnstageChanges(action: ReturnType<typeof unstageChangesRequested
     if (existing) {
       pendingPaths.push(existing.relativePath);
       pendingStageOperationsByPath.add(existing.relativePath);
-    } else if (id.startsWith("git-") && changesFromUI) {
+    } else if (id.startsWith('git-') && changesFromUI) {
       const uiChange = changesFromUI.find((c) => c.id === id);
       if (uiChange) {
         syntheticChangesToAdd.push({ ...uiChange, stage: ChangeStage.Unstaged });
@@ -404,7 +416,7 @@ function* handleUnstageChanges(action: ReturnType<typeof unstageChangesRequested
   for (const c of existingChanges) {
     if (changeIds.includes(c.id) && c.stage === ChangeStage.Staged) {
       const hasExistingUnstaged = existingChanges.some(
-        (other) => other.relativePath === c.relativePath && other.stage === ChangeStage.Unstaged
+        (other) => other.relativePath === c.relativePath && other.stage === ChangeStage.Unstaged,
       );
       if (hasExistingUnstaged) continue;
       updatedChanges.push({ ...c, stage: ChangeStage.Unstaged });
@@ -414,7 +426,7 @@ function* handleUnstageChanges(action: ReturnType<typeof unstageChangesRequested
   }
   for (const syntheticChange of syntheticChangesToAdd) {
     const hasExistingUnstaged = updatedChanges.some(
-      (c) => c.relativePath === syntheticChange.relativePath && c.stage === ChangeStage.Unstaged
+      (c) => c.relativePath === syntheticChange.relativePath && c.stage === ChangeStage.Unstaged,
     );
     if (!hasExistingUnstaged) updatedChanges.push(syntheticChange);
   }
@@ -422,7 +434,7 @@ function* handleUnstageChanges(action: ReturnType<typeof unstageChangesRequested
   yield* put(setChanges(wsId, updatedChanges));
 
   try {
-    const response = (yield* call(invoke, "file-tracking:unstage-changes", {
+    const response = (yield* call(invoke, 'file-tracking:unstage-changes', {
       workspaceId: wsId,
       changeIds,
     })) as { ok: boolean; error?: string };
@@ -452,7 +464,7 @@ function* handleStageByPath(action: ReturnType<typeof stageByPathRequested>): Sa
 
   for (const filePath of validPaths) {
     const existing = existingChanges.find(
-      (c) => c.relativePath === filePath && c.stage === ChangeStage.Unstaged
+      (c) => c.relativePath === filePath && c.stage === ChangeStage.Unstaged,
     );
     if (existing) {
       changeIds.push(existing.id);
@@ -474,7 +486,9 @@ function* handleStageByPath(action: ReturnType<typeof stageByPathRequested>): Sa
   yield* call(handleStageChanges, stageChangesRequested(wsId, changeIds, changesFromUI));
 }
 
-function* handleUnstageByPath(action: ReturnType<typeof unstageByPathRequested>): SagaGenerator<void> {
+function* handleUnstageByPath(
+  action: ReturnType<typeof unstageByPathRequested>,
+): SagaGenerator<void> {
   const [wsId, filePaths] = action.payload;
   const validPaths = filePaths.filter(Boolean);
   if (validPaths.length === 0) return;
@@ -485,7 +499,7 @@ function* handleUnstageByPath(action: ReturnType<typeof unstageByPathRequested>)
 
   for (const filePath of validPaths) {
     const existing = existingChanges.find(
-      (c) => c.relativePath === filePath && c.stage === ChangeStage.Staged
+      (c) => c.relativePath === filePath && c.stage === ChangeStage.Staged,
     );
     if (existing) {
       changeIds.push(existing.id);
@@ -511,7 +525,9 @@ function* handleUnstageByPath(action: ReturnType<typeof unstageByPathRequested>)
 // revertChange / revertChanges / revertByPath
 // ---------------------------------------------------------------------------
 
-function* handleRevertChange(action: ReturnType<typeof revertChangeRequested>): SagaGenerator<void> {
+function* handleRevertChange(
+  action: ReturnType<typeof revertChangeRequested>,
+): SagaGenerator<void> {
   const [wsId, change] = action.payload;
   const filePath = change.relativePath || change.file;
   if (!filePath || !wsId) return;
@@ -522,21 +538,28 @@ function* handleRevertChange(action: ReturnType<typeof revertChangeRequested>): 
 
   const existingChanges = yield* selectFileTrackingChanges.effect(wsId);
   const originalChanges = [...existingChanges];
-  yield* put(setChanges(wsId, existingChanges.filter((c) => c.id !== changeId)));
+  yield* put(
+    setChanges(
+      wsId,
+      existingChanges.filter((c) => c.id !== changeId),
+    ),
+  );
 
   try {
-    yield* call(invoke, "git:discard", { workspaceId: wsId, paths: [filePath] });
+    yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: [filePath] });
     clearPendingState([changeId], [filePath]);
     // Fire-and-forget refresh after successful revert
     yield* fork(handleRefresh, refreshRequested(wsId));
   } catch (error) {
-    logger.error("Failed to revert change", error as Error, { filePath });
+    logger.error('Failed to revert change', error as Error, { filePath });
     clearPendingState([changeId], [filePath]);
     yield* put(setChanges(wsId, originalChanges));
   }
 }
 
-function* handleRevertChanges(action: ReturnType<typeof revertChangesRequested>): SagaGenerator<void> {
+function* handleRevertChanges(
+  action: ReturnType<typeof revertChangesRequested>,
+): SagaGenerator<void> {
   const [wsId, changes] = action.payload;
   if (changes.length === 0 || !wsId) return;
 
@@ -550,27 +573,34 @@ function* handleRevertChanges(action: ReturnType<typeof revertChangesRequested>)
   const existingChanges = yield* selectFileTrackingChanges.effect(wsId);
   const originalChanges = [...existingChanges];
   const idsToRemove = new Set(changeIds);
-  yield* put(setChanges(wsId, existingChanges.filter((c) => !idsToRemove.has(c.id))));
+  yield* put(
+    setChanges(
+      wsId,
+      existingChanges.filter((c) => !idsToRemove.has(c.id)),
+    ),
+  );
 
   try {
-    yield* call(invoke, "git:discard", { workspaceId: wsId, paths: filePaths });
+    yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: filePaths });
     clearPendingState(changeIds, filePaths);
     yield* fork(handleRefresh, refreshRequested(wsId));
   } catch (error) {
-    logger.error("Failed to revert changes", error as Error, { filePaths });
+    logger.error('Failed to revert changes', error as Error, { filePaths });
     clearPendingState(changeIds, filePaths);
     yield* put(setChanges(wsId, originalChanges));
   }
 }
 
-function* handleRevertByPath(action: ReturnType<typeof revertByPathRequested>): SagaGenerator<void> {
+function* handleRevertByPath(
+  action: ReturnType<typeof revertByPathRequested>,
+): SagaGenerator<void> {
   const [wsId, filePaths] = action.payload;
   const validPaths = filePaths.filter(Boolean);
   if (validPaths.length === 0) return;
 
   const existingChanges = yield* selectFileTrackingChanges.effect(wsId);
-  const changesToRevert = existingChanges.filter(
-    (c) => validPaths.includes(c.relativePath || c.file)
+  const changesToRevert = existingChanges.filter((c) =>
+    validPaths.includes(c.relativePath || c.file),
   );
 
   if (changesToRevert.length > 0) {
@@ -579,11 +609,11 @@ function* handleRevertByPath(action: ReturnType<typeof revertByPathRequested>): 
     // No tracked changes found, but still try to discard
     try {
       validPaths.forEach((path) => pendingStageOperationsByPath.add(path));
-      yield* call(invoke, "git:discard", { workspaceId: wsId, paths: validPaths });
+      yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));
       yield* fork(handleRefresh, refreshRequested(wsId));
     } catch (error) {
-      logger.error("Failed to revert by path", error as Error, { filePaths: validPaths });
+      logger.error('Failed to revert by path', error as Error, { filePaths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));
     }
   }
@@ -598,25 +628,29 @@ function* handleTrackChange(action: ReturnType<typeof trackChangeRequested>): Sa
   if (!wsId) return;
 
   try {
-    yield* call(invoke, "file-tracking:track", { workspaceId: wsId, change });
+    yield* call(invoke, 'file-tracking:track', { workspaceId: wsId, change });
   } catch (error) {
-    logger.error("Failed to track change", error as Error);
+    logger.error('Failed to track change', error as Error);
   }
 }
 
-function* handleClearTrackedChanges(action: ReturnType<typeof clearTrackedChangesRequested>): SagaGenerator<void> {
+function* handleClearTrackedChanges(
+  action: ReturnType<typeof clearTrackedChangesRequested>,
+): SagaGenerator<void> {
   const wsId = action.payload[0];
   if (!wsId) return;
 
   try {
-    yield* call(invoke, "file-tracking:clear-tracked", { workspaceId: wsId });
+    yield* call(invoke, 'file-tracking:clear-tracked', { workspaceId: wsId });
     yield* put(clearAllChanges(wsId));
   } catch (error) {
-    logger.error("Failed to clear tracked changes", error as Error);
+    logger.error('Failed to clear tracked changes', error as Error);
   }
 }
 
-function* handleLoadOlderCommits(action: ReturnType<typeof loadOlderCommitsRequested>): SagaGenerator<void> {
+function* handleLoadOlderCommits(
+  action: ReturnType<typeof loadOlderCommitsRequested>,
+): SagaGenerator<void> {
   const { wsId, beforeSha, limit } = action.payload;
   if (!wsId) return;
 
@@ -627,14 +661,14 @@ function* handleLoadOlderCommits(action: ReturnType<typeof loadOlderCommitsReque
       invokeWithTimeout,
       FILE_TRACKING_CHANNELS.LOAD_OLDER_COMMITS,
       { workspaceId: wsId, beforeSha, limit: limit ?? 50 },
-      IPC_LOAD_TIMEOUT_MS
+      IPC_LOAD_TIMEOUT_MS,
     )) as { commits: CommitInfo[]; boundarySha?: string } | null;
 
     if (response?.commits) {
       yield* put(appendOlderCommits(wsId, response.commits));
     }
   } catch (error) {
-    logger.error("Failed to load older commits", error as Error);
+    logger.error('Failed to load older commits', error as Error);
   } finally {
     yield* put(setLoadingOlderCommits(wsId, false));
   }

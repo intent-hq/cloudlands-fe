@@ -5,14 +5,12 @@
 } from 'marked';
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
+  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import { DiffViewer } from '$lib/components/ui/diff';
   import { createLogger } from '$lib/utils/client-logger';
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-
-  // Dynamically import MermaidRenderer to reduce bundle size (used infrequently)
-  const MermaidRenderer = import('$lib/components/markdown/MermaidRenderer.svelte');
 
   const logger = createLogger('MarkdownRenderer');
   const activeWorkspaceId = selectActiveWorkspaceId();
@@ -277,9 +275,7 @@
         {onOpenFile}
       />
     {:else if block.type === 'mermaid'}
-      {#await MermaidRenderer then module}
-        <module.default code={block.content} />
-      {/await}
+      <MermaidRenderer code={block.content} />
     {:else if block.type === 'diff'}
       <DiffViewer patch={withSyntheticDiffHeaders(block.content)} fileName="diff.patch" showHeader={false} />
     {:else if block.type === 'code'}

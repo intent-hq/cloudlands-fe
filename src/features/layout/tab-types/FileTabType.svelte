@@ -8,15 +8,13 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import {
-  getReduxStore,
-  dispatch,
-} from '$lib/store/redux-dispatch-bridge';
+  import { getReduxStore, dispatch } from '$lib/store/redux-dispatch-bridge';
   import {
   selectFileContent,
   selectFileError,
   selectFileIsBinary,
   selectFileIsDirty,
+  selectFileLastUpdated,
   selectFileLoading,
   selectFileSaving,
 } from '$lib/store/slices/files/files-selectors';
@@ -88,6 +86,7 @@
   const fileErrorStore = selectFileError(workspaceId, filePathStore);
   const isFileBinaryStore = selectFileIsBinary(workspaceId, filePathStore);
   const isFileDirtyStore = selectFileIsDirty(workspaceId, filePathStore);
+  const fileLastUpdatedStore = selectFileLastUpdated(workspaceId, filePathStore);
 
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const headerContext = getPanelHeaderContext();
@@ -101,6 +100,7 @@
   const fileError = $derived($fileErrorStore);
   const isFileBinary = $derived($isFileBinaryStore);
   const isFileDirty = $derived($isFileDirtyStore);
+  const fileLastUpdated = $derived($fileLastUpdatedStore);
 
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
   let isMounted = $state(true);
@@ -433,7 +433,10 @@
           isBinary={isFileBinary}
         />
       {:else if isMarkdownFile && markdownPreview}
-        <MarkdownFileEditor bind:value={getFileContentForEditor, setFileContentFromEditor} />
+        <MarkdownFileEditor
+          bind:value={getFileContentForEditor, setFileContentFromEditor}
+          externalContentVersion={fileLastUpdated}
+        />
       {:else}
         <CodeEditor
           bind:this={codeEditorRef}
@@ -446,6 +449,7 @@
           lineWrapping={$lineWrapping}
           lineChanges={$diffIndicators ? fileLineChanges : []}
           jumpTo={jumpToLine}
+          externalContentVersion={fileLastUpdated}
           {isPanelFocused}
         />
       {/if}

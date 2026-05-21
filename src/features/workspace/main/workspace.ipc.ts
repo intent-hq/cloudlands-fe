@@ -42,9 +42,13 @@ import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
 import {
+  getUnifiedWatcher,
   shutdownUnifiedWatcher,
   shutdownOtherWatchers,
+  type UnifiedWorkspaceWatcher,
 } from './unified-workspace-watcher';
+import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
+import { isBinaryExtension } from '../../../shared/binary-file-extensions';
 import {
   initRepoRegistry,
   getAllRepos,
@@ -141,6 +145,8 @@ const logger = new Logger('WorkspaceIPC');
 // Storage for MetadataSyncService instances per workspace
 const metadataSyncServices = new Map<string, MetadataSyncService>();
 
+const editorRefreshUnsubscribers = new Map<string, () => void>();
+
 // Global storage for git integrations
 declare global {
   var gitIntegrations: Map<string, any> | undefined;
@@ -232,6 +238,53 @@ function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<
       error: result.error,
     };
   }
+}
+
+function unsubscribeEditorRefreshSubscriber(workspaceId: string): void {
+  const unsubscribe = editorRefreshUnsubscribers.get(workspaceId);
+  if (!unsubscribe) return;
+
+  try {
+    unsubscribe();
+    logger.info('[WorkspaceIPC] Unsubscribed editor refresh watcher', { workspaceId });
+  } catch (error) {
+    logger.warn('[WorkspaceIPC] Failed to unsubscribe editor refresh watcher', error as Error, {
+      workspaceId,
+    });
+  } finally {
+    editorRefreshUnsubscribers.delete(workspaceId);
+  }
+}
+
+function registerEditorRefreshSubscriber(
+  workspaceId: string,
+  watcher: UnifiedWorkspaceWatcher,
+): void {
+  if (!watcher.getStats().isRunning) {
+    logger.debug('[WorkspaceIPC] Skipping editor refresh subscriber; watcher is not running', {
+      workspaceId,
+    });
+    return;
+  }
+
+  const unsubscribe = watcher.subscribe({
+    id: `editor-refresh:${workspaceId}`,
+    pathPatterns: ['**'],
+    eventTypes: ['change', 'add'],
+    callback: (event) => {
+      if (event.type !== 'change' && event.type !== 'add') return;
+      if (isBinaryExtension(event.relativePath)) return;
+
+      sendToWorkspaceWindows(workspaceId, 'watcher:file-changed', {
+        workspaceId,
+        path: event.path,
+        relativePath: event.relativePath,
+        type: event.type,
+      });
+    },
+  });
+
+  editorRefreshUnsubscribers.set(workspaceId, unsubscribe);
 }
 
 // ============================================================================
@@ -573,6 +626,7 @@ export function setupWorkspaceIPC(): void {
           clearMetadataFSCache();
 
           // Shut down unified workspace watcher (after other watchers that depend on it)
+          unsubscribeEditorRefreshSubscriber(id);
           try {
             await shutdownUnifiedWatcher(id);
             logger.info('[WorkspaceIPC] Shut down unified workspace watcher', { workspaceId: id });
@@ -767,13 +821,23 @@ export function setupWorkspaceIPC(): void {
           const isRemote = !!workspace.isRemote && !!workspace.environmentConfig?.ssh;
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
           if (worktreePath && !isRemote) {
-            // Native @parcel/watcher is disabled — its C++ layer throws an
-            // unrecoverable Napi::Error (libc++abi termination) in packaged
-            // builds.  Change detection uses git polling instead (see
-            // gitPollingOnly in tracking.config.ts).
-            logger.info('[WorkspaceIPC] Skipping native file watcher (git polling mode)', {
-              workspaceId: id,
-            });
+            if (
+              TRACKING_CONFIG.changeDetection.gitPollingOnly ||
+              TRACKING_CONFIG.changeDetection.disableFileWatcher
+            ) {
+              logger.info('[WorkspaceIPC] Skipping native file watcher (git polling mode)', {
+                workspaceId: id,
+              });
+            } else {
+              try {
+                const watcher = await getUnifiedWatcher(id, worktreePath);
+                registerEditorRefreshSubscriber(id, watcher);
+              } catch (error) {
+                logger.warn('[WorkspaceIPC] Failed to start native file watcher', error as Error, {
+                  workspaceId: id,
+                });
+              }
+            }
           } else if (isRemote) {
             logger.info(
               '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)',
@@ -1431,6 +1495,7 @@ export function setupWorkspaceIPC(): void {
         clearMetadataFSCache();
 
         // Shut down unified workspace watcher
+        unsubscribeEditorRefreshSubscriber(validatedId);
         try {
           await shutdownUnifiedWatcher(validatedId);
           logger.debug('Shut down unified workspace watcher', { workspaceId: validatedId });

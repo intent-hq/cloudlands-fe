@@ -21,6 +21,7 @@ const {
   actionMocks,
   createMockSelector,
   dispatchMock,
+  applyExternalFileContentToMockState,
   mockReduxState,
   resetMockReduxState,
 } = vi.hoisted(() => {
@@ -31,6 +32,7 @@ const {
     saving: boolean;
     error: string | null;
     isBinary: boolean;
+    lastUpdated: number;
   };
 
   type ActiveSelector = { update: () => void };
@@ -63,11 +65,26 @@ const {
         saving: false,
         error: null,
         isBinary: false,
+        lastUpdated: 0,
       },
     };
     mockReduxState.fileTrackingChanges = [];
     mockReduxState.lineWrapping = true;
     mockReduxState.diffIndicators = false;
+  }
+
+  function applyExternalFileContentToMockState(path: string, content: string) {
+    const entry = mockReduxState.files[path];
+    if (!entry) throw new Error(`Missing mock file entry for ${path}`);
+    const hasPendingEdits =
+      entry.localContent !== null && entry.localContent !== entry.originalContent;
+    mockReduxState.files[path] = {
+      ...entry,
+      localContent: hasPendingEdits ? entry.localContent : content,
+      originalContent: content,
+      lastUpdated: entry.lastUpdated + 1,
+    };
+    flushMockSelectors();
   }
 
   function flushMockSelectors() {
@@ -151,6 +168,7 @@ const {
 
   return {
     actionMocks,
+    applyExternalFileContentToMockState,
     createMockSelector,
     dispatchMock,
     mockReduxState,
@@ -186,6 +204,9 @@ vi.mock('$lib/store/slices/files/files-selectors', () => ({
     const entry = path ? mockReduxState.files[path] : undefined;
     return entry ? entry.localContent !== entry.originalContent : false;
   }),
+  selectFileLastUpdated: createMockSelector((_wsId: string, path: string | null | undefined) =>
+    path ? (mockReduxState.files[path]?.lastUpdated ?? 0) : 0,
+  ),
 }));
 
 vi.mock('$lib/store/slices/files/files-slice', () => actionMocks);
@@ -309,6 +330,7 @@ describe('FileTabType Redux integration', () => {
         saving: false,
         error: null,
         isBinary: false,
+        lastUpdated: 0,
       };
 
       renderFileTab({ ...fileTab, id: `tab-${filePath}`, title, filePath });
@@ -327,6 +349,7 @@ describe('FileTabType Redux integration', () => {
       saving: false,
       error: null,
       isBinary: false,
+      lastUpdated: 0,
     };
 
     renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
@@ -334,6 +357,60 @@ describe('FileTabType Redux integration', () => {
     expect(await screen.findByTestId('markdown-file-editor')).toBeTruthy();
     expect(screen.queryByTestId('code-editor')).toBeNull();
     expect(screen.queryByTestId('file-viewer')).toBeNull();
+  });
+
+  it('updates the visible markdown editor for repeated external content while clean', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('markdown-file-editor');
+    await waitFor(() => expect(editor.value).toBe('# Project'));
+
+    applyExternalFileContentToMockState('README.md', '# Project\n\nexternal marker');
+
+    await waitFor(() => expect(editor.value).toBe('# Project\n\nexternal marker'));
+    expect(editor.getAttribute('data-external-content-version')).toBe('1');
+
+    applyExternalFileContentToMockState('README.md', '# Project\n\nsecond external marker');
+
+    await waitFor(() => expect(editor.value).toBe('# Project\n\nsecond external marker'));
+    expect(editor.getAttribute('data-external-content-version')).toBe('2');
+    expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
+
+  it('keeps local dirty markdown editor content when external content is applied', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({ ...fileTab, id: 'tab-readme', title: 'README.md', filePath: 'README.md' });
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('markdown-file-editor');
+    await fireEvent.input(editor, { target: { value: '# Local draft' } });
+
+    applyExternalFileContentToMockState('README.md', '# External marker');
+
+    await waitFor(() => expect(editor.value).toBe('# Local draft'));
+    expect(mockReduxState.files['README.md']).toMatchObject({
+      localContent: '# Local draft',
+      originalContent: '# External marker',
+      lastUpdated: 1,
+    });
   });
 
   it('keeps SVG files in FileViewer while preserving the XML language mapping', async () => {
@@ -344,6 +421,7 @@ describe('FileTabType Redux integration', () => {
       saving: false,
       error: null,
       isBinary: false,
+      lastUpdated: 0,
     };
 
     renderFileTab({ ...fileTab, id: 'tab-svg', title: 'icon.svg', filePath: 'public/icon.svg' });
@@ -363,6 +441,7 @@ describe('FileTabType Redux integration', () => {
       saving: false,
       error: null,
       isBinary: true,
+      lastUpdated: 0,
     };
 
     renderFileTab({ ...fileTab, id: 'tab-png', title: 'logo.png', filePath: 'assets/logo.png' });
@@ -419,6 +498,33 @@ describe('FileTabType Redux integration', () => {
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/saveFileContentRequested',
       payload: ['ws-1', 'src/main.ts', '/repo/src/main.ts', 'console.log("edited");'],
+    });
+  });
+
+  it('updates the visible open editor when external content is applied while clean', async () => {
+    renderFileTab();
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('console.log("loaded");'));
+
+    applyExternalFileContentToMockState('src/main.ts', 'console.log("external");');
+
+    await waitFor(() => expect(editor.value).toBe('console.log("external");'));
+    expect(editor.getAttribute('data-external-content-version')).toBe('1');
+  });
+
+  it('keeps local dirty editor content when external content is applied', async () => {
+    renderFileTab();
+
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await fireEvent.input(editor, { target: { value: 'console.log("local draft");' } });
+
+    applyExternalFileContentToMockState('src/main.ts', 'console.log("external");');
+
+    await waitFor(() => expect(editor.value).toBe('console.log("local draft");'));
+    expect(mockReduxState.files['src/main.ts']).toMatchObject({
+      localContent: 'console.log("local draft");',
+      originalContent: 'console.log("external");',
     });
   });
 

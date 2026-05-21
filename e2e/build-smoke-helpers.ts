@@ -48,25 +48,25 @@ export function findPackagedApp(): string {
     process.platform === 'win32'
       ? [join(root, 'dist-electron', 'win-unpacked', 'Intent by Augment.exe')]
       : [
-        join(
-          root,
-          'dist-electron',
-          'mac-arm64',
-          'Intent by Augment.app',
-          'Contents',
-          'MacOS',
-          'Intent by Augment',
-        ),
-        join(
-          root,
-          'dist-electron',
-          'mac',
-          'Intent by Augment.app',
-          'Contents',
-          'MacOS',
-          'Intent by Augment',
-        ),
-      ];
+          join(
+            root,
+            'dist-electron',
+            'mac-arm64',
+            'Intent by Augment.app',
+            'Contents',
+            'MacOS',
+            'Intent by Augment',
+          ),
+          join(
+            root,
+            'dist-electron',
+            'mac',
+            'Intent by Augment.app',
+            'Contents',
+            'MacOS',
+            'Intent by Augment',
+          ),
+        ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -76,7 +76,7 @@ export function findPackagedApp(): string {
 
   throw new Error(
     `Could not find packaged app. Looked in:\n${candidates.map((c) => `  - ${c}`).join('\n')}\n` +
-    'Set PACKAGED_APP_PATH to override.',
+      'Set PACKAGED_APP_PATH to override.',
   );
 }
 
@@ -449,7 +449,9 @@ export async function createWorkspaceWithPrompt(
       } catch {
         // Provider check didn't complete in time — bypass the welcome step
         // by dispatching goToStep('project') through the Redux store.
-        console.warn('⚠️ "Let\'s go" button still disabled after 45s — bypassing welcome step via Redux');
+        console.warn(
+          '⚠️ "Let\'s go" button still disabled after 45s — bypassing welcome step via Redux',
+        );
         await page.evaluate(() => {
           const ctx = (window as any).intent?.reduxContext;
           const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
@@ -511,8 +513,9 @@ export async function createWorkspaceWithPrompt(
 
   // Verify focus took hold; if not, try clicking the top-left corner of the
   // editor (above the suggestion overlay which starts at top: 52px)
-  const isFocused = await editable.evaluate((el) =>
-    el === document.activeElement || el.contains(document.activeElement));
+  const isFocused = await editable.evaluate(
+    (el) => el === document.activeElement || el.contains(document.activeElement),
+  );
   if (!isFocused) {
     console.log('⚠️ Programmatic focus failed, clicking editor top-left corner...');
     const box = await editable.boundingBox();
@@ -556,7 +559,7 @@ export async function createWorkspaceWithPrompt(
     );
     throw new Error(
       `"Create workspace" button is still disabled after 10s. ` +
-      `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
+        `The repo selector likely shows a stale/invalid path. Repo path: ${repoPath}`,
     );
   }
 
@@ -569,7 +572,11 @@ export async function createWorkspaceWithPrompt(
   await page.waitForURL(
     (url) => {
       const path = url.pathname || url.toString();
-      return /\/workspace\//.test(path) && !/\/workspace\/creating/.test(path) && !/\/workspace\/new/.test(path);
+      return (
+        /\/workspace\//.test(path) &&
+        !/\/workspace\/creating/.test(path) &&
+        !/\/workspace\/new/.test(path)
+      );
     },
     { timeout: 60_000 },
   );
@@ -773,7 +780,9 @@ export async function waitForFileContentWithNudge(
     // spinners and save indicators that are always visible, which prevents the
     // inactivity timer from ever reaching the nudge threshold.
     const streaming = await page
-      .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
+      .locator(
+        '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
+      )
       .first()
       .isVisible({ timeout: 1_000 })
       .catch(() => false);
@@ -977,24 +986,18 @@ export async function waitForAgentNotStreaming(
               };
             });
 
-            // An agent is idle when EITHER:
-            // 1. All streaming/processing flags are cleared AND the latest
-            //    assistant message is not streaming AND status is not 'active'
-            //    (matches the saga's selectAgentIsResponding / isActiveAgentThread
-            //    logic which checks stored.status === 'active' and
-            //    isStreamingMessage(latestAssistant)), OR
-            // 2. The backend has authoritatively set status='idle' with a stopReason
-            //    (the agent:idle event updates status/stopReason).
-            const allIdle = agentStates.every(
-              (a: any) => {
-                // Path 2: authoritative idle
-                if (a.status === 'idle' && a.stopReason != null) return true;
-                // Path 1: all flags cleared + no streaming assistant message + non-active status
-                const flagsCleared = !a.isStreaming && !a.isResponding && !a.isProcessing;
-                const statusNotActive = a.status !== 'active';
-                return flagsCleared && !a.lastAssistantStreaming && statusNotActive;
-              },
-            );
+            // Match the saga's selectAgentIsResponding / isActiveAgentThread
+            // guard: do not treat status='idle' as enough while any renderer
+            // processing flags or streaming assistant placeholders remain set.
+            // Otherwise follow-up sends can still route through the queue path.
+            const allIdle = agentStates.every((a: any) => {
+              const flagsCleared = !a.isStreaming && !a.isResponding && !a.isProcessing;
+              const statusNotActive = !['active', 'processing', 'waiting'].includes(a.status);
+              const activationSettled = !['activating', 'pending'].includes(a.activationState);
+              return (
+                flagsCleared && !a.lastAssistantStreaming && statusNotActive && activationSettled
+              );
+            });
 
             return {
               available: true,
@@ -1010,7 +1013,7 @@ export async function waitForAgentNotStreaming(
         if (storeState.available && storeState.allIdle && storeState.agentCount > 0) {
           console.log(
             `✅ Redux store confirms all ${storeState.agentCount} agents idle — ` +
-            `waiting 10s for IPC response + saga cleanup + tryBeginSessionPrompt guard`,
+              `waiting 10s for IPC response + saga cleanup + tryBeginSessionPrompt guard`,
           );
           // Buffer for the backend IPC response to arrive, the saga's
           // activeSends guard to clear, AND the backend's tryBeginSessionPrompt
@@ -1104,7 +1107,9 @@ async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promis
       // NOTE: Do NOT include `.animate-pulse` — it matches generic loading
       // spinners that are always visible, causing this to never detect completion.
       const hasStreamingIndicator = await page
-        .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
+        .locator(
+          '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
+        )
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
@@ -1126,7 +1131,9 @@ async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promis
         // Even with disabled send button, if no streaming indicators, give it one more check
         await new Promise((resolve) => setTimeout(resolve, 2_000));
         const stillStreaming = await page
-          .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
+          .locator(
+            '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
+          )
           .first()
           .isVisible({ timeout: 1_000 })
           .catch(() => false);
@@ -1458,7 +1465,9 @@ export function startChatNudgeMonitor(
       // NOTE: Do NOT include `.animate-pulse` — it matches generic loading
       // spinners that are always visible, preventing nudges from ever firing.
       const streaming = await page
-        .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
+        .locator(
+          '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
+        )
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
@@ -1608,7 +1617,7 @@ export async function openAgentChat(page: Page, agentId: string): Promise<void> 
   // input or message inside the visible tab-content-wrapper.
   const activeTabContent = page.locator(
     '.tab-content-wrapper:not(.hidden) .tiptap-editor[contenteditable="true"], ' +
-    '.tab-content-wrapper:not(.hidden) [data-message-role]',
+      '.tab-content-wrapper:not(.hidden) [data-message-role]',
   );
 
   try {
@@ -1699,7 +1708,9 @@ export async function waitForAssistantResponse(
 
   while (Date.now() < deadline) {
     const isStreaming = await page
-      .locator('.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]')
+      .locator(
+        '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
+      )
       .first()
       .isVisible({ timeout: 1_000 })
       .catch(() => false);
@@ -1810,7 +1821,7 @@ export async function archiveAndGoHome(page: Page, workspaceId: string): Promise
           if (s.isStreaming && s.id) {
             await (window as any).electronAPI
               .invoke('agent:stop', { agentId: s.id })
-              .catch(() => { });
+              .catch(() => {});
           }
         }
       } catch {
