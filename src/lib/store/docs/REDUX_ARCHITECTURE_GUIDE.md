@@ -15,7 +15,7 @@ skill disagree, follow the skill and report the drift.
 | Reducer purity and state shape | `.agents/skills/svelte-redux-toolkit/reducers/SKILL.md` |
 | Store-bound selectors and call modes | `.agents/skills/svelte-redux-toolkit/selectors/SKILL.md` |
 | Component setup, dispatch, and lifecycle | `.agents/skills/svelte-redux-toolkit/component-integration/SKILL.md` |
-| Saga registration, startup, and side effects | `.agents/skills/svelte-redux-toolkit/sagas/SKILL.md` |
+| Saga startup, lifecycle, and side effects | `.agents/skills/svelte-redux-toolkit/sagas/SKILL.md` |
 | Package-owned saga crash/restart behavior | `.agents/skills/svelte-redux-toolkit/saga-manager/SKILL.md` |
 | Store migration planning | `.agents/skills/migrate-to-svelte-redux-toolkit/SKILL.md` |
 
@@ -31,17 +31,18 @@ These files are the repository-specific map for how that instance is assembled:
 | --- | --- |
 | `src/lib/store/configured-store.ts` | Creates the configured Store from app reducers and middleware. |
 | `src/lib/store/reducer.ts` | Registers app-owned reducer domains. Package-owned internals are managed by the package. |
-| `src/lib/store/sagas.ts` | Collects app-owned saga entries and exports the registered saga names. |
-| `src/lib/store/saga-registration.ts` | Calls `appStore.registerSagas(sagas)`, exposes the registered Store, and starts app sagas by name. |
+| `src/lib/store/sagas.ts` | Defines the function-only ordered app saga array and the `startAllAppSagas(store)` startup helper. |
 | `src/lib/store/store.ts` | Re-exports the configured Store, inferred state types, debug helpers, and a temporary bridge for remaining compatibility surfaces. |
-| `src/routes/+layout.svelte` | Initializes the registered Store, starts all app sagas, and disposes both during root teardown. |
+| `src/routes/+layout.svelte` | Initializes the configured Store, calls `startAllAppSagas(appStore)`, and disposes saga cancels plus the Store context during root teardown. |
 
 Keep this shape aligned with the skills:
 
 - App reducers are passed to the `Store` constructor.
-- App sagas are registered with `store.registerSagas(...)` before Store init.
-- App sagas are started explicitly with `store.runSaga(name)`; `store.init()` does
-  not auto-start app sagas.
+- App sagas are functions listed in startup order in `src/lib/store/sagas.ts`.
+- After Store init/root setup, the root layout calls `startAllAppSagas(store)`,
+  which starts each listed saga with `store.runSaga(sagaFn)` and returns cancel
+  functions for teardown.
+- `store.init()` does not auto-start app sagas.
 - State types should be inferred from the configured Store instance.
 - Package-owned internal reducers and saga-manager behavior are not app APIs.
 
@@ -88,8 +89,8 @@ the app map above to find the repository owner files.
 3. Put slice state/actions/reducer in `src/lib/store/slices/<domain>/` and keep
    slice types in dedicated `*-types.ts` modules when needed.
 4. Register new app reducers in `src/lib/store/reducer.ts`.
-5. Register new app sagas in `src/lib/store/sagas.ts`; `saga-registration.ts`
-   handles Store registration/startup for the app registry.
+5. Add new app saga functions to the ordered array in `src/lib/store/sagas.ts`;
+   `startAllAppSagas(store)` includes that array in root startup after Store init.
 6. Add or update colocated tests for changed reducers, selectors, or sagas.
 7. Run the checks required by the applicable skills and report exact results.
 
