@@ -85,137 +85,95 @@ import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/ag
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
 import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
-import type { SagaName } from "./types";
 
 type AppSaga = Parameters<Store<any, any>["runSaga"]>[0];
-
-type AppSagaRegistryEntry = {
-  readonly name: SagaName;
-  readonly saga: AppSaga;
-};
 
 /**
  * All app-owned sagas in startup order. Add new sagas here as slices are migrated.
  */
 export const sagas = [
-  { name: "providerSettingsSaga", saga: providerSettingsSaga },
-  { name: "backgroundAgentSettingsSaga", saga: backgroundAgentSettingsSaga },
-  { name: "externalEditorsSaga", saga: externalEditorsSaga },
-  { name: "uiLayoutSaga", saga: uiLayoutSaga },
-  { name: "themeSaga", saga: themeSaga },
-  { name: "tabStateSaga", saga: tabStateSaga },
-  { name: "terminalsSaga", saga: terminalsSaga },
-  { name: "noteReadTrackingSaga", saga: noteReadTrackingSaga },
-  { name: "permissionSaga", saga: permissionSaga },
-  { name: "featureCodesSaga", saga: featureCodesSaga },
-  { name: "knownReposSaga", saga: knownReposSaga },
-  { name: "deepLinksSaga", saga: deepLinksSaga },
-  { name: "modelSaga", saga: modelSaga },
-  { name: "specialistsSaga", saga: specialistsSaga },
-  { name: "systemStatusSaga", saga: systemStatusSaga },
-  { name: "pipSaga", saga: pipSaga },
-  { name: "userPreferencesSaga", saga: userPreferencesSaga },
-  { name: "workspaceOperationsSaga", saga: workspaceOperationsSaga },
-  { name: "workspaceSettingsSaga", saga: workspaceSettingsSaga },
-  { name: "streamingSaga", saga: streamingConfigSaga },
-  { name: "workspaceSaga", saga: workspaceSaga },
-  { name: "gitSaga", saga: gitOperationsSaga },
-  { name: "changesSaga", saga: changesSaga },
-  { name: "notesSaga", saga: workspaceNotesSaga },
-  { name: "workspaceEventsSaga", saga: workspaceEventsRendererSaga },
-  { name: "paletteSaga", saga: paletteSaga },
-  { name: "agentsSaga", saga: workspaceAgentsSaga },
-  { name: "contextSaga", saga: contextSaga },
-  { name: "browserSaga", saga: browserSaga },
-  { name: "authSaga", saga: authSaga },
-  { name: "uiSaga", saga: uiSaga },
-  { name: "layoutSaga", saga: appLayoutSaga },
-  { name: "autoUpdateSaga", saga: autoUpdateSaga },
-  {
-    name: "workspaceNavigationLifecycleSaga",
-    saga: watchWorkspaceNavigationLifecycleSaga,
-  },
-  {
-    name: "retroactiveNavigationMountCheckSaga",
-    saga: retroactiveNavigationMountCheckSaga,
-  },
-  {
-    name: "workspaceNavigationPersistenceSaga",
-    saga: watchWorkspaceNavigationPersistenceSaga,
-  },
-  { name: "panelContextSaga", saga: panelContextSaga },
-  { name: "workspaceSwitcherSaga", saga: workspaceSwitcherSaga },
-  { name: "releaseNotesSaga", saga: releaseNotesSaga },
-  { name: "transientUiSaga", saga: transientUiSaga },
-  { name: "acceptChangesStatusSaga", saga: acceptChangesStatusSaga },
-  { name: "executorResultSaga", saga: executorResultSaga },
-  { name: "skillsSaga", saga: skillsSaga },
-  { name: "githubAuthSaga", saga: githubAuthSaga },
-  { name: "githubReposSaga", saga: githubReposSaga },
-  { name: "githubRepoSearchSaga", saga: githubRepoSearchSaga },
-  { name: "clonePreflightSaga", saga: clonePreflightSaga },
-  { name: "linearAuthSaga", saga: linearAuthSaga },
-  { name: "sentryAuthSaga", saga: sentryAuthSaga },
-  { name: "setupScriptsSaga", saga: setupScriptsSaga },
-  { name: "mcpSettingsSaga", saga: mcpSettingsSaga },
-  { name: "commentsSaga", saga: commentsSaga },
-  { name: "taskAgentAssociationsSaga", saga: taskAgentAssociationsSaga },
-  { name: "workspaceInitializerSaga", saga: workspaceInitializerSaga },
+  providerSettingsSaga,
+  backgroundAgentSettingsSaga,
+  externalEditorsSaga,
+  uiLayoutSaga,
+  themeSaga,
+  tabStateSaga,
+  terminalsSaga,
+  noteReadTrackingSaga,
+  permissionSaga,
+  featureCodesSaga,
+  knownReposSaga,
+  deepLinksSaga,
+  modelSaga,
+  specialistsSaga,
+  systemStatusSaga,
+  pipSaga,
+  userPreferencesSaga,
+  workspaceOperationsSaga,
+  workspaceSettingsSaga,
+  streamingConfigSaga,
+  workspaceSaga,
+  gitOperationsSaga,
+  changesSaga,
+  workspaceNotesSaga,
+  workspaceEventsRendererSaga,
+  paletteSaga,
+  workspaceAgentsSaga,
+  contextSaga,
+  browserSaga,
+  authSaga,
+  uiSaga,
+  appLayoutSaga,
+  autoUpdateSaga,
+  watchWorkspaceNavigationLifecycleSaga,
+  retroactiveNavigationMountCheckSaga,
+  watchWorkspaceNavigationPersistenceSaga,
+  panelContextSaga,
+  workspaceSwitcherSaga,
+  releaseNotesSaga,
+  transientUiSaga,
+  acceptChangesStatusSaga,
+  executorResultSaga,
+  skillsSaga,
+  githubAuthSaga,
+  githubReposSaga,
+  githubRepoSearchSaga,
+  clonePreflightSaga,
+  linearAuthSaga,
+  sentryAuthSaga,
+  setupScriptsSaga,
+  mcpSettingsSaga,
+  commentsSaga,
+  taskAgentAssociationsSaga,
+  workspaceInitializerSaga,
 
-  { name: "sidebarNavSaga", saga: sidebarNavSaga },
-  { name: "scriptsSaga", saga: scriptsSaga },
-  { name: "agentFollowSaga", saga: agentFollowSaga },
-  { name: "gitStatusSaga", saga: gitStatusSaga },
-  { name: "agentOverviewSaga", saga: agentOverviewSaga },
-  { name: "agentLockSaga", saga: agentLockSaga },
-  { name: "panelLayoutSaga", saga: panelLayoutSaga },
-  { name: "unreadTrackingSaga", saga: unreadTrackingSaga },
-  { name: "prStatusSaga", saga: prStatusSaga },
-  { name: "bgExecutorSaga", saga: backgroundAgentExecutorSaga },
-  { name: "chatChangesSaga", saga: chatChangesSaga },
-  { name: "chatStateSaga", saga: chatStateSaga },
-  { name: "chatStreamSaga", saga: chatStreamSaga },
-  { name: "fileExplorerSaga", saga: fileExplorerSaga },
-  { name: "filesSaga", saga: filesSaga },
-  { name: "agentQueueSaga", saga: agentQueueSaga },
-  { name: "agentIpcSaga", saga: agentIpcSaga },
-  { name: "agentChatEffectsSaga", saga: agentChatEffectsSaga },
-  { name: "agentStreamSaga", saga: agentStreamSaga },
-  { name: "agentSubscriptionUISaga", saga: agentSubscriptionUISaga },
-  { name: "agentAvailabilitySaga", saga: agentAvailabilitySaga },
-  { name: "sessionStatsSaga", saga: sessionStatsSaga },
-  { name: "sagaCrashSentrySaga", saga: sagaCrashSentrySaga },
-] as const satisfies readonly AppSagaRegistryEntry[];
-
-// SagaName is defined in ./types.ts as an explicit string literal union to
-// avoid a transitive import chain that pulls renderer-only modules into the
-// main-process typecheck.  Re-export it here for backward compatibility.
-export type { SagaName } from "./types";
-
-export type RegisteredSagaName = (typeof sagas)[number]["name"];
-
-// Compile-time assertion: ensure registry names match `SagaName` exactly.
-// If a saga is added/removed from the registry above without updating the
-// SagaName union in types.ts, one of these lines will produce a type error.
-type _AssertSagasExtendsName = Record<SagaName, unknown> extends Record<
-  RegisteredSagaName,
-  unknown
-> ? true : never;
-type _AssertNameExtendsSagas = Record<RegisteredSagaName, unknown> extends Record<
-  SagaName,
-  unknown
-> ? true : never;
-
-const _assertSync: _AssertSagasExtendsName & _AssertNameExtendsSagas = true;
-
-/** All registered saga names, for use by initStore to start all sagas synchronously. */
-export const sagaNames = sagas.map(({ name }) => name) as RegisteredSagaName[];
-
-/** Compatibility alias for callers that distinguish declared names from registered names. */
-export const registeredSagaNames: SagaName[] = sagaNames;
+  sidebarNavSaga,
+  scriptsSaga,
+  agentFollowSaga,
+  gitStatusSaga,
+  agentOverviewSaga,
+  agentLockSaga,
+  panelLayoutSaga,
+  unreadTrackingSaga,
+  prStatusSaga,
+  backgroundAgentExecutorSaga,
+  chatChangesSaga,
+  chatStateSaga,
+  chatStreamSaga,
+  fileExplorerSaga,
+  filesSaga,
+  agentQueueSaga,
+  agentIpcSaga,
+  agentChatEffectsSaga,
+  agentStreamSaga,
+  agentSubscriptionUISaga,
+  agentAvailabilitySaga,
+  sessionStatsSaga,
+  sagaCrashSentrySaga,
+] as const satisfies readonly AppSaga[];
 
 export function startAllAppSagas(
   store: Store<any, any>,
 ): Array<() => void> {
-  return sagas.map(({ saga }) => store.runSaga(saga));
+  return sagas.map((saga) => store.runSaga(saga));
 }
