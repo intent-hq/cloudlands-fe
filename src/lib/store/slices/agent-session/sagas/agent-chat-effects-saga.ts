@@ -242,8 +242,8 @@ function* activateIfNeeded(agentId: string, wsId: string): SagaGenerator<void> {
   yield* put(activateAgentRequested(sessionWorkspaceId, agentId));
 
   const activated = yield* waitFor(
-    selectAgentActivationWaitComplete as unknown as WaitForSelector<boolean, [string]>,
-    [agentId] as [string],
+    selectAgentActivationWaitComplete as WaitForSelector<boolean, [string]>,
+    [agentId],
     (complete: boolean) => complete,
     ACTIVATION_WAIT_TIMEOUT_MS,
   );

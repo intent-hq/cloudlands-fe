@@ -284,7 +284,7 @@ describe("createLoggerMiddleware", () => {
     expect(consoleLog).toHaveBeenCalledTimes(1);
   });
 
-  it("logs changed state with raw action and an expanded lazy state payload group", async () => {
+  it("logs changed state with raw action and a separate lazy state payload log", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
@@ -324,15 +324,15 @@ describe("createLoggerMiddleware", () => {
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
-    expect(consoleLog).toHaveBeenCalledTimes(1);
-    expect(group).toHaveBeenCalledTimes(1);
+    expect(consoleLog).toHaveBeenCalledTimes(2);
+    expect(group).not.toHaveBeenCalled();
     expect(consoleDir).not.toHaveBeenCalled();
 
     const actionPayload = consoleLog.mock.calls[0]?.[2];
-    const lazyPayload = group.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
+    const lazyPayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
 
     expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold"]);
-    expect(group.mock.calls[0]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
     expect(actionPayload).toBe(action);
     expect(lazyPayload).not.toBe(action);
     expect(lazyPayload).not.toBe(prevState);
@@ -351,7 +351,7 @@ describe("createLoggerMiddleware", () => {
       "todos.order": { prev: undefined, next: ["todo-1", "todo-2"] },
     });
 
-    expect(groupEnd).toHaveBeenCalledTimes(2);
+    expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 
   it("logs unchanged state without prev state and uses the no changes label", async () => {
@@ -379,8 +379,10 @@ describe("createLoggerMiddleware", () => {
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
     expect(consoleLog.mock.calls.map((call) => call.slice(0, 2))).toEqual([
       ["%c action    ", "color: #03A9F4; font-weight: bold"],
+      ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter"],
     ]);
-    expect(group).toHaveBeenCalledWith(
+    expect(group).not.toHaveBeenCalled();
+    expect(consoleLog).toHaveBeenCalledWith(
       "%c state (no changes)",
       "color: #9E9E9E; font-weight: lighter",
       expect.any(Object)
@@ -388,7 +390,7 @@ describe("createLoggerMiddleware", () => {
     expect(consoleDir).not.toHaveBeenCalled();
 
     const actionPayload = consoleLog.mock.calls[0]?.[2];
-    const statePayload = group.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
+    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
 
     expect(actionPayload).toBe(action);
     expect(statePayload).not.toBe(action);
@@ -400,7 +402,7 @@ describe("createLoggerMiddleware", () => {
     expect(statePayload.prevState).toBe(state);
     expect(statePayload.nextState).toBe(state);
     expect(statePayload.changes).toEqual({});
-    expect(groupEnd).toHaveBeenCalledTimes(2);
+    expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 
   it.each([
