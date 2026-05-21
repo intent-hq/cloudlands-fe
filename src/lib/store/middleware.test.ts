@@ -252,7 +252,6 @@ describe("window.intent Redux logging interface", () => {
 });
 
 type LazyLoggerPayloadForTest = {
-  action: unknown;
   prevState: unknown;
   nextState: unknown;
   changes: Record<string, { prev: unknown; next: unknown }>;
@@ -285,7 +284,7 @@ describe("createLoggerMiddleware", () => {
     expect(consoleLog).toHaveBeenCalledTimes(1);
   });
 
-  it("logs changed state with a single lazy payload in a collapsed group", async () => {
+  it("logs changed state with raw action and a lazy state payload in an expanded group", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
@@ -296,10 +295,17 @@ describe("createLoggerMiddleware", () => {
     };
     const nextState = {
       count: 2,
-      todos: { byId: { "todo-1": { title: "Done", tags: ["inbox", "shipped"] } } },
+      todos: {
+        byId: {
+          "todo-1": { title: "Done", tags: ["inbox", "shipped"] },
+          "todo-2": { title: "New", tags: ["later"] },
+        },
+        order: ["todo-1", "todo-2"],
+      },
     };
     let currentState = prevState;
     const action = { type: "TEST_ACTION" };
+    const group = vi.spyOn(console, "group").mockImplementation(() => {});
     const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
@@ -316,27 +322,31 @@ describe("createLoggerMiddleware", () => {
     });
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
-    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
-    expect(consoleLog).toHaveBeenCalledTimes(1);
+    expect(group).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
+    expect(groupCollapsed).not.toHaveBeenCalled();
+    expect(consoleLog).toHaveBeenCalledTimes(2);
 
-    const lazyPayload = consoleLog.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
+    const actionPayload = consoleLog.mock.calls[0]?.[2];
+    const lazyPayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
 
-    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold"]);
+    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(actionPayload).toBe(action);
     expect(lazyPayload).not.toBe(action);
     expect(lazyPayload).not.toBe(prevState);
     expect(lazyPayload).not.toBe(nextState);
-    expect(Object.keys(lazyPayload)).toEqual(["action", "prevState", "nextState", "changes"]);
-    expectEnumerableGetter(lazyPayload, "action");
+    expect(Object.keys(lazyPayload)).toEqual(["prevState", "nextState", "changes"]);
     expectEnumerableGetter(lazyPayload, "prevState");
     expectEnumerableGetter(lazyPayload, "nextState");
     expectEnumerableGetter(lazyPayload, "changes");
-    expect(lazyPayload.action).toBe(action);
     expect(lazyPayload.prevState).toBe(prevState);
     expect(lazyPayload.nextState).toBe(nextState);
     expect(lazyPayload.changes).toEqual({
       count: { prev: 1, next: 2 },
       "todos.byId.todo-1.title": { prev: "Draft", next: "Done" },
       "todos.byId.todo-1.tags[1]": { prev: "soon", next: "shipped" },
+      "todos.byId.todo-2": { prev: undefined, next: { title: "New", tags: ["later"] } },
+      "todos.order": { prev: undefined, next: ["todo-1", "todo-2"] },
     });
 
     expect(groupEnd).toHaveBeenCalledTimes(1);
@@ -349,6 +359,7 @@ describe("createLoggerMiddleware", () => {
 
     const state = { count: 1 };
     const action = { type: "TEST_ACTION", payload: "payload text" };
+    const group = vi.spyOn(console, "group").mockImplementation(() => {});
     const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
@@ -362,24 +373,23 @@ describe("createLoggerMiddleware", () => {
     const next = vi.fn((receivedAction: unknown) => receivedAction);
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
-    expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
+    expect(group).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
+    expect(groupCollapsed).not.toHaveBeenCalled();
     expect(consoleLog.mock.calls.map((call) => call.slice(0, 2))).toEqual([
       ["%c action    ", "color: #03A9F4; font-weight: bold"],
       ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter"],
     ]);
 
-    const actionPayload = consoleLog.mock.calls[0]?.[2] as LazyLoggerPayloadForTest;
+    const actionPayload = consoleLog.mock.calls[0]?.[2];
     const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
 
-    expect(actionPayload).toBe(statePayload);
+    expect(actionPayload).toBe(action);
     expect(statePayload).not.toBe(action);
     expect(statePayload).not.toBe(state);
-    expect(Object.keys(statePayload)).toEqual(["action", "prevState", "nextState", "changes"]);
-    expectEnumerableGetter(statePayload, "action");
+    expect(Object.keys(statePayload)).toEqual(["prevState", "nextState", "changes"]);
     expectEnumerableGetter(statePayload, "prevState");
     expectEnumerableGetter(statePayload, "nextState");
     expectEnumerableGetter(statePayload, "changes");
-    expect(statePayload.action).toBe(action);
     expect(statePayload.prevState).toBe(state);
     expect(statePayload.nextState).toBe(state);
     expect(statePayload.changes).toEqual({});
@@ -400,7 +410,7 @@ describe("createLoggerMiddleware", () => {
     );
 
     const state = { count: 1 };
-    const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const group = vi.spyOn(console, "group").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "groupEnd").mockImplementation(() => {});
 
@@ -413,6 +423,6 @@ describe("createLoggerMiddleware", () => {
 
     middleware(storeApi as never)(next)(action);
 
-    expect(groupCollapsed).toHaveBeenCalledWith(`%c${expectedTitle}`, "color: #9E9E9E; font-weight: 300");
+    expect(group).toHaveBeenCalledWith(`%c${expectedTitle}`, "color: #9E9E9E; font-weight: 300");
   });
 });

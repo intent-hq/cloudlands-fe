@@ -36,7 +36,6 @@ function getActionTitleStyle(stateChanged: boolean): string {
 type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 
 type LazyLoggerPayload = {
-  action: unknown;
   prevState: unknown;
   nextState: unknown;
   changes: StateDiff;
@@ -63,6 +62,11 @@ function appendArrayPath(basePath: string, index: number): string {
 
 function addStateDiff(changes: StateDiff, prevValue: unknown, nextValue: unknown, path: string): void {
   if (Object.is(prevValue, nextValue)) {
+    return;
+  }
+
+  if (prevValue === undefined) {
+    changes[path || "<root>"] = { prev: undefined, next: nextValue };
     return;
   }
 
@@ -107,14 +111,10 @@ function createStateDiff(prevState: unknown, nextState: unknown): StateDiff {
   return changes;
 }
 
-function createLazyLoggerPayload(action: unknown, prevState: unknown, nextState: unknown): LazyLoggerPayload {
+function createLazyLoggerPayload(prevState: unknown, nextState: unknown): LazyLoggerPayload {
   const lazyPayload: Partial<LazyLoggerPayload> = {};
 
   Object.defineProperties(lazyPayload, {
-    action: {
-      get: () => action,
-      enumerable: true,
-    },
     prevState: {
       get: () => prevState,
       enumerable: true,
@@ -165,7 +165,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
   %cprev state%c  — state before action
   %caction%c      — dispatched action
   %cnext state%c  — state after action
-  %cstate%c       — lazy state/diff payload (click to expand)
+  %cstate%c       — lazy state/diff payload (expanded by default)
   %cstate (no changes)%c — state unchanged
 
 %cConsole API:%c
@@ -206,12 +206,12 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const nextState = storeApi.getState();
     const stateChanged = prevState !== nextState;
     const title = getActionTitle(action);
-    const lazyPayload = createLazyLoggerPayload(action, prevState, nextState);
+    const lazyPayload = createLazyLoggerPayload(prevState, nextState);
 
-    console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
+    console.group(`%c${title}`, getActionTitleStyle(stateChanged));
+    console.log("%c action    ", getLogLabelStyle("action"), action);
 
     if (!stateChanged) {
-      console.log("%c action    ", getLogLabelStyle("action"), lazyPayload);
       console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
     } else {
       console.log("%c state    ", getLogLabelStyle("state"), lazyPayload);
