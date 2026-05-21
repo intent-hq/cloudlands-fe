@@ -41,6 +41,29 @@ type LazyLoggerPayload = {
   changes: StateDiff;
 };
 
+class LazyLoggerStatePayload implements LazyLoggerPayload {
+  declare readonly prevState: unknown;
+  declare readonly nextState: unknown;
+  declare readonly changes: StateDiff;
+
+  constructor(prevState: unknown, nextState: unknown) {
+    Object.defineProperties(this, {
+      prevState: {
+        get: () => prevState,
+        enumerable: true,
+      },
+      nextState: {
+        get: () => nextState,
+        enumerable: true,
+      },
+      changes: {
+        get: () => createStateDiff(prevState, nextState),
+        enumerable: true,
+      },
+    });
+  }
+}
+
 let hasLoggedWelcomeMessage = false;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -109,27 +132,6 @@ function createStateDiff(prevState: unknown, nextState: unknown): StateDiff {
   const changes: StateDiff = {};
   addStateDiff(changes, prevState, nextState, "");
   return changes;
-}
-
-function createLazyLoggerPayload(prevState: unknown, nextState: unknown): LazyLoggerPayload {
-  const lazyPayload: Partial<LazyLoggerPayload> = {};
-
-  Object.defineProperties(lazyPayload, {
-    prevState: {
-      get: () => prevState,
-      enumerable: true,
-    },
-    nextState: {
-      get: () => nextState,
-      enumerable: true,
-    },
-    changes: {
-      get: () => createStateDiff(prevState, nextState),
-      enumerable: true,
-    },
-  });
-
-  return lazyPayload as LazyLoggerPayload;
 }
 
 function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state" | "state (no changes)"): string {
@@ -206,7 +208,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const nextState = storeApi.getState();
     const stateChanged = prevState !== nextState;
     const title = getActionTitle(action);
-    const lazyPayload = createLazyLoggerPayload(prevState, nextState);
+    const lazyPayload = new LazyLoggerStatePayload(prevState, nextState);
 
     console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
     console.log("%c action    ", getLogLabelStyle("action"), action);
