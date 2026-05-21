@@ -296,11 +296,20 @@ export function* restoreInitialAgent(
   diskAgents: StoredAgent[],
   existingAgentIds: Set<string>,
 ) {
-  if (!initialAgentId || existingAgentIds.has(AgentId(initialAgentId))) return;
+  if (!initialAgentId) return;
+  let indexedExistingSession: AgentSession | undefined;
+  if (existingAgentIds.has(AgentId(initialAgentId))) {
+    indexedExistingSession = yield* selectAgentSession.effect(initialAgentId);
+    if (hasUsableInitialAgentSession(indexedExistingSession)) {
+      yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
+      return;
+    }
+  }
   const initialAgentOnDisk = diskAgents.find((a) => a.id === AgentId(initialAgentId));
   if (initialAgentOnDisk) {
     // Use workspace-scoped Redux selector for race-safe lookup
-    const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(initialAgentId);
+    const existingSession: AgentSession | undefined = indexedExistingSession ??
+      (yield* selectAgentSession.effect(initialAgentId));
     const isAlreadyUsable = hasUsableInitialAgentSession(existingSession);
     if (!isAlreadyUsable) {
       // Check if this is a pending agent from workspace creation that needs
