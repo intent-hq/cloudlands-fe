@@ -644,6 +644,32 @@ describe('agent-session-slice reducer', () => {
         stopReason: 'complete',
       });
     });
+
+    it('preserves agent:idle lastResponseSummary as the last agent response', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-1',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'idle',
+            isStreaming: false,
+            isProcessing: false,
+            isResponding: false,
+            lastResponseSummary: '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe(
+        '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>',
+      );
+    });
   });
 
   describe('updateDigest', () => {

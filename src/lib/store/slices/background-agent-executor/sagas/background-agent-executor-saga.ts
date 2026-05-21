@@ -152,10 +152,58 @@ function* ensureModelsLoaded(): SagaGenerator<void> {
 // Agent state change channel
 // ============================================================================
 
+function getMessagesWithIdleSummaryFallback(
+  session: {
+    id: unknown;
+    messages?: AgentMessage[];
+    lastAgentResponse?: unknown;
+    updatedAt?: unknown;
+    createdAt?: unknown;
+  },
+  includeFallback: boolean,
+  resultTag?: string,
+): AgentMessage[] {
+  const messages = [...(session.messages ?? [])];
+  if (!includeFallback || messages.some((message) => message.role === 'assistant')) {
+    return messages;
+  }
+
+  const fallbackText = typeof session.lastAgentResponse === 'string'
+    ? session.lastAgentResponse.trim()
+    : '';
+  if (!fallbackText) return messages;
+  if (
+    !resultTag ||
+    !fallbackText.includes(`<<<${resultTag}>>>`) ||
+    !fallbackText.includes(`<<<\/${resultTag}>>>`)
+  ) {
+    return messages;
+  }
+
+  const timestamp = typeof session.updatedAt === 'string'
+    ? session.updatedAt
+    : typeof session.createdAt === 'string'
+      ? session.createdAt
+      : '1970-01-01T00:00:00.000Z';
+
+  return [
+    ...messages,
+    {
+      id: `${String(session.id)}-idle-summary`,
+      role: 'assistant',
+      contentBlocks: [{ type: 'text', text: fallbackText }],
+      timestamp,
+      streamingComplete: true,
+      isStreaming: false,
+    } as AgentMessage,
+  ];
+}
+
 export function createAgentStateChannel(
   agentId: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   workspaceId: string,
+  resultTag?: string,
 ): EventChannel<{ messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean }> {
   return eventChannel((emitter) => {
     let isClosed = false;
@@ -176,8 +224,8 @@ export function createAgentStateChannel(
       const session = selectAgentSession.select(state, agentId);
       if (!session) return;
 
-      const messages = [...(session.messages ?? [])];
       const isResponding = selectAgentIsResponding.select(state, agentId);
+      const messages = getMessagesWithIdleSummaryFallback(session, !isResponding, resultTag);
 
       if (session.status === AgentStatus.Error) {
         emitTerminal({ messages, isComplete: false, isError: true, isStreaming: false });
@@ -364,7 +412,7 @@ function* monitorAgent(
   resultTag: string,
   timeout: number,
 ): SagaGenerator<void> {
-  const channel = createAgentStateChannel(agentId, workspaceId);
+  const channel = createAgentStateChannel(agentId, workspaceId, resultTag);
 
   try {
     const { completed } = yield* race({
@@ -478,8 +526,12 @@ function* handleReconnect(action: ReturnType<typeof reconnectAgent>): SagaGenera
     }
   } else {
     // Agent already finished, extract result
-    const messages = [...(agentSession.messages ?? [])];
     const config = EXECUTOR_CONFIGS[executorType as BackgroundExecutorType];
+    const messages = getMessagesWithIdleSummaryFallback(
+      agentSession,
+      true,
+      config?.resultTag,
+    );
     const { result } = extractResultFromMessages(messages, config?.resultTag, undefined, true);
 
     yield* put(setExecutorState(workspaceId, executorType, {

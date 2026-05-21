@@ -196,7 +196,7 @@ describe('createAgentStateChannel (initial snapshot)', () => {
       makeMessageSimple('<<<COMMIT_MESSAGE>>>fix: commit<<<\/COMMIT_MESSAGE>>>'),
     ]);
 
-    const channel = createAgentStateChannel(agentId, wsId);
+    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
     const event = await new Promise<any>((resolve) => channel.take(resolve));
 
     expect(event.isComplete).toBe(true);
@@ -220,7 +220,7 @@ describe('createAgentStateChannel', () => {
 
   it('emits active progress while selectAgentIsResponding is true', () => {
     const harness = createStoreHarness(makeSession({ isStreaming: true }));
-    const channel = createAgentStateChannel(agentId, wsId);
+    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
     const collected = collectChannelEvents(channel);
 
     harness.setSession(makeSession({ isStreaming: true, messages: [makeMessage('m1', 'user')] }));
@@ -258,6 +258,55 @@ describe('createAgentStateChannel', () => {
       isStreaming: false,
     });
     expect(collected.events[1].messages.map((message) => message.id)).toEqual(['m1']);
+    expect(collected.ended).toBe(true);
+  });
+
+  it('uses the idle summary as an assistant fallback when stream messages are missing', () => {
+    const harness = createStoreHarness(makeSession({
+      isStreaming: true,
+      messages: [makeMessage('user-1', 'user')],
+    }));
+    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
+    const collected = collectChannelEvents(channel);
+
+    harness.setSession(makeSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      messages: [makeMessage('user-1', 'user')],
+      lastAgentResponse: '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>',
+    }));
+
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
+    expect(collected.events[1].messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(collected.events[1].messages[1].contentBlocks).toEqual([
+      { type: 'text', text: '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>' },
+    ]);
+    expect(collected.ended).toBe(true);
+  });
+
+  it('does not synthesize an assistant fallback when the expected result tag is missing', () => {
+    const harness = createStoreHarness(makeSession({
+      isStreaming: true,
+      messages: [makeMessage('user-1', 'user')],
+    }));
+    const channel = createAgentStateChannel(agentId, wsId, 'COMMIT_MESSAGE');
+    const collected = collectChannelEvents(channel);
+
+    harness.setSession(makeSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      messages: [makeMessage('user-1', 'user')],
+      lastAgentResponse: 'Generated a normal summary without the requested tag.',
+    }));
+
+    expect(collected.events).toHaveLength(2);
+    expect(collected.events[1]).toMatchObject({ isComplete: true, isError: false });
+    expect(collected.events[1].messages.map((message) => message.role)).toEqual(['user']);
     expect(collected.ended).toBe(true);
   });
 

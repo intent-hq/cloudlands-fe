@@ -205,9 +205,14 @@ type CanonicalAgentSessionUpdates = {
   isProcessing?: boolean;
   isResponding?: boolean;
   stopReason?: string | null;
+  lastAgentResponse?: string;
 };
 
-function canonicalSessionUpdates(fields: CanonicalAgentStatusFields): CanonicalAgentSessionUpdates {
+type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
+  lastResponseSummary?: unknown;
+};
+
+function canonicalSessionUpdates(fields: CanonicalAgentStatusWithSummary): CanonicalAgentSessionUpdates {
   const updates: CanonicalAgentSessionUpdates = {};
   if (fields.status !== null) updates.status = fields.status as AgentSession['status'];
   if (fields.activationState !== null) {
@@ -218,6 +223,9 @@ function canonicalSessionUpdates(fields: CanonicalAgentStatusFields): CanonicalA
   if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
   if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
   updates.stopReason = fields.stopReason;
+  if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
+    updates.lastAgentResponse = fields.lastResponseSummary;
+  }
 
   // When the status indicates a terminal/idle state, default streaming flags
   // to false unless the caller explicitly provided them.
