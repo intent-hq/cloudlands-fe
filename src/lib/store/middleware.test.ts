@@ -251,13 +251,17 @@ describe("window.intent Redux logging interface", () => {
   });
 });
 
-type LazyLoggerPayloadForTest = {
+type ChangesPayloadForTest = {
   prevState: unknown;
   nextState: unknown;
   changes: Record<string, { prev: unknown; next: unknown }>;
 };
 
-function expectPrototypeGetter(object: object, property: keyof LazyLoggerPayloadForTest) {
+type NoChangesPayloadForTest = {
+  state: unknown;
+};
+
+function expectPrototypeGetter(object: object, property: string) {
   const descriptor = Object.getOwnPropertyDescriptor(object, property);
 
   expect(descriptor?.get).toEqual(expect.any(Function));
@@ -265,11 +269,11 @@ function expectPrototypeGetter(object: object, property: keyof LazyLoggerPayload
   expect(descriptor?.enumerable).toBe(false);
 }
 
-function expectLazyLoggerStatePayloadClassInstance(payload: LazyLoggerPayloadForTest) {
+function expectChangesPayloadClassInstance(payload: ChangesPayloadForTest) {
   const prototype = Object.getPrototypeOf(payload);
 
   expect(prototype).not.toBe(Object.prototype);
-  expect(prototype?.constructor?.name).toBe("LazyLoggerStatePayload");
+  expect(prototype?.constructor?.name).toBe("ChangesPayload");
   expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
@@ -278,6 +282,27 @@ function expectLazyLoggerStatePayloadClassInstance(payload: LazyLoggerPayloadFor
   expectPrototypeGetter(prototype, "prevState");
   expectPrototypeGetter(prototype, "nextState");
   expectPrototypeGetter(prototype, "changes");
+}
+
+function expectNoChangesPayloadClassInstance(payload: NoChangesPayloadForTest) {
+  const prototype = Object.getPrototypeOf(payload);
+  const getterNames = Object.entries(Object.getOwnPropertyDescriptors(prototype))
+    .filter(([, descriptor]) => descriptor.get)
+    .map(([property]) => property);
+
+  expect(prototype).not.toBe(Object.prototype);
+  expect(prototype?.constructor?.name).toBe("NoChangesPayload");
+  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "state")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "changes")).toBeUndefined();
+  expectPrototypeGetter(prototype, "state");
+  expect(getterNames).toEqual(["state"]);
 }
 
 describe("createLoggerMiddleware", () => {
@@ -344,7 +369,7 @@ describe("createLoggerMiddleware", () => {
     expect(consoleDir).not.toHaveBeenCalled();
 
     const actionPayload = consoleLog.mock.calls[0]?.[2];
-    const lazyPayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
+    const lazyPayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
 
     expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold"]);
     expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
@@ -352,7 +377,7 @@ describe("createLoggerMiddleware", () => {
     expect(lazyPayload).not.toBe(action);
     expect(lazyPayload).not.toBe(prevState);
     expect(lazyPayload).not.toBe(nextState);
-    expectLazyLoggerStatePayloadClassInstance(lazyPayload);
+    expectChangesPayloadClassInstance(lazyPayload);
     expect(lazyPayload.prevState).toBe(prevState);
     expect(lazyPayload.nextState).toBe(nextState);
     expect(lazyPayload.changes).toEqual({
@@ -395,9 +420,9 @@ describe("createLoggerMiddleware", () => {
 
     expect(() => middleware(storeApi as never)(next)({ type: "TEST_ACTION" })).not.toThrow();
 
-    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
+    const statePayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
 
-    expectLazyLoggerStatePayloadClassInstance(statePayload);
+    expectChangesPayloadClassInstance(statePayload);
     expect(statePayload.prevState).toBe(prevState);
     expect(statePayload.nextState).toBe(nextState);
     expect(() => statePayload.changes).toThrow("changes getter read");
@@ -439,15 +464,13 @@ describe("createLoggerMiddleware", () => {
     expect(consoleDir).not.toHaveBeenCalled();
 
     const actionPayload = consoleLog.mock.calls[0]?.[2];
-    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
+    const statePayload = consoleLog.mock.calls[1]?.[2] as NoChangesPayloadForTest;
 
     expect(actionPayload).toBe(action);
     expect(statePayload).not.toBe(action);
     expect(statePayload).not.toBe(state);
-    expectLazyLoggerStatePayloadClassInstance(statePayload);
-    expect(statePayload.prevState).toBe(state);
-    expect(statePayload.nextState).toBe(state);
-    expect(statePayload.changes).toEqual({});
+    expectNoChangesPayloadClassInstance(statePayload);
+    expect(statePayload.state).toBe(state);
     expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 

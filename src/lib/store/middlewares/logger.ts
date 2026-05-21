@@ -35,13 +35,7 @@ function getActionTitleStyle(stateChanged: boolean): string {
 
 type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 
-type LazyLoggerPayload = {
-  prevState: unknown;
-  nextState: unknown;
-  changes: StateDiff;
-};
-
-class LazyLoggerStatePayload implements LazyLoggerPayload {
+class ChangesPayload {
   readonly #prevState: unknown;
   readonly #nextState: unknown;
 
@@ -60,6 +54,18 @@ class LazyLoggerStatePayload implements LazyLoggerPayload {
 
   get changes(): StateDiff {
     return createStateDiff(this.#prevState, this.#nextState);
+  }
+}
+
+class NoChangesPayload {
+  readonly #state: unknown;
+
+  constructor(state: unknown) {
+    this.#state = state;
+  }
+
+  get state(): unknown {
+    return this.#state;
   }
 }
 
@@ -207,15 +213,14 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const nextState = storeApi.getState();
     const stateChanged = prevState !== nextState;
     const title = getActionTitle(action);
-    const lazyPayload = new LazyLoggerStatePayload(prevState, nextState);
 
     console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
     console.log("%c action    ", getLogLabelStyle("action"), action);
 
     if (!stateChanged) {
-      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
+      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), new NoChangesPayload(nextState));
     } else {
-      console.log("%c state    ", getLogLabelStyle("state"), lazyPayload);
+      console.log("%c state    ", getLogLabelStyle("state"), new ChangesPayload(prevState, nextState));
     }
 
     console.groupEnd();
