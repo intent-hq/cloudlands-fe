@@ -12,7 +12,7 @@
     noteId,
     notesByWorkspace,
   }: {
-    store: Store<any, any, any>;
+    store: Store<any, any>;
     workspaceId: string | null;
     noteId: string | null;
     notesByWorkspace: Record<string, Note[]>;

@@ -27,7 +27,7 @@ export async function runStartSectionTasks({
     html: string,
     options?: { preserveAnchors?: boolean },
   ) => string | Promise<string>;
-  dispatch: Store<any, any, any>['dispatch'];
+  dispatch: Store<any, any>['dispatch'];
   setLastKnownContent: (value: string) => void;
   logger: LoggerLike;
 }): Promise<void> {

@@ -6,7 +6,7 @@ import type { LoggerLike } from './logger.types';
 
 export type SetupCommentMarkClickHandlerV2Args = {
   editor: Editor;
-  store: Store<any, any, any>;
+  store: Store<any, any>;
   logger: LoggerLike;
   noteId: string | undefined;
   maxAttempts?: number;
