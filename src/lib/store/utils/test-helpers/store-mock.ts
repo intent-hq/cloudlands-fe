@@ -1,3 +1,5 @@
+import { select } from "typed-redux-saga";
+
 type AppStoreMockOptions = {
   state?: unknown | (() => unknown);
   dispatch?: (...args: any[]) => unknown;
@@ -38,7 +40,7 @@ export const createAppStoreMock = ({
         (...args: any[]) => readable(() => selectorFunc(appStore.state, ...args)),
         {
           select: selectorFunc,
-          effect: (...args: any[]) => selectorFunc(appStore.state, ...args),
+          effect: (...args: any[]) => select(selectorFunc, ...args),
           withStore: (storeSource: StoreReadableStateSource) =>
             (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? appStore.state, ...args)),
         },
