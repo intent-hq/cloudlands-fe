@@ -17,8 +17,6 @@ import {
 import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
 import {
-  registeredSagaNames,
-  sagaNames,
   sagas,
   startAllAppSagas,
 } from "./sagas";
@@ -71,7 +69,7 @@ describe("configured app Store", () => {
     expect(selectStoreState.select(state)).toBe(state);
   });
 
-  it("keeps app reducers on the configured package Store and derives app saga names from the registry", () => {
+  it("keeps app reducers on the configured package Store and exposes app sagas as functions", () => {
     const registeredReducers = appStore.getReducers();
 
     expect(reducers).not.toHaveProperty("storeUtility");
@@ -82,10 +80,7 @@ describe("configured app Store", () => {
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);
     }
-    expect(registeredSagaNames).toEqual(sagaNames);
-    expect(sagaNames).toEqual(sagas.map(({ name }) => name));
-    expect(new Set(sagaNames).size).toBe(sagaNames.length);
-    expect(sagas.every(({ saga }) => typeof saga === "function")).toBe(true);
+    expect(sagas.every((saga) => typeof saga === "function")).toBe(true);
   });
 
   it("starts every registered app saga through Store.runSaga in registry order", () => {
@@ -94,7 +89,7 @@ describe("configured app Store", () => {
     const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any>);
 
     expect(runtime.runSaga).toHaveBeenCalledTimes(sagas.length);
-    sagas.forEach(({ saga }, index) => {
+    sagas.forEach((saga, index) => {
       expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, saga);
     });
     expect(stopHandlers).toHaveLength(sagas.length);

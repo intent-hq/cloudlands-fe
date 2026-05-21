@@ -131,7 +131,7 @@
   } from '$lib/store/store';
   import {
     startAllAppSagas,
-  } from '$lib/store/saga-registration';
+  } from '$lib/store/sagas';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
