@@ -6,13 +6,13 @@ import {
 import { selectAgentIsResponding } from "$lib/store/slices/agent-session/agent-session-selectors";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
+import { selectActiveWorkspace } from "$lib/store/slices/workspace/workspace-selectors";
 
 import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
 import {
   openWorkspaceDrawer,
   type WorkspaceNavigationDrawerState,
 } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
-import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import {
   isFocusInEditableElement,
   isFocusInTerminal,
@@ -74,10 +74,7 @@ function getNextDockItem(drawerState: WorkspaceNavigationDrawerState, items: Doc
 function dispatchNavigateMessageEvent(direction: "next" | "previous"): void {
     dispatchWindowEvent("navigate-message", { direction });
 }
-export function createDockNavigationChannel(
-    _wsId: string,
-    _getDrawerState: () => WorkspaceNavigationDrawerState,
-): EventChannel<DockShortcutEvent> {
+export function createDockNavigationChannel(): EventChannel<DockShortcutEvent> {
     return eventChannel((emit) => {
         const isMac = isMacPlatform();
         const handleKeydown = (event: KeyboardEvent) => {
@@ -124,31 +121,24 @@ export function createDockNavigationChannel(
         };
     });
 }
-export function* watchDockNavigationForWorkspaceSaga(wsId: string) {
+export function* watchDockNavigationForWorkspaceSaga() {
     if (typeof window === "undefined")
         return;
-    // Maintain a closure-scoped drawer state so the channel's keydown handler
-    // (which runs outside saga context) can read the latest value without
-    // calling the forbidden direct-selector pattern from inside a callback.
-    let drawerStateRef: WorkspaceNavigationDrawerState =
-        yield* selectWorkspaceNavigationDrawer.effect(wsId);
-    yield* takeLatestFromSelector<WorkspaceNavigationDrawerState, [string]>(
-        selectWorkspaceNavigationDrawer,
-        [wsId],
-        function* ({ payload }) {
-            drawerStateRef = payload;
-        },
-    );
-    const channel = createDockNavigationChannel(wsId, () => drawerStateRef);
+    const channel = createDockNavigationChannel();
     try {
         while (true) {
             const shortcut: DockShortcutEvent = yield* take(channel);
-            if (shortcut.type === "create-terminal") {
-                yield* put(createTerminalRequested(wsId));
-                continue;
-            }
             if (shortcut.type === "navigate-message") {
                 yield* call(dispatchNavigateMessageEvent, shortcut.direction);
+                continue;
+            }
+            const currentWorkspace = yield* selectActiveWorkspace.effect();
+            const wsId = currentWorkspace?.id;
+            if (!wsId) {
+                continue;
+            }
+            if (shortcut.type === "create-terminal") {
+                yield* put(createTerminalRequested(wsId));
                 continue;
             }
             const agents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);

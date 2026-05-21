@@ -68,6 +68,7 @@ vi.mock("$lib/store/store", async () => {
   });
 });
 
+
 vi.mock("$lib/utils/keyboardShortcuts",
   () => ({
   isFocusInEditableElement: isFocusInEditableElementMock,
@@ -123,12 +124,26 @@ vi.mock("$lib/store/slices/workspace-navigation/workspace-navigation-selectors",
   };
 });
 
+vi.mock("$lib/store/slices/workspace/workspace-selectors", async () => {
+  const actual = await vi.importActual<typeof import("$lib/store/slices/workspace/workspace-selectors")>("$lib/store/slices/workspace/workspace-selectors");
+  return {
+    ...actual,
+    selectActiveWorkspace: {
+      ...actual.selectActiveWorkspace,
+      effect: function* (...args: any[]) {
+        return yield sagaEffects.select(actual.selectActiveWorkspace.select, ...args);
+      },
+    },
+  };
+});
+
 import {
   openTerminalOverlay,
   createTerminalRequested,
 } from "$lib/store/slices/terminals/terminals-slice";
 import { selectForegroundWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
 import { selectLoadedWorkspaceTerminals } from "$lib/store/slices/terminals/terminals-selectors";
+import { selectActiveWorkspace } from "$lib/store/slices/workspace/workspace-selectors";
 
 import { selectWorkspaceNavigationDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-selectors";
 import { openWorkspaceDrawer } from "$lib/store/slices/workspace-navigation/workspace-navigation-slice";
@@ -157,6 +172,13 @@ describe("dockNavigationSaga", () => {
     vi.stubGlobal("window", windowStub as unknown as Window & typeof globalThis);
     vi.stubGlobal("navigator", { userAgent: "Macintosh", userAgentData: { platform: "macOS" } });
     currentState = {
+      workspace: {
+        activeWorkspaceId: "ws-1",
+        workspaces: {
+          ids: ["ws-1"],
+          map: { "ws-1": { id: "ws-1" } },
+        },
+      },
       workspaceNavigation: {
         byWorkspaceId: {
           "ws-1": {
@@ -170,10 +192,6 @@ describe("dockNavigationSaga", () => {
     isFocusInTerminalMock.mockReturnValue(false);
     isRespondingMock.mockReturnValue(false);
   });
-
-  function getDrawerStateForWs1() {
-    return currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer;
-  }
 
   it("emits dock navigation shortcuts from the keydown channel", () => {
     currentState.workspaceNavigation.byWorkspaceId["ws-1"].drawer = {
@@ -189,7 +207,7 @@ describe("dockNavigationSaga", () => {
       return { close: vi.fn(() => unsubscribe?.()) };
     });
 
-    const channel = createDockNavigationChannel("ws-1", getDrawerStateForWs1);
+    const channel = createDockNavigationChannel();
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     const event = {
       altKey: true,
@@ -220,7 +238,7 @@ describe("dockNavigationSaga", () => {
     });
     isFocusInTerminalMock.mockReturnValue(true);
 
-    createDockNavigationChannel("ws-1", getDrawerStateForWs1);
+    createDockNavigationChannel();
     const keydown = windowStub.addEventListener.mock.calls[0][1];
     keydown({
       altKey: true,
@@ -240,11 +258,11 @@ describe("dockNavigationSaga", () => {
     const channel = createMockChannel();
     eventChannelMock.mockReturnValue(channel);
 
-    const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
+    const iterator = watchDockNavigationForWorkspaceSaga();
 
     iterator.next();
-    iterator.next({ open: true, type: "agent", itemId: "agent-1" });
     iterator.next({ type: "dock", direction: "previous" });
+    iterator.next({ id: "ws-1" });
     iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
     iterator.next([]);
     expect(iterator.next({ open: true, type: "agent", itemId: "agent-1" })).toEqual({
@@ -258,19 +276,17 @@ describe("dockNavigationSaga", () => {
     const channel = createMockChannel();
     eventChannelMock.mockReturnValue(channel);
 
-    const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
+    const iterator = watchDockNavigationForWorkspaceSaga();
 
-    // 1. Initial SELECT for drawer state ref
     expect(iterator.next()).toEqual({
-      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
-      done: false,
-    });
-    // 2. Provide initial drawer state → take(channel)
-    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
       value: sagaEffects.take(channel),
       done: false,
     });
     expect(iterator.next({ type: "dock", direction: "next" })).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(iterator.next({ id: "ws-1" })).toEqual({
       value: sagaEffects.select(selectForegroundWorkspaceAgents.select, "ws-1"),
       done: false,
     });
@@ -292,11 +308,11 @@ describe("dockNavigationSaga", () => {
     const channel = createMockChannel();
     eventChannelMock.mockReturnValue(channel);
 
-    const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
+    const iterator = watchDockNavigationForWorkspaceSaga();
 
-    iterator.next(); // initial SELECT for drawer state ref
-    iterator.next({ open: false, type: null, itemId: null }); // → take(channel)
+    iterator.next(); // → take(channel)
     iterator.next({ type: "dock", direction: "next" });
+    iterator.next({ id: "ws-1" });
     iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
     expect(iterator.next([{ id: "terminal-1", type: "terminal" }])).toEqual({
       value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
@@ -316,19 +332,17 @@ describe("dockNavigationSaga", () => {
     const channel = createMockChannel();
     eventChannelMock.mockReturnValue(channel);
 
-    const iterator = watchDockNavigationForWorkspaceSaga("ws-1");
+    const iterator = watchDockNavigationForWorkspaceSaga();
 
-    // 1. Initial SELECT for drawer state ref
     expect(iterator.next()).toEqual({
-      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
-      done: false,
-    });
-    // 2. Provide initial drawer state → take(channel)
-    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
       value: sagaEffects.take(channel),
       done: false,
     });
     expect(iterator.next({ type: "create-terminal" })).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(iterator.next({ id: "ws-1" })).toEqual({
       value: sagaEffects.put(createTerminalRequested("ws-1")),
       done: false,
     });
@@ -337,5 +351,19 @@ describe("dockNavigationSaga", () => {
     const effect = iterator.next({ type: "navigate-message", direction: "previous" }).value as any;
     expect(effect.type).toBe("CALL");
     expect(effect.payload.args).toEqual(["previous"]);
+  });
+
+  it("skips workspace-scoped dock shortcuts when no workspace is active", () => {
+    const channel = createMockChannel();
+    eventChannelMock.mockReturnValue(channel);
+
+    const iterator = watchDockNavigationForWorkspaceSaga();
+
+    expect(iterator.next()).toEqual({ value: sagaEffects.take(channel), done: false });
+    expect(iterator.next({ type: "dock", direction: "next" })).toEqual({
+      value: sagaEffects.select(selectActiveWorkspace.select),
+      done: false,
+    });
+    expect(iterator.next(undefined)).toEqual({ value: sagaEffects.take(channel), done: false });
   });
 });

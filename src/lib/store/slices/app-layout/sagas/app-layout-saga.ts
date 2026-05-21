@@ -30,19 +30,13 @@ import {
   getSettingsPreviousPath,
   navigateToSettings,
 } from "$lib/utils/workspace-navigation";
-import type { Task } from "redux-saga";
 import {
-  cancel,
   call,
   delay,
   fork,
   put,
   takeEvery,
 } from "typed-redux-saga";
-import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import { createTerminalRequested } from "../../terminals/terminals-slice";
 import {
@@ -81,7 +75,6 @@ import { browserTabZoomRequested } from "../../browser/browser-slice";
 import type { BrowserZoomAction } from "../../browser/browser-types";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-const dockNavigationTasks = new Map<string, Task>();
 type BrowserOpenTabEvent = {
     url: string;
     position?: "adjacent" | "replace" | "same";
@@ -332,24 +325,6 @@ export function* watchWorkspaceWindowEventsSaga() {
     yield* fork(watchOpenNoteSaga);
     yield* fork(watchOpenAgentSaga);
     yield* fork(watchOpenTerminalSaga);
-}
-function* startDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
-    const [wsId] = action.payload;
-    const task = yield* fork(watchDockNavigationForWorkspaceSaga, wsId);
-    dockNavigationTasks.set(wsId, task);
-}
-function* cancelDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceUnmounted>) {
-    const [wsId] = action.payload;
-    const task = dockNavigationTasks.get(wsId);
-    if (!task) {
-        return;
-    }
-    yield* cancel(task);
-    dockNavigationTasks.delete(wsId);
-}
-export function* watchWorkspaceWindowEventLifecyclesSaga() {
-    yield* takeEvery(workspaceMounted, startDockNavigationForWorkspaceSaga);
-    yield* takeEvery(workspaceUnmounted, cancelDockNavigationForWorkspaceSaga);
 }
 export function* watchNavigateSaga() {
     yield* takeEveryFromElectronChannel<string>("navigate", function* (path) {
@@ -667,7 +642,7 @@ export function* appLayoutSaga() {
     yield* fork(watchWorkspaceCreateForRepoSaga);
     yield* fork(watchOpenNewSpaceOnboardingSaga);
     yield* fork(watchWorkspaceWindowEventsSaga);
-    yield* fork(watchWorkspaceWindowEventLifecyclesSaga);
+    yield* fork(watchDockNavigationForWorkspaceSaga);
     yield* fork(specPanelSaga);
     yield* fork(watchCreateNoteRequestedSaga);
     yield* fork(watchCreateFileRequestedSaga);

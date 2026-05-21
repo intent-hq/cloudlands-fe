@@ -257,7 +257,6 @@ import {
   watchOpenNoteSaga,
   watchOpenTerminalSaga,
   watchShowAgentSaga,
-  watchWorkspaceWindowEventLifecyclesSaga,
   watchWorkspaceWindowEventsSaga,
 } from "./app-layout-saga";
 import { specPanelSaga } from "./spec-panel-saga";
@@ -375,7 +374,7 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
+      value: sagaEffects.fork(createDockNavigationWatcherMock),
       done: false,
     });
     expect(iterator.next()).toEqual({ value: sagaEffects.fork(specPanelSaga), done: false });
@@ -386,7 +385,7 @@ describe("appLayoutSaga", () => {
     expect(iterator.next()).toEqual({ value: undefined, done: true });
   });
 
-  it("forks the workspace window event watcher and lifecycle watcher", () => {
+  it("forks the workspace window event watcher and singleton dock navigation watcher", () => {
     const iterator = appLayoutSaga();
 
     for (let index = 0; index < 16; index += 1) {
@@ -398,7 +397,7 @@ describe("appLayoutSaga", () => {
       done: false,
     });
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(watchWorkspaceWindowEventLifecyclesSaga),
+      value: sagaEffects.fork(createDockNavigationWatcherMock),
       done: false,
     });
   });
