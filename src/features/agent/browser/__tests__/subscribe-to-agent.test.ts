@@ -29,6 +29,12 @@ const { storeRef } = vi.hoisted(() => ({
 
 vi.mock('$lib/store/store', async () => {
   const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  const readable = <T>(getter: () => T) => ({
+    subscribe: (listener: (value: T) => void) => {
+      listener(getter());
+      return () => {};
+    },
+  });
   const mockStore = {
     dispatch: (action: unknown) => storeRef.current?.dispatch(action as never),
     get state() {
@@ -40,6 +46,15 @@ vi.mock('$lib/store/store', async () => {
         return storeRef.current?.subscribe(() => listener(storeRef.current?.getState())) ?? (() => {});
       },
     }),
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
+      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
+      {
+        select: selectorFunc,
+        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+        withStore: (storeSource: { state?: unknown }) =>
+          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      },
+    ),
   };
 
   return createStoreMockModule(mockStore);

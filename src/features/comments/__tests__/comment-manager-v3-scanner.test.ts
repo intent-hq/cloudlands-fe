@@ -20,6 +20,12 @@ vi.mock('$lib/store/store', async () => {
     '$lib/store/slices/comments/comments-slice'
   );
   let state = { comments: initialState };
+  const readable = <T>(getter: () => T) => ({
+    subscribe: (listener: (value: T) => void) => {
+      listener(getter());
+      return () => {};
+    },
+  });
 
   const mockStore = {
     dispatch: (action: unknown) => {
@@ -29,6 +35,15 @@ vi.mock('$lib/store/store', async () => {
     get state() {
       return state;
     },
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
+      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
+      {
+        select: selectorFunc,
+        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+        withStore: (storeSource: { state?: unknown }) =>
+          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      },
+    ),
   };
 
   return createStoreMockModule(mockStore);

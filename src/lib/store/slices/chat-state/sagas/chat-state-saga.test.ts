@@ -103,6 +103,7 @@ vi.mock("../../workspace-agents/workspace-agents-slice", () => ({
   removeAgent: mockRemoveAgent,
   removeWorkspaceAgentState: mockRemoveWorkspaceAgentState,
   agentStreamUpdateReceived: mockAgentStreamUpdateReceived,
+  workspaceAgentsReducer: (state = { byWorkspaceId: {} }) => state,
 }));
 
 vi.mock("../../workspace-lifecycle/workspace-lifecycle-slice", () => ({
