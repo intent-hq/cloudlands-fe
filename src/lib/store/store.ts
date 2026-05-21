@@ -127,7 +127,7 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
 
 export const initAppStore = (
   loadedState?: PreloadedStoreState,
-  storeRuntime: Store<any, any, any> = configuredStore,
+  storeRuntime: Store<any, any> = configuredStore,
 ): ReduxStoreContext => {
   const disposeConfiguredStore = storeRuntime.init(loadedState);
 

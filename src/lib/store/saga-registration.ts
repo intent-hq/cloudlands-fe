@@ -9,9 +9,8 @@ import type { SagaName } from "./types";
 export const registeredSagaNames: SagaName[] = sagaNames;
 
 export function startAllAppSagas(
-  storeArg: Store<any, any, any>
+  store: Store<any, any>
 ): Array<() => void> {
-  const registeredStore = storeArg.registerSagas(sagas);
-
-  return registeredSagaNames.map((name) => registeredStore.runSaga(name));
+  const sagasList = Object.values(sagas);
+  return sagasList.map((saga) => store.runSaga(saga));
 }

@@ -104,6 +104,6 @@ export type StoreState = ToolkitStoreState<typeof configuredStore>;
 export type PreloadedStoreState = ToolkitPreloadedStoreState<StoreState>;
 
 export type ReduxStoreContext = {
-  store: Store<any, any, any>;
+  store: Store<any, any>;
   dispose: () => void;
 };
