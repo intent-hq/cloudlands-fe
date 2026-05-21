@@ -8,7 +8,6 @@ import {
   getItems,
 } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
-import type { CommentThread } from "./comments-types";
 
 /** All comments as an ordered array. */
 export const selectComments = store.createSelector((state) =>
