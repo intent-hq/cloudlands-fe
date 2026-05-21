@@ -58,7 +58,6 @@
     "lint:selector-active-workspace": "node scripts/check-selector-active-workspace-hygiene.mjs",
     "lint:redux-collections": "node scripts/check-redux-state-collections.mjs",
     "lint:saga-adapter-gate": "node scripts/check-saga-adapter-bypass.mjs",
-    "lint:architecture": "pnpm exec svelte-redux-toolkit validate-architecture",
     "test": "npm run test:unit && npm run test:playwright",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
