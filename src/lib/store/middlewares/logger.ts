@@ -208,13 +208,15 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const title = getActionTitle(action);
     const lazyPayload = createLazyLoggerPayload(prevState, nextState);
 
-    console.group(`%c${title}`, getActionTitleStyle(stateChanged));
+    console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
     console.log("%c action    ", getLogLabelStyle("action"), action);
 
     if (!stateChanged) {
-      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
+      console.group("%c state (no changes)", getLogLabelStyle("state (no changes)"), lazyPayload);
+      console.groupEnd();
     } else {
-      console.log("%c state    ", getLogLabelStyle("state"), lazyPayload);
+      console.group("%c state    ", getLogLabelStyle("state"), lazyPayload);
+      console.groupEnd();
     }
 
     console.groupEnd();
