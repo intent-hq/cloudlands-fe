@@ -42,25 +42,24 @@ type LazyLoggerPayload = {
 };
 
 class LazyLoggerStatePayload implements LazyLoggerPayload {
-  declare readonly prevState: unknown;
-  declare readonly nextState: unknown;
-  declare readonly changes: StateDiff;
+  readonly #prevState: unknown;
+  readonly #nextState: unknown;
 
   constructor(prevState: unknown, nextState: unknown) {
-    Object.defineProperties(this, {
-      prevState: {
-        get: () => prevState,
-        enumerable: true,
-      },
-      nextState: {
-        get: () => nextState,
-        enumerable: true,
-      },
-      changes: {
-        get: () => createStateDiff(prevState, nextState),
-        enumerable: true,
-      },
-    });
+    this.#prevState = prevState;
+    this.#nextState = nextState;
+  }
+
+  get prevState(): unknown {
+    return this.#prevState;
+  }
+
+  get nextState(): unknown {
+    return this.#nextState;
+  }
+
+  get changes(): StateDiff {
+    return createStateDiff(this.#prevState, this.#nextState);
   }
 }
 

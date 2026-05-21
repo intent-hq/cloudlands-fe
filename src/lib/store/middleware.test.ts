@@ -257,12 +257,27 @@ type LazyLoggerPayloadForTest = {
   changes: Record<string, { prev: unknown; next: unknown }>;
 };
 
-function expectEnumerableGetter(object: unknown, property: keyof LazyLoggerPayloadForTest) {
+function expectPrototypeGetter(object: object, property: keyof LazyLoggerPayloadForTest) {
   const descriptor = Object.getOwnPropertyDescriptor(object, property);
 
   expect(descriptor?.get).toEqual(expect.any(Function));
   expect(descriptor?.value).toBeUndefined();
-  expect(descriptor?.enumerable).toBe(true);
+  expect(descriptor?.enumerable).toBe(false);
+}
+
+function expectLazyLoggerStatePayloadClassInstance(payload: LazyLoggerPayloadForTest) {
+  const prototype = Object.getPrototypeOf(payload);
+
+  expect(prototype).not.toBe(Object.prototype);
+  expect(prototype?.constructor?.name).toBe("LazyLoggerStatePayload");
+  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
+  expectPrototypeGetter(prototype, "prevState");
+  expectPrototypeGetter(prototype, "nextState");
+  expectPrototypeGetter(prototype, "changes");
 }
 
 describe("createLoggerMiddleware", () => {
@@ -337,10 +352,7 @@ describe("createLoggerMiddleware", () => {
     expect(lazyPayload).not.toBe(action);
     expect(lazyPayload).not.toBe(prevState);
     expect(lazyPayload).not.toBe(nextState);
-    expect(Object.keys(lazyPayload)).toEqual(["prevState", "nextState", "changes"]);
-    expectEnumerableGetter(lazyPayload, "prevState");
-    expectEnumerableGetter(lazyPayload, "nextState");
-    expectEnumerableGetter(lazyPayload, "changes");
+    expectLazyLoggerStatePayloadClassInstance(lazyPayload);
     expect(lazyPayload.prevState).toBe(prevState);
     expect(lazyPayload.nextState).toBe(nextState);
     expect(lazyPayload.changes).toEqual({
@@ -352,6 +364,43 @@ describe("createLoggerMiddleware", () => {
     });
 
     expect(groupEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not compute changes until the changes getter is read", async () => {
+    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
+      "./middlewares/logger"
+    );
+
+    const prevState = {};
+    const nextState = {
+      get dangerous() {
+        throw new Error("changes getter read");
+      },
+    };
+    let currentState: unknown = prevState;
+    vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
+    const middleware = createLoggerMiddleware("composer");
+    consoleLog.mockClear();
+    const storeApi = {
+      dispatch: vi.fn(),
+      getState: vi.fn(() => currentState),
+    };
+    const next = vi.fn((receivedAction: unknown) => {
+      currentState = nextState;
+      return receivedAction;
+    });
+
+    expect(() => middleware(storeApi as never)(next)({ type: "TEST_ACTION" })).not.toThrow();
+
+    const statePayload = consoleLog.mock.calls[1]?.[2] as LazyLoggerPayloadForTest;
+
+    expectLazyLoggerStatePayloadClassInstance(statePayload);
+    expect(statePayload.prevState).toBe(prevState);
+    expect(statePayload.nextState).toBe(nextState);
+    expect(() => statePayload.changes).toThrow("changes getter read");
   });
 
   it("logs unchanged state without prev state and uses the no changes label", async () => {
@@ -395,10 +444,7 @@ describe("createLoggerMiddleware", () => {
     expect(actionPayload).toBe(action);
     expect(statePayload).not.toBe(action);
     expect(statePayload).not.toBe(state);
-    expect(Object.keys(statePayload)).toEqual(["prevState", "nextState", "changes"]);
-    expectEnumerableGetter(statePayload, "prevState");
-    expectEnumerableGetter(statePayload, "nextState");
-    expectEnumerableGetter(statePayload, "changes");
+    expectLazyLoggerStatePayloadClassInstance(statePayload);
     expect(statePayload.prevState).toBe(state);
     expect(statePayload.nextState).toBe(state);
     expect(statePayload.changes).toEqual({});
