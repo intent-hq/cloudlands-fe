@@ -760,4 +760,95 @@ describe("chat-state-saga: preserve per-agent tasks across workspace unmount (Ta
     expect(mapAfterComplete.has("agent-X")).toBe(false);
     expect(tasksAfterUnmount.every((t) => !t.isRunning())).toBe(true);
   });
+
+  it("cancels idle watchdog tasks on workspaceUnmounted even when the workspace agent index is stale", async () => {
+    const { chatStateSaga, __getActiveSendTasksForTesting } = await import(
+      "./chat-state-saga"
+    );
+    __getActiveSendTasksForTesting().clear();
+
+    const channel = stdChannel();
+
+    const idleSessionA = {
+      id: "agent-idle-A",
+      workspaceId: "ws-A",
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    };
+    const idleSessionB = {
+      id: "agent-idle-B",
+      workspaceId: "ws-B",
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    };
+
+    selectAllWorkspaceAgentsMock.mockImplementation(() => []);
+    selectAgentSessionMock.mockImplementation((_state: any, agentId: string) => {
+      if (agentId === "agent-idle-A") return idleSessionA;
+      if (agentId === "agent-idle-B") return idleSessionB;
+      return undefined;
+    });
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => channel.put(action),
+        getState: () => ({
+          chatState: {
+            byAgentId: {
+              "agent-idle-A": {
+                isStreaming: false,
+                isProcessing: false,
+                isStalled: false,
+                lastChunkTime: Date.now(),
+                streamingStartTime: Date.now(),
+                lastChunkReceivedAt: Date.now(),
+                statusEvents: [],
+                trackedWorkspaceId: "ws-A",
+              },
+              "agent-idle-B": {
+                isStreaming: false,
+                isProcessing: false,
+                isStalled: false,
+                lastChunkTime: Date.now(),
+                streamingStartTime: Date.now(),
+                lastChunkReceivedAt: Date.now(),
+                statusEvents: [],
+                trackedWorkspaceId: "ws-B",
+              },
+            },
+          },
+          agentSessions: {
+            byAgentId: {
+              "agent-idle-A": idleSessionA,
+              "agent-idle-B": idleSessionB,
+            },
+          },
+          workspaceAgents: { byWorkspaceId: { "ws-A": { agentIds: [] } } },
+        }),
+      },
+      chatStateSaga,
+    );
+
+    channel.put(chatSendStarted("agent-idle-A", "ws-A"));
+    channel.put(chatSendStarted("agent-idle-B", "ws-B"));
+    await vi.advanceTimersByTimeAsync(50);
+
+    const mapAfterStart = __getActiveSendTasksForTesting();
+    const tasksA = mapAfterStart.get("agent-idle-A")!;
+    const tasksB = mapAfterStart.get("agent-idle-B")!;
+    expect(tasksA.every((t) => t.isRunning())).toBe(true);
+    expect(tasksB.every((t) => t.isRunning())).toBe(true);
+
+    channel.put(mockWorkspaceUnmounted("ws-A"));
+    await vi.advanceTimersByTimeAsync(50);
+
+    const mapAfterUnmount = __getActiveSendTasksForTesting();
+    expect(mapAfterUnmount.has("agent-idle-A")).toBe(false);
+    expect(tasksA.every((t) => !t.isRunning())).toBe(true);
+    expect(mapAfterUnmount.has("agent-idle-B")).toBe(true);
+    expect(tasksB.every((t) => t.isRunning())).toBe(true);
+  });
 });
