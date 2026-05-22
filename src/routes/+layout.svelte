@@ -1,39 +1,32 @@
 <script lang="ts">
   import '../app.css';
 
-  import {
-  afterNavigate,
-  beforeNavigate,
-  goto,
-} from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import {
-  track,
-  setAnalyticsContextProvider,
-} from '$lib/services/analytics';
+  import { track, setAnalyticsContextProvider } from '$lib/services/analytics';
   import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   import {
-  initializeReleaseNotes,
-  closeReleaseNotesModal,
-} from '$lib/store/slices/release-notes/release-notes-slice';
+    initializeReleaseNotes,
+    closeReleaseNotesModal,
+  } from '$lib/store/slices/release-notes/release-notes-slice';
   import {
-  selectShowReleaseNotesModal,
-  selectReleaseNotes,
-} from '$lib/store/slices/release-notes/release-notes-selectors';
+    selectShowReleaseNotesModal,
+    selectReleaseNotes,
+  } from '$lib/store/slices/release-notes/release-notes-selectors';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
   import {
-  openPalette,
-  closePalette,
-  togglePalette,
-  openGoToLine,
-} from '$lib/store/slices/palette/palette-slice';
+    openPalette,
+    closePalette,
+    togglePalette,
+    openGoToLine,
+  } from '$lib/store/slices/palette/palette-slice';
   import {
-  selectIsPaletteOpen,
-  selectPaletteQuery,
-} from '$lib/store/slices/palette/palette-selectors';
+    selectIsPaletteOpen,
+    selectPaletteQuery,
+  } from '$lib/store/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -53,89 +46,68 @@
   import { invoke } from '$lib/electron-bridge';
 
   import {
-  closeGitCredentialsModal,
-  closeGitHubAuthModal,
-} from '$lib/store/slices/global-modals/global-modals-slice';
+    closeGitCredentialsModal,
+    closeGitHubAuthModal,
+  } from '$lib/store/slices/global-modals/global-modals-slice';
   import {
-  selectGitCredentialsError,
-  selectGlobalModals,
-  selectPendingGitHubAuth,
-} from '$lib/store/slices/global-modals/global-modals-selectors';
+    selectGitCredentialsError,
+    selectGlobalModals,
+    selectPendingGitHubAuth,
+  } from '$lib/store/slices/global-modals/global-modals-selectors';
   import { selectFeatureCodeDialogOpen } from '$lib/store/slices/feature-codes/feature-codes-selectors';
   import { toggleFeatureCodeDialog } from '$lib/store/slices/feature-codes/feature-codes-slice';
   import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import {
-  cleanupInvalidWorkspaceTabs,
-  openWorkspaceTab,
-} from '$lib/store/slices/tab-state/tab-state-slice';
+    cleanupInvalidWorkspaceTabs,
+    openWorkspaceTab,
+  } from '$lib/store/slices/tab-state/tab-state-slice';
   import {
-  selectCurrentWorkspaceTabId,
-  selectWorkspaceTabOrder,
-} from '$lib/store/slices/tab-state/tab-state-selectors';
+    selectCurrentWorkspaceTabId,
+    selectWorkspaceTabOrder,
+  } from '$lib/store/slices/tab-state/tab-state-selectors';
   import {
-  toggleTerminalOverlay,
-  openTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+    toggleTerminalOverlay,
+    openTerminalOverlay,
+  } from '$lib/store/slices/terminals/terminals-slice';
   import {
-  selectActiveWorkspaceId,
-  selectWorkspaceById,
-  selectWorkspaceHasLoaded,
-  selectWorkspaceItems,
-  selectWorkspaceLoading,
-} from '$lib/store/slices/workspace/workspace-selectors';
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+    selectWorkspaceHasLoaded,
+    selectWorkspaceItems,
+    selectWorkspaceLoading,
+  } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import {
-  clearActiveWorkspace,
-  loadWorkspacesRequested,
-  recordWorkspaceView,
-  setActiveWorkspaceId,
-} from '$lib/store/slices/workspace/workspace-slice';
+    clearActiveWorkspace,
+    loadWorkspacesRequested,
+    recordWorkspaceView,
+    setActiveWorkspaceId,
+  } from '$lib/store/slices/workspace/workspace-slice';
   import { createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
-  import {
-  isFocusInEditableElement,
-  KeyboardShortcutManager,
-} from '$lib/utils/keyboardShortcuts';
+  import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
-  import {
-  onDestroy,
-  onMount,
-  untrack,
-} from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
-  import {
-  ROOT_WORKSPACE_ID,
-  isValidWorkspaceId,
-} from '$shared/types/branded-ids';
+  import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
-  import {
-  SidebarNav,
-  SidebarPanel,
-} from '$lib/components/layout/sidebar-nav';
-  import {
-  togglePanel,
-  setShowCreateModal,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
+  import { togglePanel, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import {
-    initAppStore,
-    store as appStore,
-  } from '$lib/store/store';
-  import {
-    startAllAppSagas,
-  } from '$lib/store/sagas';
+  import { initAppStore, store as appStore } from '$lib/store/store';
+  import { startAllAppSagas } from '$lib/store/sagas';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
-    const storeContext = initAppStore();
+    const storeContext = initAppStore(appStore);
     const stopHandlers = startAllAppSagas(appStore);
 
     return () => {
@@ -551,7 +523,7 @@
         if (shortcuts && typeof shortcuts === 'object') {
           registerChord(shortcuts['command-palette'], 'Open Command Palette (Config)', openCmd);
         }
-      } catch  {
+      } catch {
         // Ignore if not available (e.g., web build)
       }
     })();
@@ -758,8 +730,7 @@
       ctrl: !isMac,
       description: 'Scroll Conversation Up',
       skipInEditableElements: true,
-      action: () =>
-        dispatchWindowEvent('navigate-message', { direction: 'previous' }),
+      action: () => dispatchWindowEvent('navigate-message', { direction: 'previous' }),
     });
 
     // Cmd+Down (Mac) / Ctrl+Down (Win/Linux) -> Scroll to next message
@@ -770,8 +741,7 @@
       ctrl: !isMac,
       description: 'Scroll Conversation Down',
       skipInEditableElements: true,
-      action: () =>
-        dispatchWindowEvent('navigate-message', { direction: 'next' }),
+      action: () => dispatchWindowEvent('navigate-message', { direction: 'next' }),
     });
 
     // Cmd+Alt+. (Mac) / Ctrl+Alt+. (Win/Linux) -> Open Model Picker
@@ -830,7 +800,6 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
-
     };
   });
 
@@ -996,139 +965,139 @@
 </script>
 
 <TooltipProvider>
-    <!-- Main Layout with Title Bar -->
-    <div
-      class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
-      aria-label="Application shell"
-      data-testid="app-ready"
-    >
-      <!-- Title bar at top -->
-      <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
+  <!-- Main Layout with Title Bar -->
+  <div
+    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
+    aria-label="Application shell"
+    data-testid="app-ready"
+  >
+    <!-- Title bar at top -->
+    <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
 
-      <!-- Update indicator (top-right corner) -->
-      <div class="absolute top-2 right-3 z-10">
-        <UpdateDownloadIndicator />
-      </div>
-
-      <!-- Main Content Area with Sidebar Nav -->
-      <ErrorBoundary componentName="MainLayout">
-        <div class="flex flex-1 min-h-0">
-          <!-- Global Sidebar Nav Rail -->
-          <SidebarNav />
-
-          <!-- Sidebar Panel (persistent, pushes content) -->
-          <SidebarPanel />
-
-          <!-- Content area with rounded corners -->
-          <main
-            class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
-            aria-label="Main content"
-          >
-            <div class="flex-1 min-h-0 overflow-auto">
-              {@render children?.()}
-            </div>
-
-            <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
-            <RootQuakeTerminalOverlay />
-          </main>
-        </div>
-      </ErrorBoundary>
+    <!-- Update indicator (top-right corner) -->
+    <div class="absolute top-2 right-3 z-10">
+      <UpdateDownloadIndicator />
     </div>
 
-    <!-- Global Command Palette Mount -->
-    <CommandPalette
-      isOpen={$isPaletteOpen$}
-      initialQuery={$paletteQuery$}
-      workspaceId={$activeWorkspaceId || undefined}
-      onClose={() => appStore.dispatch(closePalette())}
-      onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
-        const wsId = $activeWorkspaceId;
-        if (wsId) {
-          appStore.dispatch(
-            openWorkspaceFile(wsId, detail.path, {
-              line: detail.line,
-              openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
-            }),
-          );
-        }
-      }}
-    />
+    <!-- Main Content Area with Sidebar Nav -->
+    <ErrorBoundary componentName="MainLayout">
+      <div class="flex flex-1 min-h-0">
+        <!-- Global Sidebar Nav Rail -->
+        <SidebarNav />
 
-    <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
-    <SpacesSwitcherOverlay />
+        <!-- Sidebar Panel (persistent, pushes content) -->
+        <SidebarPanel />
 
-    <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
-    <KeyboardShortcutsCheatSheet />
+        <!-- Content area with rounded corners -->
+        <main
+          class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
+          aria-label="Main content"
+        >
+          <div class="flex-1 min-h-0 overflow-auto">
+            {@render children?.()}
+          </div>
 
-    <!-- Auggie Setup Gate -->
-    <AuggieSetupGate />
+          <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
+          <RootQuakeTerminalOverlay />
+        </main>
+      </div>
+    </ErrorBoundary>
+  </div>
 
-    <!-- Toast Notifications -->
-    <Toast />
+  <!-- Global Command Palette Mount -->
+  <CommandPalette
+    isOpen={$isPaletteOpen$}
+    initialQuery={$paletteQuery$}
+    workspaceId={$activeWorkspaceId || undefined}
+    onClose={() => appStore.dispatch(closePalette())}
+    onSelectFile={(detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => {
+      const wsId = $activeWorkspaceId;
+      if (wsId) {
+        appStore.dispatch(
+          openWorkspaceFile(wsId, detail.path, {
+            line: detail.line,
+            openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
+          }),
+        );
+      }
+    }}
+  />
 
-    <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
-    <LinkTooltip />
+  <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
+  <SpacesSwitcherOverlay />
 
-    <!-- Auto-Update Notification -->
-    {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}
-      <UpdateNotification />
-    {/await}
+  <!-- Keyboard Shortcuts Cheat Sheet (press Cmd+/ to toggle) -->
+  <KeyboardShortcutsCheatSheet />
 
-    {#if $globalModals.githubAuth.open}
-      {#key $globalModals.githubAuth.modalKey}
-        <GitHubAuthModal
-          open={true}
-          autoStart={$globalModals.githubAuth.pendingAuth !== null}
-          onClose={() => {
-            appStore.dispatch(closeGitHubAuthModal());
-          }}
-          onSuccess={handleGitHubAuthSuccess}
-        />
-      {/key}
-    {/if}
+  <!-- Auggie Setup Gate -->
+  <AuggieSetupGate />
 
-    {#if $globalModals.gitCredentials.open}
-      <GitCredentialsModal
+  <!-- Toast Notifications -->
+  <Toast />
+
+  <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
+  <LinkTooltip />
+
+  <!-- Auto-Update Notification -->
+  {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}
+    <UpdateNotification />
+  {/await}
+
+  {#if $globalModals.githubAuth.open}
+    {#key $globalModals.githubAuth.modalKey}
+      <GitHubAuthModal
         open={true}
-        errorMessage={$globalModals.gitCredentials.error?.message ?? ''}
-        rawError={$globalModals.gitCredentials.error?.rawError}
-        operation={$globalModals.gitCredentials.error?.operation ?? 'push'}
-        command={$globalModals.gitCredentials.error?.command}
-        cwd={$globalModals.gitCredentials.error?.cwd}
+        autoStart={$globalModals.githubAuth.pendingAuth !== null}
         onClose={() => {
-          appStore.dispatch(closeGitCredentialsModal());
+          appStore.dispatch(closeGitHubAuthModal());
         }}
-        onRetryInTerminal={handleCredentialsRetryInTerminal}
+        onSuccess={handleGitHubAuthSuccess}
       />
-    {/if}
+    {/key}
+  {/if}
 
-    <!-- Create Workspace Modal (opened from sidebar nav + button) -->
-    <NewSpaceModal
-      open={$showCreateModal$}
-      onClose={() => appStore.dispatch(setShowCreateModal(false))}
-    />
-
-    <!-- Release Notes Modal (shown after update) -->
-    <ReleaseNotesModal
-      open={$showReleaseNotesModal$}
-      releaseNotes={$releaseNotes$}
-      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
-    />
-
-    <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->
-    <FeatureCodeDialog
-      open={$featureCodeDialogOpen}
+  {#if $globalModals.gitCredentials.open}
+    <GitCredentialsModal
+      open={true}
+      errorMessage={$globalModals.gitCredentials.error?.message ?? ''}
+      rawError={$globalModals.gitCredentials.error?.rawError}
+      operation={$globalModals.gitCredentials.error?.operation ?? 'push'}
+      command={$globalModals.gitCredentials.error?.command}
+      cwd={$globalModals.gitCredentials.error?.cwd}
       onClose={() => {
-        if ($featureCodeDialogOpen) {
-          appStore.dispatch(toggleFeatureCodeDialog());
-        }
+        appStore.dispatch(closeGitCredentialsModal());
       }}
+      onRetryInTerminal={handleCredentialsRetryInTerminal}
     />
+  {/if}
 
-    <!-- Debug Panel (only in dev mode) -->
-    {#if import.meta.env.DEV}
-      <DebugPanel />
-    {/if}
+  <!-- Create Workspace Modal (opened from sidebar nav + button) -->
+  <NewSpaceModal
+    open={$showCreateModal$}
+    onClose={() => appStore.dispatch(setShowCreateModal(false))}
+  />
+
+  <!-- Release Notes Modal (shown after update) -->
+  <ReleaseNotesModal
+    open={$showReleaseNotesModal$}
+    releaseNotes={$releaseNotes$}
+    onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+  />
+
+  <!-- Feature Code Dialog (hidden, activated via Ctrl+Shift+F12) -->
+  <FeatureCodeDialog
+    open={$featureCodeDialogOpen}
+    onClose={() => {
+      if ($featureCodeDialogOpen) {
+        appStore.dispatch(toggleFeatureCodeDialog());
+      }
+    }}
+  />
+
+  <!-- Debug Panel (only in dev mode) -->
+  {#if import.meta.env.DEV}
+    <DebugPanel />
+  {/if}
 </TooltipProvider>
 
 <style>

@@ -73,6 +73,10 @@ function* waitForAgentSession(
 }
 
 function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
+  return hasUsableAgentSession(session);
+}
+
+function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
   return !!session?.backendSessionId && String(session.status).toLowerCase() !== 'pending';
 }
 
@@ -391,16 +395,25 @@ export function* restoreInitialAgent(
     } catch {}
   }
 }
-function* restoreRemainingAgents(
+/** @internal Exported for testing only. */
+export function* restoreRemainingAgents(
   wsId: string,
   diskAgents: StoredAgent[],
   existingAgentIds: Set<string>,
   initialAgentId: string | null,
 ) {
-  const agentsToRestore = diskAgents.filter(
-    (agent) =>
-      !existingAgentIds.has(agent.id as any) && (!initialAgentId || agent.id !== initialAgentId),
-  );
+  const agentsToRestore: StoredAgent[] = [];
+  for (const agent of diskAgents) {
+    if (initialAgentId && agent.id === initialAgentId) continue;
+    if (!existingAgentIds.has(agent.id as any)) {
+      agentsToRestore.push(agent);
+      continue;
+    }
+    const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(agent.id);
+    if (!hasUsableAgentSession(existingSession)) {
+      agentsToRestore.push(agent);
+    }
+  }
   if (agentsToRestore.length === 0) return;
   for (const agent of agentsToRestore) {
     yield* put(ensureAgentSessionLoaded(wsId, agent.id));

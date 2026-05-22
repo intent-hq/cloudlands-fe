@@ -5,7 +5,6 @@ import {
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from "./constants";
-import { store as configuredStore } from "./configured-store";
 import type {
   PreloadedStoreState,
   ReduxStoreContext,
@@ -126,13 +125,13 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
 };
 
 export const initAppStore = (
+  store: Store<any, any>,
   loadedState?: PreloadedStoreState,
-  storeRuntime: Store<any, any> = configuredStore,
 ): ReduxStoreContext => {
-  const disposeConfiguredStore = storeRuntime.init(loadedState);
+  const disposeConfiguredStore = store.init(loadedState);
 
   const storeContext: ReduxStoreContext = {
-    store: storeRuntime,
+    store,
     dispose: () => {
       cleanUpWindow(storeContext);
       disposeConfiguredStore();
