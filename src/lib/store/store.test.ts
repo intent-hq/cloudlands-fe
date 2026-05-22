@@ -100,7 +100,7 @@ describe("app Store initialization", () => {
   it("initializes the configured Store and exposes dispatch/state through context", () => {
     const runtime = createFakeStoreRuntime();
 
-    const context = initAppStore(undefined, runtime as unknown as Store<any, any>);
+    const context = initAppStore(runtime as unknown as Store<any, any>);
 
     expect(runtime.init).toHaveBeenCalledOnce();
     expect(context.store).toBe(runtime);

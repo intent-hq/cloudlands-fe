@@ -6,7 +6,7 @@ architecture rules live in the agent skills, not in this companion doc:
 - [`svelte-redux-toolkit`](../.agents/skills/svelte-redux-toolkit/SKILL.md) — root routing index and always-on Redux policy.
 - [`core-policy`](../.agents/skills/svelte-redux-toolkit/core-policy/SKILL.md) — shared-state ownership, serializability, canonical state, Svelte-store deprecation, and utility reuse rules.
 - [`import-boundaries`](../.agents/skills/svelte-redux-toolkit/import-boundaries/SKILL.md) — component/service/saga import boundaries and current public package subpaths.
-- [`component-integration`](../.agents/skills/svelte-redux-toolkit/component-integration/SKILL.md) — configured `Store` setup, Store-first dispatch/state reads, selector call modes, and `store.runSaga(name)` startup.
+- [`component-integration`](../.agents/skills/svelte-redux-toolkit/component-integration/SKILL.md) — configured `Store` setup, Store-first dispatch/state reads, selector call modes, and `store.runSaga(sagaFn)` startup.
 - [`migrate-to-svelte-redux-toolkit`](../.agents/skills/migrate-to-svelte-redux-toolkit/SKILL.md) — migration playbook for remaining Svelte stores.
 
 If this doc conflicts with the skills, follow the skills and report the drift.
@@ -22,10 +22,10 @@ The current app-specific map is:
 
 - `src/lib/store/store.ts` — configured app `Store`, app state type inference,
   and app reducer registration.
-- `src/lib/store/saga-registration.ts` — app saga registration via
-  `store.registerSagas(...)` before initialization.
+- `src/lib/store/sagas.ts` — positional `sagas` array plus
+  `startAllAppSagas(store)`, which starts each saga with `store.runSaga(sagaFn)`.
 - `src/routes/+layout.svelte` — root Store initialization and explicit app saga
-  startup with `store.runSaga(name)`.
+  startup via `startAllAppSagas(appStore)`.
 - `src/lib/store/slices/**` — app-owned slice state, actions, selectors, and
   sagas.
 - `src/lib/store/utils/` — app-local helpers that are not package-owned exports,
