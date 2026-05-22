@@ -68,6 +68,7 @@ vi.mock('$lib/store/redux-dispatch-bridge', () => ({
 
 vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-slice', () => ({
   openWorkspaceFile: vi.fn(),
+  workspaceNavigationReducer: (state = { byWorkspaceId: {} }) => state,
 }));
 
 import MarkdownFileEditor from './MarkdownFileEditor.svelte';
