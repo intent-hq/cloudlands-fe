@@ -38,10 +38,17 @@ type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 class ChangesPayload {
   readonly #prevState: unknown;
   readonly #nextState: unknown;
+  declare readonly changes: StateDiff;
 
   constructor(prevState: unknown, nextState: unknown) {
     this.#prevState = prevState;
     this.#nextState = nextState;
+
+    Object.defineProperty(this, "changes", {
+      configurable: true,
+      enumerable: true,
+      get: () => createStateDiff(this.#prevState, this.#nextState),
+    });
   }
 
   get prevState(): unknown {
@@ -52,9 +59,6 @@ class ChangesPayload {
     return this.#nextState;
   }
 
-  get changes(): StateDiff {
-    return createStateDiff(this.#prevState, this.#nextState);
-  }
 }
 
 class NoChangesPayload {

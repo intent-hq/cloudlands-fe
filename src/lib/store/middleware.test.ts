@@ -70,7 +70,7 @@ async function initStoreForReduxLoggingTests() {
       return () => {};
     },
   };
-  return initAppStore(undefined, {
+  return initAppStore({
     init: vi.fn(() => vi.fn()),
     getReadableState: vi.fn(() => readableState),
     dispatch: vi.fn((action: unknown) => action),
@@ -261,12 +261,12 @@ type NoChangesPayloadForTest = {
   state: unknown;
 };
 
-function expectPrototypeGetter(object: object, property: string) {
+function expectGetterDescriptor(object: object, property: string, enumerable = false) {
   const descriptor = Object.getOwnPropertyDescriptor(object, property);
 
   expect(descriptor?.get).toEqual(expect.any(Function));
   expect(descriptor?.value).toBeUndefined();
-  expect(descriptor?.enumerable).toBe(false);
+  expect(descriptor?.enumerable).toBe(enumerable);
 }
 
 function expectChangesPayloadClassInstance(payload: ChangesPayloadForTest) {
@@ -278,10 +278,10 @@ function expectChangesPayloadClassInstance(payload: ChangesPayloadForTest) {
   expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
-  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
-  expectPrototypeGetter(prototype, "prevState");
-  expectPrototypeGetter(prototype, "nextState");
-  expectPrototypeGetter(prototype, "changes");
+  expect(Object.getOwnPropertyDescriptor(prototype, "changes")).toBeUndefined();
+  expectGetterDescriptor(prototype, "prevState");
+  expectGetterDescriptor(prototype, "nextState");
+  expectGetterDescriptor(payload, "changes", true);
 }
 
 function expectNoChangesPayloadClassInstance(payload: NoChangesPayloadForTest) {
@@ -301,7 +301,7 @@ function expectNoChangesPayloadClassInstance(payload: NoChangesPayloadForTest) {
   expect(Object.getOwnPropertyDescriptor(prototype, "prevState")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(prototype, "nextState")).toBeUndefined();
   expect(Object.getOwnPropertyDescriptor(prototype, "changes")).toBeUndefined();
-  expectPrototypeGetter(prototype, "state");
+  expectGetterDescriptor(prototype, "state");
   expect(getterNames).toEqual(["state"]);
 }
 
@@ -391,15 +391,17 @@ describe("createLoggerMiddleware", () => {
     expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 
-  it("does not compute changes until the changes getter is read", async () => {
+  it("computes changes only when the own changes accessor is read", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
 
-    const prevState = {};
+    let diffReadCount = 0;
+    const prevState = { nested: { count: 1 } };
     const nextState = {
-      get dangerous() {
-        throw new Error("changes getter read");
+      get nested() {
+        diffReadCount++;
+        return { count: 2 };
       },
     };
     let currentState: unknown = prevState;
@@ -419,13 +421,26 @@ describe("createLoggerMiddleware", () => {
     });
 
     expect(() => middleware(storeApi as never)(next)({ type: "TEST_ACTION" })).not.toThrow();
+    expect(diffReadCount).toBe(0);
 
     const statePayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
 
     expectChangesPayloadClassInstance(statePayload);
     expect(statePayload.prevState).toBe(prevState);
     expect(statePayload.nextState).toBe(nextState);
-    expect(() => statePayload.changes).toThrow("changes getter read");
+    expect(diffReadCount).toBe(0);
+
+    const firstChanges = statePayload.changes;
+
+    expect(diffReadCount).toBe(1);
+    expect(firstChanges).toEqual({ "nested.count": { prev: 1, next: 2 } });
+
+    const secondChanges = statePayload.changes;
+
+    expect(diffReadCount).toBe(2);
+    expect(secondChanges).toEqual(firstChanges);
+    expect(secondChanges).not.toBe(firstChanges);
+    expectGetterDescriptor(statePayload, "changes", true);
   });
 
   it("logs unchanged state without prev state and uses the no changes label", async () => {
