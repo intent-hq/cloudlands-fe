@@ -34,7 +34,11 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-import { restoreInitialAgent } from './agent-loading-saga';
+import {
+  restoreInitialAgent,
+  restoreRemainingAgents,
+} from './agent-loading-saga';
+import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
 
 const sessionStorageMock = {
   getItem: vi.fn(() => null),
@@ -99,5 +103,35 @@ describe('restoreInitialAgent', () => {
     expect((step.value as any).type).toBe('PUT');
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
     expect(gen.next().done).toBe(true);
+  });
+});
+
+describe('restoreRemainingAgents', () => {
+  it('restores an indexed regular agent when the existing shell has no usable backend session', () => {
+    const wsId = 'ws-regular';
+    const diskAgent = {
+      id: 'agent-regular',
+      workspaceId: wsId,
+      name: 'Regular Agent',
+      status: 'idle',
+      messages: [],
+      createdAt: '2026-05-21T00:00:00.000Z',
+      lastActivity: '2026-05-21T00:00:00.000Z',
+      sessionId: 'backend-regular',
+    } as any;
+    const staleShell = {
+      ...pendingSession(wsId),
+      id: 'agent-regular' as AgentSession['id'],
+      name: 'Regular Agent',
+    } as AgentSession;
+    const gen = restoreRemainingAgents(wsId, [diskAgent], new Set(['agent-regular']), null);
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(staleShell);
+    expect((step.value as any).type).toBe('PUT');
+    expect((step.value as any).payload.action).toEqual(
+      ensureAgentSessionLoaded(wsId, 'agent-regular'),
+    );
   });
 });

@@ -515,6 +515,45 @@ describe('new saga-owned agent creation request handlers', () => {
     await resolution;
   });
 
+  it('replaces a stale same-id regular shell with the created backend session', () => {
+    const existing = {
+      id: 'agent-config',
+      workspaceId: 'ws-config',
+      name: 'Config Agent',
+      backendSessionId: null,
+      status: AgentStatus.Pending,
+      messages: [],
+    } as AgentSession;
+    const created = {
+      ...existing,
+      backendSessionId: 'backend-config' as AgentSession['backendSessionId'],
+      status: AgentStatus.Idle,
+    } as AgentSession;
+    const gen = handleCreateAgentFromConfigRequestedSaga('ws-config', {
+      id: 'agent-config',
+      workspaceId: 'ws-config' as any,
+      name: 'Config Agent',
+      model: 'selector-model',
+      source: 'unit-test',
+    });
+
+    let step = gen.next();
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next(makeWorkspace('ws-config'));
+    expect((step.value as any).type).toBe('SELECT');
+    step = gen.next([existing]);
+    expect((step.value as any).type).toBe('CALL');
+    step = gen.next({ success: true, agent: created });
+    expect((step.value as any).payload.action.type).toBe('agentSessions/upsertSession');
+    expect((step.value as any).payload.action.payload[0]).toMatchObject({
+      id: 'agent-config',
+      backendSessionId: 'backend-config',
+      workspaceId: 'ws-config',
+    });
+    step = gen.next();
+    expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
+  });
+
   it('rejects async config creation without registering a failed session', async () => {
     const request = createAgentFromConfigRequested('ws-config', {
       id: 'agent-config',
