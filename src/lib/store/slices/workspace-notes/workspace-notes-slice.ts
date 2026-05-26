@@ -304,17 +304,16 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
     });
   })
   .with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
-    const workspaceState = state.byWorkspaceId[workspaceId];
-    if (!workspaceState?.initialized) return state;
+    if (note.workspaceId !== workspaceId) return state;
 
+    const workspaceState = getWorkspaceState(state, workspaceId);
     const existingNote = getItem(workspaceState.notes, noteId as Note["id"]);
-    if (!existingNote) return state;
 
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
-      notes: updateItem(workspaceState.notes, {
+      notes: upsertItem(workspaceState.notes, {
         ...note,
-        id: existingNote.id,
+        id: existingNote?.id ?? (noteId as Note["id"]),
       }),
       notesVersion: workspaceState.notesVersion + 1,
     });

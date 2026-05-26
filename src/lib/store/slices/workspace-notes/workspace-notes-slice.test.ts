@@ -179,6 +179,36 @@ describe("workspaceNotesReducer", () => {
     );
   });
 
+  it("caches updated notes before workspace notes finish initializing", () => {
+    const updatedSpec = mockNote("spec", WS_1, { content: "# Coordinator plan" });
+
+    const nextState = workspaceNotesReducer(
+      initialState,
+      applyNoteUpdated(WS_1, "spec", updatedSpec)
+    );
+
+    expect(nextState.byWorkspaceId[WS_1].initialized).toBe(false);
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "spec" as Note["id"])?.content).toBe(
+      "# Coordinator plan"
+    );
+  });
+
+  it("returns state unchanged when note workspace ID does not match action workspace ID", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+    );
+    const noteFromDifferentWorkspace = mockNote("note-2", WS_2, { title: "Wrong workspace" });
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyNoteUpdated(WS_1, "note-2", noteFromDifferentWorkspace)
+    );
+
+    expect(nextState).toBe(loadedState);
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-2" as Note["id"])).toBeUndefined();
+  });
+
   it("drops non-string local content/title/source updates before storing notes", () => {
     const loadedState = workspaceNotesReducer(
       initialState,
