@@ -46,14 +46,13 @@ const svelteReduxToolkitSelectorFiles = [
   'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
 ];
 const svelteReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
-const svelteReduxToolkitSelectorRuleSeverity = 'error';
 
 const svelteReduxToolkitSourceSelectorRules = {
-  'svelte-redux-toolkit/duplicate-selector-export': svelteReduxToolkitSelectorRuleSeverity,
-  'svelte-redux-toolkit/duplicate-selector-implementation': svelteReduxToolkitSelectorRuleSeverity,
-  'svelte-redux-toolkit/inline-saga-selector': svelteReduxToolkitSelectorRuleSeverity,
-  'svelte-redux-toolkit/direct-selector-call-mode': svelteReduxToolkitSelectorRuleSeverity,
-  'svelte-redux-toolkit/wait-for-named-selector': svelteReduxToolkitSelectorRuleSeverity,
+  'svelte-redux-toolkit/duplicate-selector-export': 'error',
+  'svelte-redux-toolkit/duplicate-selector-implementation': 'error',
+  'svelte-redux-toolkit/inline-saga-selector': 'error',
+  'svelte-redux-toolkit/direct-selector-call-mode': 'error',
+  'svelte-redux-toolkit/wait-for-named-selector': 'error',
 };
 
 // Staged rollout: existing components with direct async data loads are baselined
@@ -450,19 +449,19 @@ export default [
     files: svelteReduxToolkitSourceFiles,
     ignores: svelteReduxToolkitSelectorFiles,
     rules: {
-      'svelte-redux-toolkit/selector-file-name': svelteReduxToolkitSelectorRuleSeverity,
+      'svelte-redux-toolkit/selector-file-name': 'error',
     },
   },
   {
     files: svelteReduxToolkitSelectorFiles,
     rules: {
-      'svelte-redux-toolkit/selector-export-name': svelteReduxToolkitSelectorRuleSeverity,
+      'svelte-redux-toolkit/selector-export-name': 'error',
     },
   },
   {
     files: svelteReduxToolkitTestFiles,
     rules: {
-      'svelte-redux-toolkit/test-selector-select': svelteReduxToolkitSelectorRuleSeverity,
+      'svelte-redux-toolkit/test-selector-select': 'error',
     },
   },
   {
