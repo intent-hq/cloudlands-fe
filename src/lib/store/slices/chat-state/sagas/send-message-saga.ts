@@ -224,6 +224,24 @@ function* stopBeforeForceSubmit(agentId: string, payload: SendMessagePayload): S
   }
 }
 
+function* takeChatInitializedForAgent(
+  agentId: string,
+): SagaGenerator<ReturnType<typeof chatInitialized>> {
+  while (true) {
+    const action = yield* take(chatInitialized);
+    if (action.payload[0] === agentId) return action;
+  }
+}
+
+function* takeChatInitFailedForAgent(
+  agentId: string,
+): SagaGenerator<ReturnType<typeof chatInitFailed>> {
+  while (true) {
+    const action = yield* take(chatInitFailed);
+    if (action.payload[0] === agentId) return action;
+  }
+}
+
 // ============================================================================
 // Queue path
 // ============================================================================
@@ -324,16 +342,8 @@ function* handleSendPath(
 
     // Wait for init to succeed or fail before proceeding with send (30s timeout)
     const { failed, timeout } = yield* race({
-      initialized: take((action: { type: string; payload?: unknown }) =>
-        action.type === chatInitialized.type &&
-        Array.isArray((action as any).payload) &&
-        (action as any).payload[0] === agentId,
-      ),
-      failed: take((action: { type: string; payload?: unknown }) =>
-        action.type === chatInitFailed.type &&
-        Array.isArray((action as any).payload) &&
-        (action as any).payload[0] === agentId,
-      ),
+      initialized: call(takeChatInitializedForAgent, agentId),
+      failed: call(takeChatInitFailedForAgent, agentId),
       timeout: delay(30_000),
     });
 

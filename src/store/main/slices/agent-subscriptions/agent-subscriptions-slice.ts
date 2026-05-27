@@ -11,8 +11,8 @@
  * - One-shot subscription tracking
  */
 
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 
@@ -165,6 +165,33 @@ export const evictDeletedAgent = createAction<[wsId: string, agentId: string]>(
 // --- Workspace cleanup ---
 export const clearWorkspace = createAction<[wsId: string]>(
   "agentSubscriptions/clearWorkspace"
+);
+
+// --- Saga workflow triggers ---
+
+/** Request immediate delivery of specific events to an agent. */
+export const requestDeliverEvents = createAction<
+  [wsId: string, agentId: string, events: WorkspaceEvent[]]
+>("agentSubscriptions/requestDeliverEvents");
+
+/** Request delivery of all queued events for an agent. */
+export const requestDeliverQueuedEvents = createAction<
+  [wsId: string, agentId: string]
+>("agentSubscriptions/requestDeliverQueuedEvents");
+
+/** Signal that a delegation group may be complete and ready for delivery. */
+export const requestDelegationGroupDelivery = createAction<
+  [wsId: string, groupId: string]
+>("agentSubscriptions/requestDelegationGroupDelivery");
+
+/** Request async validation of subscriptions against agent persistence. */
+export const requestValidateSubscriptions = createAction<[wsId: string]>(
+  "agentSubscriptions/requestValidateSubscriptions"
+);
+
+/** Request eviction of stale deleted agents. */
+export const requestEvictStaleAgents = createAction<[wsId: string]>(
+  "agentSubscriptions/requestEvictStaleAgents"
 );
 
 // ============================================================================
