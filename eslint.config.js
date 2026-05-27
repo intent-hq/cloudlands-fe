@@ -4,95 +4,9 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
-import {
-  actionTypeShapePlugin,
-  asyncReducerHandlerPlugin,
-  autoForkingChannelHelperPlugin,
-  collectionInternalMutationPlugin,
-  collectionStateShapePlugin,
-  componentLifecycleBoundaryPlugin,
-  directLocalStorageUsagePlugin,
-  directSelectorCallModePlugin,
-  duplicateActionTypePlugin,
-  duplicateSagaNamePlugin,
-  duplicateSagaRegistrationPlugin,
-  duplicateSelectorExportPlugin,
-  duplicateSelectorImplementationPlugin,
-  duplicateStateFieldPlugin,
-  forbiddenComponentImportPlugin,
-  forbiddenReduxApiPlugin,
-  inlineSagaSelectorPlugin,
-  nondeterministicReducerStatePlugin,
-  nonSerializableInitialStatePlugin,
-  nonSerializableStateTypePlugin,
-  passThroughWrapperPlugin,
-  rawChannelCleanupPlugin,
-  reducerSideEffectPlugin,
-  removedMiddlewareSourcePlugin,
-  sagaWatcherActionTypePlugin,
-  selectorExportNamePlugin,
-  selectorFileNamePlugin,
-  sharedSvelteStoreBoundaryPlugin,
-  sourceShapedPackageImportPlugin,
-  stateTypeNamePlugin,
-  storeConstructorSagaMapPlugin,
-  suspiciousStateFieldPlugin,
-  testSelectorSelectPlugin,
-  typedSagaCallMockGuardPlugin,
-  typedSagaYieldStarPlugin,
-  unnamespacedActionTypePlugin,
-  waitForNamedSelectorPlugin,
-} from 'svelte-redux-toolkit/eslint-plugins/plugins';
+import { full as svelteReduxToolkitFullConfig } from 'svelte-redux-toolkit/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
-
-const svelteReduxToolkitRulePlugins = [
-  actionTypeShapePlugin,
-  asyncReducerHandlerPlugin,
-  autoForkingChannelHelperPlugin,
-  collectionInternalMutationPlugin,
-  collectionStateShapePlugin,
-  componentLifecycleBoundaryPlugin,
-  directLocalStorageUsagePlugin,
-  directSelectorCallModePlugin,
-  duplicateActionTypePlugin,
-  duplicateSagaNamePlugin,
-  duplicateSagaRegistrationPlugin,
-  duplicateSelectorExportPlugin,
-  duplicateSelectorImplementationPlugin,
-  duplicateStateFieldPlugin,
-  forbiddenComponentImportPlugin,
-  forbiddenReduxApiPlugin,
-  inlineSagaSelectorPlugin,
-  nondeterministicReducerStatePlugin,
-  nonSerializableInitialStatePlugin,
-  nonSerializableStateTypePlugin,
-  passThroughWrapperPlugin,
-  rawChannelCleanupPlugin,
-  reducerSideEffectPlugin,
-  removedMiddlewareSourcePlugin,
-  sagaWatcherActionTypePlugin,
-  selectorExportNamePlugin,
-  selectorFileNamePlugin,
-  sharedSvelteStoreBoundaryPlugin,
-  sourceShapedPackageImportPlugin,
-  stateTypeNamePlugin,
-  storeConstructorSagaMapPlugin,
-  suspiciousStateFieldPlugin,
-  testSelectorSelectPlugin,
-  typedSagaCallMockGuardPlugin,
-  typedSagaYieldStarPlugin,
-  unnamespacedActionTypePlugin,
-  waitForNamedSelectorPlugin,
-];
-
-const svelteReduxToolkitPlugin = {
-  rules: Object.assign({}, ...svelteReduxToolkitRulePlugins.map((plugin) => plugin.rules)),
-};
-
-const svelteReduxToolkitWarnRules = Object.fromEntries(
-  Object.keys(svelteReduxToolkitPlugin.rules).map((ruleName) => [`svelte-redux-toolkit/${ruleName}`, 'warn']),
-);
 
 const intentPlugin = {
   rules: {
@@ -511,16 +425,7 @@ export default [
       'max-lines': ['error', { max: 1200 }],
     },
   },
-  // Wire each individual package-provided rule plugin once under the package
-  // namespace. Aggregate plugin collections are intentionally not imported here
-  // to avoid duplicate aggregate+individual registration.
-  {
-    files: ['src/**/*.{ts,tsx,svelte}'],
-    plugins: {
-      'svelte-redux-toolkit': svelteReduxToolkitPlugin,
-    },
-    rules: svelteReduxToolkitWarnRules,
-  },
+  ...svelteReduxToolkitFullConfig,
   {
     files: ['**/*.svelte'],
     ignores: componentAsyncDataFetchBaselineIgnorePatterns,
