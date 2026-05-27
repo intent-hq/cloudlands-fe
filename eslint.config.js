@@ -4,15 +4,14 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
+import { directSelectorCallModePlugin } from 'svelte-redux-toolkit/eslint-plugins/plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
-import selectorLifecycleRule from './eslint-rules/selector-lifecycle.js';
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
-    'selector-lifecycle': selectorLifecycleRule,
   },
 };
 
@@ -411,6 +410,7 @@ export default [
       svelte,
       '@typescript-eslint': typescript,
       'unused-imports': unusedImports,
+      'svelte-redux-toolkit': directSelectorCallModePlugin,
       intent: intentPlugin,
     },
     rules: {
@@ -423,7 +423,7 @@ export default [
         destructuredArrayIgnorePattern: '^_',
       }],
       'unused-imports/no-unused-imports': 'error',
-      'intent/selector-lifecycle': 'warn',
+      'svelte-redux-toolkit/direct-selector-call-mode': 'warn',
       'max-lines': ['error', { max: 1200 }],
     },
   },
