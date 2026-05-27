@@ -15,12 +15,12 @@ import type { WorkspaceEvent } from "../../../../../features/events/types";
 /** Request immediate delivery of specific events to an agent. */
 export const requestDeliverEvents = createAction<
   [wsId: string, agentId: string, events: WorkspaceEvent[]]
->("agentSubscriptions/saga/requestDeliverEvents");
+>("agentSubscriptions/requestDeliverEvents");
 
 /** Request delivery of all queued events for an agent. */
 export const requestDeliverQueuedEvents = createAction<
   [wsId: string, agentId: string]
->("agentSubscriptions/saga/requestDeliverQueuedEvents");
+>("agentSubscriptions/requestDeliverQueuedEvents");
 
 // ---------------------------------------------------------------------------
 // Delegation group triggers
@@ -29,11 +29,11 @@ export const requestDeliverQueuedEvents = createAction<
 /** Signal that a delegation group may be complete and ready for delivery. */
 export const requestDelegationGroupDelivery = createAction<
   [wsId: string, groupId: string]
->("agentSubscriptions/saga/requestDelegationGroupDelivery");
+>("agentSubscriptions/requestDelegationGroupDelivery");
 
 /** Request async validation of subscriptions against agent persistence. */
 export const requestValidateSubscriptions = createAction<[wsId: string]>(
-  "agentSubscriptions/saga/requestValidateSubscriptions"
+  "agentSubscriptions/requestValidateSubscriptions"
 );
 
 // ---------------------------------------------------------------------------
@@ -42,6 +42,6 @@ export const requestValidateSubscriptions = createAction<[wsId: string]>(
 
 /** Request eviction of stale deleted agents. */
 export const requestEvictStaleAgents = createAction<[wsId: string]>(
-  "agentSubscriptions/saga/requestEvictStaleAgents"
+  "agentSubscriptions/requestEvictStaleAgents"
 );
 
