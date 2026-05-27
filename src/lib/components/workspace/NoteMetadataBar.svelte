@@ -26,7 +26,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   restoreAgentSessionRequested,
   runAgentForNoteRequested,
 } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { readableProp } from '$lib/store/utils/readable-prop';
+  import { toStore } from 'svelte/store';
   import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('NoteMetadataBar');
@@ -40,7 +40,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     note: Note;
   } = $props();
 
-  const workspaceId$ = readableProp(() => workspaceId as string);
+  const workspaceId$ = toStore(() => workspaceId as string);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
   // scopes to the current workspace, so no manual filtering is needed.
