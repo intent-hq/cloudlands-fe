@@ -69,6 +69,11 @@ const svelteReduxToolkitTestSelectorRuleOverrides = {
   'svelte-redux-toolkit/selector-file-name': 'off',
   'svelte-redux-toolkit/selector-export-name': 'off',
 };
+const svelteReduxToolkitTestArchitectureRuleOverrides = {
+  'svelte-redux-toolkit/collection-internal-mutation': 'off',
+  'svelte-redux-toolkit/create-action-owner': 'off',
+  'svelte-redux-toolkit/duplicate-saga-name': 'off',
+};
 const svelteReduxToolkitArchitectureRules = {
   'svelte-redux-toolkit/duplicate-action-type': 'error',
   'svelte-redux-toolkit/duplicate-selector-export': 'error',
@@ -77,13 +82,18 @@ const svelteReduxToolkitArchitectureRules = {
   'svelte-redux-toolkit/pass-through-wrapper': 'error',
   'svelte-redux-toolkit/non-serializable-state-type': 'error',
   'svelte-redux-toolkit/non-serializable-initial-state': 'error',
+  'svelte-redux-toolkit/nondeterministic-reducer-state': 'error',
   'svelte-redux-toolkit/reducer-side-effect': 'error',
   'svelte-redux-toolkit/async-reducer-handler': 'error',
+  'svelte-redux-toolkit/collection-internal-mutation': 'error',
   'svelte-redux-toolkit/inline-saga-selector': 'error',
   'svelte-redux-toolkit/raw-channel-cleanup': 'error',
   'svelte-redux-toolkit/forbidden-redux-api': 'error',
+  'svelte-redux-toolkit/create-action-owner': 'error',
+  'svelte-redux-toolkit/saga-watcher-action-type': 'error',
   'svelte-redux-toolkit/unnamespaced-action-type': 'error',
   'svelte-redux-toolkit/action-type-shape': 'error',
+  'svelte-redux-toolkit/forbidden-component-import': 'error',
 };
 
 // Staged rollout: existing components with direct async data loads are baselined
@@ -478,6 +488,13 @@ export default [
     rules: svelteReduxToolkitArchitectureRules,
   },
   {
+    files: ['src/**/*.svelte'],
+    ignores: productionModuleIgnores,
+    rules: {
+      'svelte-redux-toolkit/forbidden-component-import': 'error',
+    },
+  },
+  {
     files: svelteReduxToolkitSourceFiles,
     ignores: svelteReduxToolkitSelectorRuleIgnores,
     rules: svelteReduxToolkitSourceSelectorRules,
@@ -499,6 +516,10 @@ export default [
   {
     files: svelteReduxToolkitSelectorRuleIgnores,
     rules: svelteReduxToolkitTestSelectorRuleOverrides,
+  },
+  {
+    files: svelteReduxToolkitSelectorRuleIgnores,
+    rules: svelteReduxToolkitTestArchitectureRuleOverrides,
   },
   {
     files: svelteReduxToolkitTestFiles,
