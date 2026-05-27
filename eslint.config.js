@@ -40,6 +40,22 @@ const productionModuleIgnores = [
   'src/preload/generated-channels.ts',
 ];
 
+const svelteReduxToolkitSourceFiles = ['src/**/*.{js,jsx,mjs,ts,tsx}'];
+const svelteReduxToolkitSelectorFiles = [
+  'src/**/*-selector.{js,jsx,mjs,ts,tsx}',
+  'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
+];
+const svelteReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
+const svelteReduxToolkitSelectorRuleSeverity = 'error';
+
+const svelteReduxToolkitSourceSelectorRules = {
+  'svelte-redux-toolkit/duplicate-selector-export': svelteReduxToolkitSelectorRuleSeverity,
+  'svelte-redux-toolkit/duplicate-selector-implementation': svelteReduxToolkitSelectorRuleSeverity,
+  'svelte-redux-toolkit/inline-saga-selector': svelteReduxToolkitSelectorRuleSeverity,
+  'svelte-redux-toolkit/direct-selector-call-mode': svelteReduxToolkitSelectorRuleSeverity,
+  'svelte-redux-toolkit/wait-for-named-selector': svelteReduxToolkitSelectorRuleSeverity,
+};
+
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
 // cleaned-up files are checked by the rule below.
@@ -426,6 +442,29 @@ export default [
     },
   },
   ...svelteReduxToolkitFullConfig,
+  {
+    files: svelteReduxToolkitSourceFiles,
+    rules: svelteReduxToolkitSourceSelectorRules,
+  },
+  {
+    files: svelteReduxToolkitSourceFiles,
+    ignores: svelteReduxToolkitSelectorFiles,
+    rules: {
+      'svelte-redux-toolkit/selector-file-name': svelteReduxToolkitSelectorRuleSeverity,
+    },
+  },
+  {
+    files: svelteReduxToolkitSelectorFiles,
+    rules: {
+      'svelte-redux-toolkit/selector-export-name': svelteReduxToolkitSelectorRuleSeverity,
+    },
+  },
+  {
+    files: svelteReduxToolkitTestFiles,
+    rules: {
+      'svelte-redux-toolkit/test-selector-select': svelteReduxToolkitSelectorRuleSeverity,
+    },
+  },
   {
     files: ['**/*.svelte'],
     ignores: componentAsyncDataFetchBaselineIgnorePatterns,
