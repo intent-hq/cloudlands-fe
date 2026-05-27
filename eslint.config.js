@@ -69,6 +69,22 @@ const svelteReduxToolkitTestSelectorRuleOverrides = {
   'svelte-redux-toolkit/selector-file-name': 'off',
   'svelte-redux-toolkit/selector-export-name': 'off',
 };
+const svelteReduxToolkitArchitectureRules = {
+  'svelte-redux-toolkit/duplicate-action-type': 'error',
+  'svelte-redux-toolkit/duplicate-selector-export': 'error',
+  'svelte-redux-toolkit/duplicate-selector-implementation': 'error',
+  'svelte-redux-toolkit/duplicate-saga-registration': 'error',
+  'svelte-redux-toolkit/pass-through-wrapper': 'error',
+  'svelte-redux-toolkit/non-serializable-state-type': 'error',
+  'svelte-redux-toolkit/non-serializable-initial-state': 'error',
+  'svelte-redux-toolkit/reducer-side-effect': 'error',
+  'svelte-redux-toolkit/async-reducer-handler': 'error',
+  'svelte-redux-toolkit/inline-saga-selector': 'error',
+  'svelte-redux-toolkit/raw-channel-cleanup': 'error',
+  'svelte-redux-toolkit/forbidden-redux-api': 'error',
+  'svelte-redux-toolkit/unnamespaced-action-type': 'error',
+  'svelte-redux-toolkit/action-type-shape': 'error',
+};
 
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
@@ -456,6 +472,11 @@ export default [
     },
   },
   ...svelteReduxToolkitFullConfig,
+  {
+    files: svelteReduxToolkitSourceFiles,
+    ignores: productionModuleIgnores,
+    rules: svelteReduxToolkitArchitectureRules,
+  },
   {
     files: svelteReduxToolkitSourceFiles,
     ignores: svelteReduxToolkitSelectorRuleIgnores,
