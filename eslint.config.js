@@ -46,6 +46,12 @@ const svelteReduxToolkitSelectorFiles = [
   'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
 ];
 const svelteReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
+const svelteReduxToolkitSelectorRuleIgnores = [
+  '**/__tests__/**/*.{js,jsx,mjs,ts,tsx}',
+  '**/tests/**/*.{js,jsx,mjs,ts,tsx}',
+  '**/*.{test,spec}.{js,jsx,mjs,ts,tsx}',
+  '**/*.manual-test.{js,jsx,mjs,ts,tsx}',
+];
 
 const svelteReduxToolkitSourceSelectorRules = {
   'svelte-redux-toolkit/duplicate-selector-export': 'error',
@@ -53,6 +59,15 @@ const svelteReduxToolkitSourceSelectorRules = {
   'svelte-redux-toolkit/inline-saga-selector': 'error',
   'svelte-redux-toolkit/direct-selector-call-mode': 'error',
   'svelte-redux-toolkit/wait-for-named-selector': 'error',
+};
+const svelteReduxToolkitTestSelectorRuleOverrides = {
+  'svelte-redux-toolkit/duplicate-selector-export': 'off',
+  'svelte-redux-toolkit/duplicate-selector-implementation': 'off',
+  'svelte-redux-toolkit/inline-saga-selector': 'off',
+  'svelte-redux-toolkit/direct-selector-call-mode': 'off',
+  'svelte-redux-toolkit/wait-for-named-selector': 'off',
+  'svelte-redux-toolkit/selector-file-name': 'off',
+  'svelte-redux-toolkit/selector-export-name': 'off',
 };
 
 // Staged rollout: existing components with direct async data loads are baselined
@@ -443,20 +458,26 @@ export default [
   ...svelteReduxToolkitFullConfig,
   {
     files: svelteReduxToolkitSourceFiles,
+    ignores: svelteReduxToolkitSelectorRuleIgnores,
     rules: svelteReduxToolkitSourceSelectorRules,
   },
   {
     files: svelteReduxToolkitSourceFiles,
-    ignores: svelteReduxToolkitSelectorFiles,
+    ignores: [...svelteReduxToolkitSelectorFiles, ...svelteReduxToolkitSelectorRuleIgnores],
     rules: {
       'svelte-redux-toolkit/selector-file-name': 'error',
     },
   },
   {
     files: svelteReduxToolkitSelectorFiles,
+    ignores: svelteReduxToolkitSelectorRuleIgnores,
     rules: {
       'svelte-redux-toolkit/selector-export-name': 'error',
     },
+  },
+  {
+    files: svelteReduxToolkitSelectorRuleIgnores,
+    rules: svelteReduxToolkitTestSelectorRuleOverrides,
   },
   {
     files: svelteReduxToolkitTestFiles,
