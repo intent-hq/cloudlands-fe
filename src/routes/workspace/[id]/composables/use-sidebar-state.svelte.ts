@@ -67,8 +67,8 @@ export function useSidebarState(options: UseSidebarStateOptions) {
 
   // Subscribe to working changes from Redux
   // (can't use $store syntax in .svelte.ts files)
-  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
-  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges.withStore(reduxStore)();
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges.withStore(reduxStore)();
   let _sidebarStagedChanges = $state<TrackedChange[]>(selectCurrentStagedWorkingChanges.select(appStore.state));
   let _sidebarUnstagedChanges = $state<TrackedChange[]>(selectCurrentUnstagedWorkingChanges.select(appStore.state));
   $effect(() => {
