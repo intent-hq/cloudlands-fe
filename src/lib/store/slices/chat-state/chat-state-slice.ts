@@ -182,7 +182,12 @@ export const chatInitFailed =
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
-  (agentId: string, wsId: string) => ({ agentId, wsId, timestamp: Date.now() }),
+  (agentId: string, wsId?: string, timestamp = Date.now()) => ({
+    agentId,
+    wsId,
+    timestamp,
+    timestampIso: new Date(timestamp).toISOString(),
+  }),
 );
 
 /** Send failed (activation or network error) */
