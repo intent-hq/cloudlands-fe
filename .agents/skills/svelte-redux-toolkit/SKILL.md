@@ -161,14 +161,12 @@ import { todosReducer } from "./slices/todos/todos-slice";
 import { selectTodo } from "./slices/todos/todos-selectors";
 import { todosSaga } from "./slices/todos/sagas/todos-saga";
 
-const store = new Store({ todos: todosReducer });
+const store = new Store({ todos: todosReducer }).registerSagas({ todosSaga });
 const dispose = store.init();
-const cancelTodosSaga = store.runSaga(todosSaga);
 
 store.dispatch(renameTodo("todo-1", "Ship docs"));
 const selectedTodo = selectTodo.select(store.state, "todo-1");
 
-cancelTodosSaga();
 dispose();
 selectedTodo?.id satisfies string | undefined;
 ```

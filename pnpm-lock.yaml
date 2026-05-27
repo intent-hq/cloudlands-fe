@@ -5689,7 +5689,7 @@ packages:
       svelte: ^4.0.0 || ^5.0.0
 
   svelte-redux-toolkit@file:svelte-redux-toolkit-0.1.1.tgz:
-    resolution: {integrity: sha512-6U2ri3kQ2/2imm/m887SZr7EGWu9K/A8zpphxKu0zctnTqtOAEvTPex6FrMrrukorfXcm7S9pbiU7V7Kh1PRKw==, tarball: file:svelte-redux-toolkit-0.1.1.tgz}
+    resolution: {integrity: sha512-RFO+TuRC0EjXdW/TYEqBKXCYQLdT63NqxZeWjowA+uGCYvkeaG+RcVcI48Q9lYfnnKW3+iBZt+UHeQXJM/xAHg==, tarball: file:svelte-redux-toolkit-0.1.1.tgz}
     version: 0.1.1
     hasBin: true
     peerDependencies:

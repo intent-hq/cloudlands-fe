@@ -3,9 +3,10 @@ name: svelte-redux-toolkit/file-structure
 description: >-
   Per-slice directory layout ({name}-types.ts, {name}-slice.ts,
   {name}-selectors.ts, sagas/{name}-saga.ts plus tests). Saga-only slices skip
-  reducer registration. Register reducers in the Store constructor map; store.init()
+  reducer registration. Register reducers in the Store constructor map and app
+  sagas with Store.registerSagas(...); store.init()
   wires the Redux store and package saga manager but does NOT auto-start
-  app sagas — start each one explicitly via store.runSaga(sagaFn).
+  registered app sagas — start each one explicitly via store.runSaga(name).
   Do not manually register package @internal_ sagas.
   Naming: {Feature}State, {feature}Reducer, verb-phrase actions, select*
   prefix, "sliceName/actionName" action types.
@@ -48,28 +49,27 @@ import type { StoreState } from 'svelte-redux-toolkit/types';
 import { mySliceReducer } from './slices/my-slice/my-slice-slice';
 import { mySliceSaga } from './slices/my-slice/sagas/my-slice-saga';
 
-export const store = new Store({ mySlice: mySliceReducer });
+export const store = new Store({ mySlice: mySliceReducer }).registerSagas({ mySliceSaga });
 export type AppState = StoreState<typeof store>;
 ```
 
-Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation. Register only app-owned reducers. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
+Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference, and chaining `registerSagas(...)` preserves saga-name inference, without an explicit `: Store` annotation. Register only app-owned reducers and sagas. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization without being added to the Store saga registry. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
 
-Then in the root layout — initialize the store, and start each app saga explicitly by function:
+Then in the root layout — initialize the store, and start each registered saga explicitly by name:
 
 ```svelte
 <script>
   import { onDestroy, onMount } from 'svelte';
   import { store } from '$lib/store/store';
-  import { mySliceSaga } from '$lib/store/slices/my-slice/sagas/my-slice-saga';
   const dispose = store.init();
   onDestroy(dispose);
-  onMount(() => store.runSaga(mySliceSaga));
+  onMount(() => store.runSaga('mySliceSaga'));
 </script>
 
 {@render children()}
 ```
 
-`store.init()` combines the registered reducers, creates the Redux store with middleware and readable state, and starts the package saga manager. It does **not** start app sagas — start each one with `store.runSaga(sagaFn)` from `onMount` for mount-scoped cleanup, or imperatively and keep the returned cancel function. It derives the manager name from the saga function and rejects direct `@internal_sagaManager` usage. Register the `store.init()` disposer with `onDestroy`; that disposer delegates to `store.dispose()`, which tears down the initialized Store runtime and stops Store-owned saga tasks when the whole Store lifetime ends.
+`store.init()` combines the registered reducers, creates the Redux store with middleware and readable state, and starts the package saga manager with the app-owned saga registry. It does **not** start any registered app sagas — start each one with `store.runSaga(name)` from `onMount` for mount-scoped cleanup, or imperatively and keep the returned cancel function. It accepts an app saga name string only — no function-form variant or direct `@internal_sagaManager` usage. Register the `store.init()` disposer with `onDestroy`; that disposer delegates to `store.dispose()`, which tears down the initialized Store runtime and stops Store-owned saga tasks when the whole Store lifetime ends.
 
 ### Saga-only slice (no state, no reducer)
 
@@ -96,7 +96,7 @@ export function* triggersSaga() {
 
 ```typescript
 // src/store.ts
-export const store = new Store({}); // no reducer map entry; start with store.runSaga(triggersSaga)
+export const store = new Store({}).registerSagas({ triggersSaga }); // no reducer map entry
 ```
 
 ### Naming conventions
@@ -117,12 +117,12 @@ Empty reducers add state-tree noise and run on every action; saga-only slices de
 ```typescript
 // WRONG
 export const noopReducer = createReducer({}).build();
-export const store = new Store({ triggers: noopReducer });
+export const store = new Store({ triggers: noopReducer }).registerSagas({ triggersSaga });
 ```
 
 ```typescript
-// CORRECT — no reducer map entry; start the saga with store.runSaga(triggersSaga)
-export const store = new Store({});
+// CORRECT — no reducer map entry; only the registered saga
+export const store = new Store({}).registerSagas({ triggersSaga });
 ```
 
 Source: `skills/svelte-redux-toolkit/SKILL.md` §9 (Saga-only slices) · **Priority: MEDIUM**

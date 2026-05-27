@@ -166,8 +166,8 @@ Violations must be fixed before handoff unless they are reviewed false positives
 or intentional temporary exceptions. Use only the gate's documented ignore
 comments and include a reason:
 
-- `// architecture-gate-ignore-next-line duplicate-action-type -- compatibility alias until migration ends`
-- `// architecture-gate-ignore-file suspicious-state-field -- persisted API snapshot, not local derivation`
+- `// eslint-disable-next-line architecture/duplicate-action-type -- compatibility alias until migration ends`
+- `/* eslint-disable architecture/suspicious-state-field -- persisted API snapshot, not local derivation */`
 
 Prefer rule-specific ignores. Verifiers should reject broad ignores, missing
 reasons, or exceptions that hide derived/duplicated Redux state or duplicate

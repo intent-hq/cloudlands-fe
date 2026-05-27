@@ -270,17 +270,17 @@ Verifier output must say either “canonical Redux state only” or list every d
 
 ## Gate 5 — canonical action/selector/saga owners
 
-Hard-fail duplicate action type strings, copied selector implementations, parallel saga watchers, or duplicate derived saga function names unless the handoff documents an intentional fan-out owner.
+Hard-fail duplicate action type strings, copied selector implementations, parallel saga watchers, or duplicate saga registration names unless the handoff documents an intentional fan-out owner.
 
 Pass/fail checks:
 
 - **PASS** — implementor reported search terms/paths for state, actions, selectors, and sagas before adding new owners.
 - **PASS** — new action creators live in one owning slice and other files import them.
 - **PASS** — selectors are imported/composed instead of copied.
-- **PASS** — each trigger action has one watcher owner, and each saga function name used with `store.runSaga(sagaFn)` is unique or intentionally reuses the same implementation.
+- **PASS** — each trigger action has one watcher owner, and each `Store.registerSagas(...)` saga name is unique.
 - **FAIL** — the same `createAction`/`createAsyncAction` type string appears in multiple owner modules.
 - **FAIL** — two selectors expose the same name/body without a documented canonical owner.
-- **FAIL** — two saga watchers own the same trigger action or derived saga name without a documented fan-out reason.
+- **FAIL** — two saga watchers own the same trigger action or registration name without a documented fan-out reason.
 
 Verifier output must say either “canonical action/selector/saga owners verified” or list each duplicate owner and the canonical file to keep.
 
@@ -302,7 +302,7 @@ Pass/fail checks:
 
 - **PASS** — command evidence shows exit code 0 and`[architecture-validation] no architecture gate violations found`.
 - **PASS** — `npm run validate:release` evidence is present when release/packagevalidation is part of the task; it runs the architecture gate first.
-- **PASS** — any `architecture-gate-ignore-next-line` or`architecture-gate-ignore-file` comment names the relevant rule when possibleand includes a concrete migration, compatibility, or external-data reason.
+- **PASS** — any `eslint-disable-next-line architecture/<rule-id>` or file-level `eslint-disable architecture/<rule-id>` comment names the relevant rule and includes a concrete migration, compatibility, or external-data reason.
 - **PASS** — known diagnostics are classified by command exit code, for exampleexisting `vite-plugin-dts` messages remain non-blocking only when build andrelease validation exit 0.
 - **PASS** — unrelated tracked or untracked status is reported separately and notstaged unless that cleanup or package-manager work was explicitly approved.
 - **FAIL** — required architecture evidence is missing or stale and the verifierdid not run the safe gate or document why it could not run.

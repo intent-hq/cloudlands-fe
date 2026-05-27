@@ -54,21 +54,25 @@ import type { StoreState } from "svelte-redux-toolkit/types";
 
 export const store = new Store({
   // counter: counterReducer,
+}).registerSagas({
+  // counterSaga,
 });
 export type AppState = StoreState<typeof store>;
 ```
 
-Use `StoreState<typeof store>` for the migrated app state type after adding migrated reducers to the constructor map. Constructor reducer maps preserve state inference without an explicit `: Store` annotation. Do not copy or register package-owned internals. `Store` provides internal reducers by default under reserved `@internal_` domains such as `@internal_storeUtility`. The internal saga manager starts during Store initialization; migrated app slices should use normal app domain names and start app-owned sagas only with `store.runSaga(sagaFn)`.
+Use `StoreState<typeof store>` for the migrated app state type after adding migrated reducers to the constructor map. Chaining `Store.registerSagas(...)` preserves registered saga-name inference without an explicit `: Store` annotation. Do not copy or register package-owned internals. `Store` provides internal reducers by default under reserved `@internal_` domains such as `@internal_storeUtility`. The internal saga manager starts during `Store` initialization, but it is not added to the Store saga registry; migrated app slices should use normal app domain names and register/start app-owned sagas only.
 
 Call `store.init()` in the root layout so the store is created at layout
 init and disposed when the layout unmounts. As each slice is migrated and
-its saga is available, start the saga explicitly with `store.runSaga(sagaFn)`
-from `onMount` — `store.init()` does not auto-start app sagas:
+its saga is added through `Store.registerSagas(...)`, also start the saga
+explicitly with `store.runSaga(name)` from `onMount` — `store.init()` does
+not auto-start registered sagas:
 
-The root `+layout.svelte` script calls `store.init()` during component initialization, registers the returned disposer with `onDestroy`, and starts each app saga from `onMount` as it is migrated.
+The root `+layout.svelte` script calls `store.init()` during component initialization, registers the returned disposer with `onDestroy`, and starts each registered app saga from `onMount` as it is migrated.
 
-For non-component code use `const cancel = store.runSaga(sagaFn)` instead —
-it returns a cancel function that stops the saga. For
+For non-component code use `const cancel = store.runSaga(name)` instead —
+it returns a cancel function that stops the saga. Both APIs take a
+registered saga name string only; there is no function-form variant. For
 whole-store teardown in tests or non-component owners, call `store.dispose()`
 or the disposer returned by `store.init()` to stop saga tasks owned by the
 initialized Store context.
@@ -79,8 +83,8 @@ how to dispose on unmount, etc.).
 
 ## Step 4 — Start With Empty Registrations
 
-`src/lib/store/store.ts` starts out with an empty app-owned reducer map and no app sagas started —
-the app has not migrated any of its own slices yet, while package internal reducers are still installed automatically under `@internal_` domains. The internal saga manager starts during `Store` initialization. You'll add one reducer-map entry per slice and a matching `store.runSaga(sagaFn)` startup call as you migrate; never start a manual `@internal_sagaManager` saga.
+`src/lib/store/store.ts` starts out with an empty app-owned reducer map and no registered app sagas —
+the app has not migrated any of its own slices yet, while package internal reducers are still installed automatically under `@internal_` domains. The internal saga manager starts during `Store` initialization and stays outside `getSagas()` / `getSagaNames()`. You'll add one reducer-map entry and/or one `registerSagas(...)` entry per slice as you migrate; never add a manual `@internal_sagaManager` registration.
 
 ## After Setup
 
@@ -93,16 +97,16 @@ The project now runs with an empty Redux store. Proceed slice-by-slice:
 5. Run `migrate-to-svelte-redux-toolkit/component-migration` to swap consumers
 6. Run `migrate-to-svelte-redux-toolkit/cleanup` to delete the old store file
 
-Per slice, create `src/lib/store/slices/{name}/{name}-slice.ts`, `src/lib/store/slices/{name}/{name}-selectors.ts`, and `src/lib/store/slices/{name}/sagas/{name}-saga.ts`. Then add its app-owned reducer to the `Store` constructor map and add a matching `onMount(() => store.runSaga(sagaFn))` call in the root layout so the saga actually runs.
+Per slice, create `src/lib/store/slices/{name}/{name}-slice.ts`, `src/lib/store/slices/{name}/{name}-selectors.ts`, and `src/lib/store/slices/{name}/sagas/{name}-saga.ts`. Then add its app-owned reducer to the `Store` constructor map, register its app-owned saga with `Store.registerSagas(...)` in `src/lib/store/store.ts`, and add a matching `onMount(() => store.runSaga(name))` call in the root layout so the saga actually runs.
 
 ## Examples in This Skill
 
 - Retained: empty Store bootstrap with `StoreState<typeof store>` inference in Step 3.
-- Added: explicit empty bootstrap; app reducer constructor maps; root layout lifecycle script; imperative saga cancel function; bad runSaga-before-init/internal saga examples.
+- Added: explicit empty registry bootstrap; app reducer constructor maps plus `registerSagas(...)`; root layout lifecycle script; imperative saga cancel function; bad runSaga-before-init/internal-registration examples.
 
 ## Setup Examples
 
-### 1. Start with an explicit empty app-owned reducer map
+### 1. Start with explicit empty app-owned registries
 
 ```typescript
 import { Store } from "svelte-redux-toolkit/store";
@@ -112,7 +116,7 @@ export const store = new Store({});
 export type AppState = StoreState<typeof store>;
 ```
 
-### 2. Add each migrated slice through the reducer map
+### 2. Add each migrated slice through the reducer map and `registerSagas(...)`
 
 ```typescript
 import { Store } from "svelte-redux-toolkit/store";
@@ -120,7 +124,7 @@ import type { StoreState } from "svelte-redux-toolkit/types";
 import { counterReducer } from "$lib/store/slices/counter/counter-slice";
 import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
-export const store = new Store({ counter: counterReducer });
+export const store = new Store({ counter: counterReducer }).registerSagas({ counterSaga });
 
 export type AppState = StoreState<typeof store>;
 ```
@@ -130,41 +134,42 @@ export type AppState = StoreState<typeof store>;
 ```typescript
 import { onDestroy, onMount } from "svelte";
 import { store } from "$lib/store/store";
-import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
 const disposeStore = store.init();
 
 onDestroy(disposeStore);
-onMount(() => store.runSaga(counterSaga));
+onMount(() => store.runSaga("counterSaga"));
 ```
 
 ### 4. Start and cancel a saga from non-component code after init
 
 ```typescript
 import { store } from "$lib/store/store";
-import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
 const disposeStore = store.init();
-const cancelCounterSaga = store.runSaga(counterSaga);
+const cancelCounterSaga = store.runSaga("counterSaga");
 
 cancelCounterSaga();
 disposeStore();
 ```
 
-### 5. Prove empty bootstrap has app reducers only
+### 5. Prove empty bootstrap has no app-owned sagas yet
 
 ```typescript
 import { Store } from "svelte-redux-toolkit/store";
 
 const store = new Store({});
+const appSagaNames = store.getSagaNames();
 const appReducers = store.getReducers();
 
 export const emptyBootstrapEvidence = {
+  appSagaNames,
+  hasNoAppSagas: appSagaNames.length === 0,
   reducerDomainsVisibleToApp: Object.keys(appReducers),
 };
 ```
 
-### 6. ❌ Bad: start sagas before init or start internals manually
+### 6. ❌ Bad: start sagas before init or register internals manually
 
 ```typescript
 // ❌ BAD: runSaga before init throws, and @internal_sagaManager is package-owned.
@@ -172,23 +177,23 @@ import { Store } from "svelte-redux-toolkit/store";
 
 function* counterSaga() {}
 function* fakeInternalSagaManager() {}
-Object.defineProperty(fakeInternalSagaManager, "name", { value: "@internal_sagaManager" });
 
-const store = new Store();
+const store = new Store().registerSagas({
+  counterSaga,
+  "@internal_sagaManager": fakeInternalSagaManager,
+});
 
-store.runSaga(counterSaga);
-store.init();
-store.runSaga(fakeInternalSagaManager);
+store.runSaga("counterSaga");
 ```
 
 ## Cases Covered
 
 | Case | Example |
 | --- | --- |
-| Empty pre-migration bootstrap | Step 3 bootstrap and Start with an explicit empty app-owned reducer map |
-| Reducer/saga startup | Add each migrated slice through the reducer map and `store.runSaga(sagaFn)` |
+| Empty pre-migration bootstrap | Step 3 bootstrap and Start with explicit empty app-owned registries |
+| Reducer/saga registration | Add each migrated slice through the reducer map and `registerSagas(...)` |
 | Root layout lifecycle | Initialize Store lifetime from the root layout script |
 | Non-component lifecycle owner | Start and cancel a saga from non-component code after init |
-| Empty bootstrap evidence | Prove empty bootstrap has app reducers only |
-| Incorrect setup ordering/internal startup | Bad: start sagas before init or start internals manually |
+| Empty registry evidence | Prove empty bootstrap has no app-owned sagas yet |
+| Incorrect setup ordering/internal registration | Bad: start sagas before init or register internals manually |
 
