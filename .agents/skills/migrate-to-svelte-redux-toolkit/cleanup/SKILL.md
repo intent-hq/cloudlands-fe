@@ -57,7 +57,7 @@ If a migration needs to be reverted:
 
 ### Reverting a migration
 
-Rollback restores the old store file and affected components from git history, removes the new slice directory, and removes the matching reducer constructor entry plus `registerSagas(...)` saga entry from the app Store setup.
+Rollback restores the old store file and affected components from git history, removes the new slice directory, removes the matching reducer constructor entry, and removes any matching `store.runSaga(sagaFn)` startup call from the app Store setup.
 
 ### Minimizing risk
 

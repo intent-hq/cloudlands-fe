@@ -18,7 +18,7 @@ triggers:
 
 > Selector scheduler helpers are implementation details. Do not import them from package subpaths or teach consumers to wrap selector readables manually.
 
-Source: `src/utils/selectors/create-selector.ts`, `src/utils/selectors/selector-scheduler.ts`, `src/store.ts`, and `docs/SELECTORS.md`. Current package version is `0.1.1`.
+Source: `src/utils/selectors/create-selector.ts`, `src/utils/selectors/selector-scheduler.ts`, `src/store.ts`, and `docs/SELECTORS.md`. Current package version is `0.1.2`.
 
 ## Store-first rule
 

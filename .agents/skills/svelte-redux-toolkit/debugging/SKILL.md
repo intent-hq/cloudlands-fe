@@ -7,7 +7,7 @@ description: >-
   reference-equality diagnostics. Source: src/store.ts, src/global-dev-tools.ts.
 type: sub-skill
 library: svelte-redux-toolkit
-library_version: 0.1.1
+library_version: 0.1.2
 requires:
   - svelte-redux-toolkit
 sources:

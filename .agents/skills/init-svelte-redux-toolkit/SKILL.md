@@ -42,7 +42,7 @@ For testing sagas (optional, recommended):
 npm add -D redux-saga-test-plan
 ```
 
-The package `postinstall` copies packaged AI skills into the consuming project root at `.agents/skills/`. It removes stale package-owned files before copying current packaged skills, preserves unrelated project or third-party skills, and excludes generated artifacts such as `skills/_artifacts`. In consumer apps, use the installed package CLI if skills need to be refreshed, validated, cleaned up, or if you need help text:
+Package installation does not copy AI skills automatically. In consumer apps, use the installed package CLI if skills need to be refreshed, validated, cleaned up, or if you need help text. The explicit skill install command removes stale package-owned files before copying current packaged skills, preserves unrelated project or third-party skills, and excludes generated artifacts such as `skills/_artifacts`:
 
 ```bash
 npx svelte-redux-toolkit install-skills
@@ -86,13 +86,11 @@ import type { StoreState } from 'svelte-redux-toolkit/types';
 
 export const store = new Store({
   // counter: counterReducer,
-}).registerSagas({
-  // counterSaga,
 });
 export type AppState = StoreState<typeof store>;
 ```
 
-The `Store` class accepts app reducer maps in the constructor and app saga maps through `Store.registerSagas(...)` — no separate registry files are needed. Chaining `registerSagas(...)` preserves `StoreState<typeof store>` and saga-name inference without an explicit `: Store` annotation. Package-owned slices are mounted by default under reserved `@internal_` domains such as `@internal_storeUtility`; those domains can appear in the inferred type, but application code should not register reducers with that prefix or depend on those internal state shapes directly.
+The `Store` class accepts app reducer maps in the constructor. Start app sagas explicitly with `store.runSaga(sagaFn)` after `store.init()` — no separate saga registry files are needed. Constructor reducer maps preserve `StoreState<typeof store>` without an explicit `: Store` annotation. Package-owned slices are mounted by default under reserved `@internal_` domains such as `@internal_storeUtility`; those domains can appear in the inferred type, but application code should not register reducers with that prefix or depend on those internal state shapes directly.
 
 ## Step 3 — Wire the Store into Root Layout
 
@@ -116,11 +114,11 @@ Call `store.init()` during root component initialization and register the return
 
 - Combines all registered reducers into the root reducer
 - Applies the base store middleware chain and saga middleware
-- Starts the package saga manager orchestrator with the registered app-owned saga registry; `@internal_sagaManager` is not added to `getSagas()` or `getSagaNames()`
+- Starts the package saga manager orchestrator
 - Creates the Store-owned readable runtime state used by selector and saga integrations
 - Returns a cleanup function that delegates to `store.dispose()` (registered with `onDestroy`)
 
-`store.init()` starts the internal saga manager but does **not** start any registered app sagas. Each app saga must be started explicitly by name — call `store.runSaga('mySaga')` from `onMount` in the layout for mount-scoped cleanup, or keep `const cancel = store.runSaga('mySaga')` for imperative control. It takes a registered app saga name string only — there is no function-form variant. Do not call it with `@internal_sagaManager`. For whole-store teardown outside the root-layout `onDestroy(dispose)` pattern, call `store.dispose()` to tear down the initialized Store runtime and stop saga tasks owned by that Store.
+`store.init()` starts the internal saga manager but does **not** start app sagas. Each app saga must be started explicitly by function — call `store.runSaga(counterSaga)` from `onMount` in the layout for mount-scoped cleanup, or keep `const cancel = store.runSaga(counterSaga)` for imperative control. Store derives the manager name from the saga function. Do not call it with `@internal_sagaManager`. For whole-store teardown outside the root-layout `onDestroy(dispose)` pattern, call `store.dispose()` to tear down the initialized Store runtime and stop saga tasks owned by that Store.
 
 ## Step 4 — Create Your First Slice (Verification)
 
@@ -198,7 +196,7 @@ export function* counterSaga() {
 }
 ```
 
-### 4d. Add the reducer, register the saga, and start it
+### 4d. Add the reducer and start the saga
 
 Update `src/lib/store/store.ts`:
 
@@ -206,28 +204,29 @@ Update `src/lib/store/store.ts`:
 import { counterReducer } from './slices/counter/counter-slice';
 import { counterSaga } from './slices/counter/sagas/counter-saga';
 
-export const store = new Store({ counter: counterReducer }).registerSagas({ counterSaga });
+export const store = new Store({ counter: counterReducer });
 ```
 
-Registration alone does **not** run the saga. Start it explicitly by name in your root layout after `store.init()`:
+`store.init()` does **not** run the saga. Start it explicitly by function in your root layout after `store.init()`:
 
 ```svelte
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
   import { store } from '$lib/store/store';
+  import { counterSaga } from '$lib/store/slices/counter/sagas/counter-saga';
   import { onDestroy, onMount } from 'svelte';
 
   const { children } = $props();
 
   const dispose = store.init();
   onDestroy(dispose);
-  onMount(() => store.runSaga('counterSaga'));
+  onMount(() => store.runSaga(counterSaga));
 </script>
 
 {@render children()}
 ```
 
-For non-component code (services, tests, IPC handlers), use `store.runSaga('counterSaga')` instead — it returns a cancel function that stops the saga. Both APIs take a registered saga **name string only**; there is no function-form variant. When the whole Store lifetime ends, call `store.dispose()` or the disposer returned by `store.init()` to tear down the initialized Store runtime and stop Store-owned running saga tasks.
+For non-component code (services, tests, IPC handlers), use `store.runSaga(counterSaga)` instead — it returns a cancel function that stops the saga. When the whole Store lifetime ends, call `store.dispose()` or the disposer returned by `store.init()` to tear down the initialized Store runtime and stop Store-owned running saga tasks.
 
 ### 4e. Use in a component
 

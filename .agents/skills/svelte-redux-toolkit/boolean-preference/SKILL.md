@@ -9,7 +9,7 @@ description: >-
   src/utils/store/boolean-preference.ts, skills/svelte-redux-toolkit/SKILL.md §11.
 type: sub-skill
 library: svelte-redux-toolkit
-library_version: 0.1.1
+library_version: 0.1.2
 requires:
   - svelte-redux-toolkit
   - svelte-redux-toolkit/reducers

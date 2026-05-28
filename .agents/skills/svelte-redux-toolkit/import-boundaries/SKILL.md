@@ -25,7 +25,7 @@ triggers:
 
 The documented public surface is the approved subpackage interface plus explicit utility leaf subpaths. Do not teach consumers to import from the package root, from removed broad utility barrels, or from source-shaped deep paths.
 
-The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `svelte-redux-toolkit`, `svelte-redux-toolkit/utils`, `svelte-redux-toolkit/utils/runtime/*`, `svelte-redux-toolkit/utils/selectors/*`, `svelte-redux-toolkit/src/*`, or directory `index` barrels. Current package version is `0.1.1`.
+The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `svelte-redux-toolkit`, `svelte-redux-toolkit/utils`, `svelte-redux-toolkit/utils/runtime/*`, `svelte-redux-toolkit/utils/selectors/*`, `svelte-redux-toolkit/src/*`, or directory `index` barrels. Current package version is `0.1.2`.
 
 The relevant public subpackages components, services, and sagas actually use:
 
@@ -226,7 +226,7 @@ Source: `skills/svelte-redux-toolkit/SKILL.md` §2 (Components must never import
 
 | Case | Examples |
 | --- | --- |
-| Current public package API and version `0.1.1` | 1 |
+| Current public package API and version `0.1.2` | 1 |
 | Component import allowlist and Store-first dispatch/read | 2, 6, 8, 10 |
 | Service/non-component one-shot access | 3, 7, 8 |
 | Saga-only imports/effects and public saga utilities | 4, 5, 9 |

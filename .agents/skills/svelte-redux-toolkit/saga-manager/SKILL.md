@@ -9,7 +9,7 @@ description: >-
   package-internal saga-manager files.
 type: sub-skill
 library: svelte-redux-toolkit
-library_version: 0.1.1
+library_version: 0.1.2
 requires:
   - svelte-redux-toolkit
   - svelte-redux-toolkit/sagas
@@ -39,15 +39,15 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 
 - **MUST** read `docs/SAGAS.md#saga-manager`, this skill, and any touched source before editing saga-manager guidance.
 - **MUST** cite whether the task concerns public Store lifecycle behavior or package-owned internals.
-- **MUST** preserve import boundaries: app code uses public `Store` APIs and registered saga names, not `src/slices/saga-manager/*`.
+- **MUST** preserve import boundaries: app code uses public `Store` APIs and saga functions, not `src/slices/saga-manager/*`.
 - **SHOULD** run `npm run validate:skill-examples` after changing skill examples and targeted saga-manager tests when behavior claims change.
 - **NEVER** document `addCrash`, `clearCrashes`, reducer state paths, or `@internal_sagaManager` as public app APIs unless a separate public export task approves it.
 
 ## Setup — where the manager fits
 
-- `Store.init()` starts the package-owned saga manager internally, bound to the app saga registry snapshot.
-- App sagas are registered with `Store.registerSagas(sagasMap)` and started explicitly with `store.runSaga(name)`.
-- `store.runSaga(name)` dispatches `startSaga(name)` and returns a cancel function that dispatches `stopSaga(name)`; the manager listens for those lifecycle actions.
+- `Store.init()` starts the package-owned saga manager internally.
+- App sagas are started explicitly with `store.runSaga(sagaFn)`; Store derives a manager name from the saga function.
+- `store.runSaga(sagaFn)` dispatches `startSaga(name, sagaFn)` and returns a cancel function that dispatches `stopSaga(name)`; the manager listens for those lifecycle actions.
 - `Store.dispose()` and the disposer returned by `Store.init()` tear down the initialized Store runtime and stop Store-owned saga tasks, including running app sagas forked by the manager.
 - The reserved manager name is `@internal_sagaManager`; do not register, run, or expose it as an app saga.
 
@@ -73,32 +73,32 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 
 ### 4. Start, stop, restart, and backoff mechanics
 
-- Multiple overlapping `store.runSaga(name)` calls for the same saga share one running task and increment a reference counter.
+- Multiple overlapping `store.runSaga(sagaFn)` calls for the same derived saga name and function share one running task and increment a reference counter.
 - The saga stops only after every returned cancel function has been invoked.
-- Full Store disposal is a separate lifecycle boundary: use `store.dispose()` only when ending the whole Store context, not as a replacement for normal per-mount `store.runSaga(name)` cancels.
+- Full Store disposal is a separate lifecycle boundary: use `store.dispose()` only when ending the whole Store context, not as a replacement for normal per-mount `store.runSaga(sagaFn)` cancels.
 - If the managed saga throws an unhandled error, `autoRestart` records the crash, logs it, waits, and restarts the saga automatically.
 - `getBackOffDelay(restarts)` is `min(1000 * 2^restarts, 10 minutes)`: first restart waits 1s, then 2s, 4s, and so on up to the cap.
 - Restart pressure decays after stable runtime: before incrementing, the manager subtracts one restart count per full minute since the last start, bounded at zero.
 
 ## Examples
 
-### 1. Register app sagas with `registerSagas(...)` and start them explicitly
+### 1. Start app sagas explicitly by function
 
 ```ts
 import { onMount } from "svelte";
 import { Store } from "svelte-redux-toolkit/store";
 
-export const store = new Store({ todos: todosReducer }).registerSagas({ syncTodos: syncTodosSaga });
+export const store = new Store({ todos: todosReducer });
 store.init();
 
-onMount(() => store.runSaga("syncTodos"));
+onMount(() => store.runSaga(syncTodosSaga));
 ```
 
 ### 2. Pair every runSaga owner with its own cancel function
 
 ```ts
-const cancelListPage = store.runSaga("syncTodos");
-const cancelDetailsPanel = store.runSaga("syncTodos");
+const cancelListPage = store.runSaga(syncTodosSaga);
+const cancelDetailsPanel = store.runSaga(syncTodosSaga);
 
 cancelListPage();
 // syncTodos stays running for the details panel owner.
@@ -110,7 +110,7 @@ cancelDetailsPanel();
 
 ```ts
 const disposeStore = store.init({ todos: preloadedTodosState });
-const cancelSync = store.runSaga("syncTodos");
+const cancelSync = store.runSaga(syncTodosSaga);
 
 cancelSync();
 disposeStore();
@@ -157,8 +157,8 @@ function closeDetailsPanelSafely(cancelSyncTodos: () => void) {
 
 - **Promoting internals as app APIs** — `addCrash`, `clearCrashes`, raw manager status records, reducer state keys, and `@internal_sagaManager` are package-owned. Source: `docs/SAGAS.md#saga-manager`; `src/store.ts`; `src/slices/saga-manager/saga-manager-slice.ts`.
 - **Saying cleanup is global** — `clearCrashes(sagaName)` removes only one saga entry. Source: `src/slices/saga-manager/saga-manager-slice.ts`.
-- **Forgetting reference counting** — duplicate `store.runSaga(name)` calls share the saga and require matching cancels before the task stops. Source: `src/store.ts`; `src/slices/saga-manager/sagas/manager.ts`.
-- **Using Store disposal as per-saga cleanup** — `store.dispose()` stops tasks owned by the initialized Store context as part of whole-store teardown; use `store.runSaga(name)` cancel functions for normal saga lifetimes. Source: `src/store.ts`.
+- **Forgetting reference counting** — duplicate `store.runSaga(sagaFn)` calls for the same function share the saga and require matching cancels before the task stops. Source: `src/store.ts`; `src/slices/saga-manager/sagas/manager.ts`.
+- **Using Store disposal as per-saga cleanup** — `store.dispose()` stops tasks owned by the initialized Store context as part of whole-store teardown; use `store.runSaga(sagaFn)` cancel functions for normal saga lifetimes. Source: `src/store.ts`.
 - **Flattening backoff behavior** — backoff starts at 1s, doubles to a 10-minute cap, and restart pressure decays after stable runtime. Source: `src/slices/saga-manager/sagas/manager.ts`.
 
 ## Verification cues
