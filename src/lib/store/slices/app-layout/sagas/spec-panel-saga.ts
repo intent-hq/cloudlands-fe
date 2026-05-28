@@ -124,13 +124,14 @@ function* waitForRestoreStatusToSettle(wsId: string): Generator<any, PanelLayout
 
     while (Date.now() - startTime < RESTORE_STATUS_TIMEOUT_MS) {
         // Wait for the next setRestoreStatus action matching our workspace
-        yield* race({
-            action: take((action: any) =>
-                action.type === setRestoreStatus.type &&
-                action.payload[0] === wsId
-            ),
+        const { action } = (yield* race({
+            action: take(setRestoreStatus),
             timeout: delay(RESTORE_STATUS_POLL_INTERVAL_MS),
-        });
+        })) as { action?: ReturnType<typeof setRestoreStatus> };
+
+        if (action && action.payload[0] !== wsId) {
+            continue;
+        }
 
         restoreStatus = yield* selectRestoreStatus.effect(wsId);
 
