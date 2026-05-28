@@ -27,7 +27,7 @@
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { v4 as uuidv4 } from 'uuid';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   dismissSetupScriptBannerGlobally,
   saveScript,
@@ -38,9 +38,9 @@
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('SetupScriptBanner');
+  const dispatch = getDispatch();
 
   // Store reference for Svelte 5 auto-subscription via $historyUpdateCounter
   const historyUpdateCounter = terminalHistoryTracker.updateCounter;
@@ -154,7 +154,7 @@
   }
 
   function dismiss() {
-    appStore.dispatch(dismissSetupScriptBannerGlobally());
+    dispatch(dismissSetupScriptBannerGlobally());
     isExpanded = false;
     isOpen = false;
   }
@@ -166,7 +166,7 @@
     }
 
     const now = new Date().toISOString();
-    appStore.dispatch(saveScript({
+    dispatch(saveScript({
       id: uuidv4(),
       name: scriptName || 'Workspace setup',
       content: scriptContent,

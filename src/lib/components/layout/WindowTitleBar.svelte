@@ -38,7 +38,7 @@
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
 } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
   import {
@@ -50,10 +50,9 @@
   selectCounterScale,
 } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId?: string;
@@ -61,6 +60,7 @@
 
   let { workspaceId }: Props = $props();
 
+  const dispatch = getDispatch();
   const sidebarSide$ = selectSidebarSide();
 
   // Zoom selectors
@@ -161,7 +161,7 @@
       (w) => w.status !== WorkspaceStatusEnum.Archived && w.id !== workspaceId,
     );
 
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     return allWorkspaces
       .map((ws) => {
         const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -226,7 +226,7 @@
   });
 
   function handleSearchClick() {
-    appStore.dispatch(openPalette());
+    dispatch(openPalette());
   }
 
   async function handleApplyPreset(presetId: LayoutPresetId) {
@@ -264,7 +264,7 @@
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-            onclick={() => appStore.dispatch(toggleSidebar())}
+            onclick={() => dispatch(toggleSidebar())}
             aria-label="Toggle sidebar"
           >
             <SidebarIcon size={16} side="left" />
@@ -316,7 +316,7 @@
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-            onclick={() => appStore.dispatch(toggleSidebar())}
+            onclick={() => dispatch(toggleSidebar())}
             aria-label="Toggle sidebar"
           >
             <SidebarIcon size={16} side="right" />

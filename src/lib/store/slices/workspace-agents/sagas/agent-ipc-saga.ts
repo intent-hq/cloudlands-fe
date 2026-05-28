@@ -18,11 +18,11 @@ import {
 } from '$features/agent/browser';
 import { requestDeduplicator } from '$features/agent/browser/services/request-deduplicator.service';
 import { invoke } from '$lib/electron-bridge';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
 import {
   END,
-  buffers,
   eventChannel,
 } from 'redux-saga';
 import {
@@ -129,28 +129,7 @@ type PendingDeletion = {
   toastId?: string | number;
 };
 
-type AgentDeletionCallbackAction =
-  | ReturnType<typeof commitPendingAgentDeletionRequested>
-  | ReturnType<typeof undoAgentDeletionRequested>;
-
 const pendingDeletions = new Map<string, PendingDeletion>();
-const agentDeletionCallbackListeners = new Set<(action: AgentDeletionCallbackAction) => void>();
-
-function emitAgentDeletionCallbackAction(action: AgentDeletionCallbackAction): void {
-  for (const listener of agentDeletionCallbackListeners) {
-    listener(action);
-  }
-}
-
-function createAgentDeletionCallbackChannel() {
-  return eventChannel<AgentDeletionCallbackAction>((emitter) => {
-    const listener = (action: AgentDeletionCallbackAction) => emitter(action);
-    agentDeletionCallbackListeners.add(listener);
-    return () => {
-      agentDeletionCallbackListeners.delete(listener);
-    };
-  }, buffers.expanding<AgentDeletionCallbackAction>());
-}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -356,14 +335,14 @@ export function* handleDeleteAgentWithUndoRequested(
 
     const displayName = agentName || saved.name || '';
     const timeoutId = setTimeout(() => {
-      emitAgentDeletionCallbackAction(commitPendingAgentDeletionRequested(wsId, agentId));
+      getReduxStore().dispatch(commitPendingAgentDeletionRequested(wsId, agentId));
     }, DELETE_UNDO_DURATION_MS);
     const toastId = toast.warning(displayName ? `Deleted "${displayName}"` : 'Agent deleted', {
       duration: DELETE_UNDO_DURATION_MS,
       action: {
         label: 'Undo',
         onClick: () => {
-          emitAgentDeletionCallbackAction(undoAgentDeletionRequested(wsId, agentId));
+          getReduxStore().dispatch(undoAgentDeletionRequested(wsId, agentId));
         },
       },
     }) as string | number;
@@ -430,19 +409,6 @@ export function* handleFlushPendingAgentDeletionsRequested(
   } catch (error) {
     logger.error('Failed to flush pending deletions', { wsId, error });
     yield* put(action.failure(getErrorMessage(error)));
-  }
-}
-
-/** @internal Exported for testing only. */
-export function* watchAgentDeletionCallbackSaga(): SagaGenerator<void> {
-  const channel = createAgentDeletionCallbackChannel();
-  try {
-    while (true) {
-      const action: AgentDeletionCallbackAction = yield* take(channel);
-      yield* put(action);
-    }
-  } finally {
-    channel.close();
   }
 }
 
@@ -1237,7 +1203,6 @@ export function* agentIpcSaga() {
   yield* takeEvery(undoAgentDeletionRequested, handleUndoAgentDeletionRequested);
   yield* takeEvery(commitPendingAgentDeletionRequested, handleCommitPendingAgentDeletionRequested);
   yield* takeEvery(flushPendingAgentDeletionsRequested, handleFlushPendingAgentDeletionsRequested);
-  yield* fork(watchAgentDeletionCallbackSaga);
   yield* fork(watchAgentIdleSaga);
   yield* fork(watchStreamStartingSaga);
   yield* fork(watchPrepareHandlerSaga);

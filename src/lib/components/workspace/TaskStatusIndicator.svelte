@@ -4,10 +4,10 @@
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 
   let {
     workspaceId,
@@ -75,7 +75,7 @@
     if (newStatus === status) return;
     if (!workspaceId || !noteId) return;
 
-    appStore.dispatch(updateTaskStatus(workspaceId, noteId, newStatus));
+    dispatch(updateTaskStatus(workspaceId, noteId, newStatus));
   }
 
   async function handleMenuOpen() {

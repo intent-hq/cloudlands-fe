@@ -213,24 +213,15 @@ jobs:
       - name: saga panel-layout-adapter bypass gate
         run: node scripts/check-saga-adapter-bypass.mjs
 
+
   gate:
     name: Type Check & Test
     runs-on: macos-14
     if: always()
-    needs:
-      [
-        typecheck-renderer,
-        typecheck-main,
-        typecheck-preload,
-        lint,
-        test,
-        accessibility,
-        dispatch-gate,
-      ]
+    needs: [typecheck-renderer, typecheck-main, typecheck-preload, lint, test, accessibility, dispatch-gate]
     steps:
       - name: Check results
         run: |
-          echo "Architecture gate temporarily disabled; re-enable by restoring the lint:architecture package script and architecture-gate workflow job."
           if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
              [ "${{ needs.typecheck-main.result }}" != "success" ] || \
              [ "${{ needs.typecheck-preload.result }}" != "success" ] || \

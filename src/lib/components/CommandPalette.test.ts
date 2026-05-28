@@ -108,18 +108,19 @@ vi.mock('$lib/services/analytics', () => ({ track: trackMock }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  dispatch: reduxDispatchMock,
+  getReduxStore: () => ({
+    getState: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
       workspace: { activeWorkspaceId: 'ws-1' },
     }),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    subscribe: (listener: () => void) => () => {},
     dispatch: reduxDispatchMock,
-  });
-});
+  }),
+}));
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
   createAgentRequested: vi.fn((...args: any[]) => ({
     type: 'workspaceAgents/createAgentRequested',

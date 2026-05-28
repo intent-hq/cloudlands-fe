@@ -8,14 +8,9 @@
  */
 
 import {
-  buffers,
-  eventChannel,
-} from "redux-saga";
-import {
   call,
   fork,
   put,
-  take,
   takeEvery,
   type SagaGenerator,
 } from "typed-redux-saga";
@@ -314,33 +309,31 @@ function* persistWorkspaceCollapsedNotes(): SagaGenerator<void> {
 
 let subscriptionsInitialized = false;
 
-function createActiveStreamsTrackerChannel() {
-  return eventChannel<"changed">((emitter) => {
-    activeStreamsTracker.startPolling();
-    const unsubscribe = activeStreamsTracker.subscribe(() => emitter("changed"));
-    return unsubscribe;
-  }, buffers.expanding<"changed">());
-}
-
-/** @internal Exported for testing only. */
-export function* watchActiveStreamsTrackerSaga(): SagaGenerator<void> {
-  const channel = createActiveStreamsTrackerChannel();
-  try {
-    while (true) {
-      yield* take(channel);
-      yield* put(bumpActiveStreamsVersion());
-    }
-  } finally {
-    channel.close();
-  }
-}
-
 function* initSubscriptions(): SagaGenerator<void> {
   if (subscriptionsInitialized) return;
   subscriptionsInitialized = true;
 
-  // Bridge non-Redux tracker callbacks into saga-owned channel events.
-  yield* fork(watchActiveStreamsTrackerSaga);
+  // These are non-Redux services that use callbacks.
+  // We bridge them into Redux by dispatching version bump actions.
+  yield* call(() => {
+    activeStreamsTracker.startPolling();
+  });
+
+  // We need to use the store's dispatch to bridge callbacks into Redux.
+  // Get dispatch from the store context.
+  const { getReduxStore } = yield* call(async () => {
+    const mod = await import("$lib/store/redux-dispatch-bridge");
+    return mod;
+  });
+
+  yield* call(() => {
+    const store = getReduxStore();
+    activeStreamsTracker.subscribe(() => {
+      store.dispatch(bumpActiveStreamsVersion());
+    });
+    // NOTE: unreadTrackingService subscription removed — unread state is now in Redux
+    // and components use selectUnreadAgentIdsForWorkspace directly.
+  });
 }
 
 // ── Onboarding Saga ──

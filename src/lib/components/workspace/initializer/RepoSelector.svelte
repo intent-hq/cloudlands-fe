@@ -15,8 +15,8 @@
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { replaceWorkspaceList } from '$lib/store/slices/workspace/workspace-slice';
   import {
   setWorkspaceInitializerDefaultParentPath,
@@ -42,9 +42,9 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('RepoSelector');
+  const dispatch = getDispatch();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
@@ -176,7 +176,7 @@
   });
 
   function saveRemoteSetups(setups = remoteSetups) {
-    appStore.dispatch(setWorkspaceInitializerRemoteSetups(setups));
+    dispatch(setWorkspaceInitializerRemoteSetups(setups));
   }
 
   function handleSelectRemoteSetup(setup: RemoteSetup) {
@@ -240,12 +240,12 @@
 
   function saveLastSelectedRepo(detail: RepoChangeDetail) {
     if (debugConfig.get('enableFormPersistence')) {
-      appStore.dispatch(setWorkspaceInitializerLastSelectedRepo(detail));
+      dispatch(setWorkspaceInitializerLastSelectedRepo(detail));
     }
   }
 
   function saveDefaultParentPath(path: string) {
-    appStore.dispatch(setWorkspaceInitializerDefaultParentPath(path));
+    dispatch(setWorkspaceInitializerDefaultParentPath(path));
   }
 
   // Validate a project/folder name: reject path separators, traversal, null bytes, unsafe chars
@@ -483,7 +483,7 @@
 
       const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
       if (workspaceListResult.ok) {
-        appStore.dispatch(replaceWorkspaceList(workspaces));
+        getReduxStore().dispatch(replaceWorkspaceList(workspaces));
       }
 
       // Build a map of repos by path (persistent registry first, then workspace-derived)
@@ -535,7 +535,7 @@
 
       // Save recent repos through Redux if persistence is enabled.
       if (debugConfig.get('enableFormPersistence')) {
-        appStore.dispatch(setWorkspaceInitializerRecentRepos(recentRepos));
+        dispatch(setWorkspaceInitializerRecentRepos(recentRepos));
       }
     } catch (err) {
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });

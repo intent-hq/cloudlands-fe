@@ -19,7 +19,6 @@ import {
   markDelegationAgentCompleted,
   markOneShotFired,
   removeSubscription,
-  requestDeliverQueuedEvents,
   setAgentStatus,
   emptyWorkspaceSubscriptionState,
   type QueuedEventRecord,
@@ -34,6 +33,7 @@ import {
   selectIsOneShotFired,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
+import { requestDeliverQueuedEvents } from "./saga-actions";
 import {
   watchAgentIdleForDelivery,
   periodicQueueSweep,

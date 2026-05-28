@@ -42,7 +42,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { appStoreFactoryMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+const { getReduxStoreMock, dispatchMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
   vi.hoisted(() => {
     const dispatchMock = vi.fn();
     const storeStateRef = { current: {} as any };
@@ -50,7 +50,7 @@ const { appStoreFactoryMock, storeStateRef, selectSpecMock, selectPanelsMock, se
     return {
       dispatchMock,
       storeStateRef,
-      appStoreFactoryMock: vi.fn(() => ({
+      getReduxStoreMock: vi.fn(() => ({
         getState: () => storeStateRef.current,
         dispatch: dispatchMock,
       })),
@@ -70,14 +70,9 @@ vi.mock("$shared/types/branded-ids", () => ({
   WorkspaceId: (id: string) => id,
 }));
 
-vi.mock("$lib/store/store", async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => appStoreFactoryMock()?.getState?.() ?? {},
-    dispatch: (...args: any[]) => appStoreFactoryMock()?.dispatch?.(...args),
-  });
-});
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: getReduxStoreMock,
+}));
 
 vi.mock("$lib/store/slices/workspace-notes/workspace-notes-selectors", () => ({
   selectSpec: {
@@ -139,9 +134,6 @@ vi.mock("../../workspace-agents/workspace-agents-selectors", () => ({
 vi.mock("../../workspace/workspace-selectors", () => ({
   selectActiveWorkspaceId: {
     select: (...args: any[]) => selectActiveWorkspaceIdMock(...args),
-    effect: function* (...args: any[]) {
-      return yield sagaEffects.select(selectActiveWorkspaceIdMock, ...args);
-    },
   },
 }));
 
@@ -237,15 +229,13 @@ describe("specPanelSaga", () => {
     expect(iterator.next().done).toBe(false);
     // 2. CALL isSpecAlreadyOpen — provide restoreStatus="restored"
     expect(iterator.next("restored").done).toBe(false);
-    // 3. specAlreadyOpen=false, restoreStatus="restored" → cleanup then done
-    const cleanupStep = iterator.next(false);
-    expect((cleanupStep.value as any)?.type).toBe("PUT");
-    expect((cleanupStep.value as any)?.payload?.action).toEqual({
+    // 3. specAlreadyOpen=false, restoreStatus="restored" → done
+    expect(iterator.next(false)).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith({
       type: "workspace-agents/clearInitialAgentConfig",
       payload: ["ws-restored"],
     });
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
-
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
     // The saga returned without dispatching openTabInAdjacentOrSplit (iterator already done)
@@ -270,13 +260,12 @@ describe("specPanelSaga", () => {
     const putStep = iterator.next(true);
     expect((putStep.value as any)?.type).toBe("PUT");
     expect((putStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-restored", false));
-    const cleanupStep = iterator.next();
-    expect((cleanupStep.value as any)?.type).toBe("PUT");
-    expect((cleanupStep.value as any)?.payload?.action).toEqual({
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+
+    expect(dispatchMock).toHaveBeenCalledWith({
       type: "workspace-agents/clearInitialAgentConfig",
       payload: ["ws-restored"],
     });
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:agent-config");
     expect(sessionStorage.removeItem).toHaveBeenCalledWith("workspace:ws-restored:initial-agent-pending");
   });
@@ -396,12 +385,6 @@ describe("specPanelSaga", () => {
       const finallyStep = iterator.next();
       expect((finallyStep.value as any)?.type).toBe("PUT");
       expect((finallyStep.value as any)?.payload?.action).toEqual(setDeferSpecTab("ws-test", false));
-      const cleanupStep = iterator.next();
-      expect((cleanupStep.value as any)?.type).toBe("PUT");
-      expect((cleanupStep.value as any)?.payload?.action).toEqual({
-        type: "workspace-agents/clearInitialAgentConfig",
-        payload: ["ws-test"],
-      });
       expect(iterator.next()).toEqual({ value: undefined, done: true });
     });
 

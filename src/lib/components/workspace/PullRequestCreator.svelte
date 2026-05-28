@@ -7,10 +7,10 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Badge } from '$lib/components/ui/badge';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   faCodePullRequest,
   faExclamationCircle,
@@ -24,7 +24,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { PullRequestInfo } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     onClose?: () => void;
@@ -32,6 +31,7 @@
   }
 
   let { onClose, onCreated }: Props = $props();
+  const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
 
   // Form state
@@ -54,7 +54,7 @@
   let autoCreatePending = $state(false);
 
   async function generatePRContent() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
     if (!workspace) return;
 
     generatingContent = true;
@@ -115,7 +115,7 @@
   }
 
   async function createPullRequest() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
     if (!workspace) return;
     if (!formData.title.value) {
       error = 'Please provide a title for the pull request';
@@ -139,7 +139,7 @@
 
       if (result) {
         success = true;
-        appStore.dispatch(
+        dispatch(
           updateWorkspaceEntity(workspace.id, {
             activePullRequest: result,
             prNumber: result.number,

@@ -6,7 +6,7 @@
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
@@ -19,7 +19,6 @@
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -31,6 +30,7 @@
 
   let { workspaceId, trunkBranch, repoPath, repoType, canChangeTrunk }: Props = $props();
 
+  const dispatch = getDispatch();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -57,7 +57,7 @@
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
     if (result.ok) {
-      appStore.dispatch(setWorkspaceEntity(result.data));
+      dispatch(setWorkspaceEntity(result.data));
     }
     return result;
   }

@@ -16,11 +16,11 @@ import {
   selectBackgroundWorkspaceAgents,
   selectForegroundWorkspaceAgents,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { PanelLayoutManager } from './panel-layout-adapter';
 import { calculateTiling } from './tiling-utils';
-import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('PresetExecutor');
 
@@ -68,7 +68,7 @@ async function applyPlanningPreset(
   const { workspaceId } = context;
 
   // Find the oldest agent (the initial coordinator)
-  const agents = selectForegroundWorkspaceAgents.select(appStore.state, workspaceId);
+  const agents = selectForegroundWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
   const orchestrator = agents.length > 0
     ? agents.reduce((oldest, current) => {
       const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
@@ -122,7 +122,7 @@ async function applyAgentsRowPreset(
   const { workspaceId, containerWidth, containerHeight } = context;
   const MAX_AGENTS = 6;
 
-  const state = appStore.state;
+  const state = getReduxStore().getState();
 
   // Get foreground agents first, using reducer-maintained foreground agent IDs.
   const foregroundAgents = selectForegroundWorkspaceAgents.select(state, workspaceId);
@@ -214,7 +214,7 @@ async function applyChangesPreset(
   const { workspaceId, containerWidth, containerHeight } = context;
 
   // Get changes - prioritize staged, then unstaged, then recent commits
-  const state = appStore.state;
+  const state = getReduxStore().getState();
   const staged = selectStagedWorkingChanges.select(state, workspaceId);
   const unstaged = selectUnstagedWorkingChanges.select(state, workspaceId);
   const commits = selectFileTrackingCommits.select(state, workspaceId);
@@ -303,7 +303,7 @@ async function applyReviewPreset(
   const { workspaceId } = context;
 
   // Find the oldest agent (the initial coordinator)
-  const agents = selectForegroundWorkspaceAgents.select(appStore.state, workspaceId);
+  const agents = selectForegroundWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
   const coordinator = agents.length > 0
     ? agents.reduce((oldest, current) => {
       const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;

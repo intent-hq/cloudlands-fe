@@ -8,7 +8,7 @@
  * New code should dispatch actions / read selectors directly.
  */
 
-import { store as appStore } from '$lib/store/store';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -77,8 +77,9 @@ export type { PanelTab, PanelTabType, PanelState, PanelLayoutNode, WorkspacePane
 export class PanelLayoutAdapter {
   constructor(public readonly workspaceId: string) {}
 
-  private get state() { return appStore.state; }
-  private dispatch(action: any) { appStore.dispatch(action); }
+  private get store() { return getReduxStore(); }
+  private get state() { return this.store.getState(); }
+  private dispatch(action: any) { this.store.dispatch(action); }
 
   // --- Imperative read methods (for event handlers / one-time reads only) ---
 
@@ -236,7 +237,7 @@ export function clearPanelLayoutAdapter(workspaceId: string) {
 
 /** Standalone clearPanelLayout function for backward compat with dynamic imports */
 export function clearPanelLayoutForWorkspace(workspaceId: string) {
-  appStore.dispatch(clearPanelLayout(workspaceId));
+  getReduxStore().dispatch(clearPanelLayout(workspaceId));
 }
 
 // Re-export the action as clearPanelLayout for backward compat

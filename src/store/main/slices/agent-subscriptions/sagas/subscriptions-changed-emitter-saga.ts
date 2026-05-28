@@ -18,16 +18,17 @@ import {
   take,
 } from "typed-redux-saga";
 import type { Task } from "redux-saga";
-import { createChannelFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
-import type { StoreSelector } from "svelte-redux-toolkit/types";
-import { deepEqual } from "fast-equals";
+import {
+  deepEqual,
+  shallowEqual,
+} from "fast-equals";
 
-import type { MainStoreState } from "../../../types";
 import {
   selectAllWorkspaceIds,
   selectSubscriptionsSignature,
   type SubscriptionsSignature,
 } from "../agent-subscriptions-selectors";
+import { createChannelFromSelector } from "../../../utils/selector-channel-effects";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 
 // ---------------------------------------------------------------------------
@@ -48,14 +49,6 @@ const SYSTEM_ACTOR = {
   name: "Subscription Service",
 };
 
-type MainSelectorChannelSelector<R, ARGS extends any[]> = StoreSelector<R, ARGS, MainStoreState>;
-
-const allWorkspaceIdsSelector = selectAllWorkspaceIds as unknown as MainSelectorChannelSelector<string[], []>;
-const subscriptionsSignatureSelector = selectSubscriptionsSignature as unknown as MainSelectorChannelSelector<
-  SubscriptionsSignature | null,
-  [string]
->;
-
 // ---------------------------------------------------------------------------
 // Per-workspace worker
 // ---------------------------------------------------------------------------
@@ -73,31 +66,33 @@ function* emitSubscriptionsChanged(wsId: string) {
 }
 
 export function* workspaceSignatureWorker(wsId: string) {
-  const channel = yield* createChannelFromSelector(subscriptionsSignatureSelector, wsId);
-  let lastEmittedSignature: SubscriptionsSignature | null = null;
+  const channel = createChannelFromSelector(
+    selectSubscriptionsSignature,
+    { isEqual: deepEqual },
+    wsId,
+  );
   try {
-    // The package selector-channel helper subscribes to readableStoreState
-    // synchronously at creation time and its initial emission is dropped
-    // (zero-buffer event channel with no taker yet). Emit the initial signature
-    // explicitly so workers forked by the lifecycle watcher produce one event
-    // for the workspace that just appeared, matching subsequent changes.
+    // The channel's factory runs `compute()` synchronously at creation time
+    // and its initial emission is dropped (zero-buffer event channel with no
+    // taker yet). Emit the initial signature explicitly so workers forked by
+    // the lifecycle watcher produce one event for the workspace that just
+    // appeared, matching the semantics of subsequent changes.
     const initial: SubscriptionsSignature | null = yield* selectSubscriptionsSignature.effect(wsId);
     if (initial !== null) {
-      lastEmittedSignature = initial;
       yield* emitSubscriptionsChanged(wsId);
     }
     while (true) {
       yield* take(channel);
       // Coalesce bursts of synchronous dispatches into a single emission:
       // `delay(0)` yields control so any more dispatches in the current tick
-      // are collapsed into the channel. We then read the latest signature
-      // directly from the store and retain the previous deep-equality guard,
-      // because the package helper only exposes its default equality behavior.
+      // are collapsed into the channel (later ones overwrite earlier payloads
+      // via the `isEqual` check in `createChannelFromSelector`). We then read
+      // the latest signature directly from the store rather than draining
+      // the channel, because the zero-buffer event channel used by
+      // `createChannelFromSelector` does not support `flush`.
       yield* delay(0);
       const latest: SubscriptionsSignature | null = yield* selectSubscriptionsSignature.effect(wsId);
       if (latest === null) continue;
-      if (lastEmittedSignature !== null && deepEqual(lastEmittedSignature, latest)) continue;
-      lastEmittedSignature = latest;
       yield* emitSubscriptionsChanged(wsId);
     }
   } finally {
@@ -110,13 +105,17 @@ export function* workspaceSignatureWorker(wsId: string) {
 // ---------------------------------------------------------------------------
 
 export function* subscriptionsChangedEmitterSaga() {
-  const channel = yield* createChannelFromSelector(allWorkspaceIdsSelector);
+  const channel = createChannelFromSelector(
+    selectAllWorkspaceIds,
+    { isEqual: shallowEqual },
+  );
   const workers = new Map<string, Task>();
   try {
-    // The package selector-channel helper uses the default shallow equality,
-    // matching the previous workspace-id comparison. Its initial readable-state
-    // emission is dropped before a taker exists, so explicitly fork workers for
-    // any workspace ids already present before entering the changes loop.
+    // `createChannelFromSelector` runs `compute()` synchronously at creation
+    // time and its initial emission is dropped (zero-buffer event channel with
+    // no taker yet). Explicitly fork workers for any workspace ids already
+    // present in the slice before entering the subsequent-changes loop so the
+    // saga does not miss workspaces that existed when it started.
     const initialIds = yield* selectAllWorkspaceIds.effect();
     for (const wsId of initialIds) {
       const task = yield* fork(workspaceSignatureWorker, wsId);

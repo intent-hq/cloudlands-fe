@@ -4,8 +4,8 @@
  * Manages state for fetching and displaying release notes after an app update.
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import type { ReleaseNotes, ReleaseNotesState } from "./release-notes-types";
 
 // ---------------------------------------------------------------------------

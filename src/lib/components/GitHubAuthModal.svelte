@@ -4,7 +4,7 @@
   onDestroy,
   onMount,
 } from 'svelte';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   startGitHubAuth,
   cancelGitHubAuth,
@@ -17,7 +17,6 @@
   selectGitHubAuthError,
   selectGitHubAuthRequiresAugmentAuth,
 } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     open?: boolean;
@@ -34,6 +33,7 @@
     autoStart = false,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const oauthUrl$ = selectGitHubAuthOauthUrl();
@@ -64,7 +64,7 @@
   function handleConnect() {
     authStartedHere = true;
     hasOpenedBrowser = false;
-    appStore.dispatch(startGitHubAuth());
+    dispatch(startGitHubAuth());
   }
 
   function handleOpenInBrowser() {
@@ -79,21 +79,21 @@
 
   function handleCancel() {
     if (authStartedHere) {
-      appStore.dispatch(cancelGitHubAuth());
+      dispatch(cancelGitHubAuth());
     }
     hasOpenedBrowser = false;
     onClose();
   }
 
   function handleRetry() {
-    appStore.dispatch(clearGitHubAuthError());
+    dispatch(clearGitHubAuthError());
     hasOpenedBrowser = false;
     handleConnect();
   }
 
   onDestroy(() => {
     if (authStartedHere && $isAuthenticating$) {
-      appStore.dispatch(cancelGitHubAuth());
+      dispatch(cancelGitHubAuth());
     }
   });
 </script>

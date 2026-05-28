@@ -22,8 +22,8 @@
 } from '$lib/store/slices/changes/changes-selectors';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   initializeFileExplorer,
   setWorkspacePathRequested,
@@ -45,7 +45,6 @@
   selectFileExplorerWorkspacePath,
 } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   // Search result type from workspace:list-files
   interface SearchResult {
@@ -104,8 +103,9 @@
   // Ref to VirtualizedFileTree for delegating method calls
   let virtualizedTreeRef: VirtualizedFileTree | null = $state(null);
 
-  // Capture dispatch at component init time (store.dispatch reads the configured app store,
+  // Capture dispatch at component init time (getDispatch reads Svelte context,
   // which is only valid during component initialization).
+  const dispatch = getDispatch();
 
   // Keep wsIdStore in sync with prop — drives reactive selector subscriptions.
   $effect(() => {
@@ -346,7 +346,7 @@
       const changeCount = ($ftUnstagedChanges$?.length || 0) + ($ftStagedChanges$?.length || 0);
 
       // Also watch git store status (read from Redux)
-      const gitStatus = workspaceId ? selectGitStatus.select(appStore.state, workspaceId) : null;
+      const gitStatus = workspaceId ? selectGitStatus.select(getReduxStore().getState(), workspaceId) : null;
 
       // Debounce syncs to avoid too many updates
       const now = Date.now();
@@ -358,7 +358,7 @@
         });
         // Just update local display from stores - DON'T trigger a refresh which causes cascade
         // The stores are already updated by event listeners or other components
-        appStore.dispatch(syncGitStatusFromStoresRequested(workspaceId));
+        dispatch(syncGitStatusFromStoresRequested(workspaceId));
       }
     }
   });
@@ -395,14 +395,14 @@
       // the state and cause other components to get stuck on loading skeleton.
       if (wsId) {
         try {
-          appStore.dispatch(loadGitStatus(wsId));
+          dispatch(loadGitStatus(wsId));
         } catch (storeError) {
           logger.warn('[FileTreeView] Failed to load git status:', storeError);
           // Continue with file tree initialization even if store fails
         }
       }
 
-      appStore.dispatch(
+      dispatch(
         initializeFileExplorer(targetWsId, {
           workspacePath: wsPath,
           workspaceId: wsId,
@@ -467,21 +467,21 @@
 
   // Export refresh function for parent components
   export function refresh() {
-    appStore.dispatch(refreshFileExplorer(effectiveWsId));
+    dispatch(refreshFileExplorer(effectiveWsId));
   }
 
   // Export expand/collapse all functions for parent components
   export function expandAll() {
-    appStore.dispatch(expandAllRequested(effectiveWsId));
+    dispatch(expandAllRequested(effectiveWsId));
   }
 
   export function collapseAll() {
-    appStore.dispatch(clearExpandedPathsExceptRoot(effectiveWsId));
+    dispatch(clearExpandedPathsExceptRoot(effectiveWsId));
   }
 
   // Export getter to check if any directories are expanded
   export function getHasExpandedDirectories(): boolean {
-    return selectHasExpandedDirectories.select(appStore.state, workspaceId || workspacePath || '');
+    return selectHasExpandedDirectories.select(getReduxStore().getState(), workspaceId || workspacePath || '');
   }
 
   // Export startCreatingFile for parent components to trigger inline creation
@@ -494,7 +494,7 @@
     if (workspacePath && workspacePath !== $feWorkspacePath$) {
       // Saga owns the path-change handling (clear cache, reinitialize, set up
       // listeners); we just dispatch and mark the component as initialized.
-      appStore.dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
+      dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
       initialized = true;
     }
   });
@@ -541,7 +541,7 @@
       const targetFile = selectedFile;
       setTimeout(() => {
         // Expand to the selected file via the saga (fire-and-forget).
-        appStore.dispatch(expandToPathRequested(targetWsId, targetFile));
+        dispatch(expandToPathRequested(targetWsId, targetFile));
         // Wait for the expansion + DOM update, then scroll to the element.
         // We cannot synchronously know whether expansion succeeded, so we
         // best-effort scroll on the next animation frame after a short delay.
@@ -660,7 +660,7 @@
           selectedFile = path;
           onFileSelect?.(path);
         }}
-        onToggleDirectory={(node) => appStore.dispatch(toggleDirectoryRequested(effectiveWsId, node.path))}
+        onToggleDirectory={(node) => dispatch(toggleDirectoryRequested(effectiveWsId, node.path))}
         {onCreateFile}
         {onRenameFile}
         {onSelectAgent}

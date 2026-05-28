@@ -48,7 +48,7 @@
   selectIsNoteMonospace,
   selectNoteFontStyle,
 } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
@@ -61,8 +61,8 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
 
+  const settingsDispatch = getDispatch();
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
   const noteFontStyle = selectNoteFontStyle();
@@ -192,15 +192,15 @@
   ];
 
   function handleNoteFontChange(value: string | boolean) {
-    appStore.dispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
+    settingsDispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
   }
 
   function handleAgentFontChange(value: string | boolean) {
-    appStore.dispatch(setAgentFontStyle(value as AgentFontStyle));
+    settingsDispatch(setAgentFontStyle(value as AgentFontStyle));
   }
 
   function handleCodeFontChange(value: string) {
-    appStore.dispatch(setCodeFontFamily(value));
+    settingsDispatch(setCodeFontFamily(value));
   }
 
   // App version from Electron
@@ -274,7 +274,7 @@
   function handleThemeChange(newTheme: string | boolean) {
     const theme = newTheme as ThemePreference;
     const previousTheme = $themePreference;
-    appStore.dispatch(requestThemePreferenceChange(theme));
+    settingsDispatch(requestThemePreferenceChange(theme));
     track('Changed Theme', {
       theme: theme,
       previous_theme: previousTheme,
@@ -300,14 +300,14 @@
 
   function handleResetInterfaceSystem() {
     // Reset theme
-    appStore.dispatch(requestThemePreferenceChange('system'));
+    settingsDispatch(requestThemePreferenceChange('system'));
     // Clear custom color theme
     colorThemeSettingsRef?.clearTheme();
     // Reset font styles
-    appStore.dispatch(setNoteFontStyle('sans'));
-    appStore.dispatch(setAgentFontStyle('sans'));
+    settingsDispatch(setNoteFontStyle('sans'));
+    settingsDispatch(setAgentFontStyle('sans'));
     // Reset notification settings
-    appStore.dispatch(resetNotificationSettings());
+    settingsDispatch(resetNotificationSettings());
     // Reset Git & Workspace settings
     gitWorkspaceSettingsRef?.resetToDefaults();
   }
@@ -623,7 +623,7 @@
                       variant="outline"
                       size="sm"
                       onclick={() =>
-                        appStore.dispatch(
+                        settingsDispatch(
                           simulateSetState({
                             toastVisible: true,
                             status: 'downloading',
@@ -648,7 +648,7 @@
                       variant="outline"
                       size="sm"
                       onclick={() =>
-                        appStore.dispatch(
+                        settingsDispatch(
                           simulateSetState({
                             toastVisible: true,
                             status: 'not-available',
@@ -662,7 +662,7 @@
                       variant="ghost"
                       size="sm"
                       onclick={() =>
-                        appStore.dispatch(
+                        settingsDispatch(
                           simulateSetState({
                             toastVisible: false,
                             status: 'idle',
@@ -697,7 +697,7 @@
             <span class="mx-2">·</span>
             <button
               class="font-medium underline text-primary hover:text-primary/80 cursor-pointer bg-transparent border-none p-0"
-              onclick={() => appStore.dispatch(installUpdate())}
+              onclick={() => settingsDispatch(installUpdate())}
             >
               Update available
             </button>

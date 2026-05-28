@@ -1,9 +1,4 @@
-import {
-  AgentStatus,
-  type AgentSession,
-  type Workspace,
-} from "$shared/types";
-import { AgentActivationState } from "$shared/types/agent-session";
+import type { AgentSession, Workspace } from "$shared/types";
 import {
   call,
   put,
@@ -17,7 +12,6 @@ import {
 
 import { restoreSessionFromDiskWithoutBackend } from "./agent-session-restore-utils";
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import { upsertSession } from '../../agent-session/agent-session-slice';
 
 /**
  * Saga-local in-flight guard. Debounces rapid re-dispatches per `(wsId, agentId)`
@@ -38,30 +32,11 @@ function makeKey(wsId: string, agentId: string): string {
   return JSON.stringify([wsId, agentId]);
 }
 
-function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
-  return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
-}
-
-function buildRestoreFailureSession(
-  existing: AgentSession,
-  wsId: string,
-  error: unknown,
-): AgentSession {
-  const message = error instanceof Error ? error.message : String(error || 'Failed to restore agent session from disk');
-  return {
-    ...existing,
-    workspaceId: wsId as AgentSession['workspaceId'],
-    activationState: AgentActivationState.ERROR,
-    lastActivationError: message,
-  };
-}
-
 /**
  * Loads a single agent session into Redux if it is not already present.
  *
  * Flow:
- * 1. If `selectAgentSession(agentId)` returns a usable backend-backed session, no-op.
- *    Stale same-ID shells without a backend session are restored from disk.
+ * 1. If `selectAgentSession(agentId)` returns a session, no-op.
  * 2. Otherwise resolve the workspace via the explicit `selectWorkspaceById(wsId)`.
  *    If that workspace cannot be resolved, no-op rather than falling back to
  *    the current workspace.
@@ -77,27 +52,16 @@ export function* handleEnsureAgentSessionLoaded(
   agentId: string,
 ) {
   const existing = yield* selectAgentSession.effect(agentId);
-  if (hasUsableAgentSession(existing)) return;
+  if (existing) return;
 
   const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(wsId);
   if (!workspace) return;
 
   try {
-    const restored: AgentSession | null = yield* call(
-      restoreSessionFromDiskWithoutBackend,
-      agentId,
-      workspace,
-      { bypassCache: !!existing },
-    );
-    if (!restored && existing) {
-      yield* put(upsertSession(buildRestoreFailureSession(existing, wsId, null)));
-    }
-  } catch (error) {
+    yield* call(restoreSessionFromDiskWithoutBackend, agentId, workspace);
+  } catch {
     // Intentional: the legacy component path also swallowed these errors;
     // the agent service logs via its own error boundary.
-    if (existing) {
-      yield* put(upsertSession(buildRestoreFailureSession(existing, wsId, error)));
-    }
   }
 }
 
@@ -107,7 +71,7 @@ export function* handleRestoreAgentSessionRequested(
   const [wsId, agentId] = action.payload;
   try {
     const existing = yield* selectAgentSession.effect(agentId);
-    if (hasUsableAgentSession(existing)) {
+    if (existing) {
       yield* put(action.success(existing));
       return;
     }
@@ -122,14 +86,7 @@ export function* handleRestoreAgentSessionRequested(
       restoreSessionFromDiskWithoutBackend,
       agentId,
       workspace,
-      { bypassCache: !!existing },
     );
-    if (!session && existing) {
-      const failureSession = buildRestoreFailureSession(existing, wsId, null);
-      yield* put(upsertSession(failureSession));
-      yield* put(action.success(failureSession));
-      return;
-    }
     yield* put(action.success(session));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error.message : String(error)));

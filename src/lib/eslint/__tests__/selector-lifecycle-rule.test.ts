@@ -43,52 +43,54 @@ async function lintSvelte(code: string) {
 }
 
 describe('selector-lifecycle ESLint rule', () => {
-  it('allows top-level selector initialization and Store-first dispatch', async () => {
+  it('allows top-level selector and getDispatch initialization', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
-        import { saveThing } from '$lib/store/slices/example/example-slice';
-        import { store as appStore } from '$lib/store/store';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
+        const dispatch = getDispatch();
         const thing = selectThing();
-
-        function handleClick() {
-          const currentThing = selectThing.select(appStore.state);
-          if (currentThing) {
-            appStore.dispatch(saveThing(currentThing.id));
-          }
-        }
       </script>
     `);
 
     expect(messages).toHaveLength(0);
   });
 
-  it('warns on nested selector calls', async () => {
+  it('warns on nested selector calls and nested getDispatch calls', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
         function handleClick() {
+          const dispatch = getDispatch();
           const thing = selectThing();
         }
       </script>
     `);
 
-    expect(messages.map((message) => message.ruleId)).toEqual(['intent/selector-lifecycle']);
-    expect(messages[0]?.message).toContain('selector.select(store.state, ...)');
+    expect(messages.map((message) => message.ruleId)).toEqual([
+      'intent/selector-lifecycle',
+      'intent/selector-lifecycle',
+    ]);
   });
 
-  it('warns on top-level module-script selector initialization', async () => {
+  it('warns on top-level module-script selector and getDispatch initialization', async () => {
     const messages = await lintSvelte(`
       <script context="module" lang="ts">
         import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
+        const dispatch = getDispatch();
         const thing = selectThing();
       </script>
     `);
 
-    expect(messages.map((message) => message.ruleId)).toEqual(['intent/selector-lifecycle']);
+    expect(messages.map((message) => message.ruleId)).toEqual([
+      'intent/selector-lifecycle',
+      'intent/selector-lifecycle',
+    ]);
   });
 
   it('warns on get(selectThing()) but not on get(nonSelectorStore)', async () => {
@@ -108,7 +110,6 @@ describe('selector-lifecycle ESLint rule', () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.message).toContain('Do not wrap selector readables with svelte/store get()');
-    expect(messages[0]?.message).toContain('selector.select(store.state, ...)');
   });
 
   it('only warns on get(...) for wrapped selector calls in restricted contexts', async () => {

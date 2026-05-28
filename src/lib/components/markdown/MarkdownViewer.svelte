@@ -19,12 +19,11 @@
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -304,7 +303,7 @@
         } else {
           const wsId = $activeWorkspaceId;
           if (wsId) {
-            appStore.dispatch(
+            getReduxStore().dispatch(
               openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
             );
           }
@@ -324,7 +323,7 @@
 
         const wsIdNote = $activeWorkspaceId;
         if (wsIdNote) {
-          appStore.dispatch(
+          getReduxStore().dispatch(
             openWorkspaceNote(wsIdNote, noteId, { openInAdjacentPanel, sourcePanelId }),
           );
         }

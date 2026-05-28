@@ -51,7 +51,7 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromListenSync: takeEveryFromListenSyncMock,
 }));
 
-vi.mock("$lib/utils/notes-ipc", () => ({
+vi.mock("./notes-ipc", () => ({
   notesIpc: notesIpcMock,
 }));
 

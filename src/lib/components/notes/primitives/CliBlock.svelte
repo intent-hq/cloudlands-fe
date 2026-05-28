@@ -20,12 +20,11 @@
   import { onDestroy } from 'svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   openAgentTabRequested,
   openTerminalTabRequested,
 } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('CliBlock');
 
@@ -155,7 +154,7 @@
     if (!tid) return;
     if (!workspaceId) return;
 
-    appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId: tid }));
+    getReduxStore().dispatch(openTerminalTabRequested(workspaceId, { terminalId: tid }));
   }
 </script>
 
@@ -170,7 +169,7 @@
           class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
           onclick={() => {
             if (workspaceId) {
-              appStore.dispatch(
+              getReduxStore().dispatch(
                 openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
               );
             }

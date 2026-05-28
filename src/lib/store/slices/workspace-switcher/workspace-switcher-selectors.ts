@@ -1,5 +1,5 @@
-import { store } from "../../store";
 import { WorkspaceStatusEnum } from "$shared/types";
+import { createSelector } from "../../utils/create-selector";
 import {
   selectActiveWorkspaceId,
   selectWorkspacesSortedByRecency,
@@ -7,11 +7,11 @@ import {
 } from "../workspace/workspace-selectors";
 import type { WorkspaceSwitcherState } from "./workspace-switcher-slice";
 
-export const selectSwitcherState = store.createSelector((state): WorkspaceSwitcherState => {
+export const selectSwitcherState = createSelector((state): WorkspaceSwitcherState => {
   return state.workspaceSwitcher;
 });
 
-export const selectSwitcherWorkspaceIds = store.createSelector((state): string[] => {
+export const selectSwitcherWorkspaceIds = createSelector((state): string[] => {
   const switcher = state.workspaceSwitcher;
   if (switcher.selectionHandled) {
     return [];
@@ -40,7 +40,7 @@ export const selectSwitcherWorkspaceIds = store.createSelector((state): string[]
   return orderedWorkspaces.map((workspace) => workspace.id);
 });
 
-export const selectSelectedWorkspaceId = store.createSelector((state): string | null => {
+export const selectSelectedWorkspaceId = createSelector((state): string | null => {
   const workspaceIds = selectSwitcherWorkspaceIds.select(state);
   const { selectedIndex } = state.workspaceSwitcher;
   return workspaceIds[selectedIndex] ?? null;

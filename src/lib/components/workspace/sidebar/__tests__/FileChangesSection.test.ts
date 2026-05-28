@@ -49,18 +49,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const dispatch = (...args: any[]) => {
-    mocks.dispatch(...args);
-    return mocks.reduxDispatch(...args);
-  };
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => mocks.dispatch,
+  getStoreContext: vi.fn(),
+}));
 
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({}),
+    dispatch: mocks.reduxDispatch,
+  }),
+}));
 
 vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: mocks.selector(() => mocks.staged),

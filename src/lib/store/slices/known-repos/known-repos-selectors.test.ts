@@ -5,7 +5,7 @@ import {
   it,
 } from "vitest";
 import type { StoreState } from "../../types";
-import { createCollection } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "../../utils/collection-utils";
 import { initialState } from "./known-repos-slice";
 import {
   selectKnownRepos,

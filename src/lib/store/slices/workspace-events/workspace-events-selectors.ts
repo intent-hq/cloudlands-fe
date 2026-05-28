@@ -1,8 +1,8 @@
-import { store } from "../../store";
 import type { WorkspaceEvent } from "$features/events/types";
+import { createSelector } from "../../utils/create-selector";
 import { emptyWorkspaceEventsState } from "./workspace-events-slice";
 
-export const selectWorkspaceEvents = store.createSelector<[workspaceId: string], WorkspaceEvent[]>(
+export const selectWorkspaceEvents = createSelector<[workspaceId: string], WorkspaceEvent[]>(
   (state, workspaceId) => {
     return (
       state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState
@@ -10,7 +10,7 @@ export const selectWorkspaceEvents = store.createSelector<[workspaceId: string],
   }
 );
 
-export const selectEventsLoading = store.createSelector<[workspaceId: string], boolean>(
+export const selectEventsLoading = createSelector<[workspaceId: string], boolean>(
   (state, workspaceId) => {
     return (
       state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState

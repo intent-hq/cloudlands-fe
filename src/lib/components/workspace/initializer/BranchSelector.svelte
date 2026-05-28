@@ -9,7 +9,7 @@
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
   import { performanceMonitor } from '$lib/utils/performance';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { setWorkspaceInitializerBranchForRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
@@ -25,9 +25,9 @@
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('BranchSelector');
+  const dispatch = getDispatch();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /** Status of the branch relative to its upstream */
@@ -247,7 +247,7 @@
 
   function saveBranchForRepo(targetRepoPath: string, branch: string) {
     if (debugConfig.get('enableFormPersistence') && targetRepoPath) {
-      appStore.dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
+      dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
     }
   }
 
@@ -997,6 +997,7 @@
     error = null;
 
     try {
+      const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
       const { initializeGitHubAuth, startGitHubAuth } =
         await import('$lib/store/slices/github-auth/github-auth-slice');
       const {
@@ -1005,7 +1006,7 @@
         selectGitHubAuthError,
       } = await import('$lib/store/slices/github-auth/github-auth-selectors');
 
-      const store = appStore;
+      const store = getReduxStore();
 
       // Initialize the auth state if not already
       store.dispatch(initializeGitHubAuth());
@@ -1015,7 +1016,7 @@
 
       // Poll Redux state for completion (saga handles the IPC polling)
       const checkAuthInterval = setInterval(async () => {
-        const state = store.state;
+        const state = store.getState();
         if (selectGitHubAuthIsAuthenticated.select(state)) {
           clearInterval(checkAuthInterval);
           isConnectingGitHub = false;

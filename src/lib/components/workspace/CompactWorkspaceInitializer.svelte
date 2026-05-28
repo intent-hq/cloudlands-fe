@@ -58,8 +58,8 @@
   setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$lib/store/slices/workspace/workspace-slice';
-
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
@@ -110,8 +110,8 @@
   parseCompoundModelId,
 } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
@@ -336,7 +336,7 @@
 
         // Apply specialist if provided (match by specialist ID)
         if (data.specialist) {
-          const specialists = selectSpecialists.select(appStore.state);
+          const specialists = selectSpecialists.select(getReduxStore().getState());
           const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
@@ -468,7 +468,7 @@
   // If no saved script exists for the repo, falls back to the generic "Copy config files only" template
   function restoreLastUsedSetupScript(repo: string) {
     const lastUsed = repo
-      ? selectLastUsedScriptForRepo.select(appStore.state, repo)
+      ? selectLastUsedScriptForRepo.select(getReduxStore().getState(), repo)
       : undefined;
     if (lastUsed) {
       setupScript = lastUsed.content;
@@ -640,7 +640,7 @@
         skipWorktree,
         stayOnHomePage,
       };
-      appStore.dispatch(setCompactWorkspaceInitializerFormState(formState));
+      dispatch(setCompactWorkspaceInitializerFormState(formState));
     }
   });
 
@@ -727,7 +727,7 @@
 
         // Apply specialist if provided (match by specialist ID)
         if (data.specialist) {
-          const specialists = selectSpecialists.select(appStore.state);
+          const specialists = selectSpecialists.select(getReduxStore().getState());
           const matchedSpecialist = specialists.find((s: { id: string }) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
@@ -1455,7 +1455,7 @@
       if (selectedSpecialist) {
         // Direct specialist selected
         const specialist = selectSpecialists
-          .select(appStore.state)
+          .select(getReduxStore().getState())
           .find((s) => s.id === selectedSpecialist);
         agentName = specialist?.name ?? 'Agent';
         specialistId = selectedSpecialist;
@@ -1587,10 +1587,11 @@
 
         if (mention.type === 'script') {
           try {
+            const { getReduxStore } = await import('$lib/store/redux-dispatch-bridge');
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$lib/store/slices/scripts/scripts-selectors');
             const scriptId = mention.id;
-            const state = appStore.state;
+            const state = getReduxStore().getState();
             const outputLines = selectScriptOutput.select(state, scriptId);
             const script = selectScriptById.select(state, scriptId);
             const runtime = selectScriptRuntime.select(state, scriptId);
@@ -1663,7 +1664,7 @@
       let resolvedBehaviorPrompt: string | undefined;
       if (selectedSpecialist) {
         resolvedBehaviorPrompt = selectEffectiveBehaviorPrompt.select(
-          appStore.state,
+          getReduxStore().getState(),
           selectedSpecialist,
         );
       }
@@ -1677,7 +1678,7 @@
         resolvedModel = selectedModel;
       } else if (selectedSpecialist) {
         // Check for user model override first (from specialist settings)
-        const reduxState = appStore.state;
+        const reduxState = getReduxStore().getState();
         const specialistOverride =
           selectUserOverrides.select(reduxState).modelOverrides[selectedSpecialist];
         if (specialistOverride) {
@@ -1760,7 +1761,7 @@
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
       if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
-        appStore.dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
+        dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
       }
 
@@ -1821,7 +1822,7 @@
       const effectiveModel = resolvedModel;
 
       if (effectiveModel) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
+        dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
         logger.info('Set workspace default model', {
           workspaceId: workspace.id,
           effectiveModel,
@@ -1832,7 +1833,7 @@
 
       // Pre-populate Redux with the workspace entity so the workspace page
       // has data on the very first render frame (before sagas/effects run).
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      dispatch(setWorkspaceEntity(workspace));
 
       // Save the setup script to the store for future reuse
       if (setupScript.trim()) {
@@ -1847,7 +1848,7 @@
           usageCount: 1,
           createdAt: now,
         };
-        appStore.dispatch(saveScript(scriptToSave));
+        dispatch(saveScript(scriptToSave));
         logger.info('Saved setup script to store', {
           name: setupScriptName,
           repoPath,
@@ -1875,8 +1876,8 @@
       );
 
       // Also dispatch into Redux so the workspace page can read it without sessionStorage
-      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
-      appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
+      dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
 
       // Store agent config for AuggieChatPanel to pick up
       sessionStorage.setItem(
@@ -1897,13 +1898,13 @@
         navigation: { history: [], currentIndex: -1 },
         ui: { hasInitialized: false },
       };
-      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
+      dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
       // Note: Agent ID regeneration is now handled in clearForm() to prevent ID reuse in "stay on page" mode
 
       if (stayOnHomePage) {
         // Update the workspace in the store with agentSummary so the agent shows immediately
         // This is needed because the workspace returned from create() doesn't include agentSummary
-        appStore.dispatch(
+        dispatch(
           updateWorkspaceEntity(workspace.id, {
             agentSummary: {
               count: 1,
@@ -1934,7 +1935,7 @@
           hasBehaviorPrompt: !!resolvedBehaviorPrompt,
           behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
         });
-        appStore.dispatch(activateInitialAgentRequested(workspace.id, initialAgent.agentId, {
+        dispatch(activateInitialAgentRequested(workspace.id, initialAgent.agentId, {
           id: initialAgent.agentId,
           name: agentName,
           workspaceId: WorkspaceId(workspace.id),
@@ -1957,7 +1958,7 @@
 
       // Save last submitted agent settings before clearing form.
       // This allows the form to restore these values after submission.
-      appStore.dispatch(setWorkspaceInitializerLastSubmittedAgent({
+      dispatch(setWorkspaceInitializerLastSubmittedAgent({
         selectedSpecialist,
         selectedModel,
         modelWasOverridden,
@@ -2055,7 +2056,7 @@
       cleanedState.scope = scope;
       cleanedState.scopeRepoPath = scope ? repoPath : undefined;
     }
-    appStore.dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
+    dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
 
     // Generate a new agent ID for the next workspace creation
     // This is critical for "stay on page" mode to prevent agent ID reuse

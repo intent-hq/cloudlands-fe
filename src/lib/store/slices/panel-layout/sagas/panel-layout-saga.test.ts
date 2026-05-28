@@ -113,7 +113,7 @@ function createStoreState(
       ),
     },
     files: createFilesState(fileEntries),
-    "@internal_storeUtility": { updatesLocked: false },
+    storeUtility: { updatesLocked: false },
     workspace: { activeWorkspaceId },
   };
 }
@@ -311,12 +311,9 @@ describe("panelLayoutSaga", () => {
   it("calls clearPanelLayoutAdapter when workspace is unmounted", () => {
     const action = workspaceUnmounted("ws-cleanup");
     const gen = handleWorkspaceUnmounted(action);
+    gen.next();
 
-    expect((gen.next().value as any).type).toBe("CALL");
-    expect(gen.next(clearPanelLayoutAdapterMock)).toEqual({
-      value: sagaEffects.call(clearPanelLayoutAdapterMock, "ws-cleanup"),
-      done: false,
-    });
+    expect(clearPanelLayoutAdapterMock).toHaveBeenCalledWith("ws-cleanup");
   });
 
   it("marks restore pending, initializes layout, then marks restored", () => {
@@ -423,7 +420,7 @@ describe("panelLayoutSaga", () => {
     const action = initializeLayout(wsId, layout);
     const state = {
       panelLayout: panelLayoutReducer(initialState, action),
-      "@internal_storeUtility": { updatesLocked: false },
+      storeUtility: { updatesLocked: false },
       workspace: { activeWorkspaceId: null },
     };
     const readableStoreState = {

@@ -58,14 +58,13 @@ vi.mock('$features/agent/agent.client', () => ({
 
 vi.mock('$features/agent/browser', () => ({}));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: mockSvelteDispatch,
-  });
-});
+const mockReduxDispatch = vi.hoisted(() => vi.fn());
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({}),
+    dispatch: mockReduxDispatch,
+  }),
+}));
 
 const providerWarnings$ = writable<Record<string, string>>({});
 const codexManagedInstallStatus$ = writable<{
@@ -73,7 +72,7 @@ const codexManagedInstallStatus$ = writable<{
   version?: string;
   downloadProgress?: number;
 } | null>(null);
-const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
+const mockSvelteDispatch = vi.fn((action: { type?: string; payload?: unknown }) => {
   if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
     const [payload] = action.payload as [
       { providerId: string; status: string; warning?: string } & Record<string, unknown>,
@@ -87,7 +86,7 @@ const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payl
     });
   }
   return action;
-}));
+});
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -108,6 +107,11 @@ vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
     type: 'agentSession/updateSession',
     payload: { agentId, fields },
   }),
+}));
+
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => mockSvelteDispatch,
+  getStoreContext: () => undefined,
 }));
 
 vi.mock('$lib/store/slices/model/model-utils', () => ({

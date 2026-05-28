@@ -2,23 +2,23 @@
  * Onboarding Selectors
  */
 
-import { store } from "../../store";
+import { createSelector } from '../../utils/create-selector';
 import type { OnboardingState } from './onboarding-types';
 
-export const selectOnboardingState = store.createSelector((state): OnboardingState => state.onboarding);
+export const selectOnboardingState = createSelector((state): OnboardingState => state.onboarding);
 
-export const selectOnboardingStep = store.createSelector(
+export const selectOnboardingStep = createSelector(
   (state) => state.onboarding.step,
 );
 
-export const selectOnboardingProjectConfig = store.createSelector(
+export const selectOnboardingProjectConfig = createSelector(
   (state) => state.onboarding.projectConfig,
 );
 
-export const selectOnboardingAgentStatus = store.createSelector(
+export const selectOnboardingAgentStatus = createSelector(
   (state) => state.onboarding.agentStatus,
 );
 
-export const selectOnboardingWorkspaceId = store.createSelector(
+export const selectOnboardingWorkspaceId = createSelector(
   (state) => state.onboarding.workspaceId,
 );

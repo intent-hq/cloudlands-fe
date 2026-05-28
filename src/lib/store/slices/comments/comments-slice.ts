@@ -2,15 +2,15 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { CommentsV2State, CommentThread } from "./comments-types";
 

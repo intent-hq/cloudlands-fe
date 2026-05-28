@@ -12,7 +12,7 @@
   import type { AgentNode } from './types';
   import { isAgentNode } from './types';
   import AgentHierarchyGraph from './AgentHierarchyGraph.svelte';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { selectGraphState } from '$lib/store/slices/agent-overview/agent-overview-selectors';
   import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
@@ -23,9 +23,8 @@
 } from '$lib/store/slices/agent-overview/agent-overview-slice';
   import { convertToInteractionEvent } from './graph-helpers';
   import type { InteractionEvent } from './types';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -34,13 +33,14 @@
 
   let { workspaceId, onFocus }: Props = $props();
 
+  const dispatch = getDispatch();
 
   // Create store for graph state — agents are derived from the agent-session slice
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
   const graphState$ = selectGraphState(workspaceId);
 
   // Request events from the saga (handles IPC query + real-time listeners)
-  appStore.dispatch(loadEventsRequested(workspaceId));
+  dispatch(loadEventsRequested(workspaceId));
 
   // Subscribe to workspace events from Redux and convert to interaction events
   // svelte-ignore state_referenced_locally - workspaceId doesn't change during component lifecycle
@@ -54,13 +54,13 @@
         if (interaction) interactions.push(interaction);
       }
       if (interactions.length > 0) {
-        appStore.dispatch(processWorkspaceEvents(workspaceId, interactions));
+        dispatch(processWorkspaceEvents(workspaceId, interactions));
       }
     });
   });
 
   onDestroy(() => {
-    appStore.dispatch(clearAgentOverview(workspaceId));
+    dispatch(clearAgentOverview(workspaceId));
   });
 
   // Handle agent click - open agent panel using workspace:open-agent event
@@ -68,7 +68,7 @@
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
     const sourcePanelId = findSourcePanelId(event.target);
 
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openAgentTabRequested(workspaceId, {
         agentId,
         sourcePanelId,

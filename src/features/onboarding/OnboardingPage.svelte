@@ -81,7 +81,7 @@
   import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
@@ -89,7 +89,6 @@
   hasGitHubPRMention,
   findPRNeedingBranchFetch,
 } from '$features/onboarding/utils/detect-pr-branch';
-  import { store as appStore } from '$lib/store/store';
   const logger = createLogger('onboarding-page');
 
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
@@ -278,7 +277,7 @@
 
   function restoreLastUsedSetupScript(repo: string) {
     const lastUsed = repo
-      ? selectLastUsedScriptForRepo.select(appStore.state, repo)
+      ? selectLastUsedScriptForRepo.select(getReduxStore().getState(), repo)
       : undefined;
     if (lastUsed) {
       setupScript = lastUsed.content;
@@ -629,7 +628,7 @@
     setupScriptStatus = setupScript.trim() ? 'pending' : undefined;
 
     try {
-      const reduxState = appStore.state;
+      const reduxState = getReduxStore().getState();
       const {
         provider,
         model: effectiveModel,

@@ -5,8 +5,8 @@ import type { CanonicalAgentStatusFields } from '$features/events/types';
 import {
   createAction,
   createAsyncAction,
-} from 'svelte-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+} from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
 import type {
   AgentSessionForkOptions,
   AgentSessionLaunchConfig,
@@ -756,15 +756,15 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   // Cross-slice: handle chat-state actions for isStreaming/isProcessing
   // agent-session is the single source of truth for these flags.
   // -----------------------------------------------------------------------
-  .with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
+  .with(chatSendStarted, (state, { payload: { agentId, wsId, timestamp } }) => {
     const existing = getSession(state, agentId);
     if (existing) {
       return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
     }
-    if (!wsId) return state;
     // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
     // Create a minimal placeholder so the UI can show the processing indicator immediately.
     // The full session will be populated when upsertSession arrives.
+    const now = new Date(timestamp).toISOString();
     const placeholder: StoredAgentSession = {
       id: agentId as AgentSession['id'],
       backendSessionId: null,
@@ -774,8 +774,8 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       messages: [],
       isStreaming: true,
       isProcessing: true,
-      createdAt: timestampIso,
-      updatedAt: timestampIso,
+      createdAt: now,
+      updatedAt: now,
     };
     let next = setSession(state, agentId, placeholder);
     next = registerInWorkspaceIndex(next, agentId, wsId);

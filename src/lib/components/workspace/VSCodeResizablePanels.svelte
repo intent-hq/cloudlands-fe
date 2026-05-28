@@ -16,10 +16,9 @@
   type WorkspaceSidebarPanelLayoutState,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {
     workspaceId: string;
@@ -60,6 +59,7 @@
     { id: 'activity', title: 'Activity', minHeight: 80, defaultHeight: 200 },
   ];
 
+  const dispatch = getDispatch();
   const workspaceSidebarPanelLayout = selectWorkspaceSidebarPanelLayout();
 
   // Track collapsed states and custom heights
@@ -186,7 +186,7 @@
   });
 
   function persistPanelLayout() {
-    appStore.dispatch(
+    dispatch(
       setWorkspaceSidebarPanelLayout({
         collapsed: { ...collapsedStates },
         heights: { ...panelHeights },
@@ -531,7 +531,7 @@
                 {handleFileSelect}
                 onShowAgent={(agentId) => {
                   // Dispatch action to open agent in panel
-                  appStore.dispatch(
+                  getReduxStore().dispatch(
                     openAgentTabRequested(workspaceId, { agentId }),
                   );
                 }}

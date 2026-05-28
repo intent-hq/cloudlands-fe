@@ -6,7 +6,7 @@
  * workspace events, agent sessions, line-changes state, and notes store.
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import type { StoreState } from "../../types";
 import type { InteractionEvent,
   GraphState,
@@ -35,7 +35,7 @@ import {
   extractTaskChangesFromMessages,
   extractDelegationBatchMap,
 } from "$lib/components/agent-overview/graph-helpers";
-import { getItems } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store/utils/collection-utils";
 import type { AgentSession,
   Note } from "$shared/types";
 import { selectAllWorkspaceAgents } from "$lib/store/slices/workspace-agents/workspace-agents-selectors";
@@ -51,25 +51,25 @@ const emptyWorkspaceState: AgentOverviewWorkspaceState = {
 };
 
 /** Select the per-workspace agent overview state */
-export const selectAgentOverviewWorkspace = store.createSelector(
+export const selectAgentOverviewWorkspace = createSelector(
   (state, workspaceId: string): AgentOverviewWorkspaceState =>
     state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState,
 );
 
 /** Select whether the overview is in live mode */
-export const selectIsLive = store.createSelector(
+export const selectIsLive = createSelector(
   (state, workspaceId: string): boolean =>
     (state.agentOverview.byWorkspaceId[workspaceId]?.isLive) ?? true,
 );
 
 /** Select the current time position */
-export const selectCurrentTime = store.createSelector(
+export const selectCurrentTime = createSelector(
   (state, workspaceId: string): string =>
     (state.agentOverview.byWorkspaceId[workspaceId]?.currentTime) ?? new Date().toISOString(),
 );
 
 /** Select the interaction events */
-export const selectEvents = store.createSelector(
+export const selectEvents = createSelector(
   (state, workspaceId: string): InteractionEvent[] =>
     (state.agentOverview.byWorkspaceId[workspaceId]?.events) ?? [],
 );
@@ -82,7 +82,7 @@ export const selectEvents = store.createSelector(
  * Computes the full graph state from workspace state + line changes.
  * This replaces the $derived computeGraphState from the old Svelte store.
  */
-export const selectGraphState = store.createSelector(
+export const selectGraphState = createSelector(
   (state, workspaceId: string): GraphState => {
     const ws = state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);

@@ -5,10 +5,9 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faRotateLeft } from '@fortawesome/free-solid-svg-icons';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { fetchNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { selectNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   let {
     workspace,
@@ -24,6 +23,7 @@
     onRestore?: (versionId: string) => void;
   } = $props();
 
+  const dispatch = getDispatch();
   const noteVersionsState = selectNoteVersions(workspace.id);
 
   const versions = $derived(
@@ -37,7 +37,7 @@
   // Fetch versions on mount and when visibility changes
   $effect(() => {
     if (visible && workspace?.id && noteId) {
-      appStore.dispatch(fetchNoteVersions(workspace.id, noteId));
+      dispatch(fetchNoteVersions(workspace.id, noteId));
     }
   });
 

@@ -1,6 +1,6 @@
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "svelte-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
+import { createBooleanPreference } from "../../utils/boolean-preference";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 

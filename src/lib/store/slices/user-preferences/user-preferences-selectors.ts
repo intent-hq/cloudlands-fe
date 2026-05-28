@@ -1,14 +1,14 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import {
   SYSTEM_DEFAULT_FONT,
   type FontOption,
 } from "./user-preferences-slice";
 
-export const selectAgentFontStyle = store.createSelector((state) => {
+export const selectAgentFontStyle = createSelector((state) => {
   return state.userPreferences.agentFontStyle;
 });
 
-export const selectAgentFontStyleLabel = store.createSelector((state) => {
+export const selectAgentFontStyleLabel = createSelector((state) => {
   switch (state.userPreferences.agentFontStyle) {
     case "sans":
       return "Sans-serif";
@@ -19,43 +19,43 @@ export const selectAgentFontStyleLabel = store.createSelector((state) => {
   }
 });
 
-export const selectIsAgentMonospace = store.createSelector((state) => {
+export const selectIsAgentMonospace = createSelector((state) => {
   return state.userPreferences.agentFontStyle === "monospace";
 });
 
-export const selectBetaUpdatesEnabled = store.createSelector((state) => {
+export const selectBetaUpdatesEnabled = createSelector((state) => {
   return state.userPreferences.betaUpdatesEnabled;
 });
 
-export const selectSpellcheckEnabled = store.createSelector((state) => {
+export const selectSpellcheckEnabled = createSelector((state) => {
   return state.userPreferences.spellcheckEnabled;
 });
 
-export const selectZoomFactor = store.createSelector((state) => {
+export const selectZoomFactor = createSelector((state) => {
   return state.userPreferences.zoomFactor;
 });
 
-export const selectShowArchived = store.createSelector((state) => {
+export const selectShowArchived = createSelector((state) => {
   return state.userPreferences.showArchived;
 });
 
-export const selectGroupByRepo = store.createSelector((state) => {
+export const selectGroupByRepo = createSelector((state) => {
   return state.userPreferences.groupByRepo;
 });
 
-export const selectHasCompletedProviderSetup = store.createSelector((state) => {
+export const selectHasCompletedProviderSetup = createSelector((state) => {
   return state.userPreferences.hasCompletedProviderSetup;
 });
 
-export const selectCounterScale = store.createSelector((state) => {
+export const selectCounterScale = createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
 
-export const selectNoteFontStyle = store.createSelector((state) => {
+export const selectNoteFontStyle = createSelector((state) => {
   return state.userPreferences.noteFontStyle;
 });
 
-export const selectNoteFontStyleLabel = store.createSelector((state) => {
+export const selectNoteFontStyleLabel = createSelector((state) => {
   switch (state.userPreferences.noteFontStyle) {
     case "sans":
       return "Sans-serif";
@@ -66,19 +66,19 @@ export const selectNoteFontStyleLabel = store.createSelector((state) => {
   }
 });
 
-export const selectIsNoteMonospace = store.createSelector((state) => {
+export const selectIsNoteMonospace = createSelector((state) => {
   return state.userPreferences.noteFontStyle === "monospace";
 });
 
-export const selectCodeFontFamily = store.createSelector((state) => {
+export const selectCodeFontFamily = createSelector((state) => {
   return state.userPreferences.codeFontFamily;
 });
 
-export const selectSystemFonts = store.createSelector((state) => {
+export const selectSystemFonts = createSelector((state) => {
   return state.userPreferences.systemFonts;
 });
 
-export const selectCodeFontFamilyCSS = store.createSelector((state) => {
+export const selectCodeFontFamilyCSS = createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === "system-default") {
     return SYSTEM_DEFAULT_FONT;
@@ -86,7 +86,7 @@ export const selectCodeFontFamilyCSS = store.createSelector((state) => {
   return `'${codeFontFamily}', monospace`;
 });
 
-export const selectCodeFontFamilyLabel = store.createSelector((state) => {
+export const selectCodeFontFamilyLabel = createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === "system-default") {
     return "System Default";
@@ -94,7 +94,7 @@ export const selectCodeFontFamilyLabel = store.createSelector((state) => {
   return codeFontFamily;
 });
 
-export const selectCodeFontOptions = store.createSelector((state) => {
+export const selectCodeFontOptions = createSelector((state) => {
   const { systemFonts } = state.userPreferences;
   const options: FontOption[] = [
     { value: "system-default", label: "System Default", fontFamily: SYSTEM_DEFAULT_FONT },
@@ -111,30 +111,30 @@ export const selectCodeFontOptions = store.createSelector((state) => {
   return options;
 });
 
-export const selectNotificationEnabled = store.createSelector((state) => {
+export const selectNotificationEnabled = createSelector((state) => {
   return state.userPreferences.enabled;
 });
 
-export const selectSoundEnabled = store.createSelector((state) => {
+export const selectSoundEnabled = createSelector((state) => {
   return state.userPreferences.soundEnabled;
 });
 
-export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
+export const selectSoundOnlyWhenUnfocused = createSelector((state) => {
   return state.userPreferences.soundOnlyWhenUnfocused;
 });
 
-export const selectNotificationVolume = store.createSelector((state) => {
+export const selectNotificationVolume = createSelector((state) => {
   return state.userPreferences.volume;
 });
 
-export const selectActivityLogPresets = store.createSelector((state) => {
+export const selectActivityLogPresets = createSelector((state) => {
   return state.userPreferences.activityLogPresets;
 });
 
-export const selectPromoBannerInteractions = store.createSelector((state) => {
+export const selectPromoBannerInteractions = createSelector((state) => {
   return state.userPreferences.promoBannerInteractions;
 });
 
-export const selectPromoBannerInteractionRecord = store.createSelector((state, bannerId: string) => {
+export const selectPromoBannerInteractionRecord = createSelector((state, bannerId: string) => {
   return state.userPreferences.promoBannerInteractions[bannerId] ?? null;
 });

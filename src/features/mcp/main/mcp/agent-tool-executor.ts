@@ -16,7 +16,7 @@ import { AgentMessage } from '$features/agent/main/agent-providers/base-provider
 import {
   getPendingFileOperations,
   clearPendingFileOperations,
-} from './workspace-file-tools';
+} from './workspace-tools';
 import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { Logger } from '$shared/logger';
 import { execFileAsync } from '../../../../shared/git/git-env';

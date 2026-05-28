@@ -1,38 +1,38 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 
-export const selectGlobalModals = store.createSelector((state) => {
+export const selectGlobalModals = createSelector((state) => {
   return state.globalModals;
 });
 
-export const selectGitHubAuthModal = store.createSelector((state) => {
+export const selectGitHubAuthModal = createSelector((state) => {
   return state.globalModals.githubAuth;
 });
 
-export const selectIsGitHubAuthModalOpen = store.createSelector((state) => {
+export const selectIsGitHubAuthModalOpen = createSelector((state) => {
   return selectGitHubAuthModal.select(state).open;
 });
 
-export const selectPendingGitHubAuth = store.createSelector((state) => {
+export const selectPendingGitHubAuth = createSelector((state) => {
   return selectGitHubAuthModal.select(state).pendingAuth;
 });
 
-export const selectGitHubAuthModalKey = store.createSelector((state) => {
+export const selectGitHubAuthModalKey = createSelector((state) => {
   return selectGitHubAuthModal.select(state).modalKey;
 });
 
-export const selectGitCredentialsModal = store.createSelector((state) => {
+export const selectGitCredentialsModal = createSelector((state) => {
   return state.globalModals.gitCredentials;
 });
 
-export const selectIsGitCredentialsModalOpen = store.createSelector((state) => {
+export const selectIsGitCredentialsModalOpen = createSelector((state) => {
   return selectGitCredentialsModal.select(state).open;
 });
 
-export const selectGitCredentialsError = store.createSelector((state) => {
+export const selectGitCredentialsError = createSelector((state) => {
   return selectGitCredentialsModal.select(state).error;
 });
 
-export const selectHasShownGitCredentialsModalForWorkspace = store.createSelector(
+export const selectHasShownGitCredentialsModalForWorkspace = createSelector(
   (state, workspaceId: string | undefined): boolean => {
     if (!workspaceId) {
       return false;

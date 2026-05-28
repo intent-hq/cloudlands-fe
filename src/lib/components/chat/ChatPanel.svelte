@@ -77,8 +77,8 @@
   selectPanels,
   selectCheckedSelections,
 } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
-
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';
 
   import { setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
@@ -182,10 +182,10 @@
   shouldShowPendingAssistantStatus,
 } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('ChatPanel');
 
+  const multiPanelDispatch = getDispatch();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -345,11 +345,11 @@
 
   function handleFocusSetupTerminal() {
     const setupTerminal = selectWorkspaceSetupTerminal.select(
-      appStore.state,
+      getReduxStore().getState(),
       workspace.id,
     );
     if (setupTerminal) {
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openTerminalTabRequested(workspace.id, { terminalId: setupTerminal.id }),
       );
     }
@@ -886,7 +886,7 @@
   $effect(() => {
     if (draftRestored || !workspace || !agentId) return;
     const savedDraft = untrack(() =>
-      selectChatDraft.select(appStore.state, workspace.id, agentId),
+      selectChatDraft.select(getReduxStore().getState(), workspace.id, agentId),
     );
     if (savedDraft) {
       // Use untrack to avoid creating a dependency on inputValue
@@ -912,7 +912,7 @@
     // Only save if it actually changed from what we last saved
     if (currentValue !== previousSavedDraft) {
       previousSavedDraft = currentValue;
-      appStore.dispatch(setChatDraft(workspace.id, agentId, currentValue));
+      multiPanelDispatch(setChatDraft(workspace.id, agentId, currentValue));
     }
   });
 
@@ -949,7 +949,7 @@
     // Handle notes type
     if ($mainPanel.type === 'notes' && $mainPanel.selectedNoteId) {
       const noteId = $mainPanel.selectedNoteId;
-      const note = selectNoteById.select(appStore.state, workspace.id, noteId);
+      const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
       const isSpec = noteId === 'spec';
 
       return {
@@ -1097,8 +1097,8 @@
     if (workspace?.id) {
       const panels = availablePanelContexts;
       untrack(() => {
-        appStore.dispatch(setMultiPanelWorkspace(workspace.id));
-        appStore.dispatch(updateMultiPanels(panels));
+        multiPanelDispatch(setMultiPanelWorkspace(workspace.id));
+        multiPanelDispatch(updateMultiPanels(panels));
       });
     }
   });
@@ -1120,7 +1120,7 @@
         // Add selection to multi-panel context store
         // Detect if this is from a note (markdown) vs a code file
         const isNote = language === 'markdown' && !file?.includes('/');
-        appStore.dispatch(
+        multiPanelDispatch(
           setMultiPanelSelection({
             panelId,
             tabId,
@@ -1136,7 +1136,7 @@
         // Clear the selection when text is deselected
         // This event is only dispatched when editor.isFocused is true (user clicked within the editor)
         // so it won't clear when user clicks on chat input to send
-        appStore.dispatch(clearMultiPanelSelection(panelId, tabId));
+        multiPanelDispatch(clearMultiPanelSelection(panelId, tabId));
       }
     };
 
@@ -1532,9 +1532,9 @@
     // The saga uses takeLatest to cancel stale init calls automatically.
     if (workspace && agentId) {
       // Mirror to Redux so the send-message saga can detect workspace changes
-      appStore.dispatch(chatTrackedWorkspaceSet(agentId, workspace.id));
+      multiPanelDispatch(chatTrackedWorkspaceSet(agentId, workspace.id));
 
-      appStore.dispatch(
+      multiPanelDispatch(
         initializeChatRequested(agentId, {
           wsId: workspace.id,
           options: {
@@ -1578,7 +1578,7 @@
     // Request initial message send if workspace creation left pending config.
     // The saga owns readiness waiting, sending, and storage cleanup.
     if (workspace && agentId && $agentMessages$.length === 0) {
-      appStore.dispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
+      multiPanelDispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
     }
 
     // Scroll handling on mount
@@ -1621,15 +1621,15 @@
     untrack(() => {
       rebindTracker.recordRebind(currentWorkspaceId);
       // Mirror to Redux so the send-message saga can read rebind state
-      appStore.dispatch(chatTrackedWorkspaceSet(agentId, currentWorkspaceId));
+      multiPanelDispatch(chatTrackedWorkspaceSet(agentId, currentWorkspaceId));
     });
 
     // Re-initialize via saga — takeLatest automatically cancels any in-flight older init,
     // replacing the stale-result guard that used to be handled manually.
     const rebindGeneration = untrack(() => rebindTracker.startRebind());
-    appStore.dispatch(chatRebindStarted(agentId));
+    multiPanelDispatch(chatRebindStarted(agentId));
 
-    appStore.dispatch(
+    multiPanelDispatch(
       initializeChatRequested(agentId, {
         wsId: currentWorkspaceId,
         options: {
@@ -1643,7 +1643,7 @@
     // The saga is fire-and-forget from the component's perspective.
     // End rebind tracking immediately — the saga handles its own cancellation.
     rebindTracker.endRebind(rebindGeneration);
-    appStore.dispatch(chatRebindEnded(agentId));
+    multiPanelDispatch(chatRebindEnded(agentId));
   });
 
   // Message navigation state
@@ -2148,11 +2148,11 @@
     lastViewedAgentId = agentId;
     lastIsActive = isActive;
     if (agentId && isActive) {
-      appStore.dispatch(markAgentAsViewed(agentId));
+      getReduxStore().dispatch(markAgentAsViewed(agentId));
     } else {
       // Panel is no longer active (user switched to another tab) —
       // clear so new messages for this agent are properly marked as unread.
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      getReduxStore().dispatch(clearCurrentlyViewedAgent());
     }
   });
 
@@ -2165,7 +2165,7 @@
 
     // Clear currently viewed agent so other agents can properly be marked as unread
     if (agentId) {
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      getReduxStore().dispatch(clearCurrentlyViewedAgent());
     }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
@@ -2221,7 +2221,7 @@
     // saga-owned queue removal and stop orchestration run before send.
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    appStore.dispatch(
+    multiPanelDispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text: message.content,
@@ -2248,7 +2248,7 @@
     const parts: string[] = [];
 
     // Add context from checked panels in the multi-panel context store
-    const storeState = appStore.state;
+    const storeState = getReduxStore().getState();
     const checkedPanels = selectCheckedPanels.select(storeState);
     const allPanels = selectPanels.select(storeState);
     logger.info('ChatPanel: Building workspace context', {
@@ -2396,7 +2396,7 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     // Dispatch all orchestration to the send-message saga
-    appStore.dispatch(
+    multiPanelDispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
@@ -2418,19 +2418,19 @@
 
   // Handle stopping the current generation
   function handleStop() {
-    appStore.dispatch(agentSessionStopChatRequested(agentId));
+    multiPanelDispatch(agentSessionStopChatRequested(agentId));
   }
 
   // Handle retrying the last failed message
   function handleRetry() {
     if (!workspace) return;
-    appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+    multiPanelDispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
   }
 
   // Handle retrying with a specific model (when current model is unavailable)
   function handleRetryWithModel(model: string) {
     if (!workspace) return;
-    appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
+    multiPanelDispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
   }
 
   // Handle changing the specialist for an agent
@@ -2450,7 +2450,7 @@
 
     if (specialistId) {
       // Direct specialist selected
-      const reduxState = appStore.state;
+      const reduxState = getReduxStore().getState();
       const specialist = selectSpecialists.select(reduxState).find((s) => s.id === specialistId);
       behaviorPrompt = specialist
         ? selectEffectiveBehaviorPrompt.select(reduxState, specialist.id)
@@ -2476,7 +2476,7 @@
 
     // Update the session via Redux (agent-session slice is canonical)
     if (workspace?.id) {
-      appStore.dispatch(
+      getReduxStore().dispatch(
         updateAgentSessionFields(agentId, { metadata: newMetadata, model: newModel }),
       );
     }
@@ -2487,7 +2487,7 @@
     // 2. When sending a message, the metadata is passed directly in the request
     // 3. The backend will read from request.metadata (priority) before disk
     // If persistence succeeds, the specialist will be remembered for future sessions.
-    appStore.dispatch(saveAgentSessionRequested(workspace.id, agentId, true));
+    getReduxStore().dispatch(saveAgentSessionRequested(workspace.id, agentId, true));
     logger.info('Agent specialist change dispatched', {
       agentId,
       specialistId,
@@ -2510,7 +2510,7 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    appStore.dispatch(
+    multiPanelDispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
@@ -2535,7 +2535,7 @@
   // Handle editing a user message and regenerating
   function handleEditMessage(messageId: string, newText: string, model?: string) {
     if (!workspace) return;
-    appStore.dispatch(
+    multiPanelDispatch(
       agentSessionEditAndRegenerateRequested(
         agentId,
         workspace.id,
@@ -2549,7 +2549,7 @@
   // Handle regenerating from a specific assistant message
   function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
-    appStore.dispatch(
+    multiPanelDispatch(
       agentSessionRegenerateFromMessageRequested(
         agentId,
         workspace.id,
@@ -2561,7 +2561,7 @@
   // Handle forking the conversation from a specific message
   function handleForkFromMessage(messageId: string) {
     if (!workspace) return;
-    appStore.dispatch(
+    multiPanelDispatch(
       agentSessionForkSessionRequested(agentId, workspace.id, {
         forkFromMessageId: messageId,
       }),

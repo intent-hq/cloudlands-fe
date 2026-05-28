@@ -8,7 +8,7 @@ import {
 import { runSaga } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
-import { initWorkspace } from "$lib/store/slices/changes/changes-slice";
+import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -98,42 +98,25 @@ vi.mock("$lib/store/slices/app-layout/sagas/spec-panel-saga", () => ({
   },
 }));
 
-vi.mock("$lib/store/store", async () => {
-  const effects = await import("redux-saga/effects");
-  const appStore = {
-    get state() {
-      return getReduxStateMock();
-    },
-    dispatch: vi.fn(),
-    getReadableState: () => ({
-      subscribe: (listener: (state: any) => void) => {
-        listener(getReduxStateMock());
-        return () => {};
-      },
-    }),
-    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => {
-      const selector = Object.assign(
-        (...args: any[]) => ({
-          subscribe: (listener: (value: any) => void) => {
-            listener(selectorFunc(getReduxStateMock(), ...args));
-            return () => {};
-          },
-        }),
-        {
-          select: selectorFunc,
-          effect: function* (...args: any[]) {
-            return yield effects.select(selectorFunc, ...args);
-          },
-          withStore: () => selector,
-        },
-      );
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: () => ({ getState: getReduxStateMock, dispatch: vi.fn() }),
+}));
 
-      return selector;
-    },
-  };
-
-  return { appStore, store: appStore };
+// lockReactiveSelectors: pass-through mock that executes the handler directly.
+// In tests we track the lock/unlock actions to verify batching.
+const { lockUpdatesMock, unlockUpdatesMock } = vi.hoisted(() => {
+  const lockUpdatesMock = { type: "storeUtility/lockUpdates", payload: [] };
+  const unlockUpdatesMock = { type: "storeUtility/unlockUpdates", payload: [] };
+  return { lockUpdatesMock, unlockUpdatesMock };
 });
+
+vi.mock("../../store-utility/sagas/lock-reactive-selectors", () => ({
+  lockReactiveSelectors: function* (handler: () => Generator) {
+    yield sagaEffects.put(lockUpdatesMock);
+    yield* handler();
+    yield sagaEffects.put(unlockUpdatesMock);
+  },
+}));
 
 import type { AgentSession, AgentStatus } from "$shared/types";
 import {
@@ -168,11 +151,11 @@ import {
 } from "./agent-loading-saga";
 import {
   cancelWorkspaceAgentEventsForWorkspaceSaga,
-  initializeFileTrackingForWorkspaceSaga,
   recoverLateInitialAgentHydrationSaga,
   retroactiveWorkspaceMountCheckSaga,
   watchAgentDeletedSaga,
   watchAgentRestoredSaga,
+  watchFileTrackingLifecycleSaga,
   watchLateInitialAgentHydrationRecoverySaga,
   watchAgentRenamedSaga,
   watchWaitingForFirstMessageSaga,
@@ -222,8 +205,8 @@ describe("workspaceAgentsSaga", () => {
     expect(effect.type).toBe("ALL");
   });
 
-  it("runs one-shot file tracking setup on mount and only tracks cancellable workspace tasks", () => {
-    const fileTrackingInitTask = { type: "file-tracking-init-task" } as const;
+  it("registers agent watchers on mount and cancels them from the workspace unmount handler", () => {
+    const fileTrackingTask = { type: "file-tracking-task" } as const;
     const drawerGuardTask = { type: "drawer-guard-task" } as const;
     const iterator = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-1"));
 
@@ -234,11 +217,11 @@ describe("workspaceAgentsSaga", () => {
     });
 
     expect(iterator.next()).toEqual({
-      value: sagaEffects.fork(initializeFileTrackingForWorkspaceSaga, "ws-1"),
+      value: sagaEffects.fork(watchFileTrackingLifecycleSaga, "ws-1"),
       done: false,
     });
 
-    const drawerGuardEffect = iterator.next(fileTrackingInitTask).value as any;
+    const drawerGuardEffect = iterator.next(fileTrackingTask).value as any;
     expect(drawerGuardEffect.type).toBe("FORK");
 
     expect(iterator.next(drawerGuardTask)).toEqual({
@@ -252,6 +235,10 @@ describe("workspaceAgentsSaga", () => {
 
     expect(cancelIterator.next()).toEqual({
       value: sagaEffects.put(clearCurrentlyViewed()),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({
+      value: cancelEffect(fileTrackingTask),
       done: false,
     });
     expect(cancelIterator.next()).toEqual({
@@ -382,6 +369,7 @@ describe("workspaceAgentsSaga", () => {
     expect(noWorkspace.next()).toEqual({ value: undefined, done: true });
   });
 
+
   it("renames an agent when agent:renamed is received (global, uses payload workspaceId)", () => {
     const iterator = watchAgentRenamedSaga();
 
@@ -447,12 +435,12 @@ describe("workspaceAgentsSaga", () => {
   });
 
   it("initializes file tracking on mount and dispatches loadGitStatus", () => {
-    const iterator = initializeFileTrackingForWorkspaceSaga("ws-file-tracking");
+    const iterator = watchFileTrackingLifecycleSaga("ws-file-tracking");
 
     // Should dispatch initFileTracking first
     const initEffect = iterator.next().value as any;
     expect(initEffect.type).toBe("PUT");
-    expect(initEffect.payload.action).toEqual(initWorkspace("ws-file-tracking"));
+    expect(initEffect.payload.action).toEqual(initFileTracking("ws-file-tracking"));
 
     // Then delay
     expect(iterator.next()).toEqual({
@@ -465,11 +453,18 @@ describe("workspaceAgentsSaga", () => {
     expect(putEffect.type).toBe("PUT");
     expect(putEffect.payload.action).toEqual(loadGitStatus("ws-file-tracking"));
 
-    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    // Should enter keep-alive loop
+    const keepAliveEffect = iterator.next().value as any;
+    expect(keepAliveEffect).toEqual(sagaEffects.delay(60_000));
+
+    expect(iterator.return(undefined)).toEqual({
+      value: undefined,
+      done: true,
+    });
   });
 
   it("skips file tracking setup for invalid workspace ids", () => {
-    const iterator = initializeFileTrackingForWorkspaceSaga("new");
+    const iterator = watchFileTrackingLifecycleSaga("new");
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     expect(setWorkspaceMock).not.toHaveBeenCalled();
@@ -576,14 +571,14 @@ describe("late initial-agent hydration recovery", () => {
     expect((gen.next(false).value as any).type).toBe("SELECT");
 
     expect(gen.next(true)).toEqual({
-      value: sagaEffects.take(setIsLoadingAgents),
+      value: sagaEffects.take(setIsLoadingAgents.type),
       done: false,
     });
 
     expect((gen.next(setIsLoadingAgents("other-ws", false)).value as any).type).toBe("SELECT");
 
     expect(gen.next(true)).toEqual({
-      value: sagaEffects.take(setIsLoadingAgents),
+      value: sagaEffects.take(setIsLoadingAgents.type),
       done: false,
     });
 
@@ -643,7 +638,7 @@ describe("late initial-agent hydration recovery", () => {
     const gen = watchLateInitialAgentHydrationRecoverySaga();
 
     expect(gen.next()).toEqual({
-      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
+      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
       done: false,
     });
 
@@ -654,7 +649,7 @@ describe("late initial-agent hydration recovery", () => {
     });
 
     expect(gen.next(firstTask)).toEqual({
-      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
+      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
       done: false,
     });
 
@@ -673,7 +668,7 @@ describe("late initial-agent hydration recovery", () => {
     });
 
     expect(gen.next(secondTask)).toEqual({
-      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
+      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
       done: false,
     });
 
@@ -737,7 +732,7 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     expect(putEffect.payload.action).toEqual(setIsLoadingAgents("ws-guard", true));
   });
 
-  it("publishes agents before agentsLoaded (regression: sidebar empty-state flash)", async () => {
+  it("publishes agents and agentsLoaded atomically inside lockReactiveSelectors (regression: sidebar empty-state flash)", async () => {
     vi.useFakeTimers();
 
     try {
@@ -760,15 +755,22 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
       await vi.runAllTimersAsync();
       await task.toPromise().catch(() => {});
 
-      // Verify that setAgents appears before setAgentsLoaded and later side effects.
+      // Verify that lockUpdates appears before setAgents and setAgentsLoaded,
+      // and unlockUpdates appears after them — proving atomic publication.
       const actionTypes = dispatched.map((a: any) => a.type);
+      const lockIdx = actionTypes.indexOf("storeUtility/lockUpdates");
       const setAgentsIdx = actionTypes.indexOf("workspaceAgents/setAgents");
       const setLoadedIdx = actionTypes.indexOf("workspaceAgents/setAgentsLoaded");
+      const unlockIdx = actionTypes.indexOf("storeUtility/unlockUpdates");
       const clearUnreadIdx = actionTypes.indexOf("unreadTracking/clearWorkspaceUnread");
 
-      expect(setAgentsIdx).toBeGreaterThanOrEqual(0);
-      expect(setLoadedIdx).toBeGreaterThan(setAgentsIdx);
-      expect(clearUnreadIdx).toBeGreaterThan(setLoadedIdx);
+      // All four actions must be present
+      expect(lockIdx).toBeGreaterThanOrEqual(0);
+      expect(setAgentsIdx).toBeGreaterThan(lockIdx);
+      expect(setLoadedIdx).toBeGreaterThan(lockIdx);
+      expect(unlockIdx).toBeGreaterThan(setAgentsIdx);
+      expect(unlockIdx).toBeGreaterThan(setLoadedIdx);
+      expect(clearUnreadIdx).toBeGreaterThan(unlockIdx);
       expect(dispatched[clearUnreadIdx]).toEqual(clearWorkspaceUnread("ws-atomic"));
     } finally {
       vi.useRealTimers();
@@ -791,6 +793,8 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
     expect((gen.next(null).value as any).type).toBe("CALL");
     expect((gen.next([]).value as any).type).toBe("SELECT");
     expect((gen.next([]).value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
+    expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
     expect((gen.next().value as any).type).toBe("PUT");
 

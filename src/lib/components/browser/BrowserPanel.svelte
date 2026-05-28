@@ -14,7 +14,7 @@
   ListItem,
 } from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
   import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import {
@@ -29,7 +29,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -39,6 +38,7 @@
 
   let { workspaceId, onOpenUrl, class: className }: Props = $props();
 
+  const dispatch = getDispatch();
   const recentUrls$ = selectBrowserRecentUrls(workspaceId);
 
   // Get focused browser URL from reactive selector
@@ -52,7 +52,7 @@
   // Initialize store when workspace changes
   $effect(() => {
     if (workspaceId) {
-      appStore.dispatch(initBrowserWorkspace(workspaceId));
+      dispatch(initBrowserWorkspace(workspaceId));
     }
   });
 
@@ -86,7 +86,7 @@
     }
 
     inputError = '';
-    appStore.dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
+    dispatch(addRecentUrl(workspaceId, normalized, undefined, undefined, new Date().toISOString()));
     onOpenUrl(normalized);
     urlInput = '';
   }
@@ -105,19 +105,19 @@
 
   // Handle clicking a recent URL
   function handleUrlClick(url: string) {
-    appStore.dispatch(addRecentUrl(workspaceId, url, undefined, undefined, new Date().toISOString())); // Move to top of recents
+    dispatch(addRecentUrl(workspaceId, url, undefined, undefined, new Date().toISOString())); // Move to top of recents
     onOpenUrl(url);
   }
 
   // Handle deleting a recent URL
   function handleDeleteUrl(e: MouseEvent, url: string) {
     e.stopPropagation();
-    appStore.dispatch(removeRecentUrl(workspaceId, url));
+    dispatch(removeRecentUrl(workspaceId, url));
   }
 
   // Handle clearing all recent URLs
   function handleClearAll() {
-    appStore.dispatch(clearRecentUrls(workspaceId));
+    dispatch(clearRecentUrls(workspaceId));
   }
 
   // Get display title for URL (use title if available, otherwise hostname)

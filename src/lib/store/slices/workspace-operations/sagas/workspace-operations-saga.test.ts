@@ -10,31 +10,20 @@ import { testSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 
 vi.mock("typed-redux-saga", () => ({
-  call: function* (fnOrDescriptor: any, ...args: any[]) {
-    return yield Array.isArray(fnOrDescriptor)
-      ? sagaEffects.call(fnOrDescriptor, ...args)
-      : sagaEffects.call(fnOrDescriptor, ...args);
-  },
-  delay: function* (ms: number) {
-    return yield sagaEffects.delay(ms);
+  call: function* (fn: any, ...args: any[]) {
+    return yield sagaEffects.call(fn, ...args);
   },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
-  race: function* (effects: any) {
-    return yield sagaEffects.race(effects);
-  },
   select: function* (selector: any, ...args: any[]) {
     return yield sagaEffects.select(selector, ...args);
   },
-  spawn: function* (fn: any, ...args: any[]) {
-    return yield sagaEffects.spawn(fn, ...args);
-  },
-  take: function* (patternOrChannel: any) {
-    return yield sagaEffects.take(patternOrChannel);
-  },
   takeLatest: function* (pattern: any, saga: any) {
     return yield sagaEffects.takeLatest(pattern, saga);
+  },
+  delay: function* (ms: number) {
+    return yield sagaEffects.delay(ms);
   },
 }));
 
@@ -44,8 +33,7 @@ const {
   mockNavigateAfterWorkspaceRemoval,
   mockToast,
   mockWorkspaceClientDelete,
-  mockWorkspaceClientArchive,
-  mockWorkspaceClientUnarchive,
+  mockGetReduxStore,
 } = vi.hoisted(() => ({
   mockHasRunningAgents: vi.fn(() => false),
   mockGetRunningAgentNames: vi.fn(() => []),
@@ -58,8 +46,7 @@ const {
     dismiss: vi.fn(),
   },
   mockWorkspaceClientDelete: vi.fn(),
-  mockWorkspaceClientArchive: vi.fn().mockResolvedValue({ ok: true }),
-  mockWorkspaceClientUnarchive: vi.fn().mockResolvedValue({ ok: true }),
+  mockGetReduxStore: vi.fn(),
 }));
 
 vi.mock("$lib/utils/delete-warning-utils", () => ({
@@ -86,20 +73,23 @@ vi.mock("$app/navigation", () => ({
 vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: {
     delete: mockWorkspaceClientDelete,
-    archive: mockWorkspaceClientArchive,
-    unarchive: mockWorkspaceClientUnarchive,
+    archive: vi.fn().mockResolvedValue({ ok: true }),
+    unarchive: vi.fn().mockResolvedValue({ ok: true }),
   },
+}));
+
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: mockGetReduxStore,
 }));
 
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
-import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "$lib/store/utils/collection-utils";
 import {
   clearWorkspacePendingDeletion,
   initialState as workspaceInitialState,
-  loadWorkspacesRequested,
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   replaceWorkspaceList,
@@ -115,8 +105,6 @@ import {
 import {
   requestDeleteWorkspace,
   requestArchiveWorkspace,
-  openBulkArchiveConfirm,
-  confirmBulkArchive,
   openDeleteWarning,
   closeDeleteWarning,
   workspaceOperationsReducer,
@@ -177,10 +165,9 @@ describe("workspace-operations-saga navigate-away behavior", () => {
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Next yield: spawn(deleteWorkspaceWithUndo, workspace)
+      // Next yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
-      expect(deleteEffect.type).toBe("FORK");
-      expect(deleteEffect.payload.detached).toBe(true);
+      expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
 
       // Done
@@ -201,10 +188,9 @@ describe("workspace-operations-saga navigate-away behavior", () => {
       const selectEffect = gen.next().value as any;
       expect(selectEffect.type).toBe("SELECT");
 
-      // Provide the workspace — path doesn't match, so skip navigation → spawn deleteWorkspaceWithUndo
+      // Provide the workspace — path doesn't match, so skip navigation → deleteWorkspaceWithUndo
       const deleteEffect = gen.next(workspace).value as any;
-      expect(deleteEffect.type).toBe("FORK");
-      expect(deleteEffect.payload.detached).toBe(true);
+      expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
       // Should NOT be navigateAfterWorkspaceRemoval
       expect(deleteEffect.payload.fn).not.toBe(navigateAfterWorkspaceRemoval);
@@ -233,10 +219,9 @@ describe("workspace-operations-saga navigate-away behavior", () => {
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Next yield: spawn(deleteWorkspaceWithUndo, workspace)
+      // Next yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
-      expect(deleteEffect.type).toBe("FORK");
-      expect(deleteEffect.payload.detached).toBe(true);
+      expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
 
       // Done
@@ -257,10 +242,9 @@ describe("workspace-operations-saga navigate-away behavior", () => {
       const selectEffect = gen.next().value as any;
       expect(selectEffect.type).toBe("SELECT");
 
-      // Provide workspace → path doesn't match, so skip navigation → spawn deleteWorkspaceWithUndo
+      // Provide workspace → path doesn't match, so skip navigation → deleteWorkspaceWithUndo
       const deleteEffect = gen.next(workspace).value as any;
-      expect(deleteEffect.type).toBe("FORK");
-      expect(deleteEffect.payload.detached).toBe(true);
+      expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
       // Should NOT be navigateAfterWorkspaceRemoval
       expect(deleteEffect.payload.fn).not.toBe(navigateAfterWorkspaceRemoval);
@@ -317,10 +301,9 @@ describe("workspace-operations-saga navigate-away behavior", () => {
       expect(navEffect.payload.fn).toBe(navigateAfterWorkspaceRemoval);
       expect(navEffect.payload.args).toEqual([workspace.id]);
 
-      // Fifth yield: spawn(deleteWorkspaceWithUndo, workspace)
+      // Fifth yield: call(deleteWorkspaceWithUndo, workspace)
       const deleteEffect = gen.next().value as any;
-      expect(deleteEffect.type).toBe("FORK");
-      expect(deleteEffect.payload.detached).toBe(true);
+      expect(deleteEffect.type).toBe("CALL");
       expect(deleteEffect.payload.args).toEqual([workspace]);
 
       // Done
@@ -479,20 +462,20 @@ describe("deleteWorkspaceWithUndo — multi-delete race invariants", () => {
   });
 });
 
+
 /**
  * Saga-level tests that drive `deleteWorkspaceWithUndo` through the real
  * `requestDeleteWorkspaceSaga` against a real Redux store with fake timers.
  * Unlike the reducer-level tests above, these exercise the saga's own
  * `markWorkspacePendingDeletion` / `clearWorkspacePendingDeletion` dispatches
- * and the 15s undo timing branch, so they fail if either dispatch is dropped.
+ * and the 15s `setTimeout` branch, so they fail if either dispatch is dropped.
  */
 describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
   const TOAST_ID = "toast-abc";
   const workspace = makeReducerWorkspace("ws-saga-1", "Saga One");
 
   let store: Store;
-  let capturedUndoCallback: (() => Promise<void> | void) | undefined;
-  let dispatchedActions: any[];
+  let capturedUndoCallback: (() => Promise<void>) | undefined;
 
   // Pre-warm the dynamic `import("svelte-sonner")` that `deleteWorkspaceWithUndo`
   // performs internally. The first resolution of that import requires more
@@ -507,14 +490,11 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mockHasRunningAgents.mockReturnValue(false);
-    mockWorkspaceClientArchive.mockResolvedValue({ ok: true });
-    mockWorkspaceClientUnarchive.mockResolvedValue({ ok: true });
     capturedUndoCallback = undefined;
-    dispatchedActions = [];
 
     mockToast.warning.mockImplementation((_message: string, opts?: any) => {
       if (opts?.action?.onClick) {
-        capturedUndoCallback = opts.action.onClick as () => Promise<void> | void;
+        capturedUndoCallback = opts.action.onClick as () => Promise<void>;
       }
       return TOAST_ID;
     });
@@ -530,11 +510,9 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
       workspace: workspaceReducer,
       workspaceOperations: workspaceOperationsReducer,
     });
-    const captureMiddleware = () => (next: any) => (action: any) => {
-      dispatchedActions.push(action);
-      return next(action);
-    };
-    store = createStore(rootReducer, applyMiddleware(captureMiddleware, sagaMiddleware));
+    store = createStore(rootReducer, applyMiddleware(sagaMiddleware));
+    mockGetReduxStore.mockReturnValue(store);
+
     store.dispatch(setWorkspaceEntity(workspace));
     sagaMiddleware.run(workspaceOperationsSaga);
   });
@@ -545,10 +523,12 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
 
   const workspaceState = () => (store.getState() as any).workspace;
 
-  const countDispatched = (type: string) =>
-    dispatchedActions.filter((action) => action.type === type).length;
-
-  const waitForWarningToast = async () => {
+  // The saga's `deleteWorkspaceWithUndo` awaits a dynamic `import("svelte-sonner")`
+  // before dispatching the optimistic actions. Under fake timers we have to yield
+  // to the microtask queue until the saga has made visible progress (the toast
+  // warning was shown and the pending-deletion flag was set). Raw `Promise.resolve`
+  // rounds drain microtasks even while timers are frozen.
+  const waitForOptimisticDelete = async () => {
     for (let i = 0; i < 50; i++) {
       if (mockToast.warning.mock.calls.length > 0) return;
       await Promise.resolve();
@@ -562,7 +542,7 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
 
     store.dispatch(requestDeleteWorkspace(workspace.id));
 
-    await waitForWarningToast();
+    await waitForOptimisticDelete();
 
     // Invariant: immediately after the optimistic delete, the workspace is
     // removed from the visible collection and pendingDeletions is flagged.
@@ -577,7 +557,6 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     expect(mockWorkspaceClientDelete).toHaveBeenCalledWith(workspace.id);
     expect(workspaceState().pendingDeletions).toEqual({});
     expect(getItem(workspaceState().workspaces, workspace.id)).toBeUndefined();
-    expect(countDispatched(loadWorkspacesRequested.type)).toBeGreaterThanOrEqual(1);
     expect(mockToast.error).not.toHaveBeenCalled();
   });
 
@@ -585,7 +564,7 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     mockWorkspaceClientDelete.mockResolvedValue({ ok: false, error: "boom" });
 
     store.dispatch(requestDeleteWorkspace(workspace.id));
-    await waitForWarningToast();
+    await waitForOptimisticDelete();
 
     // Same immediate invariant as success case.
     expect(workspaceState().pendingDeletions[workspace.id]).toBe(true);
@@ -596,7 +575,6 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     expect(mockWorkspaceClientDelete).toHaveBeenCalledWith(workspace.id);
     expect(workspaceState().pendingDeletions).toEqual({});
     expect(getItem(workspaceState().workspaces, workspace.id)?.id).toBe(workspace.id);
-    expect(countDispatched(loadWorkspacesRequested.type)).toBeGreaterThanOrEqual(1);
     expect(mockToast.error).toHaveBeenCalledWith("Failed to delete space");
   });
 
@@ -604,7 +582,7 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     mockWorkspaceClientDelete.mockResolvedValue({ ok: true });
 
     store.dispatch(requestDeleteWorkspace(workspace.id));
-    await waitForWarningToast();
+    await waitForOptimisticDelete();
 
     expect(workspaceState().pendingDeletions[workspace.id]).toBe(true);
     expect(getItem(workspaceState().workspaces, workspace.id)).toBeUndefined();
@@ -618,45 +596,8 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     expect(mockToast.dismiss).toHaveBeenCalledWith(TOAST_ID);
 
     // Advancing past the original 15s window must not trigger a delete,
-    // since the undo channel won the timing race.
+    // since the undo path cleared the timeout and set `undone = true`.
     await vi.advanceTimersByTimeAsync(15000);
     expect(mockWorkspaceClientDelete).not.toHaveBeenCalled();
-  });
-
-  it("archive undo: clicking the toast undo unarchives through the saga channel and reloads workspaces", async () => {
-    store.dispatch(requestArchiveWorkspace(workspace.id));
-    await waitForWarningToast();
-
-    expect(mockWorkspaceClientArchive).toHaveBeenCalledWith(workspace.id);
-    expect(capturedUndoCallback).toBeDefined();
-    const loadCountAfterArchive = countDispatched(loadWorkspacesRequested.type);
-    expect(loadCountAfterArchive).toBeGreaterThanOrEqual(1);
-
-    await capturedUndoCallback!();
-    for (let i = 0; i < 10 && countDispatched(loadWorkspacesRequested.type) <= loadCountAfterArchive; i++) {
-      await Promise.resolve();
-    }
-
-    expect(mockWorkspaceClientUnarchive).toHaveBeenCalledWith(workspace.id);
-    expect(countDispatched(loadWorkspacesRequested.type)).toBeGreaterThan(loadCountAfterArchive);
-  });
-
-  it("bulk archive undo: clicking the toast undo unarchives archived ids through the saga channel and reloads", async () => {
-    store.dispatch(openBulkArchiveConfirm("unknown"));
-    store.dispatch(confirmBulkArchive());
-    await waitForWarningToast();
-
-    expect(mockWorkspaceClientArchive).toHaveBeenCalledWith(workspace.id);
-    expect(capturedUndoCallback).toBeDefined();
-    const loadCountAfterArchive = countDispatched(loadWorkspacesRequested.type);
-    expect(loadCountAfterArchive).toBeGreaterThanOrEqual(1);
-
-    await capturedUndoCallback!();
-    for (let i = 0; i < 10 && countDispatched(loadWorkspacesRequested.type) <= loadCountAfterArchive; i++) {
-      await Promise.resolve();
-    }
-
-    expect(mockWorkspaceClientUnarchive).toHaveBeenCalledWith(workspace.id);
-    expect(countDispatched(loadWorkspacesRequested.type)).toBeGreaterThan(loadCountAfterArchive);
   });
 });

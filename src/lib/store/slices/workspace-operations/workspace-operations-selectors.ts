@@ -1,45 +1,45 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 
-export const selectShowDeleteWarning = store.createSelector((state) => {
+export const selectShowDeleteWarning = createSelector((state) => {
   return state.workspaceOperations.showDeleteWarning;
 });
 
-export const selectPendingDeleteWorkspaceId = store.createSelector((state) => {
+export const selectPendingDeleteWorkspaceId = createSelector((state) => {
   return state.workspaceOperations.pendingDeleteWorkspaceId;
 });
 
-export const selectRunningAgentNamesForDelete = store.createSelector((state) => {
+export const selectRunningAgentNamesForDelete = createSelector((state) => {
   return state.workspaceOperations.runningAgentNamesForDelete;
 });
 
-export const selectShowBulkArchiveConfirm = store.createSelector((state) => {
+export const selectShowBulkArchiveConfirm = createSelector((state) => {
   return state.workspaceOperations.showBulkArchiveConfirm;
 });
 
-export const selectShowBulkDeleteArchivedConfirm = store.createSelector((state) => {
+export const selectShowBulkDeleteArchivedConfirm = createSelector((state) => {
   return state.workspaceOperations.showBulkDeleteArchivedConfirm;
 });
 
-export const selectPendingBulkRepoKey = store.createSelector((state) => {
+export const selectPendingBulkRepoKey = createSelector((state) => {
   return state.workspaceOperations.pendingBulkRepoKey;
 });
 
-export const selectPendingBulkDeleteRepoKey = store.createSelector((state) => {
+export const selectPendingBulkDeleteRepoKey = createSelector((state) => {
   return state.workspaceOperations.pendingBulkDeleteRepoKey;
 });
 
-export const selectShowBulkDeleteWarningConfirm = store.createSelector((state) => {
+export const selectShowBulkDeleteWarningConfirm = createSelector((state) => {
   return state.workspaceOperations.showBulkDeleteWarningConfirm;
 });
 
-export const selectBulkDeleteWorkspaceCount = store.createSelector((state) => {
+export const selectBulkDeleteWorkspaceCount = createSelector((state) => {
   return state.workspaceOperations.bulkDeleteWorkspaceCount;
 });
 
-export const selectShowRemoveRepoConfirm = store.createSelector((state) => {
+export const selectShowRemoveRepoConfirm = createSelector((state) => {
   return state.workspaceOperations.showRemoveRepoConfirm;
 });
 
-export const selectPendingRemoveRepoPath = store.createSelector((state) => {
+export const selectPendingRemoveRepoPath = createSelector((state) => {
   return state.workspaceOperations.pendingRemoveRepoPath;
 });

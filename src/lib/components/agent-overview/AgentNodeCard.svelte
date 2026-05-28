@@ -8,13 +8,12 @@
   import type { AgentNode } from './types';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   selectSpecialistName,
   selectSpecialists,
 } from '$lib/store/slices/specialists/specialists-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     node: AgentNode;
@@ -45,7 +44,7 @@
   const specialistName = $derived.by(() => {
     void $specialists$;
     if (!specialist) return null;
-    return selectSpecialistName.select(appStore.state, specialist);
+    return selectSpecialistName.select(getReduxStore().getState(), specialist);
   });
 </script>
 

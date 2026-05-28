@@ -434,7 +434,7 @@ describe('filesSaga', () => {
       .dispatch(saveFileContentRequested(WS_ID, 'src/b.ts', '/repo/src/b.ts', 'b'))
       .silentRun(50);
 
-    const files = (result as any)["storeState"].files.byWorkspaceId[WS_ID].files.map;
+    const files = (result as any).storeState.files.byWorkspaceId[WS_ID].files.map;
     expect(files['src/a.ts'].saving).toBe(false);
     expect(files['src/b.ts'].saving).toBe(false);
   });

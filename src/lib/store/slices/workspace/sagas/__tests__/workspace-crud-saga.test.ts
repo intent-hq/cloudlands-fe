@@ -63,8 +63,7 @@ vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
 
 vi.mock("$lib/services/analytics", () => ({ track: mockTrack }));
 vi.mock("$lib/utils/agent-loader", () => ({ invalidateAgentCache: mockInvalidateAgentCache }));
-vi.mock("$lib/store/slices/pr-status/pr-status-slice", async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/pr-status/pr-status-slice')>()),
+vi.mock("$lib/store/slices/pr-status/pr-status-slice", () => ({
   cleanupPRStatusWorkspace: (wsId: string) => ({ type: "prStatus/cleanupWorkspace", payload: [wsId] }),
 }));
 
@@ -86,14 +85,9 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromListenSync: vi.fn(function* () {}),
 }));
 
-vi.mock("$lib/store/store", async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => {},
-    dispatch: vi.fn(),
-  });
-});
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: vi.fn(),
+}));
 
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
 import { workspaceUnmounted } from "../../../workspace-lifecycle/workspace-lifecycle-slice";

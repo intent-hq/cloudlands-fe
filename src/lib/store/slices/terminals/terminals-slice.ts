@@ -1,5 +1,5 @@
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import {
   createCollection,
   addItem,
@@ -8,7 +8,7 @@ import {
   getItem,
   getItemIndex,
   type Collection,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 
 // ============================================================================
 // Constants

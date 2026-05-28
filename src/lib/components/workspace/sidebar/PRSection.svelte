@@ -37,7 +37,7 @@
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
 
   import {
@@ -50,7 +50,7 @@
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
@@ -94,8 +94,8 @@
   import TimelineSection from './TimelineSection.svelte';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -254,7 +254,7 @@
 
   // Helper to get current workspace
   function getCurrentWorkspace() {
-    return selectWorkspaceById.select(appStore.state, workspaceId);
+    return selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
   }
 
   // Helper to persist workspace changes
@@ -286,11 +286,11 @@
   // --- PR Handlers ---
   async function handleRefreshPRStatus() {
     if (isRefreshingPR) return;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', true));
     await tick();
     try {
       if (!$githubAuthIsAuthenticated$) {
-        appStore.dispatch(initializeGitHubAuth());
+        dispatch(initializeGitHubAuth());
       }
       if (!$githubAuthIsAuthenticated$) {
         pendingActionAfterAuth = 'refresh-pr';
@@ -306,11 +306,11 @@
         logger.warn('[PRSection] Git fetch error:', error);
       }
       gitCache.invalidate(`git-status-${workspaceId}`);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      appStore.dispatch(refreshPRStatusRequested(workspaceId, true, true));
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+      dispatch(refreshPRStatusRequested(workspaceId, true, true));
     } finally {
       await new Promise((resolve) => setTimeout(resolve, 300));
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', false));
     }
   }
 
@@ -325,7 +325,7 @@
     if (!titleToUse) return;
     const wsId = opts?.workspaceId ?? workspaceId;
     if (!$githubAuthIsAuthenticated$) {
-      appStore.dispatch(initializeGitHubAuth());
+      dispatch(initializeGitHubAuth());
     }
     if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
@@ -374,11 +374,11 @@
 
   async function handleAutoFillPR() {
     if (isGeneratingPR) {
-      appStore.dispatch(cancelExecution(workspaceId, 'pr'));
+      dispatch(cancelExecution(workspaceId, 'pr'));
     } else {
       const workspace = getCurrentWorkspace();
       if (workspace) {
-        appStore.dispatch(
+        dispatch(
           executeBackgroundAgent(workspace.id, 'pr', {
             includeStagedFiles: hasStaged,
             includeCommitHashes: commits.map((c: any) => c.hash),
@@ -390,12 +390,12 @@
   }
 
   function handleStopGeneratingPR() {
-    appStore.dispatch(cancelExecution(workspaceId, 'pr'));
-    appStore.dispatch(setSidebarCreatePRWhenReady(workspaceId, false));
+    dispatch(cancelExecution(workspaceId, 'pr'));
+    dispatch(setSidebarCreatePRWhenReady(workspaceId, false));
   }
 
   function toggleCreatePRWhenReady() {
-    appStore.dispatch(setSidebarCreatePRWhenReady(workspaceId, !$createPRWhenReady$));
+    dispatch(setSidebarCreatePRWhenReady(workspaceId, !$createPRWhenReady$));
   }
 
   function viewPRThoughtProcess(e?: MouseEvent) {
@@ -403,7 +403,7 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: prAgentId,
           sourcePanelId,
@@ -416,7 +416,7 @@
   async function handlePushAllUnpushed() {
     if (!workspaceId || commits.length === 0) return;
     const newestUnpushedHash = commits[0].hash;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
     try {
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
         targetBranch: $workspace$?.branch,
@@ -430,8 +430,8 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
           await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
@@ -441,12 +441,12 @@
       trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
     }
   }
 
   async function handleForcePush() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', true));
     try {
       const result = await gitClient.push(workspaceId as WorkspaceId, undefined, true);
       if (result.ok) {
@@ -454,8 +454,8 @@
         forcePushDrawerOpen = false;
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Force push failed');
@@ -464,14 +464,14 @@
       logger.error('Force push failed', error as Error);
       toast.error('Force push failed');
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', false));
     }
   }
 
   async function handleRebaseOntoTrunk() {
     if (!workspaceId) return;
     const capturedWsId = workspaceId;
-    appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', true));
+    dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', true));
     try {
       const result = await AcceptChangesClient.execute(
         capturedWsId as WorkspaceId,
@@ -479,7 +479,7 @@
       );
       if (workspaceId !== capturedWsId) return;
       if (result.success) {
-        appStore.dispatch(ftClearOlderCommits(workspaceId));
+        dispatch(ftClearOlderCommits(workspaceId));
         if (result.result?.newBaseSha) {
           try {
             await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
@@ -489,10 +489,10 @@
         }
         gitCache.invalidate(`git-status-${capturedWsId}`);
         await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(capturedWsId, true))),
-          appStore.dispatch(refreshRequested(capturedWsId)),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(capturedWsId, true))),
+          getReduxStore().dispatch(refreshRequested(capturedWsId)),
         ]);
-        appStore.dispatch(refreshAcceptChangesStatus(capturedWsId));
+        dispatch(refreshAcceptChangesStatus(capturedWsId));
         toast.success(`Rebased onto ${trunkBranch}`);
       } else {
         const mainError = result.error || 'Rebase failed';
@@ -508,25 +508,25 @@
       logger.error('Rebase onto trunk failed', error as Error);
       toast.error(`Rebase failed: ${(error as Error).message}`);
     } finally {
-      appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', false));
+      dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', false));
     }
   }
 
   async function handlePull() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
     try {
       const result = await gitClient.pull(workspaceId as WorkspaceId);
       if (result.ok) {
         toast.success('Pulled remote commits successfully');
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
-        appStore.dispatch(loadGitStatus(workspaceId, true));
+        getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       } else {
         toast.error(`Failed to pull: ${result.error}`);
       }
     } catch (error) {
       toast.error(`Pull failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
     }
   }
 
@@ -552,7 +552,7 @@
         connectRemote.url.trim(),
       );
       toast.success('Remote added successfully');
-      appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
+      dispatch(refreshAcceptChangesStatus(workspaceId));
       connectRemote.drawerOpen = false;
       connectRemote.url = '';
     } catch (error) {
@@ -601,7 +601,7 @@
         commitHash: 'PR',
         attribution: { timestamp: Date.now() },
       };
-      appStore.dispatch(openWorkspaceDiff(workspaceId, change));
+      getReduxStore().dispatch(openWorkspaceDiff(workspaceId, change));
     } catch (error) {
       logger.error('[handlePRFileClick] Failed to fetch file content', { error, filePath });
     }

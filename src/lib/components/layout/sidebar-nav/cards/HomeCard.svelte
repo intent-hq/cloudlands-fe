@@ -4,16 +4,16 @@
    * Navigates to the home page on click.
    */
   import { goto } from '$app/navigation';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 </script>
 
 <button
   class="w-full text-left px-3 py-2 hover:bg-muted/30 transition-colors cursor-pointer text-xs text-muted-foreground hover:text-foreground"
   onclick={() => {
-    appStore.dispatch(closeAll(false));
+    dispatch(closeAll(false));
     goto('/');
   }}
 >

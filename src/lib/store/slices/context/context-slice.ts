@@ -1,5 +1,5 @@
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
@@ -7,7 +7,7 @@ import {
   addItem as collectionAddItem,
   removeItem as collectionRemoveItem,
   updateItem as collectionUpdateItem,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import type { ContextItem } from "$features/context/types";
 import type { ContextState, ContextWorkspaceState } from "./context-types";
 

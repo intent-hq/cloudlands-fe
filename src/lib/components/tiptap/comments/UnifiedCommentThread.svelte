@@ -17,10 +17,12 @@
   processMarkdownToHTML,
   processHTMLToMarkdown,
 } from '$lib/utils/markdown-processor';
-
+  import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
   import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
-  import { store as appStore } from '$lib/store/store';
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -123,9 +125,9 @@
       const html = replyEditEditor?.getHTML?.() ?? '';
       const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
       if (!md) return cancelEditReply();
-      const v2 = selectCommentById.select(appStore.state, id);
+      const v2 = selectCommentById.select(getReduxStore().getState(), id);
       if (v2) {
-        appStore.dispatch(updateCommentAction(id, { content: md }));
+        reduxDispatch(updateCommentAction(id, { content: md }));
       }
     } finally {
       editingReplyId = null;

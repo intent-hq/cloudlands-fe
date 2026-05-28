@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const MESSAGE = 'Svelte components must not fetch or load async domain data directly. Dispatch through the configured Store instance (store.dispatch(action)) and read the result through Redux selectors instead; keep API/client/provider calls in sagas or service layers, not components.';
+const MESSAGE = 'Svelte components must not fetch or load async domain data directly. Dispatch a Redux action and read the result through Redux selectors instead; keep API/client/provider calls in sagas or services.';
 
 const SAFE_AWAITED_IDENTIFIER_NAMES = new Set([
   'tick',

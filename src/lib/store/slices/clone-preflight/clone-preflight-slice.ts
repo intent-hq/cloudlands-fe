@@ -13,8 +13,8 @@
  * error message that produced the current status. Nothing here is
  * workspace-scoped because the onboarding form is global.
  */
-import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+import { createAction } from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
 
 export type ClonePreflightStatus = 'idle' | 'loading' | 'ok' | 'error';
 

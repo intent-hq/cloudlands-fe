@@ -41,6 +41,7 @@ import {
 import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
 import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
 import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+import { getReduxDispatch } from '$lib/store/redux-dispatch-bridge';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -48,7 +49,6 @@ import {
 } from '$features/providers/provider-availability.client';
 import type { StoreState } from '$lib/store/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('resolve-onboarding-model');
 const specialistId = 'spec-writer';
@@ -174,7 +174,7 @@ async function resolveDynamicProviderModel(
       // UI reads (ModelPicker, agent cards) stay consistent with our pick.
       if (provider === activeProvider) {
         try {
-          appStore.dispatch(reloadModelsForProvider());
+          getReduxDispatch()(reloadModelsForProvider());
         } catch (err) {
           logger.debug('reloadModelsForProvider dispatch failed (non-fatal)', { error: err });
         }

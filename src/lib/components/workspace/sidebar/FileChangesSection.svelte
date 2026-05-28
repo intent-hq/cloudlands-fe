@@ -26,8 +26,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
   type AgentChangeGroup,
@@ -72,8 +72,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -215,7 +215,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   function getLinkedNoteId(agentId: string | null): string | undefined {
     if (!agentId) return undefined;
-    const session = selectAgentSession.select(appStore.state, agentId);
+    const session = selectAgentSession.select(getReduxStore().getState(), agentId);
     return session?.metadata?.taskNoteId as string | undefined;
   }
 
@@ -241,7 +241,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   function getAgentDisplayName(group: AgentChangeGroup): string {
     if (!group.agentId) return 'Manual Changes';
-    const sessions = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
+    const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
@@ -344,7 +344,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        appStore.dispatch(stageByPathRequested(workspaceId, paths));
+        getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       }
     } finally {
       isStaging = false;
@@ -360,7 +360,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+        getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       }
     } finally {
       isStaging = false;
@@ -376,7 +376,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       logger.warn('Cannot stage file from locked agent', { path });
       return;
     }
-    appStore.dispatch(stageByPathRequested(workspaceId, filesToStage));
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, filesToStage));
     clearSelection();
     await tick();
     if (filesToStage.length === 1) {
@@ -385,7 +385,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       );
       if (stagedChange) {
         logger.info('[handleStageFile] Updating selection to staged version', { path });
-        appStore.dispatch(
+        getReduxStore().dispatch(
           openWorkspaceDiff(workspaceId, stagedChange, {
             changeId: stagedChange.id,
             filePath: stagedChange.relativePath || stagedChange.file,
@@ -405,7 +405,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       logger.warn('Cannot unstage file from locked agent', { path });
       return;
     }
-    appStore.dispatch(unstageByPathRequested(workspaceId, filesToUnstage));
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, filesToUnstage));
     clearSelection();
     await tick();
     if (filesToUnstage.length === 1) {
@@ -414,7 +414,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       );
       if (unstagedChange) {
         logger.info('[handleUnstageFile] Updating selection to unstaged version', { path });
-        appStore.dispatch(
+        getReduxStore().dispatch(
           openWorkspaceDiff(workspaceId, unstagedChange, {
             changeId: unstagedChange.id,
             filePath: unstagedChange.relativePath || unstagedChange.file,
@@ -434,7 +434,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       logger.warn('Cannot revert file from locked agent', { path });
       return;
     }
-    appStore.dispatch(revertByPathRequested(workspaceId, filesToRevert));
+    getReduxStore().dispatch(revertByPathRequested(workspaceId, filesToRevert));
     clearSelection();
   }
 
@@ -444,7 +444,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       return;
     }
     const paths = group.files.map((f) => f.path);
-    appStore.dispatch(stageByPathRequested(workspaceId, paths));
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
   }
 
   async function handleUnstageGroup(group: AgentChangeGroup) {
@@ -453,7 +453,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       return;
     }
     const paths = group.files.map((f) => f.path);
-    appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -465,7 +465,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const paths = group.files.map((f) => f.path);
     const commitMessage = group.agentName || 'Agent changes';
     try {
-      appStore.dispatch(stageByPathRequested(workspaceId, paths));
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage,
       });
@@ -473,8 +473,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       if (result.success) {
         try {
           await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch (e) {
           console.warn('Failed to refresh stores after group commit:', e);
@@ -536,10 +536,10 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       .map((c) => c.relativePath);
     try {
       if (otherStagedPaths.length > 0) {
-        appStore.dispatch(unstageByPathRequested(workspaceId, otherStagedPaths));
+        getReduxStore().dispatch(unstageByPathRequested(workspaceId, otherStagedPaths));
       }
       if (section === 'unstaged') {
-        appStore.dispatch(stageByPathRequested(workspaceId, paths));
+        getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       }
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: message,
@@ -551,14 +551,14 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     } finally {
       if (otherStagedPaths.length > 0) {
         try {
-          appStore.dispatch(stageByPathRequested(workspaceId, otherStagedPaths));
+          getReduxStore().dispatch(stageByPathRequested(workspaceId, otherStagedPaths));
         } catch (restageError) {
           logger.error('Failed to re-stage files after group commit', restageError as Error);
         }
       }
       await Promise.all([
-        Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-        appStore.dispatch(refreshRequested(workspaceId)),
+        Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+        getReduxStore().dispatch(refreshRequested(workspaceId)),
       ]).catch(() => {});
     }
   }
@@ -593,7 +593,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
             class="font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
             onclick={() => {
               if (workspaceId) {
-                appStore.dispatch(
+                dispatch(
                   setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
                 );
               }

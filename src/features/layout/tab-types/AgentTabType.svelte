@@ -15,7 +15,7 @@
   selectInitialAgentId,
   selectWorkspaceAgentSession,
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
@@ -27,7 +27,7 @@
   selectAgentFontStyleLabel,
   selectIsAgentMonospace,
 } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
   import {
   selectSpecialistName,
@@ -56,10 +56,10 @@
   import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
   import { isAuggieSession } from '$shared/types/agent-session';
   import { deleteAgentWithUndoRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('AgentTabType');
 
+  const dispatch = getDispatch();
   const fontStyleLabel = selectAgentFontStyleLabel();
   const isMonospace = selectIsAgentMonospace();
 
@@ -108,7 +108,7 @@
     const specialistId =
       agentSession?.metadata?.specialist || (agentSession as any)?.agentMetadata?.specialist;
     if (!specialistId) return null;
-    return selectSpecialistName.select(appStore.state, specialistId);
+    return selectSpecialistName.select(getReduxStore().getState(), specialistId);
   });
 
   // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
@@ -137,7 +137,7 @@
   const agentStatsSession = $derived.by(() => {
     if (!tab.agentId) return undefined;
     return (
-      selectWorkspaceAgentSession.select(appStore.state, workspaceId, tab.agentId) ??
+      selectWorkspaceAgentSession.select(getReduxStore().getState(), workspaceId, tab.agentId) ??
       agentSession
     );
   });
@@ -191,7 +191,7 @@
     // Only Auggie sessions go through `auggie session stats`; skip other
     // providers so the tooltip surfaces no data instead of a stale error.
     const session =
-      selectWorkspaceAgentSession.select(appStore.state, workspaceId, tab.agentId) ??
+      selectWorkspaceAgentSession.select(getReduxStore().getState(), workspaceId, tab.agentId) ??
       agentSession;
     if (!session || !isAuggieSession(session)) {
       statsTooltipOpen = false;
@@ -204,7 +204,7 @@
         ignoredAgentStatsError = $agentStatsError$ ?? undefined;
         agentStatsFetchPending = true;
       }
-      appStore.dispatch(fetchAgentStats(tab.agentId, sessionId));
+      getReduxStore().dispatch(fetchAgentStats(tab.agentId, sessionId));
     }
     statsTooltipOpen = true;
   }
@@ -244,9 +244,9 @@
     const agentName = agentSession?.name || tab.title || '';
     isAgentDeleting = true;
     try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
+      getReduxStore().dispatch(closeTab(workspaceId, tab.id));
       const action = deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName);
-      appStore.dispatch(action);
+      getReduxStore().dispatch(action);
       await action.promise;
     } catch (error) {
       logger.error('Failed to delete agent', error);
@@ -313,7 +313,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(cycleFontStyle())}
+    onclick={() => dispatch(cycleFontStyle())}
     tooltip={`Font: ${$fontStyleLabel}`}
     tooltipSide="bottom"
   >

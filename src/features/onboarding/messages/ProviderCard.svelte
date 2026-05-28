@@ -17,11 +17,11 @@
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectProviderLoadingMap } from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import { checkSingleProviderRequested } from '$lib/store/slices/agent-availability/agent-availability-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
   const providerLoadingMap$ = selectProviderLoadingMap();
 
   export interface ProviderCardData {
@@ -262,7 +262,7 @@
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
-                appStore.dispatch(checkSingleProviderRequested(provider.id));
+                dispatch(checkSingleProviderRequested(provider.id));
               }}
               disabled={$providerLoadingMap$[provider.id] ||
                 (provider.id === 'auggie' && auggieActionInProgress)}

@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import {
   getPipKey,
   type PipState,
@@ -6,7 +6,7 @@ import {
 } from "./pip-slice";
 
 /** Select whether a tab has an open PiP window */
-export const selectHasPipWindow = store.createSelector(
+export const selectHasPipWindow = createSelector(
   (state, workspaceId: string, tabId: string): boolean => {
     const key = getPipKey(workspaceId, tabId);
     return key in state.pip.openPipWindows;
@@ -14,7 +14,7 @@ export const selectHasPipWindow = store.createSelector(
 );
 
 /** Select the PiP window state for a tab */
-export const selectPipWindow = store.createSelector(
+export const selectPipWindow = createSelector(
   (state, workspaceId: string, tabId: string): PipWindowState | undefined => {
     const key = getPipKey(workspaceId, tabId);
     return state.pip.openPipWindows[key];
@@ -22,7 +22,7 @@ export const selectPipWindow = store.createSelector(
 );
 
 /** Select all PiP windows for a workspace */
-export const selectPipWindowsForWorkspace = store.createSelector(
+export const selectPipWindowsForWorkspace = createSelector(
   (state, workspaceId: string): PipWindowState[] => {
     const windows = state.pip.openPipWindows;
     const prefix = `${workspaceId}:`;
@@ -37,14 +37,14 @@ export const selectPipWindowsForWorkspace = store.createSelector(
 );
 
 /** Select the entire pip state */
-export const selectPipState = store.createSelector(
+export const selectPipState = createSelector(
   (state): PipState => {
     return state.pip;
   }
 );
 
 /** Select all open PiP windows */
-export const selectAllPipWindows = store.createSelector((state): PipWindowState[] => {
+export const selectAllPipWindows = createSelector((state): PipWindowState[] => {
   return Object.values(state.pip.openPipWindows);
 });
 

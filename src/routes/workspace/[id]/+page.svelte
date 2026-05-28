@@ -39,7 +39,7 @@
   showAgentRequested,
 } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$lib/store/slices/app-layout/app-layout-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
@@ -90,7 +90,7 @@
   getFileExtension,
 } from '$lib/services/analytics';
 
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { setOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
@@ -131,7 +131,6 @@
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('workspace-page');
 
@@ -139,6 +138,7 @@
   // Core State
   // ============================================================================
 
+  const dispatch = getDispatch();
   const sidebarSide$ = selectSidebarSide();
 
   // Create unified state for this workspace
@@ -184,7 +184,7 @@
     // Pre-populate workspace data from the store to avoid blank state.
     // This is a synchronous Map lookup — cheap and eliminates the skeleton flash
     // when the workspace is already cached (the common case from home page navigation).
-    const cachedWorkspace = selectWorkspaceById.select(appStore.state, wsId);
+    const cachedWorkspace = selectWorkspaceById.select(getReduxStore().getState(), wsId);
     if (cachedWorkspace) {
       newState.updateState({
         workspaceData: cachedWorkspace,
@@ -193,7 +193,7 @@
     }
 
     // Hydrate initial agent config from Redux / sessionStorage
-    const hasInitialAgent = hydrateInitialAgentConfig(wsId, appStore.dispatch);
+    const hasInitialAgent = hydrateInitialAgentConfig(wsId, dispatch);
     if (hasInitialAgent) {
       logger.info('Detected newly created workspace', { workspaceId: wsId });
     }
@@ -201,7 +201,7 @@
     // Hydrate Redux immediately so the selector-backed $workspace has
     // data on the very first render frame (before the workspace loader runs).
     if (cachedWorkspace) {
-      appStore.dispatch(setWorkspaceEntity(cachedWorkspace));
+      dispatch(setWorkspaceEntity(cachedWorkspace));
     }
 
     // Batch state updates with untrack to prevent effect cascades
@@ -297,20 +297,20 @@
 
   // Hide the left nav bar and top bar workspace controls during onboarding
   $effect(() => {
-    appStore.dispatch(setOnboardingActive(showOnboarding));
-    return () => appStore.dispatch(setOnboardingActive(false));
+    dispatch(setOnboardingActive(showOnboarding));
+    return () => dispatch(setOnboardingActive(false));
   });
 
   $effect(() => {
     if (workspaceId === 'new') {
-      appStore.dispatch(clearActiveWorkspace());
+      dispatch(clearActiveWorkspace());
     } else if (workspaceId) {
       // Guard: only dispatch when the active workspace ID differs to prevent
       // redundant dispatches that cascade through Redux middleware/sagas and
       // trigger Svelte's effect_update_depth_exceeded error.
       untrack(() => {
-        if (selectActiveWorkspaceId.select(appStore.state) !== workspaceId) {
-          appStore.dispatch(setActiveWorkspaceId(workspaceId));
+        if (selectActiveWorkspaceId.select(getReduxStore().getState()) !== workspaceId) {
+          dispatch(setActiveWorkspaceId(workspaceId));
         }
       });
     }
@@ -319,9 +319,9 @@
   // Load workspace store on mount
   onMount(() => {
     // Load workspace store if needed
-    if (selectWorkspaceIsEmpty.select(appStore.state)) {
+    if (selectWorkspaceIsEmpty.select(getReduxStore().getState())) {
       logger.debug('Loading workspace store on mount');
-      appStore.dispatch(loadWorkspacesRequested());
+      dispatch(loadWorkspacesRequested());
     }
 
     // Detect fresh workspace creation for fade-in transition
@@ -414,16 +414,16 @@
         // workspace entity immediately during the optimistic→real transition.
         {
           const cachedWorkspace = selectWorkspaceById.select(
-            appStore.state,
+            getReduxStore().getState(),
             currentWorkspaceId,
           );
           if (cachedWorkspace) {
-            appStore.dispatch(setWorkspaceEntity(cachedWorkspace));
+            dispatch(setWorkspaceEntity(cachedWorkspace));
           }
         }
 
         // Hydrate initial agent config from Redux / sessionStorage
-        const hasInitialAgent = hydrateInitialAgentConfig(currentWorkspaceId, appStore.dispatch);
+        const hasInitialAgent = hydrateInitialAgentConfig(currentWorkspaceId, dispatch);
         if (hasInitialAgent) {
           logger.info('Detected newly created workspace during transition', {
             workspaceId: currentWorkspaceId,
@@ -458,7 +458,7 @@
       // (/workspace/A → /workspace/B), so onDestroy does NOT fire — we must
       // dispatch the unmount action here during the workspace switch.
       if (previousWorkspaceId && previousWorkspaceId !== currentWorkspaceId) {
-        appStore.dispatch(workspaceUnmounted(previousWorkspaceId));
+        dispatch(workspaceUnmounted(previousWorkspaceId));
       }
 
       // Clear any in-flight load from the previous workspace so the loader's
@@ -548,7 +548,7 @@
 
   // Panel visibility — write via Redux actions, read via selector.select() in callbacks
   function setPanelFlag(key: keyof PanelVisibilityState, value: boolean) {
-    appStore.dispatch(setPanelVisibility(workspaceId, key, value));
+    dispatch(setPanelVisibility(workspaceId, key, value));
   }
 
   // Register analytics context provider for dynamic UI context on all events
@@ -557,7 +557,7 @@
       setAnalyticsContextProvider(() => ({
         routeName: 'workspace',
         mainPanelType: workspaceState?.state?.mainPanel?.type ?? null,
-        sidebarActiveTab: selectSidebarActiveTab.select(appStore.state, workspaceId),
+        sidebarActiveTab: selectSidebarActiveTab.select(getReduxStore().getState(), workspaceId),
         workspaceTitle: $workspace?.title ?? null,
       }));
 
@@ -635,12 +635,12 @@
     // that would cause the effect to re-run when we set it to true
     const alreadyProcessed = untrack(() =>
       capturedWorkspaceId
-        ? selectInitialAgentConfigProcessed.select(appStore.state, capturedWorkspaceId)
+        ? selectInitialAgentConfigProcessed.select(getReduxStore().getState(), capturedWorkspaceId)
         : false,
     );
 
     if (capturedWorkspaceId && !alreadyProcessed) {
-      appStore.dispatch(setInitialAgentConfigProcessed(capturedWorkspaceId, true));
+      dispatch(setInitialAgentConfigProcessed(capturedWorkspaceId, true));
 
       // First check if there was a creation error
       const errorKey = `workspace:${capturedWorkspaceId}:creation-error`;
@@ -668,7 +668,7 @@
       // Check if we have a pending initial agent from workspace creation
       // Read from Redux first, fall back to sessionStorage for page reloads
       const reduxConfig = selectInitialAgentConfig.select(
-        appStore.state,
+        getReduxStore().getState(),
         capturedWorkspaceId,
       );
       const pendingAgentKey = `workspace:${capturedWorkspaceId}:initial-agent-pending`;
@@ -718,17 +718,17 @@
             });
 
             const currentInitialAgentId = selectInitialAgentId.select(
-              appStore.state,
+              getReduxStore().getState(),
               capturedWorkspaceId,
             );
 
             if (currentInitialAgentId !== (agentId ?? null)) {
-              appStore.dispatch(setInitialAgentId(capturedWorkspaceId, agentId ?? null));
+              dispatch(setInitialAgentId(capturedWorkspaceId, agentId ?? null));
             }
 
             // Mark this agent as recently created so the drawer doesn't close
             if (agentId) {
-              appStore.dispatch(markAgentRecentlyCreatedAction(capturedWorkspaceId, agentId));
+              dispatch(markAgentRecentlyCreatedAction(capturedWorkspaceId, agentId));
             }
 
             // Store the config for AuggieChatPanel - it's already set by WorkspaceInitializer migration
@@ -757,7 +757,7 @@
               );
               // Clean up pending markers — saga will pick up from Redux
               if (!capturedWorkspaceId.startsWith('optimistic-')) {
-                appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
+                dispatch(clearInitialAgentConfig(capturedWorkspaceId));
                 sessionStorage.removeItem(pendingAgentKey);
               }
               return;
@@ -789,7 +789,7 @@
               sessionStorage.removeItem(agentConfigKey);
             } else if (agentId) {
               // Open the agent in panel layout
-              appStore.dispatch(
+              getReduxStore().dispatch(
                 showAgentRequested(capturedWorkspaceId, { agentId }),
               );
 
@@ -800,17 +800,17 @@
 
             // Cleanup pending marker once handled (non-optimistic only)
             if (!capturedWorkspaceId.startsWith('optimistic-')) {
-              appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
+              dispatch(clearInitialAgentConfig(capturedWorkspaceId));
               sessionStorage.removeItem(pendingAgentKey);
             }
           } else {
             // Only clean up if it's too old
-            appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
+            dispatch(clearInitialAgentConfig(capturedWorkspaceId));
             sessionStorage.removeItem(pendingAgentKey);
           }
         } catch (e) {
           logger.error('[WorkspacePage] Failed to parse pending agent data', e);
-          appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
+          dispatch(clearInitialAgentConfig(capturedWorkspaceId));
           sessionStorage.removeItem(pendingAgentKey);
         }
       }
@@ -840,7 +840,7 @@
       });
 
       // Clear the main panel view to prevent infinite loop
-      appStore.dispatch(ftClearMainPanelView());
+      dispatch(ftClearMainPanelView());
     } else if (mainPanelView?.type === 'diff' && mainPanelView.change && workspaceState) {
       logger.info('[WorkspacePage] Navigating to diff view from file tracking store', {
         change: mainPanelView.change,
@@ -902,7 +902,7 @@
   }
 
   function handleCreateFileConfirm(fileName: string) {
-    dispatchCreateFileRequest($workspace, createFileFolderPath, fileName, appStore.dispatch);
+    dispatchCreateFileRequest($workspace, createFileFolderPath, fileName, dispatch);
   }
 
   $effect(() => {
@@ -912,7 +912,7 @@
     if (pending.type !== 'create-file') return;
 
     handleCommandPaletteCreateFile($workspace, (folderPath) => handleCreateFile(folderPath));
-    appStore.dispatch(commandPaletteActionConsumed(workspaceId));
+    dispatch(commandPaletteActionConsumed(workspaceId));
   });
 
   async function handleOpenNote(noteId: string) {
@@ -922,14 +922,14 @@
 
       // Mark note as read when opened (await to ensure persistence before refresh)
       if ($workspace?.id) {
-        appStore.dispatch(markNoteRead($workspace.id, noteId));
+        dispatch(markNoteRead($workspace.id, noteId));
       }
     }
   }
 
   function handleCreateNote() {
     if (!$workspace?.id) return;
-    appStore.dispatch(createNoteRequested($workspace.id));
+    dispatch(createNoteRequested($workspace.id));
   }
 
   function handleOpenUrl(url: string) {
@@ -963,7 +963,7 @@
     markAgentRecentlyCreated: (agentId: string) => {
       const wsId = $workspace?.id || workspaceId;
       if (wsId) {
-        appStore.dispatch(markAgentRecentlyCreatedAction(wsId, agentId));
+        dispatch(markAgentRecentlyCreatedAction(wsId, agentId));
       }
     },
     onDraftPromptSet: (prompt) => {
@@ -992,7 +992,7 @@
    */
   async function handleCreateAgent(agentType?: string) {
     if (!$workspace) return;
-    appStore.dispatch(createAgentRequested($workspace.id, agentType));
+    dispatch(createAgentRequested($workspace.id, agentType));
   }
 
   /**
@@ -1001,7 +1001,7 @@
    */
   async function handleCreateAgentWithSpecialist(specialistId: string | null) {
     if (!$workspace) return;
-    appStore.dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId));
+    dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId));
   }
 
   /**
@@ -1009,7 +1009,7 @@
    */
   async function handleCreateTerminal() {
     if (!$workspace) return;
-    appStore.dispatch(createTerminalRequested($workspace.id));
+    dispatch(createTerminalRequested($workspace.id));
   }
 
   // ============================================================================
@@ -1027,7 +1027,7 @@
   }
 
   usePanelShortcuts({
-    // Note: Cmd+B sidebar toggle is handled by appStore.dispatch(toggleSidebar())
+    // Note: Cmd+B sidebar toggle is handled by dispatch(toggleSidebar())
     // in use-panel-shortcuts.svelte.ts
     onOpenAgentOverview: () => {
       // Open the Agent Overview panel tab
@@ -1063,23 +1063,23 @@
     },
     onFocusExplorer: () => {
       // Switch to files tab in TabbedSidebar
-      appStore.dispatch(setSidebarActiveTab(workspaceId, 'files'));
+      dispatch(setSidebarActiveTab(workspaceId, 'files'));
     },
     onFocusGit: () => {
       // Switch to changes tab in TabbedSidebar
-      appStore.dispatch(setSidebarActiveTab(workspaceId, 'changes'));
+      dispatch(setSidebarActiveTab(workspaceId, 'changes'));
     },
     onFocusNotes: () => {
       // Switch to notes tab in TabbedSidebar
-      appStore.dispatch(setSidebarActiveTab(workspaceId, 'notes'));
+      dispatch(setSidebarActiveTab(workspaceId, 'notes'));
     },
     onFocusActivity: () => {
       // Switch to agents tab in TabbedSidebar (Activity tab was removed)
-      appStore.dispatch(setSidebarActiveTab(workspaceId, 'agents'));
+      dispatch(setSidebarActiveTab(workspaceId, 'agents'));
     },
     onMaximizePanel: () => {
       // Toggle maximize: hide sidebar and dock for focus mode
-      const state = appStore.state;
+      const state = getReduxStore().getState();
       const isMaximized =
         !selectPanelVisibilityFlag.select(state, workspaceId, 'showNavigationRail') &&
         !selectPanelVisibilityFlag.select(state, workspaceId, 'showWorkspaceDock');
@@ -1121,7 +1121,7 @@
     // Dispatch workspaceUnmounted so sagas can clean up (cancel agent loading,
     // terminal loading, spec panel, window event watchers for this workspace).
     if (workspaceId) {
-      appStore.dispatch(workspaceUnmounted(workspaceId));
+      dispatch(workspaceUnmounted(workspaceId));
     }
 
     // Cancel any pending loads
@@ -1129,15 +1129,15 @@
 
     // Flush any pending undo-able agent deletions (permanently delete them now)
     const flushDeletionsAction = flushPendingAgentDeletionsRequested(workspaceId);
-    appStore.dispatch(flushDeletionsAction);
+    dispatch(flushDeletionsAction);
     await flushDeletionsAction.promise;
 
     // Clear workspace state reference
     workspaceState = null;
 
     // Clear all local state
-    appStore.dispatch(setAgents(workspaceId, []));
-    appStore.dispatch(setAgentsLoaded(workspaceId, false));
+    dispatch(setAgents(workspaceId, []));
+    dispatch(setAgentsLoaded(workspaceId, false));
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();
@@ -1273,7 +1273,7 @@
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}
-        dispatch={appStore.dispatch}
+        {dispatch}
         onHoldActiveChange={(active) => (onboardingHoldActive = active)}
         onFadingOutChange={(fading) => (onboardingFadingOut = fading)}
       />

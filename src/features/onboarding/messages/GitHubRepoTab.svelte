@@ -21,7 +21,7 @@
   import { shell } from '$lib/electron-bridge';
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import {
@@ -48,7 +48,6 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('GitHubRepoTab');
 
@@ -66,6 +65,7 @@
   let { githubUrl, clonePath, onGithubUrlChange, onClonePathChange, onSelectAndAdvance }: Props =
     $props();
 
+  const dispatch = getDispatch();
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const repos$ = selectGithubRepos();
   const reposLoading$ = selectGithubReposLoading();
@@ -201,7 +201,7 @@
     // `debounce` effect, so we can dispatch freely on every keystroke. Short
     // queries are short-circuited inside the saga, which means an empty input
     // also tidies up the search slice without any extra logic here.
-    appStore.dispatch(searchGithubRepos(cleaned));
+    dispatch(searchGithubRepos(cleaned));
   }
 
   function handlePaste(e: ClipboardEvent) {
@@ -266,7 +266,7 @@
   /** User-initiated refresh. The saga also auto-reloads when auth state
    *  flips to authenticated, so we only need an explicit dispatch here. */
   function refreshRepos() {
-    appStore.dispatch(loadGithubRepos());
+    dispatch(loadGithubRepos());
   }
 
   /**
@@ -286,7 +286,7 @@
     // Make sure the store has a fresh snapshot of GitHub auth state. The
     // github-repos saga watches this selector via takeLatestFromSelector, so
     // the initial repo load happens automatically once we become authenticated.
-    appStore.dispatch(initializeGitHubAuth());
+    dispatch(initializeGitHubAuth());
     githubInputRef?.focus();
   });
 </script>

@@ -1,9 +1,9 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 
-export const selectIsCheatSheetOpen = store.createSelector((state) => {
+export const selectIsCheatSheetOpen = createSelector((state) => {
   return state.shortcutsCheatSheet.isOpen;
 });
 
-export const selectCheatSheetContext = store.createSelector((state) => {
+export const selectCheatSheetContext = createSelector((state) => {
   return state.shortcutsCheatSheet.context;
 });

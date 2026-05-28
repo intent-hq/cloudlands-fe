@@ -13,7 +13,10 @@
 } from '$lib/store/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
-
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
   selectFileTrackingChanges,
@@ -55,7 +58,6 @@
   faMap,
   faColumns,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -255,10 +257,10 @@
       filePath: tab.diffPath,
       workspaceId,
     };
-    const store = appStore;
+    const store = getReduxStore();
     if (openInAdjacentPanel) {
       store.dispatch(openTabInAdjacentOrSplit(workspaceId, tabData, sourcePanelId));
-      const focusedId = selectFocusedPanelId.select(store.state, workspaceId);
+      const focusedId = selectFocusedPanelId.select(store.getState(), workspaceId);
       if (focusedId) {
         store.dispatch(requestPanelFocus(workspaceId, focusedId));
       }
@@ -289,9 +291,9 @@
       // Track hunk staging event
       track('Staged Changes', { method: 'hunk' });
       gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId));
+      getReduxStore().dispatch(refreshRequested(workspaceId));
     } else {
       toast.error(result.error || 'Failed to stage hunk');
     }
@@ -311,9 +313,9 @@
     if (result.ok) {
       toast.success('Hunk unstaged');
       gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
+      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId));
+      getReduxStore().dispatch(refreshRequested(workspaceId));
     } else {
       toast.error(result.error || 'Failed to unstage hunk');
     }
@@ -333,7 +335,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleLineWrapping())}
+    onclick={() => dispatch(toggleLineWrapping())}
     tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
@@ -344,7 +346,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
+    onclick={() => dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
@@ -357,7 +359,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
+    onclick={() => dispatch(toggleDiffSideBySide())}
     tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}

@@ -15,7 +15,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import AgentCard from './AgentCard.svelte';
 
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import {
@@ -26,7 +26,6 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     input: Record<string, any>;
@@ -245,7 +244,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
                     if (!workspaceId || !parsedResult?.filePath) return;
-                    appStore.dispatch(
+                    getReduxStore().dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
                         openInAdjacentPanel,
@@ -287,7 +286,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                   const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                   const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
                   if (!workspaceId || !parsedResult?.filePath) return;
-                  appStore.dispatch(
+                  getReduxStore().dispatch(
                     openWorkspaceFile(workspaceId, parsedResult.filePath, {
                       openInAdjacentPanel,
                       sourcePanelId,
@@ -408,7 +407,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
                     if (!workspaceId || !parsedResult?.filePath) return;
-                    appStore.dispatch(
+                    getReduxStore().dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
                         openInAdjacentPanel,
@@ -478,7 +477,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
                     if (!workspaceId) return;
-                    appStore.dispatch(
+                    getReduxStore().dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
                         openInAdjacentPanel: e.metaKey || e.ctrlKey,
@@ -571,7 +570,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
           {:else if parsedResult.type === 'agent-message' && parsedResult.messageContent}
             <!-- Agent message - show "Sent message to [agent]" with clickable link, then the message -->
             {@const agentId = parsedResult.toAgentId}
-            {@const toolState = appStore.state}
+            {@const toolState = getReduxStore().getState()}
             {@const toolWsId = selectActiveWorkspaceId.select(toolState)}
             {@const session = agentId && toolWsId ? selectAgentSession.select(toolState, agentId) : null}
             {@const agentName =
@@ -590,7 +589,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       if (!workspaceId) return;
-                      appStore.dispatch(
+                      getReduxStore().dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
                           openInAdjacentPanel: e.metaKey || e.ctrlKey,
@@ -683,7 +682,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                       const sourcePanelId =
                         panelElement?.getAttribute('data-panel-id') ?? undefined;
                       if (!workspaceId) return;
-                      appStore.dispatch(
+                      getReduxStore().dispatch(
                         openWorkspaceNote(workspaceId, note.id, {
                           openInAdjacentPanel,
                           sourcePanelId,
@@ -794,7 +793,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
                       class="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/30 rounded cursor-pointer text-left w-full"
                       onclick={() => {
                         if (tab.tabId && workspaceId) {
-                          appStore.dispatch(
+                          getReduxStore().dispatch(
                             focusBrowserTabRequested(workspaceId, tab.tabId),
                           );
                         }

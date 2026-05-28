@@ -35,6 +35,7 @@ import {
   setAgentStreaming,
   upsertSession,
 } from '$lib/store/slices/agent-session/agent-session-slice';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
 import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
 
@@ -45,7 +46,6 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
-import { store as appStore } from '$lib/store/store';
 
 const logger = new Logger('UnifiedAgentFactory');
 
@@ -75,8 +75,8 @@ async function getPersistenceService() {
 async function getActiveProviderId(): Promise<string | null> {
   if (isBackend) return null;
   try {
-    const store = appStore;
-    return selectActiveProviderId.select(store.state);
+    const store = getReduxStore();
+    return selectActiveProviderId.select(store.getState());
   } catch {
     return null;
   }
@@ -289,7 +289,7 @@ export class UnifiedAgentFactory {
           // Get linked references from context store (Redux)
           try {
             const topLevelItems = selectTopLevelContextItems.select(
-              appStore.state,
+              getReduxStore().getState(),
               workspace.id,
             );
             workspaceContext.linkedReferences = topLevelItems.map((item) => {
@@ -539,7 +539,7 @@ export class UnifiedAgentFactory {
 
       // Only update frontend state if we're in the frontend
       if (!isBackend) {
-        const store = appStore;
+        const store = getReduxStore();
         if (store) {
           store.dispatch(upsertSession({
             ...agent,
@@ -555,7 +555,7 @@ export class UnifiedAgentFactory {
       // This ensures ChatPanel sees streaming state immediately when it mounts
       if (normalized.initialMessage) {
         if (!isBackend) {
-          const store = appStore;
+          const store = getReduxStore();
 
           // Set streaming state directly via Redux dispatch.
           // Streaming state is owned by agent-session and keyed by agent ID.
@@ -578,7 +578,7 @@ export class UnifiedAgentFactory {
       const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
 
       if ((hasInitialMessage || hasContextReferences || hasImageBlocks) && !isBackend) {
-        const store = appStore;
+        const store = getReduxStore();
         if (store) {
           // If no text message but we have context references, generate a placeholder
           let messageText = normalized.initialMessage?.trim() || '';
@@ -611,7 +611,7 @@ export class UnifiedAgentFactory {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
           try {
-            const session = selectAgentSession.select(store.state, agent.id);
+            const session = selectAgentSession.select(store.getState(), agent.id);
             if (session) {
               const persistenceService = await getPersistenceService();
               if (persistenceService) {
@@ -897,9 +897,9 @@ export class UnifiedAgentFactory {
 
         // Clean up the user message we added since we can't proceed
         if (!isBackend) {
-          const store = appStore;
+          const store = getReduxStore();
           if (store) {
-            const session = selectAgentSession.select(store.state, agent.id);
+            const session = selectAgentSession.select(store.getState(), agent.id);
             if (session && session.messages) {
               // Remove the last message (the user message we just added)
               const trimmedMessages = session.messages.slice(0, -1);
@@ -980,7 +980,7 @@ export class UnifiedAgentFactory {
       // Mark streaming as failed (only in frontend)
       // Note: stream handler cleanup is handled by agent stream lifecycle, not here
       if (!isBackend) {
-        const store = appStore;
+        const store = getReduxStore();
         if (store) {
           store.dispatch(setAgentStreaming(agent.id, false));
         }

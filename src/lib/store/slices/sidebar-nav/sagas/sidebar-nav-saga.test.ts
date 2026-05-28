@@ -1,31 +1,9 @@
 import {
-  beforeEach,
   describe,
   expect,
   it,
-  vi,
 } from "vitest";
-import { runSaga } from "redux-saga";
 import { testSaga } from "redux-saga-test-plan";
-
-const {
-  activeStreamsListeners,
-  startPollingMock,
-} = vi.hoisted(() => ({
-  activeStreamsListeners: new Set<() => void>(),
-  startPollingMock: vi.fn(),
-}));
-
-vi.mock("$features/agent/services/active-streams-tracker", () => ({
-  activeStreamsTracker: {
-    startPolling: startPollingMock,
-    subscribe: (listener: () => void) => {
-      activeStreamsListeners.add(listener);
-      return () => activeStreamsListeners.delete(listener);
-    },
-  },
-}));
-
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
@@ -39,7 +17,6 @@ import {
   setMultiSelectSidebarSelectedTabs,
   setWorkspaceCollapsedNoteIds,
   setWorkspaceNoteOrder,
-  bumpActiveStreamsVersion,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
 } from "../sidebar-nav-slice";
@@ -57,15 +34,9 @@ import {
   persistWorkspaceNoteOrderSaga,
   persistWorkspaceSelectedTabsSaga,
   sidebarNavSaga,
-  watchActiveStreamsTrackerSaga,
 } from "./sidebar-nav-saga";
 
 describe("sidebarNav persistence sagas", () => {
-  beforeEach(() => {
-    activeStreamsListeners.clear();
-    startPollingMock.mockClear();
-  });
-
   it("replays persisted sidebar UI hydration for an already-active workspace", () => {
     testSaga(hydrateActiveWorkspaceSidebarUiSaga)
       .next()
@@ -207,24 +178,5 @@ describe("sidebarNav persistence sagas", () => {
       type: "CALL",
       payload: { fn: hydrateActiveWorkspaceSidebarUiSaga },
     });
-  });
-
-  it("bridges active stream tracker callbacks through saga puts", async () => {
-    const dispatched: any[] = [];
-    const task = runSaga(
-      { dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
-      watchActiveStreamsTrackerSaga,
-    );
-
-    await Promise.resolve();
-    expect(startPollingMock).toHaveBeenCalledTimes(1);
-
-    activeStreamsListeners.forEach((listener) => listener());
-    await Promise.resolve();
-
-    expect(dispatched).toContainEqual(bumpActiveStreamsVersion());
-    task.cancel();
-    await task.toPromise();
-    expect(activeStreamsListeners.size).toBe(0);
   });
 });

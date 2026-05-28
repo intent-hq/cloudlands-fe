@@ -17,13 +17,13 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { handleError } from '$lib/utils/error-handling';
   import { debugConfig } from '$lib/config/debug';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { setWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('RemoteSetupSelector');
+  const dispatch = getDispatch();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
 
   type RemoteSetup = WorkspaceInitializerRemoteSetup;
@@ -141,7 +141,7 @@
   }
 
   function saveSetups(setups = remoteSetups) {
-    appStore.dispatch(setWorkspaceInitializerRemoteSetups(setups));
+    dispatch(setWorkspaceInitializerRemoteSetups(setups));
   }
 
   function updateSetupLastUsed(setup: RemoteSetup) {

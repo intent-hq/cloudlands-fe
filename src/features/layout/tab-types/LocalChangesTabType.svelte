@@ -19,7 +19,10 @@
   unstageByPathRequested,
   revertByPathRequested,
 } from '$lib/store/slices/changes/changes-slice';
-
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -41,7 +44,6 @@
   faColumns,
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -155,7 +157,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleLineWrapping())}
+    onclick={() => dispatch(toggleLineWrapping())}
     tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
@@ -166,7 +168,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
+    onclick={() => dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
@@ -179,7 +181,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
+    onclick={() => dispatch(toggleDiffSideBySide())}
     tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
@@ -197,16 +199,16 @@
   branchBaseCommitSha={$ftBoundarySha$ || $workspace?.baseCommitSha || null}
   showStagingControls={true}
   showCategoryFilter={true}
-  onStage={(path) => appStore.dispatch(stageByPathRequested(workspaceId, [path]))}
-  onUnstage={(path) => appStore.dispatch(unstageByPathRequested(workspaceId, [path]))}
-  onRevert={(path) => appStore.dispatch(revertByPathRequested(workspaceId, [path]))}
+  onStage={(path) => getReduxStore().dispatch(stageByPathRequested(workspaceId, [path]))}
+  onUnstage={(path) => getReduxStore().dispatch(unstageByPathRequested(workspaceId, [path]))}
+  onRevert={(path) => getReduxStore().dispatch(revertByPathRequested(workspaceId, [path]))}
   onStageAll={() => {
     const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
     const paths = unstaged.map((c) => {
       const rawPath = c.file || c.relativePath;
       return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
     });
-    appStore.dispatch(stageByPathRequested(workspaceId, paths));
+    getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
   }}
   onUnstageAll={() => {
     const staged = $ftChanges$.filter((c) => c.stage === 'staged');
@@ -214,6 +216,6 @@
       const rawPath = c.file || c.relativePath;
       return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
     });
-    appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+    getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
   }}
 />

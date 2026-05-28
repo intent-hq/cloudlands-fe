@@ -27,7 +27,6 @@ import {
   markDelegationAgentDeleted,
   markOneShotFired,
   removeSubscription,
-  requestDeliverQueuedEvents,
   type QueuedEventRecord,
 } from "../agent-subscriptions-slice";
 import {
@@ -39,6 +38,7 @@ import {
   selectIsOneShotFired,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
+import { requestDeliverQueuedEvents } from "./saga-actions";
 import {
   buildSweepCatchUpEventId,
   recordDeliveredEventIds,

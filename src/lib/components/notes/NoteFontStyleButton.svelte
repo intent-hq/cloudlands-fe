@@ -5,14 +5,14 @@
   selectNoteFontStyleLabel,
 } from '$lib/store/slices/user-preferences/user-preferences-selectors';
   import { cycleNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
-
+  const dispatch = getDispatch();
   const noteFontStyleLabel = selectNoteFontStyleLabel();
   const isNoteMonospace = selectIsNoteMonospace();
 
   function cycleFont() {
-    appStore.dispatch(cycleNoteFontStyle());
+    dispatch(cycleNoteFontStyle());
   }
 </script>
 

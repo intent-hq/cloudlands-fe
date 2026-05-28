@@ -21,14 +21,14 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: '' }),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
     dispatch: vi.fn(),
-  });
-});
+  }),
+}));
+
+
 
 import {
   UnifiedAgentFactory,

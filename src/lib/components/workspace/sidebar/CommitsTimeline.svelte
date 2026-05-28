@@ -39,8 +39,8 @@
   addTerminal,
   openTerminalOverlay,
 } from '$lib/store/slices/terminals/terminals-slice';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
@@ -86,8 +86,8 @@
   getUndoCommitTooltip as getUndoCommitTooltipUtil,
   canAmendCommit as canAmendCommitUtil,
 } from './sidebar-changes-utils';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -137,7 +137,7 @@
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
     if (result.ok) {
-      appStore.dispatch(setWorkspaceEntity(result.data));
+      dispatch(setWorkspaceEntity(result.data));
     }
     return result;
   }
@@ -206,8 +206,8 @@
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: commitHash });
       if (result.ok) {
-        appStore.dispatch(ftClearOlderCommits(workspaceId));
-        appStore.dispatch(refreshRequested(workspaceId));
+        dispatch(ftClearOlderCommits(workspaceId));
+        getReduxStore().dispatch(refreshRequested(workspaceId));
         toast.success('Base commit updated — only newer commits will be shown');
       } else {
         toast.error('Failed to update base commit');
@@ -223,8 +223,8 @@
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: '' });
       if (result.ok) {
-        appStore.dispatch(ftClearOlderCommits(workspaceId));
-        appStore.dispatch(refreshRequested(workspaceId));
+        dispatch(ftClearOlderCommits(workspaceId));
+        getReduxStore().dispatch(refreshRequested(workspaceId));
         toast.success('Base commit reset to default');
       } else {
         toast.error('Failed to reset base commit');
@@ -297,8 +297,8 @@
 
           gitCache.invalidate(`git-status-${workspaceId}`);
           await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
           toast.success(wasPushed ? 'Commit message updated and pushed' : 'Commit message updated');
         } catch (error) {
@@ -387,7 +387,7 @@
             changeId: change.id, stage: change.stage, commitHash: change.commitHash,
           });
 
-          appStore.dispatch(
+          getReduxStore().dispatch(
             openWorkspaceDiff(workspaceId, change, {
               changeId: change.id,
               filePath,
@@ -401,7 +401,7 @@
   }
 
   function handleOpenCommitChangeset(commitHash: string, commitMessage: string) {
-    appStore.dispatch(openWorkspaceCommitChangeset(workspaceId, commitHash, commitMessage));
+    getReduxStore().dispatch(openWorkspaceCommitChangeset(workspaceId, commitHash, commitMessage));
   }
 
   function openCommitInBrowser(hash: string, event?: MouseEvent) {
@@ -448,8 +448,8 @@
         title: `Pull from origin/${remoteBranch}`,
       });
       if (result.ok && result.terminalId) {
-        appStore.dispatch(addTerminal(workspaceId, result.terminalId, `Pull from origin/${remoteBranch}`));
-        appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
+        dispatch(addTerminal(workspaceId, result.terminalId, `Pull from origin/${remoteBranch}`));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
         toast.success('Pull started in terminal', {
           description: 'After pull completes, click Refresh then retry push.',
           action: {
@@ -457,8 +457,8 @@
             onClick: async () => {
               gitCache.invalidate(`git-status-${workspaceId}`);
               await Promise.all([
-                Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-                appStore.dispatch(refreshRequested(workspaceId)),
+                Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+                getReduxStore().dispatch(refreshRequested(workspaceId)),
               ]);
               toast.success('Git status refreshed');
             },
@@ -478,7 +478,7 @@
     if (!workspaceId) return;
     const commit = allCommits[commitIndex];
     undoState.commitHash = commit.hash;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
     try {
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
         targetBranch: $workspace?.branch,
@@ -493,8 +493,8 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
           await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
@@ -513,7 +513,7 @@
       trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
       undoState.commitHash = null;
     }
   }
@@ -546,8 +546,8 @@
         toast.warning(`${commitCount} ${commitWord} removed from remote`);
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo push');
@@ -605,8 +605,8 @@
         toast.warning(`${commitCount} ${commitWord} undone - changes moved to staging`);
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+          getReduxStore().dispatch(refreshRequested(workspaceId)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo commit');
@@ -846,9 +846,9 @@
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
-          appStore.dispatch(ftClearOlderCommits(workspaceId));
+          dispatch(ftClearOlderCommits(workspaceId));
         } else {
-          appStore.dispatch(loadOlderCommitsRequested(workspaceId, $ftBoundarySha$));
+          getReduxStore().dispatch(loadOlderCommitsRequested(workspaceId, $ftBoundarySha$));
         }
       }}
     >
@@ -966,7 +966,7 @@
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];
         if (lastOlder)
-          appStore.dispatch(
+          getReduxStore().dispatch(
             loadOlderCommitsRequested(workspaceId, lastOlder.hash),
           );
       }}

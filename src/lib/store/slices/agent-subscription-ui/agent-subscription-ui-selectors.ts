@@ -2,7 +2,7 @@
  * Selectors for the agent-subscription-ui slice.
  */
 
-import { store } from "../../store";
+import { createSelector } from '../../utils/create-selector';
 import {
   makeKey,
   emptyEntry,
@@ -19,7 +19,7 @@ import type {
 // Internal helper
 // ---------------------------------------------------------------------------
 
-const selectEntry = store.createSelector<[workspaceId: string, agentId: string], AgentSubscriptionUIEntry>(
+const selectEntry = createSelector<[workspaceId: string, agentId: string], AgentSubscriptionUIEntry>(
   (state, workspaceId, agentId) => {
     const key = makeKey(workspaceId, agentId);
     return state.agentSubscriptionUI.entries[key] ?? emptyEntry;
@@ -31,14 +31,14 @@ const selectEntry = store.createSelector<[workspaceId: string, agentId: string],
 // ---------------------------------------------------------------------------
 
 /** All subscriptions for a given agent */
-export const selectAgentSubscriptions = store.createSelector<[workspaceId: string, agentId: string], Subscription[]>(
+export const selectAgentSubscriptions = createSelector<[workspaceId: string, agentId: string], Subscription[]>(
   (state, workspaceId, agentId) => {
     return selectEntry.select(state, workspaceId, agentId).subscriptions;
   },
 );
 
 /** Delegation groups for a given agent */
-export const selectDelegationGroups = store.createSelector<
+export const selectDelegationGroups = createSelector<
   [workspaceId: string, agentId: string],
   DelegationGroupStatus[]
 >((state, workspaceId, agentId) => {
@@ -46,14 +46,14 @@ export const selectDelegationGroups = store.createSelector<
 });
 
 /** Current waiting state ('idle' | 'waiting' | 'woken') */
-export const selectWaitingState = store.createSelector<[workspaceId: string, agentId: string], WaitingState>(
+export const selectWaitingState = createSelector<[workspaceId: string, agentId: string], WaitingState>(
   (state, workspaceId, agentId) => {
     return selectEntry.select(state, workspaceId, agentId).waitingState;
   },
 );
 
 /** Woken-up info or null */
-export const selectWokenUpInfo = store.createSelector<[workspaceId: string, agentId: string], WokenUpInfo | null>(
+export const selectWokenUpInfo = createSelector<[workspaceId: string, agentId: string], WokenUpInfo | null>(
   (state, workspaceId, agentId) => {
     return selectEntry.select(state, workspaceId, agentId).wokenUpInfo;
   },
@@ -64,7 +64,7 @@ export const selectWokenUpInfo = store.createSelector<[workspaceId: string, agen
  * True if there are any subscriptions or delegation groups,
  * or if the entry is in the 'completed' transitional state.
  */
-export const selectShowSubscriptionRow = store.createSelector<[workspaceId: string, agentId: string], boolean>(
+export const selectShowSubscriptionRow = createSelector<[workspaceId: string, agentId: string], boolean>(
   (state, workspaceId, agentId) => {
     const entry = selectEntry.select(state, workspaceId, agentId);
     if (entry.waitingState === 'completed') return true;
@@ -76,7 +76,7 @@ export const selectShowSubscriptionRow = store.createSelector<[workspaceId: stri
  * All agent IDs that have entries in the subscription UI for a given workspace.
  * Used by sagas to refresh all tracked agents on system-level events.
  */
-export const selectTrackedAgentIds = store.createSelector<[workspaceId: string], string[]>(
+export const selectTrackedAgentIds = createSelector<[workspaceId: string], string[]>(
   (state, workspaceId) => {
     const prefix = `${workspaceId}:`;
     const agentIds: string[] = [];
@@ -93,7 +93,7 @@ export const selectTrackedAgentIds = store.createSelector<[workspaceId: string],
  * Completion status across all delegation groups.
  * Returns { total, completed } counting all expected agents.
  */
-export const selectCompletionStatus = store.createSelector<
+export const selectCompletionStatus = createSelector<
   [workspaceId: string, agentId: string],
   { total: number; completed: number }
 >((state, workspaceId, agentId) => {

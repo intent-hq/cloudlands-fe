@@ -129,16 +129,16 @@ vi.mock("$features/agent/services/consolidated-backend.service", () => ({
   },
 }));
 
-// Mock package waitFor utility
+// Mock waitFor utility
 const mockWaitForResult = vi.fn<() => boolean>().mockReturnValue(true);
-vi.mock("svelte-redux-toolkit/saga", () => ({
+vi.mock("$lib/store/slices/store-utility/sagas/waitFor", () => ({
   waitFor: function* () {
     return mockWaitForResult();
   },
 }));
 
 // Mock selector-channel-effects (prevents readableStoreState issues)
-vi.mock("svelte-redux-toolkit/utils/sagas/selector-channel-effects", () => ({
+vi.mock("$lib/store/utils/selector-channel-effects", () => ({
   createChannelFromSelector: vi.fn(),
 }));
 

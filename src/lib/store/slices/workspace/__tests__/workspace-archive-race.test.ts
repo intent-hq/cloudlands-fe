@@ -16,7 +16,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "../../../utils/collection-utils";
 import {
   clearWorkspacePendingDeletion,
   initialState,

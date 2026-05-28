@@ -17,7 +17,7 @@ import {
 import {
   NotesPrimitivesSerializer,
   serializePrimitiveToMarkdown,
-} from '$lib/utils/notes-primitives-serializer';
+} from '../notes-primitives-serializer';
 import {
   NotePrimitiveSchema,
   type ReferencePrimitive,
@@ -354,18 +354,16 @@ describe('Notes Primitives Round-trip Serialization', () => {
           kind: 'file_range',
           semanticId: 'src/main.ts#L10-L20',
           filePath: 'src/main.ts',
-          range: {
-            startLine: 10,
-            endLine: 20,
-          },
+          startLine: 10,
+          endLine: 20,
         },
       });
       expectValidSchema(original);
 
       const result = roundTrip(original) as ReferencePrimitive;
       expect(result.target.kind).toBe('file_range');
-      expect(result.target.range?.startLine).toBe(10);
-      expect(result.target.range?.endLine).toBe(20);
+      expect(result.target.startLine).toBe(10);
+      expect(result.target.endLine).toBe(20);
     });
 
     it('should round-trip reference with line 0 (nonnegative)', () => {
@@ -374,16 +372,14 @@ describe('Notes Primitives Round-trip Serialization', () => {
           kind: 'file_range',
           semanticId: 'src/main.ts#L0-L5',
           filePath: 'src/main.ts',
-          range: {
-            startLine: 0,
-            endLine: 5,
-          },
+          startLine: 0,
+          endLine: 5,
         },
       });
       expectValidSchema(original);
 
       const result = roundTrip(original) as ReferencePrimitive;
-      expect(result.target.range?.startLine).toBe(0);
+      expect(result.target.startLine).toBe(0);
     });
 
     it('should round-trip reference with snapshot', () => {

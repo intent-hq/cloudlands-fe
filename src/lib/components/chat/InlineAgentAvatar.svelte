@@ -12,13 +12,12 @@
   selectAgentSession,
 } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     agentId: string;
@@ -28,6 +27,7 @@
 
   let { agentId, workspace = null }: Props = $props();
 
+  const dispatch = getDispatch();
   const permissionCount = selectPendingCount(agentId);
 
   // Reactive agent session from Redux; the ensure saga handles the
@@ -40,7 +40,7 @@
   $effect(() => {
     const wsId = workspace?.id;
     if (wsId) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+      dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });
 

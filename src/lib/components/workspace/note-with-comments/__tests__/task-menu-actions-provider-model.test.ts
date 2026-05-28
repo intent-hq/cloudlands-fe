@@ -12,7 +12,7 @@ const {
   createAgentMock,
   notesIpcMock,
   findByIdMock,
-  appStoreFactoryMock,
+  getReduxStoreMock,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   removeOptimisticNoteMock,
   selectWorkspaceDefaultModelMock,
@@ -21,7 +21,7 @@ const {
   createAgentMock: vi.fn(),
   notesIpcMock: vi.fn(),
   findByIdMock: vi.fn(),
-  appStoreFactoryMock: vi.fn(),
+  getReduxStoreMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
   selectWorkspaceDefaultModelMock: vi.fn(),
 }));
@@ -30,7 +30,7 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: createAgentMock },
 }));
 
-vi.mock('$lib/utils/notes-ipc', () => ({
+vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
   notesIpc: notesIpcMock,
 }));
 
@@ -57,14 +57,10 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
   buildTaskNoteContent: vi.fn(() => 'task note content'),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => appStoreFactoryMock()?.getState?.() ?? {},
-    dispatch: (...args: any[]) => appStoreFactoryMock()?.dispatch?.(...args),
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: getReduxStoreMock,
+  dispatch: (action: unknown) => action,
+}));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
@@ -144,7 +140,7 @@ describe('task menu actions provider model', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    appStoreFactoryMock.mockReturnValue({ getState: () => legacyState });
+    getReduxStoreMock.mockReturnValue({ getState: () => legacyState });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
     notesIpcMock.mockResolvedValue({
@@ -221,7 +217,7 @@ describe('task menu actions provider model', () => {
 
   it('launches task breakdown agents through the saga-owned request', () => {
     const storeDispatch = vi.fn();
-    appStoreFactoryMock.mockReturnValue({ getState: () => legacyState, dispatch: storeDispatch });
+    getReduxStoreMock.mockReturnValue({ getState: () => legacyState, dispatch: storeDispatch });
 
     runTaskBreakdownTaskMenuAction({
       workspace,

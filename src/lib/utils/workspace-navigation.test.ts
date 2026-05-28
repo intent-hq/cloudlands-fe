@@ -31,14 +31,10 @@ vi.mock('svelte/store', () => ({
   get: vi.fn(),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: mockDispatch,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  dispatch: mockDispatch,
+  getReduxStore: () => ({ getState: () => ({}) }),
+}));
 
 vi.mock('$lib/store/slices/tab-state/tab-state-slice', () => ({
   closeWorkspaceTab: (...args: unknown[]) => mockCloseTab(...args),

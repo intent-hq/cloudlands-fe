@@ -45,10 +45,9 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from '../utils/friendly-labels';
   import { faNote } from '$lib/icons/faNote';
 
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -73,7 +72,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   // Create an agent name resolver that looks up agent names from the Redux store
   const agentNameResolver: AgentNameResolver = (agentId: string): string | undefined => {
-    const agent = selectAgentSession.select(appStore.state, agentId);
+    const agent = selectAgentSession.select(getReduxStore().getState(), agentId);
     return agent?.name;
   };
 
@@ -150,7 +149,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       relativePath: filePath,
       ...data,
     } as unknown as TrackedChange;
-    appStore.dispatch(openWorkspaceDiff(workspaceId, change, { filePath }));
+    getReduxStore().dispatch(openWorkspaceDiff(workspaceId, change, { filePath }));
   }
 
   function handleEntityClick(ref: EntityRef, wsEvent?: WorkspaceEvent) {

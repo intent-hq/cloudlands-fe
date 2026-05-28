@@ -52,12 +52,13 @@ describe('no-component-async-data-fetch ESLint rule', () => {
 } from 'svelte';
         import { loadThings } from '$lib/store/slices/example/example-slice';
         import { selectThings } from '$lib/store/slices/example/example-selectors';
-        import { store as appStore } from '$lib/store/store';
+        import { getDispatch } from '$lib/store/utils/svelte-context';
 
+        const dispatch = getDispatch();
         const things = selectThings();
 
         onMount(() => {
-          appStore.dispatch(loadThings());
+          dispatch(loadThings());
         });
       </script>
     `);
@@ -132,7 +133,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(3);
-    expect(messages[0]?.message).toContain('store.dispatch(action)');
+    expect(messages[0]?.message).toContain('Dispatch a Redux action and read the result through Redux selectors');
   });
 
   it('reports async loader functions that populate component-local state', async () => {
@@ -149,7 +150,7 @@ describe('no-component-async-data-fetch ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.message).toContain('sagas or service layers');
+    expect(messages[0]?.message).toContain('sagas or services');
   });
 
   it('reports imported domain loaders in promise chains and fire-and-forget calls', async () => {

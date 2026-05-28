@@ -22,7 +22,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   selectFocusedPanelId,
   selectFocusedPanel,
@@ -32,7 +32,6 @@ import {
   selectPanelIds,
 } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 import type { PanelLayoutManager } from './panel-layout-adapter';
-  import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('PanelKeyboardShortcuts');
 
@@ -137,7 +136,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
         break;
 
       case 'split-right': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+        const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), layoutManager.workspaceId);
         if (focusedId) {
           layoutManager.splitPanel(focusedId, 'horizontal');
         }
@@ -145,7 +144,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
       }
 
       case 'split-down': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+        const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), layoutManager.workspaceId);
         if (focusedId) {
           layoutManager.splitPanel(focusedId, 'vertical');
         }
@@ -161,7 +160,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
         break;
 
       case 'close-panel': {
-        const focusedId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+        const focusedId = selectFocusedPanelId.select(getReduxStore().getState(), layoutManager.workspaceId);
         if (focusedId) {
           layoutManager.closePanel(focusedId);
         }
@@ -193,7 +192,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
         return; // Don't deactivate leader
 
       case 'move-tab-to-next-panel': {
-        const panel = selectFocusedPanel.select(appStore.state, layoutManager.workspaceId);
+        const panel = selectFocusedPanel.select(getReduxStore().getState(), layoutManager.workspaceId);
         if (panel?.activeTabId) {
           const otherPanelId = layoutManager.getOtherPanelId();
           if (otherPanelId) {
@@ -216,7 +215,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
     direction: 'left' | 'right' | 'up' | 'down',
   ) {
     const wsId = layoutManager.workspaceId;
-    const storeState = appStore.state;
+    const storeState = getReduxStore().getState();
     // Get all panel IDs and find adjacent panel based on direction
     const panelIds = selectPanelIds.select(storeState, wsId);
     if (panelIds.length <= 1) return;
@@ -242,7 +241,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
 
   function cyclePanel(layoutManager: PanelLayoutManager, direction: 'next' | 'prev') {
     const wsId = layoutManager.workspaceId;
-    const storeState = appStore.state;
+    const storeState = getReduxStore().getState();
     const panelIds = selectPanelIds.select(storeState, wsId);
     if (panelIds.length <= 1) return;
 
@@ -264,7 +263,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
     // For now, this is a placeholder
     state.isZoomed = !state.isZoomed;
     if (state.isZoomed) {
-      state.zoomedPanelId = selectFocusedPanelId.select(appStore.state, layoutManager.workspaceId);
+      state.zoomedPanelId = selectFocusedPanelId.select(getReduxStore().getState(), layoutManager.workspaceId);
     } else {
       state.zoomedPanelId = null;
     }
@@ -279,7 +278,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
 
   function equalizeAllSizes(layoutManager: PanelLayoutManager) {
     // Reset all split sizes to equal
-    const wsState = selectPanelLayoutWorkspace.select(appStore.state, layoutManager.workspaceId);
+    const wsState = selectPanelLayoutWorkspace.select(getReduxStore().getState(), layoutManager.workspaceId);
     if (!wsState) return;
 
     function equalizeSplitSizes(node: typeof wsState.root): void {
@@ -295,7 +294,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
   }
 
   function focusPanelByIndex(layoutManager: PanelLayoutManager, index: number) {
-    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
+    const panelIds = selectPanelIds.select(getReduxStore().getState(), layoutManager.workspaceId);
     if (index >= 0 && index < panelIds.length) {
       layoutManager.focusPanel(panelIds[index]);
     }
@@ -315,7 +314,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
 
     // Back navigation: Cmd+[ / Ctrl+[
     if (isMod && e.key === '[' && !e.shiftKey && !e.altKey) {
-      const storeState = appStore.state;
+      const storeState = getReduxStore().getState();
       if (selectCanGoBack.select(storeState, layoutManager.workspaceId)) {
         e.preventDefault();
         layoutManager.goBack();
@@ -325,7 +324,7 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
 
     // Forward navigation: Cmd+] / Ctrl+]
     if (isMod && e.key === ']' && !e.shiftKey && !e.altKey) {
-      const storeState = appStore.state;
+      const storeState = getReduxStore().getState();
       if (selectCanGoForward.select(storeState, layoutManager.workspaceId)) {
         e.preventDefault();
         layoutManager.goForward();

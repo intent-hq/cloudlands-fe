@@ -8,7 +8,7 @@ import type { StoreState } from "../../types";
 import {
   getItem,
   getItems,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import {
   agentQueueReducer,
   clearAgentQueue,

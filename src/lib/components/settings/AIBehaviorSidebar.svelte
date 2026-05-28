@@ -16,10 +16,12 @@
 } from '$lib/store/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
   import { openSpecialistsFolder } from '$lib/store/slices/specialists/specialists-slice';
-
+  import {
+  getReduxStore,
+  dispatch,
+} from '$lib/store/redux-dispatch-bridge';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { store as appStore } from '$lib/store/store';
 
   // View type definition
   export type AIBehaviorView =
@@ -95,7 +97,7 @@
       <Tooltip content="Open specialists folder" side="right" delayDuration={300}>
         <button
           type="button"
-          onclick={() => appStore.dispatch(openSpecialistsFolder())}
+          onclick={() => dispatch(openSpecialistsFolder())}
           class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           aria-label="Open specialists folder in file manager"
         >
@@ -105,9 +107,9 @@
     </div>
 
     {#each visibleSpecialists as specialist (specialist.id)}
-      {@const isBuiltIn = selectIsBuiltIn.select(appStore.state, specialist.id)}
-      {@const hasOverrides = selectHasOverrides.select(appStore.state, specialist.id)}
-      {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
+      {@const isBuiltIn = selectIsBuiltIn.select(getReduxStore().getState(), specialist.id)}
+      {@const hasOverrides = selectHasOverrides.select(getReduxStore().getState(), specialist.id)}
+      {@const sourceLabel = selectSpecialistSourceLabel.select(getReduxStore().getState(), specialist.id)}
       {@const isCustomized = isBuiltIn && hasOverrides}
 
       <button

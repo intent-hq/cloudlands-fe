@@ -44,6 +44,7 @@ import {
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
 
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import * as streamRegistry from './utils/stream-handler-registry';
 import { track } from '$lib/services/analytics';
 import {
@@ -58,7 +59,6 @@ import {
   AgentEventType,
 } from '../observability/event-collector-client';
 import { workspaceMetrics } from '$lib/store/slices/workspace/utils/workspace-metrics';
-import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('AgentStreamLifecycle');
 
@@ -72,7 +72,7 @@ type StreamStatusData = {
 };
 
 function dispatchRedux(action: ReduxAction): void {
-  appStore.dispatch(action as any);
+  getReduxStore().dispatch(action as any);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

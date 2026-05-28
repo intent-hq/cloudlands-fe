@@ -35,16 +35,16 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { sendMessage } from '$features/agent/agent-stream-lifecycle';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();
+  const dispatch = getDispatch();
 
   function getActiveWorkspaceSnapshot() {
-    return selectActiveWorkspace.select(appStore.state);
+    return selectActiveWorkspace.select(getReduxStore().getState());
   }
 
   // Review archive item type
@@ -125,7 +125,7 @@
       } else {
         const wsId = $activeWorkspace?.id;
         if (wsId) {
-          appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
+          getReduxStore().dispatch(openAgentTabRequested(wsId, { agentId }));
         }
       }
     }
@@ -156,7 +156,7 @@
   // Use $effect to react to walkthrough executor state changes
   $effect(() => {
     if (!walkthroughWorkspaceId) return;
-    const state = selectExecutorState.select(appStore.state, walkthroughWorkspaceId, 'walkthrough');
+    const state = selectExecutorState.select(getReduxStore().getState(), walkthroughWorkspaceId, 'walkthrough');
 
     if (state.status === 'running' || state.status === 'initializing') {
       walkthroughStatus = 'running';
@@ -186,7 +186,7 @@
     if (!workspace) return;
 
     hasLoadedFromStore = true;
-    const savedState = selectExecutorState.select(appStore.state, workspace.id, 'walkthrough');
+    const savedState = selectExecutorState.select(getReduxStore().getState(), workspace.id, 'walkthrough');
     if (savedState?.result) {
       const parsed = parseWalkthrough(savedState.result);
       if (parsed) {
@@ -206,7 +206,7 @@
     walkthroughError = '';
     walkthrough = null;
 
-    appStore.dispatch(executeBackgroundAgent(workspace.id, 'walkthrough'));
+    dispatch(executeBackgroundAgent(workspace.id, 'walkthrough'));
   }
 
   // State for sending walkthrough messages

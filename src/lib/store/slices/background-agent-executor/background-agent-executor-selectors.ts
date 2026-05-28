@@ -2,12 +2,12 @@
  * Selectors for the background-agent-executor slice.
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import type { ExecutorInstanceState, ExecutorStatus } from "./background-agent-executor-types";
 import { emptyExecutorState } from "./background-agent-executor-types";
 
 /** Select executor state for a specific workspace + executor type */
-export const selectExecutorState = store.createSelector(
+export const selectExecutorState = createSelector(
   (state, workspaceId: string, executorType: string): ExecutorInstanceState => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType] ?? emptyExecutorState;
@@ -15,7 +15,7 @@ export const selectExecutorState = store.createSelector(
 );
 
 /** Select executor status */
-export const selectExecutorStatus = store.createSelector(
+export const selectExecutorStatus = createSelector(
   (state, workspaceId: string, executorType: string): ExecutorStatus => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType]?.status ?? 'idle';
@@ -23,7 +23,7 @@ export const selectExecutorStatus = store.createSelector(
 );
 
 /** Select executor result */
-export const selectExecutorResult = store.createSelector(
+export const selectExecutorResult = createSelector(
   (state, workspaceId: string, executorType: string): string | null => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType]?.result ?? null;
@@ -31,7 +31,7 @@ export const selectExecutorResult = store.createSelector(
 );
 
 /** Select executor error */
-export const selectExecutorError = store.createSelector(
+export const selectExecutorError = createSelector(
   (state, workspaceId: string, executorType: string): string | null => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType]?.error ?? null;
@@ -39,7 +39,7 @@ export const selectExecutorError = store.createSelector(
 );
 
 /** Select executor progress */
-export const selectExecutorProgress = store.createSelector(
+export const selectExecutorProgress = createSelector(
   (state, workspaceId: string, executorType: string): number => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType]?.progress ?? 0;
@@ -47,7 +47,7 @@ export const selectExecutorProgress = store.createSelector(
 );
 
 /** Select executor agentId */
-export const selectExecutorAgentId = store.createSelector(
+export const selectExecutorAgentId = createSelector(
   (state, workspaceId: string, executorType: string): string | null => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     return ws?.executors[executorType]?.agentId ?? null;
@@ -55,7 +55,7 @@ export const selectExecutorAgentId = store.createSelector(
 );
 
 /** Select whether executor is running (initializing or running) */
-export const selectExecutorIsRunning = store.createSelector(
+export const selectExecutorIsRunning = createSelector(
   (state, workspaceId: string, executorType: string): boolean => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     const status = ws?.executors[executorType]?.status ?? 'idle';
@@ -64,7 +64,7 @@ export const selectExecutorIsRunning = store.createSelector(
 );
 
 /** Select whether executor is complete (success, error, or cancelled) */
-export const selectExecutorIsComplete = store.createSelector(
+export const selectExecutorIsComplete = createSelector(
   (state, workspaceId: string, executorType: string): boolean => {
     const ws = state.bgExecutor?.byWorkspaceId[workspaceId];
     const status = ws?.executors[executorType]?.status ?? 'idle';

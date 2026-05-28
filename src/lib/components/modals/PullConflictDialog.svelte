@@ -20,7 +20,7 @@
   type InstalledEditor,
 } from '$lib/store/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -32,7 +32,6 @@
   import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('PullConflictDialog');
 
@@ -71,6 +70,7 @@
     onCancel,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const installedEditors$ = selectInstalledEditorsFiltered();
 
   // Dropdown open state
@@ -79,7 +79,7 @@
   // Fetch installed editors on mount
   onMount(() => {
     console.log('PullConflictDialog mounted, fetching installed editors');
-    appStore.dispatch(fetchEditors());
+    dispatch(fetchEditors());
   });
 
   // Get all installed editors (combined IDEs and terminals)

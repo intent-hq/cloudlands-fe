@@ -12,9 +12,8 @@
   faCodeCommit,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openWorkspaceCommitChangeset } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -31,7 +30,7 @@
 
   function handleOpenCommitChangeset() {
     if (status?.state === 'committed') {
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openWorkspaceCommitChangeset(workspaceId, status.hash, status.message),
       );
     }

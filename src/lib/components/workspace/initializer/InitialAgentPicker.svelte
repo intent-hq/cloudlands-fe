@@ -10,7 +10,7 @@
   selectEffectiveCodingAgent,
   filterSpecialistsByGitHubAuth,
 } from '$lib/store/slices/specialists/specialists-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   selectSelectedModel,
   selectAvailableModels,
@@ -39,7 +39,6 @@
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('InitialAgentPicker');
   const specialists$ = selectSpecialists();
@@ -233,7 +232,7 @@
     const valuesSet = new Set(values);
 
     if (specialist) {
-      const state = appStore.state;
+      const state = getReduxStore().getState();
       const effectiveCodingAgent = selectEffectiveCodingAgent.select(state, specialist);
 
       // If the form's provider matches the specialist's effective coding agent,

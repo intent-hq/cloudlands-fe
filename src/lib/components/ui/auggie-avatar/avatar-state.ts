@@ -1,6 +1,6 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
-import { store as appStore } from '$lib/store/store';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   selectAgentSession,
   selectAgentIsResponding,
@@ -135,7 +135,7 @@ export function getAvatarStateFromStore(
   options: AvatarStateOptions = {},
 ): AvatarState {
   void workspaceId;
-  const state = appStore.state;
+  const state = getReduxStore().getState();
   const session = selectAgentSession.select(state, agentId);
   if (!session) {
     return 'idle';
@@ -158,5 +158,5 @@ export function getAvatarStateFromStore(
  */
 export function isAgentStreamingFromStore(workspaceId: string, agentId: string): boolean {
   void workspaceId;
-  return selectAgentIsResponding.select(appStore.state, agentId);
+  return selectAgentIsResponding.select(getReduxStore().getState(), agentId);
 }

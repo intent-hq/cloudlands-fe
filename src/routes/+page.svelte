@@ -60,7 +60,7 @@
   selectShowDeleteWarning,
   selectShowRemoveRepoConfirm,
 } from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
     type RepoInfo,
@@ -78,11 +78,11 @@
   import { fly } from 'svelte/transition';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
   const MIMIC_EMPTY_STATE = false;
 
+  const dispatch = getDispatch();
 
   let isInitializerExpanded = $state(false);
   let initialRepoForCreate = $state<RepoInfo | undefined>(undefined);
@@ -115,7 +115,7 @@
 
   $effect(() => {
     if (!$knownReposLoaded) {
-      appStore.dispatch(loadKnownRepos());
+      dispatch(loadKnownRepos());
     }
   });
 
@@ -134,7 +134,7 @@
     if (request) {
       isInitializerExpanded = true;
       untrack(() => {
-        appStore.dispatch(clearHomePageInitializerRequest());
+        dispatch(clearHomePageInitializerRequest());
       });
       tick().then(() => {
         if (request.applyPrefill) {
@@ -260,7 +260,7 @@
               pressed={$groupByRepo}
               onLabel="Grouped by repo"
               offLabel="Not grouped"
-              onclick={() => appStore.dispatch(toggleGroupByRepo())}
+              onclick={() => dispatch(toggleGroupByRepo())}
             />
 
             <!-- Archive toggle -->
@@ -270,7 +270,7 @@
               pressed={$showArchived}
               onLabel="Showing Archived"
               offLabel="Show Archived"
-              onclick={() => appStore.dispatch(toggleShowArchived())}
+              onclick={() => dispatch(toggleShowArchived())}
             />
 
             <!-- Search - icon that expands -->
@@ -388,19 +388,19 @@
               {searchQuery}
               knownRepos={$knownRepos}
               onOpen={(workspace, event) =>
-                appStore.dispatch(
+                dispatch(
                   requestOpenWorkspace({
                     workspaceId: workspace.id,
                     openInNewWindow: !!(event?.metaKey || event?.ctrlKey),
                   }),
                 )}
-              onDelete={(workspace) => appStore.dispatch(requestDeleteWorkspace(workspace.id))}
-              onArchive={(workspace) => appStore.dispatch(requestArchiveWorkspace(workspace.id))}
-              onUnarchive={(workspace) => appStore.dispatch(requestUnarchiveWorkspace(workspace.id))}
+              onDelete={(workspace) => dispatch(requestDeleteWorkspace(workspace.id))}
+              onArchive={(workspace) => dispatch(requestArchiveWorkspace(workspace.id))}
+              onUnarchive={(workspace) => dispatch(requestUnarchiveWorkspace(workspace.id))}
               onCreateForRepo={handleCreateForRepo}
-              onBulkArchive={(repoKey) => appStore.dispatch(openBulkArchiveConfirm(repoKey))}
-              onBulkDeleteArchived={(repoKey) => appStore.dispatch(openBulkDeleteArchivedConfirm(repoKey))}
-              onRemoveRepo={(repoPath) => appStore.dispatch(openRemoveRepoConfirm(repoPath))}
+              onBulkArchive={(repoKey) => dispatch(openBulkArchiveConfirm(repoKey))}
+              onBulkDeleteArchived={(repoKey) => dispatch(openBulkDeleteArchivedConfirm(repoKey))}
+              onRemoveRepo={(repoPath) => dispatch(openRemoveRepoConfirm(repoPath))}
             />
           {/if}
         </div>
@@ -413,8 +413,8 @@
 <DeleteWarningDialog
   open={$showDeleteWarning}
   agentNames={$runningAgentNamesForDelete}
-  onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
-  onCancel={() => appStore.dispatch(closeDeleteWarning())}
+  onDeleteAnyway={() => dispatch(confirmDeleteWorkspace())}
+  onCancel={() => dispatch(closeDeleteWarning())}
 />
 
 <!-- Bulk Archive Confirmation Dialog -->
@@ -423,8 +423,8 @@
   title="Archive All Spaces"
   description={`Are you sure you want to archive all active spaces in ${$pendingBulkRepoKey ?? 'this repo'}? You can unarchive them later.`}
   confirmText="Archive All"
-  onConfirm={() => appStore.dispatch(confirmBulkArchive())}
-  onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
+  onConfirm={() => dispatch(confirmBulkArchive())}
+  onCancel={() => dispatch(closeBulkArchiveConfirm())}
 />
 
 <!-- Bulk Delete Archived Confirmation Dialog -->
@@ -434,8 +434,8 @@
   description={`This will permanently delete all archived spaces in ${$pendingBulkRepoKey ?? 'this repo'}. This action cannot be undone.`}
   confirmText="Delete All"
   variant="destructive"
-  onConfirm={() => appStore.dispatch(confirmBulkDeleteArchived())}
-  onCancel={() => appStore.dispatch(closeBulkDeleteArchivedConfirm())}
+  onConfirm={() => dispatch(confirmBulkDeleteArchived())}
+  onCancel={() => dispatch(closeBulkDeleteArchivedConfirm())}
 />
 
 <!-- Bulk Delete Warning Dialog (when archived spaces have running agents) -->
@@ -445,8 +445,8 @@
   description={`${$bulkDeleteWorkspaceCount} archived space${$bulkDeleteWorkspaceCount === 1 ? '' : 's'} will be permanently deleted. Some have running agents that will be stopped.`}
   confirmText="Delete Anyway"
   variant="destructive"
-  onConfirm={() => appStore.dispatch(confirmBulkDeleteWarning())}
-  onCancel={() => appStore.dispatch(closeBulkDeleteWarningConfirm())}
+  onConfirm={() => dispatch(confirmBulkDeleteWarning())}
+  onCancel={() => dispatch(closeBulkDeleteWarningConfirm())}
 />
 
 <!-- Remove Repo Confirmation Dialog -->
@@ -456,8 +456,8 @@
   description={`Remove "${$pendingRemoveRepoPath ?? 'this repository'}" from the home page? This won't delete any files or spaces.`}
   confirmText="Remove"
   variant="destructive"
-  onConfirm={() => appStore.dispatch(confirmRemoveRepo())}
-  onCancel={() => appStore.dispatch(closeRemoveRepoConfirm())}
+  onConfirm={() => dispatch(confirmRemoveRepo())}
+  onCancel={() => dispatch(closeRemoveRepoConfirm())}
 />
 
 <style>

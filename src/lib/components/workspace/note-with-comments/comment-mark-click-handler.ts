@@ -1,12 +1,12 @@
 import type { Editor } from '@tiptap/core';
-import type { Store } from 'svelte-redux-toolkit/store';
+import type { ReduxStore } from '$lib/store/types';
 import { selectCommentAction } from '$lib/store/slices/comments/comments-slice';
 
 import type { LoggerLike } from './logger.types';
 
 export type SetupCommentMarkClickHandlerV2Args = {
   editor: Editor;
-  store: Store<any, any>;
+  store: ReduxStore;
   logger: LoggerLike;
   noteId: string | undefined;
   maxAttempts?: number;

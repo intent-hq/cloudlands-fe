@@ -22,7 +22,7 @@
   getFileExtension,
   track,
 } from '$lib/services/analytics';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   markNoteRead,
   refreshUnreadNotes,
@@ -34,7 +34,7 @@
 } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
@@ -96,7 +96,6 @@
   selectMultiSelectSidebarSelectedTabIds,
   selectMultiSelectSidebarTabOrder,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -152,6 +151,7 @@
 
   void restProps;
 
+  const dispatch = getDispatch();
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -242,13 +242,13 @@
   let previousWorkspaceId = $state<string | null>(null);
 
   function isAgentCurrentlyRunning(agentId: string): boolean {
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     const isWaiting = selectAgentIsWaiting.select(state, agentId);
     return selectAgentIsResponding.select(state, agentId) && !isWaiting;
   }
 
   function getLiveAgentAvatarState(agent: { id: string; status?: string }): AvatarState {
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     const isWaiting = selectAgentIsWaiting.select(state, agent.id);
     const isResponding = selectAgentIsResponding.select(state, agent.id);
     return getAvatarState({
@@ -341,7 +341,7 @@
       const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
       newOrder.splice(insertIndex, 0, draggedTabId);
 
-      appStore.dispatch(setMultiSelectSidebarTabOrder(newOrder));
+      dispatch(setMultiSelectSidebarTabOrder(newOrder));
     }
 
     draggedTabId = null;
@@ -373,7 +373,7 @@
 
   function persistSelectedTabs(nextSelectedTabs: Set<TabId>) {
     if (!workspaceId) return;
-    appStore.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [...nextSelectedTabs]));
+    dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [...nextSelectedTabs]));
   }
 
   function handleTabClick(tabId: TabId, event: MouseEvent) {
@@ -555,7 +555,7 @@
     });
 
     // Mark note as read when opened to clear unread indicator
-    appStore.dispatch(markNoteRead(workspaceId, noteId));
+    dispatch(markNoteRead(workspaceId, noteId));
   }
 
   function handleOpenFileInPanel(filePath: string) {
@@ -642,7 +642,7 @@
 
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
+      getReduxStore().dispatch(loadWorkspacesRequested());
       toast.warning(`Archived space ${workspaceTitle}`, {
         duration: 15000,
         action: {
@@ -650,7 +650,7 @@
           onClick: async () => {
             const undoResult = await workspaceClient.unarchive($workspace.id);
             if (undoResult.ok) {
-              appStore.dispatch(loadWorkspacesRequested());
+              getReduxStore().dispatch(loadWorkspacesRequested());
             }
           },
         },
@@ -758,7 +758,7 @@
           }, 1500);
         }
       }
-      appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+      dispatch(locateItemInSidebarConsumed(workspaceId));
     }, 150);
 
     return () => {
@@ -779,7 +779,7 @@
         workspaceId + ':' + notesWithTimestamps.map((n) => n.id + ':' + n.updatedAt).join(',');
       if (refreshKey !== lastRefreshKey) {
         lastRefreshKey = refreshKey;
-        appStore.dispatch(refreshUnreadNotes(workspaceId, notesWithTimestamps));
+        dispatch(refreshUnreadNotes(workspaceId, notesWithTimestamps));
       }
     }
   });
@@ -927,7 +927,7 @@
                             createdAt: now,
                             updatedAt: now,
                           };
-                          appStore.dispatch(addContextItem(workspaceId, newItem));
+                          dispatch(addContextItem(workspaceId, newItem));
                           const layoutManager = getPanelLayoutManager(workspaceId);
                           layoutManager.openBrowserPanel(defaultUrl, newItem.id);
                         }}
@@ -1070,14 +1070,14 @@
                     onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
                     onOpenAgent={(agentId) => handleOpenAgentInPanel(agentId)}
                     onOpenFile={(filePath) => {
-                      appStore.dispatch(
+                      getReduxStore().dispatch(
                         openWorkspaceDiff(workspaceId, { file: filePath } as never, { filePath }),
                       );
                     }}
                     onOpenAllChanges={() =>
-                      appStore.dispatch(openWorkspaceLocalChanges(workspaceId))}
+                      getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId))}
                     onOpenCommit={(hash) => {
-                      appStore.dispatch(openWorkspaceCommitChangeset(workspaceId, hash));
+                      getReduxStore().dispatch(openWorkspaceCommitChangeset(workspaceId, hash));
                     }}
                     onOpenFileInPanel={handleOpenFileInPanel}
                     onOpenAgentOverview={handleOpenAgentOverview}
@@ -1115,7 +1115,7 @@
                         activeFileStaged={effectiveActiveFileStaged}
                         isAllChangesViewActive={effectiveIsAllChangesViewActive}
                         onOpenChange={(change) => {
-                          appStore.dispatch(
+                          getReduxStore().dispatch(
                             openWorkspaceDiff(workspaceId, change as never, {
                               filePath: change.relativePath || change.file,
                               changeId: change.id,

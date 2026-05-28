@@ -28,8 +28,8 @@
   reloadModelsForProvider,
   retryLoadModels,
 } from '$lib/store/slices/model/model-slice';
-
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { identifyUser } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -48,7 +48,6 @@
 
   import { fly } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     /** Called when user selects a provider to start using */
@@ -70,6 +69,7 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
   let { onProviderSelected, onAvailabilityChange, horizontal = false }: Props = $props();
 
+  const dispatch = getDispatch();
 
   // Reactive Redux selectors — init at component top level
   const providerStatusMap$ = selectProviderStatusMap();
@@ -89,13 +89,13 @@
         error?: string;
       }>(PROVIDERS_CHANNELS.CHECK_SINGLE, providerId);
       if (result.success && result.data) {
-        appStore.dispatch(checkSingleProviderSuccess(providerId, result.data));
+        dispatch(checkSingleProviderSuccess(providerId, result.data));
         return result.data;
       }
-      appStore.dispatch(checkSingleProviderFailure(providerId));
+      dispatch(checkSingleProviderFailure(providerId));
     } catch (err) {
       logger.error(`Failed to check provider ${providerId}`, err as Error);
-      appStore.dispatch(checkSingleProviderFailure(providerId));
+      dispatch(checkSingleProviderFailure(providerId));
     }
     return undefined;
   }
@@ -161,7 +161,7 @@
 
   /** Visible providers (not hidden by env var / feature code gates) */
   const visibleProviders = $derived.by(() => {
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     // Reactive reads from Redux selectors
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
@@ -216,9 +216,9 @@
   });
 
   async function handleSelectProvider(providerId: string) {
-    appStore.dispatch(setProviderEnabled({ providerId, enabled: true }));
-    appStore.dispatch(setActiveProvider(providerId));
-    appStore.dispatch(reloadModelsForProvider());
+    dispatch(setProviderEnabled({ providerId, enabled: true }));
+    dispatch(setActiveProvider(providerId));
+    dispatch(reloadModelsForProvider());
     onProviderSelected?.(providerId);
   }
 
@@ -268,7 +268,7 @@
     clearAuggieAuthUI();
     await Promise.all([checkSingleProvider('auggie'), checkAuggieVersion()]);
     identifyUser({ force: true }).catch(() => {});
-    appStore.dispatch(retryLoadModels());
+    dispatch(retryLoadModels());
   }
 
   // Auto-clear auth UI when auggie becomes authenticated (e.g. after refresh)
@@ -478,18 +478,18 @@
   }
 
   onMount(() => {
-    appStore.dispatch(ensureProvidersCheckedAction());
+    dispatch(ensureProvidersCheckedAction());
     checkAuggieVersion();
 
     // Re-check all provider statuses on window focus/visibility
     // (user may have installed a CLI tool or logged in via browser)
     const handleFocus = () => {
-      appStore.dispatch(checkAllProvidersRequested());
+      dispatch(checkAllProvidersRequested());
       if (auggieWaitingForBrowser) pollAuggieAuthOnce();
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        appStore.dispatch(checkAllProvidersRequested());
+        dispatch(checkAllProvidersRequested());
         if (auggieWaitingForBrowser) pollAuggieAuthOnce();
       }
     };

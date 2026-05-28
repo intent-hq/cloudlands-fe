@@ -4,8 +4,8 @@
  * Actions and reducer for Sentry authentication and issue state.
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import type { SentryAuthState } from "./sentry-auth-types";
 import type { SentryIssueResult, SentryProject } from "$features/sentry-auth/types";
 import type { SentryIssueStatusType } from "$features/sentry-auth/constants";

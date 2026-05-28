@@ -5,8 +5,8 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+import { createAction } from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,

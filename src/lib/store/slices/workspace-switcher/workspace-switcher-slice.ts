@@ -1,6 +1,6 @@
 import { resetWorkspaceState } from "../workspace/workspace-slice";
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 
 export interface WorkspaceSwitcherState {
   selectedIndex: number;

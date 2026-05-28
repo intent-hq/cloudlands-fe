@@ -14,7 +14,7 @@ export { errorBoundary, ErrorBoundaryService } from './error-boundary.service';
 export type { ContextItem } from '$lib/components/chat/input/context-api';
 
 import { createLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
 import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
 
@@ -52,14 +52,9 @@ function dispatchCallbacks(
 
 function ensureStoreSubscription() {
   if (storeUnsubscribe) return;
-  let didEmitInitialValue = false;
-  storeUnsubscribe = appStore.getReadableState().subscribe(() => {
-    if (!didEmitInitialValue) {
-      didEmitInitialValue = true;
-      return;
-    }
+  storeUnsubscribe = getReduxStore().subscribe(() => {
     if (agentSubscribers.size === 0) return;
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     for (const [agentId, subscribers] of agentSubscribers) {
       const next = selectAgentSession.select(state, agentId);
       if (lastSessionByAgent.get(agentId) === next) continue;
@@ -100,7 +95,7 @@ export function subscribeToAgent(
   // Ensure the shared Redux subscription is active before any callbacks run.
   ensureStoreSubscription();
 
-  const state = appStore.state;
+  const state = getReduxStore().getState();
   const current = selectAgentSession.select(state, agentId);
 
   // Seed the last-seen session on first subscriber for this agent so the
@@ -145,7 +140,7 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
   const subscribers = agentSubscribers.get(agentId);
   if (!subscribers || subscribers.size === 0) return;
 
-  const state = appStore.state;
+  const state = getReduxStore().getState();
   const session = selectAgentSession.select(state, agentId);
 
   if (!session) {
@@ -643,7 +638,7 @@ export class PersistenceService {
       // Get workspace ID from parameter or Redux state
       let finalWorkspaceId = workspaceId;
       if (!finalWorkspaceId) {
-        const reduxState = appStore.state;
+        const reduxState = getReduxStore().getState();
         const wsId = selectActiveWorkspaceId.select(reduxState) ?? '';
         const agent = wsId ? selectAgentSession.select(reduxState, plainAgentId) : undefined;
         finalWorkspaceId = (agent?.workspaceId as string) || wsId || '';

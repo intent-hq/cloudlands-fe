@@ -23,13 +23,12 @@
 } from '$lib/electron-bridge';
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -75,11 +74,11 @@
     if (!wsId) return;
     const { type, target } = binding;
     if (type === 'file' && target) {
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openWorkspaceFile(wsId, target, { openInAdjacentPanel, sourcePanelId }),
       );
     } else if (type === 'note' && target) {
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openWorkspaceNote(wsId, target, { openInAdjacentPanel, sourcePanelId }),
       );
     }
@@ -531,7 +530,7 @@
 
       // Open the saved file in a new tab
       if (wsId) {
-        appStore.dispatch(openWorkspaceFile(wsId, filePath));
+        getReduxStore().dispatch(openWorkspaceFile(wsId, filePath));
       }
 
       saved = true;
@@ -557,7 +556,7 @@
             onclick={() => {
               const agentWsId = $activeWorkspace?.id;
               if (agentWsId) {
-                appStore.dispatch(
+                getReduxStore().dispatch(
                   openAgentTabRequested(agentWsId, { agentId: linkedAgentId }),
                 );
               }

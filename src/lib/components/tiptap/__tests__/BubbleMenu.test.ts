@@ -63,14 +63,13 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   }),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => dispatchMock,
+}));
 
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: dispatchMock,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+}));
 
 describe('BubbleMenu', () => {
   let mockEditor: any;

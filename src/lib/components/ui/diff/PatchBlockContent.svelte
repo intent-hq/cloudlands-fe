@@ -19,8 +19,7 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     patches: FilePatch[];
@@ -98,7 +97,7 @@
           class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
           onclick={() => {
             if (!workspaceId) return;
-            appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: linkedAgentId }));
+            getReduxStore().dispatch(openAgentTabRequested(workspaceId, { agentId: linkedAgentId }));
           }}
           title="View agent"
         >

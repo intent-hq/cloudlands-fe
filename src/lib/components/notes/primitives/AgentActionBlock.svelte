@@ -14,17 +14,17 @@
   import { toast } from 'svelte-sonner';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('AgentActionBlock');
+  const dispatch = getDispatch();
 
   // TipTap NodeViewProps
   let { node, updateAttributes, extension }: NodeViewProps = $props();
@@ -78,7 +78,7 @@
         })) || [];
 
       const newAgentId = unifiedIdService.generateAgentId();
-      const state = appStore.state;
+      const state = getReduxStore().getState();
       const action = createAgentFromConfigRequested(workspaceId, {
         id: newAgentId,
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
@@ -93,7 +93,7 @@
           primitiveId: primitive.id,
         },
       });
-      appStore.dispatch(action);
+      dispatch(action);
 
       const createdAgent = await action.promise;
       agentId = createdAgent.id || newAgentId;
@@ -151,7 +151,7 @@
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       if (workspaceId) {
-        appStore.dispatch(
+        dispatch(
           openAgentTabRequested(workspaceId, { agentId, sourcePanelId }),
         );
       }
@@ -166,7 +166,7 @@
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = event.metaKey || event.ctrlKey;
     if (workspaceId) {
-      appStore.dispatch(
+      dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: targetAgentId,
           sourcePanelId,

@@ -25,12 +25,11 @@
 
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('MessageContent');
 
@@ -198,7 +197,7 @@
   }) {
     logger.info('Opening file from message content', detail);
     if (!workspaceId) return;
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceFile(workspaceId, detail.path, {
         openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
         sourcePanelId: detail.sourcePanelId,
@@ -216,7 +215,7 @@
       handleOpenFile({ path: binding.target, openInAdjacentPanel, sourcePanelId });
     } else if (binding.type === 'note') {
       if (!workspaceId) return;
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openWorkspaceNote(workspaceId, binding.target, { openInAdjacentPanel, sourcePanelId }),
       );
     }

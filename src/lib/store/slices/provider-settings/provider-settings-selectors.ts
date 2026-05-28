@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import {
   type ACPProviderConfig,
   ACP_PROVIDERS,
@@ -6,37 +6,37 @@ import {
   getProviderConfig,
 } from "$shared/config/provider-config";
 
-export const selectActiveProviderId = store.createSelector(
+export const selectActiveProviderId = createSelector(
   (state): string => {
     return state.providerSettings.activeProviderId;
   }
 );
 
-export const selectActiveProvider = store.createSelector(
+export const selectActiveProvider = createSelector(
   (state): ACPProviderConfig => {
     return getProviderConfig(state.providerSettings.activeProviderId);
   }
 );
 
-export const selectIsProviderActive = store.createSelector(
+export const selectIsProviderActive = createSelector(
   (state, providerId: string): boolean => {
     return state.providerSettings.activeProviderId === providerId;
   }
 );
 
-export const selectAvailableProviders = store.createSelector(
+export const selectAvailableProviders = createSelector(
   (): ACPProviderConfig[] => {
     return Object.values(ACP_PROVIDERS);
   }
 );
 
-export const selectEnabledProviders = store.createSelector(
+export const selectEnabledProviders = createSelector(
   (state): Record<string, boolean> => {
     return state.providerSettings.enabledProviders;
   }
 );
 
-export const selectIsProviderEnabled = store.createSelector(
+export const selectIsProviderEnabled = createSelector(
   (state, providerId: string): boolean => {
     const config = getProviderConfig(providerId);
     if (config.canBeDisabled === false) return true;
@@ -44,7 +44,7 @@ export const selectIsProviderEnabled = store.createSelector(
   }
 );
 
-export const selectEnabledProviderIds = store.createSelector(
+export const selectEnabledProviderIds = createSelector(
   (state): string[] => {
     const enabled = new Set(getAlwaysEnabledProviders().map((p) => p.id));
     enabled.add(selectActiveProviderId.select(state));

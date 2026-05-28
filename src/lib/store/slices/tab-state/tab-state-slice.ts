@@ -1,5 +1,5 @@
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import { omitKey } from "../../utils/utils";
 
 export type HandleDropZoneType = "row-above" | "row-below" | "column-left" | "column-right";

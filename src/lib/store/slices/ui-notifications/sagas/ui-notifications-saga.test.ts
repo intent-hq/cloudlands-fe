@@ -13,10 +13,6 @@ import {
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from "$lib/store/slices/user-preferences/user-preferences-selectors";
-import {
-  selectActiveWorkspace,
-  selectWorkspaceById,
-} from "$lib/store/slices/workspace/workspace-selectors";
 
 vi.mock("typed-redux-saga", () => ({
   call: function* (fn: any, ...args: any[]) {
@@ -88,18 +84,9 @@ describe("uiSaga", () => {
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
 
-    const handlerIterator = getElectronHandler("background-agent:spawned")(data);
-    expect(handlerIterator.next()).toEqual({
-      value: sagaEffects.select(selectWorkspaceById.select, "ws-1"),
-      done: false,
-    });
-    expect(handlerIterator.next({ id: "ws-1", title: "Current Space" })).toEqual({
-      value: sagaEffects.select(selectActiveWorkspace.select),
-      done: false,
-    });
-    const effect = handlerIterator.next({ id: "ws-2" }).value as any;
+    const effect = getElectronHandler("background-agent:spawned")(data).next().value as any;
     expect(effect.type).toBe("CALL");
-    expect(effect.payload.args).toEqual([data, "Current Space", true]);
+    expect(effect.payload.args).toEqual([data]);
   });
 
   it("skips playing a sound when notification sound is disabled", () => {

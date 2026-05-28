@@ -58,8 +58,8 @@
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
   import { TextSelection } from '@tiptap/pm/state';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectComments } from '$lib/store/slices/comments/comments-selectors';
   import {
   selectCommentAction,
@@ -67,6 +67,7 @@
   clearCommentsAction,
 } from '$lib/store/slices/comments/comments-slice';
 
+  const reduxDispatch = getDispatch();
   import { createEditorConfig } from '$lib/utils/editor-config';
 
   import { writable } from 'svelte/store';
@@ -108,7 +109,6 @@
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();
@@ -798,9 +798,9 @@
 
       // Update note content via Redux dispatch
       {
-        const note = selectNoteById.select(appStore.state, workspace.id, noteId);
+        const note = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
         if (note) {
-          appStore.dispatch(updateNoteContent(workspace.id, noteId, markdownContent));
+          reduxDispatch(updateNoteContent(workspace.id, noteId, markdownContent));
 
           // Track note edit (throttled to at most once every 30s during continuous editing)
           try {
@@ -837,7 +837,7 @@
     if (!editor || editor.isDestroyed || !workspace?.id || !noteId) return;
 
     const associations = selectAssociationsForNote.select(
-      appStore.state,
+      getReduxStore().getState(),
       workspace.id,
       noteId,
     );
@@ -867,7 +867,7 @@
           : !currentTaskKeys.includes(association.taskText),
       )
     ) {
-      appStore.dispatch(pruneTaskAgentAssociationsForNote(workspace.id, noteId, currentTaskKeys));
+      reduxDispatch(pruneTaskAgentAssociationsForNote(workspace.id, noteId, currentTaskKeys));
       return;
     }
 
@@ -880,7 +880,7 @@
     options?: { skipSave?: boolean },
   ): void {
     if (action === 'assign-agent') {
-      const state = appStore.state;
+      const state = getReduxStore().getState();
       const parentNote = noteId ? selectNoteById.select(state, workspace.id, noteId) : null;
       const model = selectWorkspaceDefaultModel.select(state, workspace.id);
       void runAssignAgentTaskMenuAction({
@@ -892,7 +892,7 @@
         parentNoteTitle: parentNote?.title || 'parent note',
         model,
         debounceUpdate,
-        storeDispatch: appStore.dispatch,
+        storeDispatch: reduxDispatch,
         logger,
       });
     } else if (action === 'task-breakdown') {
@@ -998,7 +998,7 @@
     // Dispatch to saga — the saga will call notesClient.restoreVersion and
     // dispatch handleExternalNoteUpdate, which flows through the existing
     // external update system to update the editor
-    appStore.dispatch(restoreNoteVersion(workspace.id, noteId, versionId));
+    reduxDispatch(restoreNoteVersion(workspace.id, noteId, versionId));
 
     // Safety: clear flag after timeout in case restore fails or doesn't trigger an update
     setTimeout(() => {
@@ -1019,7 +1019,7 @@
     let goalContent = '';
     if (noteId && workspace?.id) {
       {
-        const storeNote = selectNoteById.select(appStore.state, workspace.id, noteId);
+        const storeNote = selectNoteById.select(getReduxStore().getState(), workspace.id, noteId);
         if (storeNote && storeNote.workspaceId === workspace.id) {
           goalContent = storeNote.content || '';
         }
@@ -1099,7 +1099,7 @@
       onSelectionUpdate: (selectedText) => {
         // Get the note title from store if available, otherwise use noteId
         const note = noteId
-          ? selectNoteById.select(appStore.state, workspace.id, noteId)
+          ? selectNoteById.select(getReduxStore().getState(), workspace.id, noteId)
           : null;
         const noteLabel = note?.title || noteId || 'Note';
 
@@ -1121,7 +1121,7 @@
       onSuggestionClick: handleSuggestionClick,
       onCommentClick: (commentId) => {
         logger.info('[NoteWithComments] Comment clicked (V2)', { commentId });
-        appStore.dispatch(selectCommentAction(commentId));
+        reduxDispatch(selectCommentAction(commentId));
       },
       onFilePathClick: (filePath, event) => {
         logger.info('[NoteWithComments] File path clicked', { filePath });
@@ -1130,7 +1130,7 @@
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
         const wsId = workspace?.id;
         if (wsId) {
-          appStore.dispatch(
+          getReduxStore().dispatch(
             openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
           );
         }
@@ -1206,7 +1206,7 @@
     cleanupCommentClickHandler = enableRichEditorComments
       ? setupCommentMarkClickHandlerV2({
           editor,
-          store: appStore,
+          store: getReduxStore(),
           logger,
           noteId,
         })
@@ -1374,7 +1374,7 @@
       lastSafetyNetSyncedContent = undefined;
 
       // Clear comments from previous note and reset decorations immediately
-      appStore.dispatch(clearCommentsAction());
+      reduxDispatch(clearCommentsAction());
       if (editor) {
         try {
           updateCommentDecorations(editor.view);
@@ -1506,7 +1506,7 @@
       getNoteId: () => noteId,
       getTaskAgentAssociations: () => {
         if (!workspace?.id || !noteId) return [];
-        return selectAssociationsForNote.select(appStore.state, workspace.id, noteId);
+        return selectAssociationsForNote.select(getReduxStore().getState(), workspace.id, noteId);
       },
       getCommentManager: () => commentManager,
       processMarkdownToHTML,
@@ -1729,7 +1729,7 @@
       if (!workspace?.id || !noteId) return;
 
       const navigation = selectWorkspaceNavigationHistory.select(
-        appStore.state,
+        getReduxStore().getState(),
         workspace.id,
       );
       // Get the current navigation entry
@@ -1764,11 +1764,11 @@
             // Trigger streaming-in animation when a note was just created
             if (
               noteId &&
-              selectNewlyCreatedNoteId.select(appStore.state, workspace.id) === noteId
+              selectNewlyCreatedNoteId.select(getReduxStore().getState(), workspace.id) === noteId
             ) {
               isStreamingIn = true;
               // Clear the store flag so it doesn't re-trigger
-              appStore.dispatch(clearNewlyCreatedNoteId(workspace.id));
+              reduxDispatch(clearNewlyCreatedNoteId(workspace.id));
               // Clear the animation flag after the animation completes
               setTimeout(() => {
                 isStreamingIn = false;
@@ -2048,8 +2048,8 @@
             editorWrapper={element}
             comments={$allComments$}
             onResolve={handleResolveComment}
-            onAccept={(id) => appStore.dispatch(updateCommentAction(id, { status: 'accepted' }))}
-            onReject={(id) => appStore.dispatch(updateCommentAction(id, { status: 'rejected' }))}
+            onAccept={(id) => reduxDispatch(updateCommentAction(id, { status: 'accepted' }))}
+            onReject={(id) => reduxDispatch(updateCommentAction(id, { status: 'rejected' }))}
             onReply={handleReplyToComment}
           />
         {/if}

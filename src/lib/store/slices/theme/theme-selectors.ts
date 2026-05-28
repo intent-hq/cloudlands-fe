@@ -1,19 +1,19 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import type { ThemeCustomizationState, ThemeName, ThemePreference } from "./theme-types";
 
-export const selectThemeName = store.createSelector((state): ThemeName => {
+export const selectThemeName = createSelector((state): ThemeName => {
   return state.theme.name;
 });
 
-export const selectThemePreference = store.createSelector((state): ThemePreference => {
+export const selectThemePreference = createSelector((state): ThemePreference => {
   return state.theme.preference;
 });
 
-export const selectIsDarkTheme = store.createSelector((state): boolean => {
+export const selectIsDarkTheme = createSelector((state): boolean => {
   return state.theme.name === "dark";
 });
 
-export const selectThemeCustomization = store.createSelector((state): ThemeCustomizationState => {
+export const selectThemeCustomization = createSelector((state): ThemeCustomizationState => {
   return {
     hasCustomTheme: state.theme.hasCustomTheme,
     customThemeName: state.theme.customThemeName,
@@ -21,18 +21,18 @@ export const selectThemeCustomization = store.createSelector((state): ThemeCusto
   };
 });
 
-export const selectHasCustomTheme = store.createSelector((state): boolean => {
+export const selectHasCustomTheme = createSelector((state): boolean => {
   return state.theme.hasCustomTheme;
 });
 
-export const selectCustomThemeName = store.createSelector((state): string | null => {
+export const selectCustomThemeName = createSelector((state): string | null => {
   return state.theme.customThemeName;
 });
 
-export const selectActiveThemePresetId = store.createSelector((state): string | null => {
+export const selectActiveThemePresetId = createSelector((state): string | null => {
   return state.theme.activePresetId;
 });
 
-export const selectThemeError = store.createSelector((state): string | null => {
+export const selectThemeError = createSelector((state): string | null => {
   return state.theme.error;
 });

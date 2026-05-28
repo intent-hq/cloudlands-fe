@@ -4,16 +4,12 @@ import {
   select,
   takeEvery,
 } from "typed-redux-saga";
+import { terminalManager } from "$features/terminal/terminal-manager.svelte";
 import {
   closeActiveTerminalRequested,
   removeTerminal,
 } from "../terminals-slice";
 import { selectActiveTerminalIdForWorkspace } from "../terminals-selectors";
-
-async function loadTerminalManager() {
-  const { terminalManager } = await import("$features/terminal/terminal-manager.svelte");
-  return terminalManager;
-}
 
 /**
  * Watches for keyboard-triggered "close active terminal" requests
@@ -33,7 +29,6 @@ export function* watchCloseActiveTerminal() {
       );
       if (!activeTerminalId) return;
       yield* put(removeTerminal(wsId, activeTerminalId));
-      const terminalManager = yield* call(loadTerminalManager);
       yield* call([terminalManager, terminalManager.disposeTerminal], activeTerminalId);
     },
   );

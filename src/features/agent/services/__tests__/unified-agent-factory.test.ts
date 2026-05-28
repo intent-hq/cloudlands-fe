@@ -20,15 +20,13 @@ import {
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 
-// Mock configured app Store
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+// Mock Redux store bridge
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
     dispatch: vi.fn(),
-  });
-});
+  }),
+}));
 
 // Mock the typed invoke
 vi.mock('$shared/ipc/typed-invoke', () => ({
@@ -58,6 +56,16 @@ vi.mock('$lib/electron-bridge', () => ({
     data: 'User defined rules',
   }),
 }));
+
+// Mock Redux store bridge (factory dynamically imports this)
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
+    dispatch: vi.fn(),
+  }),
+}));
+
+
 
 describe('UnifiedAgentFactory', () => {
   let factory: UnifiedAgentFactory;

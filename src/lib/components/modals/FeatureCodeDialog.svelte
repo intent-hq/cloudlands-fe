@@ -11,8 +11,7 @@
   fetchFeatures,
   deactivateFeature,
 } from '$lib/store/slices/feature-codes/feature-codes-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {
     open?: boolean;
@@ -24,6 +23,7 @@
     onClose,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const activeFeatures$ = selectActiveFeatures();
   const hasActiveFeatures$ = selectHasActiveFeatures();
 
@@ -78,7 +78,7 @@
         needsRestart = true;
       }
       // Refresh the renderer-side store so UI gates update immediately
-      appStore.dispatch(fetchFeatures());
+      dispatch(fetchFeatures());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.toLowerCase().includes('already active') || message.toLowerCase().includes('already_active')) {
@@ -117,7 +117,7 @@
   }
 
   async function removeFeature(featureId: string) {
-    await appStore.dispatch(deactivateFeature(featureId));
+    await dispatch(deactivateFeature(featureId));
     needsRestart = true;
     feedback = { message: 'Feature deactivated! Restart to apply.', color: 'text-yellow-400' };
     scheduleFeedbackClear();

@@ -6,7 +6,7 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   selectComments,
   selectSelectedComment,
@@ -17,6 +17,7 @@
   clearCommentsAction,
 } from '$lib/store/slices/comments/comments-slice';
 
+  const reduxDispatch = getDispatch();
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
   import {
@@ -28,7 +29,6 @@
   faCheck,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('CommentSystemDemo');
 
@@ -112,7 +112,7 @@
         },
         onCommentClick: (commentId) => {
           logger.info('Comment clicked', { commentId });
-          appStore.dispatch(selectCommentAction(commentId));
+          reduxDispatch(selectCommentAction(commentId));
         },
       }),
     );
@@ -121,7 +121,7 @@
     commentManager = new CommentManagerV2('demo-workspace', 'demo-note');
 
     // Load demo comments
-    appStore.dispatch(loadCommentsAction(demoComments));
+    reduxDispatch(loadCommentsAction(demoComments));
 
     // Initialize manager with editor
     commentManager.initialize(editor);
@@ -136,7 +136,7 @@
     if (commentManager) {
       commentManager.destroy();
     }
-    appStore.dispatch(clearCommentsAction());
+    reduxDispatch(clearCommentsAction());
   });
 
   // Reactive state

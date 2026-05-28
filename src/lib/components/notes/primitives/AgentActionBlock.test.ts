@@ -58,14 +58,13 @@ vi.mock('$shared/services/unified-id.service', () => ({
   },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => dispatchMock,
+}));
 
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: dispatchMock,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+}));
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: vi.fn(() => 'test-model') },

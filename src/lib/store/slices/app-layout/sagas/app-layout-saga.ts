@@ -18,6 +18,7 @@ import {
   selectNextTab,
   updateTabBrowserUrl,
 } from "$lib/store/slices/panel-layout/panel-layout-slice";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import {
   getFileExtension,
   track,
@@ -30,13 +31,20 @@ import {
   getSettingsPreviousPath,
   navigateToSettings,
 } from "$lib/utils/workspace-navigation";
+import type { Task } from "redux-saga";
 import {
+  cancel,
   call,
   delay,
   fork,
   put,
+  select,
   takeEvery,
 } from "typed-redux-saga";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAgentRequested } from "../../workspace-agents/workspace-agents-slice";
 import { createTerminalRequested } from "../../terminals/terminals-slice";
 import {
@@ -61,7 +69,7 @@ import {
   openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from "../../workspace-navigation/workspace-navigation-slice";
-import { notesIpc } from "$lib/utils/notes-ipc";
+import { notesIpc } from "../../workspace-notes/sagas/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { reloadNotes } from "../../workspace-notes/workspace-notes-slice";
 import type { Note } from "$shared/types";
@@ -75,6 +83,7 @@ import { browserTabZoomRequested } from "../../browser/browser-slice";
 import type { BrowserZoomAction } from "../../browser/browser-types";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+const dockNavigationTasks = new Map<string, Task>();
 type BrowserOpenTabEvent = {
     url: string;
     position?: "adjacent" | "replace" | "same";
@@ -134,26 +143,28 @@ export function* watchFocusBrowserTabSaga() {
     });
 }
 function* openWorkspaceTab(wsId: string, tab: Omit<PanelTab, "id">, openInAdjacentPanel = false, sourcePanelId?: string) {
+    const store = getReduxStore();
     if (openInAdjacentPanel) {
-        yield* put(openTabInAdjacentOrSplit(wsId, tab, sourcePanelId, { force: true }));
+        store.dispatch(openTabInAdjacentOrSplit(wsId, tab, sourcePanelId, { force: true }));
         yield* requestFocusedPanelFocus(wsId);
         return;
     }
-    yield* put(openTab(wsId, tab, sourcePanelId, undefined, true));
+    store.dispatch(openTab(wsId, tab, sourcePanelId, undefined, true));
 }
-function* showAgentInLayout(workspaceId: string, agentId: string) {
-    const panels = yield* selectPanels.effect(workspaceId);
+function showAgentInLayout(workspaceId: string, agentId: string) {
+    const store = getReduxStore();
+    const panels = selectPanels.select(store.getState(), workspaceId);
     for (const [panelId, panel] of Object.entries(panels)) {
         const existingAgentTab = panel.tabs.find((tab) => tab.type === "agent" && tab.agentId === agentId);
         if (!existingAgentTab) {
             continue;
         }
-        yield* put(focusPanel(workspaceId, panelId));
-        yield* put(setActiveTab(workspaceId, existingAgentTab.id, panelId));
+        store.dispatch(focusPanel(workspaceId, panelId));
+        store.dispatch(setActiveTab(workspaceId, existingAgentTab.id, panelId));
         return;
     }
-    const agent = yield* selectAgentSession.effect(agentId);
-    yield* put(openTab(workspaceId, {
+    const agent = selectAgentSession.select(store.getState(), agentId);
+    store.dispatch(openTab(workspaceId, {
         type: "agent",
         title: agent?.name || "Agent",
         agentId,
@@ -166,7 +177,7 @@ export function* watchShowAgentSaga() {
         if (!wsId || !detail?.agentId) {
             return;
         }
-        yield* showAgentInLayout(wsId, detail.agentId);
+        showAgentInLayout(wsId, detail.agentId);
     });
 }
 export function* watchOpenFileSaga() {
@@ -307,7 +318,7 @@ export function* watchOpenTerminalSaga() {
         if (!wsId || !detail?.terminalId) {
             return;
         }
-        yield* put(openTab(wsId, {
+        getReduxStore().dispatch(openTab(wsId, {
             type: "terminal",
             title: "Terminal",
             terminalId: detail.terminalId,
@@ -325,6 +336,24 @@ export function* watchWorkspaceWindowEventsSaga() {
     yield* fork(watchOpenNoteSaga);
     yield* fork(watchOpenAgentSaga);
     yield* fork(watchOpenTerminalSaga);
+}
+function* startDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceMounted>) {
+    const [wsId] = action.payload;
+    const task = yield* fork(watchDockNavigationForWorkspaceSaga, wsId);
+    dockNavigationTasks.set(wsId, task);
+}
+function* cancelDockNavigationForWorkspaceSaga(action: ReturnType<typeof workspaceUnmounted>) {
+    const [wsId] = action.payload;
+    const task = dockNavigationTasks.get(wsId);
+    if (!task) {
+        return;
+    }
+    yield* cancel(task);
+    dockNavigationTasks.delete(wsId);
+}
+export function* watchWorkspaceWindowEventLifecyclesSaga() {
+    yield* takeEvery(workspaceMounted, startDockNavigationForWorkspaceSaga);
+    yield* takeEvery(workspaceUnmounted, cancelDockNavigationForWorkspaceSaga);
 }
 export function* watchNavigateSaga() {
     yield* takeEveryFromElectronChannel<string>("navigate", function* (path) {
@@ -403,7 +432,7 @@ export function* watchBrowserOpenTabSaga() {
         }
         const { url, position = "adjacent" } = data;
         if (position === "replace") {
-            const allTabs = yield* selectAllTabs.effect(workspaceId);
+            const allTabs = yield* select(selectAllTabs.select, workspaceId);
             const existingBrowserTab = allTabs.find((tab) => tab.type === "browser");
             if (existingBrowserTab) {
                 yield* put(updateTabBrowserUrl(workspaceId, existingBrowserTab.id, url));
@@ -535,8 +564,8 @@ export function* watchOpenNewSpaceOnboardingSaga() {
 /**
  * Open a note tab in the panel layout.
  */
-function* openNoteInLayout(noteId: string, noteTitle: string, wsId: string) {
-    yield* put(openTab(wsId, {
+function openNoteInLayout(noteId: string, noteTitle: string, wsId: string): void {
+    getReduxStore().dispatch(openTab(wsId, {
         type: "note",
         title: noteTitle || "Note",
         noteId,
@@ -554,7 +583,7 @@ function* handleCreateNoteRequestedSaga(wsId: string) {
         if (result.ok && result.data) {
             yield* put(markNoteRead(wsId, result.data.id));
             yield* put(reloadNotes(wsId));
-            yield* openNoteInLayout(result.data.id, result.data.title || "New Note", wsId);
+            openNoteInLayout(result.data.id, result.data.title || "New Note", wsId);
             track("Created Note", { note_type: "regular", source: "tab-bar" });
         }
     }
@@ -562,7 +591,7 @@ function* handleCreateNoteRequestedSaga(wsId: string) {
     }
 }
 function* watchCreateNoteRequestedSaga() {
-    yield* takeEvery(createNoteRequested, function* ({ payload }: ReturnType<typeof createNoteRequested>) {
+    yield takeEvery(createNoteRequested, function* ({ payload }: ReturnType<typeof createNoteRequested>) {
         const [wsId] = payload;
         yield* handleCreateNoteRequestedSaga(wsId);
     });
@@ -619,7 +648,7 @@ function* handleCreateFileRequestedSaga(wsId: string, folderPath: string, fileNa
     }
 }
 function* watchCreateFileRequestedSaga() {
-    yield* takeEvery(createFileRequested, function* ({ payload }: ReturnType<typeof createFileRequested>) {
+    yield takeEvery(createFileRequested, function* ({ payload }: ReturnType<typeof createFileRequested>) {
         const [wsId, folderPath, fileName] = payload;
         yield* handleCreateFileRequestedSaga(wsId, folderPath, fileName);
     });
@@ -642,7 +671,7 @@ export function* appLayoutSaga() {
     yield* fork(watchWorkspaceCreateForRepoSaga);
     yield* fork(watchOpenNewSpaceOnboardingSaga);
     yield* fork(watchWorkspaceWindowEventsSaga);
-    yield* fork(watchDockNavigationForWorkspaceSaga);
+    yield* fork(watchWorkspaceWindowEventLifecyclesSaga);
     yield* fork(specPanelSaga);
     yield* fork(watchCreateNoteRequestedSaga);
     yield* fork(watchCreateFileRequestedSaga);

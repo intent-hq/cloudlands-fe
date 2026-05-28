@@ -73,14 +73,16 @@ vi.mock('$features/agent/browser', () => ({
     return () => {};
   },
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => mockState.dispatch,
+  getStoreContext: () => ({ store: { dispatch: mockState.dispatch } }),
+}));
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    getState: () => ({ agents: mockState.agents.get() }),
     dispatch: mockState.dispatch,
-  });
-});
+  }),
+}));
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
 }));
@@ -146,8 +148,7 @@ vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => (
     subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
   }),
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/user-preferences/user-preferences-slice')>()),
+vi.mock('$lib/store/slices/user-preferences/user-preferences-slice', () => ({
   cycleFontStyle: () => ({ type: 'userPreferences/cycleFontStyle' }),
 }));
 vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
@@ -156,8 +157,7 @@ vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
   }),
   selectSpecialistName: { select: () => undefined },
 }));
-vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/panel-layout/panel-layout-slice')>()),
+vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: () => ({ type: 'panelLayout/closeTab' }),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: vi.fn() }));

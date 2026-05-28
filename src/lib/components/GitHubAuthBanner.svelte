@@ -14,7 +14,7 @@
 } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   initializeGitHubAuth,
   startGitHubAuth,
@@ -28,7 +28,6 @@
   selectGitHubAuthError,
   selectGitHubAuthRequiresAugmentAuth,
 } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     /** Message shown before auth starts */
@@ -48,6 +47,7 @@
     autoStart = false,
   }: Props = $props();
 
+  const dispatch = getDispatch();
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const oauthUrl$ = selectGitHubAuthOauthUrl();
@@ -60,7 +60,7 @@
 
   // Initialize auth state on mount and optionally auto-start
   onMount(() => {
-    appStore.dispatch(initializeGitHubAuth());
+    dispatch(initializeGitHubAuth());
     if (autoStart) {
       handleConnect();
     }
@@ -68,18 +68,18 @@
 
   function handleConnect() {
     authStartedHere = true;
-    appStore.dispatch(startGitHubAuth());
+    dispatch(startGitHubAuth());
   }
 
   function handleCancel() {
     if (authStartedHere) {
-      appStore.dispatch(cancelGitHubAuth());
+      dispatch(cancelGitHubAuth());
       authStartedHere = false;
     }
   }
 
   function handleRetry() {
-    appStore.dispatch(clearGitHubAuthError());
+    dispatch(clearGitHubAuthError());
     handleConnect();
   }
 
@@ -111,7 +111,7 @@
 
       if (isAuth) {
         // Update the store state
-        appStore.dispatch(initializeGitHubAuth());
+        dispatch(initializeGitHubAuth());
         handleAuthSuccess();
       }
     } catch {
@@ -158,7 +158,7 @@
 
   onDestroy(() => {
     if (authStartedHere && $isAuthenticating$) {
-      appStore.dispatch(cancelGitHubAuth());
+      dispatch(cancelGitHubAuth());
     }
   });
 

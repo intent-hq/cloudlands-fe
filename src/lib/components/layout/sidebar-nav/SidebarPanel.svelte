@@ -10,7 +10,7 @@
   faThumbtack,
 } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   selectPanelItem,
   selectPanelWidth,
@@ -22,8 +22,8 @@
   closePanel,
   setPanelWidth as setPanelWidthAction,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
   const isCardPinned$ = selectIsCardPinned();
@@ -70,7 +70,7 @@
 
     function onMouseUp() {
       isResizing = false;
-      appStore.dispatch(setPanelWidthAction(liveWidth));
+      dispatch(setPanelWidthAction(liveWidth));
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     }
@@ -97,7 +97,7 @@
             <button
               class="w-6 h-6 flex items-center justify-center rounded-md transition-colors cursor-pointer
                 {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45 hover:text-foreground hover:bg-muted/50'}"
-              onclick={() => appStore.dispatch(toggleCardPinned())}
+              onclick={() => dispatch(toggleCardPinned())}
               aria-label={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
             >
               <Fa icon={faThumbtack} size="xs" />
@@ -105,7 +105,7 @@
           </Tooltip>
           <button
             class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-            onclick={() => appStore.dispatch(closePanel())}
+            onclick={() => dispatch(closePanel())}
             aria-label="Close panel"
           >
             <Fa icon={faXmark} size="xs" />

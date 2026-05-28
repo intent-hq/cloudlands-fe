@@ -12,8 +12,8 @@
   import UpdateToast from '$lib/components/ui/toast/UpdateToast.svelte';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
-
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   selectAutoUpdateToastVisible,
   selectAutoUpdateStatus,
@@ -25,8 +25,8 @@
   dismissDownloadedToast,
   initAutoUpdate,
 } from '$lib/store/slices/auto-update/auto-update-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
   const toastVisible$ = selectAutoUpdateToastVisible();
   const status$ = selectAutoUpdateStatus();
   const dismissedAt$ = selectAutoUpdateDismissedAt();
@@ -49,13 +49,13 @@
       onDismiss: () => {
         // Sonner's built-in dismiss (swipe, programmatic)
         currentToastId = undefined;
-        const currentStatus = selectAutoUpdateStatus.select(appStore.state);
+        const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
         if (currentStatus === 'downloaded') {
           // Allow dismissal but track the time so we can re-prompt after 24h
-          appStore.dispatch(dismissDownloadedToast(Date.now()));
+          dispatch(dismissDownloadedToast(Date.now()));
           return;
         }
-        appStore.dispatch(hideToast());
+        dispatch(hideToast());
       },
       componentProps: {
         onDismiss: () => {
@@ -64,7 +64,7 @@
             toast.dismiss(currentToastId);
             currentToastId = undefined;
           }
-          appStore.dispatch(hideToast());
+          dispatch(hideToast());
         },
       },
     });
@@ -98,12 +98,12 @@
         showUpdateToast();
       }
       // Also ensure toastVisible is true so the toast stays visible
-      const isToastVisible = selectAutoUpdateToastVisible.select(appStore.state);
+      const isToastVisible = selectAutoUpdateToastVisible.select(getReduxStore().getState());
       if (!isToastVisible) {
-        appStore.dispatch(showToast());
+        dispatch(showToast());
       }
     } else if (status === 'downloaded') {
-      const dismissedAt = selectAutoUpdateDismissedAt.select(appStore.state);
+      const dismissedAt = selectAutoUpdateDismissedAt.select(getReduxStore().getState());
       const cooldownExpired =
         dismissedAt == null || Date.now() - dismissedAt >= DISMISS_COOLDOWN_MS;
 
@@ -111,22 +111,22 @@
         if (currentToastId === undefined) {
           showUpdateToast();
         }
-        const isToastVisible = selectAutoUpdateToastVisible.select(appStore.state);
+        const isToastVisible = selectAutoUpdateToastVisible.select(getReduxStore().getState());
         if (!isToastVisible) {
-          appStore.dispatch(showToast());
+          dispatch(showToast());
         }
       } else {
         // Cooldown still active — dismiss the toast if it's showing
         // (e.g., user triggered "Check for Updates" which briefly showed the checking toast)
         dismissToast();
-        appStore.dispatch(hideToast());
+        dispatch(hideToast());
       }
     }
 
     // Auto-dismiss toast when idle (error is handled by UpdateToast with a delay)
     if (status === 'idle') {
       dismissToast();
-      appStore.dispatch(hideToast());
+      dispatch(hideToast());
     }
 
     previousStatus = status;
@@ -146,10 +146,10 @@
 
     const timeout = setTimeout(() => {
       // Re-show the toast now that cooldown has expired
-      const currentStatus = selectAutoUpdateStatus.select(appStore.state);
+      const currentStatus = selectAutoUpdateStatus.select(getReduxStore().getState());
       if (currentStatus === 'downloaded') {
         showUpdateToast();
-        appStore.dispatch(showToast());
+        dispatch(showToast());
       }
     }, remaining);
 
@@ -164,7 +164,7 @@
       const delay = status === 'error' ? 5500 : 3500;
       const timeout = setTimeout(() => {
         dismissToast();
-        appStore.dispatch(hideToast());
+        dispatch(hideToast());
       }, delay);
       return () => clearTimeout(timeout);
     }
@@ -172,7 +172,7 @@
 
   onMount(() => {
     // Initialize the auto-update store via saga
-    appStore.dispatch(initAutoUpdate());
+    dispatch(initAutoUpdate());
 
     return () => {
       dismissToast();

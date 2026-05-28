@@ -24,11 +24,11 @@
   selectCheatSheetContext,
 } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
   import { closeCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   const isOpen = selectIsCheatSheetOpen();
   const context = selectCheatSheetContext();
+  const dispatch = getDispatch();
 
   const categories = getAllShortcutCategories();
   const categoryOrder: ShortcutCategory[] = [
@@ -41,7 +41,7 @@
   ];
 
   function handleClose() {
-    appStore.dispatch(closeCheatSheet());
+    dispatch(closeCheatSheet());
   }
 
   function handleBackdropClick(e: MouseEvent) {

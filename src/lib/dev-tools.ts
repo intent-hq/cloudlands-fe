@@ -211,15 +211,15 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     AutoUpdate: {
       getState: () => {
         try {
-          const { appStore } = require('$lib/store/store');
-          return appStore.state.autoUpdate;
+          const { getReduxStore } = require('$lib/store/redux-dispatch-bridge');
+          return getReduxStore().getState().autoUpdate;
         } catch { return null; }
       },
       simulateSetState: (partial: Record<string, unknown>) => {
         try {
-          const { appStore } = require('$lib/store/store');
+          const { getReduxStore } = require('$lib/store/redux-dispatch-bridge');
           const { simulateSetState } = require('$lib/store/slices/auto-update/auto-update-slice');
-          appStore.dispatch(simulateSetState(partial));
+          getReduxStore().dispatch(simulateSetState(partial));
         } catch { /* ignore */ }
       },
     },

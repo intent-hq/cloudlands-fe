@@ -1,7 +1,8 @@
 /**
  * Main-process Redux store bridge.
  *
- * Main-process-only bridge for global access to the
+ * Equivalent of `redux-dispatch-bridge.ts` for the renderer store,
+ * but scoped to the main process. Provides global access to the
  * main-process Redux store after initialization.
  */
 

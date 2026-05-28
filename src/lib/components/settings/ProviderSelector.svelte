@@ -24,7 +24,7 @@
   retryLoadModels,
   reloadModelsForProvider,
 } from '$lib/store/slices/model/model-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   ACP_PROVIDERS,
   getProviderConfig,
@@ -59,9 +59,9 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Button from '../ui/button/button.svelte';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('ProviderSelector');
+  const dispatch = getDispatch();
   const activeProviderId = selectActiveProviderId();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const enabledProviders$ = selectEnabledProviders();
@@ -225,7 +225,7 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
-    appStore.dispatch(setProviderEnabled({ providerId, enabled }));
+    dispatch(setProviderEnabled({ providerId, enabled }));
   }
 
   onMount(() => {
@@ -368,7 +368,7 @@
       providerAvailability = providerResult.data || null;
 
       if (refreshModels) {
-        appStore.dispatch(retryLoadModels());
+        dispatch(retryLoadModels());
       }
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });
@@ -529,7 +529,7 @@
       if (result.success) {
         toast.success('Auggie installed successfully');
         await checkProviderAvailability();
-        appStore.dispatch(retryLoadModels());
+        dispatch(retryLoadModels());
       } else {
         const message = result.error || 'Installation failed';
         installError = message;
@@ -572,7 +572,7 @@
         if (result.data.authenticated) {
           toast.success('Logged in successfully');
           await checkProviderAvailability();
-          appStore.dispatch(reloadModelsForProvider());
+          dispatch(reloadModelsForProvider());
         } else {
           showAuthInput = true;
         }
@@ -621,7 +621,7 @@
       if (result.success && result.data?.autoCompleted) {
         toast.success('Logged in successfully');
         await checkProviderAvailability();
-        appStore.dispatch(reloadModelsForProvider());
+        dispatch(reloadModelsForProvider());
         return;
       }
 
@@ -692,7 +692,7 @@
         authInput = '';
         authUrl = null;
         await checkProviderAvailability();
-        appStore.dispatch(reloadModelsForProvider());
+        dispatch(reloadModelsForProvider());
       } else {
         await loadAuggieStatus();
         if (auggieStatus?.authenticated) {
@@ -700,7 +700,7 @@
           showAuthInput = false;
           authInput = '';
           authUrl = null;
-          appStore.dispatch(reloadModelsForProvider());
+          dispatch(reloadModelsForProvider());
         } else {
           authError = result.error || 'Authentication failed';
         }
@@ -729,8 +729,8 @@
         from: previousProviderId,
         to: providerId,
       });
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
+      dispatch(setActiveProvider(providerId));
+      dispatch(reloadModelsForProvider());
       toast.success(`Switched to ${ACP_PROVIDERS[providerId]?.displayName || providerId}`);
 
       // Track provider selection

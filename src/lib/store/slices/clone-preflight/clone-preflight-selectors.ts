@@ -1,14 +1,14 @@
-import { store } from "../../store";
+import { createSelector } from '../../utils/create-selector';
 import type { ClonePreflightStatus } from './clone-preflight-slice';
 
-export const selectClonePreflightStatus = store.createSelector(
+export const selectClonePreflightStatus = createSelector(
   (state): ClonePreflightStatus => state.clonePreflight.status,
 );
 
-export const selectClonePreflightUrl = store.createSelector(
+export const selectClonePreflightUrl = createSelector(
   (state): string => state.clonePreflight.url,
 );
 
-export const selectClonePreflightError = store.createSelector(
+export const selectClonePreflightError = createSelector(
   (state): string | null => state.clonePreflight.error,
 );

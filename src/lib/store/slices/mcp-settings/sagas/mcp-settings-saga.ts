@@ -14,8 +14,8 @@ import {
 } from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
-import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
-import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
+import { on } from "$lib/electron-bridge";
+import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import type { McpServerConfig, McpServerStatus, McpAuthInfo } from "../mcp-settings-types";
 import {
@@ -66,8 +66,6 @@ import {
 } from "../mcp-settings-normalization";
 
 const logger = createLogger("McpSettingsSaga");
-
-type McpServerErrorPayload = Record<string, unknown>;
 
 // ============================================================================
 // IPC helpers
@@ -547,59 +545,71 @@ function* handleImportFromJson(action: ReturnType<typeof importFromJson>): SagaG
 // IPC error listener saga
 // ============================================================================
 
-/** @internal Exported for testing only. */
-export function* handleMcpServerError(data: McpServerErrorPayload): SagaGenerator<void> {
-  const serverName = optionalString(data?.serverName);
-  const command = optionalString(data?.command);
-  const errorMessage = data?.errorMessage
-    ? toMcpErrorMessage(data.errorMessage, "MCP server error")
-    : null;
-  if (!errorMessage) return;
+function* mcpErrorListenerSaga(): SagaGenerator<void> {
+  if (typeof window === "undefined" || !window.electronAPI) return;
 
-  const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);
-  const status: McpServerStatus = isAuthError ? "auth_required" : "error";
-  const friendlyMessage = isAuthError
-    ? "Authentication required — check your credentials or reauthenticate"
-    : errorMessage;
+  // We use the `on` helper which returns a listener ID
+  // The callback dispatches directly via the store since it's outside saga context
+  try {
+    const { getReduxStore } = yield* call(
+      async () => await import("$lib/store/redux-dispatch-bridge")
+    );
 
-  if (serverName) {
-    yield* put(setServerStatus(serverName, status));
-    yield* put(setServerErrorMessage(serverName, friendlyMessage));
-    logger.warn("MCP server error received", { serverName, errorMessage, status });
-    return;
-  }
+    yield* call(on, "mcp:server-error", (_event: any, data: any) => {
+      const serverName = optionalString(data?.serverName);
+      const command = optionalString(data?.command);
+      const errorMessage = data?.errorMessage
+        ? toMcpErrorMessage(data.errorMessage, "MCP server error")
+        : null;
+      if (!errorMessage) return;
 
-  // Try to match by command/URL against loaded servers
-  if (command) {
-    const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-    for (const server of servers) {
-      const serverCmd =
-        server.type === "stdio"
-          ? server.args?.length
-            ? `${server.command} ${server.args.join(" ")}`
-            : server.command
-          : server.url;
-      if (serverCmd && command.includes(serverCmd)) {
-        yield* put(setServerStatus(server.name, status));
-        yield* put(setServerErrorMessage(server.name, friendlyMessage));
-        logger.warn("MCP server error matched by command", {
-          serverName: server.name,
-          errorMessage,
-          status,
-        });
+      const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);
+      const status: McpServerStatus = isAuthError ? "auth_required" : "error";
+      const friendlyMessage = isAuthError
+        ? "Authentication required — check your credentials or reauthenticate"
+        : errorMessage;
+
+      const store = getReduxStore();
+
+      if (serverName) {
+        store.dispatch(setServerStatus(serverName, status));
+        store.dispatch(setServerErrorMessage(serverName, friendlyMessage));
+        logger.warn("MCP server error received", { serverName, errorMessage, status });
         return;
       }
-    }
+
+      // Try to match by command/URL against loaded servers
+      if (command) {
+        const state = store.getState();
+        const servers = selectMcpServers.select(state);
+        for (const server of servers) {
+          const serverCmd =
+            server.type === "stdio"
+              ? server.args?.length
+                ? `${server.command} ${server.args.join(" ")}`
+                : server.command
+              : server.url;
+          if (serverCmd && command.includes(serverCmd)) {
+            store.dispatch(setServerStatus(server.name, status));
+            store.dispatch(setServerErrorMessage(server.name, friendlyMessage));
+            logger.warn("MCP server error matched by command", {
+              serverName: server.name,
+              errorMessage,
+              status,
+            });
+            return;
+          }
+        }
+      }
+
+      logger.warn("MCP server error received but could not match to server", {
+        command,
+        errorMessage,
+      });
+    });
+  } catch {
+    // electronAPI may not be available
   }
-
-  logger.warn("MCP server error received but could not match to server", {
-    command,
-    errorMessage,
-  });
-}
-
-function* mcpErrorListenerSaga(): SagaGenerator<void> {
-  yield* takeEveryFromElectronChannel<McpServerErrorPayload>("mcp:server-error", handleMcpServerError);
 }
 
 // ============================================================================

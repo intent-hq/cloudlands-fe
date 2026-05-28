@@ -17,7 +17,7 @@
   connectSentry,
   fetchSentryIssues,
 } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
@@ -27,7 +27,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { store as appStore } from '$lib/store/store';
 
 
   interface Props {
@@ -39,6 +38,7 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
+  const dispatch = getDispatch();
   const isAuthenticated$ = selectSentryIsAuthenticated();
   const issues$ = selectSentryIssues();
   const isLoadingIssues$ = selectSentryIsLoadingIssues();
@@ -69,7 +69,7 @@
       pendingConnect = false;
       if ($isAuthenticated$) {
         showConfigForm = false;
-        appStore.dispatch(fetchSentryIssues());
+        dispatch(fetchSentryIssues());
       }
     }
   });
@@ -77,7 +77,7 @@
   function handleConnect() {
     if (!sentryOrg || !sentryToken) return;
     pendingConnect = true;
-    appStore.dispatch(connectSentry(sentryOrg, sentryToken));
+    dispatch(connectSentry(sentryOrg, sentryToken));
   }
 
   function handleSelect(issue: SentryIssueResult) {
@@ -99,17 +99,17 @@
   }
 
   onMount(() => {
-    appStore.dispatch(initializeSentryAuth());
+    dispatch(initializeSentryAuth());
     // Fetch issues if already authenticated (state may persist from previous mount)
     if ($isAuthenticated$) {
-      appStore.dispatch(fetchSentryIssues());
+      dispatch(fetchSentryIssues());
     }
   });
 
   // When auth state becomes true (e.g. after init), fetch issues
   $effect(() => {
     if ($isAuthenticated$ && $issues$.length === 0 && !$isLoadingIssues$) {
-      appStore.dispatch(fetchSentryIssues());
+      dispatch(fetchSentryIssues());
     }
   });
 </script>

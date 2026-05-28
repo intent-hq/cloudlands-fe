@@ -3,7 +3,8 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   initializeGitHubAuth,
   startGitHubAuth,
@@ -28,6 +29,7 @@
 
   let isDisconnectingGitHub = $state(false);
 
+  const dispatch = getDispatch();
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const user$ = selectGitHubAuthUser();
@@ -36,17 +38,17 @@
 
   onMount(() => {
     if (!skipInitialize) {
-      appStore.dispatch(initializeGitHubAuth());
+      dispatch(initializeGitHubAuth());
     }
 
     // Check auth status immediately when window gains focus
     // This makes the UI update snappily when user returns from browser
     const handleFocus = () => {
-      const state = appStore.state;
+      const state = getReduxStore().getState();
       const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
       const oauthUrl = selectGitHubAuthOauthUrl.select(state);
       if (isAuthenticating && oauthUrl) {
-        appStore.dispatch(checkGitHubAuthStatus());
+        dispatch(checkGitHubAuthStatus());
       }
     };
 
@@ -57,19 +59,19 @@
   });
 
   function handleGitHubConnect() {
-    appStore.dispatch(startGitHubAuth());
+    dispatch(startGitHubAuth());
   }
 
   function handleGitHubDisconnect() {
     isDisconnectingGitHub = true;
-    appStore.dispatch(logoutGitHub());
+    dispatch(logoutGitHub());
     // The saga handles the async logout; we just reset local UI state
     // Use a short delay to let the saga complete
     setTimeout(() => { isDisconnectingGitHub = false; }, 500);
   }
 
   function handleGitHubReconnect() {
-    appStore.dispatch(startGitHubAuth());
+    dispatch(startGitHubAuth());
   }
 </script>
 

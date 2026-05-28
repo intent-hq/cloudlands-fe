@@ -11,7 +11,7 @@ import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.cli
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { track } from '$lib/services/analytics';
-
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import {
   selectInitialAgentConfig,
   selectInitialAgentId,
@@ -26,9 +26,8 @@ import {
   setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$lib/store/slices/workspace/workspace-slice';
-
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('workspace-loader');
 
@@ -40,6 +39,7 @@ export interface UseWorkspaceLoaderOptions {
 }
 
 export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
+  const dispatch = getDispatch();
 
   // Track loading state more robustly
   let loadingWorkspaceId: string | null = $state(null);
@@ -53,7 +53,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
   let lastMountedWorkspaceId: string | null = null;
 
   function hydrateInitialAgentIdBeforeMount(workspaceId: string) {
-    const state = appStore.state;
+    const state = getReduxStore().getState();
     const initialAgentId = selectInitialAgentId.select(state, workspaceId);
 
     if (initialAgentId) {
@@ -65,7 +65,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       return;
     }
 
-    appStore.dispatch(setInitialAgentId(workspaceId, pendingConfig.agentId));
+    dispatch(setInitialAgentId(workspaceId, pendingConfig.agentId));
   }
 
   async function loadWorkspace() {
@@ -169,7 +169,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     }
 
     // Load real workspace - prefer already-initialized workspace from the store
-    let ws = selectWorkspaceById.select(appStore.state, workspaceId);
+    let ws = selectWorkspaceById.select(getReduxStore().getState(), workspaceId);
 
     // Check if this workspace is already fully loaded and active.
     // If so, we only need to call the backend open() for monitoring idempotency
@@ -179,7 +179,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // state and cause active streams to appear disconnected.
     const isAlreadyActive =
       ws &&
-      selectActiveWorkspace.select(appStore.state)?.id === workspaceId &&
+      selectActiveWorkspace.select(getReduxStore().getState())?.id === workspaceId &&
       state?.workspaceData?.id === workspaceId &&
       lastMountedWorkspaceId === workspaceId;
 
@@ -223,13 +223,13 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         workspace: { id: ws.id, status: 'ready' },
       });
       workspaceState.markInitialized();
-      appStore.dispatch(setWorkspaceEntity(ws));
+      dispatch(setWorkspaceEntity(ws));
       hydrateInitialAgentIdBeforeMount(ws.id);
-      appStore.dispatch(workspaceMounted(ws.id));
+      dispatch(workspaceMounted(ws.id));
       lastMountedWorkspaceId = ws.id;
       alreadyMounted = true;
 
-      appStore.dispatch(setActiveWorkspaceId(ws.id));
+      dispatch(setActiveWorkspaceId(ws.id));
     }
 
     let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
@@ -245,7 +245,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     if (openResult.ok && openResult.data) {
       ws = openResult.data;
-      appStore.dispatch(setActiveWorkspaceId(ws.id));
+      dispatch(setActiveWorkspaceId(ws.id));
       logger.info('Workspace opened successfully, monitoring started', {
         workspaceId,
         worktreePath: ws.worktreePath,
@@ -273,18 +273,18 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       workspaceState.markInitialized();
 
       // Hydrate Redux with the (potentially fresher) workspace entity.
-      appStore.dispatch(setWorkspaceEntity(ws));
+      dispatch(setWorkspaceEntity(ws));
 
       // Dispatch workspaceMounted only if we haven't already done so above
       // from cached data. This prevents duplicate saga forks.
       if (!alreadyMounted) {
         hydrateInitialAgentIdBeforeMount(ws.id);
-        appStore.dispatch(workspaceMounted(ws.id));
+        dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;
       }
 
       // Ensure it's set as current in store
-      appStore.dispatch(setActiveWorkspaceId(ws.id));
+      dispatch(setActiveWorkspaceId(ws.id));
     } else {
       // This case shouldn't be reached since we throw if ws is null after failed open
       // but keep it as a safety net

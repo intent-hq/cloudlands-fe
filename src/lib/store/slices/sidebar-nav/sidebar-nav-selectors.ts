@@ -2,79 +2,79 @@
  * Sidebar Nav Selectors
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import type { SidebarNavItem } from "./sidebar-nav-types";
 
 // ── Direct state selectors ──
-export const selectActiveStreamsVersion = store.createSelector(
+export const selectActiveStreamsVersion = createSelector(
   (state) => state.sidebarNav.activeStreamsVersion,
 );
 
-export const selectUnreadVersion = store.createSelector(
+export const selectUnreadVersion = createSelector(
   (state) => state.sidebarNav.unreadVersion,
 );
 
-export const selectHoveredItem = store.createSelector(
+export const selectHoveredItem = createSelector(
   (state) => state.sidebarNav.hoveredItem,
 );
 
-export const selectExpandedItem = store.createSelector(
+export const selectExpandedItem = createSelector(
   (state) => state.sidebarNav.expandedItem,
 );
 
-export const selectIsCardPinned = store.createSelector(
+export const selectIsCardPinned = createSelector(
   (state) => state.sidebarNav.isCardPinned,
 );
 
-export const selectPanelItem = store.createSelector(
+export const selectPanelItem = createSelector(
   (state) => state.sidebarNav.panelItem,
 );
 
-export const selectPanelWidth = store.createSelector(
+export const selectPanelWidth = createSelector(
   (state) => state.sidebarNav.panelWidth,
 );
 
-export const selectOnboardingActive = store.createSelector(
+export const selectOnboardingActive = createSelector(
   (state) => state.sidebarNav.onboardingActive,
 );
 
-export const selectShowCreateModal = store.createSelector(
+export const selectShowCreateModal = createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectDraftPrompt = store.createSelector(
+export const selectDraftPrompt = createSelector(
   (state) => state.sidebarNav.draftPrompt,
 );
 
-export const selectAllSpacesViewMode = store.createSelector(
+export const selectAllSpacesViewMode = createSelector(
   (state) => state.sidebarNav.allSpacesViewMode,
 );
 
-export const selectPinnedWorkspaceIds = store.createSelector(
+export const selectPinnedWorkspaceIds = createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );
 
-export const selectMultiSelectSidebarTabOrder = store.createSelector(
+export const selectMultiSelectSidebarTabOrder = createSelector(
   (state): string[] => state.sidebarNav.multiSelectTabOrder,
 );
 
-export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
+export const selectMultiSelectSidebarSelectedTabIds = createSelector(
   (state, workspaceId: string): string[] =>
     state.sidebarNav.multiSelectSelectedTabIdsByWorkspaceId[workspaceId] ?? ["overview"],
 );
 
-export const selectWorkspaceNoteOrder = store.createSelector(
+export const selectWorkspaceNoteOrder = createSelector(
   (state, workspaceId: string): string[] => state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],
 );
 
-export const selectWorkspaceCollapsedNoteIds = store.createSelector(
+export const selectWorkspaceCollapsedNoteIds = createSelector(
   (state, workspaceId: string): string[] => state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
 );
 
 // ── Derived selectors ──
 
 /** The active visible card (either hovered or expanded) */
-export const selectActiveCard = store.createSelector(
+export const selectActiveCard = createSelector(
   (state): SidebarNavItem | null => {
     const { expandedItem, hoveredItem } = state.sidebarNav;
     return expandedItem ?? hoveredItem;
@@ -82,27 +82,27 @@ export const selectActiveCard = store.createSelector(
 );
 
 /** Whether any hover card is visible */
-export const selectIsCardVisible = store.createSelector(
+export const selectIsCardVisible = createSelector(
   (state) => selectActiveCard.select(state) !== null,
 );
 
 /** Whether a sidebar panel is currently open */
-export const selectIsPanelOpen = store.createSelector(
+export const selectIsPanelOpen = createSelector(
   (state) => state.sidebarNav.panelItem !== null,
 );
 
 /** Check if a specific workspace is pinned */
-export const selectIsWorkspacePinned = store.createSelector(
+export const selectIsWorkspacePinned = createSelector(
   (state, id: string) => state.sidebarNav.pinnedWorkspaceIds.includes(id),
 );
 
 /** Whether any context menu is open (prevents hover card auto-close) */
-export const selectContextMenuOpen = store.createSelector(
+export const selectContextMenuOpen = createSelector(
   (state) => state.sidebarNav.contextMenuOpenCount > 0,
 );
 
 /** The deferred leave type when context menu prevented auto-close */
-export const selectDeferredLeave = store.createSelector(
+export const selectDeferredLeave = createSelector(
   (state) => state.sidebarNav.deferredLeave,
 );
 

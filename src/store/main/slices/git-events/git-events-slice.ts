@@ -5,7 +5,7 @@
  * Actions: git:*, github:auth-required
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createAction } from "../../utils/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

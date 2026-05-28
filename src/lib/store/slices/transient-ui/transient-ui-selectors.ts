@@ -1,19 +1,19 @@
-import { store } from "../../store";
+import { createSelector } from '../../utils/create-selector';
 import { emptyWorkspaceTransientUiState } from './transient-ui-slice';
 
-export const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {
+export const selectTransientUiWorkspaceState = createSelector((state, workspaceId: string) => {
   return state.transientUi.byWorkspaceId[workspaceId] ?? emptyWorkspaceTransientUiState;
 });
 
-export const selectSidebarActiveTab = store.createSelector((state, workspaceId: string) => {
+export const selectSidebarActiveTab = createSelector((state, workspaceId: string) => {
   return selectTransientUiWorkspaceState.select(state, workspaceId).sidebarActiveTab;
 });
 
-export const selectViewedFiles = store.createSelector((state, workspaceId: string) => {
+export const selectViewedFiles = createSelector((state, workspaceId: string) => {
   return selectTransientUiWorkspaceState.select(state, workspaceId).viewedFiles;
 });
 
-export const selectIsRawNoteViewEnabled = store.createSelector(
+export const selectIsRawNoteViewEnabled = createSelector(
   (state, workspaceId: string, noteId: string) => {
     return (
       selectTransientUiWorkspaceState.select(state, workspaceId).rawNoteViewByNoteId[noteId] ===
@@ -22,6 +22,6 @@ export const selectIsRawNoteViewEnabled = store.createSelector(
   },
 );
 
-export const selectChatDraft = store.createSelector((state, workspaceId: string, agentId: string) => {
+export const selectChatDraft = createSelector((state, workspaceId: string, agentId: string) => {
   return selectTransientUiWorkspaceState.select(state, workspaceId).chatDrafts[agentId] ?? '';
 });

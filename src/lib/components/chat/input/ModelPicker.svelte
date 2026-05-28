@@ -8,7 +8,7 @@
   import { agentClient } from '$features/agent/agent.client';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
   import {
   Dropdown,
@@ -55,7 +55,7 @@
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$lib/store/slices/model/model-utils';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   ACP_PROVIDERS,
   getDefaultProviderId,
@@ -86,6 +86,7 @@
 
   const logger = createLogger('ModelPicker');
 
+  const dispatch = getDispatch();
   const activeProviderId$ = selectActiveProviderId();
   const enabledProviderIds$ = selectEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
@@ -167,18 +168,17 @@
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
   >(null);
-  import { store as appStore } from '$lib/store/store';
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
   function setProviderWarningState(providerId: string, warning: string | undefined) {
     const normalizedId = getProviderConfig(providerId).id;
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
+    dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
   }
 
   function setProviderErrorState(providerId: string, error: string) {
     const normalizedId = getProviderConfig(providerId).id;
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }));
+    dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }));
   }
 
   function getProviderWarningNotice(
@@ -297,7 +297,7 @@
   const collapsedGroups = $derived(new Set($collapsedGroupKeys$));
 
   function toggleGroup(key: string) {
-    appStore.dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
+    dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
   }
 
   let refreshingProviders = $state<Set<string>>(new Set());
@@ -465,15 +465,15 @@
         return;
       }
 
-      appStore.dispatch(selectModel(model));
+      dispatch(selectModel(model));
 
       if (workspaceId) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId, model }));
+        dispatch(setWorkspaceModel({ workspaceId, model }));
         logger.debug('Updated workspace model:', { workspaceId, model });
       }
 
       if (agentId && workspaceId) {
-        appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+        getReduxStore().dispatch(updateAgentSessionFields(agentId, { model }));
         logger.debug('Updated local session model:', { agentId, model });
 
         if (deferUpdate) {
@@ -738,18 +738,18 @@
     if (!agentId) {
       return;
     }
-    appStore.dispatch(requestHydrateModelFallbackInfo(agentId));
+    dispatch(requestHydrateModelFallbackInfo(agentId));
   });
 
   function setFallbackInfo(info: ModelFallbackInfo) {
     if (agentId) {
-      appStore.dispatch(setModelFallbackInfo(agentId, info));
+      dispatch(setModelFallbackInfo(agentId, info));
     }
   }
 
   function clearFallbackInfo() {
     if (agentId) {
-      appStore.dispatch(clearModelFallbackInfo(agentId));
+      dispatch(clearModelFallbackInfo(agentId));
     }
   }
 

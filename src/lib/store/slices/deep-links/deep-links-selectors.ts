@@ -1,25 +1,25 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 
-export const selectDeepLinks = store.createSelector((state) => {
+export const selectDeepLinks = createSelector((state) => {
   return state.deepLinks;
 });
 
-export const selectHomePageInitializerRequest = store.createSelector((state) => {
+export const selectHomePageInitializerRequest = createSelector((state) => {
   return selectDeepLinks.select(state).homePageInitializerRequest;
 });
 
-export const selectHasHomePageInitializerRequest = store.createSelector((state) => {
+export const selectHasHomePageInitializerRequest = createSelector((state) => {
   return selectHomePageInitializerRequest.select(state) !== null;
 });
 
-export const selectPendingDeepLinkAction = store.createSelector((state) => {
+export const selectPendingDeepLinkAction = createSelector((state) => {
   return selectDeepLinks.select(state).pendingAction;
 });
 
-export const selectDeepLinkProcessing = store.createSelector((state) => {
+export const selectDeepLinkProcessing = createSelector((state) => {
   return selectDeepLinks.select(state).processing;
 });
 
-export const selectDeepLinkError = store.createSelector((state) => {
+export const selectDeepLinkError = createSelector((state) => {
   return selectDeepLinks.select(state).error;
 });

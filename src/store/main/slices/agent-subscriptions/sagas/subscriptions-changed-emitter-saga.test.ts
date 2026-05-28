@@ -136,14 +136,6 @@ function setup() {
   const sagaMiddleware = createSagaMiddleware();
   const store = createStore(rootReducer, applyMiddleware(sagaMiddleware)) as unknown as MainReduxStore;
   initMainStoreBridge(store);
-  sagaMiddleware.setContext({
-    readableStoreState: {
-      subscribe(run: (state: ReturnType<typeof store.getState>) => void): () => void {
-        run(store.getState());
-        return store.subscribe(() => run(store.getState()));
-      },
-    },
-  });
   const task: Task = sagaMiddleware.run(subscriptionsChangedEmitterSaga);
   return { store, task };
 }

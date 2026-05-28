@@ -251,11 +251,9 @@ describe('Preload Listener Registry', () => {
         if (!listenerRegistry.has(channel)) {
           listenerRegistry.set(channel, new Map());
         }
-        const channelListeners = listenerRegistry.get(channel);
-        if (!channelListeners) {
-          throw new Error(`Listener registry missing for channel ${channel}`);
-        }
-        channelListeners.set(listenerId, { id: listenerId, original: callback, wrapped: wrappedCallback });
+        listenerRegistry
+          .get(channel)!
+          .set(listenerId, { id: listenerId, original: callback, wrapped: wrappedCallback });
 
         // Mirror the real preload bridge behavior (for callers that inspect the callback)
         (callback as any).__ipcWrapper = wrappedCallback;
@@ -296,10 +294,10 @@ describe('Preload Listener Registry', () => {
 
         const channelListeners = listenerRegistry.get(channel);
         const entry = channelListeners?.get(listenerId);
-        if (entry && channelListeners) {
+        if (entry) {
           mockIpcRenderer.removeListener(channel, entry.wrapped);
-          channelListeners.delete(listenerId);
-          if (channelListeners.size === 0) {
+          channelListeners!.delete(listenerId);
+          if (channelListeners!.size === 0) {
             listenerRegistry.delete(channel);
           }
           return;
@@ -324,17 +322,10 @@ describe('Preload Listener Registry', () => {
     // Register listener
     const listenerId = electronAPI.on(channel, callback);
     expect(listenerRegistry.has(channel)).toBe(true);
-    const registeredListeners = listenerRegistry.get(channel);
-    expect(registeredListeners?.size).toBe(1);
-    if (!registeredListeners) {
-      throw new Error(`Listener registry missing for channel ${channel}`);
-    }
+    expect(listenerRegistry.get(channel)!.size).toBe(1);
 
     // Get the wrapped callback that was registered
-    const wrappedCallback = registeredListeners.get(listenerId)?.wrapped;
-    if (!wrappedCallback) {
-      throw new Error(`Listener ${listenerId} missing for channel ${channel}`);
-    }
+    const wrappedCallback = listenerRegistry.get(channel)!.get(listenerId)!.wrapped;
 
     // Remove listener
     electronAPI.off(channel, callback);

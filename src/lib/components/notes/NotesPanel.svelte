@@ -18,7 +18,7 @@
   ListContainer,
   ListItem,
 } from '../ui/list';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   createNote as createNoteAction,
   initializeNotes,
@@ -43,7 +43,6 @@
   getNoteDepth,
   parseTaskStats,
 } from '../workspace/sidebar/utils';
-  import { store as appStore } from '$lib/store/store';
 
 
   const logger = createLogger('NotesPanel');
@@ -67,6 +66,7 @@
     onCollapse?: () => void;
   } = $props();
 
+  const dispatch = getDispatch();
 
   // Local UI state
   let thirdPartySources: ThirdPartySource[] = $state([]);
@@ -80,7 +80,7 @@
     if (workspaceId && lastInitializedWorkspaceId !== workspaceId) {
       lastInitializedWorkspaceId = workspaceId;
       // Initialize with the current selected note to preserve selection
-      appStore.dispatch(initializeNotes(
+      dispatch(initializeNotes(
         workspaceId,
         selectedNoteId ? selectedNoteId : undefined,
       ));
@@ -150,7 +150,7 @@
   function createNote() {
     if (!workspaceId) return;
 
-    appStore.dispatch(createNoteAction(workspaceId, {
+    dispatch(createNoteAction(workspaceId, {
       title: 'New Note',
       content: '',
       tags: [],

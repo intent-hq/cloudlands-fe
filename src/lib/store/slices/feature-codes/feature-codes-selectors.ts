@@ -1,28 +1,28 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 
 /** Select all active feature IDs */
-export const selectActiveFeatures = store.createSelector(
+export const selectActiveFeatures = createSelector(
   (state): string[] => {
     return state.featureCodes.activeFeatures;
   }
 );
 
 /** Select whether a specific feature is enabled */
-export const selectIsFeatureEnabled = store.createSelector(
+export const selectIsFeatureEnabled = createSelector(
   (state, featureId: string): boolean => {
     return state.featureCodes.activeFeatures.includes(featureId);
   }
 );
 
 /** Select whether there are any active features */
-export const selectHasActiveFeatures = store.createSelector(
+export const selectHasActiveFeatures = createSelector(
   (state): boolean => {
     return state.featureCodes.activeFeatures.length > 0;
   }
 );
 
 /** Select whether the feature code dialog is open */
-export const selectFeatureCodeDialogOpen = store.createSelector(
+export const selectFeatureCodeDialogOpen = createSelector(
   (state): boolean => {
     return state.featureCodes.dialogOpen;
   }

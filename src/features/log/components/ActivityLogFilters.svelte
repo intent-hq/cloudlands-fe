@@ -13,8 +13,7 @@
   type ActivityLogPresetPreference,
 } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectActivityLogPresets } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Filters {
     showFileChanges: boolean;
@@ -42,6 +41,7 @@
     onfilter?: (filters: Filters) => void;
   } = $props();
 
+  const dispatch = getDispatch();
   const activityLogPresets$ = selectActivityLogPresets();
   let showAdvanced = $state(false);
 
@@ -101,7 +101,7 @@
   function savePreset() {
     const name = prompt('Enter preset name:');
     if (name) {
-      appStore.dispatch(saveActivityLogPreset({ name, filters: { ...filters } }));
+      dispatch(saveActivityLogPreset({ name, filters: { ...filters } }));
     }
   }
 
@@ -113,7 +113,7 @@
 
   // Delete preset
   function deletePreset(index: number) {
-    appStore.dispatch(deleteActivityLogPreset(index));
+    dispatch(deleteActivityLogPreset(index));
   }
 
   // Auto-apply filters on change

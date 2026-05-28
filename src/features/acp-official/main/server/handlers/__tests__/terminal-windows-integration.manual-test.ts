@@ -262,10 +262,7 @@ describe.skipIf(process.platform !== 'win32')('TerminalHandler Windows encoded-c
   }, TEST_TIMEOUT_MS);
 
   pythonIt('runs python -c when Python is available', async () => {
-    if (!pythonCommand) {
-      throw new Error('Expected python command to be available for this test');
-    }
-    const result = await runTerminalCommand({ workspacePath: tempDir, command: pythonCommand });
+    const result = await runTerminalCommand({ workspacePath: tempDir, command: pythonCommand! });
     expect(result.exitCode).toBe(0);
     expect(normalizeOutput(result.output).trim()).toBe('hello');
   }, TEST_TIMEOUT_MS);

@@ -313,12 +313,12 @@ describe('initialize-chat-saga: disk message merge regression', () => {
           context: {
             readableStoreState: {
               subscribe: (run: (state: any) => void) => {
-                run({ "@internal_storeUtility": { updatesLocked: false } });
+                run({ storeUtility: { updatesLocked: false } });
                 return () => {};
               },
             },
           },
-          getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+          getState: () => ({ storeUtility: { updatesLocked: false } }),
         },
         initializeChatSaga as any,
       );
@@ -377,12 +377,12 @@ describe('initialize-chat-saga: disk message merge regression', () => {
           readableStoreState: {
             subscribe: (run: (state: any) => void) => {
               emitStoreState = run;
-              run({ "@internal_storeUtility": { updatesLocked: false }, readySession: null });
+              run({ storeUtility: { updatesLocked: false }, readySession: null });
               return () => {};
             },
           },
         },
-        getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+        getState: () => ({ storeUtility: { updatesLocked: false } }),
       },
       initializeChatSaga as any,
     );
@@ -393,7 +393,7 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     }
     expect(emitStoreState).toBeDefined();
     isReady = true;
-    emitStoreState!({ "@internal_storeUtility": { updatesLocked: false }, readySession });
+    emitStoreState!({ storeUtility: { updatesLocked: false }, readySession });
 
     await vi.dynamicImportSettled();
     await new Promise((r) => setTimeout(r, 50));
@@ -479,12 +479,12 @@ describe('initialize-chat-saga: disk message merge regression', () => {
           context: {
             readableStoreState: {
               subscribe: (run: (state: any) => void) => {
-                run({ "@internal_storeUtility": { updatesLocked: false } });
+                run({ storeUtility: { updatesLocked: false } });
                 return () => {};
               },
             },
           },
-          getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+          getState: () => ({ storeUtility: { updatesLocked: false } }),
         },
         initializeChatSaga as any,
       );

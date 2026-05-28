@@ -1,51 +1,51 @@
-import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
+import { createSelector } from "../../utils/create-selector";
 import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
 
-export const selectPanelsCollection = store.createSelector(
+export const selectPanelsCollection = createSelector(
   (state): Collection<PanelContextItem, "id"> => {
     return state.multiPanelContext.panels;
   }
 );
 
-export const selectPanels = store.createSelector((state) => {
+export const selectPanels = createSelector((state) => {
   return getItems(selectPanelsCollection.select(state));
 });
 
-export const selectCheckedPanels = store.createSelector((state) => {
+export const selectCheckedPanels = createSelector((state) => {
   return selectPanels.select(state).filter((p) => p.checked);
 });
 
-export const selectSelectionsCollection = store.createSelector(
+export const selectSelectionsCollection = createSelector(
   (state): Collection<SelectionContextItem, "id"> => {
     return state.multiPanelContext.selections;
   }
 );
 
-export const selectSelections = store.createSelector((state) => {
+export const selectSelections = createSelector((state) => {
   return getItems(selectSelectionsCollection.select(state));
 });
 
-export const selectCheckedSelections = store.createSelector((state) => {
+export const selectCheckedSelections = createSelector((state) => {
   return selectSelections.select(state).filter((s) => s.checked);
 });
 
-export const selectHasSelections = store.createSelector((state) => {
+export const selectHasSelections = createSelector((state) => {
   return state.multiPanelContext.selections.ids.length > 0;
 });
 
-export const selectSelectionCount = store.createSelector((state) => {
+export const selectSelectionCount = createSelector((state) => {
   return state.multiPanelContext.selections.ids.length;
 });
 
-export const selectWorkspaceId = store.createSelector((state) => {
+export const selectWorkspaceId = createSelector((state) => {
   return state.multiPanelContext.workspaceId;
 });
 
-export const selectCurrentAgentPanelId = store.createSelector((state) => {
+export const selectCurrentAgentPanelId = createSelector((state) => {
   return state.multiPanelContext.currentAgentPanelId;
 });
 

@@ -176,14 +176,13 @@ const {
   };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  dispatch: dispatchMock,
+  getReduxStore: () => ({
+    getState: () => ({}),
     dispatch: dispatchMock,
-  });
-});
+  }),
+}));
 
 vi.mock('$lib/store/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>

@@ -23,8 +23,7 @@
   toggleLineWrapping,
   toggleDiffSideBySide,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { dispatch } from '$lib/store/redux-dispatch-bridge';
 
   interface Props {
     /** Show fold unchanged toggle */
@@ -87,7 +86,7 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => appStore.dispatch(toggleFoldUnchanged())}
+          onclick={() => dispatch(toggleFoldUnchanged())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
             {#if $foldUnchanged}
@@ -102,7 +101,7 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => appStore.dispatch(toggleLineWrapping())}
+          onclick={() => dispatch(toggleLineWrapping())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
             {#if $lineWrapping}
@@ -117,7 +116,7 @@
         <button
           type="button"
           class="flex items-center gap-2 w-full pl-2 pr-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
-          onclick={() => appStore.dispatch(toggleDiffSideBySide())}
+          onclick={() => dispatch(toggleDiffSideBySide())}
         >
           <span class="w-3 h-3 flex items-center justify-center">
             {#if $diffSideBySide}

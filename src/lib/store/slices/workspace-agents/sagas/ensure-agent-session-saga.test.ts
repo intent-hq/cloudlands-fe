@@ -8,11 +8,6 @@ import {
 } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
-import {
-  AgentStatus,
-  type AgentSession,
-} from "$shared/types";
-import { AgentActivationState } from "$shared/types/agent-session";
 
 vi.mock("typed-redux-saga",
   async () =>
@@ -46,7 +41,6 @@ import {
   watchEnsureAgentSessionLoadedSaga,
 } from "./ensure-agent-session-saga";
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import { upsertSession } from '../../agent-session/agent-session-slice';
 
 const WS_ID = "ws-1";
 const AGENT_ID = "agent-1";
@@ -60,24 +54,9 @@ const mockWorkspace = {
 
 const mockSession = {
   id: AGENT_ID,
-  backendSessionId: "backend-1",
   workspaceId: WS_ID,
-  status: AgentStatus.Idle,
   messages: [],
-} as AgentSession;
-
-const staleShell = {
-  ...mockSession,
-  backendSessionId: null,
-  status: AgentStatus.Pending,
-  activationState: AgentActivationState.PENDING,
-} as AgentSession;
-
-const restoredSession = {
-  ...mockSession,
-  backendSessionId: "backend-restored" as AgentSession['backendSessionId'],
-  status: AgentStatus.Idle,
-} as AgentSession;
+} as any;
 
 describe("ensureAgentSessionLoaded saga", () => {
   beforeEach(() => {
@@ -150,22 +129,6 @@ describe("ensureAgentSessionLoaded saga", () => {
         ])
         .silentRun(50);
     });
-
-    it("restores a stale same-id shell using a fresh persistence read", async () => {
-      loadSessionMock.mockResolvedValue(restoredSession);
-
-      await expectSaga(handleEnsureAgentSessionLoaded, WS_ID, AGENT_ID)
-        .provide([
-          [matchers.select.selector(selectAgentSession.select), staleShell],
-          [matchers.select.selector(selectWorkspaceById.select), mockWorkspace],
-          [matchers.select.selector(selectAllWorkspaceAgents.select), []],
-        ])
-        .put.like({ action: { type: upsertSession({} as AgentSession).type } })
-        .silentRun(50);
-
-      expect(loadSessionMock).toHaveBeenCalledWith(AGENT_ID, WS_ID, { bypassCache: true });
-      expect(loadAgentConfigMock).not.toHaveBeenCalled();
-    });
   });
 
   describe("watchEnsureAgentSessionLoadedSaga", () => {
@@ -222,45 +185,6 @@ describe("ensureAgentSessionLoaded saga", () => {
 
       expect(loadSessionMock).not.toHaveBeenCalled();
       expect(loadAgentConfigMock).not.toHaveBeenCalled();
-    });
-
-    it("resolves with a restored backend session instead of returning a stale shell", async () => {
-      const action = restoreAgentSessionRequested(WS_ID, AGENT_ID);
-      loadSessionMock.mockResolvedValue(restoredSession);
-
-      await expectSaga(handleRestoreAgentSessionRequested, action)
-        .provide([
-          [matchers.select.selector(selectAgentSession.select), staleShell],
-          [matchers.select.selector(selectWorkspaceById.select), mockWorkspace],
-          [matchers.select.selector(selectAllWorkspaceAgents.select), []],
-        ])
-        .put.like({ action: { type: upsertSession({} as AgentSession).type } })
-        .put(action.success(restoredSession))
-        .silentRun(50);
-
-      expect(loadSessionMock).toHaveBeenCalledWith(AGENT_ID, WS_ID, { bypassCache: true });
-    });
-
-    it("surfaces an actionable error session when a stale shell cannot be restored", async () => {
-      const action = restoreAgentSessionRequested(WS_ID, AGENT_ID);
-      loadSessionMock.mockResolvedValue(null);
-      loadAgentConfigMock.mockResolvedValue(null);
-      const expectedFailureSession = {
-        ...staleShell,
-        workspaceId: WS_ID as AgentSession['workspaceId'],
-        activationState: AgentActivationState.ERROR,
-        lastActivationError: 'Failed to restore agent session from disk',
-      } as AgentSession;
-
-      await expectSaga(handleRestoreAgentSessionRequested, action)
-        .provide([
-          [matchers.select.selector(selectAgentSession.select), staleShell],
-          [matchers.select.selector(selectWorkspaceById.select), mockWorkspace],
-          [matchers.select.selector(selectAllWorkspaceAgents.select), []],
-        ])
-        .put(upsertSession(expectedFailureSession))
-        .put(action.success(expectedFailureSession))
-        .silentRun(50);
     });
   });
 });

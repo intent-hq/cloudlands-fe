@@ -11,49 +11,20 @@ import {
   it,
   expect,
   beforeEach,
-  vi,
+  beforeAll,
 } from 'vitest';
-
-vi.mock('$lib/store/store', async () => {
-  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<typeof import('$lib/store/slices/comments/comments-slice')>(
-    '$lib/store/slices/comments/comments-slice'
-  );
-  let state = { comments: initialState };
-  const readable = <T>(getter: () => T) => ({
-    subscribe: (listener: (value: T) => void) => {
-      listener(getter());
-      return () => {};
-    },
-  });
-
-  const mockStore = {
-    dispatch: (action: unknown) => {
-      state = { comments: commentsReducer(state.comments, action as never) };
-      return action;
-    },
-    get state() {
-      return state;
-    },
-    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
-      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
-      {
-        select: selectorFunc,
-        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
-        withStore: (storeSource: { state?: unknown }) =>
-          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
-      },
-    ),
-  };
-
-  return createStoreMockModule(mockStore);
-});
-
 import { Editor } from '@tiptap/core';
 import { CommentManagerV2 } from '../comment-manager-v2';
-import { store as appStore } from '$lib/store/store';
+import {
+  getReduxStore,
+  dispatch as reduxDispatch,
+  initReduxDispatchBridge,
+  initReduxStoreBridge,
+} from '$lib/store/redux-dispatch-bridge';
 import {
   loadCommentsAction,
+  commentsReducer,
+  initialState as commentsInitialState,
 } from '$lib/store/slices/comments/comments-slice';
 import {
   selectComments,
@@ -67,6 +38,24 @@ import {
   insertAnchorsAtPosition,
 } from './test-utils';
 import { findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';
+import { createStore } from 'redux';
+
+// Set up a minimal Redux store with comments reducer for tests
+function createTestReduxStore() {
+  const rootReducer = (state: any = { comments: commentsInitialState }, action: any) => ({
+    ...state,
+    comments: commentsReducer(state.comments, action),
+  });
+  return createStore(rootReducer);
+}
+
+let testStore: ReturnType<typeof createTestReduxStore>;
+
+beforeAll(() => {
+  testStore = createTestReduxStore();
+  initReduxDispatchBridge(testStore.dispatch);
+  initReduxStoreBridge(testStore as any);
+});
 
 describe('CommentManagerV3 - Anchor Health Scanner', () => {
   let editor: Editor;
@@ -93,7 +82,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is healthy
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(false);
     });
 
@@ -113,7 +102,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is orphaned
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(true);
     });
 
@@ -147,7 +136,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is orphaned (incomplete anchors)
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(true);
     });
 
@@ -181,7 +170,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is orphaned (incomplete anchors)
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(true);
     });
   });
@@ -195,7 +184,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
           pointId: 'test-comment:point',
         },
       });
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Insert point anchor in editor
       editor.commands.insertContentAt(1, {
@@ -211,7 +200,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is healthy
-      const updatedComment = selectCommentById.select(appStore.state, comment.id);
+      const updatedComment = selectCommentById.select(getReduxStore().getState(), comment.id);
       expect(updatedComment?.isOrphaned).toBe(false);
     });
 
@@ -223,13 +212,13 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
           pointId: 'test-comment:point',
         },
       });
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Act: Scan health (no anchor in editor)
       await manager.scanAnchorHealth();
 
       // Assert: Comment is orphaned
-      const updatedComment = selectCommentById.select(appStore.state, comment.id);
+      const updatedComment = selectCommentById.select(getReduxStore().getState(), comment.id);
       expect(updatedComment?.isOrphaned).toBe(true);
     });
   });
@@ -271,7 +260,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       insertAnchorsAtPosition(editor, comment3.id, from3, to3);
 
       // Load all comments at once
-      appStore.dispatch(loadCommentsAction([comment1, comment2, comment3]));
+      reduxDispatch(loadCommentsAction([comment1, comment2, comment3]));
 
       const id1 = comment1.id;
       const id2 = comment2.id;
@@ -298,9 +287,9 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Only comment 2 is orphaned
-      expect(selectCommentById.select(appStore.state, id1)?.isOrphaned).toBe(false);
-      expect(selectCommentById.select(appStore.state, id2)?.isOrphaned).toBe(true);
-      expect(selectCommentById.select(appStore.state, id3)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(getReduxStore().getState(), id1)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(getReduxStore().getState(), id2)?.isOrphaned).toBe(true);
+      expect(selectCommentById.select(getReduxStore().getState(), id3)?.isOrphaned).toBe(false);
     });
 
     it('should handle mix of range and point anchors', async () => {
@@ -319,7 +308,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
           pointId: 'point-comment:point',
         },
       });
-      appStore.dispatch(loadCommentsAction([...selectComments.select(appStore.state), pointComment]));
+      reduxDispatch(loadCommentsAction([...selectComments.select(getReduxStore().getState()), pointComment]));
 
       editor.commands.insertContentAt(1, {
         type: 'commentAnchor',
@@ -334,8 +323,8 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Both healthy
-      expect(selectCommentById.select(appStore.state, rangeId)?.isOrphaned).toBe(false);
-      expect(selectCommentById.select(appStore.state, pointComment.id)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(getReduxStore().getState(), rangeId)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(getReduxStore().getState(), pointComment.id)?.isOrphaned).toBe(false);
     });
   });
 
@@ -343,14 +332,14 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
     it('should handle empty document', async () => {
       // Arrange: Comment in store, empty editor
       const comment = createTestComment();
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
       editor.commands.setContent('<p></p>');
 
       // Act: Scan health
       await manager.scanAnchorHealth();
 
       // Assert: Comment is orphaned
-      expect(selectCommentById.select(appStore.state, comment.id)?.isOrphaned).toBe(true);
+      expect(selectCommentById.select(getReduxStore().getState(), comment.id)?.isOrphaned).toBe(true);
     });
 
     it('should handle no comments in store', async () => {
@@ -365,31 +354,31 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       // Arrange: Comment with no anchor field
       const comment = createTestComment();
       delete (comment as any).anchor;
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Act: Scan health (should not throw)
       await expect(manager.scanAnchorHealth()).resolves.not.toThrow();
 
       // Assert: Comment is orphaned (no anchor metadata = orphaned)
-      expect(selectCommentById.select(appStore.state, comment.id)?.isOrphaned).toBe(true);
+      expect(selectCommentById.select(getReduxStore().getState(), comment.id)?.isOrphaned).toBe(true);
     });
 
     it('should preserve existing orphaned status if still orphaned', async () => {
       // Arrange: Already orphaned comment
       const comment = createTestComment({ isOrphaned: true });
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Act: Scan health
       await manager.scanAnchorHealth();
 
       // Assert: Still orphaned
-      expect(selectCommentById.select(appStore.state, comment.id)?.isOrphaned).toBe(true);
+      expect(selectCommentById.select(getReduxStore().getState(), comment.id)?.isOrphaned).toBe(true);
     });
 
     it('should update orphaned status from true to false when anchors restored', async () => {
       // Arrange: Start with orphaned comment
       const comment = createTestComment({ isOrphaned: true });
-      appStore.dispatch(loadCommentsAction([comment]));
+      reduxDispatch(loadCommentsAction([comment]));
 
       // Restore anchors in editor
       editor.commands.insertContentAt(1, {
@@ -413,7 +402,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: No longer orphaned
-      expect(selectCommentById.select(appStore.state, comment.id)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(getReduxStore().getState(), comment.id)?.isOrphaned).toBe(false);
     });
   });
 
@@ -437,7 +426,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.handleDebouncedSave();
 
       // Assert: Scanner ran and detected orphan
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(true);
     });
   });
@@ -480,7 +469,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment marked as orphaned
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(true);
 
       // Assert: All anchors removed (cleanup happened)
@@ -503,7 +492,7 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       await manager.scanAnchorHealth();
 
       // Assert: Comment is healthy
-      const comment = selectCommentById.select(appStore.state, commentId);
+      const comment = selectCommentById.select(getReduxStore().getState(), commentId);
       expect(comment?.isOrphaned).toBe(false);
 
       // Assert: Anchors still exist

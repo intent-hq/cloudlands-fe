@@ -24,14 +24,9 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: mocks.invoke,
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => {},
-    dispatch: mocks.dispatch,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxDispatch: vi.fn(() => mocks.dispatch),
+}));
 
 vi.mock('$lib/store/slices/provider-settings/provider-settings-slice', () => ({
   validateActiveProvider: mocks.validateActiveProvider,

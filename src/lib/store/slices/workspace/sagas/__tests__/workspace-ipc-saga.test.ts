@@ -32,12 +32,12 @@ vi.mock("typed-redux-saga", () => ({
 const {
   takeEveryFromElectronChannelMock,
   takeEveryFromListenSyncMock,
-  mockAppStoreFactory,
+  mockGetReduxStore,
   mockDelete,
 } = vi.hoisted(() => ({
   takeEveryFromElectronChannelMock: vi.fn(function* () {}),
   takeEveryFromListenSyncMock: vi.fn(function* () {}),
-  mockAppStoreFactory: vi.fn(),
+  mockGetReduxStore: vi.fn(),
   mockDelete: vi.fn(),
 }));
 
@@ -46,14 +46,9 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromListenSync: takeEveryFromListenSyncMock,
 }));
 
-vi.mock("$lib/store/store", async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => mockAppStoreFactory()?.getState?.() ?? {},
-    dispatch: (...args: any[]) => mockAppStoreFactory()?.dispatch?.(...args),
-  });
-});
+vi.mock("$lib/store/redux-dispatch-bridge", () => ({
+  getReduxStore: mockGetReduxStore,
+}));
 
 vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: { delete: mockDelete },
@@ -88,7 +83,7 @@ function getElectronHandler(eventName: string) {
 describe("workspace-ipc-saga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAppStoreFactory.mockReturnValue({
+    mockGetReduxStore.mockReturnValue({
       getState: () => ({
         workspace: { pendingDeletions: { "ws-1": true } },
       }),

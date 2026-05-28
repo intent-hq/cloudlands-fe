@@ -9,7 +9,6 @@ import {
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import * as sagaEffects from "redux-saga/effects";
-import { readable } from "svelte/store";
 
 // Must mock typed-redux-saga before importing saga modules
 vi.mock("typed-redux-saga", () => ({
@@ -93,11 +92,8 @@ import {
 } from "../pr-status-slice";
 import { selectPRStatusLastRefreshTime } from "../pr-status-selectors";
 import { selectWorkspaceById } from "$lib/store/slices/workspace/workspace-selectors";
-import {
-  initialState as workspaceInitialState,
-  updateWorkspaceEntity,
-} from "$lib/store/slices/workspace/workspace-slice";
-import type { StoreState } from "$lib/store/types";
+import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
+import { init } from "$lib/store/init";
 import { invoke } from "$lib/electron-bridge";
 import { discoverPRsForBranch } from "./pr-status-saga";
 import {
@@ -122,11 +118,6 @@ const mockWorkspace = {
 };
 
 const timestamp = "2026-01-01T00:00:00.000Z";
-
-const createReadableStoreState = () => readable({
-  "@internal_storeUtility": { updatesLocked: false },
-  workspace: workspaceInitialState,
-} as any as StoreState);
 
 function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
   return {
@@ -155,7 +146,7 @@ describe("PR Status Saga", () => {
 
   describe("handleRefreshPRStatus", () => {
     it("skips refresh when rate limited", async () => {
-      const storeState = createReadableStoreState();
+      const { storeState } = init();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
@@ -170,7 +161,7 @@ describe("PR Status Saga", () => {
     });
 
     it("returns error when workspace not found", async () => {
-      const storeState = createReadableStoreState();
+      const { storeState } = init();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
@@ -185,7 +176,7 @@ describe("PR Status Saga", () => {
     });
 
     it("returns error when missing repo info", async () => {
-      const storeState = createReadableStoreState();
+      const { storeState } = init();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
@@ -200,7 +191,7 @@ describe("PR Status Saga", () => {
     });
 
     it("dispatches activePullRequest null when a tracked PR refreshes as merged", async () => {
-      const storeState = createReadableStoreState();
+      const { storeState } = init();
       const { prStatusSaga } = await import("./pr-status-saga");
       const openPR = makePR({ status: PullRequestStatus.Open });
       const mergedPR = makePR({

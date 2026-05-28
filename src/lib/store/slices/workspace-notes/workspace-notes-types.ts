@@ -1,4 +1,4 @@
-import type { Collection } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "../../utils/collection-utils";
 import type { Note, NoteVersion } from "$shared/types";
 
 export type NoteVersionsState = {

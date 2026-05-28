@@ -103,17 +103,17 @@
   addTerminal,
   openTerminalOverlay,
 } from '$lib/store/slices/terminals/terminals-slice';
-
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import {
   loadWorkspacesRequested,
   setWorkspaceEntity,
 } from '$lib/store/slices/workspace/workspace-slice';
-  import { store as appStore } from '$lib/store/store';
 
 
 
+  const dispatch = getDispatch();
   const selectedModel$ = selectSelectedModel();
   const logger = createLogger('AcceptChangesPanel');
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
@@ -324,7 +324,7 @@
     const state = $commitExecState$;
     if (state.status === 'success' && state.result && state.result !== prevCommitResult) {
       prevCommitResult = state.result;
-      appStore.dispatch(setCommitMessage(workspaceId, state.result));
+      dispatch(setCommitMessage(workspaceId, state.result));
       toast.success('Commit message generated');
     }
   });
@@ -339,17 +339,17 @@
       const descriptionLines = lines.slice(1).join('\n').trim();
 
       if (titleLine) {
-        appStore.dispatch(setPRTitle(workspaceId, titleLine));
+        dispatch(setPRTitle(workspaceId, titleLine));
       } else {
         const branchName = status?.branch || 'feature';
         const cleanBranchName = branchName
           .replace(/^(feature|fix|chore|docs|refactor|test)[-/]/, '')
           .replace(/[-_]/g, ' ')
           .trim();
-        appStore.dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
+        dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
       }
 
-      appStore.dispatch(setPRDescription(workspaceId, descriptionLines || state.result));
+      dispatch(setPRDescription(workspaceId, descriptionLines || state.result));
       toast.success('PR description generated');
     }
   });
@@ -386,7 +386,7 @@
         agentId: state.agentId || null,
         status: 'running',
       };
-      appStore.dispatch(updateWorkspaceCodeReview(workspaceId, {
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
         agentId: state.agentId,
         stagedFiles: stagedFiles.map((f: any) => f.path),
         status: 'running',
@@ -405,7 +405,7 @@
       };
       codeReviewState = newReviewState;
       reviewArchive = [{ ...newReviewState, timestamp: Date.now() }, ...reviewArchive.slice(0, 4)];
-      appStore.dispatch(updateWorkspaceCodeReview(workspaceId, {
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
         result: state.result,
         agentId: state.agentId,
         stagedFiles: stagedFiles.map((f: any) => f.path),
@@ -420,7 +420,7 @@
         error: state.error,
         status: 'error',
       };
-      appStore.dispatch(updateWorkspaceCodeReview(workspaceId, {
+      dispatch(updateWorkspaceCodeReview(workspaceId, {
         error: state.error,
         status: 'error',
       }));
@@ -483,7 +483,7 @@
         logger.info('Reconnecting to running code review executor', { agentId, savedStatus });
 
         codeReviewState = { ...codeReviewState, agentId, status: 'running' };
-        appStore.dispatch(
+        getReduxStore().dispatch(
           openWorkspaceCodeReview(workspaceId, {
             result: null,
             agentId,
@@ -491,11 +491,11 @@
             status: 'running',
           }),
         );
-        appStore.dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
       } else if (savedStatus === 'success' && result && !reviewExec.result) {
         hasReconnectedCodeReviewExecutor = true;
         logger.info('Restoring completed code review result', { agentId, resultLength: result.length });
-        appStore.dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'review', agentId!, { status: savedStatus as ExecutorStatus, result }));
         codeReviewState = { result, agentId, stagedFiles: codeReviewState.stagedFiles, status: 'complete' };
       } else {
         hasReconnectedCodeReviewExecutor = true;
@@ -508,14 +508,14 @@
       if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedCommitExecutor = true;
         if (stored.pendingCommitAction) {
-          appStore.dispatch(setIsAutofillAndCommitting(workspaceId, true));
-          appStore.dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
-          appStore.dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Resuming...'));
+          dispatch(setIsAutofillAndCommitting(workspaceId, true));
+          dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
+          dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Resuming...'));
         }
-        appStore.dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
       } else if (savedStatus === 'success' && result && !commitExec.result) {
         hasReconnectedCommitExecutor = true;
-        appStore.dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'commit', agentId!, { status: savedStatus as ExecutorStatus, result }));
       } else {
         hasReconnectedCommitExecutor = true;
       }
@@ -527,19 +527,19 @@
       if (savedStatus === 'running' || savedStatus === 'initializing') {
         hasReconnectedPRExecutor = true;
         if (stored.pendingPRContext) {
-          appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
-          appStore.dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
-          appStore.dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+          dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
+          dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
         }
-        appStore.dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
       } else if (savedStatus === 'success' && result && !prExec.result) {
         hasReconnectedPRExecutor = true;
         if (stored.pendingPRContext) {
-          appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
-          appStore.dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
-          appStore.dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+          dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
+          dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Resuming...'));
         }
-        appStore.dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
+        dispatch(reconnectAgent(workspaceId, 'pr', agentId!, { status: savedStatus as ExecutorStatus, result }));
       } else {
         hasReconnectedPRExecutor = true;
       }
@@ -547,10 +547,10 @@
 
     // Restore pending action states only if we're not reconnecting to a running executor
     if (stored.pendingCommitAction && !commitExec.agentId) {
-      appStore.dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
+      dispatch(setPendingCommitAction(workspaceId, stored.pendingCommitAction));
     }
     if (stored.pendingPRContext && !prExec.agentId) {
-      appStore.dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
+      dispatch(setPendingPRContext(workspaceId, stored.pendingPRContext));
     }
   });
 
@@ -652,7 +652,7 @@
       }
       hasStartedLoading = true;
 
-      const cachedTransientState = selectAcceptChangesState.select(appStore.state, workspaceId);
+      const cachedTransientState = selectAcceptChangesState.select(getReduxStore().getState(), workspaceId);
       const cachedStatus = cachedTransientState.cachedGitStatus;
       const cacheAge = cachedTransientState.cachedGitStatusTimestamp
         ? Date.now() - cachedTransientState.cachedGitStatusTimestamp
@@ -662,7 +662,7 @@
         // Use cached status data immediately for instant display
         status = cachedStatus;
         if (!$acceptChangesState.targetBranch) {
-          appStore.dispatch(setTargetBranch(workspaceId, cachedStatus.trunkBranch));
+          dispatch(setTargetBranch(workspaceId, cachedStatus.trunkBranch));
         }
         // PERF: Show UI immediately since we have cached status + files from Redux
         isLoading = false;
@@ -692,7 +692,7 @@
     isLoadingStatus = true;
     try {
       // Refresh file tracking in background (don't await - it may be slow)
-      appStore.dispatch(refreshRequested(workspaceId));
+      dispatch(refreshRequested(workspaceId));
 
       const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
 
@@ -702,10 +702,10 @@
       status = newStatus;
 
       // Cache the status for future navigation
-      appStore.dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
+      dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
 
       if (!$acceptChangesState.targetBranch) {
-        appStore.dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
+        dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
       }
     } catch (error) {
       logger.error('Failed to load status', error as Error);
@@ -727,7 +727,7 @@
     isLoadingPrepare = true;
     try {
       // Refresh file tracking in background (dispatch is synchronous)
-      appStore.dispatch(refreshRequested(workspaceId));
+      dispatch(refreshRequested(workspaceId));
       // Load status
       const newStatus = await AcceptChangesClient.getStatus(WorkspaceId(workspaceId));
 
@@ -735,10 +735,10 @@
       if (thisStatusVersion === statusRequestVersion) {
         status = newStatus;
         isLoadingStatus = false;
-        appStore.dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
+        dispatch(setCachedGitStatus(workspaceId, newStatus, Date.now()));
 
         if (!$acceptChangesState.targetBranch) {
-          appStore.dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
+          dispatch(setTargetBranch(workspaceId, newStatus.trunkBranch));
         }
       }
 
@@ -770,7 +770,7 @@
 
       prepareResult = result;
       if (result.suggestedCommitMessage && !$acceptChangesState.commitMessage) {
-        appStore.dispatch(setCommitMessage(workspaceId, result.suggestedCommitMessage));
+        dispatch(setCommitMessage(workspaceId, result.suggestedCommitMessage));
       }
     } catch (error) {
       logger.error('Failed to prepare action', error as Error);
@@ -820,7 +820,7 @@
   // Actions - use Redux file tracking to keep both panels in sync
   async function handleStage(filePath: string) {
     try {
-      appStore.dispatch(stageByPathRequested(workspaceId, [filePath]));
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, [filePath]));
       await refreshPrepareData();
       // Track staging event
       track('Staged Changes', { method: 'file', file_count: 1 });
@@ -832,7 +832,7 @@
 
   async function handleUnstage(filePath: string) {
     try {
-      appStore.dispatch(unstageByPathRequested(workspaceId, [filePath]));
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, [filePath]));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file', error as Error, { filePath });
@@ -843,7 +843,7 @@
   async function handleStageAll() {
     try {
       const paths = unstagedFiles.map((f) => f.path);
-      appStore.dispatch(stageByPathRequested(workspaceId, paths));
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage all files', error as Error);
@@ -854,7 +854,7 @@
   async function handleUnstageAll() {
     try {
       const paths = stagedFiles.map((f) => f.path);
-      appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage all files', error as Error);
@@ -865,7 +865,7 @@
   // Batch stage a group of files (used for per-agent-group staging)
   async function handleStageGroup(paths: string[]) {
     try {
-      appStore.dispatch(stageByPathRequested(workspaceId, paths));
+      getReduxStore().dispatch(stageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage file group', error as Error, { count: paths.length });
@@ -876,7 +876,7 @@
   // Batch unstage a group of files (used for per-agent-group unstaging)
   async function handleUnstageGroup(paths: string[]) {
     try {
-      appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+      getReduxStore().dispatch(unstageByPathRequested(workspaceId, paths));
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file group', error as Error, { count: paths.length });
@@ -889,7 +889,7 @@
     toast.warning('Changes reverted');
 
     // Dispatch revert action - saga handles optimistic update + rollback on failure
-    appStore.dispatch(revertByPathRequested(workspaceId, [filePath]));
+    getReduxStore().dispatch(revertByPathRequested(workspaceId, [filePath]));
     {
       // Refresh prepare data in background to update the timeline
       refreshPrepareData().catch((err) => {
@@ -937,12 +937,12 @@
 
   async function handleGenerateMessage() {
     if (!$workspace) return;
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   function handleOpenExistingReview() {
     // Open the existing review in the main panel
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceCodeReview(workspaceId, {
         result: codeReviewState.result,
         agentId: codeReviewState.agentId,
@@ -987,7 +987,7 @@
     };
 
     // Open the review panel immediately when starting
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceCodeReview(workspaceId, {
         result: null,
         agentId: $reviewExecState$.agentId,
@@ -1000,13 +1000,13 @@
     track('Requested Code Review', { staged_file_count: stagedFiles.length });
 
     // Pass staged files as context for the review
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'review', {
+    dispatch(executeBackgroundAgent(workspaceId, 'review', {
       files: stagedFiles.map((f) => f.path),
     }));
   }
 
   function handleOpenArchivedReview(review: CodeReviewState & { timestamp: number }) {
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceCodeReview(workspaceId, {
         result: review.result,
         agentId: review.agentId,
@@ -1035,8 +1035,8 @@
       if (result.success) {
         logger.info('Commit succeeded, updating UI');
         toast.success('Changes committed');
-        appStore.dispatch(setCommitMessage(workspaceId, ''));
-        appStore.dispatch(resetAcceptChangesOperations(workspaceId));
+        dispatch(setCommitMessage(workspaceId, ''));
+        dispatch(resetAcceptChangesOperations(workspaceId));
         logger.info('Loading status after successful commit');
         await loadStatus(false);
         logger.info('Status loaded, calling onSuccess callback');
@@ -1198,8 +1198,8 @@
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
         const terminalTitle = `Rebase onto ${tb}`;
-        appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
-        appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
+        dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
+        dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
         toast.success('Rebase started in terminal', {
           description: 'After rebase completes, retry the merge.',
@@ -1218,9 +1218,9 @@
     const repo = $workspace?.repositoryPath;
     if (repo) {
       // Dispatch action to start new workspace with same repo
-      appStore.dispatch(createWorkspaceForRepoRequested({ repositoryPath: repo }));
+      getReduxStore().dispatch(createWorkspaceForRepoRequested({ repositoryPath: repo }));
     } else {
-      appStore.dispatch(openNewSpaceModalRequested({}));
+      getReduxStore().dispatch(openNewSpaceModalRequested({}));
     }
   }
 
@@ -1243,7 +1243,7 @@
           isCreatingWorkspace = false;
           return;
         }
-        appStore.dispatch(loadWorkspacesRequested());
+        dispatch(loadWorkspacesRequested());
       }
 
       const repoPath = $workspace.repositoryPath;
@@ -1294,7 +1294,7 @@
       }
 
       const newWorkspace = result.data;
-      appStore.dispatch(setWorkspaceEntity(newWorkspace));
+      dispatch(setWorkspaceEntity(newWorkspace));
 
       logger.info('Workspace created successfully from Accept Changes', {
         workspaceId: newWorkspace.id,
@@ -1303,7 +1303,7 @@
 
       // Save the selected model as the workspace's default model
       if (selectedModel) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
+        dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
       }
 
       // Store the initial agent configuration for the workspace page to pick up
@@ -1365,7 +1365,7 @@
         trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
         if (result.success) {
           toast.success('Changes added to PR');
-          appStore.dispatch(setCommitMessage(workspaceId, ''));
+          dispatch(setCommitMessage(workspaceId, ''));
           await loadStatus(false);
           onSuccess?.(result);
         } else {
@@ -1420,7 +1420,7 @@
 
     // Ensure GitHub authentication before attempting to create a PR
     if (!$githubAuthIsAuthenticated$) {
-      appStore.dispatch(initializeGitHubAuth());
+      dispatch(initializeGitHubAuth());
     }
 
     if (!$githubAuthIsAuthenticated$) {
@@ -1444,8 +1444,8 @@
 
       trackGitOp('create-pr', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
-        appStore.dispatch(clearAcceptChangesForm(workspaceId));
-        appStore.dispatch(resetAcceptChangesOperations(workspaceId));
+        dispatch(clearAcceptChangesForm(workspaceId));
+        dispatch(resetAcceptChangesOperations(workspaceId));
         await loadStatus(false);
         onSuccess?.(result);
       } else {
@@ -1484,7 +1484,7 @@
     targetBranch: string;
   }) {
     if (!$workspace) return;
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'pr', {
+    dispatch(executeBackgroundAgent(workspaceId, 'pr', {
       includeStagedFiles: context.includeStagedFiles,
       includeCommitHashes: context.includeCommitHashes,
       targetBranch: context.targetBranch,
@@ -1537,7 +1537,7 @@
       commitHash, // Include commit hash for committed files
     } as unknown as TrackedChange;
 
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceDiff(workspaceId, change, {
         filePath,
         changeId: change.id,
@@ -1570,24 +1570,24 @@
   }
 
   function handleViewCommitThoughtProcess(e?: MouseEvent) {
-    const agentId = selectExecutorState.select(appStore.state, workspaceId, 'commit').agentId;
+    const agentId = selectExecutorState.select(getReduxStore().getState(), workspaceId, 'commit').agentId;
     if (agentId) {
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openAgentTabRequested(workspaceId, { agentId, sourcePanelId, openInAdjacentPanel }),
       );
     }
   }
 
   function handleViewPRThoughtProcess(e?: MouseEvent) {
-    const agentId = selectExecutorState.select(appStore.state, workspaceId, 'pr').agentId;
+    const agentId = selectExecutorState.select(getReduxStore().getState(), workspaceId, 'pr').agentId;
     if (agentId) {
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      appStore.dispatch(
+      getReduxStore().dispatch(
         openAgentTabRequested(workspaceId, { agentId, sourcePanelId, openInAdjacentPanel }),
       );
     }
@@ -1602,34 +1602,34 @@
       const action = pendingAction;
 
       untrack(() => {
-        appStore.dispatch(setPendingCommitAction(workspaceId, null));
+        dispatch(setPendingCommitAction(workspaceId, null));
 
         // Set the commit message from the result
-        appStore.dispatch(setCommitMessage(workspaceId, $commitExecState$.result!));
+        dispatch(setCommitMessage(workspaceId, $commitExecState$.result!));
 
         // Update phase to executing (git operations)
-        appStore.dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
+        dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
 
         // Perform the action
         if (action === 'commit') {
           handleCommit().finally(() => {
-            appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-            appStore.dispatch(clearBackgroundOperation(workspaceId));
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
           });
         } else if (action === 'add-to-pr') {
           handleAddToPR(true).finally(() => {
-            appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-            appStore.dispatch(clearBackgroundOperation(workspaceId));
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
           });
         } else if (action === 'merge') {
           handleMergeToTrunk({ squash: false }).finally(() => {
-            appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-            appStore.dispatch(clearBackgroundOperation(workspaceId));
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
           });
         } else if (action === 'squash-merge') {
           handleMergeToTrunk({ squash: true }).finally(() => {
-            appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-            appStore.dispatch(clearBackgroundOperation(workspaceId));
+            dispatch(setIsAutofillAndCommitting(workspaceId, false));
+            dispatch(clearBackgroundOperation(workspaceId));
           });
         }
       });
@@ -1641,7 +1641,7 @@
     const pendingPR = $acceptChangesState.pendingPRContext;
     if (pendingPR && $prExecState$.result && !prIsRunning) {
       untrack(() => {
-        appStore.dispatch(setPendingPRContext(workspaceId, null));
+        dispatch(setPendingPRContext(workspaceId, null));
 
         // Parse the result to extract title and description
         const result = $prExecState$.result!;
@@ -1650,7 +1650,7 @@
         const descriptionLines = lines.slice(1).join('\n').trim();
 
         if (titleLine) {
-          appStore.dispatch(setPRTitle(workspaceId, titleLine));
+          dispatch(setPRTitle(workspaceId, titleLine));
         } else {
           // Fallback: generate title from branch name
           const branchName = status?.branch || 'feature';
@@ -1658,18 +1658,18 @@
             .replace(/^(feature|fix|chore|docs|refactor|test)[-/]/, '')
             .replace(/[-_]/g, ' ')
             .trim();
-          appStore.dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
+          dispatch(setPRTitle(workspaceId, cleanBranchName.charAt(0).toUpperCase() + cleanBranchName.slice(1)));
         }
 
-        appStore.dispatch(setPRDescription(workspaceId, descriptionLines || result));
+        dispatch(setPRDescription(workspaceId, descriptionLines || result));
 
         // Update phase to executing (git operations)
-        appStore.dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
+        dispatch(updateBackgroundOperationPhase(workspaceId, 'executing'));
 
         // Now create the PR
         handleCreatePR().finally(() => {
-          appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
-          appStore.dispatch(clearBackgroundOperation(workspaceId));
+          dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+          dispatch(clearBackgroundOperation(workspaceId));
         });
       });
     }
@@ -1679,9 +1679,9 @@
   $effect(() => {
     if ($acceptChangesState.pendingCommitAction && $commitExecState$.error) {
       untrack(() => {
-        appStore.dispatch(setPendingCommitAction(workspaceId, null));
-        appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-        appStore.dispatch(clearBackgroundOperation(workspaceId));
+        dispatch(setPendingCommitAction(workspaceId, null));
+        dispatch(setIsAutofillAndCommitting(workspaceId, false));
+        dispatch(clearBackgroundOperation(workspaceId));
       });
     }
   });
@@ -1689,9 +1689,9 @@
   $effect(() => {
     if ($acceptChangesState.pendingPRContext && $prExecState$.error) {
       untrack(() => {
-        appStore.dispatch(setPendingPRContext(workspaceId, null));
-        appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
-        appStore.dispatch(clearBackgroundOperation(workspaceId));
+        dispatch(setPendingPRContext(workspaceId, null));
+        dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+        dispatch(clearBackgroundOperation(workspaceId));
       });
     }
   });
@@ -1700,34 +1700,34 @@
   async function handleAutofillAndCommit() {
     if (!$workspace) return;
 
-    appStore.dispatch(setIsAutofillAndCommitting(workspaceId, true));
-    appStore.dispatch(setPendingCommitAction(workspaceId, 'commit'));
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, 'commit'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Committing changes...'));
+    dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Committing changes...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Committing in background...', { duration: 2000 });
 
     // Start generating the commit message
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   // Autofill and add to PR - optimistically shows as submitting while generating message
   async function handleAutofillAndAddToPR() {
     if (!$workspace) return;
 
-    appStore.dispatch(setIsAutofillAndCommitting(workspaceId, true));
-    appStore.dispatch(setPendingCommitAction(workspaceId, 'add-to-pr'));
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, 'add-to-pr'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'add-to-pr', Date.now(), 'Adding to PR...'));
+    dispatch(startBackgroundOperation(workspaceId, 'add-to-pr', Date.now(), 'Adding to PR...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Adding to PR in background...', { duration: 2000 });
 
     // Start generating the commit message
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   // Autofill and create PR - optimistically shows as submitting while generating description
@@ -1738,38 +1738,38 @@
   }) {
     if (!$workspace) return;
 
-    appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
-    appStore.dispatch(setPendingPRContext(workspaceId, context));
+    dispatch(setIsAutofillAndCreatingPR(workspaceId, true));
+    dispatch(setPendingPRContext(workspaceId, context));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Creating PR...'));
+    dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Creating PR...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Creating PR in background...', { duration: 2000 });
 
     // Start generating the PR description
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'pr', context));
+    dispatch(executeBackgroundAgent(workspaceId, 'pr', context));
   }
 
   // Autofill and merge - generates commit message for staged files, then merges
   async function handleAutofillAndMerge(options?: { squash?: boolean }) {
     if (!$workspace) return;
 
-    appStore.dispatch(setIsAutofillAndCommitting(workspaceId, true));
-    appStore.dispatch(setPendingCommitAction(workspaceId, options?.squash ? 'squash-merge' : 'merge'));
+    dispatch(setIsAutofillAndCommitting(workspaceId, true));
+    dispatch(setPendingCommitAction(workspaceId, options?.squash ? 'squash-merge' : 'merge'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Merging to trunk...'));
+    dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Merging to trunk...'));
 
     // Show optimistic feedback - brief toast, UI shows status
     toast.info('Merging in background...', { duration: 2000 });
 
     // Start generating the commit message (will trigger merge on completion)
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
+    dispatch(executeBackgroundAgent(workspaceId, 'commit'));
   }
 
   function handleBack() {
-    appStore.dispatch(ftClearMainPanelView());
+    dispatch(ftClearMainPanelView());
     onBack?.();
   }
 
@@ -1920,20 +1920,20 @@
       onStageGroup={handleStageGroup}
       onUnstageGroup={handleUnstageGroup}
       onCommitMessageChange={(msg: string) => {
-        appStore.dispatch(setCommitMessage(workspaceId, msg));
+        dispatch(setCommitMessage(workspaceId, msg));
       }}
       onGenerateMessage={handleGenerateMessage}
       onCommit={handleCommit}
       onPush={handlePush}
       onAddToPR={handleAddToPR}
       onTargetBranchChange={(branch: string) => {
-        appStore.dispatch(setTargetBranch(workspaceId, branch));
+        dispatch(setTargetBranch(workspaceId, branch));
       }}
       onPRTitleChange={(title: string) => {
-        appStore.dispatch(setPRTitle(workspaceId, title));
+        dispatch(setPRTitle(workspaceId, title));
       }}
       onPRDescriptionChange={(desc: string) => {
-        appStore.dispatch(setPRDescription(workspaceId, desc));
+        dispatch(setPRDescription(workspaceId, desc));
       }}
       onGeneratePR={handleGeneratePR}
       onCreatePR={handleCreatePR}
@@ -1943,7 +1943,7 @@
       onOpenCommit={handleOpenCommit}
       onOpenPR={handleOpenPR}
       onOpenLocalChanges={() => {
-        appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
+        getReduxStore().dispatch(openWorkspaceLocalChanges(workspaceId));
       }}
       commitMessageAgentId={$commitExecState$.agentId}
       prDescriptionAgentId={$prExecState$.agentId}
@@ -1956,16 +1956,16 @@
       isAutofillAndCreatingPR={$acceptChangesState.isAutofillAndCreatingPR}
       backgroundOperation={$acceptChangesState.backgroundOperation}
       onStopGeneratingMessage={() => {
-        appStore.dispatch(cancelExecution(workspaceId, 'commit'));
-        appStore.dispatch(setIsAutofillAndCommitting(workspaceId, false));
-        appStore.dispatch(setPendingCommitAction(workspaceId, null));
-        appStore.dispatch(resetAcceptChangesOperations(workspaceId));
+        dispatch(cancelExecution(workspaceId, 'commit'));
+        dispatch(setIsAutofillAndCommitting(workspaceId, false));
+        dispatch(setPendingCommitAction(workspaceId, null));
+        dispatch(resetAcceptChangesOperations(workspaceId));
       }}
       onStopGeneratingPR={() => {
-        appStore.dispatch(cancelExecution(workspaceId, 'pr'));
-        appStore.dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
-        appStore.dispatch(setPendingPRContext(workspaceId, null));
-        appStore.dispatch(resetAcceptChangesOperations(workspaceId));
+        dispatch(cancelExecution(workspaceId, 'pr'));
+        dispatch(setIsAutofillAndCreatingPR(workspaceId, false));
+        dispatch(setPendingPRContext(workspaceId, null));
+        dispatch(resetAcceptChangesOperations(workspaceId));
       }}
       onReviewStaged={() => handleReviewStaged(false)}
       onReReview={() => handleReviewStaged(true)}

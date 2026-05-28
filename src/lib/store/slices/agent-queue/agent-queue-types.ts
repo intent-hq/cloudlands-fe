@@ -1,5 +1,5 @@
 import type { QueuedMessage } from "$shared/types";
-import type { Collection } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "../../utils/collection-utils";
 
 /** Queue metadata and messages for a single agent. */
 export interface AgentQueueEntryState {

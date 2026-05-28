@@ -43,14 +43,10 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
     .default,
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: mockState.dispatch,
-  });
-});
+vi.mock('$lib/store/utils/svelte-context', () => ({ getDispatch: () => mockState.dispatch }));
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}), dispatch: mockState.dispatch }),
+}));
 vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: { select: mockState.noteSelect },
 }));

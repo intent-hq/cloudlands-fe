@@ -4,7 +4,7 @@ import {
   it,
 } from 'vitest';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { createCollection } from 'svelte-redux-toolkit/utils/collections/collection-utils';
+import { createCollection } from '../../utils/collection-utils';
 import { getDefaultProviderId } from '$shared/config/provider-config';
 import {
   clearAllWorkspaceModels,

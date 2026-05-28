@@ -38,7 +38,7 @@
   selectAgentIsWaiting,
   selectAgentSessionsByIds,
 } from '$lib/store/slices/agent-session/agent-session-selectors';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { writable } from 'svelte/store';
   import {
   setWorkspaceNoteOrder,
@@ -55,15 +55,15 @@
   getPanelLayoutManager,
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   deleteNote,
   createNote,
   updateNoteTitle,
 } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { toast } from 'svelte-sonner';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
 
   interface Props {
     notes: Note[];
@@ -119,7 +119,7 @@
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
       if (note && trimmed !== getNoteTitle(note)) {
-        appStore.dispatch(updateNoteTitle(workspaceId, editingNoteId, trimmed));
+        dispatch(updateNoteTitle(workspaceId, editingNoteId, trimmed));
       }
     }
     cancelEdit();
@@ -203,7 +203,7 @@
             layoutManager.closeTabsByType('note', 'noteId', note.id);
           }
 
-          appStore.dispatch(deleteNote(workspaceId, note.id));
+          dispatch(deleteNote(workspaceId, note.id));
           closeContextMenu();
 
           toast.warning(
@@ -213,7 +213,7 @@
               action: {
                 label: 'Undo',
                 onClick: () => {
-                  appStore.dispatch(createNote(workspaceId, {
+                  dispatch(createNote(workspaceId, {
                     title: savedNote.title,
                     content: savedNote.content,
                     contentType: savedNote.contentType,
@@ -244,7 +244,7 @@
   // Helper to toggle collapse state
   function toggleCollapse(noteId: string, e: MouseEvent) {
     e.stopPropagation();
-    appStore.dispatch(toggleWorkspaceCollapsedNote(workspaceId, noteId));
+    dispatch(toggleWorkspaceCollapsedNote(workspaceId, noteId));
   }
 
   // Check if a note should be hidden (any ancestor is collapsed)
@@ -337,7 +337,7 @@
       const insertIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
       currentOrder.splice(insertIndex, 0, draggedNoteId);
 
-      appStore.dispatch(setWorkspaceNoteOrder(workspaceId, currentOrder));
+      dispatch(setWorkspaceNoteOrder(workspaceId, currentOrder));
       onReorderNotes?.(currentOrder);
     }
 
@@ -367,7 +367,7 @@
       specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
     }> = [];
 
-    const reduxState = appStore.state;
+    const reduxState = getReduxStore().getState();
 
     for (const agentId of assignedAgentIds) {
       const agent = agentSessionsById.get(agentId);

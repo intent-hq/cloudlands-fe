@@ -19,7 +19,7 @@ import {
 } from '../../types/events';
 import type { ToolName } from '../../types/schemas';
 import { createHash } from 'crypto';
-import { emitAgentFileChange } from '../mcp/workspace-file-tools';
+import { emitAgentFileChange } from '../mcp/workspace-tools';
 import { remoteRPCManager } from '../../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../../shared/main/remote-rpc-client';
 import { execAsync } from '../../../../shared/git/git-env';

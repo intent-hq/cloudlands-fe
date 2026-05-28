@@ -110,8 +110,7 @@ vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/changes/changes-slice', () => ({
   clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
   stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/stageByPathRequested', payload: [wsId, paths] })),
   unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/unstageByPathRequested', payload: [wsId, paths] })),
@@ -169,8 +168,7 @@ vi.mock('$lib/store/slices/git/git-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
   gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
   gitPull: vi.fn((...args: any[]) => ({ type: 'git/pull', payload: args })),
@@ -235,14 +233,9 @@ vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
 }));
 
 const mockDispatch = vi.fn();
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: mockDispatch,
-  });
-});
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}), dispatch: mockDispatch }),
+}));
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: createMockFtSelector(() => mockFileTrackingStore.currentWorkspaceId),
@@ -293,13 +286,14 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', () => ({
   recomputeAgentLocks: vi.fn((wsId: string) => ({
     type: 'agentLock/recomputeAgentLocks',
     payload: [wsId],
   })),
 }));
+
+
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));
 
@@ -312,8 +306,7 @@ vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/github-auth/github-auth-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
 }));
 
@@ -325,8 +318,7 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
   ),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
   executeBackgroundAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
   reconnectAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reconnect', payload: args })),
@@ -363,8 +355,7 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/pr-status/pr-status-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/pr-status/pr-status-slice', () => ({
   refreshPRStatusRequested: vi.fn((...args: any[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
   startPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/startPolling', payload: args })),
   stopPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/stopPolling', payload: args })),
@@ -384,8 +375,7 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/terminals/terminals-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
   addTerminal: vi.fn((...args: any[]) => ({ type: 'terminals/addTerminal', payload: args })),
   openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/open', payload: args })),
   toggleTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/toggle', payload: args })),
@@ -398,20 +388,21 @@ vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () 
   };
 });
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
   setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
   syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-}));
+vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({}));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
+vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
+}));
+
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: vi.fn(() => vi.fn()),
+  getStoreContext: vi.fn(),
 }));
 
 vi.mock('$lib/services/analytics', () => ({
@@ -902,6 +893,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
   });
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // INTERACTION TESTS
@@ -1536,6 +1528,7 @@ describe('SidebarChangesPanel', () => {
 
       // Clear mocks to isolate assertions to this interaction
       mockDispatch.mockClear();
+
 
       await fireEvent.click(commitBtn!);
 

@@ -25,9 +25,6 @@ import {
   removeDelegationGroup,
   removeSubscription,
   enqueueEvent,
-  requestDelegationGroupDelivery,
-  requestDeliverEvents,
-  requestDeliverQueuedEvents,
 } from "../agent-subscriptions-slice";
 import {
   selectAgentStatus,
@@ -35,6 +32,11 @@ import {
   selectIsDelegationGroupCompleteRaw,
   selectSubscriptionRaw,
 } from "../agent-subscriptions-selectors";
+import {
+  requestDelegationGroupDelivery,
+  requestDeliverEvents,
+  requestDeliverQueuedEvents,
+} from "./saga-actions";
 import { handleDeliverEvents } from "./delivery-saga";
 
 // ---------------------------------------------------------------------------

@@ -2,50 +2,50 @@
  * Session Stats Selectors
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import type {
   AgentSessionStats,
   WorkspaceAggregateStats,
 } from "./session-stats-types";
 
 /** Select workspace aggregate stats by workspace ID */
-export const selectWorkspaceStats = store.createSelector(
+export const selectWorkspaceStats = createSelector(
   (state, wsId: string): WorkspaceAggregateStats | undefined =>
     state?.sessionStats?.workspaceStats[wsId],
 );
 
 /** Select whether workspace stats are loading for a specific workspace */
-export const selectIsLoadingWorkspaceStats = store.createSelector(
+export const selectIsLoadingWorkspaceStats = createSelector(
   (state, wsId: string): boolean =>
     state?.sessionStats?.loadingWorkspaceStats[wsId] ?? false,
 );
 
 /** Select workspace stats error for a specific workspace */
-export const selectWorkspaceStatsError = store.createSelector(
+export const selectWorkspaceStatsError = createSelector(
   (state, wsId: string): string | null =>
     state?.sessionStats?.workspaceStatsErrors[wsId] ?? null,
 );
 
 /** Select stats for a specific agent by agentId */
-export const selectAgentStats = store.createSelector(
+export const selectAgentStats = createSelector(
   (state, agentId: string): AgentSessionStats | undefined =>
     state?.sessionStats?.agentStats[agentId],
 );
 
 /** Select all cached per-agent session stats */
-export const selectAllAgentStats = store.createSelector(
+export const selectAllAgentStats = createSelector(
   (state): Record<string, AgentSessionStats> =>
     state?.sessionStats?.agentStats ?? {},
 );
 
 /** Select whether agent stats are loading for a specific agent */
-export const selectIsLoadingAgentStats = store.createSelector(
+export const selectIsLoadingAgentStats = createSelector(
   (state, agentId: string): boolean =>
     state?.sessionStats?.loadingAgentStats[agentId] ?? false,
 );
 
 /** Select agent stats error for a specific agent */
-export const selectAgentStatsError = store.createSelector(
+export const selectAgentStatsError = createSelector(
   (state, agentId: string): string | undefined =>
     state?.sessionStats?.agentStatsErrors[agentId],
 );

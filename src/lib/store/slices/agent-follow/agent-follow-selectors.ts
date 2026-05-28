@@ -1,47 +1,47 @@
-import { store } from "../../store";
 /**
  * Selectors for the agent-follow slice.
  */
 
+import { createSelector } from "../../utils/create-selector";
 
-export const selectIsFollowing = store.createSelector(
+export const selectIsFollowing = createSelector(
   (state) => state.agentFollow.isFollowing,
 );
 
-export const selectFollowedAgentId = store.createSelector(
+export const selectFollowedAgentId = createSelector(
   (state) => state.agentFollow.followedAgentId,
 );
 
-export const selectAgentColor = store.createSelector(
+export const selectAgentColor = createSelector(
   (state) => state.agentFollow.agentColor,
 );
 
-export const selectCurrentFile = store.createSelector(
+export const selectCurrentFile = createSelector(
   (state) => state.agentFollow.currentFile,
 );
 
-export const selectCurrentNoteId = store.createSelector(
+export const selectCurrentNoteId = createSelector(
   (state) => state.agentFollow.currentNoteId,
 );
 
-export const selectIsAnimating = store.createSelector(
+export const selectIsAnimating = createSelector(
   (state) => state.agentFollow.isAnimating,
 );
 
-export const selectIsPaused = store.createSelector(
+export const selectIsPaused = createSelector(
   (state) => state.agentFollow.isPaused,
 );
 
-export const selectTypingSpeed = store.createSelector(
+export const selectTypingSpeed = createSelector(
   (state) => state.agentFollow.typingSpeed,
 );
 
-export const selectIsFollowingAgent = store.createSelector(
+export const selectIsFollowingAgent = createSelector(
   (state, agentId: string) =>
     state.agentFollow.isFollowing && state.agentFollow.followedAgentId === agentId,
 );
 
-export const selectFocusRingStyle = store.createSelector((state) => {
+export const selectFocusRingStyle = createSelector((state) => {
   const { isFollowing, agentColor } = state.agentFollow;
   if (!isFollowing || !agentColor) return "";
   return `box-shadow: 0 0 0 3px ${agentColor.start}40, 0 0 0 1px ${agentColor.start}`;

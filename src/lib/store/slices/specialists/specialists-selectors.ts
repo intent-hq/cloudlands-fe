@@ -1,9 +1,9 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import {
   getItem,
   getItems,
   type Collection,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import {
   SPECIALISTS,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
@@ -20,18 +20,18 @@ import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-sele
 // ============================================================================
 // Basic state selectors
 // ============================================================================
-export const selectBundledSpecialists = store.createSelector((state): Specialist[] => state.specialists.bundledSpecialists);
-export const selectCustomSpecialistsCollection = store.createSelector((state): Collection<CustomSpecialist, "id"> => state.specialists.customSpecialists);
-export const selectFileSpecialistsCollection = store.createSelector((state): Collection<FileSpecialist, "id"> => state.specialists.fileSpecialists);
-export const selectCustomSpecialists = store.createSelector((state): CustomSpecialist[] => getItems(selectCustomSpecialistsCollection.select(state)));
-export const selectFileSpecialists = store.createSelector((state): FileSpecialist[] => getItems(selectFileSpecialistsCollection.select(state)));
-export const selectUserOverrides = store.createSelector((state): SpecialistOverrides => state.specialists.userOverrides);
-export const selectOverridesLoaded = store.createSelector((state): boolean => state.specialists.overridesLoaded);
-export const selectCustomSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.customSpecialistsLoaded);
-export const selectFileSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.fileSpecialistsLoaded);
-export const selectBundledSpecialistsLoaded = store.createSelector((state): boolean => state.specialists.bundledSpecialistsLoaded);
-export const selectSpecialistsFolderPath = store.createSelector((state): string | null => state.specialists.specialistsFolderPath);
-export const selectProviderModelOverrides = store.createSelector((state): Record<string, Record<string, string>> => state.specialists.providerModelOverrides);
+export const selectBundledSpecialists = createSelector((state): Specialist[] => state.specialists.bundledSpecialists);
+export const selectCustomSpecialistsCollection = createSelector((state): Collection<CustomSpecialist, "id"> => state.specialists.customSpecialists);
+export const selectFileSpecialistsCollection = createSelector((state): Collection<FileSpecialist, "id"> => state.specialists.fileSpecialists);
+export const selectCustomSpecialists = createSelector((state): CustomSpecialist[] => getItems(selectCustomSpecialistsCollection.select(state)));
+export const selectFileSpecialists = createSelector((state): FileSpecialist[] => getItems(selectFileSpecialistsCollection.select(state)));
+export const selectUserOverrides = createSelector((state): SpecialistOverrides => state.specialists.userOverrides);
+export const selectOverridesLoaded = createSelector((state): boolean => state.specialists.overridesLoaded);
+export const selectCustomSpecialistsLoaded = createSelector((state): boolean => state.specialists.customSpecialistsLoaded);
+export const selectFileSpecialistsLoaded = createSelector((state): boolean => state.specialists.fileSpecialistsLoaded);
+export const selectBundledSpecialistsLoaded = createSelector((state): boolean => state.specialists.bundledSpecialistsLoaded);
+export const selectSpecialistsFolderPath = createSelector((state): string | null => state.specialists.specialistsFolderPath);
+export const selectProviderModelOverrides = createSelector((state): Record<string, Record<string, string>> => state.specialists.providerModelOverrides);
 // ============================================================================
 // Visibility gating helpers
 // ============================================================================
@@ -39,7 +39,7 @@ export const selectProviderModelOverrides = store.createSelector((state): Record
  * Check if a specialist should be visible based on Redux state and GitHub auth.
  * Gates GitHub-dependent specialists (pr-shepherd, pr-reviewer).
  */
-export const selectIsSpecialistVisible = store.createSelector((state, specialistId: string): boolean => {
+export const selectIsSpecialistVisible = createSelector((state, specialistId: string): boolean => {
     // Gate GitHub-dependent specialists behind GitHub auth
     if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId)) {
         if (!selectGitHubAuthIsAuthenticated.select(state)) {
@@ -64,7 +64,7 @@ export function filterSpecialistsByGitHubAuth(specialists: Specialist[], isGitHu
 // Derived: merged specialists list
 // Priority: file (project > user) > bundled > hardcoded SPECIALISTS (last resort)
 // ============================================================================
-export const selectSpecialists = store.createSelector((state): Specialist[] => {
+export const selectSpecialists = createSelector((state): Specialist[] => {
     const fileSpecialists = getItems(state.specialists.fileSpecialists);
     const bundledSpecialists = state.specialists.bundledSpecialists;
     const seen = new Set<string>();
@@ -133,7 +133,7 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
 // Parameterized selectors
 // ============================================================================
 /** Get specialist info by ID from any source */
-export const selectSpecialistById = store.createSelector((state, specialistId: string): {
+export const selectSpecialistById = createSelector((state, specialistId: string): {
     id: string;
     name: string;
     description: string;
@@ -150,11 +150,11 @@ export const selectSpecialistById = store.createSelector((state, specialistId: s
     return null;
 });
 /** Get specialist display name by ID */
-export const selectSpecialistName = store.createSelector((state, specialistId: string): string | null => {
+export const selectSpecialistName = createSelector((state, specialistId: string): string | null => {
     return selectSpecialistById.select(state, specialistId)?.name ?? null;
 });
 /** Get the effective model for a specialist (file override → bundled default → tier resolution) */
-export const selectEffectiveModel = store.createSelector((state, specialistId: string): string => {
+export const selectEffectiveModel = createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
@@ -174,7 +174,7 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
     return specialist.defaultModel ?? '';
 });
 /** Get the resolved default model (ignoring user overrides) */
-export const selectResolvedDefaultModel = store.createSelector((state, specialistId: string, providerId?: string): string => {
+export const selectResolvedDefaultModel = createSelector((state, specialistId: string, providerId?: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
@@ -190,7 +190,7 @@ export const selectResolvedDefaultModel = store.createSelector((state, specialis
     return specialist.defaultModel ?? '';
 });
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */
-export const selectEffectiveBehaviorPrompt = store.createSelector((state, specialistId: string): string => {
+export const selectEffectiveBehaviorPrompt = createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
@@ -199,25 +199,25 @@ export const selectEffectiveBehaviorPrompt = store.createSelector((state, specia
     return specialist.defaultBehaviorPrompt;
 });
 /** Check if a specialist is built-in (bundled) */
-export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
+export const selectIsBuiltIn = createSelector((state, specialistId: string): boolean => {
     return state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
 });
 /** Check if a specialist is file-based */
-export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
+export const selectIsFileBased = createSelector((state, specialistId: string): boolean => {
     return !!getItem(state.specialists.fileSpecialists, specialistId);
 });
 /** Check if a built-in specialist has been overridden by a user file */
-export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
+export const selectHasOverrides = createSelector((state, specialistId: string): boolean => {
     const isBuiltIn = state.specialists.bundledSpecialists.some((s: Specialist) => s.id === specialistId);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     return !!file && file.source === 'user';
 });
 /** Get a file specialist by ID */
-export const selectGetFileSpecialist = store.createSelector((state, specialistId: string): FileSpecialist | undefined => {
+export const selectGetFileSpecialist = createSelector((state, specialistId: string): FileSpecialist | undefined => {
     return getItem(state.specialists.fileSpecialists, specialistId);
 });
-export const selectSpecialistSourceLabel = store.createSelector((state, specialistId: string): 'Project' | 'User' | 'Built-in' | null => {
+export const selectSpecialistSourceLabel = createSelector((state, specialistId: string): 'Project' | 'User' | 'Built-in' | null => {
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (file?.source === 'project') {
         return 'Project';
@@ -231,7 +231,7 @@ export const selectSpecialistSourceLabel = store.createSelector((state, speciali
     return null;
 });
 /** Get the on-disk file path for a specialist */
-export const selectSpecialistFilePath = store.createSelector((state, specialistId: string): string | undefined => {
+export const selectSpecialistFilePath = createSelector((state, specialistId: string): string | undefined => {
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (file)
         return file.filePath;
@@ -243,7 +243,7 @@ export const selectSpecialistFilePath = store.createSelector((state, specialistI
     return undefined;
 });
 /** Get the effective coding agent for a specialist (file value → bundled default → active provider) */
-export const selectEffectiveCodingAgent = store.createSelector((state, specialistId: string): string => {
+export const selectEffectiveCodingAgent = createSelector((state, specialistId: string): string => {
     // Wave 2: File specialists already have the correct codingAgent baked in.
     // Check file specialist first, then fall back to bundled/hardcoded.
     const file = getItem(state.specialists.fileSpecialists, specialistId);
@@ -251,7 +251,7 @@ export const selectEffectiveCodingAgent = store.createSelector((state, specialis
     return selectResolvedDefaultCodingAgent.select(state, specialistId);
 });
 /** Get the resolved default coding agent for a specialist (specialist default → active provider) */
-export const selectResolvedDefaultCodingAgent = store.createSelector((state, specialistId: string): string => {
+export const selectResolvedDefaultCodingAgent = createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     return specialist?.codingAgent || selectActiveProviderId.select(state);

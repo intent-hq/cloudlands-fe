@@ -12,7 +12,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { StoreState } from '../../../types';
-import { debounceWithKeySaga } from 'svelte-redux-toolkit/utils/sagas/debounce-saga';
+import { debounceWithKeySaga } from '../../../utils/debounce-saga';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {

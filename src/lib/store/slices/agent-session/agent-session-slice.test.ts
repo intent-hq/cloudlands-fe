@@ -1343,8 +1343,7 @@ describe('chatSendStarted — placeholder session (restored workspace regression
     // Before the fix, chatSendStarted was a no-op when the session didn't exist.
     // In a restored workspace, the session hasn't loaded from disk yet when the
     // user sends a message, so the UI had no loading indicator.
-    const sentAt = Date.parse('2024-01-02T03:04:05.000Z');
-    const state = agentSessionReducer(initialState, chatSendStarted('agent-new', 'ws-1', sentAt));
+    const state = agentSessionReducer(initialState, chatSendStarted('agent-new', 'ws-1'));
 
     const session = state.byAgentId['agent-new'];
     expect(session).toBeDefined();
@@ -1352,8 +1351,6 @@ describe('chatSendStarted — placeholder session (restored workspace regression
     expect(session.isStreaming).toBe(true);
     expect(getMsgs(state, 'agent-new')).toEqual([]);
     expect(session.workspaceId).toBe('ws-1');
-    expect(session.createdAt).toBe('2024-01-02T03:04:05.000Z');
-    expect(session.updatedAt).toBe('2024-01-02T03:04:05.000Z');
   });
 
   it('sets isProcessing and isStreaming on an existing session', () => {
@@ -1364,13 +1361,6 @@ describe('chatSendStarted — placeholder session (restored workspace regression
 
     expect(state.byAgentId['a1'].isProcessing).toBe(true);
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
-  });
-
-  it('does not create a placeholder session when wsId is unavailable', () => {
-    const state = agentSessionReducer(initialState, chatSendStarted('agent-new'));
-
-    expect(state).toBe(initialState);
-    expect(state.byAgentId['agent-new']).toBeUndefined();
   });
 });
 

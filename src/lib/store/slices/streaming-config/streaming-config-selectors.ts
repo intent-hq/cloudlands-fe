@@ -1,4 +1,4 @@
-import { store } from "../../store";
+import { createSelector } from '../../utils/create-selector';
 import {
   resolveStreamingConfig,
   STREAMING_PROFILES,
@@ -8,12 +8,12 @@ import {
 } from './streaming-config-types';
 
 /** Select the current profile name */
-export const selectStreamingProfileName = store.createSelector(
+export const selectStreamingProfileName = createSelector(
   (state): StreamingProfileName => state.streamingConfig.currentProfile,
 );
 
 /** Select the resolved config (profile + custom overrides) for the global profile */
-export const selectStreamingConfig = store.createSelector(
+export const selectStreamingConfig = createSelector(
   (state): StreamingTimeoutConfig => {
     const { currentProfile, customConfig } = state.streamingConfig;
     return resolveStreamingConfig(currentProfile, customConfig);
@@ -21,7 +21,7 @@ export const selectStreamingConfig = store.createSelector(
 );
 
 /** Select the resolved config for a specific session */
-export const selectSessionStreamingConfig = store.createSelector(
+export const selectSessionStreamingConfig = createSelector(
   (state, sessionId: string): StreamingTimeoutConfig => {
     const { currentProfile, customConfig, sessionProfiles } = state.streamingConfig;
     const profileName = sessionProfiles[sessionId] || currentProfile;
@@ -30,12 +30,12 @@ export const selectSessionStreamingConfig = store.createSelector(
 );
 
 /** Select all available profiles */
-export const selectStreamingProfiles = store.createSelector(
+export const selectStreamingProfiles = createSelector(
   (): StreamingProfile[] => Object.values(STREAMING_PROFILES),
 );
 
 /** Select the custom config overrides (null if none) */
-export const selectCustomStreamingConfig = store.createSelector(
+export const selectCustomStreamingConfig = createSelector(
   (state): Partial<StreamingTimeoutConfig> | null => state.streamingConfig.customConfig,
 );
 

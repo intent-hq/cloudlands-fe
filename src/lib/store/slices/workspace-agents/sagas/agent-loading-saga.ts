@@ -25,6 +25,7 @@ import {
   delay,
   put,
 } from 'typed-redux-saga';
+import { lockReactiveSelectors } from '../../store-utility/sagas/lock-reactive-selectors';
 import {
   markAgentRecentlyCreated,
   setAgents,
@@ -61,40 +62,14 @@ const INITIAL_AGENT_ACTIVATION_TIMEOUT_MS = 60_000;
 function* waitForAgentSession(
   agentId: string,
   timeoutMs = AGENT_RESTORE_TIMEOUT_MS,
-  isReady: (session: AgentSession) => boolean = () => true,
 ) {
   const maxAttempts = Math.ceil(timeoutMs / AGENT_RESTORE_POLL_MS);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
-    if (session && isReady(session)) return session;
+    if (session) return session;
     yield* delay(AGENT_RESTORE_POLL_MS);
   }
   return null;
-}
-
-function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
-  return hasUsableAgentSession(session);
-}
-
-function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
-  return !!session?.backendSessionId && String(session.status).toLowerCase() !== 'pending';
-}
-
-function getStoredAgentBackendSessionId(agent: StoredAgent): string | null {
-  return (
-    (agent as any).backendSessionId ??
-    (agent as any).sessionId ??
-    (agent as any).backendAgentId ??
-    null
-  );
-}
-
-function storedAgentHasInitialPrompt(agent: StoredAgent): boolean {
-  const prompt =
-    (agent as any).metadata?.initialMessage ??
-    (agent as any).config?.metadata?.initialMessage ??
-    (agent as any).config?.prompt;
-  return typeof prompt === 'string' ? prompt.trim().length > 0 : !!prompt;
 }
 
 function buildInitialActivationConfig(
@@ -135,7 +110,7 @@ function shouldClearUnreadForLoadedWorkspace(wsId: string): boolean {
  * Replicates the component-local `openAgentInLayout` using direct layout manager calls.
  *
  * Generator: reads `panels` via `yield* selectPanels.effect(wsId)` so saga-context
- * code never performs one-time selector reads from the configured app store.
+ * code never calls `selector.select(getReduxStore().getState(), …)`.
  */
 function* openAgentInLayout(
   agentId: string,
@@ -192,8 +167,9 @@ export function* waitForPanelLayoutRestore(wsId: string) {
  * Race-prevention strategy (mount-race hardening):
  * 1. `isLoadingAgents` is set BEFORE the async work begins, acting as a saga-level
  *    guard that prevents duplicate concurrent loads for the same workspace.
- * 2. Final state publication keeps `setAgents` before `setAgentsLoaded` so the
- *    sidebar observes a populated agent list before the loaded flag flips true.
+ * 2. Final state publication (`setAgents` + `setAgentsLoaded`) is wrapped in
+ *    `lockReactiveSelectors` so the sidebar never observes an intermediate state
+ *    where agents are set but `agentsLoaded` is still false (or vice-versa).
  */
 export function* loadAgentsFromDiskSaga(wsId: string) {
   if (typeof window === 'undefined') return;
@@ -253,9 +229,11 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     // Publish agents and loaded flag atomically so the sidebar never
     // sees an intermediate state (agents set but loaded still false,
     // or loaded true with stale/empty agents).
-    yield* put(bulkUpsertSessions(filteredAgents));
-    yield* put(setAgents(wsId, filteredAgents));
-    yield* put(setAgentsLoaded(wsId, true));
+    yield* lockReactiveSelectors(function* () {
+      yield* put(bulkUpsertSessions(filteredAgents));
+      yield* put(setAgents(wsId, filteredAgents));
+      yield* put(setAgentsLoaded(wsId, true));
+    });
     if (shouldClearUnreadForLoadedWorkspace(wsId)) {
       yield* put(clearWorkspaceUnread(wsId));
     }
@@ -282,10 +260,13 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
       yield* cleanupSessionStorageKeys(wsId);
     }
   } catch {
-    // Even on error, publish empty agents before marking the list loaded.
-    yield* put(removeWorkspaceSessions(wsId));
-    yield* put(setAgents(wsId, []));
-    yield* put(setAgentsLoaded(wsId, true));
+    // Even on error, batch the state publication to avoid a transient
+    // empty-agents-but-not-loaded sidebar flash.
+    yield* lockReactiveSelectors(function* () {
+      yield* put(removeWorkspaceSessions(wsId));
+      yield* put(setAgents(wsId, []));
+      yield* put(setAgentsLoaded(wsId, true));
+    });
   } finally {
     yield* put(setIsLoadingAgents(wsId, false));
   }
@@ -300,22 +281,13 @@ export function* restoreInitialAgent(
   diskAgents: StoredAgent[],
   existingAgentIds: Set<string>,
 ) {
-  if (!initialAgentId) return;
-  let indexedExistingSession: AgentSession | undefined;
-  if (existingAgentIds.has(AgentId(initialAgentId))) {
-    indexedExistingSession = yield* selectAgentSession.effect(initialAgentId);
-    if (hasUsableInitialAgentSession(indexedExistingSession)) {
-      yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
-      return;
-    }
-  }
+  if (!initialAgentId || existingAgentIds.has(AgentId(initialAgentId))) return;
   const initialAgentOnDisk = diskAgents.find((a) => a.id === AgentId(initialAgentId));
   if (initialAgentOnDisk) {
     // Use workspace-scoped Redux selector for race-safe lookup
-    const existingSession: AgentSession | undefined = indexedExistingSession ??
-      (yield* selectAgentSession.effect(initialAgentId));
-    const isAlreadyUsable = hasUsableInitialAgentSession(existingSession);
-    if (!isAlreadyUsable) {
+    const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(initialAgentId);
+    const isAlreadyActive = existingSession && !(existingSession as any).isPending;
+    if (!isAlreadyActive && !existingSession) {
       // Check if this is a pending agent from workspace creation that needs
       // its initial message sent. The backend creates these with status Pending
       // and stores initialMessage in metadata — resumeSession would just load
@@ -323,15 +295,13 @@ export function* restoreInitialAgent(
       const diskMeta = (initialAgentOnDisk as any).metadata;
       const diskMessages = (initialAgentOnDisk as any).messages;
       const hasExistingMessages = Array.isArray(diskMessages) && diskMessages.length > 0;
-      const diskBackendSessionId = getStoredAgentBackendSessionId(initialAgentOnDisk);
       const isPendingWithMessage =
-        storedAgentHasInitialPrompt(initialAgentOnDisk) &&
+        diskMeta?.initialMessage &&
         !hasExistingMessages &&
-        (String((initialAgentOnDisk as any).status).toLowerCase() === 'pending' ||
-          !diskBackendSessionId ||
-          !hasUsableInitialAgentSession(existingSession));
+        ((initialAgentOnDisk as any).status === 'pending' ||
+          !(initialAgentOnDisk as any).backendSessionId);
       try {
-        let restored: AgentSession | null | undefined;
+        let restored: AgentSession | null;
         if (isPendingWithMessage) {
           // Dispatch the saga-owned activation request so backend creation and
           // first-message sending happen through the Redux creation flow.
@@ -355,15 +325,12 @@ export function* restoreInitialAgent(
           restored = yield* waitForAgentSession(
             initialAgentId,
             INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
-            hasUsableInitialAgentSession,
           );
-        } else if (!existingSession) {
+        } else {
           // Agent has messages or an active backend session — restore it via
           // the saga-owned disk-load action and observe Redux for the result.
           yield* put(ensureAgentSessionLoaded(wsId, initialAgentId));
           restored = yield* waitForAgentSession(initialAgentId);
-        } else {
-          restored = existingSession;
         }
         if (restored) {
           yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
@@ -387,7 +354,6 @@ export function* restoreInitialAgent(
       const newSession: AgentSession | null = yield* waitForAgentSession(
         initialAgentId,
         INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
-        hasUsableInitialAgentSession,
       );
       if (newSession) {
         yield* put(markAgentRecentlyCreated(wsId, initialAgentId));
@@ -395,25 +361,16 @@ export function* restoreInitialAgent(
     } catch {}
   }
 }
-/** @internal Exported for testing only. */
-export function* restoreRemainingAgents(
+function* restoreRemainingAgents(
   wsId: string,
   diskAgents: StoredAgent[],
   existingAgentIds: Set<string>,
   initialAgentId: string | null,
 ) {
-  const agentsToRestore: StoredAgent[] = [];
-  for (const agent of diskAgents) {
-    if (initialAgentId && agent.id === initialAgentId) continue;
-    if (!existingAgentIds.has(agent.id as any)) {
-      agentsToRestore.push(agent);
-      continue;
-    }
-    const existingSession: AgentSession | undefined = yield* selectAgentSession.effect(agent.id);
-    if (!hasUsableAgentSession(existingSession)) {
-      agentsToRestore.push(agent);
-    }
-  }
+  const agentsToRestore = diskAgents.filter(
+    (agent) =>
+      !existingAgentIds.has(agent.id as any) && (!initialAgentId || agent.id !== initialAgentId),
+  );
   if (agentsToRestore.length === 0) return;
   for (const agent of agentsToRestore) {
     yield* put(ensureAgentSessionLoaded(wsId, agent.id));

@@ -6,9 +6,9 @@
  * by executor type.
  */
 
-import type { StoreAction } from "svelte-redux-toolkit/types";
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import type { StoreAction } from "../../types";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type {
   BackgroundAgentExecutorState,

@@ -6,7 +6,7 @@
 } from 'svelte';
   import { selectPermissionOption } from '$lib/store/slices/permission/permission-slice';
   import type { PermissionRequest } from '$lib/store/slices/permission/permission-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import Fa from 'svelte-fa';
   import {
   faShieldHalved,
@@ -14,7 +14,6 @@
   faChevronUp,
 } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     request: PermissionRequest;
@@ -23,6 +22,7 @@
 
   let { request, pendingCount = 1 }: Props = $props();
 
+  const dispatch = getDispatch();
   let showDetails = $state(false);
   let isProcessing = $state(false);
 
@@ -56,7 +56,7 @@
   function handleSelectOption(optionId: string) {
     if (isProcessing) return;
     isProcessing = true;
-    appStore.dispatch(selectPermissionOption(request.requestId, optionId));
+    dispatch(selectPermissionOption(request.requestId, optionId));
     isProcessing = false;
   }
 

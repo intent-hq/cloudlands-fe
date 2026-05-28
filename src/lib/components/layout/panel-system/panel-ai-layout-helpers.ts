@@ -9,7 +9,7 @@
 
 import type { PanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import type { ClientLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
@@ -86,7 +86,7 @@ export async function openTabFromConfig(
         // in the requested panel when creation succeeds.
         const agentName = tab.newAgentName || tab.title || `Agent ${panelIndex + 1}`;
         try {
-          appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
+          getReduxStore().dispatch(createAgentFromConfigRequested(workspaceId, {
             name: agentName,
             workspaceId: WorkspaceId(workspaceId),
             source: 'panel-ai-layout',

@@ -24,7 +24,6 @@ function normalizeTimestamp(value: unknown): string {
 export function* restoreSessionFromDiskWithoutBackend(
   agentId: string,
   workspace: Workspace,
-  options?: { bypassCache?: boolean },
 ) {
   if (!agentId || !workspace?.id) return null;
   const plainAgentId = String(agentId);
@@ -32,7 +31,6 @@ export function* restoreSessionFromDiskWithoutBackend(
     [persistenceService, persistenceService.loadSession],
     plainAgentId,
     workspace.id,
-    options?.bypassCache ? { bypassCache: true } : undefined,
   );
 
   const inMemoryAgents: AgentSession[] = yield* selectAllWorkspaceAgents.effect(workspace.id);

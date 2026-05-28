@@ -19,7 +19,7 @@
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   selectAutoUpdateStatus,
   selectAutoUpdateProgress,
@@ -28,7 +28,6 @@
   selectAutoUpdateError,
 } from '$lib/store/slices/auto-update/auto-update-selectors';
   import { installUpdate } from '$lib/store/slices/auto-update/auto-update-slice';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -44,6 +43,7 @@
     closeToast?.();
   }
 
+  const dispatch = getDispatch();
   const status$ = selectAutoUpdateStatus();
   const progress$ = selectAutoUpdateProgress();
   const updateInfo$ = selectAutoUpdateInfo();
@@ -65,7 +65,7 @@
   }
 
   function handleInstall() {
-    appStore.dispatch(installUpdate());
+    dispatch(installUpdate());
   }
 
   // Auto-dismiss when up-to-date or error after a delay

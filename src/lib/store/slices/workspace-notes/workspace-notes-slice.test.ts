@@ -11,7 +11,7 @@ import {
 import {
   getItem,
   getItems,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import {
   applyNoteCreated,
   applyNoteDeleted,

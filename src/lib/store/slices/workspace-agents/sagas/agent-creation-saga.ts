@@ -11,7 +11,7 @@ import {
   agentIpcProxy,
   persistenceService,
 } from '$features/agent/browser';
-import { notesIpc } from '$lib/utils/notes-ipc';
+import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import {
   selectNoteById,
@@ -24,6 +24,7 @@ import {
   reloadNotes,
   assignAgentToTask,
 } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import {
   WorkspaceId,
@@ -106,17 +107,8 @@ const initialAgentActivationLocks = new Set<string>();
 const agentActivationWaiters = new Map<string, Array<ReturnType<typeof activateAgentRequested>>>();
 type CreateAgentFromConfigRequestAction = ReturnType<typeof createAgentFromConfigRequested>;
 
-async function loadTerminalManager() {
-  const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-  return terminalManager;
-}
-
 function hasUsableInitialAgentSession(session: AgentSession | undefined | null): session is AgentSession {
-  return hasUsableAgentSession(session);
-}
-
-function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
-  return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
+  return !!session && ((session.messages?.length ?? 0) > 0 || session.status !== AgentStatus.Pending);
 }
 
 function getActivationError(error: unknown): string {
@@ -236,54 +228,14 @@ function* registerCreatedAgent(
   wsId: string,
   session: AgentSession,
   existingAgents: AgentSession[],
-  options?: { forceUpsert?: boolean },
 ) {
-  const existingAgent = existingAgents.find((a) => a.id === session.id);
-  const shouldUpsert =
-    options?.forceUpsert ||
-    !existingAgent ||
-    (!hasUsableAgentSession(existingAgent) && hasUsableAgentSession(session));
-  if (shouldUpsert) {
+  if (!existingAgents.some((a) => a.id === session.id)) {
     yield* put(upsertSession({
       ...session,
       workspaceId: wsId as AgentSession['workspaceId'],
     }));
   }
   yield* put(markAgentRecentlyCreatedAction(wsId, session.id));
-}
-
-function buildInitialActivationSession(
-  wsId: string,
-  agentId: string,
-  config: Parameters<typeof activateInitialAgentRequested>[2],
-  activationState: AgentActivationState,
-  activationAttempts: number,
-  existing?: AgentSession | null,
-  errorMessage?: string,
-): AgentSession {
-  const now = new Date().toISOString();
-  return {
-    ...existing,
-    id: agentId as AgentSession['id'],
-    backendSessionId: existing?.backendSessionId ?? null,
-    workspaceId: wsId as AgentSession['workspaceId'],
-    name: existing?.name || config.name || 'Agent',
-    model: existing?.model || config.model,
-    provider: (existing as any)?.provider || config.provider,
-    status: existing?.status ?? AgentStatus.Pending,
-    messages: existing?.messages ?? [],
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-    metadata: {
-      ...(existing?.metadata || {}),
-      ...(config.metadata || {}),
-      isInitialAgent: true,
-      isFirstWorkspaceAgent: config.metadata?.isFirstWorkspaceAgent,
-    },
-    activationState,
-    activationAttempts,
-    lastActivationError: errorMessage,
-  } as AgentSession;
 }
 
 function markInitialMessageSentInSessionStorage(wsId: string): void {
@@ -411,25 +363,11 @@ export function* handleActivateInitialAgentRequestedSaga(
   initialAgentActivationLocks.add(lockKey);
   try {
     const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
-    const activationAttempts = (existing?.activationAttempts || 0) + 1;
     if (hasUsableInitialAgentSession(existing)) {
-      yield* registerCreatedAgent(wsId, {
-        ...existing,
-        activationState: AgentActivationState.ACTIVE,
-        activationAttempts,
-      }, agents, { forceUpsert: true });
+      yield* registerCreatedAgent(wsId, existing, agents);
       yield* put(setActiveAgentId(wsId, existing.id));
       return;
     }
-
-    yield* put(upsertSession(buildInitialActivationSession(
-      wsId,
-      agentId,
-      config,
-      AgentActivationState.ACTIVATING,
-      activationAttempts,
-      existing,
-    )));
 
     const { result, timeout } = yield* race({
       result: call([agentFactory, agentFactory.createAgent], workspace, {
@@ -446,65 +384,28 @@ export function* handleActivateInitialAgentRequestedSaga(
       timeout: delay(INITIAL_AGENT_ACTIVATION_TIMEOUT_MS),
     });
     if (timeout) {
-      const errorMessage = 'Timed out activating initial agent from Redux request';
-      logger.warn(errorMessage, { workspaceId: wsId, agentId });
-      yield* put(upsertSession(buildInitialActivationSession(
-        wsId,
-        agentId,
-        config,
-        AgentActivationState.ERROR,
-        activationAttempts,
-        existing,
-        errorMessage,
-      )));
+      logger.warn('Timed out activating initial agent from Redux request', { workspaceId: wsId, agentId });
       return;
     }
     if (!result?.success || !result.agent) {
-      const errorMessage = getAgentCreationError(result?.error || 'Failed to activate initial agent');
       logger.error('Failed to activate initial agent from Redux request', {
         workspaceId: wsId,
         agentId,
-        error: errorMessage,
+        error: result?.error,
       });
-      yield* put(upsertSession(buildInitialActivationSession(
-        wsId,
-        agentId,
-        config,
-        AgentActivationState.ERROR,
-        activationAttempts,
-        existing,
-        errorMessage,
-      )));
       return;
     }
-    const session: AgentSession = {
-      ...result.agent,
-      workspaceId: wsId as AgentSession['workspaceId'],
-      activationState: AgentActivationState.ACTIVE,
-      activationAttempts,
-    };
+    const session = result.agent;
     if (!session) return;
-    yield* registerCreatedAgent(wsId, session, agents, { forceUpsert: true });
+    yield* registerCreatedAgent(wsId, session, agents);
     yield* put(setActiveAgentId(wsId, session.id));
     yield* call(markInitialMessageSentInSessionStorage, wsId);
   } catch (error) {
-    const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
-    const activationAttempts = (existing?.activationAttempts || 0) + 1;
-    const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Failed to activate initial agent from Redux request', {
       workspaceId: wsId,
       agentId,
-      error: errorMessage,
+      error: error instanceof Error ? error.message : String(error),
     });
-    yield* put(upsertSession(buildInitialActivationSession(
-      wsId,
-      agentId,
-      config,
-      AgentActivationState.ERROR,
-      activationAttempts,
-      existing,
-      errorMessage,
-    )));
   } finally {
     initialAgentActivationLocks.delete(lockKey);
   }
@@ -1065,8 +966,7 @@ export function* handleCreateTerminalRequestedSaga(wsId: string) {
 
   const terminalId = unifiedIdService.generateTerminalId();
   yield* put(addTerminal(wsId, terminalId, 'Terminal'));
-  const terminalManager = yield* call(loadTerminalManager);
-  yield* call([terminalManager, terminalManager.saveTerminalMetadata], terminalId, wsId, 'Terminal');
+  terminalManager.saveTerminalMetadata(terminalId, wsId, 'Terminal');
   yield* put(markTerminalRecentlyCreated(wsId, terminalId));
 
   // Open terminal via panel layout

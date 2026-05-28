@@ -1,5 +1,5 @@
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
 import type { AutoUpdateState } from "./auto-update-types";
 import type { UpdateChannel, UpdateProgress, UpdateState } from "$features/auto-update/types";
 

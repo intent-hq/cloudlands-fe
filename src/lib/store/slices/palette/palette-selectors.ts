@@ -1,19 +1,19 @@
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import { getPaletteMruEntries } from "./palette-normalization";
 
-export const selectIsPaletteOpen = store.createSelector((state) => {
+export const selectIsPaletteOpen = createSelector((state) => {
   return state.palette.isOpen;
 });
 
-export const selectPaletteQuery = store.createSelector((state) => {
+export const selectPaletteQuery = createSelector((state) => {
   return state.palette.query;
 });
 
-export const selectPaletteMruEntries = store.createSelector((state) => {
+export const selectPaletteMruEntries = createSelector((state) => {
   return getPaletteMruEntries(state.palette);
 });
 
-export const selectPaletteFileMru = store.createSelector((state) => {
+export const selectPaletteFileMru = createSelector((state) => {
   return state.palette.fileMru;
 });
 

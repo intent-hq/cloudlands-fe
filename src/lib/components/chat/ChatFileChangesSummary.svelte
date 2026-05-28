@@ -15,13 +15,12 @@
   getFileChangesFromMessage,
   type ChatFileChangeSummary,
 } from '$lib/utils/get-file-changes-from-messages';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
   openWorkspaceChatChanges,
   type JsonValue,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
 
 interface Props {
     /** Single message to show changes for (per-turn mode) */
@@ -71,9 +70,9 @@ interface Props {
   function handleClick() {
     // Navigate to chat changes view
     // Pass message reference for reactive updates during streaming
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
+    const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
     if (!wsId) return;
-    appStore.dispatch(
+    getReduxStore().dispatch(
       openWorkspaceChatChanges(wsId, summary.changes as unknown as JsonValue[], displayLabel, {
         messageId: message?.id,
         isAggregate,

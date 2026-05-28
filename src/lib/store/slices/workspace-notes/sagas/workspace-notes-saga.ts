@@ -4,7 +4,7 @@ import type {
   NoteUpdatedPayload,
   TaskStatusChangedPayload,
 } from "$features/events/types";
-import { notesIpc } from "$lib/utils/notes-ipc";
+import { notesIpc } from "./notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { takeEveryFromListenSync } from "$lib/store/utils/ipc-channel";
 import type { Note, WorkspaceId } from "$shared/types";

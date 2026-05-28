@@ -4,7 +4,7 @@
  * Derived state selectors for the panel layout slice.
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import { emptyWorkspaceState } from "./panel-layout-slice";
 import type {
   WorkspacePanelLayoutState,
@@ -28,7 +28,7 @@ function isValidActiveWorkspaceId(wsId: string | null | undefined): wsId is stri
 // ============================================================================
 
 /** Select the full per-workspace panel layout state */
-export const selectPanelLayoutWorkspace = store.createSelector<[wsId: string], WorkspacePanelLayoutState>(
+export const selectPanelLayoutWorkspace = createSelector<[wsId: string], WorkspacePanelLayoutState>(
   (state, wsId) => state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState,
 );
 
@@ -37,31 +37,31 @@ export const selectPanelLayoutWorkspace = store.createSelector<[wsId: string], W
 // ============================================================================
 
 /** Select the root layout node */
-export const selectPanelLayoutRoot = store.createSelector<[wsId: string], PanelLayoutNode>(
+export const selectPanelLayoutRoot = createSelector<[wsId: string], PanelLayoutNode>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).root,
 );
 
 /** Select all panels */
-export const selectPanels = store.createSelector<[wsId: string], Record<string, PanelState>>(
+export const selectPanels = createSelector<[wsId: string], Record<string, PanelState>>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).panels,
 );
 
 /** Select a specific panel by ID */
-export const selectPanel = store.createSelector<[wsId: string, panelId: string], PanelState | undefined>(
+export const selectPanel = createSelector<[wsId: string, panelId: string], PanelState | undefined>(
   (state, wsId, panelId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).panels[panelId],
 );
 
 /** Select focused panel ID */
-export const selectFocusedPanelId = store.createSelector<[wsId: string], string | null>(
+export const selectFocusedPanelId = createSelector<[wsId: string], string | null>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).focusedPanelId,
 );
 
 /** Select the focused panel state */
-export const selectFocusedPanel = store.createSelector<[wsId: string], PanelState | undefined>(
+export const selectFocusedPanel = createSelector<[wsId: string], PanelState | undefined>(
   (state, wsId) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return ws.focusedPanelId ? ws.panels[ws.focusedPanelId] : undefined;
@@ -69,12 +69,12 @@ export const selectFocusedPanel = store.createSelector<[wsId: string], PanelStat
 );
 
 /** Select the per-workspace restore lifecycle status */
-export const selectRestoreStatus = store.createSelector<[wsId: string], PanelLayoutRestoreStatus>(
+export const selectRestoreStatus = createSelector<[wsId: string], PanelLayoutRestoreStatus>(
   (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).restoreStatus,
 );
 
 /** Select whether the layout has multiple panels */
-export const selectHasMultiplePanels = store.createSelector<[wsId: string], boolean>(
+export const selectHasMultiplePanels = createSelector<[wsId: string], boolean>(
   (state, wsId) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return Object.keys(ws.panels).length > 1;
@@ -86,7 +86,7 @@ export const selectHasMultiplePanels = store.createSelector<[wsId: string], bool
 // ============================================================================
 
 /** Select the active tab in the focused panel */
-export const selectActiveTab = store.createSelector<[wsId: string], PanelTab | undefined>(
+export const selectActiveTab = createSelector<[wsId: string], PanelTab | undefined>(
   (state, wsId) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     if (!ws.focusedPanelId) return undefined;
@@ -97,7 +97,7 @@ export const selectActiveTab = store.createSelector<[wsId: string], PanelTab | u
 );
 
 /** Select the active tab in a specific panel */
-export const selectActiveTabInPanel = store.createSelector<
+export const selectActiveTabInPanel = createSelector<
   [wsId: string, panelId: string],
   PanelTab | undefined
 >((state, wsId, panelId) => {
@@ -108,13 +108,13 @@ export const selectActiveTabInPanel = store.createSelector<
 });
 
 /** Select all tabs across all panels (flattened) */
-export const selectAllTabs = store.createSelector<[wsId: string], PanelTab[]>((state, wsId) => {
+export const selectAllTabs = createSelector<[wsId: string], PanelTab[]>((state, wsId) => {
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
   return Object.values(ws.panels).flatMap((p) => p.tabs);
 });
 
 /** Find a tab by ID across all panels. Returns [panelId, tab] or undefined. */
-export const selectTabById = store.createSelector<
+export const selectTabById = createSelector<
   [wsId: string, tabId: string],
   { panelId: string; tab: PanelTab } | undefined
 >((state, wsId, tabId) => {
@@ -127,7 +127,7 @@ export const selectTabById = store.createSelector<
 });
 
 /** Check if a specific note is open in any panel */
-export const selectIsNoteOpen = store.createSelector<[wsId: string, noteId: string], boolean>(
+export const selectIsNoteOpen = createSelector<[wsId: string, noteId: string], boolean>(
   (state, wsId, noteId) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return Object.values(ws.panels).some((p) =>
@@ -137,7 +137,7 @@ export const selectIsNoteOpen = store.createSelector<[wsId: string, noteId: stri
 );
 
 /** Check if a specific file is open in any panel */
-export const selectIsFileOpen = store.createSelector<[wsId: string, filePath: string], boolean>(
+export const selectIsFileOpen = createSelector<[wsId: string, filePath: string], boolean>(
   (state, wsId, filePath) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return Object.values(ws.panels).some((p) =>
@@ -147,7 +147,7 @@ export const selectIsFileOpen = store.createSelector<[wsId: string, filePath: st
 );
 
 /** Select active-workspace file-content paths no longer represented by any open file tab. */
-export const selectFileContentPrunePayload = store.createSelector((state): string[] => {
+export const selectFileContentPrunePayload = createSelector((state): string[] => {
   const activeWsId = state.workspace.activeWorkspaceId;
   if (!isValidActiveWorkspaceId(activeWsId)) {
     return emptyFileContentPrunePaths;
@@ -184,7 +184,7 @@ export const selectFileContentPrunePayload = store.createSelector((state): strin
 });
 
 /** Get all panel IDs */
-export const selectPanelIds = store.createSelector<[wsId: string], string[]>(
+export const selectPanelIds = createSelector<[wsId: string], string[]>(
   (state, wsId) => {
     const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
     return Object.keys(ws.panels);
@@ -198,43 +198,43 @@ export const selectPanelIds = store.createSelector<[wsId: string], string[]>(
 // ============================================================================
 
 /** Select recently closed tabs */
-export const selectRecentlyClosed = store.createSelector<[wsId: string], RecentlyClosedTab[]>(
+export const selectRecentlyClosed = createSelector<[wsId: string], RecentlyClosedTab[]>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).recentlyClosed,
 );
 
 /** Select whether there are any recently closed tabs */
-export const selectHasRecentlyClosed = store.createSelector<[wsId: string], boolean>(
+export const selectHasRecentlyClosed = createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).recentlyClosed.length > 0,
 );
 
 /** Select layout history snapshots */
-export const selectLayoutHistory = store.createSelector<[wsId: string], LayoutSnapshot[]>(
+export const selectLayoutHistory = createSelector<[wsId: string], LayoutSnapshot[]>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).layoutHistory,
 );
 
 /** Select current history index */
-export const selectHistoryIndex = store.createSelector<[wsId: string], number>(
+export const selectHistoryIndex = createSelector<[wsId: string], number>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).historyIndex,
 );
 
 /** Whether layout history has been loaded from disk */
-export const selectHistoryLoaded = store.createSelector<[wsId: string], boolean>(
+export const selectHistoryLoaded = createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).historyLoaded,
 );
 
 /** Select whether we can go back in layout history */
-export const selectCanGoBack = store.createSelector<[wsId: string], boolean>((state, wsId) => {
+export const selectCanGoBack = createSelector<[wsId: string], boolean>((state, wsId) => {
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
   return ws.historyIndex > 0 && ws.layoutHistory.length > 0;
 });
 
 /** Select whether we can go forward in layout history */
-export const selectCanGoForward = store.createSelector<[wsId: string], boolean>((state, wsId) => {
+export const selectCanGoForward = createSelector<[wsId: string], boolean>((state, wsId) => {
   const ws = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
   return ws.historyIndex < ws.layoutHistory.length - 1;
 });
@@ -244,13 +244,13 @@ export const selectCanGoForward = store.createSelector<[wsId: string], boolean>(
 // ============================================================================
 
 /** Select focus history entries */
-export const selectFocusHistory = store.createSelector<[wsId: string], FocusHistoryEntry[]>(
+export const selectFocusHistory = createSelector<[wsId: string], FocusHistoryEntry[]>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).focusHistory,
 );
 
 /** Select current focus history index */
-export const selectFocusHistoryIndex = store.createSelector<[wsId: string], number>(
+export const selectFocusHistoryIndex = createSelector<[wsId: string], number>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).focusHistoryIndex,
 );
@@ -260,19 +260,19 @@ export const selectFocusHistoryIndex = store.createSelector<[wsId: string], numb
 // ============================================================================
 
 /** Select the currently expanded panel ID */
-export const selectExpandedPanelId = store.createSelector<[wsId: string], string | null>(
+export const selectExpandedPanelId = createSelector<[wsId: string], string | null>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).expandedPanelId,
 );
 
 /** Select whether spec tab is being deferred */
-export const selectDeferSpecTab = store.createSelector<[wsId: string], boolean>(
+export const selectDeferSpecTab = createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).deferSpecTab,
 );
 
 /** Select pending focus tab ID */
-export const selectPendingFocusTabId = store.createSelector<[wsId: string], string | null>(
+export const selectPendingFocusTabId = createSelector<[wsId: string], string | null>(
   (state, wsId) =>
     (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).pendingFocusTabId,
 );
@@ -286,8 +286,8 @@ export const selectPendingFocusTabId = store.createSelector<[wsId: string], stri
  * Use this for direct state reads in sagas/callbacks instead of selectors.
  */
 export function getWorkspacePanelLayout(
-  state: { panelLayout: { byWorkspaceId: Record<string, WorkspacePanelLayoutState> } },
+  storeState: { panelLayout: { byWorkspaceId: Record<string, WorkspacePanelLayoutState> } },
   wsId: string,
 ): WorkspacePanelLayoutState {
-  return state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  return storeState.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
 }

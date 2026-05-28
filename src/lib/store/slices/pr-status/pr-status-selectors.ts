@@ -4,18 +4,18 @@
  * Selectors for workspace-scoped PR status state.
  */
 
-import { store } from "../../store";
+import { createSelector } from "../../utils/create-selector";
 import { getPRStatusWorkspaceState } from "./pr-status-slice";
 
-export const selectPRStatusIsRefreshing = store.createSelector(
+export const selectPRStatusIsRefreshing = createSelector(
   (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).isRefreshing
 );
 
-export const selectPRStatusLastRefreshTime = store.createSelector(
+export const selectPRStatusLastRefreshTime = createSelector(
   (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).lastRefreshTime
 );
 
-export const selectPRStatusLastError = store.createSelector(
+export const selectPRStatusLastError = createSelector(
   (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).lastError
 );
 

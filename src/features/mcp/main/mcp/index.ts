@@ -8,7 +8,7 @@ export * from './protocol';
 export { BaseMCPTool as Tool } from './tool';
 export type { IMCPTool } from './tool';
 export * from './server';
-export * from './workspace-file-tools';
+export * from './workspace-tools';
 export * from './tool-call-extractor';
 export * from './agent-tool-executor';
 

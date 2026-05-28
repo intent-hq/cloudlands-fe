@@ -1,5 +1,5 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { Collection } from 'svelte-redux-toolkit/utils/collections/collection-utils';
+import type { Collection } from '../../utils/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';
 

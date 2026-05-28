@@ -21,7 +21,7 @@ import {
   takeLatest,
   type SagaGenerator,
 } from "typed-redux-saga";
-import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
+import { takeLatestFromSelector } from "../../../utils/selector-channel-effects";
 import { selectGitHubAuthIsAuthenticated } from "../../github-auth/github-auth-selectors";
 import {
   clearGithubRepos,

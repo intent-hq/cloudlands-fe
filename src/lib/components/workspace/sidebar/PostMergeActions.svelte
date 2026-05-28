@@ -5,7 +5,7 @@
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   setPostMergeState,
   setGitOperationFlag,
@@ -27,7 +27,7 @@
 } from '$lib/store/slices/workspace/workspace-slice';
 
 
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -39,7 +39,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -49,6 +48,7 @@
 
   let { workspaceId, hasNoLocalChanges, trunkBranch }: Props = $props();
 
+  const dispatch = getDispatch();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -62,15 +62,15 @@
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
     if (result.ok) {
-      appStore.dispatch(setWorkspaceEntity(result.data));
+      dispatch(setWorkspaceEntity(result.data));
     }
     return result;
   }
 
   /** Dispatch a partial update to post-merge state, merging with current Redux state */
   function dispatchPostMergeUpdate(fields: Partial<PostMergeState>) {
-    const current = selectPostMergeState.select(appStore.state, workspaceId);
-    appStore.dispatch(setPostMergeState(workspaceId, { ...current, ...fields }));
+    const current = selectPostMergeState.select(getReduxStore().getState(), workspaceId);
+    dispatch(setPostMergeState(workspaceId, { ...current, ...fields }));
   }
 
   // Start new workspace with same repo after merge, archiving the current one
@@ -85,7 +85,7 @@
         toast.error('Failed to archive workspace');
         return;
       }
-      appStore.dispatch(loadWorkspacesRequested());
+      dispatch(loadWorkspacesRequested());
     }
 
     // Pre-fill the create form with the current repo info via sessionStorage
@@ -95,7 +95,7 @@
 
     // Open the create workspace modal
     const { setShowCreateModal } = await import('$lib/store/slices/sidebar-nav/sidebar-nav-slice');
-    appStore.dispatch(setShowCreateModal(true));
+    dispatch(setShowCreateModal(true));
   }
 
   // Reset workspace branch to trunk HEAD and continue working
@@ -103,7 +103,7 @@
     if (!workspaceId || !$workspace) return;
 
     const capturedWsId = workspaceId;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', true));
+    dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', true));
     try {
       const result = await AcceptChangesClient.resetToTrunk(workspaceId as WorkspaceId);
 
@@ -117,16 +117,16 @@
           await persistWorkspaceChanges({ baseCommitSha: result.result.newHeadSha });
 
           // Clear older commits pagination cache which may reference commits from old history
-          appStore.dispatch(ftClearOlderCommits(workspaceId));
+          dispatch(ftClearOlderCommits(workspaceId));
 
           // Refresh all stores in parallel
           await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
+            getReduxStore().dispatch(refreshRequested(workspaceId)),
           ]);
 
           // Also refresh aheadOfTrunk and isContentMergedToTrunk to ensure button hides itself
-          appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
+          dispatch(refreshAcceptChangesStatus(workspaceId));
 
           // Clear merge flags
           dispatchPostMergeUpdate({
@@ -155,7 +155,7 @@
             if (!unarchiveResult.ok) {
               console.error('Failed to unarchive workspace after reset:', unarchiveResult.error);
             } else {
-              appStore.dispatch(loadWorkspacesRequested());
+              dispatch(loadWorkspacesRequested());
             }
           });
         }
@@ -165,7 +165,7 @@
     } catch {
       toast.error('Failed to reset workspace');
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', false));
+      dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', false));
     }
   }
 </script>

@@ -4,8 +4,8 @@
  * Workspace-scoped state for script entries and output.
  */
 
-import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+import { createAction } from '../../utils/create-action';
+import { createReducer } from '../../utils/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import type {

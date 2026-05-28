@@ -21,8 +21,8 @@
   type ProjectType,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
-
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import {
   saveScript,
   renameScript,
@@ -37,7 +37,6 @@
   selectLastUsedScriptForRepo,
 } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
   import type { SetupScript } from '$lib/store/slices/setup-scripts/setup-scripts-types';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     repoPath?: string;
@@ -71,7 +70,8 @@
     onSave,
   }: Props = $props();
 
-  // Redux appStore.dispatch(must be at component init)
+  // Redux dispatch (must be at component init)
+  const dispatch = getDispatch();
   const allScripts$ = selectScripts();
 
   // Agent panel state
@@ -130,12 +130,12 @@
         ...(params.name ? { name: params.name } : {}),
         ...(params.projectType ? { projectType: params.projectType } : {}),
       };
-      appStore.dispatch(saveScript(updated));
+      dispatch(saveScript(updated));
       return updated;
     }
 
     const newScript = createScriptObject(params);
-    appStore.dispatch(saveScript(newScript));
+    dispatch(saveScript(newScript));
     return newScript;
   }
 
@@ -240,10 +240,10 @@
 
   // Handle deleting a saved script with undo
   function handleDeleteSavedScript(scriptId: string, name: string) {
-    const scriptData = selectScriptById.select(appStore.state, scriptId);
+    const scriptData = selectScriptById.select(getReduxStore().getState(), scriptId);
     if (!scriptData) return;
 
-    appStore.dispatch(removeScriptFromUI(scriptId));
+    dispatch(removeScriptFromUI(scriptId));
 
     if (selectedScriptId === scriptId) {
       selectedScriptId = '';
@@ -259,7 +259,7 @@
         label: 'Undo',
         onClick: () => {
           undoClicked = true;
-          appStore.dispatch(restoreScriptToUI(scriptId));
+          dispatch(restoreScriptToUI(scriptId));
           toast.dismiss(toastId);
         },
       },
@@ -267,7 +267,7 @@
 
     setTimeout(() => {
       if (!undoClicked) {
-        appStore.dispatch(deleteScript(scriptId));
+        dispatch(deleteScript(scriptId));
       }
     }, 15000);
   }
@@ -293,8 +293,8 @@
     const isExistingSaved = selectedScriptId && !selectedScriptId.startsWith('template-');
     if (isExistingSaved) {
       const now = new Date().toISOString();
-      appStore.dispatch(updateScriptContent(selectedScriptId, value, now));
-      appStore.dispatch(renameScript(selectedScriptId, customName || 'Custom Script'));
+      dispatch(updateScriptContent(selectedScriptId, value, now));
+      dispatch(renameScript(selectedScriptId, customName || 'Custom Script'));
       customName = (customName || 'Custom Script').trim() || 'Custom Script';
       hasUserEdited = false;
       toast.success(`Saved "${customName}"`);
@@ -325,7 +325,7 @@
 
   function commitNameEdit() {
     if (editingNameId && editingNameValue.trim()) {
-      appStore.dispatch(renameScript(editingNameId, editingNameValue.trim()));
+      dispatch(renameScript(editingNameId, editingNameValue.trim()));
       if (selectedScriptId === editingNameId) {
         customName = editingNameValue.trim();
       }
@@ -392,7 +392,7 @@
     }
 
     // Try to find last used script for this repo
-    const lastUsed = currentRepo ? selectLastUsedScriptForRepo.select(appStore.state, currentRepo) : undefined;
+    const lastUsed = currentRepo ? selectLastUsedScriptForRepo.select(getReduxStore().getState(), currentRepo) : undefined;
 
     // Use untrack only for internal state mutations to avoid infinite loops
     // But keep value assignment tracked so UI updates
@@ -467,7 +467,7 @@
               repoPath,
               projectType: projectType || 'generic',
             });
-            appStore.dispatch(saveScript(newScript));
+            dispatch(saveScript(newScript));
             selectedScriptId = newScript.id;
             value = '';
             customName = newScript.name;

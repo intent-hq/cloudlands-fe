@@ -8,7 +8,7 @@
   import type { SkillInfo } from '$lib/store/slices/skills/skills-types';
   import { selectSkills } from '$lib/store/slices/skills/skills-selectors';
   import { loadSkillsRequested } from '$lib/store/slices/skills/skills-slice';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { slide } from 'svelte/transition';
   import {
   faChevronDown,
@@ -17,7 +17,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
-  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -26,7 +25,8 @@
 
   let { workspaceId, class: className }: Props = $props();
 
-  // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
+  // ✅ At component init — getDispatch and selectors use getContext()
+  const dispatch = getDispatch();
   const skills$ = selectSkills(workspaceId);
 
   // Collapse state - collapsed by default
@@ -37,7 +37,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      appStore.dispatch(loadSkillsRequested(workspaceId));
+      dispatch(loadSkillsRequested(workspaceId));
     }
   });
 

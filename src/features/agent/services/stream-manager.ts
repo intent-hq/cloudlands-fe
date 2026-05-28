@@ -28,6 +28,7 @@ import { createAppMessageId } from '$shared/utils/app-message-id';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { newAssistantMessage } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
 import { removeWorkspaceAgentState } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import {
@@ -43,7 +44,6 @@ import {
 } from '$lib/store/slices/workspace/workspace-slice';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-import { store as appStore } from '$lib/store/store';
 
 const logger = new Logger('DirectStreamManager');
 
@@ -272,7 +272,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Update agent state - fail fast if workspace not found
     const wsId = config.workspaceId as string;
-    const workspaceEntity = selectWorkspaceById.select(appStore.state, wsId);
+    const workspaceEntity = selectWorkspaceById.select(getReduxStore().getState(), wsId);
     if (!workspaceEntity) {
       logger.error('Workspace not found, cannot start stream — aborting', {
         workspaceId: config.workspaceId,
@@ -285,7 +285,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
       this.metrics.errors++;
       return config.agentId;
     }
-    appStore.dispatch(setAgentStreaming(config.agentId, true));
+    getReduxStore().dispatch(setAgentStreaming(config.agentId, true));
 
     // Emit start event (include streamId for backward compatibility in events)
     this.emit('stream:start', { streamId, config });
@@ -418,7 +418,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
         if (digest) {
           session.accumulatedText = cleanedText;
           const wsId = session.config.workspaceId as string;
-          appStore.dispatch(updateAgentDigest(wsId, session.config.agentId, digest));
+          getReduxStore().dispatch(updateAgentDigest(wsId, session.config.agentId, digest));
           logger.debug('Extracted agent digest from stream', {
             agentId: session.config.agentId,
             digest,
@@ -726,7 +726,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     }
 
     // Update agent state
-    appStore.dispatch(setAgentStreaming(session.config.agentId, false));
+    getReduxStore().dispatch(setAgentStreaming(session.config.agentId, false));
 
     // Call completion callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -760,11 +760,11 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Mark agent as having unread messages (if user isn't currently viewing it)
     // Pass isBackground to skip unread tracking for background agents
     const agentSession = selectAgentSession.select(
-      appStore.state, session.config.agentId
+      getReduxStore().getState(), session.config.agentId
     );
     const isBackgroundAgent =
       agentSession?.isBackground || agentSession?.metadata?.isBackground || false;
-    appStore.dispatch(newAssistantMessage(
+    getReduxStore().dispatch(newAssistantMessage(
       session.config.agentId,
       session.config.workspaceId,
       isBackgroundAgent,
@@ -835,7 +835,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.healthStatus = 'error';
 
     // Update agent state
-    appStore.dispatch(setAgentStreaming(session.config.agentId, false));
+    getReduxStore().dispatch(setAgentStreaming(session.config.agentId, false));
 
     // Call error callbacks - use agentId as the canonical key
     const callbacks = this.callbacks.get(session.config.agentId);
@@ -1275,7 +1275,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    appStore.dispatch(setWorkspaceEntity(testWorkspace));
+    getReduxStore().dispatch(setWorkspaceEntity(testWorkspace));
   }
 
   /**
@@ -1304,8 +1304,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
       // Complete the stream
       return this.completeStream(streamId);
     } finally {
-      appStore.dispatch(removeWorkspaceEntity(testWsId));
-      appStore.dispatch(removeWorkspaceAgentState(testWsId));
+      getReduxStore().dispatch(removeWorkspaceEntity(testWsId));
+      getReduxStore().dispatch(removeWorkspaceAgentState(testWsId));
     }
   }
 
@@ -1346,8 +1346,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
       return false;
     } finally {
-      appStore.dispatch(removeWorkspaceEntity(testWsId));
-      appStore.dispatch(removeWorkspaceAgentState(testWsId));
+      getReduxStore().dispatch(removeWorkspaceEntity(testWsId));
+      getReduxStore().dispatch(removeWorkspaceAgentState(testWsId));
     }
   }
 
@@ -1442,12 +1442,12 @@ export class StreamManager extends EventEmitter implements IDisposable {
         this.sessions.set(state.config.agentId, session);
 
         // Update agent state via Redux
-        const store = appStore;
+        const store = getReduxStore();
         store.dispatch(setAgentStreaming(state.config.agentId, true));
 
         // Restore content blocks to agent state
         if (state.contentBlocks.length > 0) {
-          const agentData = selectAgentSession.select(store.state, state.config.agentId);
+          const agentData = selectAgentSession.select(store.getState(), state.config.agentId);
           if (agentData) {
             const lastMessage = agentData.messages?.[agentData.messages.length - 1];
             if (lastMessage && lastMessage.role === 'assistant') {

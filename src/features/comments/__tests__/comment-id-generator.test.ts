@@ -10,7 +10,7 @@ import {
 import {
   generateCommentId,
   isValidCommentId,
-} from '$shared/utils/comment-id-generator';
+} from '../comment-id-generator';
 
 describe('Comment ID Generator', () => {
   describe('generateCommentId', () => {

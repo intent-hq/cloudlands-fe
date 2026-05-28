@@ -7,10 +7,10 @@
 
 import { openWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
-
+import { getDispatch } from '$lib/store/utils/svelte-context';
 import { createLogger } from '$lib/utils/client-logger';
+import { fromStore } from 'svelte/store';
 import type { WorkspacePageStateManager } from './workspace-page-state.svelte';
-import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('tab-management');
 
@@ -22,6 +22,10 @@ export interface UseTabManagementOptions {
 }
 
 export function useTabManagement(options: UseTabManagementOptions) {
+  const dispatch = getDispatch();
+  const pendingCreations = selectWorkspacePendingCreations();
+  const pendingCreationsValue = fromStore(pendingCreations);
+
   // Track if tab is open to avoid duplicate operations
   let tabOpened = $state(false);
 
@@ -37,7 +41,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
 
     if (workspaceId && !tabOpened) {
       try {
-        appStore.dispatch(openWorkspaceTab(workspaceId));
+        dispatch(openWorkspaceTab(workspaceId));
         tabOpened = true;
       } catch (error) {
         logger.error('Failed to open workspace tab', { workspaceId, error });
@@ -62,8 +66,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
     }
 
     const transitionKey = `${workspaceId}-pending`;
-    const pendingCreations = selectWorkspacePendingCreations.select(appStore.state);
-    const isPendingCreation = !!pendingCreations[workspaceId];
+    const isPendingCreation = !!pendingCreationsValue.current[workspaceId];
 
     if (isPendingCreation) {
       if (!handledTransitions.has(transitionKey)) {

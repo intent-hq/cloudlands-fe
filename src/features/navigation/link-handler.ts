@@ -23,7 +23,7 @@ import {
   isGitHubUrl,
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-import { store as appStore } from '$lib/store/store';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 
 const logger = new Logger('LinkHandler');
 
@@ -137,7 +137,7 @@ async function handleDevspaceLink(url: string, workspaceId?: WorkspaceId): Promi
       }
       const terminalId = decodeURIComponent(terminalMatch[1]);
       logger.debug('Opening terminal from devspace link', { terminalId, workspaceId });
-      appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId }));
+      getReduxStore().dispatch(openTerminalTabRequested(workspaceId, { terminalId }));
       return true;
     }
 

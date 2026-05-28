@@ -1,7 +1,7 @@
-import { store } from "../../store";
 import type { FileNode, FileGitStatus } from "$shared/types";
 import { shallowEqual } from "fast-equals";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
+import { createSelector } from "../../utils/create-selector";
 import { emptyFileExplorerWorkspaceState } from "./file-explorer-slice";
 import type { FileExplorerWorkspaceState, FlattenedFileNode } from "./file-explorer-types";
 import { flattenVisibleNodes } from "./file-explorer-utils";
@@ -10,7 +10,7 @@ import { flattenVisibleNodes } from "./file-explorer-utils";
 // Per-workspace state selector
 // ---------------------------------------------------------------------------
 
-export const selectFileExplorerState = store.createSelector<[wsId: string], FileExplorerWorkspaceState>(
+export const selectFileExplorerState = createSelector<[wsId: string], FileExplorerWorkspaceState>(
   (state, wsId) => {
     return state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
   },
@@ -20,52 +20,52 @@ export const selectFileExplorerState = store.createSelector<[wsId: string], File
 // Individual field selectors
 // ---------------------------------------------------------------------------
 
-export const selectFileExplorerRootNode = store.createSelector<[wsId: string], FileNode | null>(
+export const selectFileExplorerRootNode = createSelector<[wsId: string], FileNode | null>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).rootNode,
 );
 
-export const selectFileExplorerIsLoading = store.createSelector<[wsId: string], boolean>(
+export const selectFileExplorerIsLoading = createSelector<[wsId: string], boolean>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).isLoading,
 );
 
-export const selectFileExplorerIsInitialized = store.createSelector<[wsId: string], boolean>(
+export const selectFileExplorerIsInitialized = createSelector<[wsId: string], boolean>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).isInitialized,
 );
 
-export const selectFileExplorerError = store.createSelector<[wsId: string], string | null>(
+export const selectFileExplorerError = createSelector<[wsId: string], string | null>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).error,
 );
 
-export const selectFileExplorerFileCount = store.createSelector<[wsId: string], number>(
+export const selectFileExplorerFileCount = createSelector<[wsId: string], number>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).fileCount,
 );
 
-export const selectFileExplorerGitStatus = store.createSelector<
+export const selectFileExplorerGitStatus = createSelector<
   [wsId: string],
   Record<string, FileGitStatus>
 >((state, wsId) => selectFileExplorerState.select(state, wsId).gitStatus);
 
-export const selectFileExplorerWorkspacePath = store.createSelector<[wsId: string], string>(
+export const selectFileExplorerWorkspacePath = createSelector<[wsId: string], string>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).workspacePath,
 );
 
-export const selectFileExplorerIsBulkOperation = store.createSelector<[wsId: string], boolean>(
+export const selectFileExplorerIsBulkOperation = createSelector<[wsId: string], boolean>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).isBulkOperation,
 );
 
-export const selectFileExplorerIsStoreActive = store.createSelector<[wsId: string], boolean>(
+export const selectFileExplorerIsStoreActive = createSelector<[wsId: string], boolean>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).isStoreActive,
 );
 
-export const selectFileExplorerExpandedPaths = store.createSelector<[wsId: string], string[]>(
+export const selectFileExplorerExpandedPaths = createSelector<[wsId: string], string[]>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).expandedPaths,
 );
 
-export const selectFileExplorerLoadingPaths = store.createSelector<[wsId: string], string[]>(
+export const selectFileExplorerLoadingPaths = createSelector<[wsId: string], string[]>(
   (state, wsId) => selectFileExplorerState.select(state, wsId).loadingPaths,
 );
 
-export const selectFileExplorerIsRemoteWorkspace = store.createSelector<[wsId: string], boolean>(
+export const selectFileExplorerIsRemoteWorkspace = createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     selectFileExplorerState.select(state, wsId).environmentConfig?.type === "remote",
 );
@@ -74,15 +74,15 @@ export const selectFileExplorerIsRemoteWorkspace = store.createSelector<[wsId: s
 // Derived selectors
 // ---------------------------------------------------------------------------
 
-export const selectIsPathExpanded = store.createSelector<[wsId: string, path: string], boolean>(
+export const selectIsPathExpanded = createSelector<[wsId: string, path: string], boolean>(
   (state, wsId, path) => selectFileExplorerState.select(state, wsId).expandedPaths.includes(path),
 );
 
-export const selectIsPathLoading = store.createSelector<[wsId: string, path: string], boolean>(
+export const selectIsPathLoading = createSelector<[wsId: string, path: string], boolean>(
   (state, wsId, path) => selectFileExplorerState.select(state, wsId).loadingPaths.includes(path),
 );
 
-export const selectHasExpandedDirectories = store.createSelector<[wsId: string], boolean>(
+export const selectHasExpandedDirectories = createSelector<[wsId: string], boolean>(
   (state, wsId) => {
     const ws = selectFileExplorerState.select(state, wsId);
     return ws.expandedPaths.some((p) => p !== ws.workspacePath);
@@ -124,7 +124,7 @@ const flattenedNodeCache = new WeakMap<FileNode, FlattenedNodeCacheEntry>();
  * agentFileEdits[relPath], directoryHasChanges, displayPath) are unchanged.
  * Only the outer array identity may change.
  */
-export const selectFlattenedNodes = store.createSelector<[wsId: string], FlattenedFileNode[]>(
+export const selectFlattenedNodes = createSelector<[wsId: string], FlattenedFileNode[]>(
   (state, wsId) => {
     const ws = selectFileExplorerState.select(state, wsId);
     if (!ws.rootNode || !ws.rootNode.children) return [];

@@ -1,4 +1,5 @@
 import { goto } from "$app/navigation";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import {
   selectNotificationVolume,
   selectSoundEnabled,
@@ -12,6 +13,7 @@ import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import {
   call,
   fork,
+  select,
 } from "typed-redux-saga";
 
 type BackgroundAgentSpawnedEvent = {
@@ -30,13 +32,15 @@ type NotificationNavigateEvent = {
   workspaceId: string;
 };
 
-async function showBackgroundAgentSpawnedToast(
-  data: BackgroundAgentSpawnedEvent,
-  workspaceTitle: string,
-  shouldShowOpenAction: boolean,
-): Promise<void> {
+async function showBackgroundAgentSpawnedToast(data: BackgroundAgentSpawnedEvent): Promise<void> {
   try {
     const { toast } = await import("svelte-sonner");
+    const state = getReduxStore().getState();
+    const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+    const currentWorkspace = selectActiveWorkspace.select(state);
+    const workspaceTitle = eventWorkspace?.title || "Space";
+    const shouldShowOpenAction = !!currentWorkspace && currentWorkspace.id !== data.workspaceId;
+
     const toastOptions: {
       description: string;
       duration: number;
@@ -75,11 +79,7 @@ export function* watchBackgroundAgentSpawnedSaga() {
   yield* takeEveryFromElectronChannel<BackgroundAgentSpawnedEvent>(
     "background-agent:spawned",
     function* (data) {
-      const eventWorkspace = yield* selectWorkspaceById.effect(data.workspaceId);
-      const currentWorkspace = yield* selectActiveWorkspace.effect();
-      const workspaceTitle = eventWorkspace?.title || "Space";
-      const shouldShowOpenAction = !!currentWorkspace && currentWorkspace.id !== data.workspaceId;
-      yield* call(showBackgroundAgentSpawnedToast, data, workspaceTitle, shouldShowOpenAction);
+      yield* call(showBackgroundAgentSpawnedToast, data);
     },
   );
 }
@@ -88,18 +88,18 @@ export function* watchNotificationShowSaga() {
   if (typeof window === "undefined" || !window.electronAPI) return;
 
   yield* takeEveryFromElectronChannel<NotificationShowEvent>("notification:show", function* (data) {
-    const soundEnabled: boolean = yield* selectSoundEnabled.effect();
+    const soundEnabled: boolean = yield* select(selectSoundEnabled.select);
 
     if (!soundEnabled) {
       return;
     }
 
-    const soundOnlyWhenUnfocused: boolean = yield* selectSoundOnlyWhenUnfocused.effect();
+    const soundOnlyWhenUnfocused: boolean = yield* select(selectSoundOnlyWhenUnfocused.select);
     if (soundOnlyWhenUnfocused && document.hasFocus()) {
       return;
     }
 
-    const volume: number = yield* selectNotificationVolume.effect();
+    const volume: number = yield* select(selectNotificationVolume.select);
     yield* call(playSoundForNotification, data.agentName, volume);
   });
 }

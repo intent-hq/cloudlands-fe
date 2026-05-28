@@ -27,11 +27,10 @@
   import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
   import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { store as appStore } from '$lib/store/store';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
 
   interface Props {
     workspace: Workspace | null;
@@ -40,6 +39,7 @@
 
   let { workspace, workspaceId }: Props = $props();
 
+  const dispatch = getDispatch();
   const sidebarSide$ = selectSidebarSide();
 
   let isDeleting = $state(false);
@@ -94,7 +94,7 @@
         logger.error('[WorkspaceSidebarHeader] Failed to navigate after workspace removal:', err);
       });
 
-      appStore.dispatch(requestDeleteWorkspace(workspace.id));
+      getReduxStore().dispatch(requestDeleteWorkspace(workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
     } finally {
@@ -124,7 +124,7 @@
     if (newTitle !== workspace.title) {
       const result = await workspaceClient.update({ id: workspace.id, title: newTitle });
       if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
       }
     }
     isEditingTitle = false;
@@ -181,7 +181,7 @@
         statusMessage: newStatusMessage,
       });
       if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
+        getReduxStore().dispatch(setWorkspaceEntity(result.data));
       } else {
         logger.error('Failed to update workspace status', { error: result.error });
         editedStatusMessage = workspace.statusMessage || '';
@@ -259,7 +259,7 @@
         // Update workspace store with new branch
         const updateResult = await workspaceClient.update({ id: workspace.id, branch: newBranch });
         if (updateResult.ok) {
-          appStore.dispatch(setWorkspaceEntity(updateResult.data));
+          getReduxStore().dispatch(setWorkspaceEntity(updateResult.data));
         }
       } else {
         logger.error('Failed to rename branch', { error: result.error });
@@ -339,7 +339,7 @@
     icon: faTableColumns,
     dividerBefore: true,
     onClick: () => {
-      appStore.dispatch(toggleSidebarSide());
+      dispatch(toggleSidebarSide());
     },
   });
 

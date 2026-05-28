@@ -144,7 +144,7 @@ function makeState(
       ...providerSettingsInitialState,
       activeProviderId: 'active-provider',
     },
-    "@internal_storeUtility": { updatesLocked: false },
+    storeUtility: { updatesLocked: false },
   } as any;
 }
 

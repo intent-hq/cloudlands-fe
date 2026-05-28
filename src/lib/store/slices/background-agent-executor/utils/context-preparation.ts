@@ -14,7 +14,7 @@ import {
 } from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
 import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
-import { store as appStore } from '$lib/store/store';
+import { dispatch } from '$lib/store/redux-dispatch-bridge';
 import type { Workspace } from '$shared/types';
 import type { AgentExecutorContext } from '../background-agent-executor-types';
 import {
@@ -195,7 +195,7 @@ async function prepareCommitContext(
     throw new Error("Unable to get git status. Please ensure you're in a git repository.");
   }
   const status = statusResult.data;
-  appStore.dispatch(setGitStatus(workspace.id, status));
+  dispatch(setGitStatus(workspace.id, status));
 
   const stagedFiles = status.files.filter((file) => file.staged);
   if (stagedFiles.length === 0) {
@@ -330,7 +330,7 @@ async function preparePRContext(
 
   const statusResult2 = await gitClient.getStatus(workspace.id);
   if (statusResult2.ok) {
-    appStore.dispatch(setGitStatus(workspace.id, statusResult2.data));
+    dispatch(setGitStatus(workspace.id, statusResult2.data));
   }
   const status = statusResult2.ok ? statusResult2.data : null;
 
@@ -452,7 +452,7 @@ async function prepareWalkthroughContext(
     throw new Error("Unable to get git status. Please ensure you're in a git repository.");
   }
   const status = walkthroughStatusResult.data;
-  appStore.dispatch(setGitStatus(workspace.id, status));
+  dispatch(setGitStatus(workspace.id, status));
 
   const stagedFiles = status.files.filter((file) => file.staged);
   if (stagedFiles.length === 0) {

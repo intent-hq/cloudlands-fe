@@ -14,7 +14,7 @@
 } from 'svelte';
   import { writable } from 'svelte/store';
   import { invoke } from '$lib/electron-bridge';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { selectOriginalFileContent } from '$lib/store/slices/files/files-selectors';
   import { loadFileContentRequested } from '$lib/store/slices/files/files-slice';
   import type { FileReadResponse } from '$lib/store/slices/files/files-types';
@@ -38,7 +38,6 @@
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { track } from '$lib/services/analytics';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('TrackedChangeDiffViewer');
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -153,6 +152,7 @@
 
   // Prevent multiple simultaneous staging operations
   let isProcessingLineAction = $state(false);
+  const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const filePathStore = writable<string | null | undefined>(undefined);
@@ -969,7 +969,7 @@
     }
 
     if (wsId && filePath && absolutePath && change?.stage !== 'committed' && !useProvidedContent) {
-      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+      dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
     }
   });
 

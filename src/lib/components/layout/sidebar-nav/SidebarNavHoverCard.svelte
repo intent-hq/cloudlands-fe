@@ -18,7 +18,7 @@
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import {
   selectActiveCard,
   selectExpandedItem,
@@ -33,8 +33,8 @@
   setDeferredLeave,
   clearDeferredLeave,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
 
+  const dispatch = getDispatch();
   const activeCard$ = selectActiveCard();
   const expandedItem$ = selectExpandedItem();
   const isCardPinned$ = selectIsCardPinned();
@@ -88,7 +88,7 @@
       leaveTimeout = null;
     }
     // Cancel any deferred leave — pointer is back inside the card
-    appStore.dispatch(clearDeferredLeave());
+    dispatch(clearDeferredLeave());
   }
 
   function handleCardMouseLeave() {
@@ -96,13 +96,13 @@
     if ($isCardPinned$) return;
 
     if ($contextMenuOpen$) {
-      appStore.dispatch(setDeferredLeave('card'));
+      dispatch(setDeferredLeave('card'));
       return;
     }
 
     leaveTimeout = setTimeout(() => {
-      appStore.dispatch(setHoveredItem(null));
-      appStore.dispatch(setExpandedItem(null));
+      dispatch(setHoveredItem(null));
+      dispatch(setExpandedItem(null));
     }, 200);
   }
 
@@ -110,7 +110,7 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      appStore.dispatch(closeHoverCards());
+      dispatch(closeHoverCards());
     }
   }
 
@@ -170,7 +170,7 @@
               <button
                 class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50
                   {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
-                onclick={() => appStore.dispatch(toggleCardPinned())}
+                onclick={() => dispatch(toggleCardPinned())}
                 aria-label={$isCardPinned$ ? 'Unpin sidebar' : 'Pin sidebar open'}
               >
                 <Fa icon={faThumbtack} size="xs" />

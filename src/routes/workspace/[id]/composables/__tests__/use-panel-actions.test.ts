@@ -14,14 +14,9 @@ const { dispatchMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: dispatchMock,
-  });
-});
+vi.mock('$lib/store/utils/svelte-context', () => ({
+  getDispatch: () => dispatchMock,
+}));
 
 import { usePanelActions } from '../use-panel-actions.svelte';
 

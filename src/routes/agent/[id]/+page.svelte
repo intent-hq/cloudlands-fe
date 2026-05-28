@@ -14,9 +14,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-
+  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
   import type { AgentSession } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -83,7 +82,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     try {
       // First try to get the session from the Redux store (in memory)
       let session: import('$shared/types').AgentSession | null | undefined =
-        selectAgentSession.select(appStore.state, requestedAgentId);
+        selectAgentSession.select(getReduxStore().getState(), requestedAgentId);
 
       // If not in memory, try to restore from disk
       if (!session) {
@@ -94,7 +93,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
             workspaceId: workspace.id,
           });
           const restoreAction = restoreAgentSessionRequested(workspace.id, requestedAgentId);
-          appStore.dispatch(restoreAction);
+          getReduxStore().dispatch(restoreAction);
           session = await restoreAction.promise;
         }
       }

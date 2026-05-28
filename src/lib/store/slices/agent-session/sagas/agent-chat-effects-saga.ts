@@ -65,11 +65,9 @@ import type {
   AgentSessionSendContextItem,
   AgentSessionSendMessageOptions,
 } from '../agent-session-types';
-import { waitFor } from 'svelte-redux-toolkit/saga';
-import type { StoreSelector as PackageStoreSelector } from 'svelte-redux-toolkit/types';
+import { waitFor } from '../../store-utility/sagas/waitFor';
 
 const logger = createLogger('AgentChatEffectsSaga');
-type WaitForSelector<R, ARGS extends any[]> = PackageStoreSelector<R, ARGS, unknown>;
 const MAX_MESSAGE_LENGTH = 500000;
 const INTERRUPT_MAX_WAIT_MS = 500;
 const STOP_CLEANUP_WAIT_MS = 300;
@@ -209,12 +207,7 @@ function toContextReference(item: AgentSessionSendContextItem): AgentSessionCont
 }
 
 function* waitForInterruptToFinish(agentId: string): SagaGenerator<void> {
-  yield* waitFor(
-    selectChatIsInterrupting as unknown as WaitForSelector<boolean, [string]>,
-    [agentId] as [string],
-    (val: boolean) => val === false,
-    INTERRUPT_MAX_WAIT_MS,
-  );
+  yield* waitFor(selectChatIsInterrupting, [agentId] as [string], (val: boolean) => val === false, INTERRUPT_MAX_WAIT_MS);
 }
 
 function* resolveSendWorkspace(wsId: string, sessionWorkspaceId: string): SagaGenerator<Workspace> {
@@ -242,8 +235,8 @@ function* activateIfNeeded(agentId: string, wsId: string): SagaGenerator<void> {
   yield* put(activateAgentRequested(sessionWorkspaceId, agentId));
 
   const activated = yield* waitFor(
-    selectAgentActivationWaitComplete as WaitForSelector<boolean, [string]>,
-    [agentId],
+    selectAgentActivationWaitComplete,
+    [agentId] as [string],
     (complete: boolean) => complete,
     ACTIVATION_WAIT_TIMEOUT_MS,
   );
@@ -332,7 +325,7 @@ function* sendMessageAndWaitForResponse(
   const sendAction = agentSessionSendMessageRequested(agentId, wsId, text, options);
   yield* put(sendAction);
   yield* waitFor(
-    selectAgentIsResponding as unknown as WaitForSelector<boolean, [string]>,
+    selectAgentIsResponding,
     [agentId] as [string],
     (responding: boolean) => responding,
   );

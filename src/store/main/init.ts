@@ -18,7 +18,6 @@ import { reducers } from "./reducer";
 import {
   middleware,
   runSaga,
-  setSagaContext,
 } from "./middleware";
 import {
   mainSagaEntries,
@@ -29,13 +28,6 @@ import { initMainStoreBridge } from "./redux-store-bridge";
 const logger = new Logger("MainStore");
 
 const createRootReducer = () => combineReducers(reducers);
-
-const createReadableMainStoreState = (store: MainReduxStore) => ({
-  subscribe(run: (state: MainStoreState) => void): () => void {
-    run(store.getState());
-    return store.subscribe(() => run(store.getState()));
-  },
-});
 
 export type SagaRunner = <S extends Saga>(saga: S, ...args: Parameters<S>) => Task;
 
@@ -63,7 +55,6 @@ export function initMainStore(): MainStoreContext {
 
   // Wire up the global bridge so services can access the store
   initMainStoreBridge(store);
-  setSagaContext({ readableStoreState: createReadableMainStoreState(store) });
 
   // Track task handles for sagas started by initMainStore. This wrapper does
   // not aggregate saga lifetimes; each runSaga call below starts an independent

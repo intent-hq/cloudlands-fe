@@ -13,8 +13,9 @@ import {
 } from '$lib/components/tiptap/CommentAnchor';
 import type { CommentV2 } from '../comment-types-v2';
 import {
-  store as appStore,
-} from '$lib/store/store';
+  getReduxStore,
+  dispatch as reduxDispatch,
+} from '$lib/store/redux-dispatch-bridge';
 import { loadCommentsAction } from '$lib/store/slices/comments/comments-slice';
 import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
@@ -191,7 +192,7 @@ export async function insertTextWithAnchors(
   }
 
   // Add comment to store
-  appStore.dispatch(loadCommentsAction([comment]));
+  reduxDispatch(loadCommentsAction([comment]));
 
   return { commentId: comment.id, from, to };
 }
@@ -289,7 +290,7 @@ export function waitForOrphanCheck(): Promise<void> {
  * Clear all comments from the store
  */
 export function clearCommentsStore(): void {
-  appStore.dispatch(loadCommentsAction([]));
+  reduxDispatch(loadCommentsAction([]));
 }
 
 /**
@@ -334,7 +335,7 @@ export function assertNoAnchors(editor: Editor, commentId: string): void {
  * Assert that a comment is marked as orphaned
  */
 export function assertCommentOrphaned(commentId: string, expected: boolean = true): void {
-  const comment = selectCommentById.select(appStore.state, commentId);
+  const comment = selectCommentById.select(getReduxStore().getState(), commentId);
 
   if (!comment) {
     throw new Error(`Comment ${commentId} not found in store`);

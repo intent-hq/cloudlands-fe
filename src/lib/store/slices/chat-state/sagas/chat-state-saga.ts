@@ -432,25 +432,14 @@ function* watchWorkspaceUnmountedForCleanup(): SagaGenerator<void> {
   yield* takeEvery(workspaceUnmounted, function* (action) {
     const [wsId] = action.payload;
     const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-
-    const agentIds = new Set(agents.map((agent) => String(agent.id)));
-    for (const agentId of activeSendTasks.keys()) {
-      if (agentIds.has(agentId)) continue;
-
-      const session = yield* selectAgentSession.effect(agentId);
-      if (String(session?.workspaceId) === String(wsId)) {
-        agentIds.add(agentId);
-      }
-    }
-
-    for (const agentId of agentIds) {
-      const existing = activeSendTasks.get(agentId);
+    for (const agent of agents) {
+      const existing = activeSendTasks.get(agent.id);
       if (!existing) continue;
-      const stillActive = yield* selectAgentIsResponding.effect(agentId);
+      const stillActive = yield* selectAgentIsResponding.effect(agent.id);
       if (stillActive) {
         continue;
       }
-      yield* call(cancelAndForgetTasks, agentId, existing);
+      yield* call(cancelAndForgetTasks, agent.id, existing);
     }
   });
 }

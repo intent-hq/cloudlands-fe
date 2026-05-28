@@ -6,12 +6,14 @@
   faKey,
 } from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { onMount } from 'svelte';
   import {
   validateBranchPrefix,
   sanitizeBranchPrefix,
 } from '$lib/utils/workspace-validation';
+
+  const dispatch = getDispatch();
 
   // Settings state
   let worktreesLocation = $state('');
@@ -77,7 +79,7 @@
         });
 
         // Refresh global autoCommit so workspaces pick up the new setting
-        appStore.dispatch(refreshAutoCommitSettings());
+        dispatch(refreshAutoCommitSettings());
       } catch (error) {
         logger.error('Failed to save settings:', error);
       }

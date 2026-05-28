@@ -33,23 +33,19 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNotesVersion: () => mockReadable(0),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ getState: () => ({}) }),
+  getReduxDispatch: () => () => {},
+  dispatch: () => {},
+}));
 
-  return createAppStoreMockModule({
-    state: () => ({}),
-    dispatch: vi.fn(),
-  });
-});
-
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/workspace-notes/workspace-notes-slice')>()),
+vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
   updateTaskStatus: vi.fn(),
   handleExternalNoteUpdate: vi.fn(),
   reloadNotes: vi.fn(),
 }));
 
-vi.mock('$lib/utils/notes-ipc', () => ({
+vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
   notesIpc: vi.fn(),
 }));
 

@@ -3,6 +3,7 @@ import {
   isGitOp,
   trackGitOp,
 } from "$lib/services/analytics";
+import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { takeEveryFromElectronChannel } from "$lib/store/utils/ipc-channel";
 import {
   selectActiveWorkspace,
@@ -21,16 +22,16 @@ import {
   type GitOperationCompletedEvent,
   type GitOperationFailedEvent,
 } from "../git-slice";
-async function handleGitOperationCompleted(
-    data: GitOperationCompletedEvent,
-    workspaceName: string,
-    shouldShowOpenAction: boolean | undefined,
-): Promise<void> {
+async function handleGitOperationCompleted(data: GitOperationCompletedEvent): Promise<void> {
     if ((data.operationType === "auto-commit" || data.operationType === "commit") && data.result?.noChanges) {
         return;
     }
     try {
         const { toast } = await import("svelte-sonner");
+        const state = getReduxStore().getState();
+        const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+        const currentWorkspace = selectActiveWorkspace.select(state);
+        const workspaceName = eventWorkspace?.title || "Space";
         let message: string;
         switch (data.operationType) {
             case "commit":
@@ -50,6 +51,7 @@ async function handleGitOperationCompleted(
             default:
                 message = `✅ Git operation completed in "${workspaceName}"`;
         }
+        const shouldShowOpenAction = currentWorkspace && currentWorkspace.id !== data.workspaceId;
         const toastOptions: {
             description?: string;
             duration: number;
@@ -89,11 +91,7 @@ async function handleGitOperationCompleted(
         }
     }
 }
-async function handleGitOperationFailed(
-    data: GitOperationFailedEvent,
-    workspaceName: string,
-    currentWorkspaceId: string | undefined,
-): Promise<void> {
+async function handleGitOperationFailed(data: GitOperationFailedEvent): Promise<void> {
     if (data.operationType === "auto-commit" &&
         (data.error.toLowerCase().includes("pre-commit hook") ||
             data.error.toLowerCase().includes("hook") ||
@@ -102,7 +100,11 @@ async function handleGitOperationFailed(
     }
     try {
         const { toast } = await import("svelte-sonner");
-        const isViewingFailingWorkspace = currentWorkspaceId === data.workspaceId;
+        const state = getReduxStore().getState();
+        const eventWorkspace = selectWorkspaceById.select(state, data.workspaceId);
+        const currentWorkspace = selectActiveWorkspace.select(state);
+        const workspaceName = eventWorkspace?.title || "Space";
+        const isViewingFailingWorkspace = currentWorkspace && currentWorkspace.id === data.workspaceId;
         if (isViewingFailingWorkspace && data.operationType !== "auto-commit") {
             return;
         }
@@ -134,7 +136,7 @@ async function handleGitOperationFailed(
             description: data.error && data.error.length > 200 ? data.error.slice(0, 200) + "…" : data.error,
             duration: 10000,
         };
-        const shouldShowOpenAction = currentWorkspaceId && currentWorkspaceId !== data.workspaceId;
+        const shouldShowOpenAction = currentWorkspace && currentWorkspace.id !== data.workspaceId;
         if (shouldShowOpenAction) {
             toastOptions.action = {
                 label: "Open",
@@ -187,14 +189,7 @@ export function* watchGitOperationCompletedSaga() {
         return;
     yield* takeEveryFromElectronChannel<GitOperationCompletedEvent>("git:op-completed", function* (data) {
         yield* put(setLastGitOperation(data));
-        const eventWorkspace = yield* selectWorkspaceById.effect(data.workspaceId);
-        const currentWorkspace = yield* selectActiveWorkspace.effect();
-        yield* call(
-            handleGitOperationCompleted,
-            data,
-            eventWorkspace?.title || "Space",
-            currentWorkspace && currentWorkspace.id !== data.workspaceId,
-        );
+        yield* call(handleGitOperationCompleted, data);
     });
 }
 export function* watchGitOperationFailedSaga() {
@@ -202,9 +197,7 @@ export function* watchGitOperationFailedSaga() {
         return;
     yield* takeEveryFromElectronChannel<GitOperationFailedEvent>("git:op-failed", function* (data) {
         yield* put(setLastGitError(data));
-        const eventWorkspace = yield* selectWorkspaceById.effect(data.workspaceId);
-        const currentWorkspace = yield* selectActiveWorkspace.effect();
-        yield* call(handleGitOperationFailed, data, eventWorkspace?.title || "Space", currentWorkspace?.id);
+        yield* call(handleGitOperationFailed, data);
     });
 }
 export function* watchAutoCommitHookFailureSaga() {

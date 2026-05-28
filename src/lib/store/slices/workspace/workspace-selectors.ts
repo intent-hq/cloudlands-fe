@@ -1,10 +1,10 @@
-import { store } from "../../store";
 import type { PullRequestInfo, Workspace } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
+import { createSelector } from "../../utils/create-selector";
 import {
   getItem,
   getItems,
-} from "svelte-redux-toolkit/utils/collections/collection-utils";
+} from "../../utils/collection-utils";
 import { type WorkspaceRecencyState } from "./workspace-slice";
 import { selectIsNewlyCreatedWorkspace } from "../workspace-agents/workspace-agents-selectors";
 import {
@@ -14,35 +14,35 @@ import {
 } from "../changes/changes-selectors";
 import { selectGitStatus } from "../git/git-selectors";
 
-export const selectActiveWorkspaceId = store.createSelector((state) => {
+export const selectActiveWorkspaceId = createSelector((state) => {
   return state.workspace.activeWorkspaceId as WorkspaceId | null;
 });
 
-export const selectWorkspaceLoading = store.createSelector((state) => {
+export const selectWorkspaceLoading = createSelector((state) => {
   return state.workspace.loading;
 });
 
-export const selectWorkspaceHasLoaded = store.createSelector((state) => {
+export const selectWorkspaceHasLoaded = createSelector((state) => {
   return state.workspace.hasLoaded;
 });
 
-export const selectWorkspaceIsCreating = store.createSelector((state) => {
+export const selectWorkspaceIsCreating = createSelector((state) => {
   return state.workspace.isCreating;
 });
 
-export const selectWorkspacePendingDeletions = store.createSelector<[], Record<string, boolean>>((state) => {
+export const selectWorkspacePendingDeletions = createSelector((state) => {
   return state.workspace.pendingDeletions;
 });
 
-export const selectWorkspacePendingCreations = store.createSelector((state) => {
+export const selectWorkspacePendingCreations = createSelector((state) => {
   return state.workspace.pendingCreations;
 });
 
-export const selectWorkspaceRecency = store.createSelector((state): WorkspaceRecencyState => {
+export const selectWorkspaceRecency = createSelector((state): WorkspaceRecencyState => {
   return state.workspace.recency;
 });
 
-export const selectWorkspacesSortedByRecency = store.createSelector<[workspaces: Workspace[]], Workspace[]>(
+export const selectWorkspacesSortedByRecency = createSelector<[workspaces: Workspace[]], Workspace[]>(
   (state, workspaces) => {
     return [...workspaces].sort((a, b) => {
       const aTime = state.workspace.recency.lastViewedAt[a.id] ?? 0;
@@ -67,17 +67,17 @@ export const selectWorkspacesSortedByRecency = store.createSelector<[workspaces:
  * Select a workspace entity by ID from Redux.
  * Returns undefined if not stored yet.
  */
-export const selectWorkspaceById = store.createSelector<[wsId: string], Workspace | undefined>(
+export const selectWorkspaceById = createSelector<[wsId: string], Workspace | undefined>(
   (state, wsId) => {
     return getItem(state.workspace.workspaces, wsId as Workspace["id"]);
   }
 );
 
-export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
+export const selectWorkspaceItems = createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces);
 });
 
-export const selectWorkspaceIsEmpty = store.createSelector((state) => {
+export const selectWorkspaceIsEmpty = createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;
 });
 
@@ -86,7 +86,7 @@ export const selectWorkspaceIsEmpty = store.createSelector((state) => {
  * Resolves `activeWorkspaceId` against the stored workspace collection.
  * Returns undefined if no active workspace or if it hasn't been hydrated yet.
  */
-export const selectActiveWorkspace = store.createSelector<[], Workspace | undefined>((state) => {
+export const selectActiveWorkspace = createSelector<[], Workspace | undefined>((state) => {
   const wsId = state.workspace.activeWorkspaceId;
   if (!wsId) return undefined;
   return getItem(state.workspace.workspaces, wsId as Workspace["id"]);
@@ -103,7 +103,7 @@ export const selectCurrentWorkspace = selectActiveWorkspace;
  * Uses createSelector's built-in caching so the same reference is
  * returned when the underlying data hasn't changed.
  */
-export const selectWorkspaceActivePullRequest = store.createSelector<
+export const selectWorkspaceActivePullRequest = createSelector<
   [wsId: string],
   PullRequestInfo | null
 >((state, wsId) => {
@@ -118,7 +118,7 @@ export const selectWorkspaceActivePullRequest = store.createSelector<
  * viewing the spec). Evaluates to a primitive boolean so it won't cause
  * re-render cycles.
  */
-export const selectIsNewWorkspaceSession = store.createSelector<
+export const selectIsNewWorkspaceSession = createSelector<
   [wsId: string, selectedNoteId: string | null],
   boolean
 >((state, wsId, selectedNoteId) => {

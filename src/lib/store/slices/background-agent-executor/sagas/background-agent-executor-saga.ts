@@ -17,16 +17,17 @@ import {
   delay,
   race,
   take,
+  select,
   fork,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import {
+  buffers,
+  eventChannel,
+  END,
   type EventChannel,
 } from 'redux-saga';
-import {
-  createChannelFromSelector,
-  type SelectorChannelPayload,
-} from 'svelte-redux-toolkit/saga';
+import type { StoreState } from '$lib/store/types';
 
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { sendMessage } from '$features/agent/agent-stream-lifecycle';
@@ -56,17 +57,14 @@ import {
 import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 
 import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
-import {
-  AgentStatus,
-  type AgentSession,
-} from '$shared/types';
+import { AgentStatus } from '$shared/types';
 import type { AgentMessage } from '$shared/types/agent.types';
 import {
   removeLocalStorageItem,
   setLocalStorageJSON,
   getLocalStorageJSON,
 } from '$lib/store/utils/safe-local-storage-saga';
-import { debounceWithKeySaga } from 'svelte-redux-toolkit/utils/sagas/debounce-saga';
+import { debounceWithKeySaga } from '$lib/store/utils/debounce-saga';
 import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -98,6 +96,7 @@ import {
 import { selectExecutorState } from '../background-agent-executor-selectors';
 import { prepareContext } from '../utils/context-preparation';
 import { extractResultFromMessages } from '../utils/result-extraction';
+import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('BgExecutorSaga');
@@ -154,7 +153,13 @@ function* ensureModelsLoaded(): SagaGenerator<void> {
 // ============================================================================
 
 function getMessagesWithIdleSummaryFallback(
-  session: AgentSession,
+  session: {
+    id: unknown;
+    messages?: AgentMessage[];
+    lastAgentResponse?: unknown;
+    updatedAt?: unknown;
+    createdAt?: unknown;
+  },
   includeFallback: boolean,
   resultTag?: string,
 ): AgentMessage[] {
@@ -194,37 +199,63 @@ function getMessagesWithIdleSummaryFallback(
   ];
 }
 
-type AgentStateEvent = {
-  messages: AgentMessage[];
-  isComplete: boolean;
-  isError: boolean;
-  isStreaming: boolean;
-};
-
-function getAgentStateEvent(
-  session: AgentSession,
-  isResponding: boolean,
-  resultTag?: string,
-): AgentStateEvent {
-  const messages = getMessagesWithIdleSummaryFallback(session, !isResponding, resultTag);
-
-  if (session.status === AgentStatus.Error) {
-    return { messages, isComplete: false, isError: true, isStreaming: false };
-  }
-
-  if (!isResponding && messages.length > 0) {
-    return { messages, isComplete: true, isError: false, isStreaming: false };
-  }
-
-  return { messages, isComplete: false, isError: false, isStreaming: isResponding };
-}
-
-export function* createAgentStateChannel(
+export function createAgentStateChannel(
   agentId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   workspaceId: string,
-): SagaGenerator<EventChannel<SelectorChannelPayload<AgentSession | undefined>>> {
-  void workspaceId;
-  return yield* createChannelFromSelector(selectAgentSession, agentId);
+  resultTag?: string,
+): EventChannel<{ messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean }> {
+  return eventChannel((emitter) => {
+    let isClosed = false;
+
+    const emitTerminal = (
+      event: { messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean },
+    ) => {
+      if (isClosed) return;
+      isClosed = true;
+      emitter(event);
+      emitter(END);
+    };
+
+    const processUpdate = () => {
+      if (isClosed) return;
+
+      const state = getReduxStore().getState();
+      const session = selectAgentSession.select(state, agentId);
+      if (!session) return;
+
+      const isResponding = selectAgentIsResponding.select(state, agentId);
+      const messages = getMessagesWithIdleSummaryFallback(session, !isResponding, resultTag);
+
+      if (session.status === AgentStatus.Error) {
+        emitTerminal({ messages, isComplete: false, isError: true, isStreaming: false });
+      } else if (!isResponding && messages.length > 0) {
+        emitTerminal({ messages, isComplete: true, isError: false, isStreaming: false });
+      } else {
+        emitter({ messages, isComplete: false, isError: false, isStreaming: isResponding });
+      }
+    };
+
+    // Subscribe to Redux store changes for agent state updates
+    const store = getReduxStore();
+    let previousSession = selectAgentSession.select(store.getState(), agentId);
+
+    const unsubscribe = store.subscribe(() => {
+      const currentSession = selectAgentSession.select(store.getState(), agentId);
+      if (currentSession !== previousSession) {
+        previousSession = currentSession;
+        processUpdate();
+      }
+    });
+
+    // Initial check
+    processUpdate();
+
+    return () => {
+      isClosed = true;
+      unsubscribe();
+    };
+  }, buffers.expanding<{ messages: AgentMessage[]; isComplete: boolean; isError: boolean; isStreaming: boolean }>());
 }
 
 // ============================================================================
@@ -381,36 +412,55 @@ function* monitorAgent(
   resultTag: string,
   timeout: number,
 ): SagaGenerator<void> {
-  const channel = yield* createAgentStateChannel(agentId, workspaceId);
+  const channel = createAgentStateChannel(agentId, workspaceId, resultTag);
 
   try {
     const { completed } = yield* race({
       completed: call(function* (): SagaGenerator<boolean> {
-        const initialSession = yield* selectAgentSession.effect(agentId);
-        if (initialSession) {
-          const initialHandled = yield* call(
-            handleAgentStateEvent,
-            workspaceId,
-            executorType,
-            agentId,
-            resultTag,
-            initialSession,
-          );
-          if (initialHandled) return true;
-        }
-
         while (true) {
-          const { payload: session } = yield* take(channel);
-          if (!session) continue;
-          const handled = yield* call(
-            handleAgentStateEvent,
-            workspaceId,
-            executorType,
-            agentId,
-            resultTag,
-            session,
-          );
-          if (handled) return true;
+          const event = yield* take(channel);
+          if (!event) return false;
+
+          const { messages, isComplete, isError } = event as any;
+
+          // Try to extract result from current messages
+          const { result } = extractResultFromMessages(messages, resultTag, undefined, false);
+          if (result) {
+            yield* put(setExecutorState(workspaceId, executorType, { progress: 90 }));
+          }
+
+          if (isComplete) {
+            // Final extraction with forceExtract
+            const { result: finalResult, error: extractError } =
+              extractResultFromMessages(messages, resultTag, undefined, true);
+
+            yield* put(setExecutorState(workspaceId, executorType, {
+              status: finalResult ? 'success' : 'error',
+              result: finalResult,
+              error: extractError || (finalResult ? null : 'No result extracted from agent response'),
+              progress: 100,
+            }));
+
+            return true;
+          }
+
+          if (isError) {
+            yield* put(setExecutorState(workspaceId, executorType, {
+              status: 'error',
+              error: 'Agent encountered an error',
+              progress: 0,
+            }));
+            return true;
+          }
+
+          // Update progress while running
+          const execState = yield* selectExecutorState.effect(workspaceId, executorType);
+          const currentProgress = execState?.progress ?? 20;
+          if (currentProgress < 80) {
+            yield* put(setExecutorState(workspaceId, executorType, {
+              progress: Math.min(80, currentProgress + 5),
+            }));
+          }
         }
       }),
       timedOut: delay(timeout),
@@ -428,58 +478,6 @@ function* monitorAgent(
   } finally {
     channel.close();
   }
-}
-
-function* handleAgentStateEvent(
-  workspaceId: string,
-  executorType: string,
-  agentId: string,
-  resultTag: string,
-  session: AgentSession,
-): SagaGenerator<boolean> {
-  const isResponding = yield* selectAgentIsResponding.effect(agentId);
-  const { messages, isComplete, isError } = getAgentStateEvent(session, isResponding, resultTag);
-
-  // Try to extract result from current messages
-  const { result } = extractResultFromMessages(messages, resultTag, undefined, false);
-  if (result) {
-    yield* put(setExecutorState(workspaceId, executorType, { progress: 90 }));
-  }
-
-  if (isComplete) {
-    // Final extraction with forceExtract
-    const { result: finalResult, error: extractError } =
-      extractResultFromMessages(messages, resultTag, undefined, true);
-
-    yield* put(setExecutorState(workspaceId, executorType, {
-      status: finalResult ? 'success' : 'error',
-      result: finalResult,
-      error: extractError || (finalResult ? null : 'No result extracted from agent response'),
-      progress: 100,
-    }));
-
-    return true;
-  }
-
-  if (isError) {
-    yield* put(setExecutorState(workspaceId, executorType, {
-      status: 'error',
-      error: 'Agent encountered an error',
-      progress: 0,
-    }));
-    return true;
-  }
-
-  // Update progress while running
-  const execState = yield* selectExecutorState.effect(workspaceId, executorType);
-  const currentProgress = execState?.progress ?? 20;
-  if (currentProgress < 80) {
-    yield* put(setExecutorState(workspaceId, executorType, {
-      progress: Math.min(80, currentProgress + 5),
-    }));
-  }
-
-  return false;
 }
 
 // ============================================================================
@@ -583,31 +581,8 @@ function getBgExecutorStorageKey(workspaceId: string): string {
   return `${BG_EXECUTOR_STORAGE_KEY_PREFIX}${workspaceId}`;
 }
 
-function isEmptyExecutorInstanceState(executor: ExecutorInstanceState): boolean {
-  return (
-    executor.status === emptyExecutorState.status &&
-    executor.result === emptyExecutorState.result &&
-    executor.error === emptyExecutorState.error &&
-    executor.progress === emptyExecutorState.progress &&
-    executor.agentId === emptyExecutorState.agentId &&
-    executor.workspaceId === emptyExecutorState.workspaceId &&
-    executor.executionContext === emptyExecutorState.executionContext
-  );
-}
-
-function* selectPersistableBgExecutorWorkspaceState(
-  workspaceId: string,
-): SagaGenerator<BackgroundAgentExecutorWorkspaceState | null> {
-  const executors: Record<string, ExecutorInstanceState> = {};
-
-  for (const executorType of Object.keys(EXECUTOR_CONFIGS)) {
-    const executor = yield* selectExecutorState.effect(workspaceId, executorType);
-    if (!isEmptyExecutorInstanceState(executor)) {
-      executors[executorType] = executor;
-    }
-  }
-
-  return Object.keys(executors).length > 0 ? { executors } : null;
+function selectBgExecutorWorkspaceState(state: StoreState, workspaceId: string) {
+  return state.bgExecutor?.byWorkspaceId[workspaceId] ?? null;
 }
 
 /**
@@ -670,7 +645,7 @@ export function* handlePersistBgExecutor(
   action: ReturnType<typeof persistBgExecutor>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  const workspaceState = yield* call(selectPersistableBgExecutorWorkspaceState, workspaceId);
+  const workspaceState = yield* select(selectBgExecutorWorkspaceState, workspaceId);
 
   if (!workspaceState) {
     yield* call(removeLocalStorageItem, getBgExecutorStorageKey(workspaceId));

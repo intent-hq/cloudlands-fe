@@ -4,9 +4,9 @@
  * Actions and reducer for the sidebar navigation state.
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "svelte-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "../../utils/create-action";
+import { createReducer } from "../../utils/create-reducer";
+import { createBooleanPreference } from "../../utils/boolean-preference";
 import type { SidebarNavState, SidebarNavItem, AllSpacesViewMode } from "./sidebar-nav-types";
 
 // ── localStorage keys ──

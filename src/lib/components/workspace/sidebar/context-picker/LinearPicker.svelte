@@ -19,9 +19,8 @@
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-
+  import { getDispatch } from '$lib/store/utils/svelte-context';
   import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('LinearPicker');
 
@@ -34,6 +33,7 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
+  const dispatch = getDispatch();
 
   let isAuthenticated = $state(false);
   let issues = $state<LinearIssueResult[]>([]);
@@ -77,7 +77,7 @@
   async function handleConnect() {
     isConnecting = true;
     try {
-      appStore.dispatch(startLinearAuth());
+      dispatch(startLinearAuth());
       // Wait a bit for auth to potentially complete, then re-check
       // The user will complete OAuth externally, so we poll
       await new Promise((resolve) => setTimeout(resolve, 1000));

@@ -28,7 +28,7 @@ import {
   saveTerminalMetadata,
   type TerminalOverlayState,
 } from "../terminals-slice";
-import { createCollection } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "../../../utils/collection-utils";
 import {
   getStoredCustomName,
   TERMINAL_METADATA_STORAGE_PREFIX,

@@ -14,10 +14,6 @@ import { createMainLoggerMiddleware } from "./middlewares/logger";
 
 export const sagaMiddleware = createSagaMiddleware();
 
-export const setSagaContext = (context: Record<string, unknown>): void => {
-  sagaMiddleware.setContext(context);
-};
-
 export const runSaga = <S extends Saga>(saga: S, ...args: Parameters<S>): Task => {
   return sagaMiddleware.run(saga, ...args);
 };

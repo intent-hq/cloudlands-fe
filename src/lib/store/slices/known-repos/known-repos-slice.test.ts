@@ -4,7 +4,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "svelte-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "../../utils/collection-utils";
 import {
   initialState,
   knownReposReducer,

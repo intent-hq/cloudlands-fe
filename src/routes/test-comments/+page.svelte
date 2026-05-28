@@ -6,7 +6,7 @@
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-
+  import { dispatch as reduxDispatch } from '$lib/store/redux-dispatch-bridge';
   import {
   selectComments,
   selectSelectedComment,
@@ -18,7 +18,6 @@
 } from '$lib/store/slices/comments/comments-slice';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('TestComments');
 
@@ -74,7 +73,7 @@ More content here for testing purposes.`;
         },
         onCommentClick: (commentId) => {
           logger.info('Comment clicked', { commentId });
-          appStore.dispatch(selectCommentAction(commentId));
+          reduxDispatch(selectCommentAction(commentId));
         },
         useMarkdown: true,
       }),
@@ -84,7 +83,7 @@ More content here for testing purposes.`;
     commentManager = new CommentManagerV2('test-workspace', 'test-note');
 
     // Load test comment AFTER initializing manager
-    appStore.dispatch(loadCommentsAction([testComment]));
+    reduxDispatch(loadCommentsAction([testComment]));
 
     // Initialize manager with editor (but skip backend load)
     // We'll manually set the editor instead of calling initialize
@@ -112,7 +111,7 @@ More content here for testing purposes.`;
     if (commentManager) {
       commentManager.destroy();
     }
-    appStore.dispatch(clearCommentsAction());
+    reduxDispatch(clearCommentsAction());
   });
 
   // Reactive state - access store directly, don't use $derived
