@@ -9,9 +9,8 @@ import { openWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
 
 import { createLogger } from '$lib/utils/client-logger';
-import { fromStore } from 'svelte/store';
 import type { WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('tab-management');
 
@@ -23,9 +22,6 @@ export interface UseTabManagementOptions {
 }
 
 export function useTabManagement(options: UseTabManagementOptions) {
-  const pendingCreations = selectWorkspacePendingCreations();
-  const pendingCreationsValue = fromStore(pendingCreations);
-
   // Track if tab is open to avoid duplicate operations
   let tabOpened = $state(false);
 
@@ -66,7 +62,8 @@ export function useTabManagement(options: UseTabManagementOptions) {
     }
 
     const transitionKey = `${workspaceId}-pending`;
-    const isPendingCreation = !!pendingCreationsValue.current[workspaceId];
+    const pendingCreations = selectWorkspacePendingCreations.select(appStore.state);
+    const isPendingCreation = !!pendingCreations[workspaceId];
 
     if (isPendingCreation) {
       if (!handledTransitions.has(transitionKey)) {

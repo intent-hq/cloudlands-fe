@@ -5,7 +5,7 @@
  * including diagram blocks with non-UUID IDs.
  */
 import { describe, it, expect } from 'vitest';
-import { NotesPrimitivesSerializer } from '../../src/features/notes/notes-primitives-serializer';
+import { NotesPrimitivesSerializer } from '../../src/lib/utils/notes-primitives-serializer';
 import { NotePrimitiveSchema } from '../../src/shared/types/notes-primitives';
 
 describe('NotesPrimitivesSerializer', () => {

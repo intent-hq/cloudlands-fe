@@ -5,8 +5,8 @@
  * TextEncoder is kept outside Redux; periodic stale cleanup lives in the saga.
  */
 
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import type { ContentBlock } from "../../../../shared/types";
 import { buildOrderedContentBlocks } from "../../../../shared/utils/content-block-utils";
 import type {

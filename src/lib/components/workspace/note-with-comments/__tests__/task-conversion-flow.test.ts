@@ -349,7 +349,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToNote: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+vi.mock('$lib/utils/notes-ipc', () => ({
   notesIpc: vi.fn(),
 }));
 

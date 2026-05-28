@@ -576,14 +576,14 @@ describe("late initial-agent hydration recovery", () => {
     expect((gen.next(false).value as any).type).toBe("SELECT");
 
     expect(gen.next(true)).toEqual({
-      value: sagaEffects.take(setIsLoadingAgents.type),
+      value: sagaEffects.take(setIsLoadingAgents),
       done: false,
     });
 
     expect((gen.next(setIsLoadingAgents("other-ws", false)).value as any).type).toBe("SELECT");
 
     expect(gen.next(true)).toEqual({
-      value: sagaEffects.take(setIsLoadingAgents.type),
+      value: sagaEffects.take(setIsLoadingAgents),
       done: false,
     });
 
@@ -643,7 +643,7 @@ describe("late initial-agent hydration recovery", () => {
     const gen = watchLateInitialAgentHydrationRecoverySaga();
 
     expect(gen.next()).toEqual({
-      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
+      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
       done: false,
     });
 
@@ -654,7 +654,7 @@ describe("late initial-agent hydration recovery", () => {
     });
 
     expect(gen.next(firstTask)).toEqual({
-      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
+      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
       done: false,
     });
 
@@ -673,7 +673,7 @@ describe("late initial-agent hydration recovery", () => {
     });
 
     expect(gen.next(secondTask)).toEqual({
-      value: sagaEffects.take([setInitialAgentId.type, setInitialAgentConfig.type]),
+      value: sagaEffects.take([setInitialAgentId, setInitialAgentConfig]),
       done: false,
     });
 

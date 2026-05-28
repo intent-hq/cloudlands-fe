@@ -8,44 +8,34 @@
 -->
 <script lang="ts">
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import TaskAgentStatus from './TaskAgentStatus.svelte';
   import TaskNotePreview from './TaskNotePreview.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
-  import {
-  faPlay,
-  faLinkSlash,
-  faListCheck,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlay, faLinkSlash, faListCheck } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-  selectSelectedNoteId,
-  selectNoteById,
-  selectNotesVersion,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+    selectSelectedNoteId,
+    selectNoteById,
+    selectNotesVersion,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
 
   import {
-  reloadNotes,
-  updateTaskStatus,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+    reloadNotes,
+    updateTaskStatus,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { delegateExistingTaskRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
-  import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+  import { notesIpc } from '$lib/utils/notes-ipc';
   import { NOTES_CHANNELS } from '$shared/ipc/channels';
   import type { NoteId, TaskStatus, Note, AgentSession } from '$shared/types';
-  import {
-  NoteId as NoteIdBrand,
-  WorkspaceId,
-} from '$shared/types/branded-ids';
+  import { NoteId as NoteIdBrand, WorkspaceId } from '$shared/types/branded-ids';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
@@ -282,7 +272,9 @@
     // if the task lives in a different workspace), fall back to the active workspace.
     const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
     if (!wsId) return;
-    appStore.dispatch(delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false));
+    appStore.dispatch(
+      delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false),
+    );
   }
 
   function convertToInlineTask() {

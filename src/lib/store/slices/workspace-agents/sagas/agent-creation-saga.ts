@@ -11,7 +11,7 @@ import {
   agentIpcProxy,
   persistenceService,
 } from '$features/agent/browser';
-import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+import { notesIpc } from '$lib/utils/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import {
   selectNoteById,

@@ -61,7 +61,7 @@ import {
   openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from "../../workspace-navigation/workspace-navigation-slice";
-import { notesIpc } from "../../workspace-notes/sagas/notes-ipc";
+import { notesIpc } from "$lib/utils/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import { reloadNotes } from "../../workspace-notes/workspace-notes-slice";
 import type { Note } from "$shared/types";

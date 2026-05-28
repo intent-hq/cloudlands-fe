@@ -51,7 +51,7 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (import
   reloadNotes: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+vi.mock('$lib/utils/notes-ipc', () => ({
   notesIpc: vi.fn(),
 }));
 

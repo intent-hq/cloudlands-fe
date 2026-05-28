@@ -21,9 +21,8 @@ import {
 
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
-import { fromStore } from 'svelte/store';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('workspace-page-state');
 
@@ -34,11 +33,6 @@ export type WorkspacePageState = WorkspaceNavigationWorkspaceState & {
 };
 
 export function createWorkspacePageState(workspaceId: string) {
-  const navigationState = selectWorkspaceNavigationState(workspaceId);
-  const navigationStateValue = fromStore(navigationState);
-  const pendingCreations = selectWorkspacePendingCreations();
-  const pendingCreationsValue = fromStore(pendingCreations);
-
   let workspaceData = $state<Workspace | null>(null);
   let workspaceEvents = $state<WorkspaceEvent[]>([]);
 
@@ -48,7 +42,7 @@ export function createWorkspacePageState(workspaceId: string) {
       return null;
     }
 
-    const pendingCreation = pendingCreationsValue.current[workspaceId];
+    const pendingCreation = selectWorkspacePendingCreations.select(appStore.state)[workspaceId];
     if (!pendingCreation) {
       return null;
     }
@@ -63,7 +57,7 @@ export function createWorkspacePageState(workspaceId: string) {
   });
 
   function getNavigationState() {
-    return navigationStateValue.current;
+    return selectWorkspaceNavigationState.select(appStore.state, workspaceId);
   }
 
   function getState(): WorkspacePageState {

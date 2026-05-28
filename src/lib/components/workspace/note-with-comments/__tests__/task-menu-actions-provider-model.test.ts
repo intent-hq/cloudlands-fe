@@ -30,7 +30,7 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: createAgentMock },
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+vi.mock('$lib/utils/notes-ipc', () => ({
   notesIpc: notesIpcMock,
 }));
 

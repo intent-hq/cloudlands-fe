@@ -5,7 +5,7 @@
  * content updates, and external update handling.
  * Replaces the async methods from the old notes.store.svelte.ts.
  */
-import { notesIpc } from "./notes-ipc";
+import { notesIpc } from "$lib/utils/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import type { Note, UpdateNoteRequest, CreateNoteRequest } from "$shared/types";
 import {

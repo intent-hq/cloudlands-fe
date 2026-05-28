@@ -310,7 +310,7 @@ export function* recoverLateInitialAgentHydrationSaga(wsId: string) {
 
   if (wasLoadingAgents) {
     while (yield* selectIsLoadingAgents.effect(wsId)) {
-      const action = (yield* take(setIsLoadingAgents.type)) as ReturnType<typeof setIsLoadingAgents>;
+      const action = (yield* take(setIsLoadingAgents)) as ReturnType<typeof setIsLoadingAgents>;
       const [actionWsId, loading] = action.payload;
 
       if (actionWsId === wsId && !loading) {
@@ -342,8 +342,8 @@ export function* watchLateInitialAgentHydrationRecoverySaga() {
   try {
     while (true) {
       const action = (yield* take([
-        setInitialAgentId.type,
-        setInitialAgentConfig.type,
+        setInitialAgentId,
+        setInitialAgentConfig,
       ])) as ReturnType<typeof setInitialAgentId> | ReturnType<typeof setInitialAgentConfig>;
       const [actionWsId] = action.payload;
 
