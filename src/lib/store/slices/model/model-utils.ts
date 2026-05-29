@@ -15,6 +15,8 @@ import type { CortexModel } from '$features/cortex/cortex-models.client';
 import { getCortexModels } from '$features/cortex/cortex-models.client';
 import type { OpenCodeModel } from '$features/opencode/opencode-models.client';
 import { getOpencodeModels } from '$features/opencode/opencode-models.client';
+import type { PiModel } from '$features/pi/pi-models.client';
+import { getPiModels } from '$features/pi/pi-models.client';
 import {
   ACP_PROVIDERS,
   getDefaultProviderId,
@@ -26,7 +28,8 @@ export type ProviderModel =
   | ClaudeCodeModel
   | CodexModel
   | CortexModel
-  | OpenCodeModel;
+  | OpenCodeModel
+  | PiModel;
 
 type ProviderModelsWithWarning = {
   models: ProviderModel[];
@@ -53,6 +56,8 @@ async function fetchProviderModelsWithWarning(
       return { models: await getCortexModels() };
     case 'opencode':
       return { models: await getOpencodeModels() };
+    case 'pi':
+      return { models: await getPiModels() };
     case 'mock':
       return { models: [] };
     default:

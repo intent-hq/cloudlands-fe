@@ -91,5 +91,21 @@
         d="M12 12L14.26 13.09L13.5 15.5L15.91 14.74L17 17L18.09 14.74L20.5 15.5L19.74 13.09L22 12L19.74 10.91L20.5 8.5L18.09 9.26L17 7L15.91 9.26L13.5 8.5L14.26 10.91L12 12Z"
       />
     </svg>
+  {:else if providerId === 'pi'}
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 800 800"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect width="800" height="800" rx="120" fill="#09090b" />
+      <path
+        fill="#fff"
+        fill-rule="evenodd"
+        d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"
+      />
+      <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z" />
+    </svg>
   {/if}
 </span>

@@ -5625,35 +5625,40 @@ export class ACPProvider extends BaseAgentProvider {
         }
       }
 
-      // OpenCode: apply the selected model via session/set_model after session creation.
-      // OPENCODE_CONFIG_CONTENT sets the model at the config level, but the `acp` subcommand
-      // may not honor it (observed with OpenRouter models where OpenCode falls back to its
-      // default model). Explicitly setting via ACP ensures the model sticks.
-      if (caps.id === 'opencode' && this.config.model) {
+      // OpenCode / Pi: apply the selected model via session/set_model after session creation.
+      // For OpenCode, OPENCODE_CONFIG_CONTENT sets the model at the config level, but the `acp`
+      // subcommand may not honor it (observed with OpenRouter models where OpenCode falls back to
+      // its default model). Explicitly setting via ACP ensures the model sticks.
+      // Pi (via pi-acp) has no model env var and relies purely on the ACP `/model` command
+      // (mapped to the Zed model selector), so session/set_model is the only mechanism.
+      if ((caps.id === 'opencode' || caps.id === 'pi') && this.config.model) {
         const { modelId: rawModelId } = parseCompoundModelId(this.config.model);
         if (rawModelId && rawModelId !== 'default') {
           try {
             const setModelResult = await this.setModel(rawModelId);
             if (setModelResult.success) {
-              logger.info('OpenCode model set via ACP session/set_model', {
+              logger.info('Model set via ACP session/set_model', {
                 sessionId: this.sessionId,
+                providerId: caps.id,
                 modelId: rawModelId,
               });
             } else {
               const logFn = setModelResult.unsupported ? logger.debug : logger.warn;
               logFn.call(
                 logger,
-                'Failed to set OpenCode model via ACP; relying on OPENCODE_CONFIG_CONTENT',
+                'Failed to set model via ACP session/set_model',
                 {
                   sessionId: this.sessionId,
+                  providerId: caps.id,
                   modelId: rawModelId,
                   error: setModelResult.error,
                 },
               );
             }
           } catch (e) {
-            logger.warn('Error setting OpenCode model via ACP session/set_model', {
+            logger.warn('Error setting model via ACP session/set_model', {
               sessionId: this.sessionId,
+              providerId: caps.id,
               modelId: rawModelId,
               error: (e as Error).message,
             });
