@@ -1,4 +1,5 @@
 import {
+  beforeEach,
   describe,
   expect,
   it,
@@ -7,6 +8,7 @@ import {
 import { expectSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import type { FileGitStatus, FileNode } from "$shared/types";
+import { debounceWithKeySaga } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
 
 // typed-redux-saga must be mocked BEFORE importing the saga module because
 // the saga module imports from typed-redux-saga at the top level.
@@ -64,33 +66,50 @@ import {
   applyGitStatusSnapshot,
   handleRefreshDirectory,
   handleRefreshGitStatus,
+  handleRefreshAgentFileEdits,
   handleSyncGitStatusFromStores,
   handleWorkspaceChangesEvent,
   handleFileTrackingChangesEvent,
+  handleAgentFileChangedEvent,
+  handleFileTrackingListenerReadyEvent,
   handleFileChangedWindowEvent,
   handleFileChangedIPCEvent,
+  fileExplorerSaga,
+  refreshAgentFileEditsForWorkspace,
+  replayPendingAgentFileEditsRefreshForWorkspace,
+  resetAgentFileEditsRefreshState,
 } from "./file-explorer-saga";
 import {
+  debouncedAgentFileEditsRefresh,
   emptyFileExplorerWorkspaceState,
+  initializeFileExplorer,
   incrementTreeVersion,
+  refreshAgentFileEditsRequested,
   refreshDirectoryRequested,
   refreshGitStatusRequested,
+  removeAgentFileEditsEntries,
   removeGitStatusEntries,
   setChildrenAtPathAction,
   setRootNode,
   syncGitStatusFromStoresRequested,
+  updateAgentFileEditsEntries,
   updateGitStatusEntries,
   debouncedFileTrackingSync,
   refreshFileExplorer,
 } from "../file-explorer-slice";
 import { emptyWorkspaceState as emptyChangesWorkspaceState } from "../../changes/changes-slice";
 import { initialState as gitInitialState } from "../../git/git-slice";
+import { getAgentFileEdits, propagateAgentEditsToParents } from "$lib/utils/agent-file-edits";
 
 const WS_ID = "ws-1";
 
 const MODIFIED: FileGitStatus = { status: " M", additions: 1, deletions: 0 };
 
-function stateWith(gitStatus: Record<string, FileGitStatus>, workspacePath = "/a/repo") {
+function stateWith(
+  gitStatus: Record<string, FileGitStatus>,
+  workspacePath = "/a/repo",
+  agentFileEdits: Record<string, string[]> = {},
+) {
   return {
     workspace: { activeWorkspaceId: WS_ID },
     changes: { byWorkspaceId: { [WS_ID]: emptyChangesWorkspaceState } },
@@ -101,6 +120,7 @@ function stateWith(gitStatus: Record<string, FileGitStatus>, workspacePath = "/a
           ...emptyFileExplorerWorkspaceState,
           workspacePath,
           gitStatus,
+          agentFileEdits,
         },
       },
     },
@@ -181,6 +201,248 @@ describe("handleSyncGitStatusFromStores", () => {
       expect(action.type).not.toBe(setChildrenAtPathAction.type);
       expect(action.type).not.toBe(incrementTreeVersion.type);
     }
+  });
+});
+
+describe("agentFileEdits refresh pipeline", () => {
+  const activeWs = "ws-active";
+  const rootChildren: FileNode[] = [
+    { name: "src", path: "/a/repo/src", type: "directory", children: [] },
+    { name: "README.md", path: "/a/repo/README.md", type: "file" },
+  ];
+  const stateWithActiveWs = (id: string | null) => ({
+    workspace: { activeWorkspaceId: id },
+    fileExplorer: { byWorkspaceId: {} },
+  });
+  const provideRootLoad = {
+    fork: (effect: any, _next: () => unknown) => {
+      const fnName = effect.fn?.name;
+      if (fnName?.startsWith("watch") || fnName === "debounceSaga" || fnName === "debounceWithKeySaga") return {};
+      return _next();
+    },
+    call: (effect: any, next: () => unknown) => {
+      const fnName = effect.fn?.name;
+      if (fnName === "loadGitignorePatterns" || fnName === "loadGitStatusSaga") return undefined;
+      if (fnName === "loadDirectoryCore") return rootChildren;
+      return next();
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAgentFileEditsRefreshState();
+    vi.mocked(getAgentFileEdits).mockResolvedValue(new Map());
+    vi.mocked(propagateAgentEditsToParents).mockReturnValue(new Map());
+  });
+
+  it("loads agent edits into Redux and removes stale paths", async () => {
+    vi.mocked(getAgentFileEdits).mockResolvedValue(
+      new Map([["src/foo.ts", ["agent-1"]]]),
+    );
+    vi.mocked(propagateAgentEditsToParents).mockReturnValue(
+      new Map([["src", ["agent-1"]]]),
+    );
+
+    await expectSaga(
+      handleRefreshAgentFileEdits,
+      refreshAgentFileEditsRequested(WS_ID),
+    )
+      .withState(stateWith({}, "/a/repo", { "stale.ts": ["agent-old"] }))
+      .put(removeAgentFileEditsEntries(WS_ID, ["stale.ts"]))
+      .put(updateAgentFileEditsEntries(WS_ID, {
+        "src/foo.ts": ["agent-1"],
+        src: ["agent-1"],
+      }))
+      .silentRun(50);
+  });
+
+  it("populates initially empty agent edits during file-explorer init", async () => {
+    vi.mocked(getAgentFileEdits).mockResolvedValue(
+      new Map([["src/lib/foo.ts", ["agent-1"]]]),
+    );
+    vi.mocked(propagateAgentEditsToParents).mockReturnValue(
+      new Map([
+        ["src", ["agent-1"]],
+        ["src/lib", ["agent-1"]],
+      ]),
+    );
+
+    await expectSaga(fileExplorerSaga)
+      .withState(stateWith({}, "/a/repo", {}))
+      .provide(provideRootLoad)
+      .dispatch(initializeFileExplorer(WS_ID, { workspacePath: "/a/repo" }))
+      .put(updateAgentFileEditsEntries(WS_ID, {
+        "src/lib/foo.ts": ["agent-1"],
+        src: ["agent-1"],
+        "src/lib": ["agent-1"],
+      }))
+      .silentRun(500);
+  });
+
+  it("populates initially empty agent edits during file-explorer refresh", async () => {
+    vi.mocked(getAgentFileEdits).mockResolvedValue(
+      new Map([["src/refreshed.ts", ["agent-refresh"]]]),
+    );
+    vi.mocked(propagateAgentEditsToParents).mockReturnValue(
+      new Map([["src", ["agent-refresh"]]]),
+    );
+
+    await expectSaga(fileExplorerSaga)
+      .withState(stateWith({}, "/a/repo", {}))
+      .provide(provideRootLoad)
+      .dispatch(refreshFileExplorer(WS_ID))
+      .put(updateAgentFileEditsEntries(WS_ID, {
+        "src/refreshed.ts": ["agent-refresh"],
+        src: ["agent-refresh"],
+      }))
+      .silentRun(500);
+  });
+
+  it("clears stale agent edit entries when the event query returns no current paths", async () => {
+    vi.mocked(getAgentFileEdits).mockResolvedValue(new Map());
+    vi.mocked(propagateAgentEditsToParents).mockReturnValue(new Map());
+
+    const result = await expectSaga(
+      handleRefreshAgentFileEdits,
+      refreshAgentFileEditsRequested(WS_ID),
+    )
+      .withState(stateWith({}, "/a/repo", { "src/stale.ts": ["agent-old"] }))
+      .put(removeAgentFileEditsEntries(WS_ID, ["src/stale.ts"]))
+      .silentRun(50);
+
+    const putActions = result.effects.put ?? [];
+    for (const effectDescriptor of putActions) {
+      const action = (effectDescriptor as any).payload.action;
+      expect(action.type).not.toBe(updateAgentFileEditsEntries.type);
+    }
+  });
+
+  it("serializes overlapping agent edit reloads into one follow-up reload", () => {
+    const firstRefresh = refreshAgentFileEditsForWorkspace(WS_ID);
+    const firstEffect = firstRefresh.next().value as any;
+    expect(firstEffect.type).toBe("CALL");
+    expect(firstEffect.payload.fn.name).toBe("loadAgentFileEditsSaga");
+
+    const overlappingRefresh = refreshAgentFileEditsForWorkspace(WS_ID);
+    expect(overlappingRefresh.next().done).toBe(true);
+
+    expect(firstRefresh.next().value).toEqual(sagaEffects.delay(0));
+    const replayEffect = firstRefresh.next().value as any;
+    expect(replayEffect.type).toBe("CALL");
+    expect(replayEffect.payload.fn).toBe(refreshAgentFileEditsForWorkspace);
+    expect(replayEffect.payload.args).toEqual([WS_ID]);
+    expect(firstRefresh.next().done).toBe(true);
+  });
+
+  it("allows a different workspace agent edit reload while one workspace is in progress", () => {
+    const firstRefresh = refreshAgentFileEditsForWorkspace("ws-a");
+    const firstEffect = firstRefresh.next().value as any;
+    expect(firstEffect.type).toBe("CALL");
+    expect(firstEffect.payload.fn.name).toBe("loadAgentFileEditsSaga");
+    expect(firstEffect.payload.args).toEqual(["ws-a"]);
+
+    const overlappingRefresh = refreshAgentFileEditsForWorkspace("ws-b");
+    const overlappingEffect = overlappingRefresh.next().value as any;
+    expect(overlappingEffect.type).toBe("CALL");
+    expect(overlappingEffect.payload.fn.name).toBe("loadAgentFileEditsSaga");
+    expect(overlappingEffect.payload.args).toEqual(["ws-b"]);
+    expect(overlappingRefresh.next().done).toBe(true);
+
+    expect(firstRefresh.next().done).toBe(true);
+  });
+
+  it("debounces agent edit refresh events independently per workspace", () => {
+    const saga = fileExplorerSaga();
+    let debounceEffect: any;
+
+    for (let i = 0; i < 20; i += 1) {
+      const effect = saga.next().value as any;
+      if (effect?.payload?.fn === debounceWithKeySaga) {
+        debounceEffect = effect;
+        break;
+      }
+    }
+
+    expect(debounceEffect?.type).toBe("FORK");
+    expect(debounceEffect.payload.args[0]).toBe(debouncedAgentFileEditsRefresh);
+    expect(debounceEffect.payload.args[1]).toBe(300);
+
+    const keyExtractor = debounceEffect.payload.args[2] as (action: any) => string;
+    const wsAKey = keyExtractor(refreshAgentFileEditsRequested("ws-a"));
+    expect(wsAKey).toBe(keyExtractor(refreshAgentFileEditsRequested("ws-a")));
+    expect(wsAKey).not.toBe(keyExtractor(refreshAgentFileEditsRequested("ws-b")));
+  });
+
+  it("agent-file-changed events request a debounced agent edit refresh", async () => {
+    await expectSaga(handleAgentFileChangedEvent, { workspaceId: activeWs })
+      .withState(stateWithActiveWs(activeWs))
+      .put(debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested(activeWs)))
+      .silentRun(50);
+
+    vi.mocked(getAgentFileEdits).mockResolvedValue(
+      new Map([["src/agent-event.ts", ["agent-1"]]]),
+    );
+    await expectSaga(
+      handleRefreshAgentFileEdits,
+      refreshAgentFileEditsRequested(activeWs),
+    )
+      .withState(stateWith({}, "/a/repo", {}))
+      .put(updateAgentFileEditsEntries(activeWs, { "src/agent-event.ts": ["agent-1"] }))
+      .silentRun(50);
+  });
+
+  it("does not reload or pollute the active workspace for non-matching agent-file events", async () => {
+    const result = await expectSaga(handleAgentFileChangedEvent, { workspaceId: "other-ws" })
+      .withState(stateWithActiveWs(activeWs))
+      .silentRun(50);
+
+    expect(result.effects.put ?? []).toEqual([]);
+    expect(getAgentFileEdits).not.toHaveBeenCalled();
+
+    const replayResult = await expectSaga(replayPendingAgentFileEditsRefreshForWorkspace, "other-ws")
+      .withState(stateWithActiveWs(activeWs))
+      .silentRun(50);
+    expect(replayResult.effects.put ?? []).toEqual([]);
+  });
+
+  it("buffers agent-file-changed events until their workspace becomes active", async () => {
+    const result = await expectSaga(handleAgentFileChangedEvent, { workspaceId: "ws-pending" })
+      .withState(stateWithActiveWs(activeWs))
+      .silentRun(50);
+    expect(result.effects.put ?? []).toEqual([]);
+
+    await expectSaga(replayPendingAgentFileEditsRefreshForWorkspace, "ws-pending")
+      .withState(stateWithActiveWs("ws-pending"))
+      .put(debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested("ws-pending")))
+      .silentRun(50);
+  });
+
+  it("listener-ready events refresh active workspaces and buffer inactive ones", async () => {
+    await expectSaga(handleFileTrackingListenerReadyEvent, { workspaceId: activeWs })
+      .withState(stateWithActiveWs(activeWs))
+      .put(debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested(activeWs)))
+      .silentRun(50);
+
+    const result = await expectSaga(handleFileTrackingListenerReadyEvent, { workspaceId: "ws-pending" })
+      .withState(stateWithActiveWs(activeWs))
+      .silentRun(50);
+    expect(result.effects.put ?? []).toEqual([]);
+
+    await expectSaga(replayPendingAgentFileEditsRefreshForWorkspace, "ws-pending")
+      .withState(stateWithActiveWs("ws-pending"))
+      .put(debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested("ws-pending")))
+      .silentRun(50);
+  });
+
+  it("file change events also request an agent edit refresh", async () => {
+    await expectSaga(handleFileChangedWindowEvent, {
+      workspaceId: activeWs,
+      type: "change",
+    })
+      .withState(stateWithActiveWs(activeWs))
+      .put(refreshGitStatusRequested(activeWs))
+      .put(debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested(activeWs)))
+      .silentRun(50);
   });
 });
 

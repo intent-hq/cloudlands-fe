@@ -29,12 +29,14 @@ import { TRACKING_CONFIG } from '$features/file-tracking/tracking.config';
 import { takeEveryFromElectronChannel } from '$lib/store/utils/ipc-channel';
 import {
   initWorkspace,
+  refreshRequested,
   setLoading,
   setError,
   setHasLoadedInitialData,
   updateAgentStatsBatch,
 } from '../changes-slice';
 import type { LineChangeStats } from '../changes-types';
+import { openWorkspaceLocalChanges } from '../../workspace-navigation/workspace-navigation-slice';
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
 import { setGitStatus } from '../../git/git-slice';
@@ -65,6 +67,8 @@ type FileTrackingEvent = {
   filePath?: string;
 };
 
+const pendingTrackingReadyWorkspaceIds = new Set<string>();
+
 function* watchChangesUpdated(wsId: string) {
   yield* takeEveryFromElectronChannel<FileTrackingEvent>(
     'file-tracking:changes-updated',
@@ -72,6 +76,34 @@ function* watchChangesUpdated(wsId: string) {
       if (data.workspaceId !== wsId) return;
       yield* delay(config.updateDebounce);
       yield* call(doLoadWorkspaceData, wsId);
+    },
+  );
+}
+
+export function* handleTrackingReadyEvent(data: { workspaceId?: string }): SagaGenerator<void> {
+  const wsId = data.workspaceId;
+  if (!wsId) return;
+  const currentWsId = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId) {
+    pendingTrackingReadyWorkspaceIds.add(wsId);
+    return;
+  }
+  yield* put(refreshRequested(wsId));
+}
+
+export function* replayPendingTrackingReadyForWorkspace(wsId: string): SagaGenerator<void> {
+  if (!pendingTrackingReadyWorkspaceIds.has(wsId)) return;
+  const currentWsId = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId) return;
+  pendingTrackingReadyWorkspaceIds.delete(wsId);
+  yield* put(refreshRequested(wsId));
+}
+
+export function* watchGlobalTrackingReady() {
+  yield* takeEveryFromElectronChannel<{ workspaceId?: string }>(
+    'file-tracking:listener-ready',
+    function* (data) {
+      yield* call(handleTrackingReadyEvent, data);
     },
   );
 }
@@ -114,6 +146,27 @@ function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
     yield* delay(config.updateDebounce);
     yield* call(doLoadWorkspaceData, wsId);
   });
+}
+
+export function* handleOpenWorkspaceLocalChanges(
+  action: ReturnType<typeof openWorkspaceLocalChanges>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  if (!wsId) return;
+  const currentWsId = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId) return;
+  yield* put(refreshRequested(wsId));
+}
+
+function* watchOpenWorkspaceLocalChanges(): SagaGenerator<void> {
+  yield* takeLatest(openWorkspaceLocalChanges, handleOpenWorkspaceLocalChanges);
+}
+
+export function* watchWorkspaceIpcListeners(wsId: string): SagaGenerator<void> {
+  yield* fork(watchChangesUpdated, wsId);
+  yield* fork(watchAgentFileChanged, wsId);
+  yield* fork(watchWorkspaceChanges, wsId);
+  yield* fork(watchGitStatusAction, wsId);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +226,7 @@ function* periodicAgentStatsSyncSaga() {
 // Workspace initialization
 // ---------------------------------------------------------------------------
 
-function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGenerator<void> {
+export function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGenerator<void> {
   const wsId = action.payload[0];
   logger.info('[ChangesSaga] initWorkspace', { wsId });
 
@@ -228,6 +281,21 @@ function* handleInitWorkspace(action: ReturnType<typeof initWorkspace>): SagaGen
   }
 }
 
+export function* handleInitWorkspaceWithListeners(
+  action: ReturnType<typeof initWorkspace>,
+): SagaGenerator<void> {
+  const wsId = action.payload[0];
+  const listenerTask = (yield* fork(watchWorkspaceIpcListeners, wsId)) as unknown as Task;
+
+  yield* call(handleInitWorkspace, action);
+  yield* call(replayPendingTrackingReadyForWorkspace, wsId);
+
+  const currentWsId = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId) {
+    yield* cancel(listenerTask);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
@@ -239,28 +307,12 @@ export function* changesSaga(): SagaGenerator<void> {
   // Fork agent stats periodic sync
   yield* fork(periodicAgentStatsSyncSaga);
 
-  // Watch for workspace init and set up listeners
-  let listenerTask: Task | null = null;
+  // Watch tab-open intent actions and route refresh through changes operations
+  yield* fork(watchOpenWorkspaceLocalChanges);
 
-  yield* takeLatest(initWorkspace, function* (action) {
-    // Cancel previous listeners
-    if (listenerTask) {
-      yield* cancel(listenerTask);
-    }
+  // Watch global listener-ready events before workspace-scoped init listeners exist
+  yield* fork(watchGlobalTrackingReady);
 
-    // Run initialization
-    yield* call(handleInitWorkspace, action);
-
-    const wsId = action.payload[0];
-    const currentWsId = yield* selectActiveWorkspaceId.effect();
-    if (currentWsId !== wsId) return;
-
-    // Fork IPC listeners for this workspace
-    listenerTask = (yield* fork(function* () {
-      yield* fork(watchChangesUpdated, wsId);
-      yield* fork(watchAgentFileChanged, wsId);
-      yield* fork(watchWorkspaceChanges, wsId);
-      yield* fork(watchGitStatusAction, wsId);
-    })) as unknown as Task;
-  });
+  // Watch for workspace init and set up listeners before initial sync/load
+  yield* takeLatest(initWorkspace, handleInitWorkspaceWithListeners);
 }

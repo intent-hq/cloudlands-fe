@@ -33,6 +33,7 @@ import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import type { TrackedChange } from '../types';
 import type { ChangeFilter } from './types';
+import { syncGitIntegrationForWorkspace } from './file-tracking-sync';
 
 const logger = new Logger({ category: 'FileTrackingIPC' });
 
@@ -183,20 +184,12 @@ export function setupFileTrackingIPC() {
             workspaceId: validated.workspaceId,
             force: validated.force,
           });
-          // Git integration is now managed in workspace.ipc.ts
-          // Access it from the global storage
-          const gitIntegration = global.gitIntegrations?.get(validated.workspaceId);
-          if (gitIntegration) {
-            // Pass force flag to bypass backend throttle when explicitly requested
-            await gitIntegration.syncCurrentState(validated.force ?? false);
-          } else {
-            // This is expected during workspace initialization - git integration
-            // is set up asynchronously after workspace:open
-            logger.debug('No git integration found for workspace (may still be initializing)', {
-              workspaceId: validated.workspaceId,
-            });
-          }
-          return { success: true };
+          return await syncGitIntegrationForWorkspace(
+            validated.workspaceId,
+            validated.force ?? false,
+            global,
+            logger,
+          );
         } catch (error) {
           logger.error('Failed to sync file tracking', error as Error, {
             workspaceId: validated.workspaceId,

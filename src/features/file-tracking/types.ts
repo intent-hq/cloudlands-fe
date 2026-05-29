@@ -82,6 +82,24 @@ export interface TrackedChange {
   hunks?: DiffHunk[];
 }
 
+export type FileTrackingSyncResult =
+  | {
+      success: true;
+      synced: true;
+      notReady?: false;
+    }
+  | {
+      success: false;
+      notReady: true;
+      code: 'GIT_INTEGRATION_NOT_READY';
+      error: string;
+    }
+  | {
+      success: false;
+      notReady?: false;
+      error: string;
+    };
+
 /**
  * Diff hunk information
  */

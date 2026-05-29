@@ -310,6 +310,11 @@ export class GitIntegrationService extends EventEmitter {
         commitHash: commitHash?.substring(0, 8),
       });
 
+      // The commit just changed git status outside the change detector's polling cycle.
+      // Clear any cached pre-commit status before callers force a sync, otherwise the
+      // sync can re-track files that are already committed as stale unstaged changes.
+      this.invalidateGitStatusCache();
+
       // Load existing tracked changes
       const result = await this.fileTrackingService.getChanges();
       const existingChanges = result.changes;
@@ -337,9 +342,16 @@ export class GitIntegrationService extends EventEmitter {
         },
       }));
 
-      // Clear the staged changes (they're now committed)
+      // Clear working-tree entries for committed files. Remove the staged entries
+      // that were just committed and any stale unstaged entries for the same paths,
+      // but preserve existing committed history for those files.
       const filesToClear = stagedChanges.map((c: TrackedChange) => c.file);
-      await this.fileTrackingService.clearFileChangesBatch(filesToClear);
+      await this.fileTrackingService.clearFileStageEntriesBatch(
+        filesToClear.flatMap((file) => [
+          { file, stage: ChangeStage.Staged },
+          { file, stage: ChangeStage.Unstaged },
+        ]),
+      );
 
       // Save the committed changes and force immediate flush
       await this.fileTrackingService.saveChanges(committedChanges);

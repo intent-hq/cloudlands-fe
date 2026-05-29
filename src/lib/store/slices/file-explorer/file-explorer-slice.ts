@@ -85,6 +85,10 @@ export const refreshGitStatusRequested = createAction<[wsId: string]>(
   "fileExplorer/refreshGitStatusRequested",
 );
 
+export const refreshAgentFileEditsRequested = createAction<[wsId: string]>(
+  "fileExplorer/refreshAgentFileEditsRequested",
+);
+
 export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
   "fileExplorer/syncGitStatusFromStoresRequested",
 );
@@ -97,6 +101,10 @@ export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
  */
 export const debouncedFileTrackingSync = createAction<[inner: StoreAction<any>]>(
   "fileExplorer/debouncedFileTrackingSync",
+);
+
+export const debouncedAgentFileEditsRefresh = createAction<[inner: StoreAction<any>]>(
+  "fileExplorer/debouncedAgentFileEditsRefresh",
 );
 
 // ---------------------------------------------------------------------------

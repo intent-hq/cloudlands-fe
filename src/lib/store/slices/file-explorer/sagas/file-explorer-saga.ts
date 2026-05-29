@@ -51,8 +51,10 @@ import {
   refreshFileExplorer,
   refreshDirectoryRequested,
   refreshGitStatusRequested,
+  refreshAgentFileEditsRequested,
   syncGitStatusFromStoresRequested,
   debouncedFileTrackingSync,
+  debouncedAgentFileEditsRefresh,
   setFileExplorerLoading,
   setFileExplorerInitialized,
   setRootNode,
@@ -96,15 +98,40 @@ import {
   takeEveryFromElectronChannel,
   takeEveryFromWindowEvent,
 } from "$lib/store/utils/ipc-channel";
-import { debounceSaga } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
+import {
+  debounceSaga,
+  debounceWithKeySaga,
+} from "svelte-redux-toolkit/utils/sagas/debounce-saga";
+import type { StoreAction } from "svelte-redux-toolkit/types";
 
 const logger = new Logger("FileExplorerSaga");
+
+type AgentFileEditsRefreshState = {
+  inProgress: boolean;
+  dirty: boolean;
+};
 
 // ---------------------------------------------------------------------------
 // Module-level caches (not in Redux state — performance optimization)
 // ---------------------------------------------------------------------------
 
 const directoryCache = new Map<string, Map<string, { nodes: FileNode[]; timestamp: number }>>();
+const agentFileEditsRefreshByWorkspace = new Map<string, AgentFileEditsRefreshState>();
+const pendingAgentFileEditsRefreshWorkspaceIds = new Set<string>();
+
+export function resetAgentFileEditsRefreshState(): void {
+  agentFileEditsRefreshByWorkspace.clear();
+  pendingAgentFileEditsRefreshWorkspaceIds.clear();
+}
+
+function getAgentFileEditsRefreshState(wsId: string): AgentFileEditsRefreshState {
+  let state = agentFileEditsRefreshByWorkspace.get(wsId);
+  if (!state) {
+    state = { inProgress: false, dirty: false };
+    agentFileEditsRefreshByWorkspace.set(wsId, state);
+  }
+  return state;
+}
 
 function getWsCache(wsId: string) {
   let cache = directoryCache.get(wsId);
@@ -436,6 +463,30 @@ function* loadAgentFileEditsSaga(wsId: string): SagaGenerator<void> {
   }
 }
 
+export function* refreshAgentFileEditsForWorkspace(wsId: string): SagaGenerator<void> {
+  if (!wsId) return;
+  const refreshState = getAgentFileEditsRefreshState(wsId);
+  if (refreshState.inProgress) {
+    refreshState.dirty = true;
+    return;
+  }
+
+  refreshState.inProgress = true;
+  try {
+    yield* call(loadAgentFileEditsSaga, wsId);
+  } finally {
+    const shouldReplay = refreshState.dirty;
+    refreshState.inProgress = false;
+    refreshState.dirty = false;
+    if (shouldReplay) {
+      yield* delay(0);
+      yield* call(refreshAgentFileEditsForWorkspace, wsId);
+    } else {
+      agentFileEditsRefreshByWorkspace.delete(wsId);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Initialize file explorer
 // ---------------------------------------------------------------------------
@@ -474,7 +525,7 @@ function* initializeFileExplorerSaga(
       children,
     };
     // Load agent file edits — selector derives per-node agentEdits from this record
-    yield* call(loadAgentFileEditsSaga, wsId);
+    yield* call(refreshAgentFileEditsForWorkspace, wsId);
     yield* put(setRootNode(wsId, rootNode));
     yield* put(addExpandedPath(wsId, workspacePath));
     yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
@@ -663,7 +714,7 @@ function* handleRefresh(
     children,
   };
 
-  yield* call(loadAgentFileEditsSaga, wsId);
+  yield* call(refreshAgentFileEditsForWorkspace, wsId);
   yield* put(setRootNode(wsId, rootNode));
   yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
   yield* put(setFileExplorerLoading(wsId, false));
@@ -750,6 +801,13 @@ export function* handleRefreshGitStatus(
   // Per-row selector memoization picks up only the changed rows — no treeVersion bump.
 }
 
+export function* handleRefreshAgentFileEdits(
+  action: ReturnType<typeof refreshAgentFileEditsRequested>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  yield* call(refreshAgentFileEditsForWorkspace, wsId);
+}
+
 // ---------------------------------------------------------------------------
 // Sync git status from other stores
 // ---------------------------------------------------------------------------
@@ -759,7 +817,7 @@ export function* handleSyncGitStatusFromStores(
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
   yield* call(loadGitStatusSaga, wsId);
-  yield* call(loadAgentFileEditsSaga, wsId);
+  yield* call(refreshAgentFileEditsForWorkspace, wsId);
   // Per-row selector memoization picks up only the changed rows — no treeVersion bump.
 }
 
@@ -785,6 +843,7 @@ function* watchWorkspaceMountedForStore(): SagaGenerator<void> {
   yield* takeEvery(workspaceMounted, function* (action) {
     const [wsId] = action.payload;
     yield* put(setIsStoreActive(wsId, true));
+    yield* call(replayPendingAgentFileEditsRefreshForWorkspace, wsId);
   });
 }
 
@@ -793,6 +852,7 @@ function* watchWorkspaceUnmountedForCache(): SagaGenerator<void> {
     const [wsId] = action.payload;
     yield* put(setIsStoreActive(wsId, false));
     directoryCache.delete(wsId);
+    pendingAgentFileEditsRefreshWorkspaceIds.delete(wsId);
     yield* put(clearFileExplorerForWorkspace(wsId));
   });
 }
@@ -803,6 +863,26 @@ function* watchWorkspaceUnmountedForCache(): SagaGenerator<void> {
 
 type WorkspaceChangesEvent = { workspaceId?: string };
 type FileTrackingChangesEvent = { workspaceId?: string };
+type AgentFileChangedEvent = { workspaceId?: string };
+
+function agentFileEditsRefreshAction(wsId: string) {
+  return debouncedAgentFileEditsRefresh(refreshAgentFileEditsRequested(wsId));
+}
+
+function getAgentFileEditsDebounceKey(action: StoreAction<any>): string {
+  const [wsId] = action.payload ?? [];
+  return typeof wsId === "string" && wsId.length > 0 ? `${action.type}:${wsId}` : action.type;
+}
+
+export function* replayPendingAgentFileEditsRefreshForWorkspace(
+  wsId: string,
+): SagaGenerator<void> {
+  if (!pendingAgentFileEditsRefreshWorkspaceIds.has(wsId)) return;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (activeWsId !== wsId) return;
+  pendingAgentFileEditsRefreshWorkspaceIds.delete(wsId);
+  yield* put(agentFileEditsRefreshAction(wsId));
+}
 
 export function* handleWorkspaceChangesEvent(data: WorkspaceChangesEvent): SagaGenerator<void> {
   const eventWsId = data?.workspaceId;
@@ -836,6 +916,45 @@ function* watchFileTrackingChangesIPC() {
   yield* takeEveryFromElectronChannel<FileTrackingChangesEvent>(
     "file-tracking:changes-updated",
     handleFileTrackingChangesEvent,
+  );
+}
+
+export function* handleAgentFileChangedEvent(data: AgentFileChangedEvent): SagaGenerator<void> {
+  const eventWsId = data?.workspaceId;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (eventWsId && eventWsId !== activeWsId) {
+    pendingAgentFileEditsRefreshWorkspaceIds.add(eventWsId);
+    return;
+  }
+  const targetWsId = eventWsId || activeWsId;
+  if (!targetWsId) return;
+  yield* put(agentFileEditsRefreshAction(targetWsId));
+}
+
+function* watchAgentFileChangedIPC() {
+  yield* takeEveryFromElectronChannel<AgentFileChangedEvent>(
+    "file-tracking:agent-file-changed",
+    handleAgentFileChangedEvent,
+  );
+}
+
+export function* handleFileTrackingListenerReadyEvent(
+  data: AgentFileChangedEvent,
+): SagaGenerator<void> {
+  const eventWsId = data?.workspaceId;
+  if (!eventWsId) return;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (eventWsId !== activeWsId) {
+    pendingAgentFileEditsRefreshWorkspaceIds.add(eventWsId);
+    return;
+  }
+  yield* put(agentFileEditsRefreshAction(eventWsId));
+}
+
+function* watchFileTrackingListenerReadyIPC() {
+  yield* takeEveryFromElectronChannel<AgentFileChangedEvent>(
+    "file-tracking:listener-ready",
+    handleFileTrackingListenerReadyEvent,
   );
 }
 
@@ -879,8 +998,10 @@ export function* handleFileChangedWindowEvent(detail: FileChangedDetail): SagaGe
       // full-tree reload so the change doesn't get dropped.
       yield* put(refreshFileExplorer(eventWsId));
     }
+    yield* put(agentFileEditsRefreshAction(eventWsId));
   } else if (changeType === "change") {
     yield* put(refreshGitStatusRequested(eventWsId));
+    yield* put(agentFileEditsRefreshAction(eventWsId));
   }
 }
 
@@ -956,14 +1077,23 @@ function* watchFileChangedIPC() {
 export function* fileExplorerSaga(): SagaGenerator<void> {
   // Reset module-level cache on (re)start to avoid stale data from previous runs
   directoryCache.clear();
+  resetAgentFileEditsRefreshState();
 
   yield* fork(watchWorkspaceMountedForStore);
   yield* fork(watchWorkspaceUnmountedForCache);
   yield* fork(watchWorkspaceChangesIPC);
   yield* fork(watchFileTrackingChangesIPC);
+  yield* fork(watchAgentFileChangedIPC);
+  yield* fork(watchFileTrackingListenerReadyIPC);
   yield* fork(watchFileChangedWindowEvent);
   yield* fork(watchFileChangedIPC);
   yield* fork(debounceSaga, debouncedFileTrackingSync, 300);
+  yield* fork(
+    debounceWithKeySaga,
+    debouncedAgentFileEditsRefresh,
+    300,
+    getAgentFileEditsDebounceKey,
+  );
   yield* takeLatest(initializeFileExplorer, initializeFileExplorerSaga);
   yield* takeEvery(toggleDirectoryRequested, handleToggleDirectory);
   yield* takeLatest(expandToPathRequested, handleExpandToPath);
@@ -971,6 +1101,7 @@ export function* fileExplorerSaga(): SagaGenerator<void> {
   yield* takeLatest(refreshFileExplorer, handleRefresh);
   yield* takeEvery(refreshDirectoryRequested, handleRefreshDirectory);
   yield* takeLatest(refreshGitStatusRequested, handleRefreshGitStatus);
+  yield* takeEvery(refreshAgentFileEditsRequested, handleRefreshAgentFileEdits);
   yield* takeLatest(syncGitStatusFromStoresRequested, handleSyncGitStatusFromStores);
   yield* takeLatest(setWorkspacePathRequested, handleSetWorkspacePath);
 }

@@ -42,7 +42,7 @@ import {
   selectFileTrackingBoundarySha,
   selectCurrentWorkspaceId,
 } from '../changes-selectors';
-import { ChangeStage } from '$features/file-tracking/types';
+import { ChangeStage, type FileTrackingSyncResult } from '$features/file-tracking/types';
 import type { TrackedChange, StageTransition, CommitInfo } from '../changes-types';
 import { FILE_TRACKING_CHANNELS } from '$shared/ipc/channels';
 import {
@@ -75,6 +75,7 @@ const SYNC_THROTTLE_MS = 10000;
 let loadInProgress = false;
 let loadDirty = false;
 let refreshInProgress = false;
+const pendingRefreshWorkspaceIds = new Set<string>();
 
 export function hasPendingOperations(): boolean {
   return pendingStageOperations.size > 0 || pendingStageOperationsByPath.size > 0;
@@ -91,6 +92,14 @@ export function resetTrackingState(): void {
   loadInProgress = false;
   loadDirty = false;
   refreshInProgress = false;
+  pendingRefreshWorkspaceIds.clear();
+}
+
+function takeNextPendingRefreshWorkspaceId(): string | undefined {
+  const next = pendingRefreshWorkspaceIds.values().next();
+  if (next.done) return undefined;
+  pendingRefreshWorkspaceIds.delete(next.value);
+  return next.value;
 }
 
 function clearPendingState(changeIds: string[], pendingPaths: string[]): void {
@@ -123,36 +132,54 @@ function* handleSyncWithGit(action: ReturnType<typeof syncWithGitRequested>): Sa
   yield* call(doSyncWithGit, wsId, force ?? false);
 }
 
-export function* doSyncWithGit(wsId: string, force: boolean): SagaGenerator<void> {
-  if (!wsId) return;
+export function* doSyncWithGit(
+  wsId: string,
+  force: boolean,
+): SagaGenerator<FileTrackingSyncResult | null> {
+  if (!wsId) return null;
 
   if (syncInProgress) {
     syncDirty = true;
     syncDirtyForce = syncDirtyForce || force;
-    return;
+    return null;
   }
 
   const now = Date.now();
   if (!force && now - lastSyncTime < SYNC_THROTTLE_MS) {
-    return;
+    return null;
   }
 
   lastSyncTime = Date.now();
   syncInProgress = true;
 
   try {
-    yield* call(
+    const result = (yield* call(
       invokeWithTimeout,
       'file-tracking:sync',
       { workspaceId: wsId, force },
       IPC_SYNC_TIMEOUT_MS,
-    );
+    )) as FileTrackingSyncResult | null;
+
+    if (!result) return null;
+    if (!result.success) {
+      if (result.notReady) {
+        logger.debug('Git integration not ready; treating sync as transient no-op', {
+          wsId,
+          code: result.code,
+        });
+        return result;
+      }
+      logger.error('Git sync returned failure', new Error(result.error), { wsId });
+    }
+
+    return result;
   } catch (error) {
     if (error instanceof IpcTimeoutError) {
       logger.warn('Git sync timed out', { wsId, timeoutMs: IPC_SYNC_TIMEOUT_MS });
     } else {
       logger.error('Failed to sync with git', error as Error, { wsId });
     }
+    return null;
   } finally {
     syncInProgress = false;
     if (syncDirty) {
@@ -259,7 +286,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
     const refreshablePaths = getRefreshableWorkingTreePaths(filteredChanges);
     if (refreshablePaths.length > 0) {
-	      // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
+      // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
       yield* put(refreshOpenFileContentForPathsRequested(wsId, refreshablePaths));
     }
     if (hasTransitionChanges) {
@@ -294,10 +321,13 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
 // refresh
 // ---------------------------------------------------------------------------
 
-function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenerator<void> {
+export function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenerator<void> {
   const wsId = action.payload[0];
   if (!wsId) return;
-  if (refreshInProgress) return;
+  if (refreshInProgress) {
+    pendingRefreshWorkspaceIds.add(wsId);
+    return;
+  }
 
   refreshInProgress = true;
   try {
@@ -307,6 +337,11 @@ function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenera
     yield* call(doLoadWorkspaceData, wsId);
   } finally {
     refreshInProgress = false;
+    const pendingWsId = takeNextPendingRefreshWorkspaceId();
+    if (pendingWsId) {
+      yield* delay(0);
+      yield* call(handleRefresh, refreshRequested(pendingWsId));
+    }
   }
 }
 
