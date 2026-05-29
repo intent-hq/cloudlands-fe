@@ -1,7 +1,6 @@
 import { goto } from "$app/navigation";
 import { workspaceClient } from "$lib/store/slices/workspace/utils/workspace.client";
 import { invoke } from "$lib/electron-bridge";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { removeKnownRepo } from "$lib/store/slices/known-repos/known-repos-slice";
 import {
   clearActiveWorkspace,
@@ -30,9 +29,14 @@ import {
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import {
   call,
+  delay,
   put,
+  race,
+  spawn,
+  take,
   takeLatest,
 } from "typed-redux-saga";
+import { buffers, channel, type Channel } from "redux-saga";
 import {
   selectPendingBulkDeleteRepoKey,
   selectPendingBulkRepoKey,
@@ -57,6 +61,8 @@ import {
   requestOpenWorkspace,
   requestUnarchiveWorkspace,
 } from "../workspace-operations-slice";
+
+const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15000;
 
 function workspaceMatchesRepoKey(workspace: Workspace, repoKey: string): boolean {
   if (workspace.repositoryOwner && workspace.repositoryName) {
@@ -91,52 +97,101 @@ async function getToast() {
   return toast;
 }
 
-async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
-  const toast = await getToast();
-  const store = getReduxStore();
-  const currentWorkspace = selectActiveWorkspace.select(store.getState());
-  let undone = false;
+function createUndoChannel(): Channel<true> {
+  return channel<true>(buffers.sliding(1));
+}
+
+function* deleteWorkspaceWithUndo(workspace: Workspace) {
+  const toast = yield* call(getToast);
+  const currentWorkspace = yield* selectActiveWorkspace.effect();
+  const undoChannel = createUndoChannel();
   let toastId: string | number | undefined;
 
-  store.dispatch(removeWorkspaceEntity(workspace.id));
-  store.dispatch(markWorkspacePendingDeletion(workspace.id));
+  yield* put(removeWorkspaceEntity(workspace.id));
+  yield* put(markWorkspacePendingDeletion(workspace.id));
   if (currentWorkspace?.id === workspace.id) {
-    store.dispatch(clearActiveWorkspace());
+    yield* put(clearActiveWorkspace());
   }
 
-  const timeoutId = globalThis.setTimeout(async () => {
-    if (undone) {
+  try {
+    toastId = toast.warning(`Deleted ${workspace.title || "space"}`, {
+      duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          undoChannel.put(true);
+        },
+      },
+    });
+
+    const { undo } = yield* race({
+      undo: take(undoChannel),
+      timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
+    });
+
+    if (undo) {
+      yield* put(clearWorkspacePendingDeletion(workspace.id));
+      yield* put(setWorkspaceEntity(workspace));
+      if (toastId !== undefined) {
+        toast.dismiss(toastId);
+      }
       return;
     }
 
-    const result = await workspaceClient.delete(workspace.id);
+    const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
     if (!result.ok) {
-      store.dispatch(clearWorkspacePendingDeletion(workspace.id));
-      store.dispatch(setWorkspaceEntity(workspace));
-      store.dispatch(loadWorkspacesRequested());
+      yield* put(clearWorkspacePendingDeletion(workspace.id));
+      yield* put(setWorkspaceEntity(workspace));
+      yield* put(loadWorkspacesRequested());
       toast.error("Failed to delete space");
       return;
     }
 
-    store.dispatch(clearWorkspacePendingDeletion(workspace.id));
-    store.dispatch(loadWorkspacesRequested());
-  }, 15000);
+    yield* put(clearWorkspacePendingDeletion(workspace.id));
+    yield* put(loadWorkspacesRequested());
+  } finally {
+    undoChannel.close();
+  }
+}
 
-  toastId = toast.warning(`Deleted ${workspace.title || "space"}`, {
-    duration: 15000,
-    action: {
-      label: "Undo",
-      onClick: async () => {
-        undone = true;
-        globalThis.clearTimeout(timeoutId);
-        store.dispatch(clearWorkspacePendingDeletion(workspace.id));
-        store.dispatch(setWorkspaceEntity(workspace));
-        if (toastId !== undefined) {
-          toast.dismiss(toastId);
-        }
-      },
-    },
-  });
+function* watchArchiveUndo(undoChannel: Channel<true>, workspaceId: WorkspaceId) {
+  try {
+    const { undo } = yield* race({
+      undo: take(undoChannel),
+      timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
+    });
+
+    if (!undo) {
+      return;
+    }
+
+    const undoResult = yield* call([workspaceClient, workspaceClient.unarchive], workspaceId);
+    if (undoResult.ok) {
+      yield* put(loadWorkspacesRequested());
+    }
+  } finally {
+    undoChannel.close();
+  }
+}
+
+function* watchBulkArchiveUndo(undoChannel: Channel<true>, archivedIds: WorkspaceId[]) {
+  try {
+    const { undo } = yield* race({
+      undo: take(undoChannel),
+      timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
+    });
+
+    if (!undo) {
+      return;
+    }
+
+    for (const id of archivedIds) {
+      yield* call([workspaceClient, workspaceClient.unarchive], id);
+    }
+    yield* put(loadWorkspacesRequested());
+  } finally {
+    undoChannel.close();
+  }
 }
 
 async function performBulkDeleteArchivedForRepo(repoKey: string, workspaces: Workspace[]): Promise<boolean> {
@@ -218,7 +273,7 @@ export function* requestDeleteWorkspaceSaga(action: ReturnType<typeof requestDel
     yield* call(navigateAfterWorkspaceRemoval, workspaceId);
   }
 
-  yield* call(deleteWorkspaceWithUndo, workspace);
+  yield* spawn(deleteWorkspaceWithUndo, workspace);
 }
 
 export function* confirmDeleteWorkspaceSaga() {
@@ -235,7 +290,7 @@ export function* confirmDeleteWorkspaceSaga() {
         yield* call(navigateAfterWorkspaceRemoval, workspace.id);
       }
 
-      yield* call(deleteWorkspaceWithUndo, workspace);
+      yield* spawn(deleteWorkspaceWithUndo, workspace);
     }
   }
 }
@@ -257,17 +312,14 @@ export function* requestArchiveWorkspaceSaga(action: ReturnType<typeof requestAr
 
   if (result.ok) {
     yield* put(loadWorkspacesRequested());
+    const undoChannel = createUndoChannel();
+    yield* spawn(watchArchiveUndo, undoChannel, wsId);
     toast.warning(`Archived space ${workspaceTitle}`, {
-      duration: 15000,
+      duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
       action: {
         label: "Undo",
-        // Direct dispatch is intentional: this callback fires outside any saga
-        // generator context when the user clicks "Undo" after the saga has completed.
-        onClick: async () => {
-          const undoResult = await workspaceClient.unarchive(wsId);
-          if (undoResult.ok) {
-            getReduxStore().dispatch(loadWorkspacesRequested());
-          }
+        onClick: () => {
+          undoChannel.put(true);
         },
       },
     });
@@ -333,17 +385,14 @@ export function* confirmBulkArchiveSaga() {
 
   if (archivedIds.length > 0) {
     yield* put(loadWorkspacesRequested());
+    const undoChannel = createUndoChannel();
+    yield* spawn(watchBulkArchiveUndo, undoChannel, archivedIds);
     toast.warning(`Archived ${archivedIds.length} space${archivedIds.length === 1 ? "" : "s"}`, {
-      duration: 15000,
+      duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
       action: {
         label: "Undo",
-        // Direct dispatch is intentional: this callback fires outside any saga
-        // generator context when the user clicks "Undo" after the saga has completed.
-        onClick: async () => {
-          for (const id of archivedIds) {
-            await workspaceClient.unarchive(id);
-          }
-          getReduxStore().dispatch(loadWorkspacesRequested());
+        onClick: () => {
+          undoChannel.put(true);
         },
       },
     });

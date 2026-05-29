@@ -26,8 +26,9 @@
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { store as appStore } from '$lib/store/store';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -396,7 +397,7 @@
         // Note mention: @note/{noteId}
         const noteId = captured.slice(5); // Remove "note/" prefix
         const wsId = $activeWorkspaceId ?? '';
-        const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+        const allNotes = selectAllNotes.select(appStore.state, wsId);
         const matchingNote = allNotes.find((n) => n.id === noteId) ?? null;
         const label = matchingNote?.title || noteId;
 
@@ -560,7 +561,7 @@
       // Look up the actual note ID from the title
       const noteTitle = pill.noteId;
       const wsId = $activeWorkspaceId ?? '';
-      const allNotes = selectAllNotes.select(getReduxStore().getState(), wsId);
+      const allNotes = selectAllNotes.select(appStore.state, wsId);
       const matchingNote = allNotes.find((n) => n.title === noteTitle) ?? null;
       if (matchingNote) {
         await navigateToNote(matchingNote.id);

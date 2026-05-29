@@ -6,7 +6,7 @@ import {
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import {
   contextReducer,
   initialState,

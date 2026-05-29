@@ -43,10 +43,7 @@ import { terminalEventsSaga } from "./slices/terminal-events/sagas/terminal-even
 import { scriptEventsSaga } from "./slices/script-events/sagas/script-events-saga";
 import { appEventsSaga } from "./slices/app-events/sagas/app-events-saga";
 import { sourceEventsSaga } from "./slices/source-events/sagas/source-events-saga";
-import {
-  messageAccumulatorSaga,
-  staleCleanupLoop,
-} from "./slices/message-accumulator/sagas/message-accumulator-saga";
+import { staleCleanupLoop } from "./slices/message-accumulator/sagas/message-accumulator-saga";
 
 export type MainSaga = () => ReturnType<Saga>;
 
@@ -69,7 +66,6 @@ export const mainSagas = {
   rendererSubscriptionSaga,
   eventTriggeredSagas,
 
-  messageAccumulatorSaga,
   staleCleanupLoop,
 
   workspaceLifecycleEventsSaga,

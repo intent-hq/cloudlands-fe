@@ -196,7 +196,7 @@ vi.mock('../../shared/services/mcp-tool-params-cache', () => ({
 }));
 
 // ── Import after mocks ──────────────────────────────────────────────
-import { HttpMcpBridge } from '../http-mcp-bridge';
+import { HttpMcpBridge, __resolveWsModuleForTests } from '../http-mcp-bridge';
 
 const originalNodeEnv = process.env.NODE_ENV;
 
@@ -230,6 +230,61 @@ function clearEventHandlers() {
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
+
+describe('ws module resolution', () => {
+  class MockWebSocket {}
+  class DefaultWebSocket {}
+  class MockWebSocketServer {}
+
+  it.each([
+    ['module.WebSocketServer', { WebSocket: MockWebSocket, WebSocketServer: MockWebSocketServer }],
+    ['module.Server', { WebSocket: MockWebSocket, Server: MockWebSocketServer }],
+    [
+      'module.default.WebSocketServer',
+      { WebSocket: MockWebSocket, default: { WebSocketServer: MockWebSocketServer } },
+    ],
+    [
+      'module.default.Server',
+      { WebSocket: MockWebSocket, default: { Server: MockWebSocketServer } },
+    ],
+  ])('resolves WebSocketServer from %s', (_label, moduleValue) => {
+    const resolved = __resolveWsModuleForTests(moduleValue);
+
+    expect(resolved.WebSocket).toBe(MockWebSocket);
+    expect(resolved.WebSocketServer).toBe(MockWebSocketServer);
+  });
+
+  it('resolves the client constructor from default.WebSocket', () => {
+    const resolved = __resolveWsModuleForTests({
+      Server: MockWebSocketServer,
+      default: { WebSocket: DefaultWebSocket },
+    });
+
+    expect(resolved.WebSocket).toBe(DefaultWebSocket);
+    expect(resolved.WebSocketServer).toBe(MockWebSocketServer);
+  });
+
+  it('resolves packaged ws shape where the module value is the client and Server is attached', () => {
+    class PackagedWebSocket {
+      static Server = MockWebSocketServer;
+    }
+
+    const resolved = __resolveWsModuleForTests(PackagedWebSocket);
+
+    expect(resolved.WebSocket).toBe(PackagedWebSocket);
+    expect(resolved.WebSocketServer).toBe(MockWebSocketServer);
+  });
+
+  it('throws a safe diagnostic when no constructable server is available', () => {
+    expect(() =>
+      __resolveWsModuleForTests({
+        WebSocket: MockWebSocket,
+        Server: 'not-a-constructor',
+        default: { WebSocketServer: {} },
+      }),
+    ).toThrow(/Unable to resolve ws WebSocketServer constructor; module shape: .*Server:string/);
+  });
+});
 
 describe('HttpMcpBridge', () => {
   let bridge: HttpMcpBridge;

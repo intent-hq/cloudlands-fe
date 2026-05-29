@@ -32,7 +32,7 @@
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   selectAgentSubscriptions,
   selectDelegationGroups,
@@ -45,6 +45,7 @@
   requestSubscriptionFetch,
 } from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('AgentSubscriptions');
 
@@ -56,7 +57,6 @@
   let { workspaceId, agentId }: Props = $props();
 
   // ── Redux selectors (called at component init time) ──────────────────
-  const dispatch = getDispatch();
 
   // Writable stores mirror prop values so Redux selectors re-evaluate
   // when workspaceId or agentId changes.
@@ -78,7 +78,7 @@
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
-    untrack(() => dispatch(requestSubscriptionFetch(workspaceId, agentId)));
+    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
@@ -168,7 +168,7 @@
     } catch (error) {
       logger.error('Failed to cancel subscriptions', { error });
     }
-    dispatch(resetSubscriptionUI(workspaceId, agentId));
+    appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
   }
 
   async function stopAllAgents() {
@@ -176,14 +176,14 @@
     try {
       const agentIdsToStop = [...watchedAgentIds];
       await invoke('events:unsubscribe-agent', { workspaceId, agentId });
-      dispatch(resetSubscriptionUI(workspaceId, agentId));
+      appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
       const stopAction = stopAgentSessionRequested(workspaceId, agentId);
-      dispatch(stopAction);
+      appStore.dispatch(stopAction);
       await stopAction.promise;
       await Promise.all(
         agentIdsToStop.map((id) => {
           const action = stopAgentSessionRequested(workspaceId, id);
-          dispatch(action);
+          appStore.dispatch(action);
           return action.promise;
         }),
       );

@@ -23,8 +23,8 @@
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
   import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import { selectSidebarMergeWhenReady } from '$lib/store/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -47,8 +47,8 @@
   writable,
 } from 'svelte/store';
   import Fa from 'svelte-fa';
+	import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
 
   interface Props {
     workspaceId: string;
@@ -130,7 +130,7 @@
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
     if (result.ok) {
-      dispatch(setWorkspaceEntity(result.data));
+      appStore.dispatch(setWorkspaceEntity(result.data));
     }
     return result;
   }
@@ -141,23 +141,23 @@
 
   async function handleAutoFillMerge() {
     if (isGeneratingMerge) {
-      dispatch(cancelExecution(workspaceId, 'commit-merge'));
+      appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
-      const state = getReduxStore().getState();
+      const state = appStore.state;
       const ws = selectWorkspaceById.select(state, workspaceId);
       if (ws) {
-        dispatch(executeBackgroundAgent(ws.id, 'commit-merge'));
+        appStore.dispatch(executeBackgroundAgent(ws.id, 'commit-merge'));
       }
     }
   }
 
   function handleStopGeneratingMerge() {
-    dispatch(cancelExecution(workspaceId, 'commit-merge'));
-    dispatch(setSidebarMergeWhenReady(workspaceId, false));
+    appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
+    appStore.dispatch(setSidebarMergeWhenReady(workspaceId, false));
   }
 
   function toggleMergeWhenReady() {
-    dispatch(setSidebarMergeWhenReady(workspaceId, !$mergeWhenReady$));
+    appStore.dispatch(setSidebarMergeWhenReady(workspaceId, !$mergeWhenReady$));
   }
 
   function viewMergeThoughtProcess(e?: MouseEvent) {
@@ -165,7 +165,7 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: mergeAgentId,
           sourcePanelId,
@@ -217,14 +217,14 @@
         onCommitMessageChange?.('');
         try {
           await Promise.all([
-            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
-            getReduxStore().dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+            appStore.dispatch(refreshRequested(workspaceId)),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
             await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
-            dispatch(ftClearOlderCommits(workspaceId));
+            appStore.dispatch(ftClearOlderCommits(workspaceId));
           } catch { console.error('Failed to update baseCommitSha after auto-rebase'); }
         }
         if (result.result?.autoRebased) {
@@ -277,9 +277,9 @@
         onMergeComplete?.();
         try {
           await Promise.all([
-            Promise.resolve(getReduxStore().dispatch(loadGitStatus(workspaceId, true))),
-            getReduxStore().dispatch(refreshRequested(workspaceId)),
-            Promise.resolve(dispatch(refreshPRStatusRequested(workspaceId, true, false))),
+            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+            appStore.dispatch(refreshRequested(workspaceId)),
+            Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
         toast.success(`PR #${openPR.number} merged on GitHub`);

@@ -9,7 +9,7 @@
   selectActiveWorkspaceId,
   selectWorkspaceById,
 } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -27,6 +27,7 @@
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('TaskAgentStatus');
 
@@ -92,7 +93,7 @@
     triedLoading = true;
 
     try {
-      const reduxState = getReduxStore().getState();
+      const reduxState = appStore.state;
       const wsId = selectActiveWorkspaceId.select(reduxState);
       const currentWorkspace = wsId ? selectWorkspaceById.select(reduxState, wsId) : undefined;
       if (currentWorkspace) {
@@ -101,7 +102,7 @@
           workspaceId: currentWorkspace.id,
         });
         const restoreAction = restoreAgentSessionRequested(currentWorkspace.id, agentId);
-        getReduxStore().dispatch(restoreAction);
+        appStore.dispatch(restoreAction);
         const loadedSession = await restoreAction.promise;
         if (loadedSession) {
           agentFound = true;
@@ -138,7 +139,7 @@
     // This is more efficient than each component having its own interval
     function pollCallback() {
       pollCount++;
-      const pollState = getReduxStore().getState();
+      const pollState = appStore.state;
       const pollWsId = selectActiveWorkspaceId.select(pollState);
       const session = selectAgentSession.select(pollState, agentId);
       const reduxAgent = pollWsId ? selectAgentSession.select(pollState, agentId) : undefined;
@@ -492,9 +493,9 @@
       const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-      const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+      const wsId = selectActiveWorkspaceId.select(appStore.state);
       if (wsId) {
-        getReduxStore().dispatch(
+        appStore.dispatch(
           openAgentTabRequested(wsId, {
             agentId,
             sourcePanelId,

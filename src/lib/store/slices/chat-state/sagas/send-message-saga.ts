@@ -36,7 +36,8 @@ import { selectPendingCount } from '$lib/store/slices/permission/permission-sele
 import { clearChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
 import { uncheckAllSelections } from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
 import type { AgentSession } from '$shared/types';
-import { waitFor } from '$lib/store/slices/store-utility/sagas/waitFor';
+import { waitFor } from 'svelte-redux-toolkit/saga';
+import type { StoreSelector as PackageStoreSelector } from 'svelte-redux-toolkit/types';
 import {
   sendMessage,
   chatSendStarted,
@@ -59,6 +60,7 @@ import {
 } from '../chat-state-types';
 
 const logger = createLogger('SendMessageSaga');
+type WaitForSelector<R, ARGS extends any[]> = PackageStoreSelector<R, ARGS, unknown>;
 
 function getLastAssistantStopReason(agent: AgentSession | undefined): string | undefined {
   const messages = agent?.messages ?? [];
@@ -222,6 +224,24 @@ function* stopBeforeForceSubmit(agentId: string, payload: SendMessagePayload): S
   }
 }
 
+function* takeChatInitializedForAgent(
+  agentId: string,
+): SagaGenerator<ReturnType<typeof chatInitialized>> {
+  while (true) {
+    const action = yield* take(chatInitialized);
+    if (action.payload[0] === agentId) return action;
+  }
+}
+
+function* takeChatInitFailedForAgent(
+  agentId: string,
+): SagaGenerator<ReturnType<typeof chatInitFailed>> {
+  while (true) {
+    const action = yield* take(chatInitFailed);
+    if (action.payload[0] === agentId) return action;
+  }
+}
+
 // ============================================================================
 // Queue path
 // ============================================================================
@@ -291,7 +311,7 @@ function* handleSendPath(
   if (isRebinding) {
     logger.info('Waiting for in-flight workspace rebind before sending', { agentId });
     const rebindCompleted = yield* waitFor(
-      selectChatIsRebinding,
+      selectChatIsRebinding as unknown as WaitForSelector<boolean, [string]>,
       [agentId] as [string],
       (val: boolean) => val === false,
       5000,
@@ -322,16 +342,8 @@ function* handleSendPath(
 
     // Wait for init to succeed or fail before proceeding with send (30s timeout)
     const { failed, timeout } = yield* race({
-      initialized: take((action: { type: string; payload?: unknown }) =>
-        action.type === chatInitialized.type &&
-        Array.isArray((action as any).payload) &&
-        (action as any).payload[0] === agentId,
-      ),
-      failed: take((action: { type: string; payload?: unknown }) =>
-        action.type === chatInitFailed.type &&
-        Array.isArray((action as any).payload) &&
-        (action as any).payload[0] === agentId,
-      ),
+      initialized: call(takeChatInitializedForAgent, agentId),
+      failed: call(takeChatInitFailedForAgent, agentId),
       timeout: delay(30_000),
     });
 

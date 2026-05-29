@@ -19,14 +19,14 @@
   processMarkdownToHTML,
   processHTMLToMarkdown,
 } from '$lib/utils/markdown-processor';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
   import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$lib/store/store';
 
-  const reduxDispatch = getDispatch();
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -144,9 +144,9 @@
         const html = internalEditEditor?.getHTML?.() ?? '';
         const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
         if (!md) return cancelEdit();
-        const v2 = selectCommentById.select(getReduxStore().getState(), comment.id);
+        const v2 = selectCommentById.select(appStore.state, comment.id);
         if (v2) {
-          reduxDispatch(updateCommentAction(comment.id, { content: md }));
+          appStore.dispatch(updateCommentAction(comment.id, { content: md }));
         }
         internalIsEditing = false;
       } catch {
@@ -354,9 +354,9 @@
           const openInAdjacentPanel = e.metaKey || e.ctrlKey;
           const wsId =
             workspace?.id ??
-            selectActiveWorkspaceId.select(getReduxStore().getState());
+            selectActiveWorkspaceId.select(appStore.state);
           if (wsId) {
-            getReduxStore().dispatch(
+            appStore.dispatch(
               openAgentTabRequested(wsId, {
                 agentId: comment.agentId,
                 sourcePanelId,

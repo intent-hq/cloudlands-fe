@@ -5,10 +5,10 @@
  * Rules enforced (from AGENTS.md / STATE_MANAGEMENT.md):
  *   1. Never call `selector()` (the readable form) inside event handlers —
  *      it uses Svelte's getContext() which is only valid at component init.
- *   2. Never call `getDispatch()` inside event handlers — same reason.
- *   3. For one-time state reads in handlers, use `selector.select(getReduxStore().getState(), ...args)`.
- *   4. `getDispatch()` and readable selectors at the TOP of a composable function
- *      body are safe because the composable is called during component init.
+ *   2. For one-time state reads in handlers, use `selector.select(appStore.state, ...args)`.
+ *   3. Dispatch from handlers with `appStore.dispatch(action)` on the configured Store.
+ *   4. Readable selectors at the TOP of a composable function body are safe
+ *      because the composable is called during component init.
  *
  * This test reads the source files and checks that event handler bodies
  * (inside addEventListener callbacks) do not contain unsafe patterns.
@@ -60,12 +60,7 @@ function extractEventHandlerBodies(source: string): string[] {
 function findLifecycleViolations(code: string): string[] {
   const violations: string[] = [];
 
-  // Pattern 1: calling getDispatch() inside a handler (not at top of composable)
-  if (/\bgetDispatch\(\)/.test(code)) {
-    violations.push('getDispatch() called inside event handler');
-  }
-
-  // Pattern 2: calling a selector in readable form (e.g. selectFoo() without .select)
+  // Pattern 1: calling a selector in readable form (e.g. selectFoo() without .select)
   // This matches selectXxx( but NOT selectXxx.select( or selectXxx.effect(
   const selectorCallPattern = /\bselect\w+\([^.)]/;
   if (selectorCallPattern.test(code)) {
@@ -124,14 +119,14 @@ describe('lifecycle-safe selector access in workspace-page composables', () => {
     if (templateStart === -1) return;
     const template = source.slice(templateStart);
 
-    // Check for inline .select(getReduxStore().getState() calls in template props
+    // Check for inline .select(appStore.state) calls in template props
     // These are one-shot reads that won't react to Redux state changes
-    const inlineSelectPattern = /\w+\.select\(\s*getReduxStore\(\)\.getState\(\)/g;
+    const inlineSelectPattern = /\w+\.select\(\s*appStore\.state/g;
     const matches = template.match(inlineSelectPattern) || [];
 
     expect(
       matches,
-      'Template should not use inline .select(getReduxStore().getState()) for reactive props. ' +
+      'Template should not use inline .select(appStore.state) for reactive props. ' +
         'Use a readable selector at component init time instead.',
     ).toEqual([]);
   });

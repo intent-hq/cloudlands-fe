@@ -9,6 +9,7 @@ import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getAvailableIdsFromResult } from '$shared/config/provider-config';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('ProviderAvailabilityClient');
 
@@ -96,11 +97,10 @@ export async function getProviderAvailability(
         cachedResult.hiddenProviders ?? [],
       );
 
-      const { getReduxDispatch } = await import('$lib/store/redux-dispatch-bridge');
       const { validateActiveProvider } = await import(
         '$lib/store/slices/provider-settings/provider-settings-slice'
       );
-      getReduxDispatch()(validateActiveProvider(availableIds));
+      appStore.dispatch(validateActiveProvider(availableIds));
     } catch (e) {
       // Non-critical — store validation is best-effort
       logger.debug('Failed to validate active provider against availability', { error: e });

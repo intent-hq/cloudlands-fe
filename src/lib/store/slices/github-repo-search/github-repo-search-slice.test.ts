@@ -6,7 +6,7 @@ import {
 import {
   createCollection,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 import {
   clearGithubRepoSearch,

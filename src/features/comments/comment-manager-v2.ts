@@ -21,10 +21,6 @@ import {
 import { convertBackendCommentToV2 } from './comment-types-v2';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
 import {
-  getReduxStore,
-  dispatch as reduxDispatch,
-} from '$lib/store/redux-dispatch-bridge';
-import {
   addCommentAction,
   updateCommentAction,
   removeCommentAction,
@@ -34,6 +30,7 @@ import {
   selectComments,
   selectCommentById,
 } from '$lib/store/slices/comments/comments-selectors';
+import { store as appStore } from '$lib/store/store';
 
 const logger = createLogger('CommentManagerV2');
 
@@ -211,7 +208,7 @@ export class CommentManagerV2 {
         }
       });
 
-      reduxDispatch(loadCommentsAction(v2Comments));
+      appStore.dispatch(loadCommentsAction(v2Comments));
       logger.info('Loaded comments from backend', { count: v2Comments.length });
 
       // After loading comments, we need to insert anchors into the document
@@ -379,7 +376,7 @@ export class CommentManagerV2 {
           });
 
           // Mark the comment as orphaned so it still shows in the sidebar
-          reduxDispatch(updateCommentAction(comment.id, {
+          appStore.dispatch(updateCommentAction(comment.id, {
             isOrphaned: true,
           }));
 
@@ -747,7 +744,7 @@ export class CommentManagerV2 {
 
         // Update local comment with backend ID if different
         if (backendComment.id !== comment.id) {
-          reduxDispatch(updateCommentAction(comment.id, { id: backendComment.id }));
+          appStore.dispatch(updateCommentAction(comment.id, { id: backendComment.id }));
         }
         return true;
       }
@@ -801,7 +798,7 @@ export class CommentManagerV2 {
 
     const anchoredCommentIds = getAllAnchoredCommentIds(this.editor.state.doc);
     // Only check comments for the current note
-    const currentNoteComments = selectComments.select(getReduxStore().getState()).filter(
+    const currentNoteComments = selectComments.select(appStore.state).filter(
       (comment) => comment.noteId === this.noteId,
     );
 
@@ -830,7 +827,7 @@ export class CommentManagerV2 {
       return;
     }
 
-    const currentNoteComments = selectComments.select(getReduxStore().getState()).filter(
+    const currentNoteComments = selectComments.select(appStore.state).filter(
       (comment) => comment.noteId === this.noteId,
     );
 
@@ -950,7 +947,7 @@ export class CommentManagerV2 {
     } as CommentV2;
 
     // Add comment to store
-    reduxDispatch(addCommentAction(addedComment));
+    appStore.dispatch(addCommentAction(addedComment));
 
     // Insert anchors in the document
     try {
@@ -959,7 +956,7 @@ export class CommentManagerV2 {
         this.editor.chain().focus().setTextSelection(from).insertPointAnchor(addedComment.id).run();
 
         // Update anchor ID
-        reduxDispatch(updateCommentAction(addedComment.id, {
+        appStore.dispatch(updateCommentAction(addedComment.id, {
           anchor: { type: 'point', pointId: `${addedComment.id}:point` },
         }));
       } else {
@@ -972,7 +969,7 @@ export class CommentManagerV2 {
           .run();
 
         // Update anchor IDs
-        reduxDispatch(updateCommentAction(addedComment.id, {
+        appStore.dispatch(updateCommentAction(addedComment.id, {
           anchor: {
             type: 'range',
             startId: `${addedComment.id}:start`,
@@ -983,12 +980,12 @@ export class CommentManagerV2 {
     } catch (error) {
       logger.error('Failed to insert comment anchors', error);
       // Remove the comment if anchor insertion failed
-      reduxDispatch(removeCommentAction(addedComment.id));
+      appStore.dispatch(removeCommentAction(addedComment.id));
       return null;
     }
 
     // Get the updated comment with anchor IDs from the store
-    const updatedComment = selectCommentById.select(getReduxStore().getState(), addedComment.id);
+    const updatedComment = selectCommentById.select(appStore.state, addedComment.id);
     if (!updatedComment) {
       logger.error('Comment not found in store after anchor insertion');
       return null;
@@ -1017,8 +1014,8 @@ export class CommentManagerV2 {
     this.editor.chain().focus().removeCommentAnchors(commentId).run();
 
     // Remove from store
-    const existed = !!selectCommentById.select(getReduxStore().getState(), commentId);
-    reduxDispatch(removeCommentAction(commentId));
+    const existed = !!selectCommentById.select(appStore.state, commentId);
+    appStore.dispatch(removeCommentAction(commentId));
     const removed = existed;
 
     if (removed) {
@@ -1034,10 +1031,10 @@ export class CommentManagerV2 {
    * Resolve a comment
    */
   async resolveComment(commentId: string): Promise<boolean> {
-    const existing = selectCommentById.select(getReduxStore().getState(), commentId);
+    const existing = selectCommentById.select(appStore.state, commentId);
     const updated = !!existing;
     if (updated) {
-      reduxDispatch(updateCommentAction(commentId, { status: 'resolved' }));
+      appStore.dispatch(updateCommentAction(commentId, { status: 'resolved' }));
     }
 
     if (updated) {
@@ -1056,7 +1053,7 @@ export class CommentManagerV2 {
    * Reply to a comment
    */
   async replyToComment(parentId: string, content: string): Promise<CommentV2 | null> {
-    const parentComment = selectCommentById.select(getReduxStore().getState(), parentId);
+    const parentComment = selectCommentById.select(appStore.state, parentId);
     if (!parentComment) {
       logger.error('Parent comment not found', { parentId });
       return null;
@@ -1082,7 +1079,7 @@ export class CommentManagerV2 {
     };
 
     // Create reply in store
-    reduxDispatch(addCommentAction(reply));
+    appStore.dispatch(addCommentAction(reply));
 
     // Save to backend
     await this.saveComment(reply);
@@ -1106,7 +1103,7 @@ export class CommentManagerV2 {
     }
 
     // Get all comments for this note
-    const comments = selectComments.select(getReduxStore().getState()).filter((comment) => comment.noteId === this.noteId);
+    const comments = selectComments.select(appStore.state).filter((comment) => comment.noteId === this.noteId);
 
     logger.debug('Scanning anchor health', {
       commentCount: comments.length,
@@ -1121,7 +1118,7 @@ export class CommentManagerV2 {
           logger.debug('Comment has no anchor metadata - marking as orphaned', {
             commentId: comment.id,
           });
-          reduxDispatch(updateCommentAction(comment.id, { isOrphaned: true }));
+          appStore.dispatch(updateCommentAction(comment.id, { isOrphaned: true }));
         }
         continue;
       }
@@ -1150,7 +1147,7 @@ export class CommentManagerV2 {
           foundAnchors: anchors,
         });
 
-        reduxDispatch(updateCommentAction(comment.id, { isOrphaned }));
+        appStore.dispatch(updateCommentAction(comment.id, { isOrphaned }));
 
         // If newly orphaned, remove any remaining broken anchors
         if (isOrphaned) {

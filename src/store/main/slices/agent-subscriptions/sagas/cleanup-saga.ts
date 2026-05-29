@@ -16,12 +16,10 @@ import {
   evictDeletedAgent,
   removeAllSubscriptions,
   clearAgentQueue,
-} from "../agent-subscriptions-slice";
-import { selectWorkspaceSubscriptionState } from "../agent-subscriptions-selectors";
-import {
   requestEvictStaleAgents,
   requestValidateSubscriptions,
-} from "./saga-actions";
+} from "../agent-subscriptions-slice";
+import { selectWorkspaceSubscriptionState } from "../agent-subscriptions-selectors";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@
  * at compile time, and runtime validation added overhead with no consumers.
  */
 
-import { createAction } from "../../utils/create-action";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

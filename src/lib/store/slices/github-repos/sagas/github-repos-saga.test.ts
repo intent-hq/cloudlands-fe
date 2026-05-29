@@ -21,7 +21,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("../../../utils/selector-channel-effects", () => ({
+vi.mock("svelte-redux-toolkit/utils/sagas/selector-channel-effects", () => ({
   takeLatestFromSelector: vi.fn(function* (_selector: any, _worker: any) {
     void _selector;
     void _worker;

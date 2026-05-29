@@ -14,9 +14,9 @@
 
   import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
@@ -30,6 +30,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
 import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   type DisplayMode = 'full' | 'compact' | 'icon';
 
@@ -49,7 +50,6 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     onShow,
   }: Props = $props();
 
-  const dispatch = getDispatch();
   const activeWorkspace = selectActiveWorkspace();
 
   // Reactive agent session from Redux. The ensure saga dispatch below
@@ -63,7 +63,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   $effect(() => {
     const workspace = $activeWorkspace;
     if (!workspace?.id) return;
-    dispatch(ensureAgentSessionLoaded(String(workspace.id), agentId));
+    appStore.dispatch(ensureAgentSessionLoaded(String(workspace.id), agentId));
   });
 
   // Get line change stats
@@ -202,7 +202,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
             const openInAdjacentPanel = e.metaKey || e.ctrlKey;
             const wsId = $activeWorkspace?.id;
             if (wsId) {
-              getReduxStore().dispatch(
+              appStore.dispatch(
                 openAgentTabRequested(wsId, {
                   agentId: agentData.id,
                   sourcePanelId,

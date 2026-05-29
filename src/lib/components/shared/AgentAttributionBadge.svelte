@@ -11,7 +11,8 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { store as appStore } from '$lib/store/store';
+
 
   const logger = createLogger('AgentAttributionBadge');
 
@@ -46,9 +47,9 @@
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
     // First, open the agent in panel
-    const wsId = selectActiveWorkspaceId.select(getReduxStore().getState());
+    const wsId = selectActiveWorkspaceId.select(appStore.state);
     if (wsId) {
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openAgentTabRequested(wsId, {
           agentId: attribution.agentId,
           sourcePanelId,

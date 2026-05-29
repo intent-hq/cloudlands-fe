@@ -10,7 +10,7 @@
   import { identifyUser } from '$lib/services/analytics';
   import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$lib/store/slices/model/model-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { createLogger } from '$lib/utils/client-logger';
   import {
   MINIMUM_AUGGIE_VERSION,
@@ -33,9 +33,9 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fade } from 'svelte/transition';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('AuggieSetupGate');
-  const dispatch = getDispatch();
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
   // =============================================================================
@@ -392,7 +392,7 @@
           // Refresh models now that auggie is fully ready
           // This ensures fresh models are loaded from the newly installed/authenticated CLI
           logger.info('Auggie is ready, refreshing model list...');
-          dispatch(retryLoadModels());
+          appStore.dispatch(retryLoadModels());
         }
       } catch (err) {
         const message = (err as Error).message;

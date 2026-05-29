@@ -62,8 +62,8 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: { select: () => 'ws-1' },
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: vi.fn() }),
+vi.mock('$lib/store/store', () => ({
+  store: { state: {}, dispatch: vi.fn() },
 }));
 
 vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-slice', () => ({

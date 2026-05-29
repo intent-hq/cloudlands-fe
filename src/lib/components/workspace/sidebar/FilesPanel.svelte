@@ -9,8 +9,9 @@
   import { toast } from 'svelte-sonner';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import type { EnvironmentConfig } from '$shared/types';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('FilesPanel');
 
@@ -330,7 +331,7 @@
       // Refresh git status to show new files in Changes panel
       if (workspaceId) {
         gitCache.invalidate(`git-status-${workspaceId}`);
-        getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+        appStore.dispatch(loadGitStatus(workspaceId, true));
       }
     }
   }

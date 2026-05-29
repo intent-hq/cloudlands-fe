@@ -5,8 +5,8 @@
  * No saga needed — this is pure synchronous UI state.
  */
 
-import { createAction } from '../../utils/create-action';
-import { createReducer } from '../../utils/create-reducer';
+import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
 import type { OnboardingState, OnboardingStep, ProjectConfig, AgentStatus } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 

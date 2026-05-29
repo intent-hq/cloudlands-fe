@@ -7,7 +7,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { NotesPrimitivesSerializer } from '../notes-primitives-serializer';
+import { NotesPrimitivesSerializer } from '$lib/utils/notes-primitives-serializer';
 import type {
   ReferencePrimitive,
   CliPrimitive,

@@ -222,6 +222,52 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
   });
 });
 
+describe('ws.note.listTasks', () => {
+  let mockWM: any;
+  let tool: WorkspaceJsApiTool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWM = {
+      getNote: vi.fn(),
+      getWorkspace: vi.fn().mockResolvedValue(null),
+    };
+    tool = new WorkspaceJsApiTool('/tmp/test', 'ws-1', mockWM);
+  });
+
+  it('returns taskNoteId and backward-compatible linkedTaskNoteId for linked tasks', async () => {
+    mockWM.getNote.mockResolvedValue({
+      id: 'spec',
+      title: 'Spec',
+      content: '- [ ] [Fix it](intent://local/task/abc-123)\n- [/] Plain task',
+      tags: [],
+    });
+
+    const result = await tool.execute(
+      makeCall('return await ws.note.listTasks("spec")'),
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(getText(result));
+    expect(parsed).toEqual([
+      {
+        lineNumber: 1,
+        text: 'Fix it',
+        status: 'todo',
+        taskNoteId: 'abc-123',
+        linkedTaskNoteId: 'abc-123',
+      },
+      {
+        lineNumber: 2,
+        text: 'Plain task',
+        status: 'in-progress',
+        taskNoteId: null,
+        linkedTaskNoteId: null,
+      },
+    ]);
+  });
+});
+
 describe('ws.note.add', () => {
   let mockWM: any;
   let tool: WorkspaceJsApiTool;

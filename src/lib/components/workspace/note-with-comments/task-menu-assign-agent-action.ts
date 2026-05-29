@@ -9,7 +9,7 @@ import {
   addTaskAgentAssociation,
   removeTaskAgentAssociation,
 } from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
-import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+import { notesIpc } from '$lib/utils/notes-ipc';
 import { NOTES_CHANNELS } from '$shared/ipc/channels';
 import type { Workspace, Note, AgentSession } from '$shared/types';
 import {

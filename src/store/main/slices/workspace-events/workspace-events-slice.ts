@@ -18,8 +18,8 @@
  * - eventBroadcasted: Saga feedback — event was broadcast to renderer
  */
 
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 import {

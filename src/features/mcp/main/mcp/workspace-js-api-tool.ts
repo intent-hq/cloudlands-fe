@@ -56,7 +56,7 @@ const TOOL_DESCRIPTION = [
   '  ws.note.read(id) → { id, title, content, tags, ... }  // Read a note. Use id=`spec` for the workspace spec. Content has line numbers like `   1 | text`.',
   '  ws.note.create(title, content, tags?) → { id, title, content, tags }  // Create a new note. DO NOT use this for the spec: the spec already exists as note ID `spec`; edit or add to it instead.',
   '  ws.note.list(tag?) → [{ id, title, tags, ... }]  // List notes. Optional tag filter narrows results.',
-  '  ws.note.listTasks(id) → [{ text, status, linkedTaskNoteId, lineNumber, ... }]  // Faster than `read()` when you only need checkbox/task IDs.',
+  '  ws.note.listTasks(id) → [{ text, status, taskNoteId, linkedTaskNoteId, lineNumber, ... }]  // Faster than `read()` when you only need checkbox/task IDs. Use `taskNoteId` for delegation; `linkedTaskNoteId` is a backward-compatible alias.',
   '  ws.note.readAsset(asset) → { assetId, mimeType, data, sizeKb }  // `asset` can be an asset ID or `workspace-asset://...` URL. Image assets (PNG, JPEG, GIF, WebP) are returned as native image content blocks (the model sees the image directly); non-image assets return the JSON object.',
   '  ws.note.setContent(id, content, confirmReplacement?) → { ... }  // ⚠️ FULL REPLACEMENT: replaces the entire note. Prefer `add()` / `edit()` / `editLines()` unless you intentionally want to overwrite everything.',
   '    If the new content is much shorter, call again with `confirmReplacement=true`. ```task blocks auto-convert into linked task notes.```',
@@ -181,7 +181,7 @@ const TOOL_DESCRIPTION = [
   '',
   '  // N+1 pattern: list items, then batch-read details in one call',
   '  const tasks = await ws.note.listTasks("spec")',
-  '  const taskNoteIds = tasks.filter(t => t.linkedTaskNoteId).map(t => t.linkedTaskNoteId)',
+  '  const taskNoteIds = tasks.filter(t => t.taskNoteId).map(t => t.taskNoteId)',
   '  const taskNotes = await Promise.all(taskNoteIds.map(id => ws.task.getMyTask(id)))',
   '  return taskNotes.map(t => ({ id: t.noteId, title: t.title, status: t.status }))',
 ].join('\n');

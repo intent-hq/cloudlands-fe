@@ -70,11 +70,6 @@ vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', (
   selectSelections: () => readable([]),
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => vi.fn(),
-  getStoreContext: () => undefined,
-}));
-
 vi.mock('$lib/stores/additional-agents.store.svelte', () => ({
   additionalAgentsStore: {
     getEnabledProviderIds: () => ['auggie', 'codex'],
@@ -87,7 +82,6 @@ vi.mock('$lib/stores/specialists.store.svelte', () => ({
       specialistId === 'implementor' ? 'Implementor' : null,
   },
 }));
-
 
 const resolveCompatibleModelForProviderMock = vi.hoisted(() => vi.fn());
 
@@ -145,13 +139,15 @@ vi.mock('$features/agent/agent.client', () => ({
 const mockReduxState: { workspaceAgents: { byWorkspaceId: Record<string, any> } } = {
   workspaceAgents: { byWorkspaceId: {} },
 };
-const mockReduxDispatch = vi.fn();
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => mockReduxState,
+const mockReduxDispatch = vi.hoisted(() => vi.fn());
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => mockReduxState,
     dispatch: mockReduxDispatch,
-  }),
-}));
+  });
+});
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentSession: {
     select: (_state: any, agentId: string) => {

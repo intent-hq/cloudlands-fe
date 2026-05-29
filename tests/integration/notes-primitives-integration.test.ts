@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { NotesPrimitivesSerializer } from '../../src/features/notes/notes-primitives-serializer';
-import { ReferenceResolverService } from '../../src/features/notes/reference-resolver.service';
+import { NotesPrimitivesSerializer } from '../../src/lib/utils/notes-primitives-serializer';
+import { ReferenceResolverService } from '../../src/features/notes/main/reference-resolver.service';
 import type { NotePrimitive } from '../../src/shared/types/notes-primitives';
 import { v4 as uuidv4 } from 'uuid';
 

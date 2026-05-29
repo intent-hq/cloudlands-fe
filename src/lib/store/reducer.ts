@@ -2,7 +2,6 @@ import { providerSettingsReducer } from "./slices/provider-settings/provider-set
 import { backgroundAgentSettingsReducer } from "./slices/background-agent-settings/background-agent-settings-slice";
 import { externalEditorsReducer } from "./slices/external-editors/external-editors-slice";
 import { uiLayoutReducer } from "./slices/ui-layout/ui-layout-slice";
-import { storeUtilityReducer } from "./slices/store-utility/store-utility-slice";
 import { shortcutsCheatSheetReducer } from "./slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice";
 import { tabStateReducer } from "./slices/tab-state/tab-state-slice";
 import { terminalsReducer } from "./slices/terminals/terminals-slice";
@@ -75,7 +74,6 @@ export const reducers = {
   backgroundAgentSettings: backgroundAgentSettingsReducer,
   externalEditors: externalEditorsReducer,
   uiLayout: uiLayoutReducer,
-  storeUtility: storeUtilityReducer,
   shortcutsCheatSheet: shortcutsCheatSheetReducer,
   tabState: tabStateReducer,
   terminals: terminalsReducer,

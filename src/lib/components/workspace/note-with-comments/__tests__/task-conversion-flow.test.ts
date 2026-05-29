@@ -21,7 +21,6 @@ import {
 } from '$shared/types';
 
 const {
-  mockDispatch,
   mockInvoke,
   mockTrack,
   mockLogger,
@@ -31,6 +30,7 @@ const {
   resetNotes,
   replaceNotes,
   getNoteById,
+  mockSelectorStore,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -83,6 +83,19 @@ const {
     },
   });
 
+  const mockSelectorStore = {
+    createSelector: (selectorFunc: (...args: any[]) => any) => {
+      const readableSelector = Object.assign(() => constantReadable(undefined), {
+        select: (state: any, ...args: any[]) => selectorFunc(state, ...args),
+        effect: (...args: any[]) => selectorFunc({}, ...args),
+        withStore: () => constantReadable(undefined),
+      });
+      return readableSelector;
+    },
+    dispatch: mockDispatch,
+    state: {},
+  };
+
   return {
     mockDispatch,
     mockInvoke,
@@ -106,6 +119,7 @@ const {
     getNoteById(noteId: string) {
       return state.notesById[noteId];
     },
+    mockSelectorStore,
   };
 });
 
@@ -243,16 +257,14 @@ vi.mock('$lib/services/analytics', () => ({
   track: mockTrack,
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mockDispatch,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({}),
-  }),
-  getReduxDispatch: () => mockDispatch,
-  dispatch: mockDispatch,
+  return createStoreMockModule(mockSelectorStore);
+});
+
+vi.mock('$lib/store/configured-store', () => ({
+  store: mockSelectorStore,
 }));
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
@@ -337,7 +349,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToNote: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/sagas/notes-ipc', () => ({
+vi.mock('$lib/utils/notes-ipc', () => ({
   notesIpc: vi.fn(),
 }));
 

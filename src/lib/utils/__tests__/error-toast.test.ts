@@ -10,7 +10,7 @@ const {
   dismissMock,
   dispatchMock,
   generateReportMock,
-  getReduxStoreMock,
+  appStoreFactoryMock,
   selectCurrentWorkspaceMock,
   selectWorkspaceDefaultModelMock,
   toastCustomMock,
@@ -18,7 +18,7 @@ const {
   dismissMock: vi.fn(),
   dispatchMock: vi.fn(),
   generateReportMock: vi.fn(),
-  getReduxStoreMock: vi.fn(),
+  appStoreFactoryMock: vi.fn(),
   selectCurrentWorkspaceMock: vi.fn(),
   selectWorkspaceDefaultModelMock: vi.fn(),
   toastCustomMock: vi.fn(),
@@ -36,9 +36,14 @@ vi.mock('$lib/components/ui/toast/ErrorToast.svelte', () => ({
   default: 'ErrorToast',
 }));
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: getReduxStoreMock,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => appStoreFactoryMock()?.getState?.() ?? {},
+    dispatch: (...args: any[]) => appStoreFactoryMock()?.dispatch?.(...args),
+  });
+});
 
 vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
@@ -72,7 +77,7 @@ describe('showErrorToast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
-    getReduxStoreMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
+    appStoreFactoryMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
     selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
   });

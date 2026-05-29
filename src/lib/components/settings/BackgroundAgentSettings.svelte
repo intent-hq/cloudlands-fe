@@ -18,7 +18,7 @@
   selectHasOverride,
 } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   Dropdown,
   type DropdownOption,
@@ -26,8 +26,8 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const availableModels$ = selectAvailableModels();
   const defaultModel = selectBgDefaultModel();
   const typeOverrides$ = selectBgTypeOverrides();
@@ -62,7 +62,7 @@
 
     // Update store (convert sentinel value to empty string)
     const storeValue = value === USE_DEFAULT_VALUE ? '' : value;
-    dispatch(setTypeOverride({ type, model: storeValue }));
+    appStore.dispatch(setTypeOverride({ type, model: storeValue }));
   }
 
   // Model options for override dropdowns - includes "Use default" option
@@ -89,7 +89,7 @@
   <div class="shrink-0 w-72">
     <ModelPicker
       selectedModel={$defaultModel}
-      onModelChange={(model) => dispatch(setDefaultModel(model))}
+      onModelChange={(model) => appStore.dispatch(setDefaultModel(model))}
       showManageLink={false}
       showDefaultOption={false}
       variant="default"

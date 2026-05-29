@@ -32,7 +32,7 @@
   renameTerminal,
   type TerminalTab,
 } from '$lib/store/slices/terminals/terminals-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
   import SetupScriptBanner from './SetupScriptBanner.svelte';
@@ -56,7 +56,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectScriptEntries,
   selectScriptById,
@@ -84,6 +84,7 @@
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Header from '../ui/Header.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   // ============================================================================
   // Props & State
@@ -96,7 +97,6 @@
   let { workspaceId: propWorkspaceId }: Props = $props();
 
   // Store bindings
-  const dispatch = getDispatch();
   const isOpen = selectIsTerminalOverlayOpen();
   const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalId();
@@ -142,7 +142,7 @@
     isDetectingScripts = true;
     try {
       await scriptsClient.detect(workspaceId);
-      dispatch(refreshScripts(workspaceId));
+      appStore.dispatch(refreshScripts(workspaceId));
     } finally {
       isDetectingScripts = false;
     }
@@ -223,7 +223,7 @@
     else if (action === 'restart') await scriptsClient.restart(workspaceId, scriptId);
     else if (action === 'delete') {
       await scriptsClient.remove(workspaceId, scriptId);
-      dispatch(removeScript(workspaceId!, scriptId));
+      appStore.dispatch(removeScript(workspaceId!, scriptId));
       if (selectedScriptId === scriptId) selectedScriptId = null;
     }
   }
@@ -232,11 +232,11 @@
 
   const selectedScript = $derived.by(() => {
     void $scriptEntries$; // trigger reactivity on script state changes
-    return selectedScriptId ? selectScriptById.select(getReduxStore().getState(), selectedScriptId) : null;
+    return selectedScriptId ? selectScriptById.select(appStore.state, selectedScriptId) : null;
   });
   const selectedScriptRuntime = $derived.by(() => {
     void $scriptEntries$; // trigger reactivity on script state changes
-    return selectedScriptId ? selectScriptRuntime.select(getReduxStore().getState(), selectedScriptId) : null;
+    return selectedScriptId ? selectScriptRuntime.select(appStore.state, selectedScriptId) : null;
   });
 
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
@@ -267,7 +267,7 @@
       const trimmed = editedScriptName.trim();
       if (trimmed && trimmed !== selectedScript.name) {
         scriptsClient.update(workspaceId!, selectedScriptId, { name: trimmed });
-        dispatch(refreshScripts(workspaceId!));
+        appStore.dispatch(refreshScripts(workspaceId!));
       }
     }
     isEditingScriptName = false;
@@ -308,7 +308,7 @@
       if (editedScriptCommand !== selectedScript.command) updates.command = editedScriptCommand;
       if (Object.keys(updates).length > 0) {
         scriptsClient.update(workspaceId!, selectedScriptId, updates);
-        dispatch(refreshScripts(workspaceId!));
+        appStore.dispatch(refreshScripts(workspaceId!));
       }
     }
     showScriptEditPanel = false;
@@ -341,10 +341,10 @@
   // Initialize scripts store at overlay level (persists across panel open/close)
   $effect(() => {
     if (isRealWorkspace && workspaceId) {
-      untrack(() => dispatch(initializeScripts(workspaceId)));
+      untrack(() => appStore.dispatch(initializeScripts(workspaceId)));
     }
     return () => {
-      if (isRealWorkspace && workspaceId) dispatch(disposeScripts(workspaceId));
+      if (isRealWorkspace && workspaceId) appStore.dispatch(disposeScripts(workspaceId));
     };
   });
 
@@ -440,7 +440,7 @@
 
   function finishEditing() {
     if (editingTerminalId && workspaceId) {
-      dispatch(renameTerminal(workspaceId, editingTerminalId, editingValue));
+      appStore.dispatch(renameTerminal(workspaceId, editingTerminalId, editingValue));
       editingTerminalId = null;
       editingValue = '';
     }
@@ -469,7 +469,7 @@
       scriptsClient.update(workspaceId!, editingScriptTabId, {
         name: editingScriptTabValue.trim(),
       });
-      dispatch(refreshScripts(workspaceId!));
+      appStore.dispatch(refreshScripts(workspaceId!));
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';
@@ -504,7 +504,7 @@
 
   function finishEditingHeaderName() {
     if (isEditingHeaderName && $activeTerminalId && workspaceId) {
-      dispatch(renameTerminal(workspaceId, $activeTerminalId, headerEditValue));
+      appStore.dispatch(renameTerminal(workspaceId, $activeTerminalId, headerEditValue));
     }
     isEditingHeaderName = false;
     headerEditValue = '';
@@ -542,12 +542,12 @@
   // ============================================================================
 
   function handleClose() {
-    if (workspaceId) dispatch(closeTerminalOverlay(workspaceId));
+    if (workspaceId) appStore.dispatch(closeTerminalOverlay(workspaceId));
   }
 
   function handleOpen() {
     if (workspaceId) {
-      dispatch(openTerminalOverlay(workspaceId));
+      appStore.dispatch(openTerminalOverlay(workspaceId));
     }
   }
 
@@ -557,9 +557,9 @@
     if (!workspaceId) return;
     const newId = `terminal-${Date.now()}`;
     selectedScriptId = null;
-    dispatch(addTerminal(workspaceId, newId, `Terminal ${$terminals.length + 1}`));
+    appStore.dispatch(addTerminal(workspaceId, newId, `Terminal ${$terminals.length + 1}`));
     if (!$isOpen) {
-      dispatch(openTerminalOverlay(workspaceId, newId));
+      appStore.dispatch(openTerminalOverlay(workspaceId, newId));
     }
     track('Opened Terminal', { workspace_id: workspaceId, source: 'bottom-bar' });
     // Focus the overlay container immediately so keyboard shortcuts
@@ -571,7 +571,7 @@
 
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
-    if (workspaceId) dispatch(removeTerminal(workspaceId, termId));
+    if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, termId));
     terminalManager.disposeTerminal(termId);
   }
 
@@ -600,9 +600,9 @@
         handleClose();
       } else {
         if (workspaceId) {
-          dispatch(selectTerminal(workspaceId, termId));
+          appStore.dispatch(selectTerminal(workspaceId, termId));
           if (!$isOpen) {
-            dispatch(openTerminalOverlay(workspaceId, termId));
+            appStore.dispatch(openTerminalOverlay(workspaceId, termId));
           }
         }
       }
@@ -623,7 +623,7 @@
     if (!$activeTerminalId || $terminals.length <= 1 || !workspaceId) return;
     const currentIndex = $terminals.findIndex((t: TerminalTab) => t.id === $activeTerminalId);
     const nextIndex = (currentIndex + direction + $terminals.length) % $terminals.length;
-    dispatch(selectTerminal(workspaceId, $terminals[nextIndex].id));
+    appStore.dispatch(selectTerminal(workspaceId, $terminals[nextIndex].id));
   }
 
   // ============================================================================
@@ -643,7 +643,7 @@
     if (!isResizing) return;
     const windowHeight = window.innerHeight;
     const newHeight = ((windowHeight - event.clientY) / windowHeight) * 100;
-    dispatch(setTerminalOverlayHeight(newHeight));
+    appStore.dispatch(setTerminalOverlayHeight(newHeight));
   }
 
   function stopResize() {
@@ -969,7 +969,7 @@
               onSelectScript={(id) => (selectedScriptId = id)}
               onSelectTerminal={(id) => {
                 selectedScriptId = null;
-                if (workspaceId) dispatch(selectTerminal(workspaceId, id));
+                if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
               }}
               onCreateTerminal={createNewTerminal}
             />
@@ -1058,7 +1058,7 @@
               } else {
                 selectedScriptId = script.id;
                 if (!$isOpen && workspaceId) {
-                  dispatch(openTerminalOverlay(workspaceId));
+                  appStore.dispatch(openTerminalOverlay(workspaceId));
                 }
               }
             }}
@@ -1163,8 +1163,8 @@
                   handleClose();
                 } else if (workspaceId) {
                   if ($terminals.length === 0) createNewTerminal();
-                  dispatch(openTerminalOverlay(workspaceId));
-                  const entries = selectScriptEntries.select(getReduxStore().getState());
+                  appStore.dispatch(openTerminalOverlay(workspaceId));
+                  const entries = selectScriptEntries.select(appStore.state);
                   if (entries.length > 0 && !selectedScriptId) {
                     selectedScriptId = entries[0].id;
                   }
@@ -1199,7 +1199,7 @@
                       onclick={() => {
                         selectedScriptId = script.id;
                         if (!$isOpen && workspaceId) {
-                          dispatch(openTerminalOverlay(workspaceId));
+                          appStore.dispatch(openTerminalOverlay(workspaceId));
                         }
                       }}
                       actions={getScriptActions(script)}

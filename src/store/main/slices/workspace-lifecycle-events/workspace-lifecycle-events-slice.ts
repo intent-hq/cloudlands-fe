@@ -5,7 +5,7 @@
  * Actions: workspace:created/updated/deleting/deleted/archived/file-changes
  */
 
-import { createAction } from "../../utils/create-action";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

@@ -48,12 +48,13 @@
 } from './types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import type { Workspace } from '$shared/types';
   import StartNewWorkspaceSection from './StartNewWorkspaceSection.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import type { WorkspaceId } from '$shared/types/branded-ids';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -303,7 +304,7 @@
     if (!group.agentId) return 'Manual Changes';
 
     // Try to find the session by ID first
-    const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+    const sessions = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
@@ -335,7 +336,7 @@
 
     // If it doesn't look like a UUID, try to find the agent by name
     if (!isUUID) {
-      const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+      const sessions = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
       const matchingAgent = sessions.find((s) => s.name === agentIdOrName);
       if (matchingAgent) {
         // Handle both string IDs and object IDs (e.g., Proxy objects)
@@ -350,7 +351,7 @@
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-    getReduxStore().dispatch(
+    appStore.dispatch(
       openAgentTabRequested(workspaceId, {
         agentId: resolvedAgentId,
         sourcePanelId,

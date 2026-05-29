@@ -1,6 +1,6 @@
-import { createAction } from '../../utils/create-action';
-import { createReducer } from '../../utils/create-reducer';
-import type { StoreActionCreator } from '../../types';
+import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+import type { StoreActionCreator } from 'svelte-redux-toolkit/types';
 import type {
   ChatAgentState,
   ChatStateSlice,
@@ -182,7 +182,12 @@ export const chatInitFailed =
 /** Begin sending a message — sets processing/streaming flags */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
-  (agentId: string, wsId: string) => ({ agentId, wsId, timestamp: Date.now() }),
+  (agentId: string, wsId?: string, timestamp = Date.now()) => ({
+    agentId,
+    wsId,
+    timestamp,
+    timestampIso: new Date(timestamp).toISOString(),
+  }),
 );
 
 /** Send failed (activation or network error) */

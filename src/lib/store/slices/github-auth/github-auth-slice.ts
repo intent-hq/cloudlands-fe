@@ -1,6 +1,6 @@
 import type { GitHubUser } from "$features/github-auth/types";
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import type { GitHubAuthState } from "./github-auth-types";
 
 // ============================================================================

@@ -9,7 +9,8 @@
   type ResizablePanelGroupLayoutState,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
   import { selectResizablePanelGroupLayout } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   interface Panel {
     id: string;
@@ -34,7 +35,6 @@
     children?: any;
   } = $props();
 
-  const dispatch = getDispatch();
   const persistedLayout = selectResizablePanelGroupLayout(storageKey ?? '');
 
   function isPersistedLayoutCompatible(): boolean {
@@ -112,7 +112,7 @@
 
   function savePanelSizes() {
     if (storageKey) {
-      dispatch(setResizablePanelGroupLayout(storageKey, {
+      appStore.dispatch(setResizablePanelGroupLayout(storageKey, {
         sizes: [...panelSizes],
         collapsed: Array.from(collapsedPanels),
       }));
@@ -357,7 +357,7 @@
   // Initialize on mount
   onMount(() => {
     if (storageKey) {
-      dispatch(requestResizablePanelGroupLayout(storageKey));
+      appStore.dispatch(requestResizablePanelGroupLayout(storageKey));
     }
     initializePanelSizes();
     // Set up resize observer

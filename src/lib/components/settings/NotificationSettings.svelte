@@ -21,18 +21,18 @@
   setSoundOnlyWhenUnfocused,
   setVolume,
 } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
+  import { store as appStore } from '$lib/store/store';
 
   const notificationEnabled = selectNotificationEnabled();
   const soundEnabled = selectSoundEnabled();
   const soundOnlyWhenUnfocused = selectSoundOnlyWhenUnfocused();
   const notificationVolume = selectNotificationVolume();
-  const dispatch = getDispatch();
 
   let testSoundLoading = $state(false);
 
@@ -51,7 +51,7 @@
     const target = e.target as HTMLInputElement;
     const percentage = parseInt(target.value, 10);
     const normalized = percentage / 100;
-    dispatch(setVolume(normalized));
+    appStore.dispatch(setVolume(normalized));
   }
 
   // Derive volume percentage from store (0-1 to 0-100)
@@ -67,7 +67,7 @@
     </div>
     <Toggle
       pressed={$notificationEnabled}
-      onclick={() => dispatch(setNotificationEnabled(!$notificationEnabled))}
+      onclick={() => appStore.dispatch(setNotificationEnabled(!$notificationEnabled))}
       variant="indicator"
       size="xs"
       class="mb-auto"
@@ -82,7 +82,7 @@
     </div>
     <Toggle
       pressed={$soundEnabled}
-      onclick={() => dispatch(setSoundEnabled(!$soundEnabled))}
+      onclick={() => appStore.dispatch(setSoundEnabled(!$soundEnabled))}
       variant="indicator"
       size="xs"
       class="mb-auto"
@@ -97,7 +97,7 @@
     </div>
     <Toggle
       pressed={$soundOnlyWhenUnfocused}
-      onclick={() => dispatch(setSoundOnlyWhenUnfocused(!$soundOnlyWhenUnfocused))}
+      onclick={() => appStore.dispatch(setSoundOnlyWhenUnfocused(!$soundOnlyWhenUnfocused))}
       variant="indicator"
       size="xs"
       class="mb-auto"

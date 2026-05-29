@@ -9,8 +9,8 @@ import {
   call,
   takeEvery,
 } from "typed-redux-saga";
+import type { StoreAction } from "svelte-redux-toolkit/types";
 import type { DomainEvent } from "../../../../../features/events/types";
-import type { MainStoreAction } from "../../../utils/create-action";
 import {
   broadcastDomainEvent,
   broadcastDomainEventToStdio,
@@ -33,11 +33,11 @@ for (const [domainEvent, entry] of Object.entries(AGENT_EVENT_ACTION_MAP)) {
 // Broadcast handler
 // ---------------------------------------------------------------------------
 
-function* handleBroadcast(action: MainStoreAction<any>) {
+function* handleBroadcast(action: StoreAction<[unknown]>) {
   const ipcChannel = ACTION_TYPE_TO_IPC[action.type];
   if (!ipcChannel) return;
 
-  const [data] = action.payload as [unknown];
+  const [data] = action.payload;
   yield* call(broadcastDomainEvent, ipcChannel, data, false);
   yield* call(broadcastDomainEventToStdio, ipcChannel, data);
 }

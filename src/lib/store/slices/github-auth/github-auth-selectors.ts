@@ -1,34 +1,34 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 
-export const selectGitHubAuthIsAuthenticated = createSelector(
+export const selectGitHubAuthIsAuthenticated = store.createSelector(
   (state) => state.githubAuth.isAuthenticated,
 );
 
-export const selectGitHubAuthRequiresAugmentAuth = createSelector(
+export const selectGitHubAuthRequiresAugmentAuth = store.createSelector(
   (state) => state.githubAuth.requiresAugmentAuth,
 );
 
-export const selectGitHubAuthUser = createSelector(
+export const selectGitHubAuthUser = store.createSelector(
   (state) => state.githubAuth.user,
 );
 
-export const selectGitHubAuthIsAuthenticating = createSelector(
+export const selectGitHubAuthIsAuthenticating = store.createSelector(
   (state) => state.githubAuth.isAuthenticating,
 );
 
-export const selectGitHubAuthOauthUrl = createSelector(
+export const selectGitHubAuthOauthUrl = store.createSelector(
   (state) => state.githubAuth.oauthUrl,
 );
 
-export const selectGitHubAuthNeedsScopeUpdate = createSelector(
+export const selectGitHubAuthNeedsScopeUpdate = store.createSelector(
   (state) => state.githubAuth.needsScopeUpdate,
 );
 
-export const selectGitHubAuthError = createSelector(
+export const selectGitHubAuthError = store.createSelector(
   (state) => state.githubAuth.error,
 );
 
-export const selectGitHubAuthState = createSelector(
+export const selectGitHubAuthState = store.createSelector(
   (state) => state.githubAuth,
 );
 

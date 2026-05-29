@@ -25,10 +25,11 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { resetWorkspaceState } from '$lib/store/slices/workspace/workspace-slice';
+  import { store as appStore } from '$lib/store/store';
 
   let flags: DebugFlags = $state(debugConfig.getAll());
   let isOpen = $state(false);
@@ -142,7 +143,7 @@
       }
 
       // Reset workspace store to clear simulated workspace
-      getReduxStore().dispatch(resetWorkspaceState());
+      appStore.dispatch(resetWorkspaceState());
 
       // Clear any workspace selection that might cause redirect
       sessionStorage.removeItem('last-workspace-id');
@@ -195,7 +196,7 @@
 
       // Reset the workspace store to prevent components from using the old workspace
       // This ensures components will wait for the simulated workspace to be set
-      getReduxStore().dispatch(resetWorkspaceState());
+      appStore.dispatch(resetWorkspaceState());
 
       // Navigate directly to the simulated workspace
       goto(`/workspace/${simulatedWorkspaceId}`)
@@ -214,14 +215,14 @@
 
   // Load available agents from the unified state store
   function loadAvailableAgents() {
-    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    const workspace = selectActiveWorkspace.select(appStore.state);
     if (!workspace?.id) {
       availableAgents = [];
       return;
     }
 
     // Get agents from Redux store
-    const sessions = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspace.id);
+    const sessions = selectAllWorkspaceAgents.select(appStore.state, workspace.id);
     availableAgents = sessions.map((s) => ({
       id: s.id,
       name: s.name || 'Unnamed Agent',
@@ -241,7 +242,7 @@
 
   // Trigger backend-initiated resume
   async function triggerBackendResume() {
-    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    const workspace = selectActiveWorkspace.select(appStore.state);
     if (!workspace?.id || !selectedAgentId) {
       backendResumeError = 'No space or agent selected';
       backendResumeStatus = 'error';

@@ -226,7 +226,7 @@
   import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
@@ -262,6 +262,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   import { selectAgentFileRefreshes } from '$lib/store/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
+  import { store as appStore } from '$lib/store/store';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -360,7 +361,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   function getStoredViewedFilesRecord() {
     const workspaceId = $activeWorkspaceId;
     if (!workspaceId) return {};
-    return selectViewedFiles.select(getReduxStore().getState(), workspaceId);
+    return selectViewedFiles.select(appStore.state, workspaceId);
   }
 
   /**
@@ -1560,7 +1561,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
         }
       : undefined;
     if (!diffChange) return;
-    getReduxStore().dispatch(
+    appStore.dispatch(
       openWorkspaceDiff(wsId, diffChange as unknown as TrackedChange, {
         changeId: `chat-change-${filePath}`,
         filePath,
@@ -1580,7 +1581,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
-    getReduxStore().dispatch(
+    appStore.dispatch(
       openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
     );
   }
@@ -1734,7 +1735,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (result.ok) {
       toast.success('Hunk staged');
       gitCache.invalidateWorkspace(workspaceId);
-      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+      appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
       await refreshFileDiff(filePath);
       // Restore scroll position
@@ -1770,7 +1771,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (result.ok) {
       toast.success('Hunk unstaged');
       gitCache.invalidateWorkspace(workspaceId);
-      getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+      appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
       await refreshFileDiff(filePath);
       // Restore scroll position
@@ -1788,7 +1789,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   function handleOpenCommit(commitHash: string) {
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
-    getReduxStore().dispatch(openWorkspaceCommitChangeset(wsId, commitHash));
+    appStore.dispatch(openWorkspaceCommitChangeset(wsId, commitHash));
   }
 
   function toggleFile(expandKey: string) {
@@ -1908,7 +1909,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       for (const fp of newViewed) {
         newStoredViewed[fp] = getCommitFingerprint(fp);
       }
-      getReduxStore().dispatch(setViewedFiles($activeWorkspaceId, newStoredViewed));
+      appStore.dispatch(setViewedFiles($activeWorkspaceId, newStoredViewed));
     }
   }
 
@@ -2709,7 +2710,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
           <div class="flex items-center gap-2.5 min-w-0">
             {#if commitInfo?.agentId || agentId}
               {@const displayAgentId = commitInfo?.agentId || agentId}
-              {@const ccpState = getReduxStore().getState()}
+              {@const ccpState = appStore.state}
               {@const currentWsId = selectActiveWorkspaceId.select(ccpState)}
               {@const agentSession = displayAgentId && currentWsId
                 ? selectAgentSession.select(ccpState, displayAgentId)
@@ -2731,7 +2732,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
               </button>
             {/if}
             {#if commitInfo?.linkedNoteId && onOpenNote}
-              {@const linkedNote = selectNoteById.select(getReduxStore().getState(), $activeWorkspaceId ?? '', commitInfo.linkedNoteId)}
+              {@const linkedNote = selectNoteById.select(appStore.state, $activeWorkspaceId ?? '', commitInfo.linkedNoteId)}
               {@const noteName = linkedNote?.title || 'Note'}
               <button
                 type="button"

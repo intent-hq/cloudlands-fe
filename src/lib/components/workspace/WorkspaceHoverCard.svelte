@@ -23,9 +23,10 @@
 } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
   import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
+
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspace: Workspace | null;
@@ -44,7 +45,6 @@
     loadAgentSessions = true,
   }: Props = $props();
 
-  const dispatch = getDispatch();
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
@@ -300,7 +300,7 @@
   let unreadAgentIds = $derived.by(() => {
     void $unreadAgentIds$; // triggers re-evaluation on unread state changes
     return workspace
-      ? selectUnreadAgentIdsForWorkspace.select(getReduxStore().getState(), workspace.id)
+      ? selectUnreadAgentIdsForWorkspace.select(appStore.state, workspace.id)
       : [];
   });
 
@@ -367,7 +367,7 @@
     const workspaceId = workspace?.id;
     if (!loadAgentSessions || !workspaceId) return;
     for (const agent of runningAgents.slice(0, 3)) {
-      dispatch(ensureAgentSessionLoaded(String(workspaceId), agent.id));
+      appStore.dispatch(ensureAgentSessionLoaded(String(workspaceId), agent.id));
     }
   });
 

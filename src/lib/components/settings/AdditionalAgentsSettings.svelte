@@ -2,10 +2,10 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectEnabledProviders } from '$lib/store/slices/provider-settings/provider-settings-selectors';
   import { toggleProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { ACP_PROVIDERS } from '$shared/config/provider-config';
 
-  const dispatch = getDispatch();
+  import { ACP_PROVIDERS } from '$shared/config/provider-config';
+  import { store as appStore } from '$lib/store/store';
+
   const enabledProviders$ = selectEnabledProviders();
 
   // Get providers that can be toggled (those marked as canBeDisabled)
@@ -33,7 +33,7 @@
         </div>
         <Toggle
           pressed={$enabledProviders$[provider.id] === true}
-          onclick={() => dispatch(toggleProvider(provider.id))}
+          onclick={() => appStore.dispatch(toggleProvider(provider.id))}
           variant="indicator"
           size="xs"
         />

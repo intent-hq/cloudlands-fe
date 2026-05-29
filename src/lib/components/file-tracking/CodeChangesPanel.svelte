@@ -30,10 +30,7 @@
   loadWorkspaceDataRequested,
 } from '$lib/store/slices/changes/changes-slice';
 
-  import {
-  dispatch as reduxDispatch,
-  getReduxStore,
-} from '$lib/store/redux-dispatch-bridge';
+
   import {
   openWorkspaceAcceptChanges,
   openWorkspaceDiff,
@@ -55,7 +52,8 @@
   import { Switch } from '../ui/switch';
   import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
 
   interface Props {
@@ -96,7 +94,6 @@
   let stagedCollapsed = $state(false);
 
   // Auto-commit settings from Redux
-  const dispatch = getDispatch();
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceId ?? "");
 
   // Get working changes from FileTrackingStore - the single source of truth
@@ -129,7 +126,7 @@
     }, 150); // Only show loading if operation takes more than 150ms
 
     try {
-      getReduxStore().dispatch(loadGitStatus(wsId));
+      appStore.dispatch(loadGitStatus(wsId));
     } finally {
       clearTimeout(loadingTimer);
       if (shouldShowLoading || localIsLoading) {
@@ -168,10 +165,10 @@
       // Force refresh both git status and file tracking in parallel
       const refreshPromises = Promise.all([
         new Promise<void>((resolve) => {
-          getReduxStore().dispatch(loadGitStatus(workspaceId, true));
+          appStore.dispatch(loadGitStatus(workspaceId, true));
           resolve();
         }),
-        workspaceId ? (getReduxStore().dispatch(loadWorkspaceDataRequested(workspaceId)), Promise.resolve()) : Promise.resolve(), // reload file tracking data
+        workspaceId ? (appStore.dispatch(loadWorkspaceDataRequested(workspaceId)), Promise.resolve()) : Promise.resolve(), // reload file tracking data
       ]);
 
       // Set a timeout for the refresh operation - use resolve, not reject
@@ -219,7 +216,7 @@
     });
 
     // Open diff view in main panel
-    reduxDispatch(ftSetMainPanelView({
+    appStore.dispatch(ftSetMainPanelView({
       type: 'diff',
       change,
     }));
@@ -228,7 +225,7 @@
 
     const filePath = change.file || change.relativePath;
     if (workspaceId) {
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openWorkspaceDiff(workspaceId, change, {
           filePath,
           changeId: change.id,
@@ -246,7 +243,7 @@
     // The store handles optimistic updates and background syncing
     // Pass the UI change so the store can create it if it's a synthetic ID
     try {
-      if (workspaceId) getReduxStore().dispatch(stageChangesRequested(workspaceId, [change.id], [change]));
+      if (workspaceId) appStore.dispatch(stageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
       logger.error('[handleStageChange] Failed to stage file', error as Error);
     }
@@ -257,7 +254,7 @@
     // The store handles optimistic updates and background syncing
     // Pass the UI change so the store can create it if it's a synthetic ID
     try {
-      if (workspaceId) getReduxStore().dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
+      if (workspaceId) appStore.dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
       logger.error('[handleUnstageChange] Failed to unstage file', error as Error);
     }
@@ -270,7 +267,7 @@
       // Stage all changes using the store (handles optimistic updates)
       // Pass the UI changes so the store can create them if they're synthetic IDs
       const changeIds = unstagedChanges.map((c) => c.id);
-      if (workspaceId) getReduxStore().dispatch(stageChangesRequested(workspaceId, changeIds, unstagedChanges));
+      if (workspaceId) appStore.dispatch(stageChangesRequested(workspaceId, changeIds, unstagedChanges));
     } catch (error) {
       logger.error('[handleStageAll] Failed to stage all files', error as Error);
     }
@@ -283,7 +280,7 @@
       // Unstage all changes using the store (handles optimistic updates)
       // Pass the UI changes so the store can create them if they're synthetic IDs
       const changeIds = stagedChanges.map((c) => c.id);
-      if (workspaceId) getReduxStore().dispatch(unstageChangesRequested(workspaceId, changeIds, stagedChanges));
+      if (workspaceId) appStore.dispatch(unstageChangesRequested(workspaceId, changeIds, stagedChanges));
     } catch (error) {
       logger.error('[handleUnstageAll] Failed to unstage all files', error as Error);
     }
@@ -303,15 +300,15 @@
 
     if (!workspaceId) return;
     // Dispatch revert action - saga handles optimistic update + rollback on failure
-    getReduxStore().dispatch(revertChangeRequested(workspaceId, change));
+    appStore.dispatch(revertChangeRequested(workspaceId, change));
   }
 
   function handleOpenAcceptChanges() {
     // Open the accept changes panel in the main panel
-    reduxDispatch(ftSetMainPanelView({ type: 'accept-changes' }));
+    appStore.dispatch(ftSetMainPanelView({ type: 'accept-changes' }));
 
     if (workspaceId) {
-      getReduxStore().dispatch(openWorkspaceAcceptChanges(workspaceId));
+      appStore.dispatch(openWorkspaceAcceptChanges(workspaceId));
     }
     logger.info('[CodeChangesPanel] Opened accept changes panel');
   }
@@ -404,7 +401,7 @@
           checked={$autoCommitEnabled}
           onCheckedChange={(checked) => {
             if (workspaceId) {
-              dispatch(setAutoCommitEnabled(workspaceId, checked));
+              appStore.dispatch(setAutoCommitEnabled(workspaceId, checked));
             }
           }}
         />
@@ -547,7 +544,7 @@
                   );
 
                   // Set the main panel view to show this commit
-                  reduxDispatch(ftSetMainPanelView({
+                  appStore.dispatch(ftSetMainPanelView({
                     type: 'commit',
                     commit,
                     change: commitChanges[0], // Pass first change for context

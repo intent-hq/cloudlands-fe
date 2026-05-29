@@ -1,5 +1,5 @@
+import { store } from "../../store";
 import { type StoreState } from "$lib/store/types";
-import { createSelector } from "../../utils/create-selector";
 import {
   emptyWorkspaceState,
   type TerminalTab,
@@ -7,7 +7,7 @@ import {
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 function getActiveWs(state: StoreState) {
   const wsId = state.workspace.activeWorkspaceId;
@@ -23,57 +23,57 @@ function isSetupTerminal(terminal: TerminalTab): boolean {
   return (terminal.customName || terminal.name) === 'Setup';
 }
 
-export const selectIsTerminalOverlayOpen = createSelector((state) => {
+export const selectIsTerminalOverlayOpen = store.createSelector((state) => {
   return getActiveWs(state).isOpen;
 });
 
-export const selectTerminalOverlayHeight = createSelector((state) => {
+export const selectTerminalOverlayHeight = store.createSelector((state) => {
   return state.terminals.height;
 });
 
-export const selectActiveTerminalId = createSelector((state) => {
+export const selectActiveTerminalId = store.createSelector((state) => {
   return getActiveWs(state).activeTerminalId;
 });
 
-export const selectTerminals = createSelector((state) => {
+export const selectTerminals = store.createSelector((state) => {
   return getItems(getActiveWs(state).terminals);
 });
 
-export const selectIsTerminalOverlayOpenForWorkspace = createSelector((state, wsId: string) => {
+export const selectIsTerminalOverlayOpenForWorkspace = store.createSelector((state, wsId: string) => {
   return getWsById(state, wsId).isOpen;
 });
 
-export const selectActiveTerminalIdForWorkspace = createSelector((state, wsId: string) => {
+export const selectActiveTerminalIdForWorkspace = store.createSelector((state, wsId: string) => {
   return getWsById(state, wsId).activeTerminalId;
 });
 
-export const selectTerminalsForWorkspace = createSelector((state, wsId: string) => {
+export const selectTerminalsForWorkspace = store.createSelector((state, wsId: string) => {
   return getItems(getWsById(state, wsId).terminals);
 });
 
-export const selectWorkspaceSetupTerminal = createSelector((state, wsId: string) => {
+export const selectWorkspaceSetupTerminal = store.createSelector((state, wsId: string) => {
   return getItems(getWsById(state, wsId).terminals).find(isSetupTerminal);
 });
 
-export const selectWorkspaceHasSetupTerminal = createSelector((state, wsId: string) => {
+export const selectWorkspaceHasSetupTerminal = store.createSelector((state, wsId: string) => {
   return selectWorkspaceSetupTerminal.select(state, wsId) !== undefined;
 });
 
 /** Select only user-created terminals, filtering out agent terminals (IDs starting with "agent-") */
-export const selectUserTerminals = createSelector((state) => {
+export const selectUserTerminals = store.createSelector((state) => {
   return getItems(getActiveWs(state).terminals).filter(
     (terminal) => !terminal.id.startsWith("agent-")
   );
 });
 
 /** Select workspace terminal state by workspace ID (parameterized) */
-export const selectWorkspaceTerminalState = createSelector(
+export const selectWorkspaceTerminalState = store.createSelector(
   (state, wsId: string) => {
     return state.terminals.workspaces[wsId] || emptyWorkspaceState;
   }
 );
 
-export const selectTerminalDisplayName = createSelector(
+export const selectTerminalDisplayName = store.createSelector(
   (state, termId: string): string => {
     const ws = getActiveWs(state);
     const term = getItem(ws.terminals, termId);
@@ -82,28 +82,28 @@ export const selectTerminalDisplayName = createSelector(
   }
 );
 
-export const selectTerminalsLoaded = createSelector((state, wsId: string) => {
+export const selectTerminalsLoaded = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   return ws.terminalsLoaded;
 });
 
-export const selectIsLoadingTerminals = createSelector((state, wsId: string) => {
+export const selectIsLoadingTerminals = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   return ws.isLoadingTerminals;
 });
 
-export const selectRecentlyCreatedTerminals = createSelector((state, wsId: string) => {
+export const selectRecentlyCreatedTerminals = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   return ws.recentlyCreatedTerminals;
 });
 
-export const selectLoadedWorkspaceTerminals = createSelector((state, wsId: string) => {
+export const selectLoadedWorkspaceTerminals = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   if (!ws.terminalsLoaded) return [];
   return getItems(ws.terminals);
 });
 
-export const selectIsTerminalRecentlyCreated = createSelector(
+export const selectIsTerminalRecentlyCreated = store.createSelector(
   (state, wsId: string, terminalId: string) => {
     const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
     return ws.recentlyCreatedTerminals.includes(terminalId);

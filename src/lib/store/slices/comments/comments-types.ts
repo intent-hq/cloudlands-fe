@@ -4,7 +4,7 @@
  * Safe to import from any process (no renderer-only dependencies).
  */
 
-import type { Collection } from "../../utils/collection-utils";
+import type { Collection } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 
 export type { CommentV2 };

@@ -1,42 +1,42 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 
-export const selectAutoUpdateStatus = createSelector((state) => state.autoUpdate.status);
+export const selectAutoUpdateStatus = store.createSelector((state) => state.autoUpdate.status);
 
-export const selectAutoUpdateCurrentVersion = createSelector(
+export const selectAutoUpdateCurrentVersion = store.createSelector(
   (state) => state.autoUpdate.currentVersion,
 );
 
-export const selectAutoUpdateInfo = createSelector((state) => state.autoUpdate.updateInfo);
+export const selectAutoUpdateInfo = store.createSelector((state) => state.autoUpdate.updateInfo);
 
-export const selectAutoUpdateProgress = createSelector((state) => state.autoUpdate.progress);
+export const selectAutoUpdateProgress = store.createSelector((state) => state.autoUpdate.progress);
 
-export const selectAutoUpdateError = createSelector((state) => state.autoUpdate.error);
+export const selectAutoUpdateError = store.createSelector((state) => state.autoUpdate.error);
 
-export const selectAutoUpdateChannel = createSelector((state) => state.autoUpdate.channel);
+export const selectAutoUpdateChannel = store.createSelector((state) => state.autoUpdate.channel);
 
-export const selectAutoUpdateToastVisible = createSelector(
+export const selectAutoUpdateToastVisible = store.createSelector(
   (state) => state.autoUpdate.toastVisible,
 );
 
-export const selectAutoUpdateDismissedAt = createSelector(
+export const selectAutoUpdateDismissedAt = store.createSelector(
   (state) => state.autoUpdate.downloadedToastDismissedAt,
 );
 
-export const selectIsUpdateAvailable = createSelector(
+export const selectIsUpdateAvailable = store.createSelector(
   (state) => state.autoUpdate.status === "available",
 );
 
-export const selectIsDownloading = createSelector(
+export const selectIsDownloading = store.createSelector(
   (state) => state.autoUpdate.status === "downloading",
 );
 
-export const selectIsReadyToInstall = createSelector(
+export const selectIsReadyToInstall = store.createSelector(
   (state) => state.autoUpdate.status === "downloaded",
 );
 
-export const selectIsChecking = createSelector(
+export const selectIsChecking = store.createSelector(
   (state) => state.autoUpdate.status === "checking",
 );
 
-export const selectHasError = createSelector((state) => state.autoUpdate.status === "error");
+export const selectHasError = store.createSelector((state) => state.autoUpdate.status === "error");
 

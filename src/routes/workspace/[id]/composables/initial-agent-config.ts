@@ -6,7 +6,7 @@
  * and ensures Redux is hydrated accordingly.
  */
 
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { store as appStore } from '$lib/store/store';
 import { selectInitialAgentConfig } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
 import { setInitialAgentConfig } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 
@@ -23,7 +23,7 @@ export function hydrateInitialAgentConfig(
   wsId: string,
   dispatch: (action: any) => void,
 ): boolean {
-  const pendingConfig = selectInitialAgentConfig.select(getReduxStore().getState(), wsId);
+  const pendingConfig = selectInitialAgentConfig.select(appStore.state, wsId);
   const pendingAgentKey = `workspace:${wsId}:initial-agent-pending`;
   const sessionData = sessionStorage.getItem(pendingAgentKey);
   const hasInitialAgent = !!pendingConfig || !!sessionData;

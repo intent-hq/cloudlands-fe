@@ -9,10 +9,10 @@ import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selec
 import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
+import { store as appStore } from '$lib/store/store';
 
 const APP_NAME = 'Intent';
 
@@ -52,7 +52,7 @@ async function copyError(error: AppError): Promise<void> {
  * Send error to an AI agent for debugging
  */
 async function sendToAgent(error: AppError): Promise<void> {
-  const workspace = selectCurrentWorkspace.select(getReduxStore().getState());
+  const workspace = selectCurrentWorkspace.select(appStore.state);
   if (!workspace) {
     toast.error('No space selected');
     return;
@@ -66,8 +66,8 @@ async function sendToAgent(error: AppError): Promise<void> {
 
 ${report.agentPrompt}`;
 
-  const state = getReduxStore().getState();
-  getReduxStore().dispatch(createAgentFromConfigRequested(workspace.id, {
+  const state = appStore.state;
+  appStore.dispatch(createAgentFromConfigRequested(workspace.id, {
     name: 'Debug Agent',
     workspaceId: WorkspaceId(workspace.id),
     agentType: createAgentTypeId('debug'),

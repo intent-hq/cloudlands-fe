@@ -18,9 +18,9 @@
   selectThemePreset,
   setThemeError,
 } from '$lib/store/slices/theme/theme-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
+
   const isDarkTheme = selectIsDarkTheme();
   const activePresetId = selectActiveThemePresetId();
   const hasCustomTheme = selectHasCustomTheme();
@@ -40,7 +40,7 @@
 
   function clearThemeErrorMessage() {
     errorMessage = '';
-    dispatch(setThemeError(null));
+    appStore.dispatch(setThemeError(null));
   }
 
   function selectPreset(presetId: string) {
@@ -50,7 +50,7 @@
 
     const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
     const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
-    dispatch(selectThemePreset(presetId));
+    appStore.dispatch(selectThemePreset(presetId));
     track('Changed Theme', {
       theme: preset.label,
       previous_theme: previousTheme ?? undefined,
@@ -62,7 +62,7 @@
     clearThemeErrorMessage();
     const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
     const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
-    dispatch(clearThemeCustomization());
+    appStore.dispatch(clearThemeCustomization());
     track('Changed Theme', {
       theme: 'Default',
       previous_theme: previousTheme ?? undefined,
@@ -83,8 +83,8 @@
     try {
       const text = await file.text();
       const json = JSON.parse(stripJSONC(text));
-      dispatch(setThemeError(null));
-      dispatch(importCustomTheme(json));
+      appStore.dispatch(setThemeError(null));
+      appStore.dispatch(importCustomTheme(json));
       errorMessage = '';
     } catch (err) {
       if (err instanceof SyntaxError) {

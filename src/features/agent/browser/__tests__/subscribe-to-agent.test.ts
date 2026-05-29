@@ -22,10 +22,44 @@ import {
   upsertSession,
   renameSession,
 } from '$lib/store/slices/agent-session/agent-session-slice';
-import {
-  initReduxDispatchBridge,
-  initReduxStoreBridge,
-} from '$lib/store/redux-dispatch-bridge';
+
+const { storeRef } = vi.hoisted(() => ({
+  storeRef: { current: null as Store | null },
+}));
+
+vi.mock('$lib/store/store', async () => {
+  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+  const readable = <T>(getter: () => T) => ({
+    subscribe: (listener: (value: T) => void) => {
+      listener(getter());
+      return () => {};
+    },
+  });
+  const mockStore = {
+    dispatch: (action: unknown) => storeRef.current?.dispatch(action as never),
+    get state() {
+      return storeRef.current?.getState();
+    },
+    getReadableState: () => ({
+      subscribe: (listener: (value?: unknown) => void) => {
+        listener(storeRef.current?.getState());
+        return storeRef.current?.subscribe(() => listener(storeRef.current?.getState())) ?? (() => {});
+      },
+    }),
+    createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => Object.assign(
+      (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
+      {
+        select: selectorFunc,
+        effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+        withStore: (storeSource: { state?: unknown }) =>
+          (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
+      },
+    ),
+  };
+
+  return createStoreMockModule(mockStore);
+});
+
 import {
   subscribeToAgent,
   notifyAgentSubscribers,
@@ -59,8 +93,7 @@ function makeStore() {
     unrelated: unrelatedReducer,
   });
   const store = createStore(rootReducer as any);
-  initReduxDispatchBridge(store.dispatch.bind(store));
-  initReduxStoreBridge(store as any);
+  storeRef.current = store as Store;
   return store as Store;
 }
 

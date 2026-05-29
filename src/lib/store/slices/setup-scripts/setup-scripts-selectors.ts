@@ -1,17 +1,17 @@
+import { store } from "../../store";
 import {
-  createSelector,
-  createCollectionItemSelector,
-} from "../../utils/create-selector";
-import { getItems } from "../../utils/collection-utils";
+  getItem,
+  getItems,
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { SetupScript } from "./setup-scripts-types";
 
 /** Raw scripts collection (includes pending deletions) */
-const selectScriptsCollection = createSelector(
+const selectScriptsCollection = store.createSelector(
   (state) => state.setupScripts.scripts
 );
 
 /** All visible scripts (excluding pending deletions) */
-export const selectScripts = createSelector((state) => {
+export const selectScripts = store.createSelector((state) => {
   const items = getItems(state.setupScripts.scripts);
   const pending = state.setupScripts.pendingDeletions;
   const hasAnyPending = Object.keys(pending).length > 0;
@@ -20,12 +20,12 @@ export const selectScripts = createSelector((state) => {
 });
 
 /** Get a single script by ID */
-export const selectScriptById = createCollectionItemSelector<SetupScript, "id">(
-  selectScriptsCollection.select
+export const selectScriptById = store.createSelector(
+  (state, scriptId: string) => getItem(selectScriptsCollection.select(state), scriptId),
 );
 
 /** Get scripts sorted by relevance for a given repo */
-export const selectScriptsForRepo = createSelector(
+export const selectScriptsForRepo = store.createSelector(
   (state, repoPath?: string, projectType?: string) => {
     const items = selectScripts.select(state);
     const sorted = [...items];
@@ -55,7 +55,7 @@ export const selectScriptsForRepo = createSelector(
 );
 
 /** Get the last used script for a specific repo */
-export const selectLastUsedScriptForRepo = createSelector(
+export const selectLastUsedScriptForRepo = store.createSelector(
   (state, repoPath: string) => {
     const items = getItems(state.setupScripts.scripts);
     return items
@@ -68,19 +68,19 @@ export const selectLastUsedScriptForRepo = createSelector(
 );
 
 /** Check if a script is pending deletion */
-export const selectIsPendingDeletion = createSelector(
+export const selectIsPendingDeletion = store.createSelector(
   (state, scriptId: string) => {
     return !!state.setupScripts.pendingDeletions[scriptId];
   }
 );
 
-export const selectIsSetupScriptBannerDismissed = createSelector(
+export const selectIsSetupScriptBannerDismissed = store.createSelector(
   (state, workspaceId: string) =>
     state.setupScripts.isBannerDismissedGlobally ||
     state.setupScripts.bannerDismissedByWorkspaceId[workspaceId] === true,
 );
 
-export const selectSetupScriptBannerDismissalRecord = createSelector((state) => {
+export const selectSetupScriptBannerDismissalRecord = store.createSelector((state) => {
   const dismissed: Record<string, boolean> = {};
   if (state.setupScripts.isBannerDismissedGlobally) dismissed._global = true;
   for (const workspaceId of Object.keys(state.setupScripts.bannerDismissedByWorkspaceId)) {

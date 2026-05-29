@@ -1,5 +1,5 @@
+import { store } from "../../store";
 import type { StoreState } from '../../types';
-import { createSelector } from '../../utils/create-selector';
 import { emptyChatAgentState } from './chat-state-slice';
 import type {
   ChatAgentState,
@@ -21,85 +21,85 @@ function getAgentChatState(state: StoreState, agentId: string): ChatAgentState {
 // ============================================================================
 
 /** Select the full agent chat state object */
-export const selectChatAgentState = createSelector(
+export const selectChatAgentState = store.createSelector(
   (state, agentId: string): ChatAgentState =>
     getAgentChatState(state, agentId),
 );
 
 /** Select interrupting flag */
-export const selectChatIsInterrupting = createSelector(
+export const selectChatIsInterrupting = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).isInterrupting,
 );
 
 /** Select error */
-export const selectChatError = createSelector(
+export const selectChatError = store.createSelector(
   (state, agentId: string): string | null =>
     getAgentChatState(state, agentId).error,
 );
 
 /** Select stalled flag */
-export const selectChatIsStalled = createSelector(
+export const selectChatIsStalled = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).isStalled,
 );
 
 /** Select streaming start time */
-export const selectChatStreamingStartTime = createSelector(
+export const selectChatStreamingStartTime = store.createSelector(
   (state, agentId: string): number | null =>
     getAgentChatState(state, agentId).streamingStartTime,
 );
 
 /** Select last chunk time */
-export const selectChatLastChunkTime = createSelector(
+export const selectChatLastChunkTime = store.createSelector(
   (state, agentId: string): number | null =>
     getAgentChatState(state, agentId).lastChunkTime,
 );
 
 /** Select last attempted message (for retry) */
-export const selectChatLastAttemptedMessage = createSelector(
+export const selectChatLastAttemptedMessage = store.createSelector(
   (state, agentId: string): LastAttemptedMessage | null =>
     getAgentChatState(state, agentId).lastAttemptedMessage,
 );
 
 /** Select model unavailable info */
-export const selectChatModelUnavailable = createSelector(
+export const selectChatModelUnavailable = store.createSelector(
   (state, agentId: string): ModelUnavailableInfo | null =>
     getAgentChatState(state, agentId).modelUnavailable,
 );
 
 /** Select status events */
-export const selectChatStatusEvents = createSelector(
+export const selectChatStatusEvents = store.createSelector(
   (state, agentId: string): StatusEvent[] =>
     getAgentChatState(state, agentId).statusEvents,
 );
 
 /** Select received first chunk flag */
-export const selectChatReceivedFirstChunk = createSelector(
+export const selectChatReceivedFirstChunk = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).receivedFirstChunk,
 );
 
 /** Select rebinding flag */
-export const selectChatIsRebinding = createSelector(
+export const selectChatIsRebinding = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).isRebinding,
 );
 
 /** Select tracked workspace ID (for rebind detection) */
-export const selectChatTrackedWorkspaceId = createSelector(
+export const selectChatTrackedWorkspaceId = store.createSelector(
   (state, agentId: string): string | null =>
     getAgentChatState(state, agentId).trackedWorkspaceId,
 );
 
 /** Select last message send time (for rate limiting) */
-export const selectChatLastMessageTime = createSelector(
+export const selectChatLastMessageTime = store.createSelector(
   (state, agentId: string): number =>
     getAgentChatState(state, agentId).lastMessageTime,
 );
 
 /** Select last chunk received at timestamp (for reconciliation skip logic) */
-export const selectChatLastChunkReceivedAt = createSelector(
+export const selectChatLastChunkReceivedAt = store.createSelector(
   (state, agentId: string): number =>
     getAgentChatState(state, agentId).lastChunkReceivedAt,
 );
@@ -110,7 +110,7 @@ export const selectChatLastChunkReceivedAt = createSelector(
  * but explicitly named for consumers that need
  * a guaranteed non-null ChatAgentState without wrapper methods.
  */
-export const selectChatStateOrDefault = createSelector(
+export const selectChatStateOrDefault = store.createSelector(
   (state, agentId: string): ChatAgentState =>
     getAgentChatState(state, agentId),
 );

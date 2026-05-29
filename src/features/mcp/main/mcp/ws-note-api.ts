@@ -547,6 +547,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           if (!match) return [];
           const [, , checkbox, taskText] = match;
           const linkMatch = taskText.match(taskLinkPattern);
+          const taskNoteId = linkMatch ? linkMatch[2] : null;
           const cleanText = linkMatch ? linkMatch[1] : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
           return [{
             lineNumber: index + 1,
@@ -557,7 +558,8 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
                 : checkbox === '/'
                   ? 'in-progress'
                   : 'todo',
-            taskNoteId: linkMatch ? linkMatch[2] : null,
+            taskNoteId,
+            linkedTaskNoteId: taskNoteId,
           }];
         });
       },

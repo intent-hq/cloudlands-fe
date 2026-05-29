@@ -23,7 +23,7 @@
   renameAgentSessionRequested,
   stopAgentSessionRequested,
 } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
@@ -51,7 +51,7 @@
 } from '$features/layout/panel-layout-adapter';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
   faArrowUpRightFromSquare,
@@ -59,6 +59,7 @@
   faStop,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     agentId: string;
@@ -101,13 +102,12 @@
     workspace = null,
   }: Props = $props();
 
-  const dispatch = getDispatch();
   const agentPermCount = selectPendingCount(agentId);
 
   $effect(() => {
     const wsId = workspace?.id;
     if (wsId) {
-      dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });
 
@@ -174,7 +174,7 @@
       // error optimistically so the user can retry after a failed fetch.
       // Only Auggie sessions go through `auggie session stats`; skip other
       // providers so the tooltip surfaces no data instead of a stale error.
-      const session = selectAgentSession.select(getReduxStore().getState(), agentId);
+      const session = selectAgentSession.select(appStore.state, agentId);
       if (!session || !isAuggieSession(session)) return;
       const sessionId = session.acpSessionId || session.backendSessionId;
       if (!sessionId) return;
@@ -182,7 +182,7 @@
         ignoredAgentStatsError = $agentStatsError$;
         agentStatsFetchPending = true;
       }
-      getReduxStore().dispatch(fetchAgentStats(agentId, sessionId));
+      appStore.dispatch(fetchAgentStats(agentId, sessionId));
       tooltipOpen = true;
     }, TOOLTIP_HOVER_INTENT_MS);
   }
@@ -224,17 +224,17 @@
         // rename can revert back to exactly what the user saw.
         const previousName = displayName;
         const previousNameExplicitlySet = $agent$?.nameExplicitlySet ?? false;
-        getReduxStore().dispatch(
+        appStore.dispatch(
           updateAgentSessionFields(agentId, {
             name: trimmed,
             nameExplicitlySet: true,
           } as any),
         );
         const action = renameAgentSessionRequested(wsId, agentId, trimmed);
-        getReduxStore().dispatch(action);
+        appStore.dispatch(action);
         action.promise.catch(() => {
           // Revert the optimistic dispatch so Redux matches disk, then notify.
-          getReduxStore().dispatch(
+          appStore.dispatch(
             updateAgentSessionFields(agentId, {
               name: previousName,
               nameExplicitlySet: previousNameExplicitlySet,
@@ -308,7 +308,7 @@
                 ? String(workspace.id)
                 : undefined;
             if (wsId) {
-              getReduxStore().dispatch(openAgentTabRequested(wsId, { agentId }));
+              appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
             }
           }
           closeContextMenu();
@@ -339,7 +339,7 @@
               : undefined;
           if (wsId) {
             const action = stopAgentSessionRequested(wsId, agentId);
-            getReduxStore().dispatch(action);
+            appStore.dispatch(action);
             await action.promise;
           }
           closeContextMenu();
@@ -372,7 +372,7 @@
             agentId,
             agentName || undefined,
           );
-          getReduxStore().dispatch(action);
+          appStore.dispatch(action);
           await action.promise;
         }
       },
@@ -495,7 +495,7 @@
           ? String(workspace.id)
           : undefined;
       if (!wsId) return;
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openAgentTabRequested(wsId, {
           agentId,
           sourcePanelId,

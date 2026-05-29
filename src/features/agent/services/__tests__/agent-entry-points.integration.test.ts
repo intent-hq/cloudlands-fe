@@ -17,23 +17,15 @@ import {
 } from 'vitest';
 import { UnifiedAgentFactory } from '../agent-factory';
 
-// Mock Redux store bridge
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
+// Mock configured app Store
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
     dispatch: vi.fn(),
-  }),
-}));
-
-// Mock Redux store bridge (factory dynamically imports this)
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({
-    getState: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
-    dispatch: vi.fn(),
-  }),
-}));
-
-
+  });
+});
 
 // Mock the backend creation
 vi.mock('../agent-factory', async () => {

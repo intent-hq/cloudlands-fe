@@ -10,12 +10,13 @@
   import type { NoteId } from '$shared/types';
   import { onMount } from 'svelte';
   import { TASK_HREF_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectNoteById,
   selectNotesVersion,
 } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   // Props from SvelteNodeViewRenderer
   let { node, editor }: NodeViewProps = $props();
@@ -100,8 +101,8 @@
 
         // If it's a linked task, check if the Task Note is incomplete
         if (linkedNoteId) {
-          const wsId = selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '';
-          const taskNote = selectNoteById.select(getReduxStore().getState(), wsId, linkedNoteId);
+          const wsId = selectActiveWorkspaceId.select(appStore.state) ?? '';
+          const taskNote = selectNoteById.select(appStore.state, wsId, linkedNoteId);
           if (taskNote?.metadata?.task) {
             const status = taskNote.metadata.task.status;
             if (status !== 'complete' && status !== 'cancelled') {
@@ -143,7 +144,7 @@
   });
 
   // Also recalculate when notes version changes (Task Note status updates)
-  const notesVersion$ = selectNotesVersion(selectActiveWorkspaceId.select(getReduxStore().getState()) ?? '');
+  const notesVersion$ = selectNotesVersion(selectActiveWorkspaceId.select(appStore.state) ?? '');
   $effect(() => {
     // Access notesVersion to track changes (void to suppress unused warning)
     void $notesVersion$;

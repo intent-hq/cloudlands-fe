@@ -54,6 +54,11 @@ import {
   evictDeletedAgent,
   removeAllSubscriptions,
   emptyWorkspaceSubscriptionState,
+  requestDeliverEvents,
+  requestDeliverQueuedEvents,
+  requestDelegationGroupDelivery,
+  requestEvictStaleAgents,
+  requestValidateSubscriptions,
   subscribeToDelegationGroup,
   type QueuedEventRecord,
   type DelegationGroupTrackerRecord,
@@ -71,13 +76,6 @@ import {
   selectSubscriptionRaw,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
-import {
-  requestDeliverEvents,
-  requestDeliverQueuedEvents,
-  requestDelegationGroupDelivery,
-  requestEvictStaleAgents,
-  requestValidateSubscriptions,
-} from "./saga-actions";
 import {
   handleDeliverEvents,
   handleDeliverQueuedEvents,

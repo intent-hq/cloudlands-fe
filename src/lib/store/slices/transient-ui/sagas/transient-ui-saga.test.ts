@@ -30,7 +30,7 @@ import {
   getLocalStorageJSON,
   removeLocalStorageItem,
 } from "$lib/store/utils/safe-local-storage-saga";
-import { debounceWithKeySaga } from "../../../utils/debounce-saga";
+import { debounceWithKeySaga } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../../workspace/workspace-slice";
 import {

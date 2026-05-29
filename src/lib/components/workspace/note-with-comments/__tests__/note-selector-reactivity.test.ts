@@ -8,24 +8,44 @@
  * The fix passes writable stores so the selector re-evaluates when noteId changes.
  */
 import {
+  afterEach,
   describe,
   it,
   expect,
 } from "vitest";
 import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import { Store } from "svelte-redux-toolkit/store";
+import {
   get,
-  writable,
 } from "svelte/store";
-import { init } from "$lib/store/init";
+import { reducers } from "$lib/store/reducer";
 import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
-import { loadWorkspaceNotesSucceeded } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
 import {
   ContentType,
   NoteVisibility,
   type Note,
 } from "$shared/types";
+import NoteSelectorReactivityHarness from "./NoteSelectorReactivityHarness.test.svelte";
 
 const WS_1 = "ws-1";
+
+function createTestStore() {
+  return new Store(reducers);
+}
+
+function renderInitializedStore() {
+  const store = createTestStore();
+  return { store };
+}
+
+afterEach(() => {
+  cleanup();
+});
 
 function mockNote(id: string, workspaceId = WS_1): Note {
   return {
@@ -44,76 +64,112 @@ function mockNote(id: string, workspaceId = WS_1): Note {
 }
 
 describe("selectNoteById reactivity with writable store args", () => {
-  it("returns the correct note when noteId writable store changes", () => {
-    const { store } = init();
+  it("returns the correct note when noteId prop changes without remounting", async () => {
+    const { store } = renderInitializedStore();
+    const { rerender } = render(NoteSelectorReactivityHarness, {
+      props: {
+        store,
+        workspaceId: WS_1,
+        noteId: "note-a",
+        notesByWorkspace: {
+          [WS_1]: [mockNote("note-a"), mockNote("note-b")],
+        },
+      },
+    });
 
-    // Load two notes into the store
-    store.dispatch(
-      loadWorkspaceNotesSucceeded([WS_1], {
-        [WS_1]: [mockNote("note-a"), mockNote("note-b")],
-      }),
-    );
-
-    // Create writable stores mirroring the pattern used in NoteWithComments
-    const workspaceIdStore = writable(WS_1);
-    const noteIdStore = writable("note-a");
-
-    // Create selector at "init time" with writable stores
-    const readable$ = selectNoteById.withStore(store)(workspaceIdStore, noteIdStore);
-
-    // Initially should resolve to note-a
-    const noteA = get(readable$);
-    expect(noteA).toBeDefined();
-    expect(noteA!.id).toBe("note-a");
-    expect(noteA!.content).toBe("Content for note-a");
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("note-a");
+    });
+    expect(screen.getByTestId("selected-note-content").textContent).toBe("Content for note-a");
+    expect(screen.getByTestId("selected-from-state-id").textContent).toBe("note-a");
+    expect(screen.getByTestId("readable-note-count").textContent).toBe("2");
+    expect(selectNoteById.select(store.state, WS_1, "note-a")?.id).toBe("note-a");
+    expect(get(store.getReadableState()).workspaceNotes.byWorkspaceId[WS_1]?.notes.ids).toEqual([
+      "note-a",
+      "note-b",
+    ]);
 
     // Switch noteId — simulates navigating to a different note without remounting
-    noteIdStore.set("note-b");
+    await rerender({
+      store,
+      workspaceId: WS_1,
+      noteId: "note-b",
+      notesByWorkspace: {
+        [WS_1]: [mockNote("note-a"), mockNote("note-b")],
+      },
+    });
 
     // The readable must now return note-b
-    const noteB = get(readable$);
-    expect(noteB).toBeDefined();
-    expect(noteB!.id).toBe("note-b");
-    expect(noteB!.content).toBe("Content for note-b");
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("note-b");
+    });
+    expect(screen.getByTestId("selected-note-content").textContent).toBe("Content for note-b");
+    expect(screen.getByTestId("selected-from-state-id").textContent).toBe("note-b");
   });
 
-  it("returns undefined when noteId writable is set to a non-existent note", () => {
-    const { store } = init();
+  it("returns undefined when noteId prop changes to a non-existent note", async () => {
+    const { store } = renderInitializedStore();
+    const { rerender } = render(NoteSelectorReactivityHarness, {
+      props: {
+        store,
+        workspaceId: WS_1,
+        noteId: "note-a",
+        notesByWorkspace: {
+          [WS_1]: [mockNote("note-a")],
+        },
+      },
+    });
 
-    store.dispatch(
-      loadWorkspaceNotesSucceeded([WS_1], {
-        [WS_1]: [mockNote("note-a")],
-      }),
-    );
-
-    const workspaceIdStore = writable(WS_1);
-    const noteIdStore = writable("note-a");
-    const readable$ = selectNoteById.withStore(store)(workspaceIdStore, noteIdStore);
-
-    expect(get(readable$)?.id).toBe("note-a");
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("note-a");
+    });
 
     // Switch to a note that doesn't exist
-    noteIdStore.set("note-missing");
-    expect(get(readable$)).toBeUndefined();
+    await rerender({
+      store,
+      workspaceId: WS_1,
+      noteId: "note-missing",
+      notesByWorkspace: {
+        [WS_1]: [mockNote("note-a")],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("");
+    });
+    expect(screen.getByTestId("selected-from-state-id").textContent).toBe("");
   });
 
-  it("returns undefined when workspaceId writable is cleared", () => {
-    const { store } = init();
+  it("returns undefined when workspaceId prop is cleared", async () => {
+    const { store } = renderInitializedStore();
+    const { rerender } = render(NoteSelectorReactivityHarness, {
+      props: {
+        store,
+        workspaceId: WS_1,
+        noteId: "note-a",
+        notesByWorkspace: {
+          [WS_1]: [mockNote("note-a")],
+        },
+      },
+    });
 
-    store.dispatch(
-      loadWorkspaceNotesSucceeded([WS_1], {
-        [WS_1]: [mockNote("note-a")],
-      }),
-    );
-
-    const workspaceIdStore = writable<string | null>(WS_1);
-    const noteIdStore = writable<string | null>("note-a");
-    const readable$ = selectNoteById.withStore(store)(workspaceIdStore, noteIdStore);
-
-    expect(get(readable$)?.id).toBe("note-a");
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("note-a");
+    });
 
     // Clear workspace — should return undefined
-    workspaceIdStore.set(null);
-    expect(get(readable$)).toBeUndefined();
+    await rerender({
+      store,
+      workspaceId: null,
+      noteId: "note-a",
+      notesByWorkspace: {
+        [WS_1]: [mockNote("note-a")],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("selected-note-id").textContent).toBe("");
+    });
+    expect(screen.getByTestId("selected-from-state-id").textContent).toBe("");
   });
 });

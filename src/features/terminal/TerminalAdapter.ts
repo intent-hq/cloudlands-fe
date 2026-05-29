@@ -25,7 +25,7 @@ import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-import { dispatch } from '$lib/store/redux-dispatch-bridge';
+import { store as appStore } from '$lib/store/store';
 import {
   closeActiveTerminalRequested,
   toggleTerminalOverlay,
@@ -461,7 +461,7 @@ export class TerminalAdapter {
       // overlay (workspace vs root) reacts via its own selector subscription.
       if (isMod && event.key === 'j' && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          dispatch(toggleTerminalOverlay(this.workspaceId));
+          appStore.dispatch(toggleTerminalOverlay(this.workspaceId));
         }
         return false;
       }
@@ -489,7 +489,7 @@ export class TerminalAdapter {
       // Cmd+W (Mac) / Ctrl+W (Win/Linux) - close active terminal tab
       if (isMod && (event.key === 'w' || event.key === 'W') && !event.shiftKey && !event.altKey) {
         if (event.type === 'keydown') {
-          dispatch(closeActiveTerminalRequested(this.workspaceId));
+          appStore.dispatch(closeActiveTerminalRequested(this.workspaceId));
         }
         return false;
       }
@@ -512,7 +512,7 @@ export class TerminalAdapter {
           if (event.shiftKey || event.key === '~') {
             dispatchWindowEvent('workspace:new-terminal', { workspaceId: this.workspaceId });
           } else {
-            dispatch(toggleTerminalOverlay(this.workspaceId));
+            appStore.dispatch(toggleTerminalOverlay(this.workspaceId));
           }
         }
         return false;

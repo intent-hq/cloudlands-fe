@@ -3,8 +3,8 @@
  */
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
 import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+import { store as appStore } from '$lib/store/store';
 
 /**
  * Get the names of agents currently running in a workspace
@@ -15,7 +15,7 @@ export function getRunningAgentNames(workspaceId: string): string[] {
   const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
 
   // Get all agents for this workspace from Redux
-  const agents = selectAllWorkspaceAgents.select(getReduxStore().getState(), workspaceId);
+  const agents = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
 
   // Look up agent names from the Redux store
   const agentNames: string[] = [];

@@ -16,7 +16,7 @@
   import { onMount } from 'svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import Header from '$lib/components/ui/Header.svelte';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
@@ -25,7 +25,7 @@
   closeAll,
   togglePinWorkspace,
 } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
@@ -35,8 +35,8 @@
   compareWorkspaceActivityDisplayTimeDesc,
   isWorkspaceActivityWithin,
 } from '$shared/utils/workspace-activity-time';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
@@ -76,7 +76,7 @@
     void $activeStreamsVersion$;
     void $unreadAgentIds$;
     const now = Date.now();
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
@@ -176,19 +176,19 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    dispatch(closeAll(false));
-    dispatch(clearWorkspaceUnread(workspaceId));
+    appStore.dispatch(closeAll(false));
+    appStore.dispatch(clearWorkspaceUnread(workspaceId));
     goto(route);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    dispatch(clearWorkspaceUnread(workspaceId));
+    appStore.dispatch(clearWorkspaceUnread(workspaceId));
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    dispatch(togglePinWorkspace(workspaceId));
+    appStore.dispatch(togglePinWorkspace(workspaceId));
   }
 
   // Flat list of all visible workspace IDs for keyboard nav

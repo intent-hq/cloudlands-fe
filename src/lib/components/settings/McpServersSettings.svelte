@@ -31,8 +31,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+  import { store as appStore } from '$lib/store/store';
   import {
   selectMcpServersWithStatus,
   selectMcpLoading,
@@ -53,7 +52,6 @@
 } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
-  const dispatch = getDispatch();
   const servers$ = selectMcpServersWithStatus();
   const loading$ = selectMcpLoading();
   const error$ = selectMcpError();
@@ -89,7 +87,7 @@
   const canOpenDiagnosticTerminal = isMacPlatform();
 
   onMount(() => {
-    dispatch(loadServers());
+    appStore.dispatch(loadServers());
     loadSettingsFile();
   });
 
@@ -126,11 +124,11 @@
   }
 
   function handleToggleEnabled() {
-    dispatch(toggleEnabled());
+    appStore.dispatch(toggleEnabled());
   }
 
   function handleRetryLoadServers() {
-    dispatch(loadServers());
+    appStore.dispatch(loadServers());
   }
 
   async function handleCopyDiagnosticCommand() {
@@ -180,13 +178,13 @@
   }
 
   function handleToggleServer(name: string) {
-    dispatch(toggleServer(name));
+    appStore.dispatch(toggleServer(name));
   }
 
   async function handleAddServer(config: McpServerConfig) {
     // The saga handles auth checks and connection testing.
     // Auth-required status will be reflected in the server card via the status map.
-    dispatch(addServer(config));
+    appStore.dispatch(addServer(config));
     showAddPanel = false;
     await loadSettingsFile();
   }
@@ -197,19 +195,19 @@
 
   async function handleUpdateServer(config: McpServerConfig) {
     if (!editingServer) return;
-    dispatch(updateServer(editingServer.name, config));
+    appStore.dispatch(updateServer(editingServer.name, config));
     editingServer = null;
     await loadSettingsFile();
   }
 
   async function handleDeleteServer(name: string) {
     // Get the server config before deleting (for undo)
-    const currentServers = selectMcpServers.select(getReduxStore().getState());
+    const currentServers = selectMcpServers.select(appStore.state);
     const serverConfig = currentServers.find((s) => s.name === name);
     if (!serverConfig) return;
 
     // Delete immediately
-    dispatch(removeServer(name));
+    appStore.dispatch(removeServer(name));
     await loadSettingsFile();
 
     // Show toast with undo action
@@ -217,7 +215,7 @@
       action: {
         label: 'Undo',
         onClick: async () => {
-          dispatch(addServer(serverConfig));
+          appStore.dispatch(addServer(serverConfig));
           await loadSettingsFile();
         },
       },
@@ -229,7 +227,7 @@
     logger.info('Reauthenticate requested for:', name);
 
     // Find the server by name
-    const currentServers = selectMcpServersWithStatus.select(getReduxStore().getState());
+    const currentServers = selectMcpServersWithStatus.select(appStore.state);
     const server = currentServers.find((s) => s.name === name);
     if (!server) {
       logger.warn('Server not found:', name);
@@ -255,7 +253,7 @@
             duration: 5000,
           });
           // Re-test the connection to update status
-          dispatch(testServerConnection(server.name, server.url, server.headers));
+          appStore.dispatch(testServerConnection(server.name, server.url, server.headers));
           return;
         }
 
@@ -349,7 +347,7 @@
             env: Object.keys(env).length > 0 ? env : undefined,
           };
 
-      dispatch(addServer(config));
+      appStore.dispatch(addServer(config));
       activeConfig = null;
       userInputValues = {};
       await loadSettingsFile();
@@ -381,7 +379,7 @@
   }
 
   async function handleImportJson(json: string) {
-    dispatch(importFromJson(json));
+    appStore.dispatch(importFromJson(json));
     showAddPanel = false;
     // Success feedback is driven by the saga dispatching importFromJsonCompleted,
     // observed reactively via $lastImportedCount$ below.
@@ -407,7 +405,7 @@
       });
       if (result?.success) {
         userMcpSaveStatus = 'saved';
-        dispatch(loadServers());
+        appStore.dispatch(loadServers());
         setTimeout(() => (userMcpSaveStatus = 'idle'), 2000);
       } else {
         userMcpSaveStatus = 'error';

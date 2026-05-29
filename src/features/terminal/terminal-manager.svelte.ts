@@ -6,16 +6,14 @@
 import { TerminalAdapter } from './TerminalAdapter';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { Logger } from '../../shared/logger';
-import {
-  dispatch,
-  getReduxStore,
-} from '$lib/store/redux-dispatch-bridge';
+
 import {
   removeTerminal,
   saveTerminalMetadata as saveTerminalMetadataAction,
   type TerminalMetadata,
 } from '$lib/store/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$lib/store/slices/terminals/terminals-selectors';
+  import { store as appStore } from '$lib/store/store';
 
 const logger = new Logger('TerminalManager');
 
@@ -35,7 +33,7 @@ class RendererTerminalManager {
    */
   saveTerminalMetadata(terminalId: string, workspaceId: string, title?: string): void {
     try {
-      dispatch(saveTerminalMetadataAction(workspaceId, terminalId, title || 'Terminal', new Date().toISOString()));
+      appStore.dispatch(saveTerminalMetadataAction(workspaceId, terminalId, title || 'Terminal', new Date().toISOString()));
       logger.debug(`[RendererTerminalManager] Saved terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to save terminal metadata:', error);
@@ -47,7 +45,7 @@ class RendererTerminalManager {
    */
   loadTerminalMetadata(workspaceId: string): TerminalMetadata[] {
     try {
-      return selectTerminalsForWorkspace.select(getReduxStore().getState(), workspaceId).map((terminal) => ({
+      return selectTerminalsForWorkspace.select(appStore.state, workspaceId).map((terminal) => ({
         terminalId: terminal.id,
         workspaceId: terminal.workspaceId ?? workspaceId,
         createdAt: terminal.createdAt ?? '',
@@ -64,7 +62,7 @@ class RendererTerminalManager {
    */
   removeTerminalMetadata(terminalId: string, workspaceId: string): void {
     try {
-      dispatch(removeTerminal(workspaceId, terminalId));
+      appStore.dispatch(removeTerminal(workspaceId, terminalId));
       logger.debug(`[RendererTerminalManager] Removed terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to remove terminal metadata:', error);

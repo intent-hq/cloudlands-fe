@@ -41,6 +41,8 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(definition.description).toContain('statusMessage');
     expect(definition.description).toContain('ws.workspace.setStatusMessage(message)');
     expect(definition.description).toContain('does not change lifecycle `status` or task statuses');
+    expect(definition.description).toContain('Use `taskNoteId` for delegation');
+    expect(definition.description).toContain('tasks.filter(t => t.taskNoteId).map(t => t.taskNoteId)');
     expect(definition.description).toContain('ws.agent.delegate({');
     expect(definition.description).toContain('ws.pr.status()');
   });

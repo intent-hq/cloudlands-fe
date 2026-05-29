@@ -11,7 +11,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
   selectIsInitialSpecWriteInProgress,
@@ -39,7 +39,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { toggleSpellcheck } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectScrollPosition } from '$lib/store/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import Fa from 'svelte-fa';
   import {
   faCheck,
@@ -50,6 +50,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { track } from '$lib/services/analytics';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('NoteTabType');
 
@@ -58,7 +59,6 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   const headerContext = getPanelHeaderContext();
 
   const workspace = selectWorkspaceById(workspaceId);
-  const dispatch = getDispatch();
   const spellcheckEnabled = selectSpellcheckEnabled();
   const scrollPosition = selectScrollPosition(tab.id);
 
@@ -105,7 +105,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (!workspaceId || !isInitialSpecWriteInProgress) return null;
 
     // Use Redux to find the initial agent and verify it's a spec-writer
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const initialAgentId = selectInitialAgentId.select(state, workspaceId);
     if (!initialAgentId) return null;
 
@@ -167,7 +167,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
     // Get note info for tracking before deletion
     const noteToDelete = selectNoteById.select(
-      getReduxStore().getState(),
+      appStore.state,
       workspaceId,
       noteIdToDelete,
     );
@@ -183,8 +183,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     const noteTitle = $note?.title || 'Note';
     isNoteDeleting = true;
     try {
-      getReduxStore().dispatch(closeTab(workspaceId, tab.id));
-      dispatch(deleteNote(workspaceId, noteIdToDelete));
+      appStore.dispatch(closeTab(workspaceId, tab.id));
+      appStore.dispatch(deleteNote(workspaceId, noteIdToDelete));
 
       // Track deletion (optimistic — saga handles IPC + errors)
       track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
@@ -198,7 +198,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
               label: 'Undo',
               onClick: () => {
                 try {
-                  dispatch(
+                  appStore.dispatch(
                     createNote(savedNote.workspaceId, {
                       title: savedNote.title,
                       content: savedNote.content,
@@ -228,7 +228,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   function handleToggleRawNoteView() {
     if (!tab.noteId) return;
-    dispatch(toggleRawNoteView(workspaceId, tab.noteId));
+    appStore.dispatch(toggleRawNoteView(workspaceId, tab.noteId));
   }
 
   // Register header actions
@@ -283,7 +283,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleSpellcheck())}
+    onclick={() => appStore.dispatch(toggleSpellcheck())}
     tooltip={$spellcheckEnabled ? 'Spellcheck: On' : 'Spellcheck: Off'}
     tooltipSide="bottom"
     aria-pressed={$spellcheckEnabled}
@@ -336,7 +336,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       editable={noteEditable}
       {isPanelFocused}
       initialScrollPosition={$scrollPosition}
-      onScrollPositionSave={(scrollTop: number) => dispatch(saveScrollPosition(tab.id, scrollTop))}
+      onScrollPositionSave={(scrollTop: number) => appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
     />
   {/if}
 {:else}

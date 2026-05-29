@@ -13,14 +13,15 @@
   logoutSentry,
   clearSentryError,
 } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
+
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */
@@ -28,7 +29,6 @@
   }
 
   let { skipInitialize = false }: Props = $props();
-  const dispatch = getDispatch();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const isAuthenticated$ = selectSentryIsAuthenticated();
   const organization$ = selectSentryOrganization();
@@ -43,7 +43,7 @@
 
   onMount(() => {
     if (!skipInitialize) {
-      dispatch(initializeSentryAuth());
+      appStore.dispatch(initializeSentryAuth());
     }
   });
 
@@ -64,19 +64,19 @@
       return;
     }
     pendingConnect = true;
-    dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
+    appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
   }
 
   function handleSentryDisconnect() {
     isDisconnectingSentry = true;
-    dispatch(logoutSentry());
+    appStore.dispatch(logoutSentry());
     // Reset local state immediately since logout is synchronous in Redux
     isDisconnectingSentry = false;
   }
 
   function handleSentryReconnect() {
     showConnectForm = true;
-    sentryOrg = selectSentryOrganization.select(getReduxStore().getState()) || '';
+    sentryOrg = selectSentryOrganization.select(appStore.state) || '';
     sentryToken = '';
   }
 
@@ -84,7 +84,7 @@
     showConnectForm = false;
     sentryOrg = '';
     sentryToken = '';
-    dispatch(clearSentryError());
+    appStore.dispatch(clearSentryError());
   }
 </script>
 

@@ -12,12 +12,12 @@
  * UI can show stale/mismatched data defensively (e.g. clear results the
  * moment the input diverges from `lastQuery`).
  */
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 
 export type GithubRepoSearchState = {

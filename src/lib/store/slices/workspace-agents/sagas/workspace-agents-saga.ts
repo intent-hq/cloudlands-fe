@@ -5,20 +5,15 @@ import type {
   WorkspaceEvent,
 } from "$features/events/types";
 import type { AgentSession } from "$shared/types";
-import { initWorkspace as initFileTracking } from "$lib/store/slices/changes/changes-slice";
+import { initWorkspace } from "$lib/store/slices/changes/changes-slice";
 import { loadGitStatus } from "$lib/store/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
-import { getReduxStore } from "$lib/store/redux-dispatch-bridge";
 import { clearCurrentlyViewed } from "$lib/store/slices/note-read-tracking/note-read-tracking-slice";
 import {
   takeEveryFromElectronChannel,
   takeEveryFromWindowEvent,
 } from "$lib/store/utils/ipc-channel";
-import { shallowEqual } from "fast-equals";
 import {
-  buffers,
-  eventChannel,
-  type EventChannel,
   type Task,
 } from "redux-saga";
 import {
@@ -28,10 +23,11 @@ import {
   delay,
   fork,
   put,
-  select,
+  race,
   take,
   takeEvery,
 } from "typed-redux-saga";
+import { createChannelFromSelector } from "svelte-redux-toolkit/saga";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -120,25 +116,16 @@ function* clearUnreadForMountedWorkspace(wsId: string) {
   yield* put(clearWorkspaceUnread(wsId));
 }
 
-export function* watchFileTrackingLifecycleSaga(wsId: string) {
+export function* initializeFileTrackingForWorkspaceSaga(wsId: string) {
   if (!isValidFileTrackingWorkspaceId(wsId)) {
     return;
   }
 
-  try {
-    yield* put(initFileTracking(wsId));
-    yield* delay(50);
+  yield* put(initWorkspace(wsId));
+  yield* delay(50);
 
-    // Load initial git status via Redux
-    yield* put(loadGitStatus(wsId));
-
-    // git:status-changed listener is now handled by gitStatusSaga
-    while (true) {
-      yield* delay(60_000);
-    }
-  } finally {
-    // Cleanup is handled by the gitStatusSaga lifecycle
-  }
+  // Load initial git status via Redux. Ongoing git updates are owned by gitStatusSaga.
+  yield* put(loadGitStatus(wsId));
 }
 
 export function* watchAgentDeletedSaga() {
@@ -213,8 +200,7 @@ export function* watchWaitingForFirstMessageSaga() {
 }
 
 function* checkDrawerGuard(wsId: string) {
-  const state = getReduxStore().getState();
-  const drawerState = selectWorkspaceNavigationDrawer.select(state, wsId);
+  const drawerState = yield* selectWorkspaceNavigationDrawer.effect(wsId);
   if (!drawerState?.open || !drawerState.itemId) {
     return;
   }
@@ -222,13 +208,13 @@ function* checkDrawerGuard(wsId: string) {
   const drawerItemId = String(drawerState.itemId);
 
   if (drawerState.type === "agent") {
-    const agentsLoaded = selectAgentsLoaded.select(state, wsId);
+    const agentsLoaded = yield* selectAgentsLoaded.effect(wsId);
     if (!agentsLoaded) {
       return;
     }
 
-    const initialAgentId = selectInitialAgentId.select(state, wsId);
-    const agents = selectAllWorkspaceAgents.select(state, wsId);
+    const initialAgentId = yield* selectInitialAgentId.effect(wsId);
+    const agents = yield* selectAllWorkspaceAgents.effect(wsId);
 
     if (initialAgentId && drawerItemId === initialAgentId) {
       const pendingInitialAgent = agents.find((agent) => String(agent.id) === initialAgentId);
@@ -237,7 +223,7 @@ function* checkDrawerGuard(wsId: string) {
       }
     }
 
-    const recentlyCreatedAgents = selectRecentlyCreatedAgents.select(state, wsId);
+    const recentlyCreatedAgents = yield* selectRecentlyCreatedAgents.effect(wsId);
     if (recentlyCreatedAgents.includes(drawerItemId)) {
       return;
     }
@@ -255,86 +241,54 @@ function* checkDrawerGuard(wsId: string) {
     return;
   }
 
-  const terminalsLoaded = selectTerminalsLoaded.select(state, wsId);
+  const terminalsLoaded = yield* selectTerminalsLoaded.effect(wsId);
   if (!terminalsLoaded) {
     return;
   }
 
-  const recentlyCreatedTerminals = selectRecentlyCreatedTerminals.select(state, wsId);
+  const recentlyCreatedTerminals = yield* selectRecentlyCreatedTerminals.effect(wsId);
   if (recentlyCreatedTerminals.includes(drawerItemId)) {
     return;
   }
 
-  const terminals = selectLoadedWorkspaceTerminals.select(state, wsId);
+  const terminals = yield* selectLoadedWorkspaceTerminals.effect(wsId);
   if (!terminals.find((terminal) => terminal.id === drawerItemId)) {
     yield* put(closeWorkspaceDrawer(wsId));
   }
 }
 
-function createDrawerGuardChannel(wsId: string): EventChannel<boolean> {
-  return eventChannel<boolean>((emitter) => {
-    const store = getReduxStore();
-
-    let previousAgents = selectAllWorkspaceAgents.select(store.getState(), wsId);
-    let previousAgentsLoaded = selectAgentsLoaded.select(store.getState(), wsId);
-    let previousInitialAgentId = selectInitialAgentId.select(store.getState(), wsId);
-    let previousRecentlyCreatedAgents = selectRecentlyCreatedAgents.select(store.getState(), wsId);
-    let previousTerminals = selectLoadedWorkspaceTerminals.select(store.getState(), wsId);
-    let previousTerminalsLoaded = selectTerminalsLoaded.select(store.getState(), wsId);
-    let previousRecentlyCreatedTerminals = selectRecentlyCreatedTerminals.select(
-      store.getState(),
-      wsId
-    );
-
-    const unsubscribe = store.subscribe(() => {
-      const state = store.getState();
-      const nextAgents = selectAllWorkspaceAgents.select(state, wsId);
-      const nextAgentsLoaded = selectAgentsLoaded.select(state, wsId);
-      const nextInitialAgentId = selectInitialAgentId.select(state, wsId);
-      const nextRecentlyCreatedAgents = selectRecentlyCreatedAgents.select(state, wsId);
-      const nextTerminals = selectLoadedWorkspaceTerminals.select(state, wsId);
-      const nextTerminalsLoaded = selectTerminalsLoaded.select(state, wsId);
-      const nextRecentlyCreatedTerminals = selectRecentlyCreatedTerminals.select(state, wsId);
-
-      const changed =
-        !shallowEqual(nextAgents, previousAgents) ||
-        nextAgentsLoaded !== previousAgentsLoaded ||
-        nextInitialAgentId !== previousInitialAgentId ||
-        nextRecentlyCreatedAgents !== previousRecentlyCreatedAgents ||
-        !shallowEqual(nextTerminals, previousTerminals) ||
-        nextTerminalsLoaded !== previousTerminalsLoaded ||
-        nextRecentlyCreatedTerminals !== previousRecentlyCreatedTerminals;
-
-      if (!changed) {
-        return;
-      }
-
-      previousAgents = nextAgents;
-      previousAgentsLoaded = nextAgentsLoaded;
-      previousInitialAgentId = nextInitialAgentId;
-      previousRecentlyCreatedAgents = nextRecentlyCreatedAgents;
-      previousTerminals = nextTerminals;
-      previousTerminalsLoaded = nextTerminalsLoaded;
-      previousRecentlyCreatedTerminals = nextRecentlyCreatedTerminals;
-      emitter(true);
-    });
-
-    return () => unsubscribe();
-  }, buffers.sliding<boolean>(1));
-}
-
 function* watchDrawerGuardSaga(wsId: string) {
-  const channel = createDrawerGuardChannel(wsId);
+  const agentsChannel = yield* createChannelFromSelector(selectAllWorkspaceAgents, wsId);
+  const agentsLoadedChannel = yield* createChannelFromSelector(selectAgentsLoaded, wsId);
+  const initialAgentIdChannel = yield* createChannelFromSelector(selectInitialAgentId, wsId);
+  const recentlyCreatedAgentsChannel = yield* createChannelFromSelector(selectRecentlyCreatedAgents, wsId);
+  const terminalsChannel = yield* createChannelFromSelector(selectLoadedWorkspaceTerminals, wsId);
+  const terminalsLoadedChannel = yield* createChannelFromSelector(selectTerminalsLoaded, wsId);
+  const recentlyCreatedTerminalsChannel = yield* createChannelFromSelector(selectRecentlyCreatedTerminals, wsId);
 
   try {
     yield* call(checkDrawerGuard, wsId);
 
     while (true) {
-      yield* take(channel);
+      yield* race({
+        agents: take(agentsChannel),
+        agentsLoaded: take(agentsLoadedChannel),
+        initialAgentId: take(initialAgentIdChannel),
+        recentlyCreatedAgents: take(recentlyCreatedAgentsChannel),
+        terminals: take(terminalsChannel),
+        terminalsLoaded: take(terminalsLoadedChannel),
+        recentlyCreatedTerminals: take(recentlyCreatedTerminalsChannel),
+      });
       yield* call(checkDrawerGuard, wsId);
     }
   } finally {
-    channel.close();
+    agentsChannel.close();
+    agentsLoadedChannel.close();
+    initialAgentIdChannel.close();
+    recentlyCreatedAgentsChannel.close();
+    terminalsChannel.close();
+    terminalsLoadedChannel.close();
+    recentlyCreatedTerminalsChannel.close();
   }
 }
 
@@ -356,7 +310,7 @@ export function* recoverLateInitialAgentHydrationSaga(wsId: string) {
 
   if (wasLoadingAgents) {
     while (yield* selectIsLoadingAgents.effect(wsId)) {
-      const action = (yield* take(setIsLoadingAgents.type)) as ReturnType<typeof setIsLoadingAgents>;
+      const action = (yield* take(setIsLoadingAgents)) as ReturnType<typeof setIsLoadingAgents>;
       const [actionWsId, loading] = action.payload;
 
       if (actionWsId === wsId && !loading) {
@@ -388,8 +342,8 @@ export function* watchLateInitialAgentHydrationRecoverySaga() {
   try {
     while (true) {
       const action = (yield* take([
-        setInitialAgentId.type,
-        setInitialAgentConfig.type,
+        setInitialAgentId,
+        setInitialAgentConfig,
       ])) as ReturnType<typeof setInitialAgentId> | ReturnType<typeof setInitialAgentConfig>;
       const [actionWsId] = action.payload;
 
@@ -425,26 +379,25 @@ export function* watchWorkspaceAgentEventsForWorkspaceSaga(
   workspaceAgentTasks.set(wsId, []);
   yield* clearUnreadForMountedWorkspace(wsId);
 
-  const fileTrackingTask = yield* fork(watchFileTrackingLifecycleSaga, wsId);
+  // One-shot mount initialization only; ongoing git/file listeners are owned by
+  // their domain sagas, so this task is intentionally not tracked for unmount
+  // cancellation.
+  yield* fork(initializeFileTrackingForWorkspaceSaga, wsId);
   const drawerGuardTask = yield* fork(watchDrawerGuardSaga, wsId);
 
   // Load agents from disk on workspace mount
   yield* fork(loadAgentsFromDiskSaga, wsId);
 
-  workspaceAgentTasks.set(wsId, [
-    fileTrackingTask,
-    drawerGuardTask,
-  ]);
+  workspaceAgentTasks.set(wsId, [drawerGuardTask]);
 }
 
 /**
  * Cancels workspace-scoped tasks when a workspace unmounts.
  *
- * The tasks tracked in `workspaceAgentTasks` are workspace-level
- * (`watchFileTrackingLifecycleSaga` and `watchDrawerGuardSaga`) — they operate
- * on UI concerns tied to a workspace being mounted (drawer open state, git
- * status polling). They do not represent per-agent background work, so it is
- * safe to cancel them on unmount; their state is rebuilt on remount.
+ * The tasks tracked in `workspaceAgentTasks` are workspace-level long-running
+ * UI concerns tied to a workspace being mounted (currently the drawer guard).
+ * They do not represent per-agent background work, so it is safe to cancel them
+ * on unmount; their state is rebuilt on remount.
  *
  * Per-agent background work lives in `chat-state-saga`'s `activeSendTasks`
  * map, which has its own unmount handling that preserves watchdogs while
@@ -528,7 +481,7 @@ export function* workspaceAgentsSaga() {
  */
 /** @internal Exported for testing only. */
 export function* retroactiveWorkspaceMountCheckSaga() {
-  const activeWsId = yield* select(selectActiveWorkspaceId.select);
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
 
   if (!activeWsId) {
     return;

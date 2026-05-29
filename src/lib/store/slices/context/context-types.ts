@@ -4,7 +4,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { Collection } from "../../utils/collection-utils";
+import type { Collection } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { ContextItem } from "$features/context/types";
 
 export type ContextWorkspaceState = {

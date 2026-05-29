@@ -1,36 +1,36 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 
 /** Select all unread note IDs */
-export const selectUnreadNoteIds = createSelector((state) => {
+export const selectUnreadNoteIds = store.createSelector((state) => {
   return Object.keys(state.noteReadTracking.unreadNoteIds);
 });
 
 /** Check if a specific note has unread changes */
-export const selectHasUnreadChanges = createSelector((state, noteId: string) => {
+export const selectHasUnreadChanges = store.createSelector((state, noteId: string) => {
   return !!state.noteReadTracking.unreadNoteIds[noteId];
 });
 
 /** Select the count of unread notes */
-export const selectUnreadCount = createSelector((state) => {
+export const selectUnreadCount = store.createSelector((state) => {
   return Object.keys(state.noteReadTracking.unreadNoteIds).length;
 });
 
 /** Select the loading state */
-export const selectIsNoteReadTrackingLoading = createSelector((state) => {
+export const selectIsNoteReadTrackingLoading = store.createSelector((state) => {
   return state.noteReadTracking.isLoading;
 });
 
 /** Select the currently viewed note ID */
-export const selectCurrentlyViewedNoteId = createSelector((state) => {
+export const selectCurrentlyViewedNoteId = store.createSelector((state) => {
   return state.noteReadTracking.currentlyViewedNoteId;
 });
 
 /** Select a cached read record for a specific note */
-export const selectReadRecord = createSelector((state, noteId: string) => {
+export const selectReadRecord = store.createSelector((state, noteId: string) => {
   return state.noteReadTracking.readRecords[noteId] ?? null;
 });
 
 /** Select all read records */
-export const selectReadRecords = createSelector((state): Record<string, import("$shared/types/user-activity.types").NoteReadRecord> => {
+export const selectReadRecords = store.createSelector((state): Record<string, import("$shared/types/user-activity.types").NoteReadRecord> => {
   return state.noteReadTracking.readRecords;
 });

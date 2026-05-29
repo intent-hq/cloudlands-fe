@@ -2,7 +2,7 @@
  * Scripts selectors — workspace-scoped.
  */
 
-import { createSelector } from '../../utils/create-selector';
+import { store } from "../../store";
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import type { ScriptWithState } from './scripts-types';
 import { emptyWorkspaceState } from './scripts-slice';
@@ -19,59 +19,59 @@ function getWs(state: StoreState, wsId: string) {
 }
 
 /** All stored script entries (active workspace). */
-export const selectScriptEntries = createSelector((state): ScriptWithState[] => {
+export const selectScriptEntries = store.createSelector((state): ScriptWithState[] => {
   const ws = getActiveWs(state);
   return Object.values(ws.scripts);
 });
 
 /** Running scripts (active workspace). */
-export const selectRunningScripts = createSelector((state): ScriptWithState[] => {
+export const selectRunningScripts = store.createSelector((state): ScriptWithState[] => {
   return selectScriptEntries
     .select(state)
     .filter((s) => (s.runtime ?? createDefaultRuntimeState()).status === 'running');
 });
 
 /** Idle scripts (active workspace). */
-export const selectIdleScripts = createSelector((state): ScriptWithState[] => {
+export const selectIdleScripts = store.createSelector((state): ScriptWithState[] => {
   return selectScriptEntries
     .select(state)
     .filter((s) => (s.runtime ?? createDefaultRuntimeState()).status === 'idle');
 });
 
 /** Get a specific script by ID (active workspace). */
-export const selectScriptById = createSelector((state, scriptId: string) => {
+export const selectScriptById = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
   return ws.scripts[scriptId] ?? null;
 });
 
 /** Get runtime state for a specific script (active workspace). */
-export const selectScriptRuntime = createSelector((state, scriptId: string) => {
+export const selectScriptRuntime = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
   return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
 });
 
 /** Get output lines for a specific script (active workspace). */
-export const selectScriptOutput = createSelector((state, scriptId: string) => {
+export const selectScriptOutput = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
   return ws.outputBuffers[scriptId] ?? [];
 });
 
 /** Whether scripts are initialized for the active workspace. */
-export const selectScriptsInitialized = createSelector((state) => {
+export const selectScriptsInitialized = store.createSelector((state) => {
   return getActiveWs(state).initialized;
 });
 
 /** Whether scripts are loading for the active workspace. */
-export const selectScriptsLoading = createSelector((state) => {
+export const selectScriptsLoading = store.createSelector((state) => {
   return getActiveWs(state).loading;
 });
 
 /** Scripts data for a specific workspace (parameterized). */
-export const selectWorkspaceScriptsInitialized = createSelector(
+export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,
 );
 
-export const selectWorkspaceScriptEntries = createSelector(
+export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
     return Object.values(ws.scripts);
@@ -79,7 +79,7 @@ export const selectWorkspaceScriptEntries = createSelector(
 );
 
 /** Get output lines for a specific workspace + script (parameterized). */
-export const selectWorkspaceScriptOutput = createSelector(
+export const selectWorkspaceScriptOutput = store.createSelector(
   (state, wsId: string, scriptId: string) => {
     const ws = getWs(state, wsId);
     return ws.outputBuffers[scriptId] ?? [];
@@ -87,13 +87,13 @@ export const selectWorkspaceScriptOutput = createSelector(
 );
 
 /** Get a script by ID for a specific workspace (parameterized). */
-export const selectWorkspaceScript = createSelector((state, wsId: string, scriptId: string) => {
+export const selectWorkspaceScript = store.createSelector((state, wsId: string, scriptId: string) => {
   const ws = getWs(state, wsId);
   return ws.scripts[scriptId] ?? null;
 });
 
 /** Get runtime for a script in a specific workspace (parameterized). */
-export const selectWorkspaceScriptRuntime = createSelector(
+export const selectWorkspaceScriptRuntime = store.createSelector(
   (state, wsId: string, scriptId: string) => {
     const ws = getWs(state, wsId);
     return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();

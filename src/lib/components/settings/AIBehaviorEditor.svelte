@@ -8,8 +8,8 @@
 } from '@fortawesome/free-solid-svg-icons';
 
   import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
+
   import {
   selectSpecialists,
   selectIsBuiltIn,
@@ -43,6 +43,7 @@
   import { toast } from 'svelte-sonner';
   import { parseCompoundModelId } from '$shared/config/provider-config';
   import { generateUniqueSpecialistId } from '$shared/specialist-file-types';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     activeView: AIBehaviorView;
@@ -53,7 +54,6 @@
 
   let { activeView, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props = $props();
 
-  const dispatch = getDispatch();
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
@@ -66,7 +66,7 @@
     return (
       specs.length > 0 &&
       specs.every(
-        (s) => selectEffectiveModel.select(getReduxStore().getState(), s.id) === $selectedModel,
+        (s) => selectEffectiveModel.select(appStore.state, s.id) === $selectedModel,
       )
     );
   });
@@ -77,7 +77,7 @@
   }
 
   function getCurrentWorkspacePath(): string | undefined {
-    const workspace = selectActiveWorkspace.select(getReduxStore().getState());
+    const workspace = selectActiveWorkspace.select(appStore.state);
     return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
   }
 
@@ -119,13 +119,13 @@
 
   const isBuiltIn = $derived(
     currentSpecialist
-      ? selectIsBuiltIn.select(getReduxStore().getState(), currentSpecialist.id)
+      ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id)
       : false,
   );
 
   const isFileBased = $derived(
     currentSpecialist
-      ? selectIsFileBased.select(getReduxStore().getState(), currentSpecialist.id)
+      ? selectIsFileBased.select(appStore.state, currentSpecialist.id)
       : false,
   );
 
@@ -133,19 +133,19 @@
   const hasOverrides = $derived.by(() => {
     void $fileSpecialists$; // track file specialist changes for reactivity
     if (!currentSpecialist) return false;
-    const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
+    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
     return !!fileSpec && fileSpec.source === 'user' && isBuiltIn;
   });
 
   const specialistFilePath = $derived(
     currentSpecialist
-      ? selectSpecialistFilePath.select(getReduxStore().getState(), currentSpecialist.id)
+      ? selectSpecialistFilePath.select(appStore.state, currentSpecialist.id)
       : undefined,
   );
 
   const sourceLabel = $derived(
     currentSpecialist
-      ? selectSpecialistSourceLabel.select(getReduxStore().getState(), currentSpecialist.id)
+      ? selectSpecialistSourceLabel.select(appStore.state, currentSpecialist.id)
       : null,
   );
 
@@ -159,9 +159,9 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id);
+      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
       specialistModelValue = selectEffectiveModel.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
     }
@@ -171,8 +171,8 @@
     if (!compoundModelId) return;
     const { providerId } = parseCompoundModelId(compoundModelId);
     if (providerId && providerId !== $activeProviderId$) {
-      dispatch(setActiveProvider(providerId));
-      dispatch(reloadModelsForProvider());
+      appStore.dispatch(setActiveProvider(providerId));
+      appStore.dispatch(reloadModelsForProvider());
     }
   }
 
@@ -186,12 +186,12 @@
     if (isFileBased) {
       // Already a file specialist (user or project) — update in place
       const fileSpec = selectGetFileSpecialist.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
       if (fileSpec) {
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
-        dispatch(
+        appStore.dispatch(
           saveFileSpecialist({
             id: fileSpec.id,
             name: fileSpec.name,
@@ -209,10 +209,10 @@
     } else {
       // Built-in or legacy — export to user file with the change applied
       const effectivePrompt = selectEffectiveBehaviorPrompt.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
-      dispatch(
+      appStore.dispatch(
         saveFileSpecialist({
           id: currentSpecialist.id,
           name: currentSpecialist.name,
@@ -239,12 +239,12 @@
     if (!currentSpecialist) return;
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
       if (fileSpec) {
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
-        dispatch(
+        appStore.dispatch(
           saveFileSpecialist({
             id: fileSpec.id,
             name: fileSpec.name,
@@ -262,14 +262,14 @@
     } else {
       // Built-in or legacy — export to user file with the change applied
       const effectiveModel = selectEffectiveModel.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
       const effectiveCodingAgent = selectEffectiveCodingAgent.select(
-        getReduxStore().getState(),
+        appStore.state,
         currentSpecialist.id,
       );
-      dispatch(
+      appStore.dispatch(
         saveFileSpecialist({
           id: currentSpecialist.id,
           name: currentSpecialist.name,
@@ -290,17 +290,17 @@
     const trimmed = newNameValue.trim();
     if (!trimmed || trimmed === currentSpecialist.name) return;
 
-    const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
-    dispatch(
+    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+    appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: trimmed,
         description: currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id),
-        model: selectEffectiveModel.select(getReduxStore().getState(), currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        model: selectEffectiveModel.select(appStore.state, currentSpecialist.id),
         modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
-        behaviorPrompt: selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), currentSpecialist.id),
+        behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
       }),
@@ -312,17 +312,17 @@
     const trimmed = newDescValue.trim();
     if (trimmed === currentSpecialist.description) return;
 
-    const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
-    dispatch(
+    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+    appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: currentSpecialist.name,
         description: trimmed || currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(getReduxStore().getState(), currentSpecialist.id),
-        model: selectEffectiveModel.select(getReduxStore().getState(), currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        model: selectEffectiveModel.select(appStore.state, currentSpecialist.id),
         modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
-        behaviorPrompt: selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), currentSpecialist.id),
+        behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
       }),
@@ -332,7 +332,7 @@
   function resetToDefault() {
     if (!currentSpecialist) return;
     // Delete the user override file so the specialist reverts to bundled defaults
-    dispatch(
+    appStore.dispatch(
       deleteFileSpecialistAction({
         id: currentSpecialist.id,
         scope: 'user',
@@ -346,8 +346,8 @@
     // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
     const specialistName = currentSpecialist.name;
-    const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), specialistId);
-    dispatch(
+    const fileSpec = selectGetFileSpecialist.select(appStore.state, specialistId);
+    appStore.dispatch(
       deleteFileSpecialistAction({
         id: specialistId,
         scope: fileSpec?.source ?? 'user',
@@ -365,9 +365,9 @@
     if (!newName.trim() || newPromptIsOverLimit) return;
     const createdId = generateUniqueSpecialistId(
       newName.trim(),
-      selectSpecialists.select(getReduxStore().getState()).map((specialist) => specialist.id),
+      selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
     );
-    dispatch(
+    appStore.dispatch(
       saveFileSpecialist({
         id: createdId,
         name: newName.trim(),
@@ -405,7 +405,7 @@
   /** Check if a built-in specialist has been customized (has a user file override) */
   function hasFileOverride(): boolean {
     if (!currentSpecialist) return false;
-    const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), currentSpecialist.id);
+    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
     return !!fileSpec && fileSpec.source === 'user';
   }
 </script>
@@ -432,9 +432,9 @@
               const { providerId: newProvider } = parseCompoundModelId($selectedModel);
               // Save each specialist as a user file with the selected model
               for (const s of $specialists) {
-                const fileSpec = selectGetFileSpecialist.select(getReduxStore().getState(), s.id);
-                const effectivePrompt = selectEffectiveBehaviorPrompt.select(getReduxStore().getState(), s.id);
-                dispatch(
+                const fileSpec = selectGetFileSpecialist.select(appStore.state, s.id);
+                const effectivePrompt = selectEffectiveBehaviorPrompt.select(appStore.state, s.id);
+                appStore.dispatch(
                   saveFileSpecialist({
                     id: s.id,
                     name: s.name,
@@ -557,7 +557,7 @@
     <div class="min-h-0 h-full">
       <AutoSaveTextarea
         value={selectEffectiveBehaviorPrompt.select(
-          getReduxStore().getState(),
+          appStore.state,
           currentSpecialist.id,
         )}
         originalValue={currentSpecialist.defaultBehaviorPrompt}

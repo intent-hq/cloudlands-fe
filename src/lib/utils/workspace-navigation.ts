@@ -24,10 +24,6 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { track } from '$lib/services/analytics';
-import {
-  dispatch,
-  getReduxStore,
-} from '$lib/store/redux-dispatch-bridge';
 import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$lib/store/slices/tab-state/tab-state-selectors';
@@ -37,6 +33,7 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+import { store as appStore } from '$lib/store/store';
 
 const logger = new Logger('WorkspaceNavigation');
 
@@ -69,7 +66,7 @@ export async function navigateToAgent(agentId: string): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  dispatch(openWorkspaceDrawer(workspaceId, 'agent', agentId));
+  appStore.dispatch(openWorkspaceDrawer(workspaceId, 'agent', agentId));
 }
 
 /**
@@ -110,7 +107,7 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  dispatch(openWorkspaceDrawer(workspaceId, 'terminal', terminalId));
+  appStore.dispatch(openWorkspaceDrawer(workspaceId, 'terminal', terminalId));
 }
 
 /** Options for opening content in panels */
@@ -155,7 +152,7 @@ export async function navigateToNote(noteId: string, options?: OpenInPanelOption
     return;
   }
 
-  dispatch(
+  appStore.dispatch(
     openWorkspaceNote(workspaceId, noteId, {
       openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
       sourcePanelId: options?.sourcePanelId,
@@ -196,7 +193,7 @@ export async function navigateToFile(
     return;
   }
 
-  dispatch(
+  appStore.dispatch(
     openWorkspaceFile(workspaceId, filePath, {
       line,
       openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
@@ -240,7 +237,7 @@ export async function closeDrawer(): Promise<void> {
 
   await goto(url.toString(), { replaceState: true });
 
-  dispatch(closeWorkspaceDrawer(workspaceId));
+  appStore.dispatch(closeWorkspaceDrawer(workspaceId));
 }
 
 /**
@@ -418,10 +415,10 @@ export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string):
   logger.info('[navigateAfterWorkspaceRemoval] Navigating after workspace removal:', removedWorkspaceId);
 
   // Close the tab - this automatically sets currentTabId to the next available tab
-  dispatch(closeWorkspaceTab(removedWorkspaceId));
+  appStore.dispatch(closeWorkspaceTab(removedWorkspaceId));
 
   // Get the next tab ID (already set by closeTab)
-  const nextTabId = selectCurrentWorkspaceTabId.select(getReduxStore().getState());
+  const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
 
   if (nextTabId && typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== 'undefined' && nextTabId !== 'null' && nextTabId !== removedWorkspaceId) {
     logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);

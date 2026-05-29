@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectUnreadAgentIdsByWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
@@ -28,6 +28,7 @@
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
   import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
   import WorkspaceTableRow from './WorkspaceTableRow.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   // Safe non-deferred transition functions replacing crossfade.
   //
@@ -128,7 +129,7 @@
 
     // Get unread agent IDs for this workspace
     const unreadAgentIds = new Set($unreadAgentIdsByWorkspace$[ws.id] ?? []);
-    const reduxState = getReduxStore().getState();
+    const reduxState = appStore.state;
 
     return summaryAgents
       .map((agent) => {

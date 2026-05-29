@@ -8,51 +8,38 @@
 -->
 <script lang="ts">
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import TaskAgentStatus from './TaskAgentStatus.svelte';
   import TaskNotePreview from './TaskNotePreview.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
-  import {
-  faPlay,
-  faLinkSlash,
-  faListCheck,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlay, faLinkSlash, faListCheck } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
   import {
-  selectSelectedNoteId,
-  selectNoteById,
-  selectNotesVersion,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+    selectSelectedNoteId,
+    selectNoteById,
+    selectNotesVersion,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+
   import {
-  getReduxStore,
-  getReduxDispatch,
-  dispatch as reduxDispatch,
-} from '$lib/store/redux-dispatch-bridge';
-  import {
-  reloadNotes,
-  updateTaskStatus,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+    reloadNotes,
+    updateTaskStatus,
+  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
   import { delegateExistingTaskRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
-  import { notesIpc } from '$lib/store/slices/workspace-notes/sagas/notes-ipc';
+  import { notesIpc } from '$lib/utils/notes-ipc';
   import { NOTES_CHANNELS } from '$shared/ipc/channels';
   import type { NoteId, TaskStatus, Note, AgentSession } from '$shared/types';
-  import {
-  NoteId as NoteIdBrand,
-  WorkspaceId,
-} from '$shared/types/branded-ids';
+  import { NoteId as NoteIdBrand, WorkspaceId } from '$shared/types/branded-ids';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -103,7 +90,7 @@
     void $notesVersion;
     const wsId = $activeWorkspaceId;
     if (!wsId) return null;
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     return selectNoteById.select(state, wsId, linkedTaskNoteId) ?? null;
   });
 
@@ -162,7 +149,7 @@
     try {
       const workspaceId = linkedTaskNote?.workspaceId;
       if (!workspaceId) return;
-      getReduxDispatch()(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
+      appStore.dispatch(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
     } catch (error) {
       logger.error('Failed to update linked task status', error);
     }
@@ -285,7 +272,9 @@
     // if the task lives in a different workspace), fall back to the active workspace.
     const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
     if (!wsId) return;
-    reduxDispatch(delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false));
+    appStore.dispatch(
+      delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false),
+    );
   }
 
   function convertToInlineTask() {
@@ -326,7 +315,7 @@
 
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
-    const reduxState = getReduxStore().getState();
+    const reduxState = appStore.state;
     const currentNoteId = selectSelectedNoteId.select(reduxState, wsId);
     if (!currentNoteId) return;
     const currentNote = selectNoteById.select(reduxState, wsId, currentNoteId);
@@ -360,7 +349,7 @@
       const tr = editor.state.tr;
       tr.replaceWith(pos, pos + node.nodeSize, newTaskItem);
       editor.view.dispatch(tr);
-      reduxDispatch(reloadNotes(currentNote.workspaceId));
+      appStore.dispatch(reloadNotes(currentNote.workspaceId));
     } catch (error) {
       logger.error('Failed to convert checkbox to Task Note', error);
     }

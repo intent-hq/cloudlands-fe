@@ -16,7 +16,7 @@
   toggleHiddenEditor,
   type InstalledEditor,
 } from '$lib/store/slices/external-editors/external-editors-slice';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   faCode,
   faFolder,
@@ -24,7 +24,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  const dispatch = getDispatch();
+  import { store as appStore } from '$lib/store/store';
   const installedEditors$ = selectInstalledEditors();
   const hiddenEditorIds$ = selectHiddenEditorIds();
 
@@ -41,7 +41,7 @@
   const installedEditors = $derived($installedEditors$.filter((editor) => editor.installed));
 
   onMount(() => {
-    dispatch(fetchEditors());
+    appStore.dispatch(fetchEditors());
   });
 
   function isEditorEnabled(editorId: string) {
@@ -51,7 +51,7 @@
   function handleEditorToggle(editorId: string, value: string | boolean) {
     const enabled = value === true;
     if (isEditorEnabled(editorId) !== enabled) {
-      dispatch(toggleHiddenEditor(editorId));
+      appStore.dispatch(toggleHiddenEditor(editorId));
     }
   }
 

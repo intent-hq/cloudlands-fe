@@ -27,7 +27,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { fetchEditors } from '$lib/store/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { createLogger } from '$lib/utils/client-logger';
   import {
   isAbsolutePath,
@@ -50,6 +50,7 @@
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import Button from './button/button.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   /** Icon mapping from editor ID to Svelte component */
   const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
@@ -108,7 +109,6 @@
 
   const logger = createLogger('WorkspaceActionsMenu');
 
-  const dispatch = getDispatch();
   const installedEditors$ = selectInstalledEditorsFiltered();
 
   let resolvedPath: string = $state('');
@@ -117,7 +117,7 @@
 
   // Fetch installed editors when component mounts
   onMount(() => {
-    dispatch(fetchEditors());
+    appStore.dispatch(fetchEditors());
   });
 
   // Get installed editors for dynamic menu

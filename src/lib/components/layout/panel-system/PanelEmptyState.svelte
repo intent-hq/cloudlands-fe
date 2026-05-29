@@ -17,10 +17,7 @@
   faRobot,
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import {
-  dispatch,
-  getReduxStore,
-} from '$lib/store/redux-dispatch-bridge';
+
   import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import {
   SHORTCUTS,
@@ -33,6 +30,7 @@
 } from '$lib/store/slices/panel-layout/panel-layout-selectors';
 
   import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -117,7 +115,7 @@
     {
       key: SHORTCUTS.COMMAND_PALETTE.key,
       label: SHORTCUTS.COMMAND_PALETTE.label,
-      action: () => dispatch(openPalette()),
+      action: () => appStore.dispatch(openPalette()),
     },
     {
       key: 'mod+shift+]',
@@ -132,7 +130,7 @@
       key: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key,
       label: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.label,
       action: () => {
-        const panelId = selectFocusedPanelId.select(getReduxStore().getState(), _workspaceId);
+        const panelId = selectFocusedPanelId.select(appStore.state, _workspaceId);
         if (panelId) {
           layoutManager?.splitPanel(panelId, 'horizontal');
         }
@@ -141,7 +139,7 @@
     {
       key: 'mod+?',
       label: 'Keyboard Shortcuts',
-      action: () => dispatch(openCheatSheet('global')),
+      action: () => appStore.dispatch(openCheatSheet('global')),
     },
   ];
 </script>

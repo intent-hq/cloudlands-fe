@@ -11,7 +11,7 @@
 } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
   import { setSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-slice';
   import { selectSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
@@ -37,8 +37,9 @@
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import TimelineDivider from './TimelineDivider.svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     workspaceId: string;
@@ -70,7 +71,6 @@
     onCommit,
   }: Props = $props();
 
-  const dispatch = getDispatch();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -95,10 +95,10 @@
 
   async function handleAutoFill() {
     if (isGenerating) {
-      dispatch(cancelExecution(workspaceId, 'commit'));
+      appStore.dispatch(cancelExecution(workspaceId, 'commit'));
       return;
     }
-    dispatch(
+    appStore.dispatch(
       executeBackgroundAgent(workspaceId, 'commit', {
         prompt: 'generate a commit message',
       }),
@@ -106,12 +106,12 @@
   }
 
   function handleStopGenerating() {
-    dispatch(cancelExecution(workspaceId, 'commit'));
-    dispatch(setSidebarCommitWhenReady(workspaceId, false));
+    appStore.dispatch(cancelExecution(workspaceId, 'commit'));
+    appStore.dispatch(setSidebarCommitWhenReady(workspaceId, false));
   }
 
   function toggleCommitWhenReady() {
-    dispatch(setSidebarCommitWhenReady(workspaceId, !$commitWhenReady$));
+    appStore.dispatch(setSidebarCommitWhenReady(workspaceId, !$commitWhenReady$));
   }
 
   function viewCommitThoughtProcess(e?: MouseEvent) {
@@ -119,7 +119,7 @@
       const panelElement = (e?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = e?.metaKey || e?.ctrlKey || false;
-      getReduxStore().dispatch(
+      appStore.dispatch(
         openAgentTabRequested(workspaceId, {
           agentId: commitAgentId,
           sourcePanelId,

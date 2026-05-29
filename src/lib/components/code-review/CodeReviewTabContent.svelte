@@ -6,7 +6,7 @@
 
   import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectCurrentStagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
@@ -31,6 +31,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from 'svelte/transition';
+  import { store as appStore } from '$lib/store/store';
 
 
   interface Props {
@@ -39,7 +40,6 @@
 
   let { workspaceId }: Props = $props();
 
-  const dispatch = getDispatch();
 
   // Get workspace and staged files
   const activeWorkspace = selectActiveWorkspace();
@@ -125,13 +125,13 @@
     streamingText = '';
     error = '';
 
-    dispatch(executeBackgroundAgent(workspaceId, 'review', {
+    appStore.dispatch(executeBackgroundAgent(workspaceId, 'review', {
       files: $ftStagedChanges$.map((f) => f.relativePath),
     }));
   }
 
   function handleStop() {
-    dispatch(cancelExecution(workspaceId, 'review'));
+    appStore.dispatch(cancelExecution(workspaceId, 'review'));
     status = 'idle';
   }
 
@@ -140,7 +140,7 @@
     walkthroughStatus = 'running';
     walkthroughError = '';
     walkthrough = null;
-    dispatch(executeBackgroundAgent(workspaceId, 'walkthrough'));
+    appStore.dispatch(executeBackgroundAgent(workspaceId, 'walkthrough'));
   }
 </script>
 

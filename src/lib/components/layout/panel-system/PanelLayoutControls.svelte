@@ -17,7 +17,7 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { invoke } from '$lib/electron-bridge';
   import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
@@ -25,6 +25,7 @@
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
   import PanelMinimap from './PanelMinimap.svelte';
   import type { LayoutPresetId } from './types';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('PanelLayoutControls');
   const fastModel$ = selectModelForType('fast');
@@ -115,7 +116,7 @@
   }
 
   function getWorkspaceContext() {
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     const agents = workspaceId
       ? selectForegroundWorkspaceAgents.select(state, workspaceId).map((s) => ({
           id: s.id,

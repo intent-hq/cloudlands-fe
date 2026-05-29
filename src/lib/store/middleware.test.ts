@@ -62,6 +62,22 @@ const setLocalStorageEntries = (entries: Record<string, string | null | undefine
   localStorageGetItem.mockImplementation((key: string) => entries[key] ?? null);
 };
 
+async function initStoreForReduxLoggingTests() {
+  const { initAppStore } = await import("./store");
+  const readableState = {
+    subscribe: (run: (state: Record<string, never>) => void) => {
+      run({});
+      return () => {};
+    },
+  };
+  return initAppStore({
+    init: vi.fn(() => vi.fn()),
+    getReadableState: vi.fn(() => readableState),
+    dispatch: vi.fn((action: unknown) => action),
+    state: {},
+  } as any);
+}
+
 describe("store middleware Redux logging gating", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -72,15 +88,17 @@ describe("store middleware Redux logging gating", () => {
     delete (window as Window & { intentFlags?: unknown }).intentFlags;
   });
 
-  it("does not add the logger middleware when the debug flag is off", async () => {
+  it("adds the logger middleware automatically in the Vitest dev environment", async () => {
     const { middleware } = await import("./middleware");
 
-    expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
+    expect(mocks.createLoggerMiddleware).toHaveBeenCalledWith("");
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
+      mocks.loggerMiddleware,
     ]);
   });
 
@@ -95,6 +113,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sagaMiddleware,
       mocks.sentryMiddleware,
+      mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
   });
@@ -178,9 +197,7 @@ describe("window.intent Redux logging interface", () => {
   });
 
   it("registers enableReduxLogging and disableReduxLogging on window.intent", async () => {
-    const { init } = await import("./init");
-
-    const storeContext = init();
+    const storeContext = await initStoreForReduxLoggingTests();
 
     expect(window.intent?.enableReduxLogging).toBeTypeOf("function");
     expect(window.intent?.disableReduxLogging).toBeTypeOf("function");
@@ -192,9 +209,7 @@ describe("window.intent Redux logging interface", () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      const { init } = await import("./init");
-
-      const storeContext = init();
+      const storeContext = await initStoreForReduxLoggingTests();
 
       window.intent?.enableReduxLogging?.();
       expect(localStorageSetItem).toHaveBeenCalledWith(REDUX_DEBUG_LS_KEY, "true");
@@ -222,9 +237,7 @@ describe("window.intent Redux logging interface", () => {
       entries[key] = null;
     });
 
-    const { init } = await import("./init");
-
-    const storeContext = init();
+    const storeContext = await initStoreForReduxLoggingTests();
 
     window.intent?.debug?.toggleReduxLogs?.();
     expect(localStorageSetItem).toHaveBeenLastCalledWith(REDUX_DEBUG_LS_KEY, "true");
@@ -237,6 +250,60 @@ describe("window.intent Redux logging interface", () => {
     storeContext.dispose();
   });
 });
+
+type ChangesPayloadForTest = {
+  prevState: unknown;
+  nextState: unknown;
+  changes: Record<string, { prev: unknown; next: unknown }>;
+};
+
+type NoChangesPayloadForTest = {
+  state: unknown;
+};
+
+function expectGetterDescriptor(object: object, property: string, enumerable = false) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, property);
+
+  expect(descriptor?.get).toEqual(expect.any(Function));
+  expect(descriptor?.value).toBeUndefined();
+  expect(descriptor?.enumerable).toBe(enumerable);
+}
+
+function expectChangesPayloadClassInstance(payload: ChangesPayloadForTest) {
+  const prototype = Object.getPrototypeOf(payload);
+
+  expect(prototype).not.toBe(Object.prototype);
+  expect(prototype?.constructor?.name).toBe("ChangesPayload");
+  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "changes")).toBeUndefined();
+  expectGetterDescriptor(prototype, "prevState");
+  expectGetterDescriptor(prototype, "nextState");
+  expectGetterDescriptor(payload, "changes", true);
+}
+
+function expectNoChangesPayloadClassInstance(payload: NoChangesPayloadForTest) {
+  const prototype = Object.getPrototypeOf(payload);
+  const getterNames = Object.entries(Object.getOwnPropertyDescriptors(prototype))
+    .filter(([, descriptor]) => descriptor.get)
+    .map(([property]) => property);
+
+  expect(prototype).not.toBe(Object.prototype);
+  expect(prototype?.constructor?.name).toBe("NoChangesPayload");
+  expect(Object.getOwnPropertyDescriptor(payload, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "state")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(payload, "changes")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "action")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "prevState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "nextState")).toBeUndefined();
+  expect(Object.getOwnPropertyDescriptor(prototype, "changes")).toBeUndefined();
+  expectGetterDescriptor(prototype, "state");
+  expect(getterNames).toEqual(["state"]);
+}
 
 describe("createLoggerMiddleware", () => {
   beforeEach(() => {
@@ -257,16 +324,30 @@ describe("createLoggerMiddleware", () => {
     expect(consoleLog).toHaveBeenCalledTimes(1);
   });
 
-  it("logs changed state with prev state, action, and next state in a collapsed group", async () => {
+  it("logs changed state with raw action and a separate lazy state payload log", async () => {
     const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
       "./middlewares/logger"
     );
 
-    const prevState = { count: 1 };
-    const nextState = { count: 2 };
+    const prevState = {
+      count: 1,
+      todos: { byId: { "todo-1": { title: "Draft", tags: ["inbox", "soon"] } } },
+    };
+    const nextState = {
+      count: 2,
+      todos: {
+        byId: {
+          "todo-1": { title: "Done", tags: ["inbox", "shipped"] },
+          "todo-2": { title: "New", tags: ["later"] },
+        },
+        order: ["todo-1", "todo-2"],
+      },
+    };
     let currentState = prevState;
     const action = { type: "TEST_ACTION" };
+    const group = vi.spyOn(console, "group").mockImplementation(() => {});
     const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleDir = vi.spyOn(console, "dir").mockImplementation(() => {});
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
 
@@ -283,22 +364,83 @@ describe("createLoggerMiddleware", () => {
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION", "color: inherit; font-weight: 600");
-    expect(consoleLog).toHaveBeenCalledTimes(4);
-    expect(consoleLog.mock.calls.slice(0, 3)).toEqual([
-      ["%c prev state", "color: #9E9E9E; font-weight: bold", prevState],
-      ["%c action    ", "color: #03A9F4; font-weight: bold", action],
-      ["%c next state", "color: #4CAF50; font-weight: bold", nextState],
-    ]);
+    expect(consoleLog).toHaveBeenCalledTimes(2);
+    expect(group).not.toHaveBeenCalled();
+    expect(consoleDir).not.toHaveBeenCalled();
 
-    const lazyDiff = consoleLog.mock.calls[3]?.[2] as { diff: Record<string, { prev: unknown; next: unknown }> };
-    const diffDescriptor = Object.getOwnPropertyDescriptor(lazyDiff, "diff");
+    const actionPayload = consoleLog.mock.calls[0]?.[2];
+    const lazyPayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
 
-    expect(consoleLog.mock.calls[3]?.slice(0, 2)).toEqual(["%c changes  ", "color: #FF9800; font-weight: bold"]);
-    expect(diffDescriptor?.get).toEqual(expect.any(Function));
-    expect(diffDescriptor?.value).toBeUndefined();
-    expect(lazyDiff.diff).toEqual({ count: { prev: 1, next: 2 } });
+    expect(consoleLog.mock.calls[0]?.slice(0, 2)).toEqual(["%c action    ", "color: #03A9F4; font-weight: bold"]);
+    expect(consoleLog.mock.calls[1]?.slice(0, 2)).toEqual(["%c state    ", "color: #4CAF50; font-weight: bold"]);
+    expect(actionPayload).toBe(action);
+    expect(lazyPayload).not.toBe(action);
+    expect(lazyPayload).not.toBe(prevState);
+    expect(lazyPayload).not.toBe(nextState);
+    expectChangesPayloadClassInstance(lazyPayload);
+    expect(lazyPayload.prevState).toBe(prevState);
+    expect(lazyPayload.nextState).toBe(nextState);
+    expect(lazyPayload.changes).toEqual({
+      count: { prev: 1, next: 2 },
+      "todos.byId.todo-1.title": { prev: "Draft", next: "Done" },
+      "todos.byId.todo-1.tags[1]": { prev: "soon", next: "shipped" },
+      "todos.byId.todo-2": { prev: undefined, next: { title: "New", tags: ["later"] } },
+      "todos.order": { prev: undefined, next: ["todo-1", "todo-2"] },
+    });
 
     expect(groupEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("computes changes only when the own changes accessor is read", async () => {
+    const { createLoggerMiddleware } = await vi.importActual<typeof import("./middlewares/logger")>(
+      "./middlewares/logger"
+    );
+
+    let diffReadCount = 0;
+    const prevState = { nested: { count: 1 } };
+    const nextState = {
+      get nested() {
+        diffReadCount++;
+        return { count: 2 };
+      },
+    };
+    let currentState: unknown = prevState;
+    vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+
+    const middleware = createLoggerMiddleware("composer");
+    consoleLog.mockClear();
+    const storeApi = {
+      dispatch: vi.fn(),
+      getState: vi.fn(() => currentState),
+    };
+    const next = vi.fn((receivedAction: unknown) => {
+      currentState = nextState;
+      return receivedAction;
+    });
+
+    expect(() => middleware(storeApi as never)(next)({ type: "TEST_ACTION" })).not.toThrow();
+    expect(diffReadCount).toBe(0);
+
+    const statePayload = consoleLog.mock.calls[1]?.[2] as ChangesPayloadForTest;
+
+    expectChangesPayloadClassInstance(statePayload);
+    expect(statePayload.prevState).toBe(prevState);
+    expect(statePayload.nextState).toBe(nextState);
+    expect(diffReadCount).toBe(0);
+
+    const firstChanges = statePayload.changes;
+
+    expect(diffReadCount).toBe(1);
+    expect(firstChanges).toEqual({ "nested.count": { prev: 1, next: 2 } });
+
+    const secondChanges = statePayload.changes;
+
+    expect(diffReadCount).toBe(2);
+    expect(secondChanges).toEqual(firstChanges);
+    expect(secondChanges).not.toBe(firstChanges);
+    expectGetterDescriptor(statePayload, "changes", true);
   });
 
   it("logs unchanged state without prev state and uses the no changes label", async () => {
@@ -308,7 +450,9 @@ describe("createLoggerMiddleware", () => {
 
     const state = { count: 1 };
     const action = { type: "TEST_ACTION", payload: "payload text" };
+    const group = vi.spyOn(console, "group").mockImplementation(() => {});
     const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    const consoleDir = vi.spyOn(console, "dir").mockImplementation(() => {});
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const groupEnd = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
 
@@ -322,10 +466,26 @@ describe("createLoggerMiddleware", () => {
 
     expect(middleware(storeApi as never)(next)(action)).toBe(action);
     expect(groupCollapsed).toHaveBeenCalledWith("%cTEST_ACTION payload text", "color: #9E9E9E; font-weight: 300");
-    expect(consoleLog.mock.calls).toEqual([
-      ["%c action    ", "color: #03A9F4; font-weight: bold", action],
-      ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter", state],
+    expect(consoleLog.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ["%c action    ", "color: #03A9F4; font-weight: bold"],
+      ["%c state (no changes)", "color: #9E9E9E; font-weight: lighter"],
     ]);
+    expect(group).not.toHaveBeenCalled();
+    expect(consoleLog).toHaveBeenCalledWith(
+      "%c state (no changes)",
+      "color: #9E9E9E; font-weight: lighter",
+      expect.any(Object)
+    );
+    expect(consoleDir).not.toHaveBeenCalled();
+
+    const actionPayload = consoleLog.mock.calls[0]?.[2];
+    const statePayload = consoleLog.mock.calls[1]?.[2] as NoChangesPayloadForTest;
+
+    expect(actionPayload).toBe(action);
+    expect(statePayload).not.toBe(action);
+    expect(statePayload).not.toBe(state);
+    expectNoChangesPayloadClassInstance(statePayload);
+    expect(statePayload.state).toBe(state);
     expect(groupEnd).toHaveBeenCalledTimes(1);
   });
 
@@ -343,6 +503,7 @@ describe("createLoggerMiddleware", () => {
     );
 
     const state = { count: 1 };
+    vi.spyOn(console, "group").mockImplementation(() => {});
     const groupCollapsed = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "groupEnd").mockImplementation(() => {});

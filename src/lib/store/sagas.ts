@@ -1,8 +1,9 @@
 /**
- * Root sagas registry.
- * Each saga is registered here and managed by the saga manager.
- * Sagas are started/stopped via initStore() or the RunSaga component.
+ * Root app saga registry.
+ * Each saga is listed in startup order and started/stopped via Store.runSaga.
  */
+
+import type { Store } from "svelte-redux-toolkit/store";
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
 import { backgroundAgentSettingsSaga } from "./slices/background-agent-settings/sagas/background-agent-settings-saga";
@@ -83,14 +84,14 @@ import { agentStreamSaga } from "./slices/agent-session/sagas/agent-stream-saga"
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
+import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
+
+type AppSaga = Parameters<Store<any, any>["runSaga"]>[0];
 
 /**
- * All registered sagas.
- * Add new sagas here as slices are migrated.
- *
- * All sagas are started synchronously by initStore() during store initialization.
+ * All app-owned sagas in startup order. Add new sagas here as slices are migrated.
  */
-export const sagas = {
+export const sagas = [
   providerSettingsSaga,
   backgroundAgentSettingsSaga,
   externalEditorsSaga,
@@ -110,23 +111,23 @@ export const sagas = {
   userPreferencesSaga,
   workspaceOperationsSaga,
   workspaceSettingsSaga,
-  streamingSaga: streamingConfigSaga,
+  streamingConfigSaga,
   workspaceSaga,
-  gitSaga: gitOperationsSaga,
+  gitOperationsSaga,
   changesSaga,
-  notesSaga: workspaceNotesSaga,
-  workspaceEventsSaga: workspaceEventsRendererSaga,
+  workspaceNotesSaga,
+  workspaceEventsRendererSaga,
   paletteSaga,
-  agentsSaga: workspaceAgentsSaga,
+  workspaceAgentsSaga,
   contextSaga,
   browserSaga,
   authSaga,
   uiSaga,
-  layoutSaga: appLayoutSaga,
+  appLayoutSaga,
   autoUpdateSaga,
-  workspaceNavigationLifecycleSaga: watchWorkspaceNavigationLifecycleSaga,
+  watchWorkspaceNavigationLifecycleSaga,
   retroactiveNavigationMountCheckSaga,
-  workspaceNavigationPersistenceSaga: watchWorkspaceNavigationPersistenceSaga,
+  watchWorkspaceNavigationPersistenceSaga,
   panelContextSaga,
   workspaceSwitcherSaga,
   releaseNotesSaga,
@@ -155,7 +156,7 @@ export const sagas = {
   panelLayoutSaga,
   unreadTrackingSaga,
   prStatusSaga,
-  bgExecutorSaga: backgroundAgentExecutorSaga,
+  backgroundAgentExecutorSaga,
   chatChangesSaga,
   chatStateSaga,
   chatStreamSaga,
@@ -168,22 +169,11 @@ export const sagas = {
   agentSubscriptionUISaga,
   agentAvailabilitySaga,
   sessionStatsSaga,
-} as const;
+  sagaCrashSentrySaga,
+] as const satisfies readonly AppSaga[];
 
-// SagaName is defined in ./types.ts as an explicit string literal union to
-// avoid a transitive import chain that pulls renderer-only modules into the
-// main-process typecheck.  Re-export it here for backward compatibility.
-export type { SagaName } from './types';
-
-// Compile-time assertion: ensure the keys of `sagas` match `SagaName` exactly.
-// If a saga is added/removed from the object above without updating the
-// SagaName union in types.ts, one of these lines will produce a type error.
-import type { SagaName as _SagaName } from './types';
-type _AssertSagasExtendsName = Record<_SagaName, unknown> extends Record<keyof typeof sagas, unknown> ? true : never;
-type _AssertNameExtendsSagas = Record<keyof typeof sagas, unknown> extends Record<_SagaName, unknown> ? true : never;
- 
-const _assertSync: _AssertSagasExtendsName & _AssertNameExtendsSagas = true;
-
-/** All registered saga names, for use by initStore to start all sagas synchronously. */
-export const sagaNames = Object.keys(sagas) as _SagaName[];
-
+export function startAllAppSagas(
+  store: Store<any, any>,
+): Array<() => void> {
+  return sagas.map((saga) => store.runSaga(saga));
+}

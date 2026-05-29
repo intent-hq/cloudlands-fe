@@ -35,47 +35,125 @@ function getActionTitleStyle(stateChanged: boolean): string {
 
 type StateDiff = Record<string, { prev: unknown; next: unknown }>;
 
+class ChangesPayload {
+  readonly #prevState: unknown;
+  readonly #nextState: unknown;
+  declare readonly changes: StateDiff;
+
+  constructor(prevState: unknown, nextState: unknown) {
+    this.#prevState = prevState;
+    this.#nextState = nextState;
+
+    Object.defineProperty(this, "changes", {
+      configurable: true,
+      enumerable: true,
+      get: () => createStateDiff(this.#prevState, this.#nextState),
+    });
+  }
+
+  get prevState(): unknown {
+    return this.#prevState;
+  }
+
+  get nextState(): unknown {
+    return this.#nextState;
+  }
+
+}
+
+class NoChangesPayload {
+  readonly #state: unknown;
+
+  constructor(state: unknown) {
+    this.#state = state;
+  }
+
+  get state(): unknown {
+    return this.#state;
+  }
+}
+
 let hasLoggedWelcomeMessage = false;
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
-function createLazyStateDiff(prevState: unknown, nextState: unknown): { diff: StateDiff } {
-  const prevRecord = asRecord(prevState);
-  const nextRecord = asRecord(nextState);
-  const lazyDiff: { diff?: StateDiff } = {};
+function appendObjectPath(basePath: string, key: string): string {
+  return basePath ? `${basePath}.${key}` : key;
+}
 
-  Object.defineProperty(lazyDiff, "diff", {
-    get() {
-      const changes: StateDiff = {};
+function appendArrayPath(basePath: string, index: number): string {
+  return basePath ? `${basePath}[${index}]` : `[${index}]`;
+}
 
-      for (const key of new Set([...Object.keys(prevRecord), ...Object.keys(nextRecord)])) {
-        if (prevRecord[key] !== nextRecord[key]) {
-          changes[key] = { prev: prevRecord[key], next: nextRecord[key] };
-        }
+function addStateDiff(changes: StateDiff, prevValue: unknown, nextValue: unknown, path: string): void {
+  if (Object.is(prevValue, nextValue)) {
+    return;
+  }
+
+  if (prevValue === undefined) {
+    changes[path || "<root>"] = { prev: undefined, next: nextValue };
+    return;
+  }
+
+  if (
+    (Array.isArray(prevValue) || prevValue === undefined) &&
+    (Array.isArray(nextValue) || nextValue === undefined)
+  ) {
+    const prevArray = Array.isArray(prevValue) ? prevValue : [];
+    const nextArray = Array.isArray(nextValue) ? nextValue : [];
+    const length = Math.max(prevArray.length, nextArray.length);
+
+    if (length > 0) {
+      for (let index = 0; index < length; index++) {
+        addStateDiff(changes, prevArray[index], nextArray[index], appendArrayPath(path, index));
       }
+      return;
+    }
+  }
 
-      return changes;
-    },
-    enumerable: true,
-  });
+  if (
+    (isPlainRecord(prevValue) || prevValue === undefined) &&
+    (isPlainRecord(nextValue) || nextValue === undefined)
+  ) {
+    const prevRecord = isPlainRecord(prevValue) ? prevValue : {};
+    const nextRecord = isPlainRecord(nextValue) ? nextValue : {};
+    const keys = new Set([...Object.keys(prevRecord), ...Object.keys(nextRecord)]);
 
-  return lazyDiff as { diff: StateDiff };
+    if (keys.size > 0) {
+      for (const key of keys) {
+        addStateDiff(changes, prevRecord[key], nextRecord[key], appendObjectPath(path, key));
+      }
+      return;
+    }
+  }
+
+  changes[path || "<root>"] = { prev: prevValue, next: nextValue };
 }
 
-function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state (no changes)" | "changes"): string {
+function createStateDiff(prevState: unknown, nextState: unknown): StateDiff {
+  const changes: StateDiff = {};
+  addStateDiff(changes, prevState, nextState, "");
+  return changes;
+}
+
+function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state" | "state (no changes)"): string {
   switch (label) {
     case "prev state":
       return "color: #9E9E9E; font-weight: bold";
     case "action":
       return "color: #03A9F4; font-weight: bold";
     case "next state":
+    case "state":
       return "color: #4CAF50; font-weight: bold";
     case "state (no changes)":
       return "color: #9E9E9E; font-weight: lighter";
-    case "changes":
-      return "color: #FF9800; font-weight: bold";
   }
 }
 
@@ -83,7 +161,6 @@ function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state
  * Logger middleware - logs dispatched actions and state changes.
  * Only active when debug flag is enabled in localStorage.
  */
- 
 export function createLoggerMiddleware(_webviewName?: string): Middleware {
   if (!hasLoggedWelcomeMessage) {
     hasLoggedWelcomeMessage = true;
@@ -99,7 +176,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
   %cprev state%c  — state before action
   %caction%c      — dispatched action
   %cnext state%c  — state after action
-  %cchanges%c     — lazily-computed diff (click to expand)
+  %cstate%c       — lazy state/diff payload (expanded by default)
   %cstate (no changes)%c — state unchanged
 
 %cConsole API:%c
@@ -121,7 +198,7 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
       "",
       "color: #4CAF50; font-weight: bold",
       "",
-      "color: #FF9800; font-weight: bold",
+      "color: #4CAF50; font-weight: bold",
       "",
       "color: #9E9E9E; font-weight: lighter",
       "",
@@ -142,15 +219,12 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     const title = getActionTitle(action);
 
     console.groupCollapsed(`%c${title}`, getActionTitleStyle(stateChanged));
+    console.log("%c action    ", getLogLabelStyle("action"), action);
 
     if (!stateChanged) {
-      console.log("%c action    ", getLogLabelStyle("action"), action);
-      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), nextState);
+      console.log("%c state (no changes)", getLogLabelStyle("state (no changes)"), new NoChangesPayload(nextState));
     } else {
-      console.log("%c prev state", getLogLabelStyle("prev state"), prevState);
-      console.log("%c action    ", getLogLabelStyle("action"), action);
-      console.log("%c next state", getLogLabelStyle("next state"), nextState);
-      console.log("%c changes  ", getLogLabelStyle("changes"), createLazyStateDiff(prevState, nextState));
+      console.log("%c state    ", getLogLabelStyle("state"), new ChangesPayload(prevState, nextState));
     }
 
     console.groupEnd();
@@ -158,4 +232,3 @@ export function createLoggerMiddleware(_webviewName?: string): Middleware {
     return result;
   };
 }
-

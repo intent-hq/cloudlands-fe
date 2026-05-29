@@ -2,66 +2,62 @@
  * Comments V2 selectors.
  */
 
-import {
-  createSelector,
-  createCollectionItemSelector,
-} from "../../utils/create-selector";
+import { store } from "../../store";
 import {
   getItem,
   getItems,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
-import type { CommentThread } from "./comments-types";
 
 /** All comments as an ordered array. */
-export const selectComments = createSelector((state) =>
+export const selectComments = store.createSelector((state) =>
   getItems(state.comments.commentsById),
 );
 
 /** All threads as an ordered array. */
-export const selectThreads = createSelector((state) =>
+export const selectThreads = store.createSelector((state) =>
   getItems(state.comments.threadsById),
 );
 
 /** Look up a single comment by id. */
-export const selectCommentById = createCollectionItemSelector<CommentV2, "id">(
-  (state) => state.comments.commentsById,
+export const selectCommentById = store.createSelector((state, commentId: string) =>
+  getItem(state.comments.commentsById, commentId),
 );
 
 /** Look up a single thread by id. */
-export const selectThreadById = createCollectionItemSelector<CommentThread, "id">(
-  (state) => state.comments.threadsById,
+export const selectThreadById = store.createSelector((state, threadId: string) =>
+  getItem(state.comments.threadsById, threadId),
 );
 
 /** Currently selected comment id. */
-export const selectSelectedCommentId = createSelector(
+export const selectSelectedCommentId = store.createSelector(
   (state) => state.comments.selectedCommentId,
 );
 
 /** The selected comment object (or undefined). */
-export const selectSelectedComment = createSelector((state) => {
+export const selectSelectedComment = store.createSelector((state) => {
   const id = state.comments.selectedCommentId;
   return id ? getItem(state.comments.commentsById, id) : undefined;
 });
 
 /** Currently hovered comment id. */
-export const selectHoveredCommentId = createSelector(
+export const selectHoveredCommentId = store.createSelector(
   (state) => state.comments.hoveredCommentId,
 );
 
 /** The hovered comment object (or undefined). */
-export const selectHoveredComment = createSelector((state) => {
+export const selectHoveredComment = store.createSelector((state) => {
   const id = state.comments.hoveredCommentId;
   return id ? getItem(state.comments.commentsById, id) : undefined;
 });
 
 /** Check if a thread is expanded. */
-export const selectIsThreadExpanded = createSelector(
+export const selectIsThreadExpanded = store.createSelector(
   (state, threadId: string) => !!state.comments.expandedThreadIds[threadId],
 );
 
 /** Get all comments for a given thread, sorted by createdAt. */
-export const selectCommentsForThread = createSelector(
+export const selectCommentsForThread = store.createSelector(
   (state, threadId: string) => {
     const ids = state.comments.commentIdsByThread[threadId];
     if (!ids || ids.length === 0) return [];

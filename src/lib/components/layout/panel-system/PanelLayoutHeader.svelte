@@ -78,8 +78,9 @@
   import { toast } from 'svelte-sonner';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { getShortcutDisplay } from '$lib/utils/shortcuts';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('PanelLayoutHeader');
   const fastModel$ = selectModelForType('fast');
@@ -252,7 +253,7 @@
     agents: Array<{ id: string; name: string; status: string }>;
     notes: Array<{ id: string; title: string }>;
   } {
-    const state = getReduxStore().getState();
+    const state = appStore.state;
     // Get agents from the Redux store
     const agents = selectForegroundWorkspaceAgents.select(state, workspaceId ?? '');
 

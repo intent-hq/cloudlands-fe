@@ -42,24 +42,27 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
   },
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mocks.dispatch,
-}));
+vi.mock('$lib/store/store', async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
 
-vi.mock('$lib/store/redux-dispatch-bridge', () => ({
-  getReduxStore: () => ({ getState: () => ({}), dispatch: mocks.dispatch }),
-}));
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+  });
+});
 
 vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
 
-vi.mock('$lib/store/slices/workspace-operations/workspace-operations-slice', () => ({
+vi.mock('$lib/store/slices/workspace-operations/workspace-operations-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   requestArchiveWorkspace: vi.fn((id: string) => ({ type: 'archive', payload: [id] })),
   requestDeleteWorkspace: vi.fn((id: string) => ({ type: 'delete', payload: [id] })),
 }));
 
-vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', () => ({
+vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   incrementContextMenuOpen: vi.fn(() => ({ type: 'sidebar/incrementContextMenuOpen' })),
   decrementContextMenuOpen: vi.fn(() => ({ type: 'sidebar/decrementContextMenuOpen' })),
 }));
@@ -67,10 +70,6 @@ vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', () => ({
 vi.mock('$lib/store/slices/unread-tracking/unread-tracking-selectors', () => ({
   selectUnreadAgentIds: vi.fn(() => mocks.readable(mocks.unreadAgentIds)),
   selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => mocks.unreadAgentIds) },
-}));
-
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
-  selectAllWorkspaceAgents: vi.fn(() => mocks.readable([])),
 }));
 
 vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({

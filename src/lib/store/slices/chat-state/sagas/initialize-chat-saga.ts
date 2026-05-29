@@ -46,7 +46,8 @@ import type { AgentSessionSendMessageOptions } from '../../agent-session/agent-s
 import { hydrateAgentQueueRequested } from '../../agent-queue/agent-queue-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
-import { waitFor } from '../../store-utility/sagas/waitFor';
+import { waitFor } from 'svelte-redux-toolkit/saga';
+import type { StoreSelector as PackageStoreSelector } from 'svelte-redux-toolkit/types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
 import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
@@ -58,6 +59,7 @@ import type {
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
 const logger = createLogger('InitializeChatSaga');
+type WaitForSelector<R, ARGS extends any[]> = PackageStoreSelector<R, ARGS, unknown>;
 
 // ============================================================================
 // Session Lookup
@@ -206,7 +208,7 @@ function* waitForInitialSession(
   timeoutMs = 5000,
 ): SagaGenerator<AgentSession | null> {
   const isReady = yield* waitFor(
-    selectWorkspaceAgentReadySession,
+    selectWorkspaceAgentReadySession as unknown as WaitForSelector<AgentSession | null, [string, string]>,
     [wsId, agentId],
     (session) => !!session,
     timeoutMs,

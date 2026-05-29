@@ -5,7 +5,7 @@
  * Actions: note:created/updated/deleted, line-attribution:updated, comment:*
  */
 
-import { createAction } from "../../utils/create-action";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

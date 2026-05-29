@@ -49,7 +49,7 @@ const {
   mockCreate,
   mockDelete,
   mockDuplicate,
-  mockGetReduxStore,
+  mockAppStoreFactory,
   mockInvalidateAgentCache,
   mockList,
   mockOpen,
@@ -70,7 +70,7 @@ const {
   mockCreate: vi.fn(),
   mockDelete: vi.fn(),
   mockDuplicate: vi.fn(),
-  mockGetReduxStore: vi.fn(),
+  mockAppStoreFactory: vi.fn(),
   mockInvalidateAgentCache: vi.fn(),
   mockList: vi.fn(),
   mockOpen: vi.fn(),
@@ -86,9 +86,14 @@ vi.mock("$lib/store/utils/ipc-channel", () => ({
   takeEveryFromListenSync: takeEveryFromListenSyncMock,
 }));
 
-vi.mock("$lib/store/redux-dispatch-bridge", () => ({
-  getReduxStore: mockGetReduxStore,
-}));
+vi.mock("$lib/store/store", async () => {
+  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+
+  return createAppStoreMockModule({
+    state: () => mockAppStoreFactory()?.getState?.() ?? {},
+    dispatch: (...args: any[]) => mockAppStoreFactory()?.dispatch?.(...args),
+  });
+});
 
 vi.mock("$lib/store/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: {
@@ -107,15 +112,14 @@ vi.mock("$lib/services/analytics", () => ({
   track: mockTrack,
 }));
 
-vi.mock("$lib/store/slices/pr-status/pr-status-slice", () => ({
+vi.mock("$lib/store/slices/pr-status/pr-status-slice", async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/store/slices/pr-status/pr-status-slice')>()),
   cleanupPRStatusWorkspace: (wsId: string) => ({ type: "prStatus/cleanupWorkspace", payload: [wsId] }),
 }));
 
 vi.mock("$lib/utils/agent-loader", () => ({
   invalidateAgentCache: mockInvalidateAgentCache,
 }));
-
-
 
 vi.mock("$lib/store/slices/transient-ui/transient-ui-slice", async () => {
   const actual = await vi.importActual<object>("$lib/store/slices/transient-ui/transient-ui-slice");
@@ -193,7 +197,6 @@ import {
 } from "./workspace-ipc-saga";
 import { WorkspaceId } from "$shared/types/branded-ids";
 
-
 function getListenSyncHandler(eventName: string) {
   const call = takeEveryFromListenSyncMock.mock.calls.find(([name]) => name === eventName);
   expect(call).toBeDefined();
@@ -213,7 +216,7 @@ function getElectronHandler(eventName: string) {
 describe("workspaceSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetReduxStore.mockReturnValue({
+    mockAppStoreFactory.mockReturnValue({
       getState: () => ({
         workspace: {
           pendingDeletions: { "ws-1": true },
@@ -455,7 +458,6 @@ describe("workspace request sagas", () => {
     expect((iterator.next().value as any).type).toBe("FORK");
     expect(iterator.next().done).toBe(true);
   });
-
 
   it("tracks rename analytics when a workspace title changes", () => {
     const iterator = handleUpdateWorkspace(

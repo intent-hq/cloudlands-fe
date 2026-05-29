@@ -18,7 +18,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[KEYBINDINGS.md](./KEYBINDINGS.md)** - Keyboard shortcuts and bindings reference
 - **[MULTI_ACP_PROVIDER_SPEC.md](./MULTI_ACP_PROVIDER_SPEC.md)** - Multi-provider ACP specification
 - **[RULES_SYSTEM.md](./RULES_SYSTEM.md)** - Rules and instruction system
-- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
+- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation and links to the Redux skills as the active architecture source
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
 - **[TYPE_SYSTEM_GUIDE.md](./TYPE_SYSTEM_GUIDE.md)** - TypeScript and type safety
 - **[chat-session-forking.md](./chat-session-forking.md)** - Chat forking capabilities
@@ -53,7 +53,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 
 ### Technical Guides
-- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
+- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation; active Redux architecture rules live in the skills under `../.agents/skills/svelte-redux-toolkit/` and migration rules under `../.agents/skills/migrate-to-svelte-redux-toolkit/`
 - **[ERROR_HANDLING_SYSTEM.md](./ERROR_HANDLING_SYSTEM.md)** - Error handling patterns
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
 
@@ -66,7 +66,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 ### For New Developers
 1. Start with [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)
 2. Review [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)
-3. Understand [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)
+3. Review [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), then follow the Redux skills for current implementation rules
 
 - **[Agents.md](../Agents.md)** - Quick reference for AI agents working in this codebase
 
@@ -75,7 +75,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 ### Frontend (Renderer Process)
 
 - **UI Components** - Svelte 5 components with shadcn-svelte
-- **State Management** - Redux for shared state; `.store.svelte.ts` modules remain transitional where noted
+- **State Management** - Redux for shared state; `.store.svelte.ts` modules are deprecated migration targets, and Store-first Redux rules live in the skills
 - **Services** - Business logic layer
 - **IPC Bridge** - Communication with main process
 

@@ -1,32 +1,32 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import { serializeWorkspaceTabsState } from "./tab-state-slice";
 
-export const selectIsDragging = createSelector((state) => {
+export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
 });
 
-export const selectActiveHandleDrop = createSelector((state) => {
+export const selectActiveHandleDrop = store.createSelector((state) => {
   return state.tabState.activeHandleDrop;
 });
 
-export const selectScrollPosition = createSelector(
+export const selectScrollPosition = store.createSelector(
   (state, tabId: string): number | undefined => {
     return state.tabState.scrollPositions[tabId];
   }
 );
 
-export const selectAllScrollPositions = createSelector((state) => {
+export const selectAllScrollPositions = store.createSelector((state) => {
   return state.tabState.scrollPositions;
 });
 
-export const selectCurrentWorkspaceTabId = createSelector((state) => {
+export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
   return state.tabState.currentTabId;
 });
 
-export const selectWorkspaceTabOrder = createSelector((state) => {
+export const selectWorkspaceTabOrder = store.createSelector((state) => {
   return state.tabState.tabOrder;
 });
 
-export const selectPersistedWorkspaceTabsState = createSelector((state) => {
+export const selectPersistedWorkspaceTabsState = store.createSelector((state) => {
   return serializeWorkspaceTabsState(state.tabState);
 });

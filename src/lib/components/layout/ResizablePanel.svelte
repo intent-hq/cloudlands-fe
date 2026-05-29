@@ -17,7 +17,8 @@
   selectSidebarExpandedWidth,
   selectSidebarWidth,
 } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+  import { store as appStore } from '$lib/store/store';
+
 
   let {
     // Common props
@@ -103,7 +104,6 @@
     children?: any;
   } = $props();
 
-  const dispatch = getDispatch();
   const sidebarIsCollapsed = selectIsCollapsed();
   const sidebarWidth = selectSidebarWidth();
   const sidebarExpandedWidth = selectSidebarExpandedWidth();
@@ -171,11 +171,11 @@
     if (!key) return;
 
     if (key === 'workspace-left-panel-width') {
-      dispatch(setSidebarWidth(pixels));
+      appStore.dispatch(setSidebarWidth(pixels));
     } else if (key === 'workspace-left-panel-expanded-width') {
-      dispatch(setSidebarExpandedWidth(pixels));
+      appStore.dispatch(setSidebarExpandedWidth(pixels));
     } else {
-      dispatch(setResizablePanelSize(key, getValueToPersist(pixels, isWidth)));
+      appStore.dispatch(setResizablePanelSize(key, getValueToPersist(pixels, isWidth)));
     }
   }
 
@@ -256,7 +256,7 @@
 
         // Update sidebar width store for left sidebar on window resize
         if (storageKey === 'workspace-left-panel-width') {
-          dispatch(setSidebarWidth(panelWidth));
+          appStore.dispatch(setSidebarWidth(panelWidth));
         }
       }
       if (expandedWidthPercent > 0) {
@@ -338,10 +338,10 @@
   // Check for collapse threshold on mount and set up resize listener
   onMount(() => {
     if (storageKey && !isWorkspaceLeftPanel) {
-      dispatch(requestResizablePanelSize(storageKey));
+      appStore.dispatch(requestResizablePanelSize(storageKey));
     }
     if (expandedStorageKey && !isWorkspaceExpandedPanel) {
-      dispatch(requestResizablePanelSize(expandedStorageKey));
+      appStore.dispatch(requestResizablePanelSize(expandedStorageKey));
     }
 
     if (orientation === 'horizontal' && collapseThreshold && panelWidth < collapseThreshold) {
@@ -414,7 +414,7 @@
 
         // Update sidebar width store for left sidebar (live during drag)
         if (storageKey === 'workspace-left-panel-width') {
-          dispatch(setSidebarWidth(panelWidth));
+          appStore.dispatch(setSidebarWidth(panelWidth));
         }
       }
     } else {

@@ -28,7 +28,7 @@
   import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import {
   checkClonePreflight,
   clearClonePreflight,
@@ -38,6 +38,7 @@
   selectClonePreflightError,
   selectClonePreflightUrl,
 } from '$lib/store/slices/clone-preflight/clone-preflight-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   interface Props {
     // Input state
@@ -123,7 +124,6 @@
   // flooding the network. A failed preflight surfaces inline BEFORE the user
   // clicks Create, using the same `WorkspaceCreationError` component used
   // for post-submit errors so the guidance is consistent.
-  const dispatch = getDispatch();
   const preflightStatus$ = selectClonePreflightStatus();
   const preflightError$ = selectClonePreflightError();
   const preflightUrl$ = selectClonePreflightUrl();
@@ -140,9 +140,9 @@
     lastPreflightKey = key;
 
     if (key !== 'clear') {
-      dispatch(checkClonePreflight(projectSelection!.githubUrl!));
+      appStore.dispatch(checkClonePreflight(projectSelection!.githubUrl!));
     } else {
-      dispatch(clearClonePreflight());
+      appStore.dispatch(clearClonePreflight());
     }
   });
 

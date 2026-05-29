@@ -3,8 +3,8 @@ import type { UnifiedAgentConfig } from "$shared/types/agent.types";
 import {
   createAction,
   createAsyncAction,
-} from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+} from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";
@@ -386,9 +386,10 @@ export const agentStreamResetStreamingMessagesRequested = createAction<[
 
 /**
  * Saga-only trigger: ensure a single agent session is loaded into Redux.
- * If the session already exists for the given agentId it is a no-op;
+ * If the session already exists with a usable backend identity it is a no-op;
  * otherwise the saga resolves the workspace and loads persisted session/config
- * through the saga-owned persistence utility. Idempotent and debounced
+ * through the saga-owned persistence utility, replacing stale same-ID shells.
+ * Idempotent and debounced
  * per `(wsId, agentId)` — rapid re-dispatches while a load is in flight
  * are ignored. Handled in sagas/ensure-agent-session-saga.ts.
  */

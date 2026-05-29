@@ -1,10 +1,10 @@
 import type { EditorCategory } from "$shared/editors/editor-registry";
-import { createAction } from "../../utils/create-action";
-import { createReducer } from "../../utils/create-reducer";
+import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
+import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 // ============================================================================
 // Types

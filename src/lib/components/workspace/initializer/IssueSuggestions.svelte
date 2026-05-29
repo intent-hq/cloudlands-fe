@@ -218,7 +218,7 @@
   import { startGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
   import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
   import { selectLinearIsAuthenticating } from '$lib/store/slices/linear-auth/linear-auth-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -228,11 +228,11 @@
   selectSentryError,
 } from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
   import Header from '$lib/components/ui/Header.svelte';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('ContextPicker');
-  const issueDispatch = getDispatch();
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const githubAuthIsAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const linearIsAuthenticating$ = selectLinearIsAuthenticating();
@@ -627,7 +627,7 @@
       // this function, causing an infinite loop (effect_update_depth_exceeded).
       // Auth initialization is handled by the components that manage GitHub auth
       // (GitHubAuthBanner, GitHubAuthConnection, etc.).
-      isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(getReduxStore().getState());
+      isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(appStore.state);
 
       logger.debug('GitHub auth state', {
         isAuthenticated: isGitHubAuthenticated,
@@ -1302,7 +1302,7 @@
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId:
-                      selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                      selectActiveWorkspaceId.select(appStore.state) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
@@ -1313,7 +1313,7 @@
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId:
-                      selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                      selectActiveWorkspaceId.select(appStore.state) ?? undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
@@ -1631,7 +1631,7 @@
             <button
               type="button"
               disabled={$linearIsAuthenticating$}
-              onclick={() => issueDispatch(startLinearAuth())}
+              onclick={() => appStore.dispatch(startLinearAuth())}
               class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$linearIsAuthenticating$ ? 'Connecting…' : 'Connect'}
@@ -1656,7 +1656,7 @@
             <button
               type="button"
               disabled={$githubAuthIsAuthenticating$}
-              onclick={() => issueDispatch(startGitHubAuth())}
+              onclick={() => appStore.dispatch(startGitHubAuth())}
               class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$githubAuthIsAuthenticating$ ? 'Connecting…' : 'Connect'}
@@ -1721,7 +1721,7 @@
                     bind:value={sentryToken}
                     onkeydown={(e) => {
                       if (e.key === 'Enter' && sentryOrg.trim() && sentryToken.trim()) {
-                        issueDispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
+                        appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
                       }
                     }}
                   />
@@ -1729,7 +1729,7 @@
                     type="button"
                     disabled={$sentryIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
                     onclick={() =>
-                      issueDispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
+                      appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
                     class="shrink-0 text-xs text-primary hover:text-primary/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {$sentryIsConnecting$ ? 'Connecting…' : 'Connect'}
@@ -1745,7 +1745,7 @@
                     onclick={() =>
                       handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
                         workspaceId:
-                          selectActiveWorkspaceId.select(getReduxStore().getState()) ?? undefined,
+                          selectActiveWorkspaceId.select(appStore.state) ?? undefined,
                       })}
                     class="underline cursor-pointer hover:opacity-100"
                   >

@@ -1,4 +1,4 @@
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../store";
 import { emptyBrowserWorkspaceState } from "./browser-slice";
 import type {
   BrowserWorkspaceState,
@@ -6,26 +6,26 @@ import type {
   RecentUrl,
 } from "./browser-types";
 
-export const selectBrowserWorkspaceState = createSelector<
+export const selectBrowserWorkspaceState = store.createSelector<
   [wsId: string],
   BrowserWorkspaceState
 >((state, wsId) => {
   return state.browser.byWorkspaceId[wsId] ?? emptyBrowserWorkspaceState;
 });
 
-export const selectBrowserRecentUrls = createSelector<[wsId: string], RecentUrl[]>(
+export const selectBrowserRecentUrls = store.createSelector<[wsId: string], RecentUrl[]>(
   (state, wsId) => {
     return selectBrowserWorkspaceState.select(state, wsId).recentUrls;
   }
 );
 
-export const selectBrowserCurrentUrl = createSelector<[wsId: string], string | null>(
+export const selectBrowserCurrentUrl = store.createSelector<[wsId: string], string | null>(
   (state, wsId) => {
     return selectBrowserWorkspaceState.select(state, wsId).currentUrl;
   }
 );
 
-export const selectBrowserIsLoading = createSelector<[wsId: string], boolean>(
+export const selectBrowserIsLoading = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => {
     return selectBrowserWorkspaceState.select(state, wsId).isLoading;
   }
@@ -36,7 +36,7 @@ export const selectBrowserIsLoading = createSelector<[wsId: string], boolean>(
  * empty. The EmbeddedBrowser subscriber drains the entire queue in order
  * and dispatches `clearBrowserTabZoomRequest` once to remove the entry.
  */
-export const selectPendingBrowserZoom = createSelector<
+export const selectPendingBrowserZoom = store.createSelector<
   [wsId: string, tabId: string],
   BrowserZoomAction[] | null
 >((state, wsId, tabId) => {

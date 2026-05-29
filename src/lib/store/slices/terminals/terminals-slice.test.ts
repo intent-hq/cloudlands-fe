@@ -27,7 +27,7 @@ import {
   createCollection,
   getItems,
   getItem,
-} from "../../utils/collection-utils";
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 const WS = "ws-1";
 

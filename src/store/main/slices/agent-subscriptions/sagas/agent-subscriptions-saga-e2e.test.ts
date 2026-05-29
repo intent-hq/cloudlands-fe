@@ -29,6 +29,9 @@ import {
   markOneShotFired,
   removeDelegationGroup,
   removeSubscription,
+  requestDeliverEvents,
+  requestDeliverQueuedEvents,
+  requestDelegationGroupDelivery,
   setAgentStatus,
   emptyWorkspaceSubscriptionState,
   type QueuedEventRecord,
@@ -46,11 +49,6 @@ import {
   selectIsDelegationGroupCompleteRaw,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
-import {
-  requestDeliverEvents,
-  requestDeliverQueuedEvents,
-  requestDelegationGroupDelivery,
-} from "./saga-actions";
 import {
   handleDeliverEvents,
   handleDeliverQueuedEvents,

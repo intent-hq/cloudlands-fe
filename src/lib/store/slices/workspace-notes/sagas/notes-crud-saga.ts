@@ -5,7 +5,7 @@
  * content updates, and external update handling.
  * Replaces the async methods from the old notes.store.svelte.ts.
  */
-import { notesIpc } from "./notes-ipc";
+import { notesIpc } from "$lib/utils/notes-ipc";
 import { NOTES_CHANNELS } from "$shared/ipc/channels";
 import type { Note, UpdateNoteRequest, CreateNoteRequest } from "$shared/types";
 import {
@@ -58,7 +58,7 @@ import {
 } from "../workspace-notes-slice";
 import { markNoteRead } from "../../note-read-tracking/note-read-tracking-slice";
 import { Logger } from "$shared/logger";
-import { getItem } from "$lib/store/utils/collection-utils";
+import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { selectWorkspaceNotesState } from "../workspace-notes-selectors";
 import {
   isFullNote,

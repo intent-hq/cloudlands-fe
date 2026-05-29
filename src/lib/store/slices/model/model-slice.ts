@@ -1,6 +1,6 @@
-import { createAction } from '../../utils/create-action';
-import { createReducer } from '../../utils/create-reducer';
-import { createCollection } from '../../utils/collection-utils';
+import { createAction } from 'svelte-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'svelte-redux-toolkit/utils/store/create-reducer';
+import { createCollection } from 'svelte-redux-toolkit/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import {
   normalizeModelForProvider,

@@ -49,7 +49,7 @@ import {
   requestDeliverEvents,
   requestDeliverQueuedEvents,
   requestDelegationGroupDelivery,
-} from "./saga-actions";
+} from "../agent-subscriptions-slice";
 
 const logger = new Logger("DeliverySaga");
 

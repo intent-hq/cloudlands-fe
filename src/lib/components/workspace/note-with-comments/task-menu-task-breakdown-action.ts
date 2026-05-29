@@ -1,6 +1,6 @@
 import type { Workspace } from '$shared/types';
 import { createAgentTypeId } from '$shared/types/agent.types';
-import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+import { store as appStore } from '$lib/store/store';
 import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
 
 import type { AgentContext } from '$features/agent/agent-context';
@@ -68,5 +68,5 @@ export function runTaskBreakdownTaskMenuAction({
       contextReferences: context,
     },
   });
-  getReduxStore().dispatch(launchAction);
+  appStore.dispatch(launchAction);
 }

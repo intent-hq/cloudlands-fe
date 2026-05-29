@@ -17,7 +17,6 @@ import {
   takeEvery,
   type SagaGenerator,
 } from "typed-redux-saga";
-import { clearPanelLayoutAdapter } from "$features/layout/panel-layout-adapter";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -30,7 +29,7 @@ import {
 import {
   takeEveryFromSelector,
   type SelectorChannelPayload,
-} from "../../../utils/selector-channel-effects";
+} from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { removeFileContentEntry } from "../../files/files-slice";
 import {
@@ -98,6 +97,11 @@ function getStorageKey(wsId: string): string {
 }
 
 const restoredWorkspaceIds = new Set<string>();
+
+async function loadClearPanelLayoutAdapter() {
+  const { clearPanelLayoutAdapter } = await import("$features/layout/panel-layout-adapter");
+  return clearPanelLayoutAdapter;
+}
 
 function isValidMountedWorkspaceId(wsId: string): boolean {
   return !!wsId && wsId !== "new" && !wsId.startsWith("optimistic-") && wsId !== "undefined";
@@ -357,7 +361,8 @@ function* watchClearLayout() {
 export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnmounted>): SagaGenerator<void> {
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
-  clearPanelLayoutAdapter(wsId);
+  const clearPanelLayoutAdapter = yield* call(loadClearPanelLayoutAdapter);
+  yield* call(clearPanelLayoutAdapter, wsId);
 }
 
 function* watchWorkspaceUnmounted() {

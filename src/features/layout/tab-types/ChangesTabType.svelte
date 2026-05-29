@@ -27,7 +27,7 @@
   toggleFoldUnchanged,
   toggleDiffSideBySide,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { dispatch } from '$lib/store/redux-dispatch-bridge';
+
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
   import Fa from 'svelte-fa';
@@ -38,6 +38,7 @@
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { store as appStore } from '$lib/store/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
@@ -169,7 +170,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleLineWrapping())}
+    onclick={() => appStore.dispatch(toggleLineWrapping())}
     tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
@@ -180,7 +181,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleFoldUnchanged())}
+    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
       ? 'Folding unchanged lines. Click to disable.'
       : 'Click to fold unchanged lines'}
@@ -193,7 +194,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    onclick={() => dispatch(toggleDiffSideBySide())}
+    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
     tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
@@ -221,13 +222,13 @@
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      dispatch(openAgentTabRequested(workspaceId, { agentId, openInAdjacentPanel, sourcePanelId }));
+      appStore.dispatch(openAgentTabRequested(workspaceId, { agentId, openInAdjacentPanel, sourcePanelId }));
     }}
     onOpenNote={(noteId, event) => {
       const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
       const panelElement = (event?.target as HTMLElement | null)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-      dispatch(openWorkspaceNote(workspaceId, noteId, { openInAdjacentPanel, sourcePanelId }));
+      appStore.dispatch(openWorkspaceNote(workspaceId, noteId, { openInAdjacentPanel, sourcePanelId }));
     }}
   />
 {/key}

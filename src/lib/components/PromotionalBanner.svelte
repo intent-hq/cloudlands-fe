@@ -12,7 +12,7 @@
   type PromoBannerInteraction,
 } from '$lib/store/slices/user-preferences/user-preferences-slice';
   import { selectPromoBannerInteractions } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import type {
     PromotionalBanner as PromotionalBannerData,
     PromotionalBannerAction,
@@ -27,8 +27,8 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
+  import { store as appStore } from '$lib/store/store';
 
-  const dispatch = getDispatch();
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
   const promoBannerInteractions$ = selectPromoBannerInteractions();
@@ -237,11 +237,11 @@
   }
 
   function recordInteraction(bannerId: string, interaction: PromoBannerInteraction) {
-    dispatch(recordPromoBannerInteraction(bannerId, interaction));
+    appStore.dispatch(recordPromoBannerInteraction(bannerId, interaction));
   }
 
   function dismissBanner(id: string, completedAllSteps = false) {
-    dispatch(dismissPromoBanner(id, new Date().toISOString(), completedAllSteps));
+    appStore.dispatch(dismissPromoBanner(id, new Date().toISOString(), completedAllSteps));
     dismissedBannerIds = [...new Set([...dismissedBannerIds, id])];
   }
 
@@ -313,8 +313,8 @@
           }
         }
 
-        dispatch(setActiveProvider(action.agentId));
-        dispatch(reloadModelsForProvider());
+        appStore.dispatch(setActiveProvider(action.agentId));
+        appStore.dispatch(reloadModelsForProvider());
 
         // Recompute remaining buttons now that models are loaded for the new provider.
         recomputeRemainingButtons();

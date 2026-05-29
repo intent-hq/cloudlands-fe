@@ -18,7 +18,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
   import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-  import { getReduxStore } from '$lib/store/redux-dispatch-bridge';
+
   import { agentClient } from '$features/agent/agent.client';
 
   import { getAgentProvider } from '$shared/types/agent-session';
@@ -48,11 +48,10 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   selectPanels,
   selectSelections,
 } from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
-  import { getDispatch } from '$lib/store/utils/svelte-context';
+
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
-  const simpleRichInputDispatch = getDispatch();
 
   type MainPanelContext = {
     type: 'file' | 'note' | 'spec';
@@ -102,6 +101,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   // Import ContextItem from context-api.ts
   import type { ContextItem } from './context-api';
   import { cn } from '$lib/utils';
+  import { store as appStore } from '$lib/store/store';
   export type { ContextItem };
 
   let {
@@ -310,11 +310,11 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 
   // Handlers for picker buttons
   function handleTogglePanel(id: string) {
-    simpleRichInputDispatch(togglePanelAction(id));
+    appStore.dispatch(togglePanelAction(id));
   }
 
   function handleToggleSelection(id: string) {
-    simpleRichInputDispatch(toggleSelectionAction(id));
+    appStore.dispatch(toggleSelectionAction(id));
   }
 
   // Resize functionality
@@ -396,7 +396,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     }
 
     const session = workspace?.id
-      ? selectAgentSession.select(getReduxStore().getState(), agentId)
+      ? selectAgentSession.select(appStore.state, agentId)
       : undefined;
     const provider = session ? getAgentProvider(session) : undefined;
     return provider ? getProviderConfig(provider).id : undefined;
@@ -429,7 +429,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
-      ? selectAgentSession.select(getReduxStore().getState(), agentId)
+      ? selectAgentSession.select(appStore.state, agentId)
       : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;
@@ -440,7 +440,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
     selectedModel = newModel;
     lastNotifiedModel = newModel;
 
-    getReduxStore().dispatch(updateAgentSessionFields(agentId, {
+    appStore.dispatch(updateAgentSessionFields(agentId, {
       provider: newProvider,
       model: newModel,
       metadata: {
@@ -464,7 +464,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
       const rollbackProvider = previousProvider ?? previousSession?.provider ?? previousSession?.metadata?.provider as string | undefined;
       const rollbackModel = previousModel ?? previousSession?.model;
       if (rollbackProvider && rollbackModel) {
-        getReduxStore().dispatch(updateAgentSessionFields(agentId, {
+        appStore.dispatch(updateAgentSessionFields(agentId, {
           provider: rollbackProvider,
           model: rollbackModel,
           metadata: {

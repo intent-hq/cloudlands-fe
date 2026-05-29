@@ -30,7 +30,7 @@ import {
   selectWorkspaceById,
   selectActiveWorkspace,
 } from "$lib/store/slices/workspace/workspace-selectors";
-import { takeLatestFromSelector } from "$lib/store/utils/selector-channel-effects";
+import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import { updateWorkspaceEntity } from "$lib/store/slices/workspace/workspace-slice";
 import {
   PullRequestStatus,
@@ -485,7 +485,7 @@ function* watchWindowFocus(): SagaGenerator<void> {
  * startPRPolling / stopPRPolling.
  */
 function* watchActiveWorkspacePRPolling(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(
+  yield* takeLatestFromSelector<Workspace | undefined>(
     selectActiveWorkspace,
     function* ({ payload: workspace }) {
       const wsId = workspace?.id;
