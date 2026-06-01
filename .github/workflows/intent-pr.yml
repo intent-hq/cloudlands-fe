@@ -68,20 +68,49 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Build main process
         run: pnpm run build:main
-      - name: Verify main process loads without devDependencies
+      - name: Verify main process has no devDependency imports
         run: |
           # svelte is a devDependency stripped from packaged builds.
-          # Hide it and try loading the main process entry — if Node's
-          # module resolver hits svelte, the import fails just like it
-          # would in the packaged app.
+          # Hide it and try importing files reachable from the main-
+          # process entry. If any module in the chain transitively
+          # resolves 'svelte', Node fails with ERR_MODULE_NOT_FOUND —
+          # the same crash that occurs inside the packaged app.asar.
+          #
+          # We cannot import dist/main/index.js directly because it
+          # requires 'electron' (unavailable in plain Node), which may
+          # error out *before* the resolver reaches the svelte path,
+          # producing a false pass (this is exactly the bug that let
+          # PR #654 through). Instead we import the specific service
+          # modules that sit on the boundary between the main process
+          # and renderer-only dependencies.
           mv node_modules/svelte node_modules/svelte.HIDDEN
-          OUTPUT=$(node --input-type=module -e "await import('./dist/main/index.js')" 2>&1 || true)
+
+          FAILED=0
+          for MODULE in \
+            dist/features/agent/services/stream-manager.js \
+            dist/features/agent/main/consolidated-backend.service.js \
+            dist/features/agent/main/agent-backend-handler.service.js; do
+
+            EXIT_CODE=0
+            OUTPUT=$(node --input-type=module \
+              -e "await import('./$MODULE'); process.exit(0);" \
+              2>&1) || EXIT_CODE=$?
+
+            if [ "$EXIT_CODE" -ne 0 ] && echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
+              echo "FAIL: $MODULE"
+              echo "$OUTPUT" | head -3
+              FAILED=1
+            fi
+          done
+
           mv node_modules/svelte.HIDDEN node_modules/svelte
-          if echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
-            echo "$OUTPUT"
-            echo "::error::Main process imports svelte at runtime. This will crash packaged builds."
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Main-process modules transitively import svelte. This will crash packaged builds."
             exit 1
           fi
+
+          echo "✓ No svelte imports found in main-process module graph."
 
   typecheck-preload:
     name: Type Check (preload)

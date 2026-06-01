@@ -35,15 +35,41 @@ import {
   setAgentStreaming,
   updateAgentDigest,
 } from '$lib/store/slices/agent-session/agent-session-slice';
-
-import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 import {
   setWorkspaceEntity,
   removeWorkspaceEntity,
 } from '$lib/store/slices/workspace/workspace-slice';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-import { store as appStore } from '$lib/store/store';
+import { getRendererStore } from '$lib/store/renderer-store-bridge';
+
+/** Shorthand – keeps call-site diffs minimal after bridge migration. */
+const appStore = {
+  get state() { return getRendererStore().state; },
+  dispatch(action: { type: string;[k: string]: any }) { return getRendererStore().dispatch(action); },
+};
+
+// ---------------------------------------------------------------------------
+// Inline selector helpers.
+//
+// The canonical selector modules (`workspace-selectors`, `agent-session-selectors`)
+// statically import the configured Store which chains to `svelte-redux-toolkit/store`
+// → `svelte`. Since stream-manager.ts is transitively loaded by the main process
+// (where svelte is absent in packaged builds), we cannot import those modules.
+// The logic below mirrors the selectors without the Store dependency.
+// ---------------------------------------------------------------------------
+
+/** Mirrors selectWorkspaceById.select(state, wsId) */
+function lookupWorkspaceById(state: any, wsId: string): Workspace | undefined {
+  return state.workspace?.workspaces?.map?.[wsId];
+}
+
+/** Mirrors selectAgentSession.select(state, agentId) */
+function lookupAgentSession(state: any, agentId?: string) {
+  if (!agentId) return undefined;
+  return state.agentSessions?.byAgentId[agentId] as
+    | { messages?: AgentMessage[]; isBackground?: boolean; metadata?: { isBackground?: boolean } }
+    | undefined;
+}
 
 const logger = new Logger('DirectStreamManager');
 
@@ -272,7 +298,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Update agent state - fail fast if workspace not found
     const wsId = config.workspaceId as string;
-    const workspaceEntity = selectWorkspaceById.select(appStore.state, wsId);
+    const workspaceEntity = lookupWorkspaceById(appStore.state, wsId);
     if (!workspaceEntity) {
       logger.error('Workspace not found, cannot start stream — aborting', {
         workspaceId: config.workspaceId,
@@ -759,7 +785,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Mark agent as having unread messages (if user isn't currently viewing it)
     // Pass isBackground to skip unread tracking for background agents
-    const agentSession = selectAgentSession.select(
+    const agentSession = lookupAgentSession(
       appStore.state, session.config.agentId
     );
     const isBackgroundAgent =
@@ -1447,7 +1473,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
         // Restore content blocks to agent state
         if (state.contentBlocks.length > 0) {
-          const agentData = selectAgentSession.select(store.state, state.config.agentId);
+          const agentData = lookupAgentSession(store.state, state.config.agentId);
           if (agentData) {
             const lastMessage = agentData.messages?.[agentData.messages.length - 1];
             if (lastMessage && lastMessage.role === 'assistant') {

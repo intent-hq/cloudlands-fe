@@ -10,6 +10,7 @@ import type {
   ReduxStoreContext,
 } from "./types";
 import { safeLocalStorage } from "../utils/safe-storage";
+import { initRendererStoreBridge } from "./renderer-store-bridge";
 
 export { store } from "./configured-store";
 
@@ -139,6 +140,11 @@ export const initAppStore = (
   };
 
   exposeStoreContextDebug(storeContext);
+
+  // Populate the renderer store bridge so that services reachable from the
+  // main process (e.g. stream-manager.ts) can access dispatch/state without a
+  // static import of this module (which would chain to svelte).
+  initRendererStoreBridge(store);
 
   return storeContext;
 };
