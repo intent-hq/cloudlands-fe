@@ -81,6 +81,7 @@
   type WorkspacePhaseStats,
 } from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
   import {
@@ -100,7 +101,6 @@
 
   interface Props {
     workspaceId: string;
-    workspacePath?: string;
     notesLoading?: boolean;
     selectedNoteId?: string | null;
     onOpenNote?: (noteId: string) => void;
@@ -129,7 +129,6 @@
 
   let {
     workspaceId,
-    workspacePath = '',
     notesLoading = false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     selectedNoteId = null,
@@ -159,6 +158,7 @@
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
 
   // Transient signal: panel tab "Reveal in Sidebar" → scroll & highlight.
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
@@ -700,6 +700,7 @@
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey && e.shiftKey && e.key === 'c') {
         e.preventDefault();
+        const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
         if (workspacePath) {
           navigator.clipboard.writeText(workspacePath);
           import('$lib/components/ui/toast').then(({ toast }) => {
@@ -960,13 +961,13 @@
                         >
                       </OpenComboButton></span
                     >.
-                  {:else if tabId === 'files' && workspacePath}
+                  {:else if tabId === 'files' && $fileExplorerWorkspacePath}
                     {$workspace?.skipWorktree
                       ? 'Working directly in'
                       : 'The workspace contains a copy of your repo that lives in'}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
-                        filePath={workspacePath}
+                        filePath={$fileExplorerWorkspacePath}
                         isDirectory={true}
                         variant="sidebar"
                         compact
@@ -974,7 +975,7 @@
                       >
                         <span
                           class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                          >/{workspacePath.split(/[/\\]/).slice(-2).join('/')}</span
+                          >/{$fileExplorerWorkspacePath.split(/[/\\]/).slice(-2).join('/')}</span
                         >
                       </OpenComboButton></span
                     >.
@@ -1201,9 +1202,7 @@
                     </div>
                     <FilesPanel
                       bind:this={filesPanelRef}
-                      {workspacePath}
                       {workspaceId}
-                      environmentConfig={$workspace?.environmentConfig}
                       selectedFile={effectiveSelectedFile}
                       onOpenFile={handleOpenFileInPanel}
                       {onCreateFile}

@@ -279,6 +279,10 @@ export class ChangeDetectorRefactored extends EventEmitter {
       if (fileWatcherActive) {
         this.performanceMonitor.incrementCounter('activeWatchers', 1);
       } else {
+        logger.info('File watcher inactive after startup; using git polling fallback', {
+          workspaceId: this.workspaceId,
+          workspacePath: this.workspacePath,
+        });
         this.startGitPolling();
         // Register interval change listener for git polling restarts.
         // Only needed when periodic polling is active.

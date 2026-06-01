@@ -1,51 +1,45 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import {
-  onMount,
-  tick,
-} from 'svelte';
+  import { tick } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { invoke } from '$lib/electron-bridge';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
-  import type { EnvironmentConfig } from '$shared/types';
+  import { ListContainer, ListItem } from '$lib/components/ui/list';
   import {
-  ListContainer,
-  ListItem,
-} from '$lib/components/ui/list';
-  import {
-  selectCurrentStagedWorkingChanges,
-  selectCurrentUnstagedWorkingChanges,
-} from '$lib/store/slices/changes/changes-selectors';
+    selectCurrentStagedWorkingChanges,
+    selectCurrentUnstagedWorkingChanges,
+  } from '$lib/store/slices/changes/changes-selectors';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
   import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
 
-
   import {
-  initializeFileExplorer,
-  setWorkspacePathRequested,
-  toggleDirectoryRequested,
-  expandToPathRequested,
-  expandAllRequested,
-  refreshFileExplorer,
-  clearExpandedPathsExceptRoot,
-  syncGitStatusFromStoresRequested,
-} from '$lib/store/slices/file-explorer/file-explorer-slice';
+    initializeFileExplorer,
+    toggleDirectoryRequested,
+    removeExpandedPath,
+    expandToPathRequested,
+    expandAllRequested,
+    clearExpandedPathsExceptRoot,
+    syncGitStatusFromStoresRequested,
+  } from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
-  selectFileExplorerRootNode,
-  selectFileExplorerIsLoading,
-  selectFileExplorerIsInitialized,
-  selectFileExplorerError,
-  selectFileExplorerGitStatus,
-  selectFlattenedNodes,
-  selectHasExpandedDirectories,
-  selectFileExplorerWorkspacePath,
-} from '$lib/store/slices/file-explorer/file-explorer-selectors';
+    selectFileExplorerRootNode,
+    selectFileExplorerIsLoading,
+    selectFileExplorerIsInitialized,
+    selectFileExplorerError,
+    selectFileExplorerGitStatus,
+    selectEffectiveFileExplorerWorkspacePath,
+    selectFileExplorerInitializationInputs,
+    selectFlattenedNodes,
+    selectHasExpandedDirectories,
+    selectShouldInitializeFileExplorerForWorkspace,
+  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
   import { store as appStore } from '$lib/store/store';
+  import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
 
   // Search result type from workspace:list-files
   interface SearchResult {
@@ -56,9 +50,7 @@
   }
 
   interface Props {
-    workspacePath: string;
-    workspaceId?: string;
-    environmentConfig?: EnvironmentConfig;
+    workspaceId: string;
     onFileSelect?: (path: string) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onRenameFile?: (oldPath: string, newPath: string) => void;
@@ -72,9 +64,7 @@
   }
 
   let {
-    workspacePath,
     workspaceId,
-    environmentConfig,
     onFileSelect,
     onCreateFile,
     onRenameFile,
@@ -90,7 +80,7 @@
   const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
 
   // Writable store for workspace ID, used as reactive arg for selectors
-  const wsIdStore = writable(workspaceId || workspacePath || '');
+  const wsIdStore = writable(workspaceId);
 
   // Selector subscriptions at component init time
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);
@@ -98,8 +88,8 @@
   const feIsInitialized$ = selectFileExplorerIsInitialized(wsIdStore);
   const feError$ = selectFileExplorerError(wsIdStore);
   const gitStatusRecord$ = selectFileExplorerGitStatus(wsIdStore);
+  const fileExplorerInitializationInputs$ = selectFileExplorerInitializationInputs(wsIdStore);
   const flattenedNodes$ = selectFlattenedNodes(wsIdStore);
-  const feWorkspacePath$ = selectFileExplorerWorkspacePath(wsIdStore);
 
   // Ref to VirtualizedFileTree for delegating method calls
   let virtualizedTreeRef: VirtualizedFileTree | null = $state(null);
@@ -109,17 +99,23 @@
 
   // Keep wsIdStore in sync with prop — drives reactive selector subscriptions.
   $effect(() => {
-    wsIdStore.set(workspaceId || workspacePath || '');
+    wsIdStore.set(workspaceId);
   });
 
   // Effective workspace id used for dispatches. Derived so it reacts to prop
   // changes without requiring a separate mutable ref.
-  const effectiveWsId = $derived(workspaceId || workspacePath || '');
+  const effectiveWsId = $derived(workspaceId);
 
-  // Track the last workspaceId we initialized for, to handle workspace switches
-  let lastInitializedWorkspaceId: string | undefined = undefined;
+  function toggleFlattenedDirectory(nodePath: string, flatNode?: FlattenedFileNode) {
+    if (flatNode?.isExpanded && flatNode.compactedExpandedPaths?.length) {
+      for (const expandedPath of flatNode.compactedExpandedPaths) {
+        appStore.dispatch(removeExpandedPath(effectiveWsId, expandedPath));
+      }
+      return;
+    }
 
-  let modifiedFiles = $state<Set<string>>(new Set());
+    appStore.dispatch(toggleDirectoryRequested(effectiveWsId, nodePath));
+  }
 
   // Search state - for querying all files when filtering
   let searchResults = $state<SearchResult[]>([]);
@@ -298,28 +294,10 @@
 
   // Handle file selection
 
-  // Mark a file as modified (called from parent component)
-  export function markFileModified(filePath: string) {
-    modifiedFiles.add(filePath);
-    // Force re-render
-    modifiedFiles = new Set(modifiedFiles);
-  }
-
-  // Mark a file as unmodified (called from parent component)
-  export function markFileUnmodified(filePath: string) {
-    modifiedFiles.delete(filePath);
-    // Force re-render
-    modifiedFiles = new Set(modifiedFiles);
-  }
-
-  // Check if a file is modified
-  function isFileModified(filePath: string): boolean {
-    return modifiedFiles.has(filePath);
-  }
-
   // Filtered flattened nodes - applies showOnlyChanged filter
   const filteredFlattenedNodes = $derived.by(() => {
     const nodes = $flattenedNodes$;
+
     if (!showOnlyChanged) return nodes;
     // Git-change signals are derived onto each FlattenedFileNode by
     // selectFlattenedNodes, so a single field check covers files and
@@ -336,6 +314,7 @@
 
   let initialized = false;
   let isInitializing = false; // Guard against concurrent initialization
+  let pendingInitializationKey: string | undefined = undefined;
   let lastSyncTime = 0;
 
   // Watch for changes in the stores and sync local git status display
@@ -367,20 +346,41 @@
   // IPC/window listeners and workspace lifecycle are now owned by the saga, so
   // this function only needs to dispatch the initialize action.
   function initializeForWorkspace(wsPath: string, wsId: string | undefined) {
+    const targetWsId = wsId || wsPath;
+    const initializationKey = `${targetWsId}:${wsPath}`;
+
     // Prevent concurrent initialization
     if (isInitializing) {
       logger.debug('[FileTreeView] Initialization already in progress, skipping', { wsId });
       return;
     }
 
-    // Skip if already initialized for this workspace
-    if (initialized && lastInitializedWorkspaceId === wsId) {
-      logger.debug('[FileTreeView] Already initialized for this workspace, skipping', { wsId });
+    if (!selectShouldInitializeFileExplorerForWorkspace.select(appStore.state, targetWsId)) {
+      const initializationInputs = selectFileExplorerInitializationInputs.select(
+        appStore.state,
+        targetWsId,
+      );
+      initialized = true;
+      if (initializationInputs.isInitialized || !initializationInputs.workspacePath) {
+        pendingInitializationKey = undefined;
+      }
+      logger.debug('[FileTreeView] Already initialized for this workspace/path, skipping', {
+        wsId: targetWsId,
+        workspacePath: wsPath,
+      });
       return;
     }
 
-    const targetWsId = wsId || wsPath;
+    if (pendingInitializationKey === initializationKey) {
+      logger.debug('[FileTreeView] Initialization already requested, skipping duplicate dispatch', {
+        wsId: targetWsId,
+        workspacePath: wsPath,
+      });
+      return;
+    }
+
     isInitializing = true;
+    pendingInitializationKey = initializationKey;
     logger.info('[FileTreeView] Initializing for workspace', {
       workspacePath: wsPath,
       workspaceId: wsId,
@@ -406,11 +406,9 @@
         initializeFileExplorer(targetWsId, {
           workspacePath: wsPath,
           workspaceId: wsId,
-          environmentConfig,
         }),
       );
       initialized = true;
-      lastInitializedWorkspaceId = wsId;
       logger.info('[FileTreeView] Initialization dispatched');
     } catch (error) {
       logger.error('[FileTreeView] Failed to initialize:', error);
@@ -419,56 +417,26 @@
     }
   }
 
-  onMount(() => {
+  // Effect to handle mount, remount, workspace ID/path changes, and cleared Redux state.
+  // Environment-config changes are observed by the file-explorer saga.
+  $effect(() => {
+    const currentWsId = workspaceId;
+    const initializationInputs = $fileExplorerInitializationInputs$;
+    const currentWsPath = initializationInputs.workspacePath;
+
     logger.info('[FileTreeView] onMount called', {
-      workspacePath,
+      workspacePath: currentWsPath,
       workspaceId,
-      hasPath: !!workspacePath,
-      pathLength: workspacePath?.length,
+      hasPath: !!currentWsPath,
+      pathLength: currentWsPath?.length,
     });
 
-    // Only initialize if we have a workspace path
-    if (workspacePath) {
-      // Initialize asynchronously to prevent UI blocking
-      Promise.resolve().then(() => initializeForWorkspace(workspacePath, workspaceId));
-    } else {
-      logger.warn('[FileTreeView] No workspace path provided, skipping initialization');
+    if (!currentWsPath) {
+      logger.warn('[FileTreeView] No workspace path provided; checking initialization gate');
     }
 
+    initializeForWorkspace(currentWsPath, currentWsId);
   });
-
-  // Effect to handle workspace ID changes (workspace switch without component remount)
-  $effect(() => {
-    // Read workspaceId and workspacePath to create reactive dependencies
-    const currentWsId = workspaceId;
-    const currentWsPath = workspacePath;
-
-    // If workspace ID changed and we have a valid path, reinitialize
-    if (
-      currentWsId &&
-      currentWsPath &&
-      currentWsId !== lastInitializedWorkspaceId &&
-      lastInitializedWorkspaceId !== undefined
-    ) {
-      logger.info('[FileTreeView] Workspace ID changed, reinitializing', {
-        previousWorkspaceId: lastInitializedWorkspaceId,
-        newWorkspaceId: currentWsId,
-        workspacePath: currentWsPath,
-      });
-
-      // Reset initialized flag since we're switching workspaces. The saga
-      // handles deactivate/reactivate via workspaceMounted/Unmounted.
-      initialized = false;
-
-      // Initialize the new workspace
-      initializeForWorkspace(currentWsPath, currentWsId);
-    }
-  });
-
-  // Export refresh function for parent components
-  export function refresh() {
-    appStore.dispatch(refreshFileExplorer(effectiveWsId));
-  }
 
   // Export expand/collapse all functions for parent components
   export function expandAll() {
@@ -481,23 +449,13 @@
 
   // Export getter to check if any directories are expanded
   export function getHasExpandedDirectories(): boolean {
-    return selectHasExpandedDirectories.select(appStore.state, workspaceId || workspacePath || '');
+    return selectHasExpandedDirectories.select(appStore.state, effectiveWsId);
   }
 
   // Export startCreatingFile for parent components to trigger inline creation
   export function startCreatingFile(dirPath?: string) {
     virtualizedTreeRef?.startCreatingFile(dirPath);
   }
-
-  // React to workspace path changes
-  $effect(() => {
-    if (workspacePath && workspacePath !== $feWorkspacePath$) {
-      // Saga owns the path-change handling (clear cache, reinitialize, set up
-      // listeners); we just dispatch and mark the component as initialized.
-      appStore.dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
-      initialized = true;
-    }
-  });
 
   // Track the file we've already expanded to (to avoid re-expanding on every effect run)
   let lastExpandedToFile = $state<string | null>(null);
@@ -552,6 +510,10 @@
               `[data-file-path="${CSS.escape(targetFile)}"]`,
             );
             // If not found and path is relative, try with workspace prefix
+            const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(
+              appStore.state,
+              targetWsId,
+            );
             if (!fileElement && !targetFile.startsWith('/') && workspacePath) {
               const absolutePath = `${workspacePath}/${targetFile}`;
               fileElement = document.querySelector(
@@ -654,18 +616,16 @@
         bind:this={virtualizedTreeRef}
         flattenedNodes={filteredFlattenedNodes}
         {selectedFile}
-        {workspacePath}
         {workspaceId}
         onFileSelect={(path) => {
           selectedFile = path;
           onFileSelect?.(path);
         }}
-        onToggleDirectory={(node) => appStore.dispatch(toggleDirectoryRequested(effectiveWsId, node.path))}
+        onToggleDirectory={(node, flatNode) => toggleFlattenedDirectory(node.path, flatNode)}
         {onCreateFile}
         {onRenameFile}
         {onSelectAgent}
         {getGitStatusColor}
-        {isFileModified}
         {onExternalFilesDrop}
       />
     {:else}

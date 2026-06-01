@@ -5,12 +5,9 @@
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faCodeBranch } from '@fortawesome/free-solid-svg-icons';
-  import type { EnvironmentConfig } from '$shared/types';
 
   interface Props {
-    workspacePath: string;
-    workspaceId?: string;
-    environmentConfig?: EnvironmentConfig;
+    workspaceId: string;
     onFileSelect?: (path: string) => void;
     onSelectAgent?: (agentId: string) => void;
     selectedFile?: string;
@@ -21,9 +18,7 @@
   }
 
   let {
-    workspacePath,
     workspaceId,
-    environmentConfig,
     onFileSelect,
     onSelectAgent,
     selectedFile = $bindable(''),
@@ -33,22 +28,7 @@
     onCollapse = undefined,
   }: Props = $props();
 
-  let fileTreeView: FileTreeView;
   let showOnlyChanged = $state(false);
-
-  // Export refresh function for parent components
-  export function refresh() {
-    fileTreeView?.refresh();
-  }
-
-  // Export modified file functions
-  export function markFileModified(filePath: string) {
-    fileTreeView?.markFileModified(filePath);
-  }
-
-  export function markFileUnmodified(filePath: string) {
-    fileTreeView?.markFileUnmodified(filePath);
-  }
 </script>
 
 <VSCodeScrollablePanel
@@ -76,13 +56,10 @@
   {/snippet}
 
   <FileTreeView
-    {workspacePath}
     {workspaceId}
-    {environmentConfig}
     {onFileSelect}
     {onSelectAgent}
     bind:selectedFile
-    bind:this={fileTreeView}
     {isLoading}
     {showOnlyChanged}
   />

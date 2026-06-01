@@ -15,8 +15,6 @@
   setWorkspaceSidebarPanelLayout,
   type WorkspaceSidebarPanelLayoutState,
 } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-
   import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$lib/store/store';
 
@@ -74,8 +72,6 @@
   let focusedDivider: string | null = $state(null);
   let dragStartY = $state(0);
   let dragStartHeights = $state<Record<string, number>>({});
-
-  const workspace = $derived(selectWorkspaceById(workspaceId));
 
   // Load persisted states from Redux and initialize DOM measurements.
   onMount(() => {
@@ -479,9 +475,7 @@
       >
         <div class="panel-wrapper">
           <VSCodeFileExplorer
-            workspacePath={$workspace?.worktreePath || $workspace?.repositoryPath || ''}
             {workspaceId}
-            environmentConfig={$workspace?.environmentConfig}
             onFileSelect={handleFileSelect}
             {onSelectAgent}
             bind:selectedFile

@@ -84,6 +84,17 @@ const PARCEL_EVENT_TYPE_MAP: Record<string, WatchEventType> = {
   delete: 'unlink',
 };
 
+export class WatcherStartDeferredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WatcherStartDeferredError';
+  }
+}
+
+export function isWatcherStartDeferredError(error: unknown): error is WatcherStartDeferredError {
+  return error instanceof WatcherStartDeferredError;
+}
+
 // ============================================================================
 // Ignore patterns for native filtering
 // ============================================================================
@@ -366,7 +377,7 @@ export class UnifiedWorkspaceWatcher {
     if (heapUsedMB > HEAP_PRESSURE_THRESHOLD_MB || rssMB > RSS_PRESSURE_THRESHOLD_MB) {
       const msg = `Deferring watcher start: heap ${heapUsedMB.toFixed(0)}MB / RSS ${rssMB.toFixed(0)}MB exceeds threshold (heap>${HEAP_PRESSURE_THRESHOLD_MB}MB or RSS>${RSS_PRESSURE_THRESHOLD_MB}MB)`;
       logger.warn(msg, { workspaceId: this.workspaceId, heapUsedMB: heapUsedMB.toFixed(0), rssMB: rssMB.toFixed(0) });
-      throw new Error(msg);
+      throw new WatcherStartDeferredError(msg);
     }
 
     try {

@@ -1,4 +1,4 @@
-import type { FileNode, FileGitStatus } from "$shared/types";
+import { WorkspaceStatus, type EnvironmentConfig, type FileNode, type FileGitStatus, type Workspace } from "$shared/types";
 import {
   describe,
   expect,
@@ -6,8 +6,9 @@ import {
 } from "vitest";
 import type { StoreState } from "../../types";
 import {
-  emptyFileExplorerWorkspaceState,
   fileExplorerReducer,
+  emptyFileExplorerWorkspaceState,
+  initialState,
   setChildrenAtPathAction,
   setGitStatusMap,
   setRootNode,
@@ -16,7 +17,14 @@ import {
   updateGitStatusEntries,
   removeGitStatusEntries,
 } from "./file-explorer-slice";
-import { selectFlattenedNodes } from "./file-explorer-selectors";
+import {
+  selectFileExplorerRootNode,
+  selectCurrentFileExplorerEnvironmentConfigTrigger,
+  selectEffectiveFileExplorerWorkspacePath,
+  selectFileExplorerInitializationInputs,
+  selectFlattenedNodes,
+  selectShouldInitializeFileExplorerForWorkspace,
+} from "./file-explorer-selectors";
 import type { FileExplorerWorkspaceState } from "./file-explorer-types";
 
 const WS_ID = "ws-1";
@@ -49,11 +57,68 @@ function makeTree(): FileNode {
   };
 }
 
-function mockState(overrides: Partial<FileExplorerWorkspaceState> = {}): StoreState {
+function makeCompactedTree(): FileNode {
+  const foo: FileNode = { name: "foo.ts", path: "/a/repo/src/lib/foo.ts", type: "file" };
+  const lib: FileNode = {
+    name: "lib",
+    path: "/a/repo/src/lib",
+    type: "directory",
+    children: [foo],
+  };
+  const src: FileNode = {
+    name: "src",
+    path: "/a/repo/src",
+    type: "directory",
+    children: [lib],
+  };
+  return {
+    name: "repo",
+    path: WORKSPACE_PATH,
+    type: "directory",
+    children: [src],
+  };
+}
+
+function makeDeepCompactedTree(): FileNode {
+  const utils: FileNode = {
+    name: "utils.ts",
+    path: "/a/repo/src/lib/components/utils.ts",
+    type: "file",
+  };
+  const components: FileNode = {
+    name: "components",
+    path: "/a/repo/src/lib/components",
+    type: "directory",
+    children: [utils],
+  };
+  const lib: FileNode = {
+    name: "lib",
+    path: "/a/repo/src/lib",
+    type: "directory",
+    children: [components],
+  };
+  const src: FileNode = {
+    name: "src",
+    path: "/a/repo/src",
+    type: "directory",
+    children: [lib],
+  };
+  return {
+    name: "repo",
+    path: WORKSPACE_PATH,
+    type: "directory",
+    children: [src],
+  };
+}
+
+function mockState(
+  overrides: Partial<FileExplorerWorkspaceState> = {},
+  rootNode: FileNode = makeTree(),
+): StoreState {
+  let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(WS_ID, WORKSPACE_PATH));
+  state = fileExplorerReducer(state, setRootNode(WS_ID, rootNode));
   const ws: FileExplorerWorkspaceState = {
-    ...emptyFileExplorerWorkspaceState,
-    workspacePath: WORKSPACE_PATH,
-    rootNode: makeTree(),
+    ...state.byWorkspaceId[WS_ID],
     // Expand root + all intermediate directories so every node is visible
     expandedPaths: [WORKSPACE_PATH, "/a/repo/src", "/a/repo/src/lib"],
     ...overrides,
@@ -66,6 +131,243 @@ function mockState(overrides: Partial<FileExplorerWorkspaceState> = {}): StoreSt
 function findByPath(nodes: ReturnType<typeof selectFlattenedNodes.select>, path: string) {
   return nodes.find((n) => n.node.path === path);
 }
+
+function mockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
+  return {
+    id: WS_ID as Workspace["id"],
+    title: "Workspace",
+    branch: "main",
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    path: WORKSPACE_PATH,
+    ...overrides,
+  };
+}
+
+function mockInitializationState(
+  overrides: Partial<FileExplorerWorkspaceState> = {},
+  workspaceOverrides: Partial<Workspace> | null = {},
+): StoreState {
+  const workspace = workspaceOverrides === null ? undefined : mockWorkspace(workspaceOverrides);
+  return {
+    workspace: {
+      activeWorkspaceId: WS_ID,
+      workspaces: {
+        idField: "id",
+        ids: workspace ? [WS_ID] : [],
+        map: workspace ? { [WS_ID]: workspace } : {},
+        refsCount: workspace ? { [WS_ID]: 1 } : {},
+      },
+    },
+    fileExplorer: {
+      byWorkspaceId: {
+        [WS_ID]: {
+          ...emptyFileExplorerWorkspaceState,
+          ...overrides,
+        },
+      },
+    },
+  } as unknown as StoreState;
+}
+
+const remoteConfig: EnvironmentConfig = {
+  type: "remote",
+  workspace_path: WORKSPACE_PATH,
+  ssh: { host: "example.test", user: "dev" },
+};
+
+describe("selectFileExplorerRootNode", () => {
+  it("returns the normalized root node without materializing child objects", () => {
+    const root = selectFileExplorerRootNode.select(mockState(), WS_ID);
+
+    expect(root?.path).toBe(WORKSPACE_PATH);
+    expect(root?.children).toEqual([
+      "/a/repo/src",
+      "/a/repo/README.md",
+    ]);
+    expect(typeof root?.children[0]).toBe("string");
+  });
+});
+
+describe("selectEffectiveFileExplorerWorkspacePath", () => {
+  it("uses worktreePath before repositoryPath and path", () => {
+    expect(
+      selectEffectiveFileExplorerWorkspacePath.select(
+        mockInitializationState({}, {
+          path: "/workspace/base",
+          repositoryPath: "/workspace/repo",
+          worktreePath: "/workspace/worktree",
+        }),
+        WS_ID,
+      ),
+    ).toBe("/workspace/worktree");
+  });
+
+  it("falls back to repositoryPath before path", () => {
+    expect(
+      selectEffectiveFileExplorerWorkspacePath.select(
+        mockInitializationState({}, {
+          path: "/workspace/base",
+          repositoryPath: "/workspace/repo",
+          worktreePath: undefined,
+        }),
+        WS_ID,
+      ),
+    ).toBe("/workspace/repo");
+  });
+
+  it("falls back to path when worktree and repository paths are unset", () => {
+    expect(
+      selectEffectiveFileExplorerWorkspacePath.select(
+        mockInitializationState({}, {
+          path: "/workspace/base",
+          repositoryPath: undefined,
+          worktreePath: undefined,
+        }),
+        WS_ID,
+      ),
+    ).toBe("/workspace/base");
+  });
+
+  it("returns empty string when no workspace path is available", () => {
+    expect(selectEffectiveFileExplorerWorkspacePath.select(mockInitializationState({}, null), WS_ID)).toBe("");
+  });
+});
+
+describe("selectFileExplorerInitializationInputs", () => {
+  it("tracks UI effect inputs needed by the initialization gate", () => {
+    expect(
+      selectFileExplorerInitializationInputs.select(
+        mockInitializationState(
+          {
+            workspacePath: WORKSPACE_PATH,
+            isLoading: false,
+            isInitialized: true,
+            isRemoteInitialized: false,
+          },
+          { environmentConfig: remoteConfig },
+        ),
+        WS_ID,
+      ),
+    ).toEqual({
+      workspacePath: WORKSPACE_PATH,
+      currentWorkspacePath: WORKSPACE_PATH,
+      isLoading: false,
+      isInitialized: true,
+    });
+  });
+});
+
+describe("selectCurrentFileExplorerEnvironmentConfigTrigger", () => {
+  it("derives the current workspace environment config trigger from workspace state", () => {
+    expect(
+      selectCurrentFileExplorerEnvironmentConfigTrigger.select(
+        mockInitializationState(
+          { workspacePath: WORKSPACE_PATH, isInitialized: true },
+          { environmentConfig: remoteConfig },
+        ),
+      ),
+    ).toEqual({
+      wsId: WS_ID,
+      workspacePath: WORKSPACE_PATH,
+      workspaceEnvironmentConfig: remoteConfig,
+    });
+  });
+});
+
+describe("selectShouldInitializeFileExplorerForWorkspace", () => {
+  it("initializes when Redux state is empty or cleared", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState(),
+        WS_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("skips an already initialized same workspace path", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState({ workspacePath: WORKSPACE_PATH, isInitialized: true }),
+        WS_ID,
+      ),
+    ).toBe(false);
+  });
+
+  it("initializes when the workspace path changes", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState({ workspacePath: "/workspace/old", isInitialized: true }),
+        WS_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not duplicate an in-flight initialization for the same workspace path", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState({ workspacePath: WORKSPACE_PATH, isLoading: true }),
+        WS_ID,
+      ),
+    ).toBe(false);
+  });
+
+  it("initializes a workspace that now has remote config when remote setup is still required", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState(
+          { workspacePath: WORKSPACE_PATH, isInitialized: true },
+          { environmentConfig: remoteConfig },
+        ),
+        WS_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("initializes a remote workspace when remote setup is still required", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState(
+          {
+            workspacePath: WORKSPACE_PATH,
+            isInitialized: true,
+          },
+          { environmentConfig: remoteConfig },
+        ),
+        WS_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it("skips a fully initialized remote workspace with matching config", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState(
+          {
+            workspacePath: WORKSPACE_PATH,
+            isInitialized: true,
+            isRemoteInitialized: true,
+          },
+          { environmentConfig: remoteConfig },
+        ),
+        WS_ID,
+      ),
+    ).toBe(false);
+  });
+
+  it("skips initialization when the workspace path cannot be derived", () => {
+    expect(
+      selectShouldInitializeFileExplorerForWorkspace.select(
+        mockInitializationState({ workspacePath: WORKSPACE_PATH, isInitialized: true }, null),
+        WS_ID,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("selectFlattenedNodes — agentEdits derivation", () => {
   it("returns no agentEdits when record is empty", () => {
@@ -437,5 +739,117 @@ describe("selectFlattenedNodes — referential stability across surgical updates
 
     // And the newly added file appears in the list.
     expect(findByPath(after, "/a/repo/src/lib/new.ts")).toBeDefined();
+  });
+
+  it("setChildrenAtPathAction refreshes same-path child metadata instead of reusing stale nodes", () => {
+    let state = buildSeededState();
+
+    const before = selectFlattenedNodes.select(
+      { fileExplorer: state } as unknown as StoreState,
+      WS_ID,
+    );
+    const fooBefore = findByPath(before, "/a/repo/src/lib/foo.ts");
+    expect(fooBefore?.node.size).toBeUndefined();
+
+    const refreshedFoo: FileNode = {
+      name: "foo.ts",
+      path: "/a/repo/src/lib/foo.ts",
+      type: "file",
+      size: 99,
+    };
+    const refreshedBar: FileNode = {
+      name: "bar.ts",
+      path: "/a/repo/src/lib/bar.ts",
+      type: "file",
+    };
+    state = fileExplorerReducer(
+      state,
+      setChildrenAtPathAction(WS_ID, "/a/repo/src/lib", [refreshedFoo, refreshedBar]),
+    );
+
+    const after = selectFlattenedNodes.select(
+      { fileExplorer: state } as unknown as StoreState,
+      WS_ID,
+    );
+    const fooAfter = findByPath(after, "/a/repo/src/lib/foo.ts");
+    expect(fooAfter).not.toBe(fooBefore);
+    expect(fooAfter?.node.size).toBe(99);
+  });
+});
+
+describe("selectFlattenedNodes — compacted directory expansion", () => {
+  function compactedState(
+    expandedPaths: string[],
+    overrides: Partial<FileExplorerWorkspaceState> = {},
+    rootNode: FileNode = makeCompactedTree(),
+  ) {
+    return mockState({
+      expandedPaths,
+      ...overrides,
+    }, rootNode);
+  }
+
+  it("omits descendants for a collapsed compacted single-child directory chain", () => {
+    const flat = selectFlattenedNodes.select(compactedState([WORKSPACE_PATH]), WS_ID);
+
+    const compactedRow = findByPath(flat, "/a/repo/src/lib");
+    expect(compactedRow?.displayPath).toBe("src/lib");
+    expect(compactedRow?.isExpanded).toBe(false);
+    expect(findByPath(flat, "/a/repo/src/lib/foo.ts")).toBeUndefined();
+  });
+
+  it("shows loaded descendants when an ancestor segment in the compacted chain is expanded", () => {
+    const flat = selectFlattenedNodes.select(
+      compactedState([WORKSPACE_PATH, "/a/repo/src"]),
+      WS_ID,
+    );
+
+    const compactedRow = findByPath(flat, "/a/repo/src/lib");
+    expect(compactedRow?.displayPath).toBe("src/lib");
+    expect(compactedRow?.isExpanded).toBe(true);
+    expect(compactedRow?.compactedExpandedPaths).toEqual(["/a/repo/src"]);
+    expect(findByPath(flat, "/a/repo/src/lib/foo.ts")?.depth).toBe(1);
+  });
+
+  it("shows loaded descendants when the visible compacted directory is expanded", () => {
+    const flat = selectFlattenedNodes.select(
+      compactedState([WORKSPACE_PATH, "/a/repo/src/lib"]),
+      WS_ID,
+    );
+
+    const compactedRow = findByPath(flat, "/a/repo/src/lib");
+    expect(compactedRow?.isExpanded).toBe(true);
+    expect(compactedRow?.compactedExpandedPaths).toEqual(["/a/repo/src/lib"]);
+    expect(findByPath(flat, "/a/repo/src/lib/foo.ts")).toBeDefined();
+  });
+
+  it("shows loaded descendants when a deeper compacted segment is expanded", () => {
+    const flat = selectFlattenedNodes.select(
+      compactedState(
+        [WORKSPACE_PATH, "/a/repo/src/lib/components"],
+        {},
+        makeDeepCompactedTree(),
+      ),
+      WS_ID,
+    );
+
+    const compactedRow = findByPath(flat, "/a/repo/src/lib/components");
+    expect(compactedRow?.displayPath).toBe("src/lib/components");
+    expect(compactedRow?.isExpanded).toBe(true);
+    expect(findByPath(flat, "/a/repo/src/lib/components/utils.ts")).toBeDefined();
+  });
+
+  it("keeps metadata enrichment on descendants below an expanded compacted row", () => {
+    const flat = selectFlattenedNodes.select(
+      compactedState([WORKSPACE_PATH, "/a/repo/src"], {
+        agentFileEdits: { "src/lib/foo.ts": ["agent-1"] },
+        gitStatus: { "src/lib/foo.ts": MODIFIED },
+      }),
+      WS_ID,
+    );
+
+    const foo = findByPath(flat, "/a/repo/src/lib/foo.ts");
+    expect(foo?.agentEdits).toEqual(["agent-1"]);
+    expect(foo?.gitStatus).toEqual(MODIFIED);
   });
 });

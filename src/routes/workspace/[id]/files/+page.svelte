@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import FileExplorerLayout from '$lib/components/file-explorer/file-explorer-layout.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -14,7 +15,7 @@
   });
 
   const workspace = selectWorkspaceById(workspaceIdStore);
-  let workspacePath = $derived($workspace?.path || '');
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
 </script>
 
 <div class="h-screen flex flex-col">
@@ -33,8 +34,8 @@
 
   <!-- File Explorer -->
   <div class="flex-1 overflow-hidden">
-    {#if workspacePath}
-      <FileExplorerLayout {workspacePath} {workspaceId} />
-    {:else}{/if}
+    {#if $fileExplorerWorkspacePath}
+      <FileExplorerLayout {workspaceId} />
+    {/if}
   </div>
 </div>

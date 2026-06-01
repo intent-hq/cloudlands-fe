@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import * as Sidebar from '$lib/components/ui/sidebar';
@@ -7,57 +6,61 @@
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import {
-  faArrowsRotate,
-  faFolder,
-  faFolderOpen,
-  faFileAlt,
-  faFileCode,
-  faImage,
-  faArchive,
-  faCog,
-  faChevronRight,
-  faChevronDown,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
-  import type { FileNode } from '$shared/types';
-
+    faArrowsRotate,
+    faFolder,
+    faFolderOpen,
+    faFileAlt,
+    faFileCode,
+    faImage,
+    faArchive,
+    faCog,
+    faChevronRight,
+    faChevronDown,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
+  import type { FileExplorerTreeNode } from '$lib/store/slices/file-explorer/file-explorer-types';
+  import { filterFileExplorerChildPaths } from './file-explorer-sidebar-utils';
 
   import {
-  initializeFileExplorer,
-  setWorkspacePathRequested,
-  toggleDirectoryRequested,
-  refreshFileExplorer,
-} from '$lib/store/slices/file-explorer/file-explorer-slice';
+    initializeFileExplorer,
+    toggleDirectoryRequested,
+    refreshFileExplorer,
+  } from '$lib/store/slices/file-explorer/file-explorer-slice';
   import {
-  selectFileExplorerRootNode,
-  selectFileExplorerIsLoading,
-  selectFileExplorerError,
-  selectFileExplorerFileCount,
-  selectIsPathExpanded,
-  selectIsPathLoading,
-} from '$lib/store/slices/file-explorer/file-explorer-selectors';
+    selectFileExplorerRootNode,
+    selectFileExplorerIsLoading,
+    selectFileExplorerError,
+    selectFileExplorerFileCount,
+    selectFileExplorerNodeMap,
+    selectEffectiveFileExplorerWorkspacePath,
+    selectIsPathExpanded,
+    selectIsPathLoading,
+    selectShouldInitializeFileExplorerForWorkspace,
+  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import { store as appStore } from '$lib/store/store';
 
   interface Props {
-    workspacePath: string;
-    workspaceId?: string;
+    workspaceId: string;
     onFileSelect?: (path: string) => void;
     selectedFile?: string;
   }
 
-  let { workspacePath, workspaceId, onFileSelect, selectedFile = $bindable('') }: Props = $props();
+  let { workspaceId, onFileSelect, selectedFile = $bindable('') }: Props = $props();
 
   // Capture dispatch at component init time (store.dispatch reads the configured app store,
   // which is only valid during component initialization).
 
-  const wsIdStore = writable(workspaceId || workspacePath || '');
+  const wsIdStore = writable(workspaceId);
+  const fileExplorerWorkspacePath$ = selectEffectiveFileExplorerWorkspacePath(wsIdStore);
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);
   const feIsLoading$ = selectFileExplorerIsLoading(wsIdStore);
   const feError$ = selectFileExplorerError(wsIdStore);
   const fileCount$ = selectFileExplorerFileCount(wsIdStore);
+  const nodeMap$ = selectFileExplorerNodeMap(wsIdStore);
+  const shouldInitializeFileExplorer$ = selectShouldInitializeFileExplorerForWorkspace(wsIdStore);
 
   // Effective workspace id used for dispatches.
-  const effectiveWsId = $derived(workspaceId || workspacePath || '');
+  const effectiveWsId = $derived(workspaceId);
 
   let searchQuery = $state('');
 
@@ -94,7 +97,7 @@
   }
 
   // Handle file selection
-  function selectFile(node: FileNode) {
+  function selectFile(node: FileExplorerTreeNode) {
     if (node.type === 'file') {
       selectedFile = node.path;
       onFileSelect?.(node.path);
@@ -103,43 +106,21 @@
     }
   }
 
-  // Filter nodes by search query
-  function filterNodes(nodes: FileNode[], query: string): FileNode[] {
-    if (!query) return nodes;
-
-    const lowerQuery = query.toLowerCase();
-    return nodes.filter((node) => {
-      const matches = node.name.toLowerCase().includes(lowerQuery);
-      if (matches) return true;
-
-      // Also check children for directories
-      if (node.children) {
-        const childMatches = filterNodes(node.children, query);
-        return childMatches.length > 0;
-      }
-
-      return false;
-    });
-  }
-
-  onMount(() => {
-    // Dispatch initialization — the file-explorer saga owns IPC listeners
-    // (file:changed, workspace-changes, file-tracking:changes-updated) and
-    // will refresh state when those events fire for the active workspace.
-    appStore.dispatch(
-      initializeFileExplorer(effectiveWsId, { workspacePath, workspaceId }),
-    );
-  });
-
   // Keep the reactive selector arg in sync with the prop.
   $effect(() => {
-    wsIdStore.set(workspaceId || workspacePath || '');
+    wsIdStore.set(workspaceId);
   });
 
   // React to workspace path changes
   $effect(() => {
-    if (workspacePath) {
-      appStore.dispatch(setWorkspacePathRequested(effectiveWsId, workspacePath));
+    const workspacePath = $fileExplorerWorkspacePath$;
+    if (workspacePath && $shouldInitializeFileExplorer$) {
+      appStore.dispatch(
+        initializeFileExplorer(effectiveWsId, {
+          workspacePath,
+          workspaceId,
+        }),
+      );
     }
   });
 </script>
@@ -174,8 +155,8 @@
                 {$feError$}
               </div>
             {:else if $rootNode$}
-              {#snippet FileTreeItem(node: FileNode, depth: number)}
-                {@const wsId = workspaceId || workspacePath || ''}
+              {#snippet FileTreeItem(node: FileExplorerTreeNode, depth: number)}
+                {@const wsId = effectiveWsId}
                 {@const nodeExpanded = selectIsPathExpanded.select(appStore.state, wsId, node.path)}
                 {@const isIgnored = node.isGitignored === true}
                 {@const Icon =
@@ -196,7 +177,7 @@
                       <span class="w-4 h-4 flex items-center justify-center mr-1">
                         {#if selectIsPathLoading.select(appStore.state, wsId, node.path)}
                           <Fa icon={faSpinner} size="xs" class="w-3 h-3 animate-spin" />
-                        {:else if node.children && node.children.length > 0}
+                        {:else if node.children.length > 0}
                           <Fa
                             icon={nodeExpanded ? faChevronDown : faChevronRight}
                             size="xs"
@@ -209,23 +190,27 @@
                     <Fa
                       icon={Icon}
                       size="1x"
-                      class="w-4 h-4 {node.type === 'directory'
-                        ? 'text-blue-500'
-                        : 'text-subtle'}"
+                      class="w-4 h-4 {node.type === 'directory' ? 'text-blue-500' : 'text-subtle'}"
                     />
                     <span class="truncate">{node.name}</span>
                   </Sidebar.MenuButton>
                 </Sidebar.MenuItem>
 
-                {#if nodeExpanded && node.children}
-                  {#each filterNodes(node.children, searchQuery) as child (child.path)}
-                    {@render FileTreeItem(child, depth + 1)}
+                {#if nodeExpanded}
+                  {#each filterFileExplorerChildPaths(node.children, searchQuery, $nodeMap$) as childPath (childPath)}
+                    {@const child = $nodeMap$[childPath]}
+                    {#if child}
+                      {@render FileTreeItem(child, depth + 1)}
+                    {/if}
                   {/each}
                 {/if}
               {/snippet}
 
-              {#each filterNodes($rootNode$.children || [], searchQuery) as node (node.path)}
-                {@render FileTreeItem(node, 0)}
+              {#each filterFileExplorerChildPaths($rootNode$.children, searchQuery, $nodeMap$) as childPath (childPath)}
+                {@const node = $nodeMap$[childPath]}
+                {#if node}
+                  {@render FileTreeItem(node, 0)}
+                {/if}
               {/each}
             {:else}
               <!-- <div class="px-4 py-2 text-sm text-subtle">

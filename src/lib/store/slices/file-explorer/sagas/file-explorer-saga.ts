@@ -17,7 +17,8 @@ import {
   takeLatest,
   type SagaGenerator,
 } from "typed-redux-saga";
-import type { FileNode, FileGitStatus } from "$shared/types";
+import { deepEqual } from "fast-equals";
+import type { FileNode, FileGitStatus, EnvironmentConfig } from "$shared/types";
 import { GitFileStatus } from "$shared/types";
 import {
   WorkspaceId as WorkspaceIdFn,
@@ -35,7 +36,10 @@ import {
   selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
   selectWorkspaceFileChanges,
 } from "../../changes/changes-selectors";
-import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
+import {
+  selectActiveWorkspaceId,
+  selectWorkspaceEnvironmentConfig,
+} from "../../workspace/workspace-selectors";
 import {
   setGitStatus,
   setGitDiffs,
@@ -73,23 +77,26 @@ import {
   incrementTreeVersion,
   setFileExplorerWorkspacePath,
   setFileExplorerFileCount,
-  setEnvironmentConfigAction,
   setRemoteConnectionIdAction,
   setIsRemoteInitializedAction,
   setIsStoreActive,
   clearFileExplorerForWorkspace,
 } from "../file-explorer-slice";
-import { selectFileExplorerState } from "../file-explorer-selectors";
+import {
+  selectCurrentFileExplorerEnvironmentConfigTrigger,
+  selectEffectiveFileExplorerWorkspacePath,
+  selectFileExplorerState,
+  type FileExplorerEnvironmentConfigTrigger,
+} from "../file-explorer-selectors";
+import { getItem } from "svelte-redux-toolkit/utils/collections/collection-utils";
 import {
   shouldHide,
   checkGitignored,
   sortNodes,
   countFilesInTree,
   extractWorkspaceId,
-  findNodeByPath,
-  CACHE_TTL,
 } from "../file-explorer-utils";
-import type { FileExplorerWorkspaceState } from "../file-explorer-types";
+import type { FileExplorerTreeNode, FileExplorerWorkspaceState } from "../file-explorer-types";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -102,6 +109,7 @@ import {
   debounceSaga,
   debounceWithKeySaga,
 } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
+import { takeLatestFromSelector } from "svelte-redux-toolkit/utils/sagas/selector-channel-effects";
 import type { StoreAction } from "svelte-redux-toolkit/types";
 
 const logger = new Logger("FileExplorerSaga");
@@ -112,10 +120,9 @@ type AgentFileEditsRefreshState = {
 };
 
 // ---------------------------------------------------------------------------
-// Module-level caches (not in Redux state — performance optimization)
+// Module-level transient state (not Redux domain data)
 // ---------------------------------------------------------------------------
 
-const directoryCache = new Map<string, Map<string, { nodes: FileNode[]; timestamp: number }>>();
 const agentFileEditsRefreshByWorkspace = new Map<string, AgentFileEditsRefreshState>();
 const pendingAgentFileEditsRefreshWorkspaceIds = new Set<string>();
 
@@ -133,25 +140,27 @@ function getAgentFileEditsRefreshState(wsId: string): AgentFileEditsRefreshState
   return state;
 }
 
-function getWsCache(wsId: string) {
-  let cache = directoryCache.get(wsId);
-  if (!cache) {
-    cache = new Map();
-    directoryCache.set(wsId, cache);
-  }
-  return cache;
+function isRelevantEnvironmentConfigChange(
+  previousConfig: EnvironmentConfig | undefined,
+  currentConfig: EnvironmentConfig | undefined,
+): boolean {
+  if (deepEqual(previousConfig, currentConfig)) return false;
+  return previousConfig?.type === "remote" || currentConfig?.type === "remote";
 }
 
-function clearWsCache(wsId: string) {
-  directoryCache.get(wsId)?.clear();
+function getTreeNode(
+  ws: FileExplorerWorkspaceState,
+  path: string,
+): FileExplorerTreeNode | null {
+  return getItem(ws.nodes, path) ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: read workspace state from Redux
-// ---------------------------------------------------------------------------
-
-function* getWsState(wsId: string): SagaGenerator<FileExplorerWorkspaceState> {
-  return yield* selectFileExplorerState.effect(wsId);
+function hasLoadedDirectoryChildren(
+  ws: FileExplorerWorkspaceState,
+  path: string,
+): boolean {
+  const node = getTreeNode(ws, path);
+  return node?.type === "directory" && node.children.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +171,9 @@ function* loadDirectoryCore(
   wsId: string,
   dirPath: string,
 ): SagaGenerator<FileNode[]> {
-  const ws = yield* getWsState(wsId);
-  const { workspacePath, gitignorePatterns, environmentConfig, remoteConnectionId } = ws;
+  const ws = yield* selectFileExplorerState.effect(wsId);
+  const { workspacePath, gitignorePatterns, remoteConnectionId } = ws;
+  const environmentConfig = yield* selectWorkspaceEnvironmentConfig.effect(wsId);
 
   if (environmentConfig?.type === "remote") {
     return yield* call(loadDirectoryCoreRemote, wsId, dirPath, workspacePath, remoteConnectionId, gitignorePatterns);
@@ -277,7 +287,7 @@ export function* applyGitStatusSnapshot(
   wsId: string,
   snapshot: Record<string, FileGitStatus>,
 ): SagaGenerator<void> {
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   const previous = ws.gitStatus;
   const stalePaths: string[] = [];
   for (const key of Object.keys(previous)) {
@@ -292,7 +302,7 @@ export function* applyGitStatusSnapshot(
 }
 
 function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!ws.workspacePath) {
     yield* put(setGitStatusMap(wsId, {}));
     return;
@@ -406,7 +416,7 @@ function* loadGitStatusSaga(wsId: string): SagaGenerator<void> {
 // ---------------------------------------------------------------------------
 
 function* loadGitignorePatterns(wsId: string): SagaGenerator<void> {
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!ws.workspacePath) return;
   try {
     const response = yield* call(() =>
@@ -427,7 +437,7 @@ function* loadGitignorePatterns(wsId: string): SagaGenerator<void> {
 // ---------------------------------------------------------------------------
 
 function* loadAgentFileEditsSaga(wsId: string): SagaGenerator<void> {
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!wsId) return;
   try {
     const editsMap = yield* call(() => getAgentFileEdits(wsId));
@@ -446,7 +456,7 @@ function* loadAgentFileEditsSaga(wsId: string): SagaGenerator<void> {
     }
     // Diff against prior state so unchanged entries keep their array identity
     // (per-row selector memoization depends on ===-stability of agentEdits refs).
-    const freshState = yield* getWsState(wsId);
+    const freshState = yield* selectFileExplorerState.effect(wsId);
     const previous = freshState.agentFileEdits;
     const stalePaths: string[] = [];
     for (const key of Object.keys(previous)) {
@@ -495,12 +505,10 @@ function* initializeFileExplorerSaga(
   action: ReturnType<typeof initializeFileExplorer>,
 ): SagaGenerator<void> {
   const [wsId, options] = action.payload;
-  const { workspacePath, environmentConfig } = options;
+  const { workspacePath } = options;
+  const environmentConfig = yield* selectWorkspaceEnvironmentConfig.effect(wsId);
 
   yield* put(setFileExplorerWorkspacePath(wsId, workspacePath));
-  if (environmentConfig) {
-    yield* put(setEnvironmentConfigAction(wsId, environmentConfig));
-  }
 
   yield* put(setFileExplorerLoading(wsId, true));
 
@@ -518,7 +526,7 @@ function* initializeFileExplorerSaga(
   // Load root directory
   const children = yield* call(loadDirectoryCore, wsId, workspacePath);
   if (children.length > 0) {
-    const rootNode: FileNode = {
+    const rootFileNode: FileNode = {
       name: workspacePath.split("/").pop() || "",
       path: workspacePath,
       type: "directory",
@@ -526,9 +534,9 @@ function* initializeFileExplorerSaga(
     };
     // Load agent file edits — selector derives per-node agentEdits from this record
     yield* call(refreshAgentFileEditsForWorkspace, wsId);
-    yield* put(setRootNode(wsId, rootNode));
+    yield* put(setRootNode(wsId, rootFileNode));
     yield* put(addExpandedPath(wsId, workspacePath));
-    yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
+    yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootFileNode)));
   }
 
   yield* put(setFileExplorerLoading(wsId, false));
@@ -540,21 +548,24 @@ function* initializeFileExplorerSaga(
 // Remote FS initialization
 // ---------------------------------------------------------------------------
 
-function* initRemoteFS(wsId: string): SagaGenerator<void> {
-  const ws = yield* getWsState(wsId);
-  if (!ws.environmentConfig || ws.environmentConfig.type !== "remote") return;
+function* initRemoteFS(
+  wsId: string,
+): SagaGenerator<void> {
+  const ws = yield* selectFileExplorerState.effect(wsId);
+  const effectiveEnvironmentConfig = yield* selectWorkspaceEnvironmentConfig.effect(wsId);
+  if (!effectiveEnvironmentConfig || effectiveEnvironmentConfig.type !== "remote") return;
   if (ws.isRemoteInitialized) return;
 
   try {
     const response = yield* call(() =>
       invoke<{ success: boolean; data?: { connectionId: string } }>("remote-fs:init", {
-        host: ws.environmentConfig!.ssh?.host ?? "",
-        port: ws.environmentConfig!.ssh?.port ?? 22,
+        host: effectiveEnvironmentConfig.ssh?.host ?? "",
+        port: effectiveEnvironmentConfig.ssh?.port ?? 22,
         auth: {
-          user: ws.environmentConfig!.ssh?.user ?? "",
-          password: ws.environmentConfig!.ssh?.password,
-          key_path: ws.environmentConfig!.ssh?.key_path,
-          use_agent: ws.environmentConfig!.ssh?.use_agent,
+          user: effectiveEnvironmentConfig.ssh?.user ?? "",
+          password: effectiveEnvironmentConfig.ssh?.password,
+          key_path: effectiveEnvironmentConfig.ssh?.key_path,
+          use_agent: effectiveEnvironmentConfig.ssh?.use_agent,
         },
       }),
     );
@@ -571,11 +582,11 @@ function* initRemoteFS(wsId: string): SagaGenerator<void> {
 // Toggle directory
 // ---------------------------------------------------------------------------
 
-function* handleToggleDirectory(
+export function* handleToggleDirectory(
   action: ReturnType<typeof toggleDirectoryRequested>,
 ): SagaGenerator<void> {
   const [wsId, nodePath] = action.payload;
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
 
   if (ws.expandedPaths.includes(nodePath)) {
     // Collapse
@@ -586,23 +597,9 @@ function* handleToggleDirectory(
   // Expand – load children if needed
   yield* put(addExpandedPath(wsId, nodePath));
 
-  const node = ws.rootNode ? findNodeByPath(ws.rootNode, ws.workspacePath, nodePath) : null;
-  const hasLoadedChildren = node?.children && node.children.length > 0;
-
-  // Check cache
-  const cache = getWsCache(wsId);
-  const cached = cache.get(nodePath);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    if (!hasLoadedChildren) {
-      yield* put(setChildrenAtPathAction(wsId, nodePath, cached.nodes));
-    }
-    return;
-  }
-
-  if (!hasLoadedChildren) {
+  if (!hasLoadedDirectoryChildren(ws, nodePath)) {
     yield* put(addLoadingPath(wsId, nodePath));
     const children = yield* call(loadDirectoryCore, wsId, nodePath);
-    cache.set(nodePath, { nodes: children, timestamp: Date.now() });
     yield* put(setChildrenAtPathAction(wsId, nodePath, children));
     yield* put(removeLoadingPath(wsId, nodePath));
   }
@@ -616,7 +613,7 @@ function* handleExpandToPath(
   action: ReturnType<typeof expandToPathRequested>,
 ): SagaGenerator<void> {
   const [wsId, targetPath] = action.payload;
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!ws.workspacePath) return;
 
   // Build the list of ancestor directories
@@ -631,8 +628,7 @@ function* handleExpandToPath(
       if (!ws.expandedPaths.includes(currentPath)) {
         yield* put(addExpandedPath(wsId, currentPath));
         // Load children if needed
-        const node = ws.rootNode ? findNodeByPath(ws.rootNode, ws.workspacePath, currentPath) : null;
-        if (!node?.children || node.children.length === 0) {
+        if (!hasLoadedDirectoryChildren(ws, currentPath)) {
           const children = yield* call(loadDirectoryCore, wsId, currentPath);
           yield* put(setChildrenAtPathAction(wsId, currentPath, children));
         }
@@ -652,13 +648,15 @@ function* handleExpandAll(
   action: ReturnType<typeof expandAllRequested>,
 ): SagaGenerator<void> {
   const [wsId, maxDepth] = action.payload;
-  const ws = yield* getWsState(wsId);
-  if (!ws.rootNode) return;
+  const ws = yield* selectFileExplorerState.effect(wsId);
+  if (!ws.rootPath) return;
+  const rootTreeNode = getTreeNode(ws, ws.rootPath);
+  if (!rootTreeNode) return;
 
   const depthLimit = maxDepth ?? 3;
   yield* put(setBulkOperation(wsId, true));
 
-  function* expandRecursive(node: FileNode, depth: number): SagaGenerator<void> {
+  function* expandLoadedFileNode(node: FileNode, depth: number): SagaGenerator<void> {
     if (depth >= depthLimit) return;
     if (node.type !== "directory") return;
 
@@ -670,19 +668,45 @@ function* handleExpandAll(
       yield* put(setChildrenAtPathAction(wsId, node.path, children));
       for (const child of children) {
         if (child.type === "directory") {
-          yield* call(expandRecursive, child, depth + 1);
+          yield* call(expandLoadedFileNode, child, depth + 1);
         }
       }
     } else {
       for (const child of node.children) {
         if (child.type === "directory") {
-          yield* call(expandRecursive, child, depth + 1);
+          yield* call(expandLoadedFileNode, child, depth + 1);
         }
       }
     }
   }
 
-  yield* call(expandRecursive, ws.rootNode, 0);
+  function* expandNormalizedNode(node: FileExplorerTreeNode, depth: number): SagaGenerator<void> {
+    if (depth >= depthLimit) return;
+    if (node.type !== "directory") return;
+
+    if (!ws.expandedPaths.includes(node.path)) {
+      yield* put(addExpandedPath(wsId, node.path));
+    }
+    if (node.children.length === 0) {
+      const children = yield* call(loadDirectoryCore, wsId, node.path);
+      yield* put(setChildrenAtPathAction(wsId, node.path, children));
+      for (const child of children) {
+        if (child.type === "directory") {
+          yield* call(expandLoadedFileNode, child, depth + 1);
+        }
+      }
+      return;
+    }
+
+    for (const childPath of node.children) {
+      const child = getTreeNode(ws, childPath);
+      if (child?.type === "directory") {
+        yield* call(expandNormalizedNode, child, depth + 1);
+      }
+    }
+  }
+
+  yield* call(expandNormalizedNode, rootTreeNode, 0);
   yield* put(setBulkOperation(wsId, false));
   yield* put(incrementTreeVersion(wsId));
 }
@@ -695,10 +719,9 @@ function* handleRefresh(
   action: ReturnType<typeof refreshFileExplorer>,
 ): SagaGenerator<void> {
   const [wsId] = action.payload;
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!ws.workspacePath) return;
 
-  clearWsCache(wsId);
   yield* put(setFileExplorerLoading(wsId, true));
 
   // Reload gitignore, git status
@@ -707,7 +730,7 @@ function* handleRefresh(
 
   // Reload root
   const children = yield* call(loadDirectoryCore, wsId, ws.workspacePath);
-  const rootNode: FileNode = {
+  const rootFileNode: FileNode = {
     name: ws.workspacePath.split("/").pop() || "",
     path: ws.workspacePath,
     type: "directory",
@@ -715,22 +738,29 @@ function* handleRefresh(
   };
 
   yield* call(refreshAgentFileEditsForWorkspace, wsId);
-  yield* put(setRootNode(wsId, rootNode));
-  yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootNode)));
+  yield* put(setRootNode(wsId, rootFileNode));
+  yield* put(setFileExplorerFileCount(wsId, countFilesInTree(rootFileNode)));
   yield* put(setFileExplorerLoading(wsId, false));
+}
 
-  // Re-expand previously expanded directories
-  const expandedPaths = ws.expandedPaths.filter((p) => p !== ws.workspacePath);
+export function* handleRootNodeReplaced(
+  action: ReturnType<typeof setRootNode>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  const ws = yield* selectFileExplorerState.effect(wsId);
+  const expandedPaths = [...ws.expandedPaths]
+    .filter((path) => path !== ws.workspacePath)
+    .sort((a, b) => a.split("/").length - b.split("/").length);
+  if (expandedPaths.length === 0) return;
+
   for (const path of expandedPaths) {
-    const node = findNodeByPath(rootNode, ws.workspacePath, path);
-    if (node && node.type === "directory") {
-      if (!node.children || node.children.length === 0) {
-        const dirChildren = yield* call(loadDirectoryCore, wsId, path);
-        yield* put(setChildrenAtPathAction(wsId, path, dirChildren));
-      }
+    try {
+      const children = yield* call(loadDirectoryCore, wsId, path);
+      yield* put(setChildrenAtPathAction(wsId, path, children));
+    } catch (error) {
+      logger.error("Failed to reload expanded directory after root replacement:", error, { wsId, path });
     }
   }
-  yield* put(incrementTreeVersion(wsId));
 }
 
 // ---------------------------------------------------------------------------
@@ -760,7 +790,7 @@ export function* handleRefreshDirectory(
   action: ReturnType<typeof refreshDirectoryRequested>,
 ): SagaGenerator<void> {
   const [wsId, filePath] = action.payload;
-  const ws = yield* getWsState(wsId);
+  const ws = yield* selectFileExplorerState.effect(wsId);
   if (!ws.workspacePath) return;
 
   const parentDir = computeParentDir(filePath, ws.workspacePath);
@@ -773,15 +803,10 @@ export function* handleRefreshDirectory(
 
   // If the directory is not currently loaded in the tree, lazy-expand will
   // populate it when the user opens it. No-op here.
-  const node = ws.rootNode ? findNodeByPath(ws.rootNode, ws.workspacePath, parentDir) : null;
-  if (!node || node.type !== "directory") return;
-
-  // Invalidate only this directory's cache entry — not the whole workspace.
-  const cache = getWsCache(wsId);
-  cache.delete(parentDir);
+  const node = getTreeNode(ws, parentDir);
+  if (node?.type !== "directory") return;
 
   const children = yield* call(loadDirectoryCore, wsId, parentDir);
-  cache.set(parentDir, { nodes: children, timestamp: Date.now() });
   yield* put(setChildrenAtPathAction(wsId, parentDir, children));
 
   // Keep git-status badges in sync surgically via the Wave 2 machinery
@@ -830,9 +855,41 @@ function* handleSetWorkspacePath(
 ): SagaGenerator<void> {
   const [wsId, path] = action.payload;
   yield* put(setFileExplorerWorkspacePath(wsId, path));
-  clearWsCache(wsId);
   // Re-initialize with the new path
   yield* put(initializeFileExplorer(wsId, { workspacePath: path }));
+}
+
+export function* handleWorkspaceEnvironmentConfigChange({
+  payload,
+  prevPayload,
+}: {
+  payload: FileExplorerEnvironmentConfigTrigger;
+  prevPayload?: FileExplorerEnvironmentConfigTrigger | null;
+}): SagaGenerator<void> {
+  if (!prevPayload || !payload.wsId || payload.wsId !== prevPayload.wsId) return;
+
+  const wsId = payload.wsId;
+  const activeWsId = yield* selectActiveWorkspaceId.effect();
+  if (activeWsId !== wsId) return;
+
+  const currentEnvironmentConfig = payload.workspaceEnvironmentConfig
+  if (!isRelevantEnvironmentConfigChange(prevPayload.workspaceEnvironmentConfig, currentEnvironmentConfig)) return;
+
+  const workspacePath = yield* selectEffectiveFileExplorerWorkspacePath.effect(wsId);
+  if (!workspacePath) return;
+
+  yield* put(setRemoteConnectionIdAction(wsId, null));
+  yield* put(setIsRemoteInitializedAction(wsId, false));
+  yield* put(initializeFileExplorer(wsId, { workspacePath, workspaceId: wsId }));
+}
+
+function* watchWorkspaceEnvironmentConfigForFileExplorer(): SagaGenerator<void> {
+  // Canonical trigger: the file-explorer saga watches the current workspace's
+  // environmentConfig selector and owns remote-runtime reset + reinitialization.
+  yield* takeLatestFromSelector(
+    selectCurrentFileExplorerEnvironmentConfigTrigger,
+    handleWorkspaceEnvironmentConfigChange,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -847,11 +904,10 @@ function* watchWorkspaceMountedForStore(): SagaGenerator<void> {
   });
 }
 
-function* watchWorkspaceUnmountedForCache(): SagaGenerator<void> {
+function* watchWorkspaceUnmountedForStore(): SagaGenerator<void> {
   yield* takeEvery(workspaceUnmounted, function* (action) {
     const [wsId] = action.payload;
     yield* put(setIsStoreActive(wsId, false));
-    directoryCache.delete(wsId);
     pendingAgentFileEditsRefreshWorkspaceIds.delete(wsId);
     yield* put(clearFileExplorerForWorkspace(wsId));
   });
@@ -1075,18 +1131,17 @@ function* watchFileChangedIPC() {
 // ---------------------------------------------------------------------------
 
 export function* fileExplorerSaga(): SagaGenerator<void> {
-  // Reset module-level cache on (re)start to avoid stale data from previous runs
-  directoryCache.clear();
   resetAgentFileEditsRefreshState();
 
   yield* fork(watchWorkspaceMountedForStore);
-  yield* fork(watchWorkspaceUnmountedForCache);
+  yield* fork(watchWorkspaceUnmountedForStore);
   yield* fork(watchWorkspaceChangesIPC);
   yield* fork(watchFileTrackingChangesIPC);
   yield* fork(watchAgentFileChangedIPC);
   yield* fork(watchFileTrackingListenerReadyIPC);
   yield* fork(watchFileChangedWindowEvent);
   yield* fork(watchFileChangedIPC);
+  yield* fork(watchWorkspaceEnvironmentConfigForFileExplorer);
   yield* fork(debounceSaga, debouncedFileTrackingSync, 300);
   yield* fork(
     debounceWithKeySaga,
@@ -1095,6 +1150,7 @@ export function* fileExplorerSaga(): SagaGenerator<void> {
     getAgentFileEditsDebounceKey,
   );
   yield* takeLatest(initializeFileExplorer, initializeFileExplorerSaga);
+  yield* takeLatest(setRootNode, handleRootNodeReplaced);
   yield* takeEvery(toggleDirectoryRequested, handleToggleDirectory);
   yield* takeLatest(expandToPathRequested, handleExpandToPath);
   yield* takeLatest(expandAllRequested, handleExpandAll);

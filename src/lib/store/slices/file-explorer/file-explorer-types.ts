@@ -1,14 +1,17 @@
-import type { FileNode, FileGitStatus, EnvironmentConfig } from "$shared/types";
+import type { FileNode, FileGitStatus } from "$shared/types";
+import type { Collection } from "svelte-redux-toolkit/utils/collections/collection-utils";
 
 // ---------------------------------------------------------------------------
 // Flattened node for virtualized rendering
 // ---------------------------------------------------------------------------
 
 export interface FlattenedFileNode {
-  node: FileNode;
+  node: FileExplorerTreeNode;
   depth: number;
   /** Compacted path prefix (for single-child directory chains like "src/lib/components") */
   displayPath?: string;
+  /** Expanded paths represented by this compacted directory row */
+  compactedExpandedPaths?: string[];
   /** UI state computed from expandedPaths */
   isExpanded: boolean;
   /** UI state computed from loadingPaths */
@@ -25,9 +28,17 @@ export interface FlattenedFileNode {
 // Per-workspace state
 // ---------------------------------------------------------------------------
 
+export type FileExplorerTreeNode = Omit<FileNode, "children"> & {
+  /** Child node paths in display order */
+  children: string[];
+};
+
+export type FileExplorerDisplayNode = FileExplorerTreeNode;
+
 export interface FileExplorerWorkspaceState {
   workspacePath: string;
-  rootNode: FileNode | null;
+  rootPath: string | null;
+  nodes: Collection<FileExplorerTreeNode, "path">;
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -44,7 +55,6 @@ export interface FileExplorerWorkspaceState {
   /** Incremented to force UI re-renders after deep tree mutations */
   treeVersion: number;
   gitignorePatterns: string[];
-  environmentConfig?: EnvironmentConfig;
   remoteConnectionId: string | null;
   isRemoteInitialized: boolean;
   /** Whether this workspace's file explorer is active (false = abort pending async ops) */

@@ -1,16 +1,15 @@
 <script lang="ts">
   import FileTreeView from '$lib/components/file-explorer/file-tree-view.svelte';
   import { cn } from '$lib/utils';
-  import {
-  invoke,
-  dialog,
-} from '$lib/electron-bridge';
+  import { invoke, dialog } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { refreshFileExplorer } from '$lib/store/slices/file-explorer/file-explorer-slice';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
 
-  import type { EnvironmentConfig } from '$shared/types';
   import { store as appStore } from '$lib/store/store';
 
   const logger = createLogger('FilesPanel');
@@ -18,6 +17,10 @@
   // Helper to check if a file exists at the given path
   async function checkFileExists(filePath: string): Promise<boolean> {
     try {
+      const environmentConfig = selectWorkspaceById.select(
+        appStore.state,
+        workspaceId,
+      )?.environmentConfig;
       if (environmentConfig?.type === 'remote') {
         const connectionId = `file-explorer-${workspaceId}`;
         const response = (await invoke('remote-fs:exists', { connectionId, path: filePath })) as {
@@ -92,9 +95,7 @@
   }
 
   interface Props {
-    workspacePath?: string;
     workspaceId: string;
-    environmentConfig?: EnvironmentConfig;
     selectedFile?: string | null;
     onOpenFile?: (filePath: string) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
@@ -106,9 +107,7 @@
   }
 
   let {
-    workspacePath = '',
     workspaceId,
-    environmentConfig,
     selectedFile = null,
     onOpenFile,
     onCreateFile,
@@ -118,6 +117,9 @@
     searchQuery = '',
     class: className,
   }: Props = $props();
+
+  const effectiveWsId = $derived(workspaceId);
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceId);
 
   // Handle file rename via IPC
   async function handleRenameFile(oldPath: string, newPath: string) {
@@ -138,7 +140,7 @@
         });
         onFileRenamed?.(oldPath, newPath);
         // Refresh the file tree to show the new name immediately
-        fileTreeRef?.refresh();
+        appStore.dispatch(refreshFileExplorer(effectiveWsId));
       } else {
         throw new Error(response.error || 'Failed to rename file');
       }
@@ -152,6 +154,7 @@
 
   // Handle external files dropped onto the file tree
   async function handleExternalFilesDrop(files: File[], targetPath: string | null) {
+    const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
     if (!workspacePath || files.length === 0) return;
 
     // Use the drop target path if provided, otherwise fall back to workspace root
@@ -326,7 +329,7 @@
 
     // Refresh the file tree to show newly added files/folders
     if (successCount > 0) {
-      fileTreeRef?.refresh();
+      appStore.dispatch(refreshFileExplorer(effectiveWsId));
 
       // Refresh git status to show new files in Changes panel
       if (workspaceId) {
@@ -388,13 +391,11 @@
 </script>
 
 <div class={cn('pb-3', className)}>
-  {#if workspacePath}
+  {#if $fileExplorerWorkspacePath}
     <div class="overflow-y-auto">
       <FileTreeView
         bind:this={fileTreeRef}
-        {workspacePath}
         {workspaceId}
-        {environmentConfig}
         onFileSelect={onOpenFile}
         {onCreateFile}
         onRenameFile={handleRenameFile}

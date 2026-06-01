@@ -12,6 +12,7 @@ import { Logger } from '../../../../shared/logger';
 import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
 import {
   getUnifiedWatcher,
+  isWatcherStartDeferredError,
   type WatchEvent,
 } from '../unified-workspace-watcher';
 
@@ -82,6 +83,15 @@ export class FileWatcher extends EventEmitter {
         workspacePath: this.workspacePath,
       });
     } catch (error) {
+      if (isWatcherStartDeferredError(error)) {
+        logger.warn('Native file watcher start deferred under memory pressure; continuing in degraded mode', {
+          workspaceId: this.workspaceId,
+          workspacePath: this.workspacePath,
+          reason: error.message,
+        });
+        return;
+      }
+
       logger.error('Failed to start file watcher:', error);
       throw error;
     }

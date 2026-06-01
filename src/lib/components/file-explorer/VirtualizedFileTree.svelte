@@ -5,8 +5,11 @@
   tick,
   untrack,
 } from 'svelte';
-  import type { FileNode } from '$shared/types';
-  import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
+  import { writable } from 'svelte/store';
+  import type {
+    FileExplorerDisplayNode as FileNode,
+    FlattenedFileNode,
+  } from '$lib/store/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
   import {
   faChevronDown,
@@ -34,6 +37,7 @@
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -41,10 +45,9 @@
   interface Props {
     flattenedNodes: FlattenedFileNode[];
     selectedFile?: string;
-    workspacePath?: string;
     workspaceId?: string;
     onFileSelect?: (path: string) => void;
-    onToggleDirectory?: (node: FileNode) => void;
+    onToggleDirectory?: (node: FileNode, flatNode?: FlattenedFileNode) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onRenameFile?: (oldPath: string, newPath: string) => void | Promise<void>;
     onSelectAgent?: (agentId: string) => void;
@@ -59,7 +62,6 @@
   let {
     flattenedNodes = [],
     selectedFile = '',
-    workspacePath = '',
     workspaceId = '',
     onFileSelect,
     onToggleDirectory,
@@ -72,6 +74,13 @@
     overscan = 5,
     onExternalFilesDrop,
   }: Props = $props();
+
+  const workspaceIdStore = writable(workspaceId);
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
+
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
 
   // ============================================================
   // External file drop zone detection
@@ -125,6 +134,10 @@
       hoverExpandTimeout = null;
     }
     hoverExpandTargetPath = null;
+  }
+
+  function requestToggleDirectory(flatNode: FlattenedFileNode) {
+    onToggleDirectory?.(flatNode.node, flatNode);
   }
 
   function handleFileDragLeave(e: DragEvent) {
@@ -221,7 +234,7 @@
           // Find the node again in case flattenedNodes changed
           const targetNode = flattenedNodes.find((n) => n.node.path === hoverExpandTargetPath);
           if (targetNode && targetNode.node.type === 'directory' && !targetNode.isExpanded) {
-            onToggleDirectory(targetNode.node);
+            requestToggleDirectory(targetNode);
           }
           hoverExpandTimeout = null;
           hoverExpandTargetPath = null;
@@ -300,6 +313,7 @@
           name: '',
           path: CREATING_SENTINEL_PATH,
           type: 'file',
+          children: [],
         },
         depth: 0,
         isExpanded: false,
@@ -314,6 +328,7 @@
         name: '',
         path: CREATING_SENTINEL_PATH,
         type: 'file',
+        children: [],
       },
       depth: dirDepth + 1,
       isExpanded: false,
@@ -452,7 +467,7 @@
         if (node.type === 'directory') {
           if (!focusedNode.isExpanded) {
             // Expand the directory
-            onToggleDirectory?.(node);
+            requestToggleDirectory(focusedNode);
           } else if (node.children && node.children.length > 0) {
             // Move to first child
             setFocusedIndex(currentIndex + 1);
@@ -471,7 +486,7 @@
         const node = focusedNode.node;
         if (node.type === 'directory' && focusedNode.isExpanded) {
           // Collapse the directory
-          onToggleDirectory?.(node);
+          requestToggleDirectory(focusedNode);
         } else {
           // Move to parent directory
           const parentIndex = findParentIndex(currentIndex);
@@ -492,7 +507,7 @@
         if (onRenameFile) {
           startEditing(node.path, node.name);
         } else if (node.type === 'directory') {
-          onToggleDirectory?.(node);
+          requestToggleDirectory(focusedNode);
         } else {
           onFileSelect?.(node.path);
         }
@@ -509,7 +524,7 @@
           // Focus stays in explorer - don't blur
         } else {
           // For directories, toggle expansion
-          onToggleDirectory?.(node);
+          requestToggleDirectory(focusedNode);
         }
         break;
       }
@@ -633,7 +648,7 @@
         }
       }
       if (!targetDir) {
-        targetDir = workspacePath;
+        targetDir = $fileExplorerWorkspacePath;
       }
     }
 
@@ -642,7 +657,7 @@
       (n) => n.node.path === targetDir && n.node.type === 'directory',
     );
     if (dirNode && !dirNode.isExpanded) {
-      onToggleDirectory?.(dirNode.node);
+      requestToggleDirectory(dirNode);
       // Wait for reactive update after expansion
       await tick();
     }
@@ -749,7 +764,7 @@
         label: 'New File',
         icon: faPlus,
         onClick: () => {
-          startCreatingFile(workspacePath);
+          startCreatingFile($fileExplorerWorkspacePath);
           closeContextMenu();
         },
       });
@@ -771,7 +786,7 @@
         },
       });
       if (onCreateFile) {
-        const parentDir = node.path.substring(0, node.path.lastIndexOf('/')) || workspacePath;
+        const parentDir = node.path.substring(0, node.path.lastIndexOf('/')) || $fileExplorerWorkspacePath;
         items.push({
           id: 'new-file',
           label: 'New File',
@@ -788,7 +803,8 @@
         label: flattenedNodes.find((n) => n.node.path === node.path)?.isExpanded ? 'Collapse' : 'Expand',
         icon: faFolderOpen,
         onClick: () => {
-          onToggleDirectory?.(node);
+          const flatNode = flattenedNodes.find((n) => n.node.path === node.path);
+          if (flatNode) requestToggleDirectory(flatNode);
           closeContextMenu();
         },
       });
@@ -913,6 +929,7 @@
     if (!selectedFile) return false;
     // Direct match (both absolute or both relative)
     if (nodePath === selectedFile) return true;
+    const workspacePath = $fileExplorerWorkspacePath;
     // selectedFile is relative, nodePath is absolute
     if (workspacePath && nodePath === `${workspacePath}/${selectedFile}`) return true;
     // selectedFile is absolute, nodePath matches the end
@@ -986,7 +1003,7 @@
     if (flatNode.node.type === 'file') {
       onFileSelect?.(flatNode.node.path);
     } else {
-      onToggleDirectory?.(flatNode.node);
+      requestToggleDirectory(flatNode);
     }
     // Refocus the tree container so keyboard navigation continues to work
     requestAnimationFrame(() => {
@@ -997,6 +1014,7 @@
   // Check if a path matches a node path (helper for scrollToPath)
   function pathMatches(nodePath: string, targetPath: string): boolean {
     if (filePathsMatch(nodePath, targetPath)) return true;
+    const workspacePath = $fileExplorerWorkspacePath;
     if (workspacePath && nodePath === `${workspacePath}/${targetPath}`) return true;
     return false;
   }

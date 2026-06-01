@@ -17,7 +17,12 @@ import {
   setChildrenAtPathAction,
   clearFileExplorerForWorkspace,
 } from '$lib/store/slices/file-explorer/file-explorer-slice';
+import {
+  selectFileExplorerNodeMap,
+  selectFileExplorerRootNode,
+} from '$lib/store/slices/file-explorer/file-explorer-selectors';
 import type { FileNode } from '$shared/types';
+import { filterFileExplorerChildPaths } from '../file-explorer-sidebar-utils';
 import {
   shouldHide,
   checkGitignored,
@@ -37,14 +42,22 @@ describe('FileExplorerReducer', () => {
     const state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/test/path'));
     const ws = state.byWorkspaceId[wsId];
     expect(ws.workspacePath).toBe('/test/path');
-    expect(ws.rootNode).toBeNull();
+    expect(ws.rootPath).toBeNull();
+    expect(ws.nodes.ids).toEqual([]);
     expect(ws.expandedPaths).toEqual([]);
   });
 
   it('should set root node', () => {
     const root: FileNode = { name: 'root', path: '/test', type: 'directory', children: [] };
     const state = fileExplorerReducer(initialState, setRootNode(wsId, root));
-    expect(state.byWorkspaceId[wsId].rootNode).toEqual(root);
+    const ws = state.byWorkspaceId[wsId];
+    expect(ws.rootPath).toBe('/test');
+    expect(selectFileExplorerRootNode.select({ fileExplorer: state } as any, wsId)).toEqual({
+      name: 'root',
+      path: '/test',
+      type: 'directory',
+      children: [],
+    });
   });
 
   it('should add and remove expanded paths', () => {
@@ -105,7 +118,42 @@ describe('FileExplorerReducer', () => {
       { name: 'index.ts', path: '/root/src/index.ts', type: 'file' },
     ];
     state = fileExplorerReducer(state, setChildrenAtPathAction(wsId, '/root/src', newChildren));
-    expect(state.byWorkspaceId[wsId].rootNode?.children?.[0].children).toEqual(newChildren);
+    expect(state.byWorkspaceId[wsId].nodes.map['/root/src'].children).toEqual(['/root/src/index.ts']);
+    expect(selectFileExplorerRootNode.select({ fileExplorer: state } as any, wsId)?.children).toEqual(['/root/src']);
+  });
+
+  it('should preserve sidebar search by keeping directory branches with matching descendants', () => {
+    const root: FileNode = {
+      name: 'root', path: '/root', type: 'directory',
+      children: [
+        {
+          name: 'src', path: '/root/src', type: 'directory',
+          children: [
+            {
+              name: 'components', path: '/root/src/components', type: 'directory',
+              children: [{ name: 'Button.svelte', path: '/root/src/components/Button.svelte', type: 'file' }],
+            },
+            { name: 'index.ts', path: '/root/src/index.ts', type: 'file' },
+          ],
+        },
+        { name: 'README.md', path: '/root/README.md', type: 'file' },
+      ],
+    };
+    const state = fileExplorerReducer(initialState, setRootNode(wsId, root));
+    const storeState = { fileExplorer: state } as any;
+    const nodeMap = selectFileExplorerNodeMap.select(storeState, wsId);
+    const rootNode = selectFileExplorerRootNode.select(storeState, wsId);
+
+    expect(filterFileExplorerChildPaths(rootNode?.children ?? [], 'button', nodeMap)).toEqual([
+      '/root/src',
+    ]);
+    expect(filterFileExplorerChildPaths(['/root/src'], 'button', nodeMap)).toEqual(['/root/src']);
+    expect(filterFileExplorerChildPaths(['/root/src/components'], 'button', nodeMap)).toEqual([
+      '/root/src/components',
+    ]);
+    expect(filterFileExplorerChildPaths(rootNode?.children ?? [], 'readme', nodeMap)).toEqual([
+      '/root/README.md',
+    ]);
   });
 });
 

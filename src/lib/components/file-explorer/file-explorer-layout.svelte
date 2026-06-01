@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { invoke } from '$lib/electron-bridge';
   import FileExplorerSidebar from './file-explorer-sidebar.svelte';
@@ -8,6 +9,7 @@
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
   import {
   faXmark,
   faFileAlt,
@@ -19,12 +21,18 @@
   const logger = createLogger('FileExplorerLayout');
 
   interface Props {
-    workspacePath: string;
     workspaceId?: string;
     initialFile?: string;
   }
 
-  let { workspacePath, workspaceId, initialFile }: Props = $props();
+  let { workspaceId = '', initialFile }: Props = $props();
+
+  const workspaceIdStore = writable(workspaceId);
+  const fileExplorerWorkspacePath = selectEffectiveFileExplorerWorkspacePath(workspaceIdStore);
+
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
 
   // State for open files
   let openFiles = $state<Map<string, { content: string; modified: boolean }>>(new Map());
@@ -36,7 +44,7 @@
   // Get breadcrumb parts from file path
   function getBreadcrumbParts(filePath: string): string[] {
     if (!filePath) return [];
-    const relativePath = filePath.replace(workspacePath, '').replace(/^\//, '');
+    const relativePath = filePath.replace($fileExplorerWorkspacePath, '').replace(/^\//, '');
     return relativePath.split('/').filter(Boolean);
   }
 
@@ -204,7 +212,6 @@
 
 <Sidebar.Provider>
   <FileExplorerSidebar
-    {workspacePath}
     {workspaceId}
     onFileSelect={handleFileSelect}
     bind:selectedFile

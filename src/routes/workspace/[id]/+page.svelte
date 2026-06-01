@@ -1178,10 +1178,6 @@
     >
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
-        workspacePath={$workspace?.worktreePath ||
-          $workspace?.repositoryPath ||
-          $workspace?.path ||
-          ''}
         notes={sidebarState.sidebarNotes}
         notesLoading={sidebarState.sidebarNotesLoading}
         selectedNoteId={state?.mainPanel?.type === 'notes'

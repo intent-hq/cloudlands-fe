@@ -1,10 +1,19 @@
-import type { FileNode, FileGitStatus, EnvironmentConfig } from "$shared/types";
+import type { FileNode, FileGitStatus } from "$shared/types";
 import { shallowEqual } from "fast-equals";
+import {
+  createCollection,
+  getItem,
+  getItems,
+  type Collection,
+} from "svelte-redux-toolkit/utils/collections/collection-utils";
 import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
 import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import type { FileExplorerWorkspaceState, FileExplorerState } from "./file-explorer-types";
-import { setChildrenAtPath } from "./file-explorer-utils";
+import type {
+  FileExplorerWorkspaceState,
+  FileExplorerState,
+  FileExplorerTreeNode,
+} from "./file-explorer-types";
 import type { StoreAction } from "svelte-redux-toolkit/types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
@@ -15,7 +24,8 @@ export type { FileExplorerWorkspaceState, FileExplorerState };
 
 export const emptyFileExplorerWorkspaceState: FileExplorerWorkspaceState = {
   workspacePath: "",
-  rootNode: null,
+  rootPath: null,
+  nodes: createCollection<FileExplorerTreeNode, "path">("path"),
   isLoading: false,
   isInitialized: false,
   error: null,
@@ -27,7 +37,6 @@ export const emptyFileExplorerWorkspaceState: FileExplorerWorkspaceState = {
   isBulkOperation: false,
   treeVersion: 0,
   gitignorePatterns: [],
-  environmentConfig: undefined,
   remoteConnectionId: null,
   isRemoteInitialized: false,
   isStoreActive: true,
@@ -45,7 +54,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // ---------------------------------------------------------------------------
 
 export const initializeFileExplorer = createAction<
-  [wsId: string, options: { workspacePath: string; workspaceId?: string; environmentConfig?: EnvironmentConfig }]
+  [wsId: string, options: { workspacePath: string; workspaceId?: string }]
 >("fileExplorer/initializeFileExplorer");
 
 export const setWorkspacePathRequested = createAction<[wsId: string, path: string]>(
@@ -216,10 +225,6 @@ export const setFileExplorerFileCount = createAction<[wsId: string, count: numbe
   "fileExplorer/setFileCount",
 );
 
-export const setEnvironmentConfigAction = createAction<
-  [wsId: string, config: EnvironmentConfig | undefined]
->("fileExplorer/setEnvironmentConfig");
-
 export const setRemoteConnectionIdAction = createAction<[wsId: string, id: string | null]>(
   "fileExplorer/setRemoteConnectionId",
 );
@@ -275,6 +280,111 @@ function removeRecordKeys<V>(
   return draft ?? record;
 }
 
+function createEmptyNodesCollection(): Collection<FileExplorerTreeNode, "path"> {
+  return createCollection<FileExplorerTreeNode, "path">("path");
+}
+
+function toTreeNode(node: FileNode): FileExplorerTreeNode {
+  const { children, ...metadata } = node;
+  return {
+    ...metadata,
+    children: children?.map((child) => child.path) ?? [],
+  };
+}
+
+function collectNormalizedNodes(node: FileNode, result: FileExplorerTreeNode[] = []): FileExplorerTreeNode[] {
+  result.push(toTreeNode(node));
+  for (const child of node.children ?? []) {
+    collectNormalizedNodes(child, result);
+  }
+  return result;
+}
+
+function normalizeTree(rootNode: FileNode | null): {
+  rootPath: string | null;
+  nodes: Collection<FileExplorerTreeNode, "path">;
+} {
+  if (!rootNode) {
+    return { rootPath: null, nodes: createEmptyNodesCollection() };
+  }
+  return {
+    rootPath: rootNode.path,
+    nodes: createCollection<FileExplorerTreeNode, "path">(
+      "path",
+      collectNormalizedNodes(rootNode),
+    ),
+  };
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function treeNodesEqual(left: FileExplorerTreeNode, right: FileExplorerTreeNode): boolean {
+  const { children: leftChildren, ...leftMetadata } = left;
+  const { children: rightChildren, ...rightMetadata } = right;
+  return shallowEqual(leftMetadata, rightMetadata) && sameStringArray(leftChildren, rightChildren);
+}
+
+function collectSubtreePaths(
+  nodes: Collection<FileExplorerTreeNode, "path">,
+  paths: readonly string[],
+  result: string[] = [],
+): string[] {
+  for (const path of paths) {
+    const node = getItem(nodes, path);
+    if (!node) continue;
+    result.push(path);
+    collectSubtreePaths(nodes, node.children, result);
+  }
+  return result;
+}
+
+function replaceChildrenInCollection(
+  nodes: Collection<FileExplorerTreeNode, "path">,
+  parentPath: string,
+  children: FileNode[],
+): Collection<FileExplorerTreeNode, "path"> {
+  const parent = getItem(nodes, parentPath);
+  if (!parent) return nodes;
+
+  const childPaths = children.map((child) => child.path);
+  const incomingNodes = children.flatMap((child) => collectNormalizedNodes(child));
+  const incomingPaths = new Set(incomingNodes.map((node) => node.path));
+  const stalePaths = collectSubtreePaths(nodes, parent.children).filter(
+    (path) => !incomingPaths.has(path),
+  );
+
+  const updatedParent: FileExplorerTreeNode = { ...parent, children: childPaths };
+  const hasIncomingChanges = incomingNodes.some((node) => {
+    const existing = getItem(nodes, node.path);
+    return !existing || !treeNodesEqual(existing, node);
+  });
+
+  if (
+    stalePaths.length === 0 &&
+    sameStringArray(parent.children, childPaths) &&
+    !hasIncomingChanges
+  ) {
+    return nodes;
+  }
+
+  const stalePathSet = new Set(stalePaths);
+  const finalItems: FileExplorerTreeNode[] = [];
+  for (const node of getItems(nodes)) {
+    if (node.path === parentPath) {
+      finalItems.push(updatedParent);
+      continue;
+    }
+    if (stalePathSet.has(node.path) || incomingPaths.has(node.path)) continue;
+    finalItems.push(node);
+  }
+  finalItems.push(...incomingNodes);
+
+  return createCollection<FileExplorerTreeNode, "path">("path", finalItems);
+}
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -302,15 +412,24 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
   })
   .with(setRootNode, (state, { payload: [wsId, rootNode] }) => {
     const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, rootNode, treeVersion: ws.treeVersion + 1 });
+    const normalizedTree = normalizeTree(rootNode);
+    if (normalizedTree.rootPath === null && ws.rootPath === null && ws.nodes.ids.length === 0) {
+      return state;
+    }
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      ...normalizedTree,
+      treeVersion: ws.treeVersion + 1,
+    });
   })
   .with(setChildrenAtPathAction, (state, { payload: [wsId, parentPath, children] }) => {
     const ws = getWorkspaceState(state, wsId);
-    if (!ws.rootNode) return state;
-    const newRoot = setChildrenAtPath(ws.rootNode, parentPath, children);
+    if (!ws.rootPath) return state;
+    const nodes = replaceChildrenInCollection(ws.nodes, parentPath, children);
+    if (nodes === ws.nodes) return state;
     return setWorkspaceState(state, wsId, {
       ...ws,
-      rootNode: newRoot,
+      nodes,
       treeVersion: ws.treeVersion + 1,
     });
   })
@@ -408,7 +527,8 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
     return setWorkspaceState(state, wsId, {
       ...ws,
       workspacePath: path,
-      rootNode: null,
+      rootPath: null,
+      nodes: createEmptyNodesCollection(),
       expandedPaths: [],
       loadingPaths: [],
       error: null,
@@ -419,21 +539,14 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, fileCount: count });
   })
-  .with(setEnvironmentConfigAction, (state, { payload: [wsId, config] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      environmentConfig: config,
-      isRemoteInitialized: false,
-      remoteConnectionId: null,
-    });
-  })
   .with(setRemoteConnectionIdAction, (state, { payload: [wsId, id] }) => {
     const ws = getWorkspaceState(state, wsId);
+    if (ws.remoteConnectionId === id) return state;
     return setWorkspaceState(state, wsId, { ...ws, remoteConnectionId: id });
   })
   .with(setIsRemoteInitializedAction, (state, { payload: [wsId, value] }) => {
     const ws = getWorkspaceState(state, wsId);
+    if (ws.isRemoteInitialized === value) return state;
     return setWorkspaceState(state, wsId, { ...ws, isRemoteInitialized: value });
   })
   .with(setIsStoreActive, (state, { payload: [wsId, value] }) => {

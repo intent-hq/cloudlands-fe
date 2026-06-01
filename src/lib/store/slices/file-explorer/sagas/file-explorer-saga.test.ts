@@ -7,7 +7,7 @@ import {
 } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
-import type { FileGitStatus, FileNode } from "$shared/types";
+import type { EnvironmentConfig, FileGitStatus, FileNode } from "$shared/types";
 import { debounceWithKeySaga } from "svelte-redux-toolkit/utils/sagas/debounce-saga";
 
 // typed-redux-saga must be mocked BEFORE importing the saga module because
@@ -64,6 +64,7 @@ vi.mock("$lib/utils/agent-file-edits", () => ({
 // Import after mocks
 import {
   applyGitStatusSnapshot,
+  handleToggleDirectory,
   handleRefreshDirectory,
   handleRefreshGitStatus,
   handleRefreshAgentFileEdits,
@@ -74,6 +75,8 @@ import {
   handleFileTrackingListenerReadyEvent,
   handleFileChangedWindowEvent,
   handleFileChangedIPCEvent,
+  handleRootNodeReplaced,
+  handleWorkspaceEnvironmentConfigChange,
   fileExplorerSaga,
   refreshAgentFileEditsForWorkspace,
   replayPendingAgentFileEditsRefreshForWorkspace,
@@ -82,8 +85,10 @@ import {
 import {
   debouncedAgentFileEditsRefresh,
   emptyFileExplorerWorkspaceState,
+  fileExplorerReducer,
   initializeFileExplorer,
   incrementTreeVersion,
+  initialState as fileExplorerInitialState,
   refreshAgentFileEditsRequested,
   refreshDirectoryRequested,
   refreshGitStatusRequested,
@@ -95,23 +100,70 @@ import {
   updateAgentFileEditsEntries,
   updateGitStatusEntries,
   debouncedFileTrackingSync,
+  setFileExplorerWorkspacePath,
+  setRemoteConnectionIdAction,
+  setIsRemoteInitializedAction,
   refreshFileExplorer,
+  addExpandedPath,
+  toggleDirectoryRequested,
 } from "../file-explorer-slice";
 import { emptyWorkspaceState as emptyChangesWorkspaceState } from "../../changes/changes-slice";
 import { initialState as gitInitialState } from "../../git/git-slice";
 import { getAgentFileEdits, propagateAgentEditsToParents } from "$lib/utils/agent-file-edits";
+import { invoke } from "$lib/electron-bridge";
 
 const WS_ID = "ws-1";
+const WORKSPACE_PATH = "/a/repo";
 
 const MODIFIED: FileGitStatus = { status: " M", additions: 1, deletions: 0 };
 
-function stateWith(
-  gitStatus: Record<string, FileGitStatus>,
-  workspacePath = "/a/repo",
-  agentFileEdits: Record<string, string[]> = {},
+const remoteConfig: EnvironmentConfig = {
+  type: "remote",
+  workspace_path: WORKSPACE_PATH,
+  ssh: { host: "example.test", user: "dev" },
+};
+
+const updatedRemoteConfig: EnvironmentConfig = {
+  ...remoteConfig,
+  ssh: { host: "other.example.test", user: "dev" },
+};
+
+const localConfig: EnvironmentConfig = {
+  type: "local",
+};
+
+function workspaceState(environmentConfig?: EnvironmentConfig) {
+  return {
+    activeWorkspaceId: WS_ID,
+    workspaces: {
+      idField: "id",
+      ids: [WS_ID],
+      map: { [WS_ID]: { id: WS_ID, path: WORKSPACE_PATH, environmentConfig } },
+      refsCount: { [WS_ID]: 1 },
+    },
+  };
+}
+
+function environmentConfigTrigger(
+  environmentConfig: EnvironmentConfig | undefined,
+  wsId: string | null = WS_ID,
 ) {
   return {
-    workspace: { activeWorkspaceId: WS_ID },
+    wsId,
+    workspacePath: wsId ? WORKSPACE_PATH : "",
+    workspaceEnvironmentConfig: environmentConfig,
+  };
+}
+
+function stateWith(
+  gitStatus: Record<string, FileGitStatus>,
+  workspacePath = WORKSPACE_PATH,
+  agentFileEdits: Record<string, string[]> = {},
+  environmentConfig?: EnvironmentConfig,
+  fileExplorerOverrides: Partial<typeof emptyFileExplorerWorkspaceState> = {},
+) {
+  return {
+    workspace: workspaceState(environmentConfig),
     changes: { byWorkspaceId: { [WS_ID]: emptyChangesWorkspaceState } },
     git: gitInitialState,
     fileExplorer: {
@@ -121,6 +173,7 @@ function stateWith(
           workspacePath,
           gitStatus,
           agentFileEdits,
+          ...fileExplorerOverrides,
         },
       },
     },
@@ -186,7 +239,7 @@ describe("handleRefreshGitStatus", () => {
 });
 
 describe("handleSyncGitStatusFromStores", () => {
-  it("does not bump treeVersion or replace rootNode", async () => {
+  it("does not bump treeVersion or replace the root tree", async () => {
     const result = await expectSaga(
       handleSyncGitStatusFromStores,
       syncGitStatusFromStoresRequested(WS_ID),
@@ -201,6 +254,144 @@ describe("handleSyncGitStatusFromStores", () => {
       expect(action.type).not.toBe(setChildrenAtPathAction.type);
       expect(action.type).not.toBe(incrementTreeVersion.type);
     }
+  });
+});
+
+describe("handleRootNodeReplaced", () => {
+  const WORKSPACE_PATH = "/a/repo";
+  const rootNode: FileNode = {
+    name: "repo",
+    path: WORKSPACE_PATH,
+    type: "directory",
+    children: [],
+  };
+
+  function stateAfterReplacementWithExpandedPaths() {
+    let fileExplorerState = fileExplorerReducer(
+      fileExplorerInitialState,
+      setFileExplorerWorkspacePath(WS_ID, WORKSPACE_PATH),
+    );
+    fileExplorerState = fileExplorerReducer(fileExplorerState, setRootNode(WS_ID, rootNode));
+    for (const path of [WORKSPACE_PATH, `${WORKSPACE_PATH}/src`, `${WORKSPACE_PATH}/missing`]) {
+      fileExplorerState = fileExplorerReducer(fileExplorerState, addExpandedPath(WS_ID, path));
+    }
+    fileExplorerState = fileExplorerReducer(fileExplorerState, setRootNode(WS_ID, rootNode));
+    return { fileExplorer: fileExplorerState } as any;
+  }
+
+  it("reloads non-root expanded paths after root replacement without normalized-tree prefiltering", async () => {
+    const srcChildren: FileNode[] = [
+      { name: "index.ts", path: `${WORKSPACE_PATH}/src/index.ts`, type: "file" },
+    ];
+    const loadedPaths: string[] = [];
+
+    await expectSaga(handleRootNodeReplaced, setRootNode(WS_ID, rootNode))
+      .withState(stateAfterReplacementWithExpandedPaths())
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName !== "loadDirectoryCore") return next();
+          const [, dirPath] = effect.args as [string, string];
+          loadedPaths.push(dirPath);
+          if (dirPath === `${WORKSPACE_PATH}/src`) return srcChildren;
+          return [];
+        },
+      })
+      .put(setChildrenAtPathAction(WS_ID, `${WORKSPACE_PATH}/src`, srcChildren))
+      .put(setChildrenAtPathAction(WS_ID, `${WORKSPACE_PATH}/missing`, []))
+      .silentRun(100);
+
+    expect(loadedPaths).toEqual([
+      `${WORKSPACE_PATH}/src`,
+      `${WORKSPACE_PATH}/missing`,
+    ]);
+  });
+
+  it("registers setRootNode as the canonical replacement watcher trigger", () => {
+    const saga = fileExplorerSaga();
+    let replacementWatcher: any;
+
+    for (let i = 0; i < 30; i += 1) {
+      const effect = saga.next().value as any;
+      if (effect?.payload?.args?.[0] === setRootNode) {
+        replacementWatcher = effect;
+        break;
+      }
+    }
+
+    expect(replacementWatcher?.type).toBe("FORK");
+    expect(replacementWatcher.payload.args[1]).toBe(handleRootNodeReplaced);
+  });
+});
+
+describe("handleToggleDirectory", () => {
+  const WORKSPACE_PATH = "/a/repo";
+
+  function directory(path: string, children: FileNode[] = []): FileNode {
+    return {
+      name: path.split("/").pop() || "repo",
+      path,
+      type: "directory",
+      children,
+    };
+  }
+
+  function file(path: string): FileNode {
+    return {
+      name: path.split("/").pop() || "file",
+      path,
+      type: "file",
+    };
+  }
+
+  function stateWithRoot(root: FileNode) {
+    let fileExplorerState = fileExplorerReducer(
+      fileExplorerInitialState,
+      setFileExplorerWorkspacePath(WS_ID, WORKSPACE_PATH),
+    );
+    fileExplorerState = fileExplorerReducer(fileExplorerState, setRootNode(WS_ID, root));
+    return { fileExplorer: fileExplorerState } as any;
+  }
+
+  it("expands without fetching when normalized slice children are already loaded", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const loadedRoot = directory(WORKSPACE_PATH, [
+      directory(srcPath, [file(`${srcPath}/index.ts`)]),
+    ]);
+
+    const result = await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(loadedRoot))
+      .put(addExpandedPath(WS_ID, srcPath))
+      .silentRun(50);
+
+    const callEffects = result.effects.call ?? [];
+    expect(
+      callEffects.some((effect: any) => effect.payload.fn?.name === "loadDirectoryCore"),
+    ).toBe(false);
+  });
+
+  it("fetches and applies children when normalized slice children are not available", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const fetchedChildren = [file(`${srcPath}/index.ts`)];
+
+    await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(directory(WORKSPACE_PATH, [directory(srcPath)])))
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName === "loadDirectoryCore") return fetchedChildren;
+          return next();
+        },
+      })
+      .put(addExpandedPath(WS_ID, srcPath))
+      .put(setChildrenAtPathAction(WS_ID, srcPath, fetchedChildren))
+      .silentRun(100);
   });
 });
 
@@ -277,6 +468,108 @@ describe("agentFileEdits refresh pipeline", () => {
         "src/lib": ["agent-1"],
       }))
       .silentRun(500);
+  });
+
+  it("initializes remote FS from workspace environment config during file-explorer init", async () => {
+    vi.mocked(invoke).mockImplementation(async (channel: string) => {
+      if (channel === "remote-fs:init") {
+        return { success: true, data: { connectionId: "remote-conn-1" } } as any;
+      }
+      return { success: true, data: { fileStatuses: {}, fileChanges: {} } } as any;
+    });
+
+    await expectSaga(fileExplorerSaga)
+      .withState(stateWith({}, WORKSPACE_PATH, {}, remoteConfig))
+      .provide(provideRootLoad)
+      .dispatch(initializeFileExplorer(WS_ID, { workspacePath: WORKSPACE_PATH }))
+      .put(setRemoteConnectionIdAction(WS_ID, "remote-conn-1"))
+      .put(setIsRemoteInitializedAction(WS_ID, true))
+      .silentRun(500);
+  });
+
+  it("reinitializes and resets remote runtime on local-to-remote config changes", async () => {
+    await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger(remoteConfig),
+      prevPayload: environmentConfigTrigger(undefined),
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, remoteConfig))
+      .put(setRemoteConnectionIdAction(WS_ID, null))
+      .put(setIsRemoteInitializedAction(WS_ID, false))
+      .put(initializeFileExplorer(WS_ID, { workspacePath: WORKSPACE_PATH, workspaceId: WS_ID }))
+      .silentRun(50);
+  });
+
+  it("reinitializes and clears stale remote runtime on remote-to-local config changes", async () => {
+    await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger(localConfig),
+      prevPayload: environmentConfigTrigger(remoteConfig),
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, localConfig, {
+        remoteConnectionId: "remote-conn-old",
+        isRemoteInitialized: true,
+      }))
+      .put(setRemoteConnectionIdAction(WS_ID, null))
+      .put(setIsRemoteInitializedAction(WS_ID, false))
+      .put(initializeFileExplorer(WS_ID, { workspacePath: WORKSPACE_PATH, workspaceId: WS_ID }))
+      .silentRun(50);
+  });
+
+  it("reinitializes remote runtime when remote config details change", async () => {
+    await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger(updatedRemoteConfig),
+      prevPayload: environmentConfigTrigger(remoteConfig),
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, updatedRemoteConfig, {
+        remoteConnectionId: "remote-conn-old",
+        isRemoteInitialized: true,
+      }))
+      .put(setRemoteConnectionIdAction(WS_ID, null))
+      .put(setIsRemoteInitializedAction(WS_ID, false))
+      .put(initializeFileExplorer(WS_ID, { workspacePath: WORKSPACE_PATH, workspaceId: WS_ID }))
+      .silentRun(50);
+  });
+
+  it("does not dispatch duplicate initialization for same-config workspace updates", async () => {
+    const result = await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger({
+        type: "remote",
+        workspace_path: WORKSPACE_PATH,
+        ssh: { host: "example.test", user: "dev" },
+      }),
+      prevPayload: environmentConfigTrigger(remoteConfig),
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, remoteConfig, {
+        remoteConnectionId: "remote-conn-1",
+        isRemoteInitialized: true,
+      }))
+      .silentRun(50);
+
+    const putActions = result.effects.put ?? [];
+    for (const effectDescriptor of putActions) {
+      const action = (effectDescriptor as any).payload.action;
+      expect(action.type).not.toBe(initializeFileExplorer.type);
+      expect(action.type).not.toBe(setRemoteConnectionIdAction.type);
+      expect(action.type).not.toBe(setIsRemoteInitializedAction.type);
+    }
+  });
+
+  it("ignores initial selector emissions and active workspace switches", async () => {
+    const initialEmission = await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger(remoteConfig),
+      prevPayload: undefined,
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, remoteConfig))
+      .silentRun(50);
+
+    const workspaceSwitch = await expectSaga(handleWorkspaceEnvironmentConfigChange, {
+      payload: environmentConfigTrigger(remoteConfig),
+      prevPayload: environmentConfigTrigger(undefined, "other-ws"),
+    })
+      .withState(stateWith({}, WORKSPACE_PATH, {}, remoteConfig))
+      .silentRun(50);
+
+    expect(initialEmission.effects.put ?? []).toEqual([]);
+    expect(workspaceSwitch.effects.put ?? []).toEqual([]);
   });
 
   it("populates initially empty agent edits during file-explorer refresh", async () => {
@@ -684,16 +977,16 @@ describe("handleRefreshDirectory", () => {
   }
 
   function stateWithTree(workspacePath = WORKSPACE_PATH) {
+    let fileExplorerState = fileExplorerReducer(
+      fileExplorerInitialState,
+      setFileExplorerWorkspacePath(WS_ID, workspacePath),
+    );
+    fileExplorerState = fileExplorerReducer(
+      fileExplorerState,
+      setRootNode(WS_ID, makeTree()),
+    );
     return {
-      fileExplorer: {
-        byWorkspaceId: {
-          [WS_ID]: {
-            ...emptyFileExplorerWorkspaceState,
-            workspacePath,
-            rootNode: makeTree(),
-          },
-        },
-      },
+      fileExplorer: fileExplorerState,
     } as any;
   }
 
@@ -742,7 +1035,7 @@ describe("handleRefreshDirectory", () => {
   });
 
   it("no-ops when the parent directory is not currently loaded in the tree", async () => {
-    // filePath under an uninstantiated directory — findNodeByPath returns null.
+    // filePath under an uninstantiated directory — normalized node lookup returns null.
     const result = await expectSaga(
       handleRefreshDirectory,
       refreshDirectoryRequested(WS_ID, "/a/repo/unloaded/child.ts"),
