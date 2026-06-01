@@ -2127,77 +2127,6 @@ export function setupAuggieIPC() {
     }
   });
 
-  // Setup MCP for Pi
-  //
-  // Pi (the engine) loads MCP via the pi MCP adapter, which reads a global
-  // override file at ~/.pi/agent/mcp.json with an `mcpServers` object keyed by
-  // server name. pi-acp itself does not forward MCP to pi, so writing pi's
-  // global MCP config is the correct integration point.
-  ipcMain.handle(AUGGIE_CHANNELS.SETUP_MCP_PI, async () => {
-    try {
-      logger.info('Setting up MCP for Pi');
-
-      const auggiePath = await findAuggiePathAsync();
-
-      if (!auggiePath) {
-        return {
-          success: false,
-          error: 'Auggie CLI not found. Please install auggie first.',
-        };
-      }
-
-      // Read or create ~/.pi/agent/mcp.json
-      const configDir = path.join(os.homedir(), '.pi', 'agent');
-      const configFile = path.join(configDir, 'mcp.json');
-
-      // Ensure directory exists
-      await fs.mkdir(configDir, { recursive: true });
-
-      // Read existing config or create new one
-      let config: any = {
-        mcpServers: {},
-      };
-
-      try {
-        const content = await fs.readFile(configFile, 'utf-8');
-        config = JSON.parse(content);
-        // Ensure mcpServers object exists
-        if (!config.mcpServers) {
-          config.mcpServers = {};
-        }
-      } catch (readError) {
-        const errCode = (readError as NodeJS.ErrnoException).code;
-        if (errCode !== 'ENOENT') {
-          logger.warn('Failed to parse existing Pi MCP config, will overwrite', {
-            error: (readError as Error).message,
-          });
-        }
-      }
-
-      // Add or update the augment-context-engine entry
-      config.mcpServers['augment-context-engine'] = {
-        command: auggiePath,
-        args: ['--mcp', '--mcp-auto-workspace'],
-      };
-
-      // Write the config file
-      await fs.writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
-
-      logger.info('Pi MCP setup completed', { configFile });
-
-      return {
-        success: true,
-      };
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
-      logger.error('Failed to setup MCP for Pi', { error: errorMessage });
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
-  });
-
   // Check if MCP is configured for Claude Code
   ipcMain.handle(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE, async () => {
     try {
@@ -2336,51 +2265,6 @@ export function setupAuggieIPC() {
     } catch (error) {
       const errorMessage = (error as Error).message || 'Unknown error';
       logger.error('Error checking OpenCode MCP configuration', { error: errorMessage });
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
-  });
-
-  // Check if MCP is configured for Pi
-  ipcMain.handle(AUGGIE_CHANNELS.CHECK_MCP_PI, async () => {
-    try {
-      logger.info('Checking MCP configuration for Pi');
-
-      const configFile = path.join(os.homedir(), '.pi', 'agent', 'mcp.json');
-
-      try {
-        const content = await fs.readFile(configFile, 'utf-8');
-        const config = JSON.parse(content);
-
-        // Check if augment-context-engine is configured
-        const isConfigured = Boolean(
-          config.mcpServers && config.mcpServers['augment-context-engine'],
-        );
-
-        logger.info('Pi MCP check completed', { configured: isConfigured });
-        return {
-          success: true,
-          configured: isConfigured,
-        };
-      } catch (readOrParseError) {
-        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
-        if (errCode === 'ENOENT') {
-          logger.info('Pi MCP config file not found');
-        } else {
-          logger.warn('Failed to read/parse Pi MCP config file', {
-            error: (readOrParseError as Error).message,
-          });
-        }
-        return {
-          success: true,
-          configured: false,
-        };
-      }
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
-      logger.error('Error checking Pi MCP configuration', { error: errorMessage });
       return {
         success: false,
         error: errorMessage,
@@ -2631,52 +2515,6 @@ export function setupAuggieIPC() {
     } catch (error) {
       const errorMessage = (error as Error).message || 'Unknown error';
       logger.error('Failed to uninstall MCP from OpenCode', { error: errorMessage });
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
-  });
-
-  // Uninstall MCP from Pi
-  ipcMain.handle(AUGGIE_CHANNELS.UNINSTALL_MCP_PI, async () => {
-    try {
-      logger.info('Uninstalling MCP from Pi');
-
-      const configFile = path.join(os.homedir(), '.pi', 'agent', 'mcp.json');
-
-      try {
-        const content = await fs.readFile(configFile, 'utf-8');
-        const config = JSON.parse(content);
-
-        if (config.mcpServers && config.mcpServers['augment-context-engine']) {
-          delete config.mcpServers['augment-context-engine'];
-          await fs.writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
-          logger.info('Pi MCP uninstall completed', { configFile });
-        } else {
-          logger.info('augment-context-engine not found in Pi config, nothing to uninstall');
-        }
-
-        return {
-          success: true,
-        };
-      } catch (readOrParseError) {
-        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
-        if (errCode === 'ENOENT') {
-          logger.info('Pi MCP config file not found, nothing to uninstall');
-          return { success: true };
-        }
-        logger.warn('Failed to read/parse Pi MCP config file during uninstall', {
-          error: (readOrParseError as Error).message,
-        });
-        return {
-          success: false,
-          error: `Failed to parse Pi config: ${(readOrParseError as Error).message}`,
-        };
-      }
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
-      logger.error('Failed to uninstall MCP from Pi', { error: errorMessage });
       return {
         success: false,
         error: errorMessage,

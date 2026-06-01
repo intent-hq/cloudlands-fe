@@ -301,7 +301,6 @@ import { setupPersistenceIPC } from '../features/agent/main/persistence.ipc';
 import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
 import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
 import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
-import { setupPiIPC } from '../features/pi/main/pi.ipc';
 import { setupCodexIPC } from '../features/codex/main/codex.ipc';
 import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
@@ -1427,7 +1426,6 @@ app.whenReady().then(async () => {
   setupClaudeCodeIPC(); // Needed for claude-code:get-models
   setupCodexIPC(); // Needed for codex:get-models
   setupCortexIPC(); // Needed for cortex:get-models
-  setupPiIPC(); // Needed for pi:get-models
   setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupThirdPartySourcesIPC(); // Needed for sources:list

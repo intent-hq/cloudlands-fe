@@ -159,21 +159,6 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
 
-  pi: {
-    id: 'pi',
-    displayName: 'Pi',
-    command: 'pi-acp',
-    baseArgs: [],
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
-    isDefault: false,
-    canBeDisabled: true,
-    ipcChannelPrefix: 'pi',
-    loginDocsUrl: 'https://pi.dev/docs/latest/quickstart',
-  },
-
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
@@ -264,7 +249,6 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   codex: 'codex',
   mock: 'mock',
   opencode: 'opencode',
-  pi: 'pi',
   cortex: 'cortex',
 };
 

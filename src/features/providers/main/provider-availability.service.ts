@@ -35,11 +35,6 @@ import {
   getOpenCodePath,
   isOpenCodeInstalled,
 } from '../../opencode/main/opencode-resolver';
-import {
-  clearPiCache,
-  getPiPath,
-  isPiInstalled,
-} from '../../pi/main/pi-resolver';
 import type {
   ProviderAvailabilityResult,
   ProviderStatus,
@@ -199,19 +194,6 @@ async function checkCortexAvailability(): Promise<ProviderStatus> {
 async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isOpenCodeInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
-}
-
-/**
- * Check if pi is available by checking if the pi CLI is installed.
- * Does not fall back to npx - we want accurate "is installed" status.
- */
-async function checkPiAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isPiInstalled();
     return { available: installed };
   } catch (error) {
     return { available: false, error: (error as Error).message };
@@ -501,33 +483,24 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   clearCodexCache();
   clearCortexCache();
   clearOpenCodeCache();
-  clearPiCache();
 
   // Check all providers in parallel for faster startup
   // For hidden providers, skip the actual check and return unavailable
   const isCortexHidden = hiddenProviders.includes('cortex');
   const isMockHidden = hiddenProviders.includes('mock');
-  const [
-    auggieResult,
-    claudeCodeResult,
-    codexResult,
-    cortexResult,
-    mockResult,
-    opencodeResult,
-    piResult,
-  ] = await Promise.all([
-    checkAuggieAvailability(),
-    checkClaudeCodeAvailability(),
-    checkCodexAvailability(),
-    isCortexHidden
-      ? Promise.resolve({ available: false } as ProviderStatus)
-      : checkCortexAvailability(),
-    isMockHidden
-      ? Promise.resolve({ available: false } as ProviderStatus)
-      : checkMockAvailability(),
-    checkOpenCodeAvailability(),
-    checkPiAvailability(),
-  ]);
+  const [auggieResult, claudeCodeResult, codexResult, cortexResult, mockResult, opencodeResult] =
+    await Promise.all([
+      checkAuggieAvailability(),
+      checkClaudeCodeAvailability(),
+      checkCodexAvailability(),
+      isCortexHidden
+        ? Promise.resolve({ available: false } as ProviderStatus)
+        : checkCortexAvailability(),
+      isMockHidden
+        ? Promise.resolve({ available: false } as ProviderStatus)
+        : checkMockAvailability(),
+      checkOpenCodeAvailability(),
+    ]);
 
   // Run auth checks in parallel for available providers.
   // Auggie uses `model list`; model listing is the stable auth gate.
@@ -572,8 +545,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       codexResult.available ||
       cortexResult.available ||
       mockResult.available ||
-      opencodeResult.available ||
-      piResult.available,
+      opencodeResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -581,7 +553,6 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       cortex: cortexResult,
       mock: mockResult,
       opencode: opencodeResult,
-      pi: piResult,
     },
     hiddenProviders,
   };
@@ -594,7 +565,6 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     cortex: cortexResult.available,
     mock: mockResult.available,
     opencode: opencodeResult.available,
-    pi: piResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
@@ -614,17 +584,14 @@ export async function getProviderPaths(): Promise<{
   codex: string | null;
   cortex: string | null;
   opencode: string | null;
-  pi: string | null;
 }> {
-  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, piPath] =
-    await Promise.all([
-      findAuggiePathAsync(),
-      getClaudeCodePath(),
-      getCodexPath(),
-      getCortexPath(),
-      getOpenCodePath(),
-      getPiPath(),
-    ]);
+  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath] = await Promise.all([
+    findAuggiePathAsync(),
+    getClaudeCodePath(),
+    getCodexPath(),
+    getCortexPath(),
+    getOpenCodePath(),
+  ]);
 
   return {
     auggie: auggiePath,
@@ -632,7 +599,6 @@ export async function getProviderPaths(): Promise<{
     codex: codexPath,
     cortex: cortexPath,
     opencode: opencodePath,
-    pi: piPath,
   };
 }
 
@@ -716,12 +682,6 @@ export function setupProviderAvailabilityIPC(): void {
               const opencodePath = await getOpenCodePath();
               authenticated = await checkOpenCodeReady(opencodePath);
             }
-            break;
-          case 'pi':
-            // pi has no stable "am I logged in" signal — availability is based
-            // solely on whether the binary is installed; authenticated stays undefined.
-            clearPiCache();
-            status = await checkPiAvailability();
             break;
           case 'mock':
             status = await checkMockAvailability();

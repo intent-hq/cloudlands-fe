@@ -250,9 +250,6 @@ export const IPC_CHANNELS = {
     SETUP_MCP_CORTEX: 'auggie:setup-mcp-cortex',
     CHECK_MCP_CORTEX: 'auggie:check-mcp-cortex',
     UNINSTALL_MCP_CORTEX: 'auggie:uninstall-mcp-cortex',
-    SETUP_MCP_PI: 'auggie:setup-mcp-pi',
-    CHECK_MCP_PI: 'auggie:check-mcp-pi',
-    UNINSTALL_MCP_PI: 'auggie:uninstall-mcp-pi',
   },
   // OpenCode Integration
   OPENCODE: {
@@ -278,11 +275,6 @@ export const IPC_CHANNELS = {
   CORTEX: {
     CHECK_AVAILABILITY: 'cortex:check-availability',
     GET_MODELS: 'cortex:get-models',
-  },
-
-  // Pi Integration
-  PI: {
-    GET_MODELS: 'pi:get-models',
   },
 
   // Promotional Banner

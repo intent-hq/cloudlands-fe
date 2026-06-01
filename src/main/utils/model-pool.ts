@@ -62,12 +62,6 @@ export async function getCachedModelsForProvider(
         );
         return await getCachedOpencodeModels();
       }
-      case 'pi': {
-        const { getCachedPiModels } = await import(
-          '../../features/pi/main/pi.ipc'
-        );
-        return await getCachedPiModels();
-      }
       default:
         // Unknown / unsupported provider — cortex, mock, or typo. Skip live
         // validation so the caller falls through its existing path.

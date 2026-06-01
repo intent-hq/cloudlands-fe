@@ -142,7 +142,6 @@
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
     },
-    pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
   };
 
   // Map provider IDs to keys used in ProviderAvailabilityResult
@@ -153,7 +152,6 @@
     mock: 'mock',
     opencode: 'opencode',
     cortex: 'cortex',
-    pi: 'pi',
   };
 
   // Helper to get provider availability from result (handles different key formats)
@@ -393,7 +391,6 @@
         checkMcpCodexResult,
         checkMcpOpenCodeResult,
         checkMcpCortexResult,
-        checkMcpPiResult,
       ] = await Promise.all([
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
@@ -401,7 +398,6 @@
         isCortexHidden
           ? Promise.resolve({ success: true, configured: false })
           : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_PI),
       ]);
 
       mcpConfigured = {
@@ -409,7 +405,6 @@
         codex: checkMcpCodexResult?.configured ?? false,
         opencode: checkMcpOpenCodeResult?.configured ?? false,
         cortex: checkMcpCortexResult?.configured ?? false,
-        pi: checkMcpPiResult?.configured ?? false,
       };
     } catch (err) {
       logger.warn('Failed to check MCP status', { error: err });
@@ -427,7 +422,6 @@
         codex: AUGGIE_CHANNELS.SETUP_MCP_CODEX,
         opencode: AUGGIE_CHANNELS.SETUP_MCP_OPENCODE,
         cortex: AUGGIE_CHANNELS.SETUP_MCP_CORTEX,
-        pi: AUGGIE_CHANNELS.SETUP_MCP_PI,
       };
 
       const channel = channelMap[providerId];
@@ -439,14 +433,7 @@
 
       if (result?.success) {
         mcpConfigured = { ...mcpConfigured, [providerId]: true };
-        if (providerId === 'pi') {
-          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`, {
-            description:
-              'Install pi-mcp-adapter for Pi to load the Context Engine: npm i -g pi-mcp-adapter',
-          });
-        } else {
-          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`);
-        }
+        toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`);
         track('Enabled Context Engine', {
           provider_id: providerId,
           success: true,
@@ -476,7 +463,6 @@
         codex: AUGGIE_CHANNELS.UNINSTALL_MCP_CODEX,
         opencode: AUGGIE_CHANNELS.UNINSTALL_MCP_OPENCODE,
         cortex: AUGGIE_CHANNELS.UNINSTALL_MCP_CORTEX,
-        pi: AUGGIE_CHANNELS.UNINSTALL_MCP_PI,
       };
 
       const channel = channelMap[providerId];
@@ -781,8 +767,6 @@
     {@render skeleton('codex')}
 
     {@render skeleton('opencode')}
-
-    {@render skeleton('pi')}
 
     {#if providerAvailability && !providerAvailability.hiddenProviders?.includes('cortex')}
       {@render skeleton('cortex')}
@@ -1299,16 +1283,6 @@
         <path
           d="M12 12L14.26 13.09L13.5 15.5L15.91 14.74L17 17L18.09 14.74L20.5 15.5L19.74 13.09L22 12L19.74 10.91L20.5 8.5L18.09 9.26L17 7L15.91 9.26L13.5 8.5L14.26 10.91L12 12Z"
         />
-      </svg>
-    {:else if providerId === 'pi'}
-      <svg class="size-5" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
-        <rect width="800" height="800" rx="120" fill="#09090b" />
-        <path
-          fill="#fff"
-          fill-rule="evenodd"
-          d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"
-        />
-        <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z" />
       </svg>
     {:else}
       <!-- Fallback for unknown providers -->
