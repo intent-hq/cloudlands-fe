@@ -45,6 +45,7 @@ import {
   importFromJson,
   importFromJsonCompleted,
   testServerConnection,
+  restartServer,
   applyWorkspaceDisabledServers,
   toggleWorkspaceMcpServer,
 } from "../mcp-settings-slice";
@@ -253,6 +254,39 @@ function* handleTestServerConnection(
       error: toMcpErrorMessage(error, "Connection test failed"),
     });
   }
+}
+
+// ============================================================================
+// Restart server saga
+// ============================================================================
+
+export function* handleRestartServer(
+  action: ReturnType<typeof restartServer>
+): SagaGenerator<void> {
+  const [name] = action.payload;
+  const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const server = servers.find((s) => s.name === name);
+  if (!server) {
+    logger.warn("Cannot restart unknown MCP server", { name });
+    return;
+  }
+
+  // Optimistically clear the prior failure and mark the server as re-validating.
+  yield* put(clearServerErrorMessage(name));
+  yield* put(setServerStatus(name, "configured"));
+
+  // Remote servers can be actively re-tested now. Stdio servers have no
+  // renderer-owned process to restart — the next agent launch re-attempts the
+  // spawn, so we leave the optimistic "configured" state and let the
+  // startup-error listener flip it back to "stopped" if it fails again.
+  if (server.type !== "stdio" && server.url) {
+    yield* call(
+      handleTestServerConnection,
+      testServerConnection(server.name, server.url, server.headers)
+    );
+  }
+
+  logger.info("Restart requested for MCP server", { name, type: server.type });
 }
 
 // ============================================================================
@@ -556,8 +590,12 @@ export function* handleMcpServerError(data: McpServerErrorPayload): SagaGenerato
     : null;
   if (!errorMessage) return;
 
+  // This listener only fires for MCP server startup/launch failures, which
+  // mean the server is not running. Distinguish auth failures (recoverable
+  // by re-authenticating) from a stopped/unavailable server (recoverable by
+  // retrying/restarting).
   const isAuthError = /\bUnauthorized\b|\b401\b|\b403\b|\bauth/i.test(errorMessage);
-  const status: McpServerStatus = isAuthError ? "auth_required" : "error";
+  const status: McpServerStatus = isAuthError ? "auth_required" : "stopped";
   const friendlyMessage = isAuthError
     ? "Authentication required — check your credentials or reauthenticate"
     : errorMessage;
@@ -618,5 +656,6 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(updateServer, handleUpdateServer);
   yield* takeEvery(importFromJson, handleImportFromJson);
   yield* takeEvery(testServerConnection, handleTestServerConnection);
+  yield* takeEvery(restartServer, handleRestartServer);
 }
 

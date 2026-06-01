@@ -73,6 +73,7 @@ describe('mcp-settings normalization', () => {
       beta: true,
     });
     expect(normalizeMcpServerStatus('auth_required')).toBe('auth_required');
+    expect(normalizeMcpServerStatus('stopped')).toBe('stopped');
     expect(normalizeMcpServerStatus({ status: 'error' })).toBeUndefined();
   });
 });

@@ -13,6 +13,7 @@
   faCopy,
   faKey,
   faTrash,
+  faRotateRight,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -22,9 +23,13 @@
     onEdit: (server: McpServerWithStatus) => void;
     onDelete: (name: string) => void;
     onReauthenticate?: (name: string) => void;
+    onRestart?: (name: string) => void;
   }
 
-  let { server, onToggle, onEdit, onDelete, onReauthenticate }: Props = $props();
+  let { server, onToggle, onEdit, onDelete, onReauthenticate, onRestart }: Props = $props();
+
+  // Statuses that represent a recoverable failure the user can retry/restart.
+  const isRetryable = $derived(server.status === 'error' || server.status === 'stopped');
 
   // UI state
   let showTools = $state(false);
@@ -36,6 +41,7 @@
     configured: { label: 'Ready', class: 'text-blue-700 dark:text-blue-400 bg-blue-500/10' },
     disconnected: { label: 'Disconnected', class: 'text-gray-600 dark:text-gray-400 bg-gray-500/10' },
     error: { label: 'Error', class: 'text-red-700 dark:text-red-400 bg-red-500/10' },
+    stopped: { label: 'Stopped', class: 'text-orange-700 dark:text-orange-400 bg-orange-500/10' },
     auth_required: { label: 'Needs Auth', class: 'text-amber-700 dark:text-amber-400 bg-amber-500/10' },
     disabled: { label: 'Disabled', class: 'text-gray-500 dark:text-gray-500 bg-gray-500/10' },
   };
@@ -142,9 +148,17 @@
         </div>
         <p class="text-xs text-subtle truncate">{matchedPreset ? matchedPreset.description : displayCommand()}</p>
 
-        <!-- Error message (shown inline when server has issues) -->
-        {#if server.status === 'error' && server.errorMessage}
-          <p class="mt-1 text-xs text-red-500 dark:text-red-400 line-clamp-2">{server.errorMessage}</p>
+        <!-- Error / stopped message (shown inline when server has issues) -->
+        {#if isRetryable && server.errorMessage}
+          <p
+            class="mt-1 text-xs line-clamp-2 {server.status === 'stopped'
+              ? 'text-orange-600 dark:text-orange-400'
+              : 'text-red-500 dark:text-red-400'}"
+          >{server.errorMessage}</p>
+        {:else if server.status === 'stopped'}
+          <p class="mt-1 text-xs text-orange-600 dark:text-orange-400 line-clamp-2">
+            Server stopped or failed to start. Restart to try again.
+          </p>
         {/if}
 
         <!-- Tools expansion (inline, only if has tools) -->
@@ -172,6 +186,15 @@
           onclick={() => onReauthenticate?.(server.name)}
         >
           Authenticate
+        </button>
+      {:else if isRetryable && onRestart && !server.disabled}
+        <button
+          type="button"
+          class="px-2.5 py-1 text-xs font-medium rounded-md border border-orange-500/50 text-orange-700 dark:text-orange-400 hover:bg-orange-500/10 transition-colors cursor-pointer flex items-center gap-1.5"
+          onclick={() => onRestart?.(server.name)}
+        >
+          <Fa icon={faRotateRight} size="xs" />
+          Restart
         </button>
       {/if}
       <!-- Toggle switch -->

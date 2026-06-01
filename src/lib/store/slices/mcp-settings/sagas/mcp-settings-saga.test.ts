@@ -24,12 +24,15 @@ vi.mock("$lib/utils/client-logger", () => ({
 import {
   handleLoadServers,
   handleMcpServerError,
+  handleRestartServer,
 } from "./mcp-settings-saga";
 import {
   initialState,
   setDisabledServers,
-  setServerErrorMessage,
   setServerStatus,
+  setServerErrorMessage,
+  clearServerErrorMessage,
+  restartServer,
 } from "../mcp-settings-slice";
 import type { McpServerConfig } from "../mcp-settings-types";
 
@@ -98,6 +101,66 @@ describe("handleLoadServers", () => {
   });
 });
 
+async function collectRestartActions(
+  servers: McpServerConfig[],
+  name: string,
+): Promise<DispatchedAction[]> {
+  const dispatched: DispatchedAction[] = [];
+
+  await runSaga(
+    {
+      dispatch: (action: DispatchedAction) => dispatched.push(action),
+      getState: () => ({
+        mcpSettings: {
+          ...initialState,
+          servers,
+        },
+      }),
+    },
+    handleRestartServer,
+    restartServer(name),
+  ).toPromise();
+
+  return dispatched;
+}
+
+describe("handleRestartServer", () => {
+  it("clears the prior error and re-validates an unknown server as a no-op", async () => {
+    const dispatched = await collectRestartActions([], "ghost");
+
+    expect(dispatched).toEqual([]);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("optimistically clears the error and marks a stdio server configured without testing a connection", async () => {
+    const servers: McpServerConfig[] = [
+      { name: "filesystem", type: "stdio", command: "node", args: ["server.js"] },
+    ];
+
+    const dispatched = await collectRestartActions(servers, "filesystem");
+
+    expect(dispatched).toContainEqual(clearServerErrorMessage("filesystem"));
+    expect(dispatched).toContainEqual(setServerStatus("filesystem", "configured"));
+    expect(mockInvoke).not.toHaveBeenCalledWith("user-mcp:test-connection", expect.anything());
+  });
+
+  it("re-tests the connection for a remote server with a url", async () => {
+    mockInvoke.mockResolvedValue({ success: true, data: {} });
+    const servers: McpServerConfig[] = [
+      { name: "linear", type: "http", url: "https://mcp.linear.app/sse" },
+    ];
+
+    const dispatched = await collectRestartActions(servers, "linear");
+
+    expect(dispatched).toContainEqual(clearServerErrorMessage("linear"));
+    expect(dispatched).toContainEqual(setServerStatus("linear", "configured"));
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "user-mcp:test-connection",
+      expect.objectContaining({ name: "linear", url: "https://mcp.linear.app/sse" }),
+    );
+  });
+});
+
 describe("handleMcpServerError", () => {
   it("dispatches status and message updates for direct server-name errors", async () => {
     const dispatched: DispatchedAction[] = [];
@@ -112,6 +175,19 @@ describe("handleMcpServerError", () => {
     expect(dispatched).toContainEqual(
       setServerErrorMessage("alpha", "Authentication required — check your credentials or reauthenticate"),
     );
+  });
+
+  it("classifies a non-auth server-name error as stopped", async () => {
+    const dispatched: DispatchedAction[] = [];
+
+    await runSaga(
+      { dispatch: (action: DispatchedAction) => dispatched.push(action), getState: () => ({}) },
+      handleMcpServerError,
+      { serverName: "filesystem", errorMessage: "spawn ENOENT" },
+    ).toPromise();
+
+    expect(dispatched).toContainEqual(setServerStatus("filesystem", "stopped"));
+    expect(dispatched).toContainEqual(setServerErrorMessage("filesystem", "spawn ENOENT"));
   });
 
   it("matches command errors against MCP servers through selector effects", async () => {
@@ -129,7 +205,34 @@ describe("handleMcpServerError", () => {
       { command: "/usr/bin/node server.js", errorMessage: "spawn failed" },
     ).toPromise();
 
-    expect(dispatched).toContainEqual(setServerStatus("stdio-server", "error"));
+    expect(dispatched).toContainEqual(setServerStatus("stdio-server", "stopped"));
     expect(dispatched).toContainEqual(setServerErrorMessage("stdio-server", "spawn failed"));
+  });
+
+  it("ignores events without an error message", async () => {
+    const dispatched: DispatchedAction[] = [];
+
+    await runSaga(
+      { dispatch: (action: DispatchedAction) => dispatched.push(action), getState: () => ({}) },
+      handleMcpServerError,
+      { serverName: "filesystem" },
+    ).toPromise();
+
+    expect(dispatched).toEqual([]);
+  });
+
+  it("does not dispatch when the error cannot be matched to a server", async () => {
+    const dispatched: DispatchedAction[] = [];
+
+    await runSaga(
+      {
+        dispatch: (action: DispatchedAction) => dispatched.push(action),
+        getState: () => ({ mcpSettings: { ...initialState, servers: [] } }),
+      },
+      handleMcpServerError,
+      { command: "unknown-binary", errorMessage: "boom" },
+    ).toPromise();
+
+    expect(dispatched).toEqual([]);
   });
 });

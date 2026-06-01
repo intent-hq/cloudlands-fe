@@ -164,6 +164,11 @@ export const testServerConnection = createAction<
   [name: string, url: string, headers?: Record<string, string>]
 >("mcpSettings/testServerConnection");
 
+/** Trigger: retry/restart a stopped or errored server */
+export const restartServer = createAction<[name: string]>(
+  "mcpSettings/restartServer"
+);
+
 // ============================================================================
 // Reducer
 // ============================================================================

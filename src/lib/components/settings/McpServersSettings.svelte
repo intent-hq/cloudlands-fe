@@ -49,6 +49,7 @@
   updateServer,
   importFromJson,
   testServerConnection,
+  restartServer,
 } from '$lib/store/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
@@ -179,6 +180,14 @@
 
   function handleToggleServer(name: string) {
     appStore.dispatch(toggleServer(name));
+  }
+
+  function handleRestartServer(name: string) {
+    appStore.dispatch(restartServer(name));
+    toast.info(`Restarting "${name}"`, {
+      description: 'Re-checking the MCP server. New agents will pick up the restart.',
+      duration: 3000,
+    });
   }
 
   async function handleAddServer(config: McpServerConfig) {
@@ -653,6 +662,7 @@
                   onEdit={handleEditServer}
                   onDelete={handleDeleteServer}
                   onReauthenticate={handleReauthenticate}
+                  onRestart={handleRestartServer}
                 />
               {/each}
             </div>

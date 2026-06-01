@@ -23,6 +23,8 @@ import {
   isContextTooLargeError,
   isSessionRecoverableError,
   isModelNotAvailableError,
+  isMissingWorkspaceToolError,
+  detectMissingWorkspaceToolInUpdate,
 } from '../acp-provider';
 import type { AgentMessage } from '../base-provider';
 import type { ContentBlock } from '../../../../../shared/types/content-block';
@@ -1553,6 +1555,113 @@ describe('classifier fallback via structured errorData', () => {
     it('still classifies via top-level message without errorData', () => {
       expect(isModelNotAvailableError('model not available', -1)).toBe(true);
       expect(isModelNotAvailableError('unrelated error', -1)).toBe(false);
+    });
+  });
+
+  describe('isMissingWorkspaceToolError', () => {
+    it('classifies the canonical "Tool workspace_api not found" symptom', () => {
+      expect(isMissingWorkspaceToolError('Tool workspace_api not found')).toBe(true);
+      expect(isMissingWorkspaceToolError('Error: tool "workspace_api" not found')).toBe(true);
+    });
+
+    it('matches other missing-tool phrasings for the workspace tool', () => {
+      expect(isMissingWorkspaceToolError('Unknown tool: workspace_api')).toBe(true);
+      expect(isMissingWorkspaceToolError('workspace-mcp tool is not available')).toBe(true);
+      expect(isMissingWorkspaceToolError('workspace_mcp not registered')).toBe(true);
+    });
+
+    it('requires both a workspace-tool reference and a missing-tool phrase', () => {
+      // Workspace reference but no missing-tool phrasing
+      expect(isMissingWorkspaceToolError('workspace_api returned an error')).toBe(false);
+      // Missing-tool phrasing but unrelated tool
+      expect(isMissingWorkspaceToolError('Tool some_other_tool not found')).toBe(false);
+      expect(isMissingWorkspaceToolError('unrelated error')).toBe(false);
+      expect(isMissingWorkspaceToolError('')).toBe(false);
+    });
+
+    it('classifies via structured errorData detail', () => {
+      expect(
+        isMissingWorkspaceToolError('Internal error', {
+          errorDetails: { detail: 'tool workspace_api not found' },
+        }),
+      ).toBe(true);
+    });
+  });
+
+  describe('detectMissingWorkspaceToolInUpdate', () => {
+    it('detects a failed update whose structured title identifies the workspace tool', () => {
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          title: 'workspace_api',
+          rawOutput: { output: 'Tool not found' },
+        }),
+      ).toBe(true);
+    });
+
+    it('detects the symptom in a structured provider error message', () => {
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          isError: true,
+          error: { message: 'Tool workspace_api not found' },
+        }),
+      ).toBe(true);
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          error: { message: 'Unknown tool: workspace_api' },
+        }),
+      ).toBe(true);
+    });
+
+    it('detects when identity comes from rawInput and the phrase from output', () => {
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          rawInput: { server: 'workspace-mcp', tool: 'read_note' },
+          rawOutput: { output: 'tool is not available' },
+        }),
+      ).toBe(true);
+    });
+
+    it('does not match when only the OUTPUT of an unrelated failed tool mentions the workspace tool', () => {
+      // A failed bash whose output merely contains the substring must not trigger recovery.
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          title: 'bash',
+          rawOutput: { output: 'workspace_api: pattern not found' },
+        }),
+      ).toBe(false);
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          title: 'Terminal',
+          content: [{ type: 'text', text: 'grep: workspace-mcp not found' }],
+        }),
+      ).toBe(false);
+    });
+
+    it('ignores successful updates even if the structured identity matches', () => {
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'completed',
+          title: 'workspace_api',
+          rawOutput: { output: 'Tool workspace_api not found' },
+        }),
+      ).toBe(false);
+    });
+
+    it('ignores failed updates that are not about the workspace tool', () => {
+      expect(
+        detectMissingWorkspaceToolInUpdate({
+          status: 'failed',
+          title: 'some_other_tool',
+          rawOutput: { output: 'Tool some_other_tool not found' },
+        }),
+      ).toBe(false);
+      expect(detectMissingWorkspaceToolInUpdate(null)).toBe(false);
+      expect(detectMissingWorkspaceToolInUpdate({ status: 'failed' })).toBe(false);
     });
   });
 

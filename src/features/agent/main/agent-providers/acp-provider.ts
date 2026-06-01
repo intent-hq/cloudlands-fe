@@ -68,6 +68,10 @@ import {
   readUserMcpServers,
 } from '../../../mcp/main/user-mcp-settings';
 import {
+  applyBaselineEnvToStdioServers,
+  redactMcpEnvForLogging,
+} from '../../../mcp/main/mcp-env';
+import {
   CONFLICTING_BUILTIN_TOOLS,
   FILE_WRITE_TOOLS,
   getToolDenylistForAgentType,
@@ -861,6 +865,149 @@ export function isModelNotAvailableError(
 }
 
 /**
+ * Detects the "workspace MCP tool went missing" symptom — e.g. the model calls
+ * `workspace_api` but the active (or session/load-resumed) session no longer has
+ * the built-in workspace-mcp tools registered, even though the MCP bridge is
+ * healthy. This is recoverable by recreating the session so the MCP servers and
+ * their tools re-register.
+ */
+/** Whether (already lower-cased) text references the workspace MCP tool. */
+function mentionsWorkspaceTool(text: string): boolean {
+  return (
+    text.includes('workspace_api') ||
+    text.includes('workspace-mcp') ||
+    text.includes('workspace_mcp')
+  );
+}
+
+/** Whether (already lower-cased) text uses a missing-tool phrasing. */
+function mentionsMissingTool(text: string): boolean {
+  return (
+    text.includes('not found') ||
+    text.includes('unknown tool') ||
+    text.includes('no such tool') ||
+    text.includes('not registered') ||
+    text.includes('is not available')
+  );
+}
+
+export function isMissingWorkspaceToolError(
+  rawError: string,
+  errorData?: {
+    apiStatus?: string;
+    errorDetails?: { code?: number; message?: string; detail?: string };
+  },
+): boolean {
+  const errorLower = (rawError || '').toLowerCase();
+  const structuredLower = classifierTextFromErrorData(errorData);
+
+  const matches = (text: string): boolean =>
+    mentionsWorkspaceTool(text) && mentionsMissingTool(text);
+
+  return matches(errorLower) || matches(structuredLower);
+}
+
+/**
+ * Pulls the candidate error/result text out of a tool_call / tool_call_update
+ * notification so it can be classified. Handles the several shapes ACP providers
+ * use (rawOutput.output, result, error, and content arrays/strings).
+ */
+function toolUpdateTextForClassification(update: any): string {
+  if (!update) return '';
+  const parts: unknown[] = [
+    update.rawOutput?.output,
+    update.result,
+    update.error?.message,
+    update.error,
+    update.content?.error?.message,
+    update.content?.error,
+    update.content?.result,
+  ];
+
+  if (Array.isArray(update.content)) {
+    for (const block of update.content) {
+      if (typeof block === 'string') parts.push(block);
+      else if (block && typeof block.text === 'string') parts.push(block.text);
+    }
+  } else if (typeof update.content === 'string') {
+    parts.push(update.content);
+  }
+
+  const out: string[] = [];
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      out.push(part);
+    } else if (part && typeof part === 'object') {
+      try {
+        out.push(JSON.stringify(part));
+      } catch {
+        // Ignore values that can't be serialized — best-effort classification only.
+      }
+    }
+  }
+  return out.join(' ');
+}
+
+/**
+ * Extract workspace-tool IDENTITY text from a tool_call / tool_call_update using
+ * only STRUCTURED fields — the tool identity (title, name, toolCallId, rawInput)
+ * and the provider error (error/error.message). Arbitrary tool OUTPUT
+ * (rawOutput.output, result, content) is deliberately excluded so a failed
+ * unrelated tool whose output merely mentions the workspace tool cannot be
+ * misidentified as the workspace tool itself.
+ */
+function structuredToolIdentityText(update: any): string {
+  if (!update) return '';
+  const parts: unknown[] = [
+    update.title,
+    update.name,
+    update.toolCallId,
+    update.rawInput,
+    update.error?.message,
+    update.error,
+  ];
+  const out: string[] = [];
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      out.push(part);
+    } else if (part && typeof part === 'object') {
+      try {
+        out.push(JSON.stringify(part));
+      } catch {
+        // Ignore values that can't be serialized — best-effort classification only.
+      }
+    }
+  }
+  return out.join(' ');
+}
+
+/**
+ * Returns true when a failed tool_call / tool_call_update notification indicates
+ * the workspace MCP tool went missing. Only failed updates are considered.
+ *
+ * The workspace-tool IDENTITY must be established from a STRUCTURED signal (tool
+ * identity fields or the provider error), never from arbitrary tool output. This
+ * prevents an unrelated failed tool (e.g. bash/search) whose OUTPUT happens to
+ * mention workspace_api from wrongly triggering session recovery. The
+ * missing-tool PHRASE may still come from the structured identity, the provider
+ * error, or the tool output.
+ */
+export function detectMissingWorkspaceToolInUpdate(update: any): boolean {
+  if (!update) return false;
+  const isError = update.status === 'failed' || update.isError === true;
+  if (!isError) return false;
+
+  const identityText = structuredToolIdentityText(update);
+  if (!mentionsWorkspaceTool(identityText.toLowerCase())) return false;
+
+  // Identity is established from a structured field above, so reuse
+  // isMissingWorkspaceToolError for the combined phrase logic across the
+  // structured identity and the (best-effort) tool output.
+  const outputText = toolUpdateTextForClassification(update);
+  return isMissingWorkspaceToolError(`${identityText} ${outputText}`);
+}
+
+/**
  * Error types that indicate session recovery should be attempted
  */
 export function isSessionRecoverableError(
@@ -1566,6 +1713,13 @@ export class ACPProvider extends BaseAgentProvider {
   private transientRetryAttempts = 0; // Track transient error retry attempts (fetch failed, timeout, etc.)
   private readonly MAX_TRANSIENT_RETRY_ATTEMPTS = 3; // Max times to auto-retry after transient network errors
   private contextTooLargeRecoveryCount = 0; // Track 413-specific recovery for progressive history reduction
+  // Recovery for the "workspace MCP tool went missing" symptom. Forcing a fresh
+  // session/new on the next init re-registers the MCP servers/tools that a
+  // resumed session may have lost.
+  private forceFreshSessionOnNextInit = false;
+  private workspaceToolRecoveryAttempts = 0; // Bounded to prevent restart loops
+  private readonly MAX_WORKSPACE_TOOL_RECOVERY_ATTEMPTS = 3;
+  private workspaceToolRecoveryInProgress = false; // Guard against concurrent recovery
   private triedModels = new Set<string>(); // Track which models we've tried to prevent infinite loops
   // Stream generation counter - incremented on each interrupt to prevent stale cancelled responses
   // from completing new streams. See interrupt() for detailed explanation.
@@ -1711,6 +1865,17 @@ export class ACPProvider extends BaseAgentProvider {
    * Returns true if session/load succeeded, false if it failed (caller should fall back to session/new).
    */
   private async tryLoadPreviousSession(): Promise<boolean> {
+    // A prior turn detected that the built-in workspace MCP tools went missing.
+    // Force a fresh session/new (which re-registers the MCP servers/tools) instead
+    // of resuming a session that lost them. The flag is single-use.
+    if (this.forceFreshSessionOnNextInit) {
+      this.forceFreshSessionOnNextInit = false;
+      logger.info(
+        'Skipping session/load to recover missing workspace MCP tools (forcing session/new)',
+      );
+      return false;
+    }
+
     // Check guards BEFORE emitting status, so brand-new sessions don't show "Resuming session…"
     if (!this.previousSessionId || !this.supportsSessionLoad()) {
       logger.info('Skipping session/load attempt', {
@@ -2702,6 +2867,12 @@ export class ACPProvider extends BaseAgentProvider {
             this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
 
+          // Merge a safe parent-process environment baseline into every stdio
+          // MCP server so user-configured servers (and the built-in
+          // workspace-mcp) inherit expected shell variables instead of running
+          // with an overly narrow environment. Explicit per-server env wins.
+          finalMcpServers = applyBaselineEnvToStdioServers(finalMcpServers);
+
           const mcpConfig = { mcpServers: finalMcpServers };
           workspaceMcpServers = finalMcpServers;
 
@@ -2737,7 +2908,8 @@ export class ACPProvider extends BaseAgentProvider {
             mcpServerPath,
             mcpServerPathExists,
             isPackaged: app.isPackaged,
-            mcpConfigJson: JSON.stringify(mcpConfig, null, 2),
+            // Redact env/header values so secrets never reach logs.
+            mcpConfigJson: JSON.stringify(redactMcpEnvForLogging(mcpConfig), null, 2),
           });
 
           // CRITICAL: If MCP server path doesn't exist, log error with details
@@ -2775,7 +2947,8 @@ export class ACPProvider extends BaseAgentProvider {
               __dirname,
               isPackaged: app.isPackaged,
               httpMcpPort,
-              mcpConfig,
+              // Redact env/header values so secrets never reach the debug log.
+              mcpConfig: redactMcpEnvForLogging(mcpConfig),
             };
 
             // Read existing entries, keep last 49, add new one
@@ -3003,6 +3176,11 @@ export class ACPProvider extends BaseAgentProvider {
             this.surfaceMcpLoadErrorToRenderer(userMcpError);
           }
         } // end of !simpleRequest block
+
+        // Merge a safe parent-process environment baseline into stdio MCP
+        // servers before translating to provider-specific config, so external
+        // servers inherit expected shell variables. Explicit per-server env wins.
+        finalMcpServers = applyBaselineEnvToStdioServers(finalMcpServers);
 
         workspaceMcpServers = finalMcpServers;
       } catch (error) {
@@ -5069,6 +5247,11 @@ export class ACPProvider extends BaseAgentProvider {
    * Returns a Promise so callers can await it and properly block the message queue
    */
   private async handleSessionUpdate(params: any): Promise<void> {
+    // Detect the "workspace MCP tool went missing" symptom from a failed tool
+    // call result and trigger a bounded session recovery. Runs out-of-band (not
+    // awaited) so it never blocks or delays streaming.
+    this.maybeRecoverMissingWorkspaceTool(params);
+
     // ALWAYS use the new streaming handler if available
     // The legacy system causes issues with duplicate accumulator access
     if (this.streamingHandler) {
@@ -5112,6 +5295,27 @@ export class ACPProvider extends BaseAgentProvider {
       sessionId: params?.sessionId,
       updateType: sessionUpdate?.sessionUpdate,
     });
+  }
+
+  /**
+   * Inspect a session/update notification for the missing-workspace-tool symptom
+   * (a failed tool_call/tool_call_update referencing the workspace MCP tool) and
+   * kick off bounded recovery. Best-effort and non-blocking — failures here must
+   * never disrupt streaming.
+   */
+  private maybeRecoverMissingWorkspaceTool(params: any): void {
+    try {
+      const update = params?.update || params?.sessionUpdate;
+      const updateType = update?.sessionUpdate || update?.type;
+      if (updateType !== 'tool_call_update' && updateType !== 'tool_call') {
+        return;
+      }
+      if (detectMissingWorkspaceToolInUpdate(update)) {
+        void this.triggerWorkspaceToolRecovery('tool_call_update');
+      }
+    } catch {
+      // Best-effort detection — never disrupt streaming.
+    }
   }
 
   /**
@@ -5848,6 +6052,88 @@ export class ACPProvider extends BaseAgentProvider {
         recoveryAttempt: this.sessionRecoveryAttempts,
       });
       return false;
+    }
+  }
+
+  /**
+   * Recover from a lost/stale workspace MCP tool registration (e.g. the model
+   * called `workspace_api` but the session reports it as not found).
+   *
+   * Recreates the session — forcing session/new instead of session/load — so the
+   * MCP servers and their tools re-register. Bounded by
+   * MAX_WORKSPACE_TOOL_RECOVERY_ATTEMPTS to prevent restart loops, and guarded so
+   * the many failed tool updates in a single broken turn only trigger one recovery.
+   * For background agents the original prompt is auto-retried so the user does not
+   * need to resend.
+   */
+  private async triggerWorkspaceToolRecovery(reason: string): Promise<void> {
+    if (this.workspaceToolRecoveryInProgress) {
+      return;
+    }
+    if (this.workspaceToolRecoveryAttempts >= this.MAX_WORKSPACE_TOOL_RECOVERY_ATTEMPTS) {
+      logger.warn('Workspace MCP tool recovery budget exhausted; not retrying', {
+        attempts: this.workspaceToolRecoveryAttempts,
+        maxAttempts: this.MAX_WORKSPACE_TOOL_RECOVERY_ATTEMPTS,
+        reason,
+        sessionId: this.sessionId,
+      });
+      this.emitStatus(
+        'mcp-recovery',
+        'Workspace tools are unavailable. Try restarting the agent.',
+        'error',
+      );
+      return;
+    }
+
+    this.workspaceToolRecoveryInProgress = true;
+    this.workspaceToolRecoveryAttempts++;
+    // Force a fresh session/new on the next initialization so MCP tools re-register.
+    this.forceFreshSessionOnNextInit = true;
+
+    this.emitStatus('mcp-recovery', 'Reconnecting workspace tools…', 'warn');
+    logger.info('Workspace MCP tool missing — recreating session to re-register tools', {
+      reason,
+      recoveryAttempt: this.workspaceToolRecoveryAttempts,
+      maxAttempts: this.MAX_WORKSPACE_TOOL_RECOVERY_ATTEMPTS,
+      sessionId: this.sessionId,
+    });
+
+    try {
+      const recovered = await this.attemptSessionRecoveryAndNotify();
+      if (!recovered) {
+        this.emitStatus('mcp-recovery', 'Failed to reconnect workspace tools.', 'error');
+        return;
+      }
+
+      this.emitStatus('mcp-recovery', 'Workspace tools reconnected.', 'info');
+
+      // Auto-retry only for background agents (mirrors session-loss recovery),
+      // reusing the stored prompt so the user does not need to resend.
+      const isBackground = this.config.metadata?.isBackground === true;
+      if (isBackground && this.pendingRetry && !this.retryInProgress) {
+        const { messages, options } = this.pendingRetry;
+        this.pendingRetry = undefined;
+        const completionSessionId = this.frontendSessionId || this.sessionId;
+        if (completionSessionId) {
+          this.cleanupStreamingCallback(completionSessionId);
+        }
+        setTimeout(() => {
+          void this.streamMessage(messages, options).catch((retryError) => {
+            logger.error('Auto-retry after workspace MCP tool recovery failed', {
+              error: retryError instanceof Error ? retryError.message : String(retryError),
+              recoveryAttempt: this.workspaceToolRecoveryAttempts,
+            });
+          });
+        }, 250);
+      }
+    } catch (error) {
+      this.emitStatus('mcp-recovery', 'Failed to reconnect workspace tools.', 'error');
+      logger.error('Workspace MCP tool recovery failed', {
+        error: error instanceof Error ? error.message : String(error),
+        recoveryAttempt: this.workspaceToolRecoveryAttempts,
+      });
+    } finally {
+      this.workspaceToolRecoveryInProgress = false;
     }
   }
 
@@ -7979,6 +8265,7 @@ export class ACPProvider extends BaseAgentProvider {
               this.sessionRecoveryAttempts = 0;
               this.contextTooLargeRecoveryCount = 0;
               this.transientRetryAttempts = 0;
+              this.workspaceToolRecoveryAttempts = 0;
               this.currentStreamingRequestId = null;
 
               callbacks.resolveStream();
@@ -8051,6 +8338,7 @@ export class ACPProvider extends BaseAgentProvider {
           this.sessionRecoveryAttempts = 0;
           this.contextTooLargeRecoveryCount = 0;
           this.transientRetryAttempts = 0;
+          this.workspaceToolRecoveryAttempts = 0;
 
           // Call the original callback if provided and await it
           // This ensures persistence completes before we resolve the stream

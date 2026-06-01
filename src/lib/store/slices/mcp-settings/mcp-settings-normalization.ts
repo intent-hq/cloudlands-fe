@@ -7,6 +7,7 @@ const MCP_SERVER_STATUSES: readonly McpServerStatus[] = [
   'error',
   'auth_required',
   'disabled',
+  'stopped',
 ];
 
 const MCP_TRANSPORT_TYPES: readonly McpServerConfig['type'][] = ['stdio', 'http', 'sse'];
