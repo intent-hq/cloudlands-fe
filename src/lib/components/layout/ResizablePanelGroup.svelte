@@ -7,9 +7,9 @@
   requestResizablePanelGroupLayout,
   setResizablePanelGroupLayout,
   type ResizablePanelGroupLayoutState,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { selectResizablePanelGroupLayout } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { selectResizablePanelGroupLayout } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Panel {

@@ -17,7 +17,7 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
-  import { selectAgentIsWaitingForOtherAgents } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectAgentIsWaitingForOtherAgents } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   interface Props {
     agent: AgentNode;

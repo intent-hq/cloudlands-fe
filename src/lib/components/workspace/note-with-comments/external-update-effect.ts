@@ -1,5 +1,5 @@
 import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
-import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
+import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
 
 import { reapplyCommentAnchorsAfterExternalUpdate } from './comment-manager-utils';
 import { applyExternalUpdateHtmlToEditorPreservingCursor } from './external-update-editor';

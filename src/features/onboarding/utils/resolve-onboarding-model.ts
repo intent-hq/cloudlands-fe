@@ -22,16 +22,16 @@
  *     `reloadModelsForProvider` and fetch via `getModelsForProvider`.
  */
 
-import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
   selectUserOverrides,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
 import {
   selectSelectedModel,
   selectAvailableModels,
-} from '$lib/store/slices/model/model-selectors';
+} from '$store/renderer/slices/model/model-selectors';
 import {
   PROVIDER_MODEL_TIERS,
   getDefaultModelForProvider,
@@ -39,16 +39,16 @@ import {
   parseCompoundModelId,
 } from '$shared/config/provider-config';
 import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-import { getModelsForProvider } from '$lib/store/slices/model/model-utils';
-import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
+import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
   type ProviderStatus,
 } from '$features/providers/provider-availability.client';
-import type { StoreState } from '$lib/store/types';
+import type { StoreState } from '$store/renderer/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('resolve-onboarding-model');
 const specialistId = 'spec-writer';

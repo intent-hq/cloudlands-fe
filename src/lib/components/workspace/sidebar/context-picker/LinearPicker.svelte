@@ -20,8 +20,8 @@
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
-  import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('LinearPicker');
 

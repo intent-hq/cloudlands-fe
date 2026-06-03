@@ -1,0 +1,822 @@
+import { shallowEqual } from 'fast-equals';
+import type { AgentSession, AgentMessage } from '$shared/types';
+import { AgentStatus } from '$shared/types/agent.types';
+import type { CanonicalAgentStatusFields } from '$features/events/types';
+import {
+  createAction,
+  createAsyncAction,
+} from 'ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
+import type {
+  AgentSessionForkOptions,
+  AgentSessionLaunchConfig,
+  AgentSessionLaunchOptions,
+  AgentSessionSendMessageOptions,
+  AgentSessionState,
+  StoredAgentSession,
+} from './agent-session-types';
+import {
+  deduplicateAgentMessages,
+  insertAgentMessageWithDedup,
+  mergeAgentSessionMessagesWithPolicy,
+  normalizeAgentMessage,
+  normalizeDateValue,
+  replaceAgentMessageByIdWithDedup,
+} from '$shared/utils/message-dedup';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
+import {
+  chatSendStarted,
+  chatSendFailed,
+  chatInterrupted,
+  chatStopCompleted,
+  chatReset,
+  chatStreamingReconciled,
+  chatStuckStateCleared,
+  chatInitialized,
+  streamCompleted,
+  streamTimedOut,
+} from '../chat-state/chat-state-slice';
+
+export { computeMessageContentHash, hasCanonicalId, isTimestampClose } from '$shared/utils/message-dedup';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const MAX_MESSAGES_PER_AGENT = 500;
+
+// ============================================================================
+// Normalization helpers (copied from workspace-agents-slice)
+// ============================================================================
+
+type AgentFileChange = NonNullable<AgentSession['fileChanges']>[number];
+
+function normalizeAgentFileChange(fileChange: AgentFileChange): AgentFileChange {
+  return {
+    ...fileChange,
+    timestamp: normalizeDateValue(fileChange.timestamp),
+  };
+}
+
+function normalizeAgentSession(agent: AgentSession): AgentSession {
+  return {
+    ...agent,
+    createdAt: normalizeDateValue(agent.createdAt) ?? agent.createdAt,
+    updatedAt: normalizeDateValue(agent.updatedAt) ?? agent.updatedAt,
+    lastActivity: normalizeDateValue(agent.lastActivity),
+    startedAt: normalizeDateValue(agent.startedAt),
+    endedAt: normalizeDateValue(agent.endedAt),
+    lastViewedAt: normalizeDateValue(agent.lastViewedAt),
+    messages: agent.messages.map(normalizeAgentMessage),
+    fileChanges: agent.fileChanges?.map(normalizeAgentFileChange),
+  };
+}
+
+// ============================================================================
+// Normalize / Prune helpers
+// ============================================================================
+
+function pruneMessages(messages: AgentMessage[]): AgentMessage[] {
+  if (messages.length <= MAX_MESSAGES_PER_AGENT) return messages;
+  return messages.slice(messages.length - MAX_MESSAGES_PER_AGENT);
+}
+
+/**
+ * Stable sort by timestamp ascending. Normalized timestamps are ISO strings,
+ * so lexicographic comparison is correct. Messages with equal timestamps
+ * preserve their original relative order (V8 Array.sort is stable).
+ */
+function sortMessagesByTimestamp(messages: AgentMessage[]): AgentMessage[] {
+  if (messages.length <= 1) return messages;
+  return [...messages].sort((a, b) => {
+    const tsA =
+      typeof a.timestamp === 'string' ? a.timestamp : (a.timestamp?.toISOString?.() ?? '');
+    const tsB =
+      typeof b.timestamp === 'string' ? b.timestamp : (b.timestamp?.toISOString?.() ?? '');
+    if (tsA < tsB) return -1;
+    if (tsA > tsB) return 1;
+    return 0;
+  });
+}
+
+function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
+  return pruneMessages(sortMessagesByTimestamp(deduplicateAgentMessages(messages.map(normalizeAgentMessage))));
+}
+
+// ============================================================================
+// State helpers
+// ============================================================================
+
+/** Normalize incoming session and keep its messages as an ordered array. */
+function toStoredSession(session: AgentSession): StoredAgentSession {
+  const normalized = normalizeAgentSession(session);
+  const messages = normalizeSortPruneMessages(normalized.messages || []);
+  return { ...normalized, messages };
+}
+
+function getSession(state: AgentSessionState, agentId: string): StoredAgentSession | undefined {
+  return state.byAgentId[agentId];
+}
+
+function setSession(
+  state: AgentSessionState,
+  agentId: string,
+  session: StoredAgentSession,
+): AgentSessionState {
+  return {
+    ...state,
+    byAgentId: { ...state.byAgentId, [agentId]: session },
+  };
+}
+
+function addMessageToSession(
+  state: AgentSessionState,
+  agentId: string,
+  message: AgentMessage,
+): AgentSessionState {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  const currentList = session.messages;
+  const nextMessages = pruneMessages(insertAgentMessageWithDedup(currentList, message));
+  if (nextMessages === currentList) return state;
+  return setSession(state, agentId, {
+    ...session,
+    messages: nextMessages,
+  });
+}
+
+function replaceSessionMessageById(
+  state: AgentSessionState,
+  agentId: string,
+  oldId: string,
+  newMessage: AgentMessage,
+): AgentSessionState {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  if (!session.messages.some((message) => message.id === oldId)) return state;
+  const currentList = session.messages;
+  const nextMessages = replaceAgentMessageByIdWithDedup(currentList, oldId, newMessage);
+  if (nextMessages === currentList) return state;
+  return setSession(state, agentId, {
+    ...session,
+    messages: nextMessages,
+  });
+}
+
+function mergeMessagesIntoSession(
+  state: AgentSessionState,
+  agentId: string,
+  messages: AgentMessage[],
+  nextIsStreaming: boolean,
+): AgentSessionState {
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  const currentMessages = session.messages;
+  const mergeResult = mergeAgentSessionMessagesWithPolicy({
+    currentMessages,
+    incomingMessages: messages,
+    currentIsStreaming: session.isStreaming === true,
+    nextIsStreaming,
+  });
+  if (!mergeResult.accepted) return state;
+  return setSession(state, agentId, {
+    ...session,
+    messages: normalizeSortPruneMessages(mergeResult.messages),
+  });
+}
+
+function updateSessionFields(
+  state: AgentSessionState,
+  agentId: string,
+  partial: Partial<Omit<StoredAgentSession, 'messages'>>,
+): AgentSessionState {
+  const existing = getSession(state, agentId);
+  if (!existing) return state;
+  const merged = { ...existing, ...partial };
+  if (shallowEqual(existing, merged)) return state;
+  return setSession(state, agentId, merged);
+}
+
+type CanonicalAgentSessionUpdates = {
+  status?: AgentSession['status'];
+  activationState?: AgentSession['activationState'];
+  isActive?: boolean;
+  isStreaming?: boolean;
+  isProcessing?: boolean;
+  isResponding?: boolean;
+  stopReason?: string | null;
+  lastAgentResponse?: string;
+};
+
+type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
+  lastResponseSummary?: unknown;
+};
+
+function canonicalSessionUpdates(fields: CanonicalAgentStatusWithSummary): CanonicalAgentSessionUpdates {
+  const updates: CanonicalAgentSessionUpdates = {};
+  if (fields.status !== null) updates.status = fields.status as AgentSession['status'];
+  if (fields.activationState !== null) {
+    updates.activationState = fields.activationState as AgentSession['activationState'];
+  }
+  if (fields.isActive !== null) updates.isActive = fields.isActive;
+  if (fields.isStreaming !== null) updates.isStreaming = fields.isStreaming;
+  if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
+  if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
+  updates.stopReason = fields.stopReason;
+  if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
+    updates.lastAgentResponse = fields.lastResponseSummary;
+  }
+
+  // When the status indicates a terminal/idle state, default streaming flags
+  // to false unless the caller explicitly provided them.
+  // Compare against both AgentStatus enum values (PascalCase) and lowercase
+  // variants from IPC events — no runtime .toLowerCase() transformation.
+  const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+    'idle', 'Idle',
+    'completed', 'Completed',
+    'failed',
+    'error',
+    'deleted',
+  ]);
+  if (
+    fields.isActive === false ||
+    (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
+  ) {
+    updates.isStreaming = fields.isStreaming ?? false;
+    updates.isProcessing = fields.isProcessing ?? false;
+    updates.isResponding = fields.isResponding ?? false;
+  }
+
+  return updates;
+}
+
+function canonicalFieldsFromWorkspaceEvent(
+  event: { type?: string; data?: any },
+): [string, CanonicalAgentStatusFields] | null {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId ?? data.sessionId;
+  if (!agentId) return null;
+
+  if (event.type === 'agent:idle') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'idle',
+      activationState: data.activationState ?? null,
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.finishReason ?? null,
+    }];
+  }
+  if (event.type === 'agent:failed') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'failed',
+      activationState: data.activationState ?? 'error',
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.error ?? null,
+    }];
+  }
+  if (event.type === 'agent:session-completed') {
+    return [agentId, {
+      ...data,
+      status: data.status ?? 'completed',
+      activationState: data.activationState ?? null,
+      isActive: data.isActive ?? false,
+      isStreaming: data.isStreaming ?? false,
+      isProcessing: data.isProcessing ?? false,
+      isResponding: data.isResponding ?? false,
+      stopReason: data.stopReason ?? data.finishReason ?? null,
+    }];
+  }
+  if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+    return [agentId, data];
+  }
+  return null;
+}
+
+function registerInWorkspaceIndex(
+  state: AgentSessionState,
+  agentId: string,
+  wsId: string,
+): AgentSessionState {
+  const existing = state.agentIdsByWorkspace[wsId] ?? [];
+  if (existing.includes(agentId)) return state;
+  return {
+    ...state,
+    agentIdsByWorkspace: {
+      ...state.agentIdsByWorkspace,
+      [wsId]: [...existing, agentId],
+    },
+  };
+}
+
+type SessionComparisonSnapshot = Pick<
+  StoredAgentSession,
+  | 'status'
+  | 'name'
+  | 'model'
+  | 'isStreaming'
+  | 'isProcessing'
+  | 'isResponding'
+  | 'digest'
+  | 'backendSessionId'
+  | 'acpSessionId'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'lastActivity'
+  | 'hasUnread'
+  | 'currentTurnNumber'
+  | 'isBackground'
+  | 'activationState'
+  | 'isActive'
+  | 'stopReason'
+> & {
+  messageCount: number;
+  lastMessageId: AgentMessage['id'] | undefined;
+};
+
+function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
+  const messages = session.messages;
+  return {
+    status: session.status,
+    name: session.name,
+    model: session.model,
+    isStreaming: session.isStreaming,
+    isProcessing: session.isProcessing,
+    isResponding: session.isResponding,
+    digest: session.digest,
+    backendSessionId: session.backendSessionId,
+    acpSessionId: session.acpSessionId,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    lastActivity: session.lastActivity,
+    hasUnread: session.hasUnread,
+    currentTurnNumber: session.currentTurnNumber,
+    isBackground: session.isBackground,
+    activationState: session.activationState,
+    isActive: session.isActive,
+    stopReason: session.stopReason,
+    messageCount: messages.length,
+    lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
+  };
+}
+
+/**
+ * Shallow equivalence check for upsertSession no-op guard.
+ * Compares key scalar fields and message count / last message ID
+ * to avoid creating new state references when nothing changed.
+ */
+function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): boolean {
+  return shallowEqual(toSessionComparisonSnapshot(a), toSessionComparisonSnapshot(b));
+}
+
+function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
+  const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
+  for (const wsId of Object.keys(agentIdsByWorkspace)) {
+    const agents = agentIdsByWorkspace[wsId];
+    const filtered = agents.filter((id) => id !== agentId);
+    if (filtered.length !== agents.length) {
+      if (filtered.length === 0) {
+        delete agentIdsByWorkspace[wsId];
+      } else {
+        agentIdsByWorkspace[wsId] = filtered;
+      }
+    }
+  }
+  return { ...state, agentIdsByWorkspace };
+}
+
+// ============================================================================
+// Initial State
+// ============================================================================
+
+export const initialState: AgentSessionState = {
+  byAgentId: {},
+  agentIdsByWorkspace: {},
+};
+
+// ============================================================================
+// Actions
+// ============================================================================
+
+/** Upsert a session — normalize dates, order/prune messages to 500, register in workspace index */
+export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
+
+/** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
+export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
+
+/** Set streaming flag for an agent. Streaming state is agent/session-scoped. */
+export const setAgentStreaming = createAction<[agentId: string, isStreaming: boolean]>(
+  'agentSessions/setAgentStreaming',
+);
+
+/** Set streaming flag for an agent. Kept as a compatibility alias for older call sites. */
+export const setSessionStreaming = createAction<[agentId: string, isStreaming: boolean]>(
+  'agentSessions/setSessionStreaming',
+);
+
+/** Add a single message (normalize, exact-ID guard, prune) */
+export const addMessage = createAction<[agentId: string, message: AgentMessage]>(
+  'agentSessions/addMessage',
+);
+
+/** Update a single message by messageId */
+export const updateMessage = createAction<
+  [agentId: string, messageId: string, updates: Partial<AgentMessage>]
+>('agentSessions/updateMessage');
+
+/** Full replacement of messages (normalize/order/prune) */
+export const replaceMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
+  'agentSessions/replaceMessages',
+);
+
+/** Merge a raw session message snapshot using Redux-owned stale/dedup policy. */
+export const mergeSessionMessages = createAction<[
+  agentId: string,
+  messages: AgentMessage[],
+  nextIsStreaming: boolean,
+]>('agentSessions/mergeSessionMessages');
+
+/** Atomically remove a single message by ID */
+export const removeMessage = createAction<[agentId: string, messageId: string]>(
+  'agentSessions/removeMessage',
+);
+
+/**
+ * Swaps the message at the matched index in place. Does not re-sort — the
+ * caller must ensure the new message is semantically close enough to the old
+ * one (same logical turn). Used by the saga's content-match dedup to preserve
+ * canonical-ID without reordering.
+ *
+ * If a duplicate message already exists (same ID, or equivalent canonical
+ * assistant content from the same turn), that stale entry is dropped so the
+ * list never contains duplicate logical messages.
+ */
+export const replaceMessageById = createAction<
+  [agentId: string, oldId: string, newMessage: AgentMessage]
+>('agentSessions/replaceMessageById');
+
+/** Non-message field updates */
+export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
+  'agentSessions/updateSession',
+);
+
+/** Reconcile canonical status metadata from IPC/domain events. */
+export const reconcileCanonicalStatus = createAction<[agentId: string, fields: CanonicalAgentStatusFields]>(
+  'agentSessions/reconcileCanonicalStatus',
+);
+
+/** @deprecated Renderer-visible queue hydration lives in agentQueue. Use hydrateAgentQueueRequested instead. */
+export const hydrateQueuedMessagesRequested = createAction<[agentId: string]>(
+  'agentSessions/hydrateQueuedMessagesRequested',
+);
+
+/** Saga-owned core send side effect trigger. */
+export const agentSessionSendMessageRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+  text: string,
+  options?: AgentSessionSendMessageOptions,
+], void>('agentSessions/sendMessage', 'agentSessions/sendMessageRequested');
+
+/** Saga-owned core stop side effect trigger. */
+export const agentSessionStopChatRequested = createAsyncAction<[
+  agentId: string,
+], void>('agentSessions/stopChat', 'agentSessions/stopChatRequested');
+
+/** Saga-owned agent launch side effect trigger. Resolves with the created session. */
+export const agentSessionLaunchAgentRequested = createAsyncAction<[
+  wsId: string,
+  config: AgentSessionLaunchConfig,
+  options?: AgentSessionLaunchOptions,
+], AgentSession>('agentSessions/launchAgent', 'agentSessions/launchAgentRequested');
+
+/** Saga-owned edit/regenerate side effect trigger. */
+export const agentSessionEditAndRegenerateRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+  messageId: string,
+  newText: string,
+  options?: AgentSessionSendMessageOptions,
+], void>('agentSessions/editAndRegenerate', 'agentSessions/editAndRegenerateRequested');
+
+/** Saga-owned regenerate-from-message side effect trigger. */
+export const agentSessionRegenerateFromMessageRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+  assistantMessageId: string,
+  options?: AgentSessionSendMessageOptions,
+], void>('agentSessions/regenerateFromMessage', 'agentSessions/regenerateFromMessageRequested');
+
+/** Saga-owned retry-last-message side effect trigger. */
+export const agentSessionRetryLastMessageRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+], void>('agentSessions/retryLastMessage', 'agentSessions/retryLastMessageRequested');
+
+/** Saga-owned retry-with-model side effect trigger. */
+export const agentSessionRetryWithModelRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+  model: string,
+], void>('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
+
+/** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
+export const agentSessionForkSessionRequested = createAsyncAction<[
+  agentId: string,
+  wsId: string,
+  options?: AgentSessionForkOptions,
+], string>('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
+
+/** Update agent digest */
+export const updateDigest = createAction<[agentId: string, digest: string | null]>(
+  'agentSessions/updateDigest',
+);
+
+/** Update an agent's digest field. Kept on the legacy action type for dispatch compatibility. */
+export const updateAgentDigest = createAction<[wsId: string, agentId: string, digest: string | null]>(
+  'workspaceAgents/updateAgentDigest',
+);
+
+/** Rename agent session */
+export const renameSession = createAction<[agentId: string, name: string]>(
+  'agentSessions/renameSession',
+);
+
+/** Rename an agent session. Kept on the legacy action type for dispatch compatibility. */
+export const renameAgent = createAction<[wsId: string, agentId: string, name: string]>(
+  'workspaceAgents/renameAgent',
+);
+
+/** Bulk upsert sessions (initial load / snapshot reconciliation) */
+export const bulkUpsertSessions = createAction<[sessions: AgentSession[]]>(
+  'agentSessions/bulkUpsertSessions',
+);
+
+/** Remove all sessions for a workspace */
+export const removeWorkspaceSessions = createAction<[wsId: string]>(
+  'agentSessions/removeWorkspaceSessions',
+);
+
+/** Clear all sessions */
+export const clearAllSessions = createAction('agentSessions/clearAllSessions');
+
+// ============================================================================
+// Reducer
+// ============================================================================
+
+export const agentSessionReducer = createReducer<AgentSessionState>(initialState)
+  .with(upsertSession, (state, { payload: [session] }) => {
+    const finalSession = toStoredSession(session);
+    const agentId = String(finalSession.id);
+    const wsId = String(session.workspaceId);
+
+    // No-op guard: if the session already exists with equivalent data
+    // and is already registered in the workspace index, return state unchanged.
+    const existing = getSession(state, agentId);
+    const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
+    if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+      return state;
+    }
+
+    // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
+    // created by chatSendStarted before the full session loaded from disk.
+    if (existing) {
+      if (existing.isStreaming && finalSession.isStreaming === undefined) {
+        finalSession.isStreaming = true;
+      }
+      if (existing.isProcessing && finalSession.isProcessing === undefined) {
+        finalSession.isProcessing = true;
+      }
+
+      // Guard: if agent:idle/streamCompleted already cleared the streaming
+      // flags (existing is authoritatively idle), don't let stale incoming
+      // data from an async saga re-introduce isStreaming=true.
+      // Only chatSendStarted should transition idle→streaming.
+      // Cast to string for comparison: the typed status is AgentStatus but
+      // IPC events may set it to lowercase 'idle' via type assertion.
+      const existingStatus = existing.status as string;
+      if (
+        (existingStatus === AgentStatus.Idle || existingStatus === 'idle') &&
+        existing.stopReason &&
+        !existing.isStreaming
+      ) {
+        finalSession.isStreaming = false;
+        finalSession.isProcessing = false;
+      }
+    }
+
+    let next = setSession(state, agentId, finalSession);
+    next = registerInWorkspaceIndex(next, agentId, wsId);
+    return next;
+  })
+  .with(removeSession, (state, { payload: [agentId] }) => {
+    if (!state.byAgentId[agentId]) return state;
+
+    const { [agentId]: _, ...rest } = state.byAgentId;
+    let next: AgentSessionState = { ...state, byAgentId: rest };
+    next = removeFromWorkspaceIndex(next, agentId);
+    return next;
+  })
+  .with(setSessionStreaming, (state, { payload: [agentId, isStreaming] }) => {
+    const session = getSession(state, agentId);
+    if (!session || session.isStreaming === isStreaming) return state;
+    return updateSessionFields(state, agentId, { isStreaming });
+  })
+  .with(addMessage, (state, { payload: [agentId, message] }) =>
+    addMessageToSession(state, agentId, message),
+  )
+  .with(updateMessage, (state, { payload: [agentId, messageId, updates] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const index = session.messages.findIndex((message) => message.id === messageId);
+    if (index === -1) return state;
+    const nextMessage = { ...session.messages[index], ...updates, id: messageId };
+    if (shallowEqual(nextMessage, session.messages[index])) return state;
+    const nextMessages = session.messages.slice();
+    nextMessages[index] = nextMessage;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
+  })
+  .with(replaceMessages, (state, { payload: [agentId, messages] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    return setSession(state, agentId, {
+      ...session,
+      messages: normalizeSortPruneMessages(messages),
+    });
+  })
+  .with(mergeSessionMessages, (state, { payload: [agentId, messages, nextIsStreaming] }) =>
+    mergeMessagesIntoSession(state, agentId, messages, nextIsStreaming),
+  )
+  .with(removeMessage, (state, { payload: [agentId, messageId] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const nextMessages = session.messages.filter((message) => message.id !== messageId);
+    if (nextMessages.length === session.messages.length) return state;
+    return setSession(state, agentId, { ...session, messages: nextMessages });
+  })
+  .with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>
+    replaceSessionMessageById(state, agentId, oldId, newMessage),
+  )
+  .with(updateSession, (state, { payload: [agentId, updates] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    const { messages, ...otherUpdates } = updates;
+    let merged: StoredAgentSession = { ...session, ...otherUpdates };
+    if (messages && Array.isArray(messages)) {
+      merged = { ...merged, messages: normalizeSortPruneMessages(messages) };
+    }
+    return setSession(state, agentId, merged);
+  })
+  .with(reconcileCanonicalStatus, (state, { payload: [agentId, fields] }) => {
+    const updates = canonicalSessionUpdates(fields);
+    if (Object.keys(updates).length === 0) return state;
+    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
+  })
+  .with(eventReceived, (state, { payload: [, event] }) => {
+    const canonical = canonicalFieldsFromWorkspaceEvent(event);
+    if (!canonical) return state;
+    const [agentId, fields] = canonical;
+    const updates = canonicalSessionUpdates(fields);
+    if (Object.keys(updates).length === 0) return state;
+    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
+  })
+  .with(updateDigest, (state, { payload: [agentId, digest] }) =>
+    updateSessionFields(state, agentId, { digest: digest ?? undefined }),
+  )
+  .with(renameSession, (state, { payload: [agentId, name] }) => {
+    const session = getSession(state, agentId);
+    if (!session || session.name === name) return state;
+    return setSession(state, agentId, { ...session, name });
+  })
+  .with(bulkUpsertSessions, (state, { payload: [sessions] }) => {
+    let next = state;
+    for (const session of sessions) {
+      const finalSession = toStoredSession(session);
+      const agentId = String(finalSession.id);
+      const wsId = String(session.workspaceId);
+
+      // Preserve in-flight isStreaming/isProcessing flags unconditionally.
+      // bulkUpsertSessions is used for disk reconciliation; disk data is always
+      // stale for ephemeral in-memory flags like streaming/processing state.
+      // The factory or saga sets these flags before the bulk upsert runs, so
+      // an incoming false from disk must never overwrite an active true.
+      const existing = getSession(next, agentId);
+      if (existing) {
+        if (existing.isStreaming) {
+          finalSession.isStreaming = true;
+        }
+        if (existing.isProcessing) {
+          finalSession.isProcessing = true;
+        }
+      }
+
+      next = setSession(next, agentId, finalSession);
+      next = registerInWorkspaceIndex(next, agentId, wsId);
+    }
+    return next;
+  })
+  .with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
+    const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
+    if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
+    const byAgentId = { ...state.byAgentId };
+    for (const id of agentIds) {
+      delete byAgentId[id];
+    }
+
+    const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
+    return { byAgentId, agentIdsByWorkspace: restWorkspaces };
+  })
+  .with(clearAllSessions, () => initialState)
+  // -----------------------------------------------------------------------
+  // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
+  // -----------------------------------------------------------------------
+  .with(setAgentStreaming, (state, { payload: [agentId, isStreaming] }) => {
+    const session = getSession(state, agentId);
+    if (!session || session.isStreaming === isStreaming) return state;
+    return updateSessionFields(state, agentId, { isStreaming });
+  })
+  .with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
+    const session = getSession(state, agentId);
+    if (!session || session.digest === digest) return state;
+    return setSession(state, agentId, { ...session, digest: digest ?? undefined });
+  })
+  .with(renameAgent, (state, { payload: [, agentId, name] }) => {
+    const session = getSession(state, agentId);
+    if (!session || session.name === name) return state;
+    return setSession(state, agentId, { ...session, name });
+  })
+  // -----------------------------------------------------------------------
+  // Cross-slice: handle chat-state actions for isStreaming/isProcessing
+  // agent-session is the single source of truth for these flags.
+  // -----------------------------------------------------------------------
+  .with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
+    const existing = getSession(state, agentId);
+    if (existing) {
+      return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
+    }
+    if (!wsId) return state;
+    // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
+    // Create a minimal placeholder so the UI can show the processing indicator immediately.
+    // The full session will be populated when upsertSession arrives.
+    const placeholder: StoredAgentSession = {
+      id: agentId as AgentSession['id'],
+      backendSessionId: null,
+      workspaceId: wsId as AgentSession['workspaceId'],
+      name: '',
+      status: 'idle' as any,
+      messages: [],
+      isStreaming: true,
+      isProcessing: true,
+      createdAt: timestampIso,
+      updatedAt: timestampIso,
+    };
+    let next = setSession(state, agentId, placeholder);
+    next = registerInWorkspaceIndex(next, agentId, wsId);
+    return next;
+  })
+  .with(chatSendFailed, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(chatInterrupted, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(chatStopCompleted, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(chatReset, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
+    updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+  )
+  .with(chatInitialized, (state, { payload: [agentId, data] }) => {
+    const session = getSession(state, agentId);
+    if (!session) return state;
+    // chatInitialized may only CLEAR streaming flags, never SET them.
+    // Setting isStreaming=true is chatSendStarted's responsibility.
+    // The saga captures a streaming-state snapshot that can be stale by
+    // the time chatInitialized is dispatched — if agent:idle already
+    // cleared the flags, re-introducing isStreaming=true causes the UI
+    // to think the agent is still streaming and blocks follow-up messages.
+    if (!data.isStreaming) {
+      if (!session.isStreaming && !session.isProcessing) return state;
+      return updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false });
+    }
+    return state;
+  })
+  .with(streamCompleted, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(streamTimedOut, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  )
+  .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+  );

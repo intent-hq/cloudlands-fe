@@ -55,8 +55,7 @@ import {
   _resetMainStoreBridge,
   initMainStoreBridge,
 } from "../../../redux-store-bridge";
-import type { MainReduxStore } from "../../../types";
-import { __resetAllCachedSelectorsForTests } from "../../../../utils/create-cached-selector";
+import type { MainStore, MainStoreState } from "../../../types";
 import { dispatchWorkspaceEvent } from "./ipc-bridge-saga";
 import {
   __resetSubscriptionVersionCountersForTests,
@@ -134,8 +133,14 @@ function setup() {
     agentSubscriptions: agentSubscriptionsReducer,
   });
   const sagaMiddleware = createSagaMiddleware();
-  const store = createStore(rootReducer, applyMiddleware(sagaMiddleware)) as unknown as MainReduxStore;
-  initMainStoreBridge(store);
+  const store = createStore(rootReducer, applyMiddleware(sagaMiddleware));
+  const bridgeStore = {
+    get state() {
+      return store.getState() as MainStoreState;
+    },
+    dispatch: store.dispatch,
+  } as unknown as MainStore;
+  initMainStoreBridge(bridgeStore);
   sagaMiddleware.setContext({
     readableStoreState: {
       subscribe(run: (state: ReturnType<typeof store.getState>) => void): () => void {
@@ -171,7 +176,6 @@ let ctx: ReturnType<typeof setup>;
 beforeEach(() => {
   mockedDispatchEvent.mockClear();
   __resetSubscriptionVersionCountersForTests();
-  __resetAllCachedSelectorsForTests();
   ctx = setup();
 });
 

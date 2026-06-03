@@ -20,7 +20,7 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
-  import { openPalette } from '$lib/store/slices/palette/palette-slice';
+  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { applyContentPreset } from '$features/layout/preset-executor';
   import {
@@ -28,16 +28,16 @@
   selectCanGoBack,
   selectCanGoForward,
   selectActiveTab,
-} from '$lib/store/slices/panel-layout/panel-layout-selectors';
+} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { PanelLayoutControls } from '$lib/components/layout/panel-system';
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import PromotionalBanner from '$lib/components/PromotionalBanner.svelte';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -48,12 +48,12 @@
   import {
   selectZoomFactor,
   selectCounterScale,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { selectOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId?: string;

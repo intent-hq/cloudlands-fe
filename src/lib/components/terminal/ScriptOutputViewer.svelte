@@ -30,12 +30,12 @@
   selectScriptById,
   selectScriptRuntime,
   selectScriptOutput,
-} from '$lib/store/slices/scripts/scripts-selectors';
-  import { removeScript } from '$lib/store/slices/scripts/scripts-slice';
+} from '$store/renderer/slices/scripts/scripts-selectors';
+  import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

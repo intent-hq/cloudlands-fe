@@ -15,13 +15,13 @@ import type { Actor } from '../../../shared/types';
 import type {
   FileChange,
   DiffChunk,
-} from '../../../lib/store/slices/workspace/utils/change-detector.types';
+} from '$shared/types/change-detector.types';
 
 // Re-export types for compatibility
 export type {
   FileChange,
   DiffChunk,
-} from '../../../lib/store/slices/workspace/utils/change-detector.types';
+} from '$shared/types/change-detector.types';
 
 // Import modular components
 import {

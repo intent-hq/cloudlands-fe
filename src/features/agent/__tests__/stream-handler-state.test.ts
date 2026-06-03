@@ -29,9 +29,9 @@ const mockElectronAPI = {
 };
 
 // Mock the dependencies
-vi.mock('$lib/electron-bridge', async () => await import('$lib/store/utils/test-helpers/electron-bridge-mock'));
+vi.mock('$lib/electron-bridge', async () => await import('$store/renderer/utils/test-helpers/electron-bridge-mock'));
 
-vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
+vi.mock('$lib/utils/client-logger', async () => await import('$store/renderer/utils/test-helpers/client-logger-mock'));
 
 vi.mock('$shared/types/branded-ids', () => ({
   createMessageId: (id: string) => id,

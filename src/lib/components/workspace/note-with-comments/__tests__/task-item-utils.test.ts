@@ -10,7 +10,7 @@ import {
   initialState,
   pruneTaskAgentAssociationsForNote,
   taskAgentAssociationsReducer,
-} from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
+} from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 
 import {
   createTaskAgentAssociationKey,

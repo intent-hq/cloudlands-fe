@@ -47,7 +47,7 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check Redux agent session store
-          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
           if (!storeContent.includes('byAgentId') || !storeContent.includes('registerInWorkspaceIndex')) {
@@ -64,7 +64,7 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for cleanup handlers in the current saga/lifecycle split
-          const sagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const sagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
           const sagaContent = await fs.readFile(sagaPath, 'utf-8');
           const registryPath = path.join(__dirname, '../src/features/agent/utils/stream-handler-registry.ts');
           const registryContent = await fs.readFile(registryPath, 'utf-8');
@@ -88,7 +88,7 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for message queueing or locking in current saga/state ownership
-          const chatSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
           const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
           if (!chatSagaContent.includes('stopIfResponding') || !chatSagaContent.includes('selectAgentSessionIsProcessing')) {
@@ -156,7 +156,7 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for JSON.stringify usage in Redux-owned message state
-          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
           if (storeContent.includes('JSON.stringify') && !storeContent.includes('try')) {
@@ -206,7 +206,7 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check chat send saga
-          const chatSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
           const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
           if (!chatSagaContent.includes('trim()') || !chatSagaContent.includes('Message cannot be empty')) {
@@ -274,7 +274,7 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for state validation
-          const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
+          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
           if (!storeContent.includes('deduplicateRecoverySession') || !storeContent.includes('refreshSessionForMissingTarget')) {

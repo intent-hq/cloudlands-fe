@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import linearDark from '../../../assets/logos/linear-dark.svg?url';
   import linearLight from '../../../assets/logos/linear-light.svg?url';
 

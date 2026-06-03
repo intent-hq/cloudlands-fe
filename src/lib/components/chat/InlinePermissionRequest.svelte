@@ -4,8 +4,8 @@
   onMount,
   onDestroy,
 } from 'svelte';
-  import { selectPermissionOption } from '$lib/store/slices/permission/permission-slice';
-  import type { PermissionRequest } from '$lib/store/slices/permission/permission-slice';
+  import { selectPermissionOption } from '$store/renderer/slices/permission/permission-slice';
+  import type { PermissionRequest } from '$store/renderer/slices/permission/permission-slice';
 
   import Fa from 'svelte-fa';
   import {
@@ -14,7 +14,7 @@
   faChevronUp,
 } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     request: PermissionRequest;

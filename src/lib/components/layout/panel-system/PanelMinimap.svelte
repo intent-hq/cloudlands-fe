@@ -8,7 +8,7 @@
    * - Visual representation of the layout tree
    */
 
-  import type { PanelLayoutNode } from '$lib/store/slices/panel-layout/panel-layout-types';
+  import type { PanelLayoutNode } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
 
   interface Props {

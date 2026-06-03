@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 /* eslint-disable max-lines */
   import {
   onMount,
@@ -17,7 +17,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
-  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   import { agentClient } from '$features/agent/agent.client';
 
@@ -43,11 +43,11 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import {
   togglePanel as togglePanelAction,
   toggleSelection as toggleSelectionAction,
-} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
   selectPanels,
   selectSelections,
-} from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { slide } from 'svelte/transition';
 
@@ -101,7 +101,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   // Import ContextItem from context-api.ts
   import type { ContextItem } from './context-api';
   import { cn } from '$lib/utils';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   export type { ContextItem };
 
   let {

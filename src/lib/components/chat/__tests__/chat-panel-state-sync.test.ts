@@ -4,7 +4,7 @@ import {
   it,
 } from 'vitest';
 
-import type { ChatState } from '$lib/store/slices/chat-state/chat-state-types';
+import type { ChatState } from '$store/renderer/slices/chat-state/chat-state-types';
 
 import {
   hasChatServiceStateChanged,

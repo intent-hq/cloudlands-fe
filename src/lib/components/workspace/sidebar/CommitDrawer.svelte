@@ -4,13 +4,13 @@
    * Contains the commit form, auto-fill, and file export panels.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
   cancelExecution,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-  import { setSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-slice';
-  import { selectSidebarCommitWhenReady } from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+  import { setSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-slice';
+  import { selectSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-selectors';
 
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -38,8 +38,8 @@
   import DividerPanel from './DividerPanel.svelte';
   import TimelineDivider from './TimelineDivider.svelte';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

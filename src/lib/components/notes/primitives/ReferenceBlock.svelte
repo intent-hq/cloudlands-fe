@@ -19,12 +19,12 @@
 } from '$shared/types/notes-primitives';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ReferenceBlock');
 

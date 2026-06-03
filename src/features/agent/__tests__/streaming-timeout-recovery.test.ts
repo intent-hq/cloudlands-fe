@@ -23,13 +23,13 @@ import {
 import {
   STREAMING_PROFILES,
   resolveStreamingConfig,
-} from '$lib/store/slices/streaming-config/streaming-config-types';
+} from '$store/renderer/slices/streaming-config/streaming-config-types';
 import {
   streamingConfigReducer,
   initialState,
   setStreamingProfile,
   resetStreamingConfig,
-} from '$lib/store/slices/streaming-config/streaming-config-slice';
+} from '$store/renderer/slices/streaming-config/streaming-config-slice';
 import { AGENT_STREAMING_CONFIG } from '../../../shared/constants/agent-streaming';
 
 const allProfiles = Object.values(STREAMING_PROFILES);

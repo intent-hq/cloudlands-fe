@@ -5,7 +5,7 @@
    * Renders credit usage stats for an agent session inside a tooltip content area.
    * Designed to be used as the `content` snippet of TooltipRich.
    */
-  import type { AgentSessionStats } from '$lib/store/slices/session-stats/session-stats-types';
+  import type { AgentSessionStats } from '$store/renderer/slices/session-stats/session-stats-types';
   import { Skeleton } from '$lib/components/ui/skeleton';
 
   type EmptyState = 'pending' | 'empty';

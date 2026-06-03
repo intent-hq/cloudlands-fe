@@ -18,9 +18,9 @@
   addTerminal,
   openTerminalOverlay,
   toggleTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   let rtkAvailable = $state(false);

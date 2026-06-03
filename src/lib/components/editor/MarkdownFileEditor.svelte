@@ -20,10 +20,10 @@
     extractFrontMatter,
   } from '$lib/utils/markdown-processor';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     /** Markdown content (two-way bindable) */

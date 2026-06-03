@@ -11,7 +11,7 @@ import {
   afterEach,
 } from 'vitest';
 import { TerminalBufferManager } from '../terminal-buffer-manager';
-import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
+import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({

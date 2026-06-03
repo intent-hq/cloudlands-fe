@@ -8,8 +8,8 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Badge } from '$lib/components/ui/badge';
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   import {
   faCodePullRequest,
@@ -24,7 +24,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { PullRequestInfo } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     onClose?: () => void;

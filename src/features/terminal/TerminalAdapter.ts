@@ -25,11 +25,11 @@ import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 import {
   closeActiveTerminalRequested,
   toggleTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
 
 const logger = new Logger('TerminalAdapter');
 

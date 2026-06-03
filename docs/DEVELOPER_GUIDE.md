@@ -193,7 +193,7 @@ ACP provider metadata lives in `src/shared/config/provider-config.ts`.
 Each provider config defines the provider identity plus its CLI command, default arguments, model-flag behavior, auth support, MCP/rules-file support, and related provider-specific capabilities.
 
 `activeProviderStore` in `src/lib/stores/active-provider.store.svelte.ts` manages which single provider is active at runtime.
-Per `docs/STATE_MANAGEMENT.md`, this `.store.svelte.ts` module is a transitional adapter; keep shared or durable app state in Redux under `src/lib/store/` when extending this area.
+Per `docs/STATE_MANAGEMENT.md`, this `.store.svelte.ts` module is a transitional adapter; keep shared or durable app state in Redux under `src/store/renderer/` when extending this area.
 
 Key behaviors:
 

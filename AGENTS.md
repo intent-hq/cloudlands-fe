@@ -30,7 +30,7 @@ src/
 | Working on… | Open |
 | --- | --- |
 | agents | docs/AGENT_ARCHITECTURE.md |
-| state/store | docs/STATE_MANAGEMENT.md, src/lib/store/docs/ |
+| state/store | docs/STATE_MANAGEMENT.md, src/store/renderer/docs/ |
 | UI components | docs/COMPONENT_RESPONSIBILITIES.md |
 | component design | docs/COMPONENTS_DESIGN.md |
 | panels/layout | docs/panel-system-refactoring.md, docs/proposals/PANEL_TAB_UX_SPEC.md |
@@ -47,11 +47,11 @@ src/
 
 ## Key conventions
 
-- **Svelte stores are DEPRECATED** — All `.store.svelte.ts` files are migration targets. New shared/domain state MUST use Redux slices + sagas (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](src/lib/store/docs/MIGRATION_GUIDE.md) to move toward complete store removal. See `docs/STATE_MANAGEMENT.md`.
+- **Svelte stores are DEPRECATED** — All `.store.svelte.ts` files are migration targets. New shared/domain state MUST use Redux slices + sagas (ephemeral component-local UI state is fine without Redux). If refactoring encounters `.store.svelte.ts` usage, do not expand or entrench it — follow the [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) to move toward complete store removal. See `docs/STATE_MANAGEMENT.md`.
 - Use `pnpm`, not `npm`.
 - Put renderer product work in `src/features/`; shared utilities live in `src/lib/`.
 - Create agents via `agentFactory.createAgent()`.
-- Keep shared app state in `src/lib/store/`, not ad-hoc component state.
+- Keep shared app state in `src/store/renderer/`, not ad-hoc component state.
 - **Selector readables belong at component init only** — `selector()` uses Svelte context and must not run in event handlers or callbacks. Dispatch actions and perform one-time selector reads through the configured app `Store` instance, e.g. `store.dispatch(action)` and `selector.select(store.state, ...args)`. See `docs/STATE_MANAGEMENT.md` for details.
 - **Never import from a feature's **`main/`** subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.

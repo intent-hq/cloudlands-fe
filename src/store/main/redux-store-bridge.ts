@@ -2,19 +2,19 @@
  * Main-process Redux store bridge.
  *
  * Main-process-only bridge for global access to the
- * main-process Redux store after initialization.
+ * configured main-process StreamingStore after initialization.
  */
 
-import type { MainReduxStore, MainStoreState } from "./types";
+import type { MainStore, MainStoreState } from "./types";
 
 type MainAction = { type: string };
 
-let storeBridge: MainReduxStore | null = null;
+let storeBridge: MainStore | null = null;
 
 /**
  * Initialize the main store bridge. Called once by `initMainStore()`.
  */
-export function initMainStoreBridge(store: MainReduxStore): void {
+export function initMainStoreBridge(store: MainStore): void {
   if (storeBridge) {
     throw new Error("Main Redux store bridge already initialized.");
   }
@@ -22,9 +22,9 @@ export function initMainStoreBridge(store: MainReduxStore): void {
 }
 
 /**
- * Get the main-process Redux store. Throws if not yet initialized.
+ * Get the configured main-process StreamingStore. Throws if not yet initialized.
  */
-export function getMainStore(): MainReduxStore {
+export function getMainStore(): MainStore {
   if (!storeBridge) {
     throw new Error("Main Redux store bridge not initialized. Call initMainStore() first.");
   }
@@ -33,10 +33,10 @@ export function getMainStore(): MainReduxStore {
 }
 
 /**
- * Shortcut for `getMainStore().getState()`.
+ * Shortcut for `getMainStore().state`.
  */
 export function getMainState(): MainStoreState {
-  return getMainStore().getState();
+  return getMainStore().state as MainStoreState;
 }
 
 /**

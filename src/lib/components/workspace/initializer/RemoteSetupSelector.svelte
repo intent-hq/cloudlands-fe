@@ -18,10 +18,10 @@
   import { handleError } from '$lib/utils/error-handling';
   import { debugConfig } from '$lib/config/debug';
 
-  import { setWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerRemoteSetups } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
-  import { store as appStore } from '$lib/store/store';
+  import { setWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('RemoteSetupSelector');
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();

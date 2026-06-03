@@ -20,10 +20,10 @@ import {
   vi,
 } from 'vitest';
 
-vi.mock('$lib/store/store', async () => {
-  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<typeof import('$lib/store/slices/comments/comments-slice')>(
-    '$lib/store/slices/comments/comments-slice'
+vi.mock('$store/renderer/store', async () => {
+  const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { commentsReducer, initialState } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
+    '$store/renderer/slices/comments/comments-slice'
   );
   let state = { comments: initialState };
   const readable = <T>(getter: () => T) => ({
@@ -56,11 +56,11 @@ vi.mock('$lib/store/store', async () => {
 });
 
 import { CommentManagerV2 } from '../comment-manager-v2';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 import {
   loadCommentsAction,
-} from '$lib/store/slices/comments/comments-slice';
-import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+} from '$store/renderer/slices/comments/comments-slice';
+import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
 import { NotesService } from '../../notes/main/notes.service';
 import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import {
@@ -100,6 +100,7 @@ vi.mock('../../../store/main/slices/note-events/note-events-slice', () => ({
 
 vi.mock('../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
   emitWorkspaceEvent: vi.fn((payload: any) => ({ type: 'workspace-events/emitWorkspaceEvent', payload })),
+  workspaceEventsReducer: vi.fn((state = { byWorkspaceId: {} }) => state),
 }));
 
 describe('V3 Integration Tests - Real Version History', () => {

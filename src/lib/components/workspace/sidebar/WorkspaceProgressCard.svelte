@@ -12,7 +12,7 @@
   extractOrderedSpecTaskIds,
   extractSpecTaskIds,
 } from '$shared/utils/task-stats';
-  import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
+  import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import Fa from 'svelte-fa';
   import {
   faEllipsisV,
@@ -33,10 +33,10 @@
   {
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
-  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { goto } from '$app/navigation';
   import {
   tick,
@@ -48,13 +48,13 @@
 } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   fetchReadyTasks,
   applyReadyTasks,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
@@ -71,16 +71,16 @@
   getRunningAgentNames,
 } from '$lib/utils/delete-warning-utils';
 
-  import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
   loadWorkspacesRequested,
   setWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
   import {
   selectWorkspaceById,
   selectWorkspaceActivePullRequest,
-} from '$lib/store/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   const readyLogger = createLogger('ReadyTasks');
 

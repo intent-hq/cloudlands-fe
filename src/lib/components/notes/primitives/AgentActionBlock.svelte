@@ -13,16 +13,16 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
 
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentActionBlock');
 

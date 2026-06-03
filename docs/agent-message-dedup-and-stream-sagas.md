@@ -37,7 +37,7 @@ Why: duplicate policy must be consistent for full session snapshots, incremental
 
 #### Reducer safety net
 
-`src/lib/store/slices/agent-session/agent-session-slice.ts` routes session/message ingestion through the dedup utility.
+`src/store/renderer/slices/agent-session/agent-session-slice.ts` routes session/message ingestion through the dedup utility.
 
 Covered paths include:
 
@@ -67,7 +67,7 @@ Why: service/lifecycle files should be as thin as possible. Shared/domain state 
 
 #### Saga-owned missing-target reconciliation
 
-`src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts` owns stream update decisions that depend on Redux state.
+`src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts` owns stream update decisions that depend on Redux state.
 
 It handles:
 
@@ -118,7 +118,7 @@ The implementation was verified with focused coverage for:
 ### Architectural Rules Going Forward
 
 - Keep service and lifecycle files as thin as possible. They can translate external events into typed actions, but should not make Redux-state-dependent domain decisions.
-- Put shared/domain state in Redux slices under `src/lib/store/`.
+- Put shared/domain state in Redux slices under `src/store/renderer/`.
 - Put side-effect orchestration in Redux sagas: IPC, persistence, refresh/reconcile, timers, retries, coalescing, rate limiting, and cross-slice workflows.
 - Keep duplicate matching and merge rules in `message-dedup.ts`; do not reimplement near-duplicate policy in services, sagas, components, or persistence code.
 - Preserve false-positive guards for legitimate repeated assistant messages, especially different explicit turns.
@@ -127,10 +127,10 @@ The implementation was verified with focused coverage for:
 
 - `src/shared/utils/message-dedup.ts`
 - `src/shared/utils/content-block-helpers.ts`
-- `src/lib/store/slices/agent-session/agent-session-slice.ts`
+- `src/store/renderer/slices/agent-session/agent-session-slice.ts`
 - `src/features/agent/agent-stream-lifecycle.ts`
-- `src/lib/store/slices/workspace-agents/workspace-agents-slice.ts`
-- `src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts`
+- `src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts`
+- `src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts`
 - `src/features/agent/__tests__/stream-lifecycle-bugs-regression.test.ts`
-- `src/lib/store/slices/agent-session/sagas/agent-stream-saga.test.ts`
-- `src/lib/store/slices/agent-session/sagas/agent-stream-saga-regression.test.ts`
+- `src/store/renderer/slices/agent-session/sagas/agent-stream-saga.test.ts`
+- `src/store/renderer/slices/agent-session/sagas/agent-stream-saga-regression.test.ts`

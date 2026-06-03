@@ -26,9 +26,9 @@
   selectAutoUpdateInfo,
   selectAutoUpdateCurrentVersion,
   selectAutoUpdateError,
-} from '$lib/store/slices/auto-update/auto-update-selectors';
-  import { installUpdate } from '$lib/store/slices/auto-update/auto-update-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/auto-update/auto-update-selectors';
+  import { installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     /** Callback when toast should be dismissed */

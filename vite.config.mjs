@@ -332,6 +332,7 @@ export default defineConfig({
     alias: [
       // Path aliases for cleaner imports
       { find: '$lib', replacement: join(__dirname, './src/lib') },
+      { find: '$store', replacement: join(__dirname, './src/store') },
       { find: '$app', replacement: join(__dirname, './src/app') },
       { find: '$features', replacement: join(__dirname, './src/features') },
       { find: '$shared', replacement: join(__dirname, './src/shared') },

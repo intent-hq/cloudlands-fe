@@ -10,15 +10,15 @@
   selectAgentIsResponding,
   selectAgentIsWaiting,
   selectAgentSession,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-  import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
+  import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     agentId: string;

@@ -10,7 +10,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('MarkdownRenderer');
   const activeWorkspaceId = selectActiveWorkspaceId();

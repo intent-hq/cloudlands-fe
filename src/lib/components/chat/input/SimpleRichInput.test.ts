@@ -65,18 +65,18 @@ vi.mock('$lib/components/ui/tooltip', async () => {
   return { TooltipShortcut: SlotOnly };
 });
 
-vi.mock('$lib/store/slices/multi-panel-context/multi-panel-context-selectors', () => ({
+vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectPanels: () => readable([]),
   selectSelections: () => readable([]),
 }));
 
-vi.mock('$lib/stores/additional-agents.store.svelte', () => ({
+vi.mock('$store/renderers/additional-agents.store.svelte', () => ({
   additionalAgentsStore: {
     getEnabledProviderIds: () => ['auggie', 'codex'],
   },
 }));
 
-vi.mock('$lib/stores/specialists.store.svelte', () => ({
+vi.mock('$store/renderers/specialists.store.svelte', () => ({
   specialistsStore: {
     getSpecialistName: (specialistId: string) =>
       specialistId === 'implementor' ? 'Implementor' : null,
@@ -140,15 +140,15 @@ const mockReduxState: { workspaceAgents: { byWorkspaceId: Record<string, any> } 
   workspaceAgents: { byWorkspaceId: {} },
 };
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => mockReduxState,
     dispatch: mockReduxDispatch,
   });
 });
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
       // Search across all workspaces since wsId was removed
@@ -160,7 +160,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     },
   },
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
       for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {

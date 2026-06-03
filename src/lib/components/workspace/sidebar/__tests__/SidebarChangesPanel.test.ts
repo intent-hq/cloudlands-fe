@@ -76,7 +76,7 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
   };
 });
 
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.stagedChanges),
   selectUnstagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.unstagedChanges),
   selectFileTrackingCommits: createMockFtSelector(() => mockFileTrackingStore.commits),
@@ -110,7 +110,7 @@ vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
   stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/stageByPathRequested', payload: [wsId, paths] })),
@@ -146,7 +146,7 @@ vi.mock('$features/git/git.client', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/git/git-selectors', () => ({
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitAhead: Object.assign(
     () => createReadable(mockGitState.ahead),
     { select: () => mockGitState.ahead },
@@ -169,7 +169,7 @@ vi.mock('$lib/store/slices/git/git-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
   gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
@@ -226,7 +226,7 @@ function createSelectorReadable<TArg, TValue>(arg: TArg, resolver: (value: any) 
   return createReadable(resolver(arg));
 }
 
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: {
     update: mockWorkspaceStore.update,
     archive: mockWorkspaceStore.archive,
@@ -235,8 +235,8 @@ vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
 }));
 
 const mockDispatch = vi.fn();
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -244,7 +244,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: createMockFtSelector(() => mockFileTrackingStore.currentWorkspaceId),
   selectWorkspaceById: Object.assign(
     (workspaceId: string) =>
@@ -283,9 +283,9 @@ const mockGitOperationFlags = {
   isResettingToTrunk: false,
 };
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({}));
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({}));
 
-vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: vi.fn().mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
       fn({});
@@ -293,7 +293,7 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/agent-lock/agent-lock-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recomputeAgentLocks: vi.fn((wsId: string) => ({
     type: 'agentLock/recomputeAgentLocks',
@@ -303,7 +303,7 @@ vi.mock('$lib/store/slices/agent-lock/agent-lock-slice', async (importOriginal) 
 
 const mockGitHubAuthIsAuthenticated = vi.hoisted(() => ({ value: false }));
 
-vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
+vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticated: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(mockGitHubAuthIsAuthenticated.value);
@@ -312,20 +312,20 @@ vi.mock('$lib/store/slices/github-auth/github-auth-selectors', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/github-auth/github-auth-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/github-auth/github-auth-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   initializeGitHubAuth: vi.fn(() => ({ type: 'githubAuth/initialize' })),
 }));
 
 const defaultExecutorState = { status: 'idle', result: null, error: null, agentId: null };
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
+vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorState: Object.assign(
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(defaultExecutorState); return () => { }; } }),
     { select: vi.fn().mockReturnValue(defaultExecutorState) },
   ),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   executeBackgroundAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
@@ -333,14 +333,14 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
   resetExecutor: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reset', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => { }; } }),
     { select: vi.fn().mockReturnValue([]) },
   ),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign(
     vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(undefined); return () => { }; } }),
     { select: vi.fn().mockReturnValue(undefined) },
@@ -363,14 +363,14 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/pr-status/pr-status-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/pr-status/pr-status-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   refreshPRStatusRequested: vi.fn((...args: any[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
   startPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/startPolling', payload: args })),
   stopPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/stopPolling', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/pr-status/pr-status-selectors', () => ({
+vi.mock('$store/renderer/slices/pr-status/pr-status-selectors', () => ({
   selectPRStatusIsRefreshing: Object.assign(vi.fn().mockReturnValue({ subscribe: vi.fn() }), {
     select: vi.fn().mockReturnValue(false),
   }),
@@ -384,31 +384,31 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/terminals/terminals-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/terminals/terminals-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   addTerminal: vi.fn((...args: any[]) => ({ type: 'terminals/addTerminal', payload: args })),
   openTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/open', payload: args })),
   toggleTerminalOverlay: vi.fn((...args: any[]) => ({ type: 'terminals/toggle', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () => {
+vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors', () => {
   const { readable } = require('svelte/store');
   return {
     selectAutoCommitEnabled: vi.fn(() => readable(true)),
   };
 });
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
   syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', async (importOriginal) => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
@@ -584,7 +584,7 @@ async function resetMocks() {
   (groupFilesByAgent as Mock).mockReturnValue([]);
 
   const { selectLockedAgentIds } = await import(
-    '$lib/store/slices/agent-lock/agent-lock-selectors'
+    '$store/renderer/slices/agent-lock/agent-lock-selectors'
   );
   (selectLockedAgentIds as Mock).mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
@@ -852,7 +852,7 @@ describe('SidebarChangesPanel', () => {
 
     it('renders locked agent group with lock indicator', async () => {
       const { selectLockedAgentIds } = await import(
-        '$lib/store/slices/agent-lock/agent-lock-selectors'
+        '$store/renderer/slices/agent-lock/agent-lock-selectors'
       );
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
@@ -1303,7 +1303,7 @@ describe('SidebarChangesPanel', () => {
 
     it('auto-commit lock prevents manual staging of locked files', async () => {
       const { selectLockedAgentIds } = await import(
-        '$lib/store/slices/agent-lock/agent-lock-selectors'
+        '$store/renderer/slices/agent-lock/agent-lock-selectors'
       );
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
@@ -1560,7 +1560,7 @@ describe('SidebarChangesPanel', () => {
     let refreshPRStatusRequestedMock: Mock;
 
     beforeEach(async () => {
-      const prStatusSlice = await import('$lib/store/slices/pr-status/pr-status-slice');
+      const prStatusSlice = await import('$store/renderer/slices/pr-status/pr-status-slice');
       refreshPRStatusRequestedMock = prStatusSlice.refreshPRStatusRequested as unknown as Mock;
       refreshPRStatusRequestedMock.mockClear();
 

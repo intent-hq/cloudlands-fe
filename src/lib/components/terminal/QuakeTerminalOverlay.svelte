@@ -21,7 +21,7 @@
   selectTerminalOverlayHeight,
   selectActiveTerminalId,
   selectTerminals,
-} from '$lib/store/slices/terminals/terminals-selectors';
+} from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   openTerminalOverlay,
   closeTerminalOverlay,
@@ -31,7 +31,7 @@
   setTerminalOverlayHeight,
   renameTerminal,
   type TerminalTab,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
 
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
@@ -61,13 +61,13 @@
   selectScriptEntries,
   selectScriptById,
   selectScriptRuntime,
-} from '$lib/store/slices/scripts/scripts-selectors';
+} from '$store/renderer/slices/scripts/scripts-selectors';
   import {
   refreshScripts,
   initializeScripts,
   disposeScripts,
   removeScript,
-} from '$lib/store/slices/scripts/scripts-slice';
+} from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import {
   ListContainer,
@@ -84,7 +84,7 @@
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Header from '../ui/Header.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   // ============================================================================
   // Props & State

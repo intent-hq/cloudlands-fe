@@ -11,16 +11,16 @@ import {
   selectStagedWorkingChanges,
   selectUnstagedWorkingChanges,
   selectFileTrackingCommits,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
 import {
   selectBackgroundWorkspaceAgents,
   selectForegroundWorkspaceAgents,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { PanelLayoutManager } from './panel-layout-adapter';
 import { calculateTiling } from './tiling-utils';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('PresetExecutor');
 

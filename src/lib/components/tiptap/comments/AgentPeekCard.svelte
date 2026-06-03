@@ -6,18 +6,18 @@
    * Shows a preview of the agent conversation instead of a regular comment.
    */
 
-  import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
+  import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import {
   getAgentPeekData,
   truncateToLines,
 } from '$lib/utils/agent-peek-utils';
 
-  import { selectAgentIsResponding } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
@@ -29,8 +29,8 @@
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { store as appStore } from '$lib/store/store';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   type DisplayMode = 'full' | 'compact' | 'icon';
 

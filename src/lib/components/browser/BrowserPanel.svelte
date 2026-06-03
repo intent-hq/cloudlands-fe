@@ -15,21 +15,21 @@
 } from '$lib/components/ui/list';
   import { cn } from '$lib/utils';
 
-  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
-  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
   addRecentUrl,
   removeRecentUrl,
   clearRecentUrls,
   initBrowserWorkspace,
-} from '$lib/store/slices/browser/browser-slice';
+} from '$store/renderer/slices/browser/browser-slice';
   import {
   faGlobe,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

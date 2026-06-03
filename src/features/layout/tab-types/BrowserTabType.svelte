@@ -11,11 +11,11 @@
   updateTabBrowserUrl,
   updateTabTitle,
   updateTabFavicon,
-} from '$lib/store/slices/panel-layout/panel-layout-slice';
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
 
-  import { updateContextItem } from '$lib/store/slices/context/context-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { updateContextItem } from '$store/renderer/slices/context/context-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   let { tab, workspaceId, isActive, isPanelFocused, onFocus }: TabTypeComponentProps = $props();
 

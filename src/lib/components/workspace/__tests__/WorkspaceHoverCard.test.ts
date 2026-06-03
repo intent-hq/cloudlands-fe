@@ -51,8 +51,8 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
   },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -60,16 +60,16 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/unread-tracking/unread-tracking-selectors', () => ({
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
   selectUnreadAgentIds: vi.fn(() => mocks.readable(mocks.unreadAgentIds)),
   selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => mocks.unreadAgentIds) },
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(mocks.createWorkspaceSessionReadable),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(vi.fn(mocks.createWorkspaceSessionReadable), {
     select: vi.fn(
       (_state: unknown, workspaceId: string) => mocks.agentSessionsByWorkspace[workspaceId] ?? [],

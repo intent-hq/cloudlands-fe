@@ -5,10 +5,9 @@
  * since there is no DOM or localStorage in the main process.
  */
 
-import type { Middleware } from "redux";
+import type { StoreMiddleware } from "ag-redux-toolkit/types";
 
 import { Logger } from "../../../shared/logger";
-import type { MainStoreState } from "../types";
 
 const logger = new Logger("MainRedux");
 
@@ -16,7 +15,7 @@ const logger = new Logger("MainRedux");
  * Creates a structured logger middleware for the main-process Redux store.
  * Only logs action type and payload size to avoid flooding logs.
  */
-export const createMainLoggerMiddleware = (): Middleware<any, MainStoreState, any> => {
+export const createMainLoggerMiddleware = (): StoreMiddleware => {
   return (store) => (next) => (action) => {
     const typedAction = action as { type: string; payload?: unknown };
     const prevState = store.getState();
@@ -33,4 +32,3 @@ export const createMainLoggerMiddleware = (): Middleware<any, MainStoreState, an
     return result;
   };
 };
-

@@ -9,7 +9,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
 const ROOT = process.cwd();
-const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src/lib/store/slices');
+const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src/store/renderer/slices');
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.svelte-kit', '.git']);
 const ACTIVE_WORKSPACE_SELECTOR_NAME = 'select(?:Active|Current)Workspace(?:Id)?';
@@ -22,8 +22,8 @@ const CYAN = '\x1b[0;36m';
 const NC = '\x1b[0m';
 
 const BASELINE = new Set([
-  'src/lib/store/slices/workspace-switcher/workspace-switcher-selectors.ts::import::selectActiveWorkspaceId from ../workspace/workspace-selectors',
-  'src/lib/store/slices/workspace-switcher/workspace-switcher-selectors.ts::selector.select::selectActiveWorkspaceId::const activeWorkspaceId = selectActiveWorkspaceId.select(state);',
+  'src/store/renderer/slices/workspace-switcher/workspace-switcher-selectors.ts::import::selectActiveWorkspaceId from ../workspace/workspace-selectors',
+  'src/store/renderer/slices/workspace-switcher/workspace-switcher-selectors.ts::selector.select::selectActiveWorkspaceId::const activeWorkspaceId = selectActiveWorkspaceId.select(state);',
 ]);
 
 function isSelectorFile(absPath) {

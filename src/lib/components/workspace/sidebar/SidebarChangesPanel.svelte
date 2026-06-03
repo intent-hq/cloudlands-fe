@@ -5,7 +5,7 @@
    */
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
 
-  import { recomputeAgentLocks } from '$lib/store/slices/agent-lock/agent-lock-slice';
+  import { recomputeAgentLocks } from '$store/renderer/slices/agent-lock/agent-lock-slice';
   import {
   selectStagedWorkingChanges as selectFtStagedChanges,
   selectUnstagedWorkingChanges as selectFtUnstagedChanges,
@@ -15,33 +15,33 @@
   selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
   selectPendingAutoAction,
   selectAcceptChangesState,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import {
   refreshRequested,
   refreshAcceptChangesStatus,
   setPendingAutoAction,
-} from '$lib/store/slices/changes/changes-slice';
-  import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
+} from '$store/renderer/slices/changes/changes-slice';
+  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
   import { gitCache } from '$features/git/git-cache';
   import {
   loadGitStatus,
   setPostMergeState,
   setGitOperationFlag,
-} from '$lib/store/slices/git/git-slice';
+} from '$store/renderer/slices/git/git-slice';
   import {
   selectGitStatus,
   selectGitAhead,
   selectGitBehind,
   selectPostMergeState,
   selectGitOperationFlags,
-} from '$lib/store/slices/git/git-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+} from '$store/renderer/slices/git/git-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
   addTerminal,
   openTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
 
 
 
@@ -52,9 +52,9 @@
   selectActiveWorkspaceId,
   selectWorkspaceById,
   selectWorkspaceActivePullRequest,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
-  import { openWorkspaceLocalChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceLocalChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 
 
@@ -62,7 +62,7 @@
   import { toast } from '$lib/components/ui/toast';
 
   import { trackGitOp } from '$lib/services/analytics';
-  import { syncWorkspaceSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -83,7 +83,7 @@
   import FileChangesSection from './FileChangesSection.svelte';
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

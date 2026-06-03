@@ -41,12 +41,12 @@ import {
 import {
   selectAgentQueue,
   selectAgentStatus,
-  selectAllSubscriptionsRaw,
+  selectAllSubscriptions,
   selectAllWorkspaceIds,
   selectIsAgentDeleted,
   selectIsOneShotFired,
-  selectDelegationGroupRaw,
-  selectIsDelegationGroupCompleteRaw,
+  selectDelegationGroup,
+  selectIsDelegationGroupComplete,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
@@ -116,7 +116,7 @@ describe("E2E: multi-round coordinator wake-up", () => {
     // Match + enqueue + deliver + oneShot cleanup
     await expectSaga(handleMatchEvent, workspaceEventAccepted(eventB))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub1]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub1]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-impl"), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -136,7 +136,7 @@ describe("E2E: multi-round coordinator wake-up", () => {
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(eventC))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub2]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub2]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-verif"), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -354,7 +354,7 @@ describe("E2E: rapid agent completion before subscription catch-up", () => {
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-live"), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -389,7 +389,7 @@ describe("E2E: rapid agent completion before subscription catch-up", () => {
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         // oneShot already fired by catch-up
         [matchers.select(selectIsOneShotFired.select, WS, "sub-race"), true],
@@ -444,8 +444,8 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -510,7 +510,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(verifierIdleEvent))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [oneShotSub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [oneShotSub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-verifier"), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -583,7 +583,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) {
+          if (effect.selector === selectDelegationGroup.select) {
             return {
               groupId: "deleg-impl",
               parentAgentId: COORDINATOR,
@@ -597,7 +597,7 @@ describe("E2E: delegation group then oneShot — multi-round coordinator wake-up
               delivered: false,
             };
           }
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -702,8 +702,8 @@ describe("E2E: no-window delegation group wakeup (regression)", () => {
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -991,7 +991,7 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
     // Step 1: handleMatchEvent matches and enqueues the event
     await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-nowin"), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -1126,7 +1126,7 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
     // Step 1: handleMatchEvent matches and routes to delegation group
     await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
       ])
       .put(appendDelegationGroupEvent(WS, "deleg-match-nowin", event))
@@ -1154,8 +1154,8 @@ describe("E2E: no-window subscription matching with wakeup verification", () => 
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return delegTracker;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return delegTracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();

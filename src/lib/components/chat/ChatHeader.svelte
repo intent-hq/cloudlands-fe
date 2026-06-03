@@ -25,8 +25,8 @@
   selectUserOverrides,
   selectSpecialistById,
   selectEffectiveModel,
-} from '$lib/store/slices/specialists/specialists-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/specialists/specialists-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;

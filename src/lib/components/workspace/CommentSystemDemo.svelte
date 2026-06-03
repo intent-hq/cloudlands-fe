@@ -10,12 +10,12 @@
   import {
   selectComments,
   selectSelectedComment,
-} from '$lib/store/slices/comments/comments-selectors';
+} from '$store/renderer/slices/comments/comments-selectors';
   import {
   selectCommentAction,
   loadCommentsAction,
   clearCommentsAction,
-} from '$lib/store/slices/comments/comments-slice';
+} from '$store/renderer/slices/comments/comments-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
   import Fa from 'svelte-fa';
@@ -28,7 +28,7 @@
   faCheck,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CommentSystemDemo');
 

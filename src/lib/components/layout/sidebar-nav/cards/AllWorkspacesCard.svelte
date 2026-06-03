@@ -5,7 +5,7 @@
   import {
   selectWorkspaceItems,
   selectWorkspaceActivePullRequest,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   WorkspaceStatusEnum,
   PullRequestStatus,
@@ -25,24 +25,24 @@
   selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
   selectAllSpacesViewMode,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-  import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+  import { clearWorkspaceUnread } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 
   import {
   closeAll,
   togglePinWorkspace,
   setAllSpacesViewMode,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import type { AllSpacesViewMode } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import type { AllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   getWorkspaceActivityDisplayTime,
 } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;

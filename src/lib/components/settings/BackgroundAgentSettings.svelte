@@ -11,13 +11,13 @@
   BACKGROUND_AGENT_TYPE_INFO,
   setDefaultModel,
   setTypeOverride,
-} from '$lib/store/slices/background-agent-settings/background-agent-settings-slice';
+} from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
   import {
   selectBgDefaultModel,
   selectBgTypeOverrides,
   selectHasOverride,
-} from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
-  import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+} from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
+  import { selectAvailableModels } from '$store/renderer/slices/model/model-selectors';
 
   import {
   Dropdown,
@@ -26,7 +26,7 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const availableModels$ = selectAvailableModels();
   const defaultModel = selectBgDefaultModel();

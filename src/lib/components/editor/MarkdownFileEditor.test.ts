@@ -58,15 +58,15 @@ vi.mock('$lib/components/tiptap/BubbleMenu.svelte', () => ({
   default: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: { select: () => 'ws-1' },
 }));
 
-vi.mock('$lib/store/store', () => ({
+vi.mock('$store/renderer/store', () => ({
   store: { state: {}, dispatch: vi.fn() },
 }));
 
-vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
   openWorkspaceFile: vi.fn(),
 }));
 

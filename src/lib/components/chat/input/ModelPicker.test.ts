@@ -58,8 +58,8 @@ vi.mock('$features/agent/agent.client', () => ({
 
 vi.mock('$features/agent/browser', () => ({}));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -89,35 +89,35 @@ const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payl
   return action;
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', async () => {
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', async () => {
   const { readable } = await import('svelte/store');
   const selectAgentSession = vi.fn(() => readable(undefined));
   selectAgentSession.select = vi.fn(() => undefined);
   return { selectAgentSession };
 });
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', async () => {
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
   const { readable } = await import('svelte/store');
   const selectAgentSession = vi.fn(() => readable(undefined));
   selectAgentSession.select = vi.fn(() => undefined);
   return { selectAgentSession };
 });
 
-vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   updateSession: (agentId: string, fields: Record<string, unknown>) => ({
     type: 'agentSession/updateSession',
     payload: { agentId, fields },
   }),
 }));
 
-vi.mock('$lib/store/slices/model/model-utils', () => ({
+vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(() =>
     Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }]),
   ),
   getModelsForProviderForLoadingState: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => readable(mockModelState.selectedModel),
   selectAvailableModels: () => readable(mockModelState.availableModels),
   selectModelFallbackInfo: () => readable(null),
@@ -127,7 +127,7 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectAllProviderWarnings: () => providerWarnings$,
 }));
 
-vi.mock('$lib/store/slices/agent-availability/agent-availability-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
 }));
 
@@ -207,7 +207,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');
-vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectEnabledProviderIds: () => enabledProviderIds$,
 }));
@@ -234,7 +234,7 @@ vi.mock('svelte-sonner', () => ({
 import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
-} from '$lib/store/slices/model/model-utils';
+} from '$store/renderer/slices/model/model-utils';
 import ModelPicker from './ModelPicker.svelte';
 
 describe('ModelPicker locked state', () => {

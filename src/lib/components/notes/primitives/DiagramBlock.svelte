@@ -21,15 +21,15 @@
   dialog,
   invoke,
 } from '$lib/electron-bridge';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspace = selectActiveWorkspace();
 

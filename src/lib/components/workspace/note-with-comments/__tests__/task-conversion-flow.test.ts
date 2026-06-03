@@ -257,21 +257,21 @@ vi.mock('$lib/services/analytics', () => ({
   track: mockTrack,
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createStoreMockModule(mockSelectorStore);
 });
 
-vi.mock('$lib/store/configured-store', () => ({
+vi.mock('$store/renderer/configured-store', () => ({
   store: mockSelectorStore,
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => constantReadable('ws-1'),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => currentNoteReadable, {
     select: (_state: any, _workspaceId: string, noteId: string) => getNoteById(noteId),
   }),
@@ -284,7 +284,7 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNotesVersion: () => notesVersionReadable,
 }));
 
-vi.mock('$lib/store/slices/comments/comments-selectors', () => ({
+vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectComments: Object.assign(() => constantReadable([]), {
     select: () => [],
   }),
@@ -293,7 +293,7 @@ vi.mock('$lib/store/slices/comments/comments-selectors', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/comments/comments-slice', () => ({
+vi.mock('$store/renderer/slices/comments/comments-slice', () => ({
   selectCommentAction: vi.fn((commentId: string) => ({
     type: 'comments/selectComment',
     payload: commentId,
@@ -307,18 +307,18 @@ vi.mock('$lib/store/slices/comments/comments-slice', () => ({
   })),
 }));
 
-vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectNoteFontStyle: () => constantReadable('sans'),
   selectSpellcheckEnabled: () => constantReadable(true),
 }));
 
-vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
   selectWorkspaceNavigationHistory: {
     select: () => ({ history: [], currentIndex: -1 }),
   },
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   restoreNoteVersion: vi.fn((workspaceId: string, noteId: string, versionId: string) => ({
     type: 'workspaceNotes/restoreNoteVersion',
     payload: { workspaceId, noteId, versionId },
@@ -341,7 +341,7 @@ vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
   })),
 }));
 
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectIsRawNoteViewEnabled: () => constantReadable(false),
 }));
 

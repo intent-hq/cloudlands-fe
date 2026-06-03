@@ -4,7 +4,7 @@ Purpose: current ownership map for change tracking, event persistence, file trac
 
 ## Architecture Overview
 
-Per `docs/STATE_MANAGEMENT.md`, Redux in `src/lib/store/` is the canonical home for shared or durable application state. Existing `.store.svelte.ts` files remain transitional adapters and migration targets toward Redux slices, selectors, and sagas.
+Per `docs/STATE_MANAGEMENT.md`, Redux in `src/store/renderer/` is the canonical home for shared or durable application state. Existing `.store.svelte.ts` files remain transitional adapters and migration targets toward Redux slices, selectors, and sagas.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
@@ -15,7 +15,7 @@ Per `docs/STATE_MANAGEMENT.md`, Redux in `src/lib/store/` is the canonical home 
                               │ selectors + render
 ┌─────────────────────────────────────────────────────────────────┐
 │ State Layer                                                     │
-│ Redux in src/lib/store/ is canonical for shared/durable state   │
+│ Redux in src/store/renderer/ is canonical for shared/durable state   │
 │ .store.svelte.ts files are transitional migration targets       │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
@@ -53,14 +53,14 @@ For IPC-driven updates, the ownership path is now: **Main Process → IPC → Sa
 
 ## State Ownership Rules
 
-- Put shared, durable, or workflow-driving state in Redux under `src/lib/store/`.
+- Put shared, durable, or workflow-driving state in Redux under `src/store/renderer/`.
 - Keep Svelte components focused on rendering, interaction, and minimal instance-local UI state.
 - Treat `.store.svelte.ts` files such as file tracking and line changes as transitional rather than the long-term state architecture.
 - Put cross-component async workflows and persistence logic in sagas or main-process services, not in component `$effect` chains.
 
 ## Redux Saga Domains
 
-The root saga registry in `src/lib/store/sagas.ts` now owns many responsibilities that previously lived in components. Components should render state and dispatch user intent; sagas should own IPC listeners, workflow coordination, and persistence.
+The root saga registry in `src/store/renderer/sagas.ts` now owns many responsibilities that previously lived in components. Components should render state and dispatch user intent; sagas should own IPC listeners, workflow coordination, and persistence.
 
 | Domain | Ownership |
 | --- | --- |

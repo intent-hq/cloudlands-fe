@@ -3,9 +3,9 @@
   import {
   selectIsNoteMonospace,
   selectNoteFontStyleLabel,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { cycleNoteFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { cycleNoteFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const noteFontStyleLabel = selectNoteFontStyleLabel();

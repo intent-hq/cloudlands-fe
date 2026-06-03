@@ -20,8 +20,8 @@
   selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerLastSelectedRepo,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRepoSelection } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
   const logger = createLogger('ProjectPickerMessage');
 

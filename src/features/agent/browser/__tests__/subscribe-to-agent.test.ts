@@ -21,14 +21,14 @@ import {
   agentSessionReducer,
   upsertSession,
   renameSession,
-} from '$lib/store/slices/agent-session/agent-session-slice';
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 
 const { storeRef } = vi.hoisted(() => ({
   storeRef: { current: null as Store | null },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
       listener(getter());

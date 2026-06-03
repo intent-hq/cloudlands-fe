@@ -10,26 +10,26 @@ import { handleLink } from '$features/navigation/link-handler';
 import {
   selectCurrentStagedWorkingChanges,
   selectCurrentUnstagedWorkingChanges,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
 import {
   selectAllNotes,
   selectNotesLoading,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-import { initializeNotes } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 import {
   stageByPathRequested,
   unstageByPathRequested,
   revertChangeRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
 
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
+import { selectWorkspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
 import type { Note, Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 export interface UseSidebarStateOptions {
   workspace: Workspace | null;

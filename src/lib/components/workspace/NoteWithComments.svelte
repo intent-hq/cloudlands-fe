@@ -60,12 +60,12 @@
   import { TextSelection } from '@tiptap/pm/state';
 
 
-  import { selectComments } from '$lib/store/slices/comments/comments-selectors';
+  import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
   import {
   selectCommentAction,
   updateCommentAction,
   clearCommentsAction,
-} from '$lib/store/slices/comments/comments-slice';
+} from '$store/renderer/slices/comments/comments-slice';
 
   import { createEditorConfig } from '$lib/utils/editor-config';
 
@@ -77,11 +77,11 @@
   restoreNoteVersion,
   updateNoteContent,
   clearNewlyCreatedNoteId,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
   selectNoteById,
   selectNewlyCreatedNoteId,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   processMarkdownToHTML,
   processHTMLToMarkdown,
@@ -92,23 +92,23 @@
   AGENT_ASSOCIATIONS_REMOVED_EVENT,
   pruneTaskAgentAssociationsForNote,
   TASK_ASSOCIATION_CHANGED_EVENT,
-} from '$lib/store/slices/task-agent-associations/task-agent-associations-slice';
-  import { selectAssociationsForNote } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
-  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+} from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+  import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
+  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
 
   import { invoke } from '$lib/electron-bridge';
   import {
   selectNoteFontStyle,
   selectSpellcheckEnabled,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
-  import { selectWorkspaceNavigationHistory } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
-  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
+  import { selectWorkspaceNavigationHistory } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
   import { track } from '$lib/services/analytics';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();

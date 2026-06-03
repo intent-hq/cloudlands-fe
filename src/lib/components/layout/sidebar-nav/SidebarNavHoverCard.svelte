@@ -10,7 +10,7 @@
    */
 
   import { tick } from 'svelte';
-  import type { SidebarNavItem } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+  import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import NewWorkspaceCard from './cards/NewWorkspaceCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -24,7 +24,7 @@
   selectExpandedItem,
   selectIsCardPinned,
   selectContextMenuOpen,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   closeHoverCards,
   setHoveredItem,
@@ -32,8 +32,8 @@
   toggleCardPinned,
   setDeferredLeave,
   clearDeferredLeave,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeCard$ = selectActiveCard();
   const expandedItem$ = selectExpandedItem();

@@ -5,8 +5,8 @@
 } from '$lib/utils/hash';
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
-  import { selectAgentIsThinking } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
+  import { selectAgentIsThinking } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   interface Props {
     agentId?: string;

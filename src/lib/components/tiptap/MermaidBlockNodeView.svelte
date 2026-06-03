@@ -14,7 +14,7 @@
   tick,
   onMount,
 } from 'svelte';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
 
   // TipTap NodeViewProps

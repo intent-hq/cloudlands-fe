@@ -66,7 +66,7 @@ const {
   };
 });
 
-vi.mock('$lib/store/store', () => ({ store: appStore }));
+vi.mock('$store/renderer/store', () => ({ store: appStore }));
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
@@ -75,15 +75,15 @@ vi.mock('$lib/utils/file-type-icons', () => ({ getFileTypeIconSvg: () => '' }));
 vi.mock('../VirtualizedFileTree.svelte', async () => ({
   default: (await import('../../chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
-vi.mock('$lib/store/slices/git/git-slice', () => ({ loadGitStatus: loadGitStatusMock }));
-vi.mock('$lib/store/slices/git/git-selectors', () => ({
+vi.mock('$store/renderer/slices/git/git-slice', () => ({ loadGitStatus: loadGitStatusMock }));
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitStatus: { select: vi.fn(() => null) },
 }));
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentStagedWorkingChanges: () => createReadable([]),
   selectCurrentUnstagedWorkingChanges: () => createReadable([]),
 }));
-vi.mock('$lib/store/slices/file-explorer/file-explorer-slice', () => ({
+vi.mock('$store/renderer/slices/file-explorer/file-explorer-slice', () => ({
   initializeFileExplorer: initializeFileExplorerMock,
   toggleDirectoryRequested: vi.fn(),
   removeExpandedPath: vi.fn(),
@@ -92,7 +92,7 @@ vi.mock('$lib/store/slices/file-explorer/file-explorer-slice', () => ({
   clearExpandedPathsExceptRoot: vi.fn(),
   syncGitStatusFromStoresRequested: vi.fn(),
 }));
-vi.mock('$lib/store/slices/file-explorer/file-explorer-selectors', () => ({
+vi.mock('$store/renderer/slices/file-explorer/file-explorer-selectors', () => ({
   selectFileExplorerRootNode: () => createReadable(null),
   selectFileExplorerIsLoading: () => createReadable(false),
   selectFileExplorerIsInitialized: () => createReadable(true),

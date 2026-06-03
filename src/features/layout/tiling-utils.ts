@@ -5,7 +5,7 @@
  * Used for applying presets that tile multiple items (agents, files, etc.)
  */
 
-import type { PanelLayoutNode } from '$lib/store/slices/panel-layout/panel-layout-types';
+import type { PanelLayoutNode } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 /**
  * Tiling configuration based on container dimensions

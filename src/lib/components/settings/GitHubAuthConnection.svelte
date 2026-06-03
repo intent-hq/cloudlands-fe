@@ -3,13 +3,13 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   import {
   initializeGitHubAuth,
   startGitHubAuth,
   logoutGitHub,
   checkGitHubAuthStatus,
-} from '$lib/store/slices/github-auth/github-auth-slice';
+} from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
@@ -17,7 +17,7 @@
   selectGitHubAuthUser,
   selectGitHubAuthError,
   selectGitHubAuthRequiresAugmentAuth,
-} from '$lib/store/slices/github-auth/github-auth-selectors';
+} from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */

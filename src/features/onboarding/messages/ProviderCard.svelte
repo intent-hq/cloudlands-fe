@@ -18,9 +18,9 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
 
-  import { selectProviderLoadingMap } from '$lib/store/slices/agent-availability/agent-availability-selectors';
-  import { checkSingleProviderRequested } from '$lib/store/slices/agent-availability/agent-availability-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const providerLoadingMap$ = selectProviderLoadingMap();
 

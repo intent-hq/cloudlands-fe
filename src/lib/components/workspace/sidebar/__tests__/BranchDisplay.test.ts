@@ -31,8 +31,8 @@ const mocks = vi.hoisted(() => {
   return { dispatch, workspaceEntity, selector };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -40,7 +40,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -52,12 +52,12 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((...args: unknown[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
 const mockUpdate = vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mockUpdate },
 }));
 

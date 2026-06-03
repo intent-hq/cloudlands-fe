@@ -5,14 +5,14 @@
 import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
-import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
-import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
-import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const APP_NAME = 'Intent';
 

@@ -34,9 +34,9 @@ import {
   replaceMessages,
   setAgentStreaming,
   upsertSession,
-} from '$lib/store/slices/agent-session/agent-session-slice';
-import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
-import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
 import {
   getDefaultModelForProvider,
@@ -45,7 +45,7 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = new Logger('UnifiedAgentFactory');
 
@@ -110,7 +110,7 @@ export type { UnifiedAgentConfig,
   CreateAgentResult } from '$shared/types/agent.types';
 import type { UnifiedAgentConfig,
   CreateAgentResult } from '$shared/types/agent.types';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
  * Normalized agent configuration with guaranteed name

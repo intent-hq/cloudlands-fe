@@ -47,14 +47,14 @@
   type AgentChangeGroup,
 } from './types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   import type { Workspace } from '$shared/types';
   import StartNewWorkspaceSection from './StartNewWorkspaceSection.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

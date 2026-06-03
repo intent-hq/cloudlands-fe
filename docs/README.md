@@ -53,7 +53,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 
 ### Technical Guides
-- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation; active Redux architecture rules live in the skills under `../.agents/skills/svelte-redux-toolkit/` and migration rules under `../.agents/skills/migrate-to-svelte-redux-toolkit/`
+- **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation; active Redux architecture rules live in the skills under `../.agents/skills/ag-redux-toolkit/`
 - **[ERROR_HANDLING_SYSTEM.md](./ERROR_HANDLING_SYSTEM.md)** - Error handling patterns
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
 

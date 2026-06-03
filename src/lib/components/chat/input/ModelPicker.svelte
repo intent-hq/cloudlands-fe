@@ -7,7 +7,7 @@
 
   import { agentClient } from '$features/agent/agent.client';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
@@ -35,7 +35,7 @@
   selectIsLoadingModels,
   selectLoadError,
   selectAllProviderWarnings,
-} from '$lib/store/slices/model/model-selectors';
+} from '$store/renderer/slices/model/model-selectors';
   import {
   clearModelFallbackInfo,
   requestHydrateModelFallbackInfo,
@@ -44,17 +44,17 @@
   setModelFallbackInfo,
   setModelPickerGroupCollapsed,
   setWorkspaceModel,
-} from '$lib/store/slices/model/model-slice';
-  import type { ModelFallbackInfo } from '$lib/store/slices/model/model-types';
-  import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
+} from '$store/renderer/slices/model/model-slice';
+  import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
+  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   selectActiveProviderId,
   selectEnabledProviderIds,
-} from '$lib/store/slices/provider-settings/provider-settings-selectors';
+} from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
-} from '$lib/store/slices/model/model-utils';
+} from '$store/renderer/slices/model/model-utils';
 
   import {
   ACP_PROVIDERS,
@@ -167,7 +167,7 @@
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
   >(null);
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 

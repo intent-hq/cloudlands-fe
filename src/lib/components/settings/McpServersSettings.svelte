@@ -29,9 +29,9 @@
   import { toast } from '$lib/components/ui/toast';
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   import {
   selectMcpServersWithStatus,
   selectMcpLoading,
@@ -39,7 +39,7 @@
   selectMcpEnabled,
   selectMcpServers,
   selectMcpLastImportedCount,
-} from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
+} from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import {
   loadServers,
   toggleEnabled,
@@ -50,7 +50,7 @@
   importFromJson,
   testServerConnection,
   restartServer,
-} from '$lib/store/slices/mcp-settings/mcp-settings-slice';
+} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
   const servers$ = selectMcpServersWithStatus();

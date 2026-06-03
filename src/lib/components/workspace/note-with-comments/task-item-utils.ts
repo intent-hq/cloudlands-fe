@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
+import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
 
 import type { LoggerLike } from './logger.types';
 

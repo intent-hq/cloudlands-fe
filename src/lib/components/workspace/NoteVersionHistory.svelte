@@ -6,9 +6,9 @@
   import Fa from 'svelte-fa';
   import { faRotateLeft } from '@fortawesome/free-solid-svg-icons';
 
-  import { fetchNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { selectNoteVersions } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { fetchNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { selectNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   let {
     workspace,

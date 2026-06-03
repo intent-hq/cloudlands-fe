@@ -26,10 +26,10 @@
   import { goto } from '$app/navigation';
   import { invoke } from '$lib/electron-bridge';
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { resetWorkspaceState } from '$lib/store/slices/workspace/workspace-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { resetWorkspaceState } from '$store/renderer/slices/workspace/workspace-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   let flags: DebugFlags = $state(debugConfig.getAll());
   let isOpen = $state(false);

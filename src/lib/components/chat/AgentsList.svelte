@@ -27,8 +27,8 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     agents?: AgentSession[];

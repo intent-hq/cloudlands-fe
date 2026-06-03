@@ -21,10 +21,10 @@ describe('retired chat service boundary', () => {
 
   it('keeps one-shot UI cleanup requests out of Redux boundaries', () => {
     const files = [
-      'src/lib/store/slices/chat-state/chat-state-types.ts',
-      'src/lib/store/slices/chat-state/chat-state-slice.ts',
-      'src/lib/store/slices/chat-state/chat-state-selectors.ts',
-      'src/lib/store/slices/chat-state/sagas/send-message-saga.ts',
+      'src/store/renderer/slices/chat-state/chat-state-types.ts',
+      'src/store/renderer/slices/chat-state/chat-state-slice.ts',
+      'src/store/renderer/slices/chat-state/chat-state-selectors.ts',
+      'src/store/renderer/slices/chat-state/sagas/send-message-saga.ts',
       'src/lib/components/chat/ChatPanel.svelte',
     ];
     const forbidden = [

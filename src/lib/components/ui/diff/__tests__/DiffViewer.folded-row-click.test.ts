@@ -31,11 +31,11 @@ const testState = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectCodeFontFamilyCSS: () => testState.createReadable('monospace'),
 }));
 
-vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
+vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
   selectIsDarkTheme: () => testState.createReadable(false),
 }));
 

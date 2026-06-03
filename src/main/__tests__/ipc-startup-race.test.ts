@@ -36,11 +36,11 @@ const SRC_ROOT = path.resolve(__dirname, '..', '..');
 /**
  * Channels the renderer invokes during startup (init sagas, layout mounts,
  * store initialization). Gathered by auditing:
- * - src/lib/store/slices/specialists/sagas/init-saga.ts
- * - src/lib/store/slices/permission/sagas/ipc-saga.ts
+ * - src/store/renderer/slices/specialists/sagas/init-saga.ts
+ * - src/store/renderer/slices/permission/sagas/ipc-saga.ts
  * - src/lib/services/promotional-banner.ts (called from PromotionalBanner.svelte)
- * - src/lib/store/slices/auto-update/sagas/auto-update-saga.ts
- * - src/lib/store/slices/workspace-settings/sagas/init-saga.ts
+ * - src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts
+ * - src/store/renderer/slices/workspace-settings/sagas/init-saga.ts
  */
 const RENDERER_STARTUP_CHANNELS = [
   // Specialists init saga — called immediately on store init

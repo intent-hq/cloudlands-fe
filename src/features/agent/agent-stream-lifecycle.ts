@@ -29,14 +29,14 @@ import {
   agentStreamResetStreamingMessagesRequested,
   agentStreamUpdateReceived,
   restoreAgentSessionRequested,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
   setAgentStreaming,
   upsertSession,
-} from '$lib/store/slices/agent-session/agent-session-slice';
-import { streamStatusReceived } from '$lib/store/slices/chat-state/chat-state-slice';
-import type { StatusEvent } from '$lib/store/slices/chat-state/chat-state-types';
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { streamStatusReceived } from '$store/renderer/slices/chat-state/chat-state-slice';
+import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
   errorRecovery,
   DEFAULT_STRATEGIES,
@@ -57,8 +57,8 @@ import {
   eventCollector,
   AgentEventType,
 } from '../observability/event-collector-client';
-import { workspaceMetrics } from '$lib/store/slices/workspace/utils/workspace-metrics';
-import { store as appStore } from '$lib/store/store';
+import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('AgentStreamLifecycle');
 

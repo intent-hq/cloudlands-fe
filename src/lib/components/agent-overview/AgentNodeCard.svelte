@@ -12,9 +12,9 @@
   import {
   selectSpecialistName,
   selectSpecialists,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     node: AgentNode;

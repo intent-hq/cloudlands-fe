@@ -9,9 +9,9 @@
 
 import type { PanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import type { ClientLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { createAgentFromConfigRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 export interface AILayoutTabConfig {
   type: string;

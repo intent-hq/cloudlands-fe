@@ -25,12 +25,12 @@ import {
   updateCommentAction,
   removeCommentAction,
   loadCommentsAction,
-} from '$lib/store/slices/comments/comments-slice';
+} from '$store/renderer/slices/comments/comments-slice';
 import {
   selectComments,
   selectCommentById,
-} from '$lib/store/slices/comments/comments-selectors';
-import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/comments/comments-selectors';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('CommentManagerV2');
 

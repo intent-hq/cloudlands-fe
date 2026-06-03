@@ -6,7 +6,7 @@
  */
 
 import { untrack } from 'svelte';
-import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -15,20 +15,20 @@ import { track } from '$lib/services/analytics';
 import {
   selectInitialAgentConfig,
   selectInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-import { setInitialAgentId } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectActiveWorkspace,
   selectWorkspaceById,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   setActiveWorkspaceId,
   setWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
 
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('workspace-loader');
 

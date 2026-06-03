@@ -18,9 +18,9 @@
   processHTMLToMarkdown,
 } from '$lib/utils/markdown-processor';
 
-  import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
-  import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
+  import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 

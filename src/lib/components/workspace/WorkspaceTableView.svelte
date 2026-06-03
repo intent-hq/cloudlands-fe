@@ -1,12 +1,12 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectUnreadAgentIdsByWorkspace } from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+  import { selectUnreadAgentIdsByWorkspace } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
   selectAgentSession,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -28,7 +28,7 @@
   import WorkspaceTableGroupHeader from './WorkspaceTableGroupHeader.svelte';
   import WorkspaceTableOlderToggle from './WorkspaceTableOlderToggle.svelte';
   import WorkspaceTableRow from './WorkspaceTableRow.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   // Safe non-deferred transition functions replacing crossfade.
   //

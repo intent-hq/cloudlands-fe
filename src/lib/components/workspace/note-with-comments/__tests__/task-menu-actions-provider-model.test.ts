@@ -34,11 +34,11 @@ vi.mock('$lib/utils/notes-ipc', () => ({
   notesIpc: notesIpcMock,
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: { select: findByIdMock },
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => {
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
   return {
     ...original,
@@ -57,8 +57,8 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
   buildTaskNoteContent: vi.fn(() => 'task note content'),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => appStoreFactoryMock()?.getState?.() ?? {},
@@ -66,7 +66,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
 }));
 

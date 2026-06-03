@@ -35,12 +35,12 @@ import {
   executeBackgroundAgent,
   cancelExecution,
   resetExecutor,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-import type { AgentExecutorContext } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
-import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+import type { AgentExecutorContext } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
+import type { ExecutorStatus } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
 
 import type { Workspace } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 export interface UseBackgroundAgentOptions {
   autoExecute?: boolean; // Execute immediately when workspace is available

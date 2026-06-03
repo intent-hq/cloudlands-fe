@@ -5,11 +5,11 @@
   import {
   selectIsReadyToInstall,
   selectAutoUpdateStatus,
-} from '$lib/store/slices/auto-update/auto-update-selectors';
+} from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
   installUpdate,
   simulateSetState,
-} from '$lib/store/slices/auto-update/auto-update-slice';
+} from '$store/renderer/slices/auto-update/auto-update-slice';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -25,11 +25,11 @@
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { selectIsProviderActive } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { selectThemePreference } from '$lib/store/slices/theme/theme-selectors';
-  import { requestThemePreferenceChange } from '$lib/store/slices/theme/theme-slice';
-  import type { ThemePreference } from '$lib/store/slices/theme/theme-types';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
+  import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
+  import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   const workspaces = selectWorkspaceItems();
 
   import {
@@ -38,7 +38,7 @@
   setCodeFontFamily,
   setNoteFontStyle,
   type AgentFontStyle,
-} from '$lib/store/slices/user-preferences/user-preferences-slice';
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectAgentFontStyle,
   selectCodeFontFamily,
@@ -47,7 +47,7 @@
   selectCodeFontOptions,
   selectIsNoteMonospace,
   selectNoteFontStyle,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { Select } from '$lib/components/ui/select';
 
@@ -61,7 +61,7 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();

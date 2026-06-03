@@ -5,11 +5,11 @@
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
   cancelExecution,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import {
   ChangeStage,
   type TrackedChange,
@@ -19,22 +19,22 @@
   setSidebarCreatePRWhenReady,
   refreshAcceptChangesStatus,
   clearOlderCommits as ftClearOlderCommits,
-} from '$lib/store/slices/changes/changes-slice';
-  import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
+} from '$store/renderer/slices/changes/changes-slice';
+  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
   import { gitClient } from '$features/git/git.client';
   import {
   loadGitStatus,
   setGitOperationFlag,
-} from '$lib/store/slices/git/git-slice';
+} from '$store/renderer/slices/git/git-slice';
   import {
   selectGitAhead,
   selectGitBehind,
   selectPostMergeState,
   selectGitOperationFlags,
-} from '$lib/store/slices/git/git-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+} from '$store/renderer/slices/git/git-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
 
@@ -43,13 +43,13 @@
   import {
   selectSidebarCreatePRWhenReady,
   selectAcceptChangesState,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
 
 
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -92,9 +92,9 @@
   import { aggregatePRFiles } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

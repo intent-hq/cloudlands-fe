@@ -21,11 +21,11 @@
 } from '$lib/utils/markdown-processor';
 
 
-  import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
-  import { updateCommentAction } from '$lib/store/slices/comments/comments-slice';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
+  import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;

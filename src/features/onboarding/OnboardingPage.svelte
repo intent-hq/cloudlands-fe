@@ -23,13 +23,13 @@
   import {
   selectOnboardingStep,
   selectOnboardingState,
-} from '$lib/store/slices/onboarding/onboarding-selectors';
+} from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
   goToStep,
   setProjectConfig,
   setOnboardingWorkspaceId,
   resetOnboarding,
-} from '$lib/store/slices/onboarding/onboarding-slice';
+} from '$store/renderer/slices/onboarding/onboarding-slice';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -46,12 +46,12 @@
 
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
-  import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import {
   parseContextMentions,
@@ -64,20 +64,20 @@
   import {
   setInitialAgentConfig,
   setInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
 } from '$features/setup-scripts';
-  import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
-  import { setHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerHydrated } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
-  import { hydrateWorkspaceNavigation } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
@@ -89,7 +89,7 @@
   hasGitHubPRMention,
   findPRNeedingBranchFetch,
 } from '$features/onboarding/utils/detect-pr-branch';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   const logger = createLogger('onboarding-page');
 
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
@@ -749,7 +749,7 @@
       }
       try {
         const { workspaceStorageManager: wsm } =
-          await import('$lib/store/slices/workspace/utils/workspace-storage-manager');
+          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
         wsm.clearState(workspace.id);
       } catch {
         /* ignore */

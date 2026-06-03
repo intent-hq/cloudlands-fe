@@ -9,15 +9,15 @@
   startGitHubAuth,
   cancelGitHubAuth,
   clearGitHubAuthError,
-} from '$lib/store/slices/github-auth/github-auth-slice';
+} from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
   selectGitHubAuthOauthUrl,
   selectGitHubAuthError,
   selectGitHubAuthRequiresAugmentAuth,
-} from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     open?: boolean;

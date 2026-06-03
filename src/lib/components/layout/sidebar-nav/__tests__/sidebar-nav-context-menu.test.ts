@@ -14,8 +14,8 @@ import {
   setHoveredItem,
   setExpandedItem,
   setCardPinned,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-import type { SidebarNavState } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import type { SidebarNavState } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
 
 describe('sidebar-nav context menu (Redux reducer)', () => {
   let state: SidebarNavState;

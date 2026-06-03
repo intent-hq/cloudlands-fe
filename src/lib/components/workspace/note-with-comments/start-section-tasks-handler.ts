@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
-import type { Store } from 'svelte-redux-toolkit/store';
+import type { Store } from 'ag-redux-toolkit/svelte-store';
 
-import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 import type { LoggerLike } from './logger.types';
 

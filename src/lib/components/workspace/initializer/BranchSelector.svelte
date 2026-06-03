@@ -10,8 +10,8 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { performanceMonitor } from '$lib/utils/performance';
 
-  import { setWorkspaceInitializerBranchForRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerBranchByRepo } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+  import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
   faCheck,
@@ -25,7 +25,7 @@
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
@@ -998,12 +998,12 @@
 
     try {
       const { initializeGitHubAuth, startGitHubAuth } =
-        await import('$lib/store/slices/github-auth/github-auth-slice');
+        await import('$store/renderer/slices/github-auth/github-auth-slice');
       const {
         selectGitHubAuthIsAuthenticated,
         selectGitHubAuthIsAuthenticating,
         selectGitHubAuthError,
-      } = await import('$lib/store/slices/github-auth/github-auth-selectors');
+      } = await import('$store/renderer/slices/github-auth/github-auth-selectors');
 
       const store = appStore;
 

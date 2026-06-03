@@ -23,7 +23,7 @@
   import {
   incrementContextMenuOpen,
   decrementContextMenuOpen,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
 
@@ -31,19 +31,19 @@
   selectAgentIsResponding,
   selectAgentIsWaiting,
   selectAgentSession,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   requestArchiveWorkspace,
   requestDeleteWorkspace,
-} from '$lib/store/slices/workspace-operations/workspace-operations-slice';
-  import { selectWorkspaceActivePullRequest } from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
   import {
   isPRMergeable as checkPRMergeable,
   getPRTooltipContent,
 } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspace: Workspace;

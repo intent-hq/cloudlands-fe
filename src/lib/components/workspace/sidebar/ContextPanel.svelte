@@ -12,14 +12,14 @@
   initContextForWorkspace,
   addContextItem,
   removeContextItem,
-} from '$lib/store/slices/context/context-slice';
-  import { selectTopLevelContextItems } from '$lib/store/slices/context/context-selectors';
+} from '$store/renderer/slices/context/context-slice';
+  import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { handleLink } from '$features/navigation/link-handler';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Note } from '$shared/types';

@@ -1,10 +1,10 @@
 <script lang="ts">
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { selectEnabledProviders } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { toggleProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
+  import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
   import { ACP_PROVIDERS } from '$shared/config/provider-config';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const enabledProviders$ = selectEnabledProviders();
 

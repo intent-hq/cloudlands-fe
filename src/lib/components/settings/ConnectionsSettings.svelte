@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { store as appStore } from '$lib/store/store';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
-  import { initializeLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
-  import { initializeSentryAuth } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  import { store as appStore } from '$store/renderer/store';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { initializeLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import { initializeSentryAuth } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';

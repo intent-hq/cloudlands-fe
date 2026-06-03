@@ -1,18 +1,18 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   selectSentryIsAuthenticated,
   selectSentryOrganization,
   selectSentryIsConnecting,
   selectSentryError,
-} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+} from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
   initializeSentryAuth,
   connectSentry,
   logoutSentry,
   clearSentryError,
-} from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+} from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -21,7 +21,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */

@@ -211,14 +211,14 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     AutoUpdate: {
       getState: () => {
         try {
-          const { appStore } = require('$lib/store/store');
+          const { appStore } = require('$store/renderer/store');
           return appStore.state.autoUpdate;
         } catch { return null; }
       },
       simulateSetState: (partial: Record<string, unknown>) => {
         try {
-          const { appStore } = require('$lib/store/store');
-          const { simulateSetState } = require('$lib/store/slices/auto-update/auto-update-slice');
+          const { appStore } = require('$store/renderer/store');
+          const { simulateSetState } = require('$store/renderer/slices/auto-update/auto-update-slice');
           appStore.dispatch(simulateSetState(partial));
         } catch { /* ignore */ }
       },

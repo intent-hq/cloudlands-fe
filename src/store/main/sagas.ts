@@ -11,6 +11,8 @@
  */
 
 import type { Saga } from "redux-saga";
+
+import type { MainStore } from "./types";
 import {
   supervisedDelegationGroupSaga,
   supervisedMatchingSaga,
@@ -86,3 +88,9 @@ export const mainSagaEntries = mainSagaNames.map((name) => ({
   name,
   saga: mainSagas[name],
 }));
+
+export function startAllMainSagas(
+  store: MainStore,
+): Array<() => void> {
+  return mainSagaEntries.map(({ saga }) => store.runSaga(saga));
+}

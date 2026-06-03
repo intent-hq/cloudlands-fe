@@ -40,7 +40,7 @@ The codebase follows clean architecture principles with consolidated backend:
 - **[EVENT_SYSTEM](./docs/EVENT_SYSTEM.md)** - Unified event system architecture
 - **[STATE_MANAGEMENT](./docs/STATE_MANAGEMENT.md)** - State management architecture and Redux migration notes
 
-Per [`docs/STATE_MANAGEMENT.md`](./docs/STATE_MANAGEMENT.md), Redux in `src/lib/store/` is the canonical home for shared or durable app state. Existing `.store.svelte.ts` modules remain transitional adapters during the migration.
+Per [`docs/STATE_MANAGEMENT.md`](./docs/STATE_MANAGEMENT.md), Redux in `src/store/renderer/` is the canonical home for shared or durable app state. Existing `.store.svelte.ts` modules remain transitional adapters during the migration.
 
 ### Technical Guides
 

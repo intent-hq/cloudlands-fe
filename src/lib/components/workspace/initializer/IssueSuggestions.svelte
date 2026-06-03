@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
-  import type { SentryIssueResult } from '$lib/store/slices/sentry-auth/sentry-auth-types';
+  import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
 
   const preloadLogger = createLogger('IssueSuggestions:preload');
@@ -214,23 +214,23 @@
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
-} from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { startGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
-  import { startLinearAuth } from '$lib/store/slices/linear-auth/linear-auth-slice';
-  import { selectLinearIsAuthenticating } from '$lib/store/slices/linear-auth/linear-auth-selectors';
+} from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { startGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import { selectLinearIsAuthenticating } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
 
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
-  import { connectSentry } from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+  import { connectSentry } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
   import {
   selectSentryIsConnecting,
   selectSentryError,
-} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+} from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import Header from '$lib/components/ui/Header.svelte';
 
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ContextPicker');
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();

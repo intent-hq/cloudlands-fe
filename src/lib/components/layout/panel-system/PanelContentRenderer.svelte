@@ -9,7 +9,7 @@
    * Tab types are registered in: src/features/layout/tab-types/register-all.ts
    */
 
-  import type { PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
 
   interface Props {

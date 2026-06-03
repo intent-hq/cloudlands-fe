@@ -1,47 +1,55 @@
 /**
  * Main-process Redux store initialization.
  *
- * Creates the Redux store with saga middleware, store-guard, and logger,
+ * Initializes the configured StreamingStore with store-guard and logger,
  * initializes the store bridge, and starts registered main sagas.
  */
 
-import {
-  applyMiddleware,
-  combineReducers,
-  legacy_createStore as createStore,
-} from "redux";
-import type { Saga, Task } from "redux-saga";
+import { render } from "svelte/server";
+import type {
+  Component,
+  ComponentInternals,
+} from "svelte";
 
 import { Logger } from "../../shared/logger";
-import type { MainReduxStore, MainStoreState } from "./types";
+import type { MainStore } from "./types";
+import { store } from "./configured-store";
 import { reducers } from "./reducer";
-import {
-  middleware,
-  runSaga,
-  setSagaContext,
-} from "./middleware";
+import { middleware } from "./middleware";
 import {
   mainSagaEntries,
   mainSagaNames,
+  startAllMainSagas,
 } from "./sagas";
 import { initMainStoreBridge } from "./redux-store-bridge";
 
 const logger = new Logger("MainStore");
 
-const createRootReducer = () => combineReducers(reducers);
+type MainStoreInitComponentProps = {
+  run: () => void;
+};
 
-const createReadableMainStoreState = (store: MainReduxStore) => ({
-  subscribe(run: (state: MainStoreState) => void): () => void {
-    run(store.getState());
-    return store.subscribe(() => run(store.getState()));
-  },
-});
+const MainStoreInitComponent: Component<MainStoreInitComponentProps> = (
+  _renderer: ComponentInternals,
+  props: MainStoreInitComponentProps,
+) => {
+  props.run();
+  return {};
+};
 
-export type SagaRunner = <S extends Saga>(saga: S, ...args: Parameters<S>) => Task;
+const runInSvelteServerContext = (run: () => void): void => {
+  // StreamingStore.init() currently checks for an ambient Svelte context before
+  // creating its Redux runtime. The Electron main process has no component tree,
+  // so provide the smallest public server-render context and force the lazy render.
+  void render(MainStoreInitComponent, { props: { run } }).body;
+};
+
+export type SagaRunner = MainStore["runSaga"];
 
 export interface MainStoreContext {
-  store: MainReduxStore;
+  store: MainStore;
   runSaga: SagaRunner;
+  dispose: () => void;
 }
 
 /**
@@ -53,30 +61,13 @@ export interface MainStoreContext {
 export function initMainStore(): MainStoreContext {
   logger.info("Initializing main-process Redux store");
 
-  const rootReducer = createRootReducer();
-
-  const store = createStore(
-    rootReducer,
-    {} as MainStoreState,
-    applyMiddleware(...middleware),
-  ) as MainReduxStore;
+  let disposeConfiguredStore: (() => void) | undefined;
+  runInSvelteServerContext(() => {
+    disposeConfiguredStore = store.init();
+  });
 
   // Wire up the global bridge so services can access the store
   initMainStoreBridge(store);
-  setSagaContext({ readableStoreState: createReadableMainStoreState(store) });
-
-  // Track task handles for sagas started by initMainStore. This wrapper does
-  // not aggregate saga lifetimes; each runSaga call below starts an independent
-  // registry entry.
-  const tasksStarted: Task[] = [];
-  const runSagaSafely: SagaRunner = <S extends Saga>(
-    saga: S,
-    ...args: Parameters<S>
-  ) => {
-    const task = runSaga(saga, ...args);
-    tasksStarted.push(task);
-    return task;
-  };
 
   // Start each registered static zero-argument saga independently from the
   // registry. Dynamic/runtime-argument worker forks stay inside the owning
@@ -85,9 +76,7 @@ export function initMainStore(): MainStoreContext {
     sagaCount: mainSagaEntries.length,
     sagaNames: mainSagaNames,
   });
-  for (const { saga } of mainSagaEntries) {
-    runSagaSafely(saga);
-  }
+  const stopMainSagas = startAllMainSagas(store);
 
   logger.info("Main-process Redux store initialized", {
     reducerCount: Object.keys(reducers).length,
@@ -95,5 +84,14 @@ export function initMainStore(): MainStoreContext {
     sagaCount: mainSagaEntries.length,
   });
 
-  return { store, runSaga: runSagaSafely };
+  return {
+    store,
+    runSaga: store.runSaga.bind(store),
+    dispose: () => {
+      for (const stopMainSaga of stopMainSagas) {
+        stopMainSaga();
+      }
+      disposeConfiguredStore?.();
+    },
+  };
 }

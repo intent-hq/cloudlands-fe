@@ -20,21 +20,21 @@
   import {
   openTab,
   openTabInAdjacentOrSplit,
-} from '$lib/store/slices/panel-layout/panel-layout-slice';
-  import { selectFocusedPanelId } from '$lib/store/slices/panel-layout/panel-layout-selectors';
-  import { requestPanelFocus } from '$lib/store/slices/app-layout/app-layout-slice';
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { requestPanelFocus } from '$store/renderer/slices/app-layout/app-layout-slice';
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   selectLineWrapping,
   selectFoldUnchanged,
   selectDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   toggleLineWrapping,
   toggleFoldUnchanged,
   toggleDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { patchToContents } from '$lib/utils/diff-utils';
   import { Button } from '$lib/components/ui/button';
@@ -47,7 +47,7 @@
   faTextWidth,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();

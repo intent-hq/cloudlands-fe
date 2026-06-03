@@ -16,7 +16,7 @@
   import type { ContextProvider, ContextItemType } from '$features/context/types';
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
   const activeWorkspaceId = selectActiveWorkspaceId();

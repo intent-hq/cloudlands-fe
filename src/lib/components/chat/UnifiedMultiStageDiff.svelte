@@ -13,14 +13,14 @@
   ChangeStage,
   type TrackedChange,
 } from '$features/file-tracking/types';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { ChangePart } from './types';
   import {
   mergeChangeParts,
   buildContentFromMergedHunks,
 } from './unified-diff-merger';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
-  import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 

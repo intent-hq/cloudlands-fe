@@ -23,12 +23,12 @@
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectAgentMessageById } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -161,7 +161,7 @@
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
-  // (top of <script>) per src/lib/store/AGENTS.md §5. The selector short-circuits
+  // (top of <script>) per src/store/renderer/AGENTS.md §5. The selector short-circuits
   // to `undefined` when either id is empty, so subscribing unconditionally with
   // empty-string fallbacks is safe and avoids a conditional-store gotcha with
   // Svelte's `$store` auto-subscription.

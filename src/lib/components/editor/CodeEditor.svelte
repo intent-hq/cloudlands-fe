@@ -30,10 +30,10 @@
   import {
   selectActiveWorkspace,
   selectWorkspaceById,
-} from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { selectIsFollowing } from '$lib/store/slices/agent-follow/agent-follow-selectors';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectIsFollowing } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
   createUniqueMonacoModelPath,

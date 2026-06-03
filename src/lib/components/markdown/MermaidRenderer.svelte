@@ -7,7 +7,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import mermaid from 'mermaid';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   const logger = createLogger('MermaidRenderer');
 

@@ -18,13 +18,13 @@
    */
 
   import { cn } from '$lib/utils';
-  import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
   setActiveHandleDrop,
   type HandleDropZoneType,
   type SerializableRect,
-} from '$lib/store/slices/tab-state/tab-state-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   /** Position relative to the split for container-level insertion */

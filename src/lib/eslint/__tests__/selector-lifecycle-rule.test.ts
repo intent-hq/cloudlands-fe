@@ -46,9 +46,9 @@ describe('selector-lifecycle ESLint rule', () => {
   it('allows top-level selector initialization and Store-first dispatch', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
-        import { saveThing } from '$lib/store/slices/example/example-slice';
-        import { store as appStore } from '$lib/store/store';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
+        import { saveThing } from '$store/renderer/slices/example/example-slice';
+        import { store as appStore } from '$store/renderer/store';
 
         const thing = selectThing();
 
@@ -67,7 +67,7 @@ describe('selector-lifecycle ESLint rule', () => {
   it('warns on nested selector calls', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
 
         function handleClick() {
           const thing = selectThing();
@@ -82,7 +82,7 @@ describe('selector-lifecycle ESLint rule', () => {
   it('warns on top-level module-script selector initialization', async () => {
     const messages = await lintSvelte(`
       <script context="module" lang="ts">
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
 
         const thing = selectThing();
       </script>
@@ -98,7 +98,7 @@ describe('selector-lifecycle ESLint rule', () => {
   get,
   writable,
 } from 'svelte/store';
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
 
         const plainStore = writable(1);
         const a = get(selectThing());
@@ -115,7 +115,7 @@ describe('selector-lifecycle ESLint rule', () => {
     const messages = await lintSvelte(`
       <script lang="ts">
         import { get } from 'svelte/store';
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
 
         function handleClick() {
           const thing = get((selectThing()));
@@ -130,7 +130,7 @@ describe('selector-lifecycle ESLint rule', () => {
   it('warns for callback-style props like onClose', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
       </script>
 
       <Dialog onClose={selectThing()} />
@@ -143,7 +143,7 @@ describe('selector-lifecycle ESLint rule', () => {
   it('does not warn for non-callback props like onboarding', async () => {
     const messages = await lintSvelte(`
       <script lang="ts">
-        import { selectThing } from '$lib/store/slices/example/example-selectors';
+        import { selectThing } from '$store/renderer/slices/example/example-selectors';
       </script>
 
       <Dialog onboarding={selectThing()} />

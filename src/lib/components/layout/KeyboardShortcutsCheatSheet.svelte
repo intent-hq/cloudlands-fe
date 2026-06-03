@@ -22,9 +22,9 @@
   import {
   selectIsCheatSheetOpen,
   selectCheatSheetContext,
-} from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
-  import { closeCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+  import { closeCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const isOpen = selectIsCheatSheetOpen();

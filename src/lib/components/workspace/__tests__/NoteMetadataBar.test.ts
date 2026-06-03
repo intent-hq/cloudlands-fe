@@ -41,8 +41,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -50,39 +50,39 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: Object.assign(() => mocks.readable(mocks.activeWorkspace), {
     select: () => mocks.activeWorkspace,
   }),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: () => mocks.readable(mocks.allNotes),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => mocks.readable(mocks.workspaceAgents),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: (_state: unknown, agentId: string) => mocks.agentsById.get(agentId) },
 }));
 
-vi.mock('$lib/store/slices/app-layout/app-layout-slice', () => ({
+vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
   openAgentTabRequested: vi.fn((workspaceId: string, options: unknown) => ({
     type: 'appLayout/openAgentTabRequested',
     payload: [workspaceId, options],
   })),
 }));
 
-vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
   openWorkspaceChatChanges: vi.fn((...payload: unknown[]) => ({
     type: 'workspaceNavigation/openWorkspaceChatChanges',
     payload,
   })),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   ensureAgentSessionLoaded: vi.fn((workspaceId: string, agentId: string) => ({
     type: 'workspaceAgents/ensureAgentSessionLoaded',
     payload: [workspaceId, agentId],

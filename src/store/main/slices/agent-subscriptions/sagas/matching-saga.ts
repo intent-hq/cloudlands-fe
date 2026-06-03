@@ -12,7 +12,6 @@ import {
   delay,
   fork,
   put,
-  select,
   take,
   takeEvery,
 } from "typed-redux-saga";
@@ -33,7 +32,7 @@ import {
 import {
   selectAgentQueueLength,
   selectAgentStatus,
-  selectAllSubscriptionsRaw,
+  selectAllSubscriptions,
   selectDelegationGroup,
   selectIsAgentDeleted,
   selectIsOneShotFired,
@@ -288,10 +287,7 @@ export function* handleMatchEvent(
 
   try {
 
-  const subscriptions: AgentSubscriptionRecord[] = yield* select(
-    selectAllSubscriptionsRaw,
-    wsId,
-  );
+  const subscriptions: AgentSubscriptionRecord[] = yield* selectAllSubscriptions.effect(wsId);
 
   if (subscriptions.length === 0) {
     if (isAgentLifecycle) {

@@ -7,7 +7,7 @@
   faPencil,
 } from '@fortawesome/free-solid-svg-icons';
 
-  import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
 
   import {
@@ -22,15 +22,15 @@
   selectSpecialistsFolderPath,
   selectEffectiveCodingAgent,
   selectFileSpecialists,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
   import {
   deleteFileSpecialist as deleteFileSpecialistAction,
   saveFileSpecialist,
-} from '$lib/store/slices/specialists/specialists-slice';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
+} from '$store/renderer/slices/specialists/specialists-slice';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
@@ -43,7 +43,7 @@
   import { toast } from 'svelte-sonner';
   import { parseCompoundModelId } from '$shared/config/provider-config';
   import { generateUniqueSpecialistId } from '$shared/specialist-file-types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     activeView: AIBehaviorView;

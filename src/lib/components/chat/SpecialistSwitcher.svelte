@@ -4,8 +4,8 @@
   import {
   selectSpecialists,
   filterSpecialistsByGitHubAuth,
-} from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */

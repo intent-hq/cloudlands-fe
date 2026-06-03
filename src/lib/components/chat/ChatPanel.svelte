@@ -44,7 +44,7 @@
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import type { AgentMessage } from '$shared/types';
-  import { saveAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   agentSessionEditAndRegenerateRequested,
   agentSessionForkSessionRequested,
@@ -53,35 +53,35 @@
   agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
   updateSession as updateAgentSessionFields,
-} from '$lib/store/slices/agent-session/agent-session-slice';
+} from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
   selectAgentSession,
   selectAgentIsResponding,
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentMessages,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { selectAgentQueueMessages } from '$lib/store/slices/agent-queue/agent-queue-selectors';
-  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectAllTabs as selectPanelLayoutAllTabs } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
   setWorkspace as setMultiPanelWorkspace,
   updatePanels as updateMultiPanels,
   setSelection as setMultiPanelSelection,
   clearSelection as clearMultiPanelSelection,
   type PanelContextItem,
-} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
   selectCheckedPanels,
   selectPanels,
   selectCheckedSelections,
-} from '$lib/store/slices/multi-panel-context/multi-panel-context-selectors';
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
 
-  import { selectWorkspaceSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';
+  import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
-  import { setChatDraft } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
   sendMessage,
   initializeChatRequested,
@@ -89,7 +89,7 @@
   chatRebindStarted,
   chatRebindEnded,
   chatTrackedWorkspaceSet,
-} from '$lib/store/slices/chat-state/chat-state-slice';
+} from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
   selectChatIsStalled,
@@ -98,12 +98,12 @@
   selectChatReceivedFirstChunk,
   selectChatStatusEvents,
   selectChatStreamingStartTime,
-} from '$lib/store/slices/chat-state/chat-state-selectors';
-  import { selectChatDraft } from '$lib/store/slices/transient-ui/transient-ui-selectors';
-  import { selectWorkspaceNavigationMainPanel } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
 
-  import { selectTasksForAgent } from '$lib/store/slices/task-agent-associations/task-agent-associations-selectors';
-  import type { TaskAgentAssociation } from '$lib/store/slices/task-agent-associations/task-agent-associations-types';
+  import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
+  import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, AgentMetadata } from '$shared/types';
   import {
   extractAllContent,
@@ -140,7 +140,7 @@
   slide,
 } from 'svelte/transition';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
-  import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
@@ -157,12 +157,12 @@
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
-  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
-  import { selectIsAgentMonospace } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
+  import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
   markAgentAsViewed,
   clearCurrentlyViewedAgent,
-} from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import AuroraBackground from './AuroraBackground.svelte';
   import {
   invoke,
@@ -172,7 +172,7 @@
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
   selectEffectiveModel,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
@@ -182,7 +182,7 @@
   shouldShowPendingAssistantStatus,
 } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ChatPanel');
 

@@ -16,18 +16,18 @@ import {
   clearExpandedPathsExceptRoot,
   setChildrenAtPathAction,
   clearFileExplorerForWorkspace,
-} from '$lib/store/slices/file-explorer/file-explorer-slice';
+} from '$store/renderer/slices/file-explorer/file-explorer-slice';
 import {
   selectFileExplorerNodeMap,
   selectFileExplorerRootNode,
-} from '$lib/store/slices/file-explorer/file-explorer-selectors';
+} from '$store/renderer/slices/file-explorer/file-explorer-selectors';
 import type { FileNode } from '$shared/types';
 import { filterFileExplorerChildPaths } from '../file-explorer-sidebar-utils';
 import {
   shouldHide,
   checkGitignored,
   sortNodes,
-} from '$lib/store/slices/file-explorer/file-explorer-utils';
+} from '$store/renderer/slices/file-explorer/file-explorer-utils';
 
 describe('FileExplorerReducer', () => {
   const wsId = 'test-ws';

@@ -125,7 +125,7 @@ class WorkspaceFlowIntegrationTest {
       {
         name: 'Agent Session Redux State',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+          const filePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
           const content = await fs.readFile(filePath, 'utf-8');
 
           return content.includes('upsertSession') &&

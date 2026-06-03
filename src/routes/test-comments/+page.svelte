@@ -10,15 +10,15 @@
   import {
   selectComments,
   selectSelectedComment,
-} from '$lib/store/slices/comments/comments-selectors';
+} from '$store/renderer/slices/comments/comments-selectors';
   import {
   selectCommentAction,
   loadCommentsAction,
   clearCommentsAction,
-} from '$lib/store/slices/comments/comments-slice';
+} from '$store/renderer/slices/comments/comments-slice';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('TestComments');
 

@@ -58,8 +58,8 @@ vi.mock('$shared/services/unified-id.service', () => ({
   },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -67,7 +67,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: { select: vi.fn(() => 'test-model') },
 }));
 

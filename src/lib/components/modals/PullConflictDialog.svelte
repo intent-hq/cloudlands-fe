@@ -18,8 +18,8 @@
   import {
   fetchEditors,
   type InstalledEditor,
-} from '$lib/store/slices/external-editors/external-editors-slice';
-  import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
+} from '$store/renderer/slices/external-editors/external-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -32,7 +32,7 @@
   import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('PullConflictDialog');
 

@@ -5,31 +5,31 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
 
-  import { loadKnownRepos } from '$lib/store/slices/known-repos/known-repos-slice';
+  import { loadKnownRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
   selectKnownRepos,
   selectKnownReposLoaded,
-} from '$lib/store/slices/known-repos/known-repos-selectors';
+} from '$store/renderer/slices/known-repos/known-repos-selectors';
   import {
   selectWorkspaceHasLoaded,
   selectWorkspaceItems,
   selectWorkspaceLoading,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   toggleGroupByRepo,
   toggleShowArchived,
-} from '$lib/store/slices/user-preferences/user-preferences-slice';
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectGroupByRepo,
   selectHasCompletedProviderSetup,
   selectShowArchived,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { clearHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-slice';
-  import { selectHomePageInitializerRequest } from '$lib/store/slices/deep-links/deep-links-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { clearHomePageInitializerRequest } from '$store/renderer/slices/deep-links/deep-links-slice';
+  import { selectHomePageInitializerRequest } from '$store/renderer/slices/deep-links/deep-links-selectors';
   import {
   selectNodeVersion,
   selectShowNodeWarning,
-} from '$lib/store/slices/system-status/system-status-selectors';
+} from '$store/renderer/slices/system-status/system-status-selectors';
   import {
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
@@ -48,7 +48,7 @@
   requestDeleteWorkspace,
   requestOpenWorkspace,
   requestUnarchiveWorkspace,
-} from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+} from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
   selectBulkDeleteWorkspaceCount,
   selectPendingBulkRepoKey,
@@ -59,7 +59,7 @@
   selectShowBulkDeleteWarningConfirm,
   selectShowDeleteWarning,
   selectShowRemoveRepoConfirm,
-} from '$lib/store/slices/workspace-operations/workspace-operations-selectors';
+} from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
   import WorkspaceTableView, {
@@ -78,7 +78,7 @@
   import { fly } from 'svelte/transition';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   // Feature flag: mimic empty state for testing (set to true to test empty state UI)
   const MIMIC_EMPTY_STATE = false;

@@ -9,7 +9,7 @@ import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getAvailableIdsFromResult } from '$shared/config/provider-config';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('ProviderAvailabilityClient');
 
@@ -98,7 +98,7 @@ export async function getProviderAvailability(
       );
 
       const { validateActiveProvider } = await import(
-        '$lib/store/slices/provider-settings/provider-settings-slice'
+        '$store/renderer/slices/provider-settings/provider-settings-slice'
       );
       appStore.dispatch(validateActiveProvider(availableIds));
     } catch (e) {

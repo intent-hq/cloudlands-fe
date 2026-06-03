@@ -2,7 +2,7 @@
  * Message Accumulator Selectors (Main Process)
  */
 
-import { createSelector } from "../../utils/create-selector";
+import { store } from "../../configured-store";
 import type { ContentBlock } from "../../../../shared/types";
 import type {
   AccumulatorStats,
@@ -14,11 +14,11 @@ import { EMPTY_STATS } from "./message-accumulator-types";
 // Individual accumulator
 // ---------------------------------------------------------------------------
 
-export const selectAccumulator = createSelector<[sessionId: string], SerializedAccumulatedMessage | undefined>(
+export const selectAccumulator = store.createSelector<[sessionId: string], SerializedAccumulatedMessage | undefined>(
   (state, sessionId) => state.messageAccumulator.accumulators[sessionId],
 );
 
-export const selectPartialContent = createSelector<[sessionId: string], { content: string; contentBlocks: ContentBlock[] }>(
+export const selectPartialContent = store.createSelector<[sessionId: string], { content: string; contentBlocks: ContentBlock[] }>(
   (state, sessionId) => {
     const acc = state.messageAccumulator.accumulators[sessionId];
     if (!acc) return { content: "", contentBlocks: [] };
@@ -58,15 +58,15 @@ export const selectPartialContent = createSelector<[sessionId: string], { conten
 // Collection queries
 // ---------------------------------------------------------------------------
 
-export const selectActiveSessionIds = createSelector<[], string[]>(
+export const selectActiveSessionIds = store.createSelector<[], string[]>(
   (state) => Object.keys(state.messageAccumulator.accumulators),
 );
 
-export const selectAccumulatorStats = createSelector<[], AccumulatorStats>(
+export const selectAccumulatorStats = store.createSelector<[], AccumulatorStats>(
   (state) => state.messageAccumulator.stats ?? EMPTY_STATS,
 );
 
-export const selectHasAccumulator = createSelector<[sessionId: string], boolean>(
+export const selectHasAccumulator = store.createSelector<[sessionId: string], boolean>(
   (state, sessionId) => sessionId in state.messageAccumulator.accumulators,
 );
 

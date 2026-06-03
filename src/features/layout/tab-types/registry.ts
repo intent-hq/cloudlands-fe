@@ -13,7 +13,7 @@
 
 import type { Component } from 'svelte';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-import type { PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 /**
  * Props that all tab type components must accept

@@ -6,8 +6,8 @@ import {
 
 
 import type { AgentSession } from '$shared/types';
-import { store as appStore } from '$lib/store/store';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { store as appStore } from '$store/renderer/store';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 type AgentIdAccessor = () => string | null | undefined;
 

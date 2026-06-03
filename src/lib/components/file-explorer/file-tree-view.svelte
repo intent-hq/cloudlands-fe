@@ -12,9 +12,9 @@
   import {
     selectCurrentStagedWorkingChanges,
     selectCurrentUnstagedWorkingChanges,
-  } from '$lib/store/slices/changes/changes-selectors';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { selectGitStatus } from '$lib/store/slices/git/git-selectors';
+  } from '$store/renderer/slices/changes/changes-selectors';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { selectGitStatus } from '$store/renderer/slices/git/git-selectors';
 
   import {
     initializeFileExplorer,
@@ -24,7 +24,7 @@
     expandAllRequested,
     clearExpandedPathsExceptRoot,
     syncGitStatusFromStoresRequested,
-  } from '$lib/store/slices/file-explorer/file-explorer-slice';
+  } from '$store/renderer/slices/file-explorer/file-explorer-slice';
   import {
     selectFileExplorerRootNode,
     selectFileExplorerIsLoading,
@@ -36,10 +36,10 @@
     selectFlattenedNodes,
     selectHasExpandedDirectories,
     selectShouldInitializeFileExplorerForWorkspace,
-  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
-  import { store as appStore } from '$lib/store/store';
-  import type { FlattenedFileNode } from '$lib/store/slices/file-explorer/file-explorer-types';
+  import { store as appStore } from '$store/renderer/store';
+  import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
 
   // Search result type from workspace:list-files
   interface SearchResult {

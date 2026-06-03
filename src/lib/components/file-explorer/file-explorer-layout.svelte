@@ -9,7 +9,7 @@
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
-  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
   faXmark,
   faFileAlt,

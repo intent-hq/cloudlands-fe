@@ -15,10 +15,10 @@ import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
 import {
   selectSpecialists,
   selectSpecialistById,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
 import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 // Cache for workspace repo paths to avoid repeated IPC calls
 const workspaceRepoPathCache = new Map<string, string>();
@@ -627,7 +627,7 @@ export class TerminalProvider implements Provider {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-      const { selectTerminals, selectTerminalDisplayName } = await import('$lib/store/slices/terminals/terminals-selectors');
+      const { selectTerminals, selectTerminalDisplayName } = await import('$store/renderer/slices/terminals/terminals-selectors');
       const store = appStore;
       const state = store.state;
 
@@ -706,7 +706,7 @@ export class ScriptProvider implements Provider {
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
-      const { selectScriptEntries } = await import('$lib/store/slices/scripts/scripts-selectors');
+      const { selectScriptEntries } = await import('$store/renderer/slices/scripts/scripts-selectors');
 
       if (!context.workspaceId) {
         return [];
@@ -815,7 +815,7 @@ export class AgentProvider implements Provider {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     try {
       const { selectAllWorkspaceAgents } = await import(
-        '$lib/store/slices/workspace-agents/workspace-agents-selectors'
+        '$store/renderer/slices/workspace-agents/workspace-agents-selectors'
       );
       const workspaceId = context.workspaceId;
       if (!workspaceId) {

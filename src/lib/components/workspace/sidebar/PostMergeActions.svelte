@@ -4,34 +4,34 @@
    * Shown when workspace commits have been merged to trunk.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import {
   setPostMergeState,
   setGitOperationFlag,
   loadGitStatus,
-} from '$lib/store/slices/git/git-slice';
+} from '$store/renderer/slices/git/git-slice';
   import {
   refreshAcceptChangesStatus,
   clearOlderCommits as ftClearOlderCommits,
   refreshRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
   import {
   selectPostMergeState,
   selectGitOperationFlags,
-} from '$lib/store/slices/git/git-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/git/git-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   loadWorkspacesRequested,
   setWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
 
 
 
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import type { PostMergeState } from '$lib/store/slices/git/git-types';
+  import type { PostMergeState } from '$store/renderer/slices/git/git-types';
   import {
   faRotateLeft,
   faRocket,
@@ -39,7 +39,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;
@@ -94,7 +94,7 @@
     }
 
     // Open the create workspace modal
-    const { setShowCreateModal } = await import('$lib/store/slices/sidebar-nav/sidebar-nav-slice');
+    const { setShowCreateModal } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
     appStore.dispatch(setShowCreateModal(true));
   }
 

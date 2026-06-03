@@ -36,7 +36,7 @@
   import {
   selectWorkspaceEvents,
   selectEventsLoading,
-} from '$lib/store/slices/workspace-events/workspace-events-selectors';
+} from '$store/renderer/slices/workspace-events/workspace-events-selectors';
 
   import {
   getActivityLabelParts,
@@ -47,7 +47,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   interface Props {
     workspaceId: string;

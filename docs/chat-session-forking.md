@@ -153,7 +153,7 @@ export interface AgentSession {
 
 #### 1.2 Add Fork Method (`src/features/agent/agent.service.ts`)
 
-> Transitional note: Per `docs/STATE_MANAGEMENT.md`, store-based shared-state patterns shown here are transitional; new shared state should use Redux slices in `src/lib/store/`.
+> Transitional note: Per `docs/STATE_MANAGEMENT.md`, store-based shared-state patterns shown here are transitional; new shared state should use Redux slices in `src/store/renderer/`.
 
 ```typescript
 async forkSession(

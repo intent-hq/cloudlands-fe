@@ -13,8 +13,8 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 
-  import { openWorkspaceCommitChangeset } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   export type CommitStatus =
     | { state: 'committing' }

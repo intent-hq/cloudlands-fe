@@ -24,10 +24,10 @@
   import LaunchFromSelectionDialog from './LaunchFromSelectionDialog.svelte';
   import { createAgentTypeId } from '$shared/types/agent.types';
 
-  import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

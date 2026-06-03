@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * NoteCodeChangesCard - A sleek,
   compact card showing code changes from agents
@@ -20,15 +20,15 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   AgentSession } from '$shared/types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
-  import { selectCurrentChanges } from '$lib/store/slices/changes/changes-selectors';
+  import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
   import {
   ChangeStage,
   type TrackedChange,
 } from '$features/file-tracking/types';
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   getFileChangesFromMessages,
   type ChatFileChange,
@@ -40,8 +40,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   openWorkspaceChatChanges,
   openWorkspaceDiff,
   type JsonValue,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteCodeChangesCard');
 

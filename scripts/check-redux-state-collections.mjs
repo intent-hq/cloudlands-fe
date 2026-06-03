@@ -4,14 +4,14 @@
 // Redux state may store arrays of primitive/scalar values and ID lists, but
 // entity/object lists must use Collection<T, K> from collection-utils instead.
 // This dependency-free scanner targets slice state type/interface declarations
-// and obvious object-array literals in slice initial state under src/lib/store/slices.
+// and obvious object-array literals in slice initial state under src/store/renderer/slices.
 
 import { readFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
 const ROOT = process.cwd();
-const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src/lib/store/slices');
+const SEARCH_DIR = resolve(ROOT, process.argv[2] ?? 'src/store/renderer/slices');
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -555,36 +555,36 @@ function baselineKey(relPath, violation) {
 const BASELINE = new Set([
   // Existing legacy state shapes kept out of the initial rollout. New violations
   // fail unless they are explicitly added here during a deliberate migration plan.
-  'src/lib/store/slices/agent-follow/agent-follow-types.ts::AgentFollowState.pendingChanges::PendingChange[]',
-  'src/lib/store/slices/agent-overview/agent-overview-types.ts::AgentOverviewWorkspaceState.events::InteractionEvent[]',
-  'src/lib/store/slices/browser/browser-types.ts::BrowserWorkspaceState.recentUrls::RecentUrl[]',
-  'src/lib/store/slices/browser/browser-types.ts::BrowserWorkspaceState.pendingZoomByTabId::BrowserZoomAction[]',
-  'src/lib/store/slices/changes/changes-types.ts::FileTrackingWorkspaceState.changes::TrackedChange[]',
-  'src/lib/store/slices/changes/changes-types.ts::FileTrackingWorkspaceState.transitions::StageTransition[]',
-  'src/lib/store/slices/changes/changes-types.ts::FileTrackingWorkspaceState.commits::CommitInfo[]',
-  'src/lib/store/slices/changes/changes-types.ts::FileTrackingWorkspaceState.olderCommits::CommitInfo[]',
-  'src/lib/store/slices/chat-state/chat-state-types.ts::ChatAgentState.statusEvents::StatusEvent[]',
-  'src/lib/store/slices/git/git-types.ts::GitWorkspaceState.diffs::DiffChunk[]',
-  'src/lib/store/slices/linear-auth/linear-auth-types.ts::LinearAuthSliceState.issues::LinearIssueResult[]',
-  'src/lib/store/slices/mcp-servers/mcp-servers-types.ts::McpServersState.servers::McpServerInfo[]',
-  'src/lib/store/slices/mcp-settings/mcp-settings-types.ts::McpSettingsState.servers::McpServerConfig[]',
-  'src/lib/store/slices/mcp-settings/mcp-settings-types.ts::McpSettingsState.toolsMap::McpTool[]',
-  'src/lib/store/slices/panel-layout/panel-layout-types.ts::PanelState.tabs::PanelTab[]',
-  'src/lib/store/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.recentlyClosed::RecentlyClosedTab[]',
-  'src/lib/store/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.layoutHistory::LayoutSnapshot[]',
-  'src/lib/store/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.focusHistory::FocusHistoryEntry[]',
-  'src/lib/store/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.savedSizesBeforeExpand::SavedExpandSizes[]',
-  'src/lib/store/slices/scripts/scripts-types.ts::ScriptsWorkspaceState.outputBuffers::ScriptOutputLine[]',
-  'src/lib/store/slices/sentry-auth/sentry-auth-types.ts::SentryAuthState.projects::SentryProject[]',
-  'src/lib/store/slices/sentry-auth/sentry-auth-types.ts::SentryAuthState.issues::SentryIssueResult[]',
-  'src/lib/store/slices/skills/skills-types.ts::SkillsWorkspaceState.skills::SkillInfo[]',
-  'src/lib/store/slices/specialists/specialists-slice.ts::SpecialistsState.bundledSpecialists::.Specialist[]',
-  'src/lib/store/slices/user-preferences/user-preferences-slice.ts::UserPreferencesState.activityLogPresets::ActivityLogPresetPreference[]',
-  'src/lib/store/slices/workspace-events/workspace-events-slice.ts::WorkspaceEventsWorkspaceState.events::WorkspaceEvent[]',
-  'src/lib/store/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationMainPanelState.chatChanges::JsonValue[]',
-  'src/lib/store/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationNavigationState.history::WorkspaceNavigationHistoryEntry[]',
-  'src/lib/store/slices/workspace-notes/workspace-notes-types.ts::NoteVersionsState.versions::NoteVersion[]',
-  'src/lib/store/slices/workspace-notes/workspace-notes-types.ts::ReadyTasksState.tasks::Note[]',
+  'src/store/renderer/slices/agent-follow/agent-follow-types.ts::AgentFollowState.pendingChanges::PendingChange[]',
+  'src/store/renderer/slices/agent-overview/agent-overview-types.ts::AgentOverviewWorkspaceState.events::InteractionEvent[]',
+  'src/store/renderer/slices/browser/browser-types.ts::BrowserWorkspaceState.recentUrls::RecentUrl[]',
+  'src/store/renderer/slices/browser/browser-types.ts::BrowserWorkspaceState.pendingZoomByTabId::BrowserZoomAction[]',
+  'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.changes::TrackedChange[]',
+  'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.transitions::StageTransition[]',
+  'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.commits::CommitInfo[]',
+  'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.olderCommits::CommitInfo[]',
+  'src/store/renderer/slices/chat-state/chat-state-types.ts::ChatAgentState.statusEvents::StatusEvent[]',
+  'src/store/renderer/slices/git/git-types.ts::GitWorkspaceState.diffs::DiffChunk[]',
+  'src/store/renderer/slices/linear-auth/linear-auth-types.ts::LinearAuthSliceState.issues::LinearIssueResult[]',
+  'src/store/renderer/slices/mcp-servers/mcp-servers-types.ts::McpServersState.servers::McpServerInfo[]',
+  'src/store/renderer/slices/mcp-settings/mcp-settings-types.ts::McpSettingsState.servers::McpServerConfig[]',
+  'src/store/renderer/slices/mcp-settings/mcp-settings-types.ts::McpSettingsState.toolsMap::McpTool[]',
+  'src/store/renderer/slices/panel-layout/panel-layout-types.ts::PanelState.tabs::PanelTab[]',
+  'src/store/renderer/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.recentlyClosed::RecentlyClosedTab[]',
+  'src/store/renderer/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.layoutHistory::LayoutSnapshot[]',
+  'src/store/renderer/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.focusHistory::FocusHistoryEntry[]',
+  'src/store/renderer/slices/panel-layout/panel-layout-types.ts::WorkspacePanelLayoutState.savedSizesBeforeExpand::SavedExpandSizes[]',
+  'src/store/renderer/slices/scripts/scripts-types.ts::ScriptsWorkspaceState.outputBuffers::ScriptOutputLine[]',
+  'src/store/renderer/slices/sentry-auth/sentry-auth-types.ts::SentryAuthState.projects::SentryProject[]',
+  'src/store/renderer/slices/sentry-auth/sentry-auth-types.ts::SentryAuthState.issues::SentryIssueResult[]',
+  'src/store/renderer/slices/skills/skills-types.ts::SkillsWorkspaceState.skills::SkillInfo[]',
+  'src/store/renderer/slices/specialists/specialists-slice.ts::SpecialistsState.bundledSpecialists::.Specialist[]',
+  'src/store/renderer/slices/user-preferences/user-preferences-slice.ts::UserPreferencesState.activityLogPresets::ActivityLogPresetPreference[]',
+  'src/store/renderer/slices/workspace-events/workspace-events-slice.ts::WorkspaceEventsWorkspaceState.events::WorkspaceEvent[]',
+  'src/store/renderer/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationMainPanelState.chatChanges::JsonValue[]',
+  'src/store/renderer/slices/workspace-navigation/workspace-navigation-slice.ts::WorkspaceNavigationNavigationState.history::WorkspaceNavigationHistoryEntry[]',
+  'src/store/renderer/slices/workspace-notes/workspace-notes-types.ts::NoteVersionsState.versions::NoteVersion[]',
+  'src/store/renderer/slices/workspace-notes/workspace-notes-types.ts::ReadyTasksState.tasks::Note[]',
 ]);
 
 function findViolations(src, sliceStateTypeNames) {
@@ -651,7 +651,7 @@ async function main() {
     console.log('  Store entity/object lists as Collection<T, K>, not Entity[] or Array<Entity>.');
     console.log('  Import Collection/createCollection and update through collection utilities in reducers.');
     console.log('  Primitive arrays and ID arrays remain allowed.');
-    console.log('  See src/lib/store/AGENTS.md § "Use Collection, Not Arrays".');
+    console.log('  See src/store/renderer/AGENTS.md § "Use Collection, Not Arrays".');
     for (const line of lines) console.log(line);
     console.log('');
     console.log(`${RED}✗ Found ${total} Redux state entity-array violation(s).${NC}`);

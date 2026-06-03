@@ -9,7 +9,7 @@ import {
   put,
   takeEvery,
 } from "typed-redux-saga";
-import type { StoreAction } from "svelte-redux-toolkit/types";
+import type { StoreAction } from "ag-redux-toolkit/types";
 import type { DomainEvent } from "../../../../../features/events/types";
 import {
   broadcastDomainEvent,

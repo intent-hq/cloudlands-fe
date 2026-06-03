@@ -21,8 +21,8 @@ import type { WorkspaceEventType, WorkspaceEvent } from '../../../../features/ev
 import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
 import type { GitDiffResult } from './git-types';
 // Import FileChange from the shared types instead of defining locally
-import type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
-export type { FileChange } from '../../../../lib/store/slices/workspace/utils/change-detector.types';
+import type { FileChange } from '$shared/types/change-detector.types';
+export type { FileChange } from '$shared/types/change-detector.types';
 import {
   isGitRepository,
   storeBlob,

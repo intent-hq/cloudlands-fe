@@ -23,22 +23,22 @@
   parseReviewSummary,
 } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import {
   CodeWalkthroughSection,
   parseWalkthrough,
 } from './walkthrough';
   import type { CodeWalkthrough, WalkthroughStatus } from './walkthrough';
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
-  import { executeBackgroundAgent } from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
+  import { executeBackgroundAgent } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { sendMessage } from '$features/agent/agent-stream-lifecycle';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
 
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();

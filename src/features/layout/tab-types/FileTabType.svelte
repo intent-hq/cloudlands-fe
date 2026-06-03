@@ -7,7 +7,7 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
   selectFileContent,
@@ -17,15 +17,15 @@
   selectFileLastUpdated,
   selectFileLoading,
   selectFileSaving,
-} from '$lib/store/slices/files/files-selectors';
+} from '$store/renderer/slices/files/files-selectors';
   import {
   loadFileContentRequested,
   saveFileContentRequested,
   updateFileContent,
-} from '$lib/store/slices/files/files-slice';
-  import { selectFileTrackingChanges } from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/files/files-slice';
+  import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { invoke } from '$lib/electron-bridge';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import {
@@ -42,14 +42,14 @@
   import {
   selectLineWrapping,
   selectDiffIndicators,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   toggleLineWrapping,
   toggleDiffIndicators,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import {
@@ -66,7 +66,7 @@
   getFileExtension,
 } from '$lib/services/analytics';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();

@@ -6,17 +6,17 @@
    * to enable/disable individual servers per workspace.
    */
   import { writable } from 'svelte/store';
-  import type { McpServerConfig } from '$lib/store/slices/mcp-settings/mcp-settings-types';
+  import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 
   import {
   loadServers,
   toggleWorkspaceMcpServer,
-} from '$lib/store/slices/mcp-settings/mcp-settings-slice';
+} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
   import {
   selectMcpServers,
   selectMcpErrorMessages,
   selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
-} from '$lib/store/slices/mcp-settings/mcp-settings-selectors';
+} from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from 'svelte/transition';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -29,7 +29,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

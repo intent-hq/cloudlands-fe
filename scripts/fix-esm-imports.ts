@@ -20,6 +20,7 @@ const defaultDistDir = path.join(__dirname, '../dist');
 const aliasDirectories: Record<string, string> = {
   shared: 'shared',
   lib: 'lib',
+  store: 'store',
   features: 'features',
 };
 
@@ -57,7 +58,7 @@ export async function fixImports(options: FixImportsOptions = {}) {
     let modified = false;
 
     content = content.replace(
-      /from\s+(['"])\$(shared|lib|features)\/([^'"]+)\1/g,
+      /from\s+(['"])\$(shared|lib|store|features)\/([^'"]+)\1/g,
       (match, quote, aliasName, importPath) => {
         modified = true;
         return `from ${quote}${getAliasImportPath(file, distDir, aliasName, importPath)}${quote}`;
@@ -65,7 +66,7 @@ export async function fixImports(options: FixImportsOptions = {}) {
     );
 
     content = content.replace(
-      /import\(\s*(['"])\$(shared|lib|features)\/([^'"]+)\1\s*\)/g,
+      /import\(\s*(['"])\$(shared|lib|store|features)\/([^'"]+)\1\s*\)/g,
       (match, quote, aliasName, importPath) => {
         modified = true;
         return `import(${quote}${getAliasImportPath(file, distDir, aliasName, importPath)}${quote})`;

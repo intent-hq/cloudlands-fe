@@ -19,6 +19,7 @@
     "baseUrl": ".",
     "paths": {
       "$lib/*": ["src/lib/*"],
+      "$store/*": ["src/store/*"],
       "$shared/*": ["src/shared/*"],
       "$features/*": ["src/features/*"]
     }

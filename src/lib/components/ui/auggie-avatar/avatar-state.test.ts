@@ -19,21 +19,21 @@ const {
   selectAgentIsWaitingMock: vi.fn(),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => getStateMock(),
   });
 });
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentSession: {
     select: selectAgentSessionMock,
   },
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: {
     select: selectAgentSessionMock,
   },

@@ -24,8 +24,8 @@
   import {
   openAgentTabRequested,
   openTerminalTabRequested,
-} from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CliBlock');
 

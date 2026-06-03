@@ -1,5 +1,5 @@
 import { AgentStatus } from '$shared/types';
-import type { ChatState } from '$lib/store/slices/chat-state/chat-state-types';
+import type { ChatState } from '$store/renderer/slices/chat-state/chat-state-types';
 
 type PendingAssistantStatusState = Pick<
   ChatState,

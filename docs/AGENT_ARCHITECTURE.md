@@ -244,7 +244,7 @@ This handshake ensures stream handlers are registered before streaming begins.
 
 ### Session Recovery (Page Refresh/HMR)
 
-Session recovery is split between a thin renderer stream adapter and Redux sagas. `src/features/agent/agent-stream-lifecycle.ts` reconnects stream handlers and emits typed Redux actions; state-dependent decisions and side-effect orchestration live in `src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts`.
+Session recovery is split between a thin renderer stream adapter and Redux sagas. `src/features/agent/agent-stream-lifecycle.ts` reconnects stream handlers and emits typed Redux actions; state-dependent decisions and side-effect orchestration live in `src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts`.
 
 **On initialization** (`reconnectActiveStreams()`):
 
@@ -365,7 +365,7 @@ type ContentBlock =
 
 ### Message Deduplication and Missing-Target Reconciliation
 
-Agent session message deduplication is centralized in `src/shared/utils/message-dedup.ts` and applied by `src/lib/store/slices/agent-session/agent-session-slice.ts` during session/message ingestion. The shared utility owns duplicate matching and merge policy for assistant stream finalization cases, including near-duplicate content with divergent renderer/backend identities, so renderer and main-process persistence paths use the same rules.
+Agent session message deduplication is centralized in `src/shared/utils/message-dedup.ts` and applied by `src/store/renderer/slices/agent-session/agent-session-slice.ts` during session/message ingestion. The shared utility owns duplicate matching and merge policy for assistant stream finalization cases, including near-duplicate content with divergent renderer/backend identities, so renderer and main-process persistence paths use the same rules.
 
 When stream updates arrive without a local assistant update target, `agent-stream-lifecycle.ts` dispatches raw stream actions and the agent-session `agent-stream-saga.ts` performs the stateful reconciliation: select the session, try canonical target matching, refresh from persistence with bypass cache, and only then create a fallback assistant message if needed. See [Agent Message Deduplication and Stream Saga Architecture](./agent-message-dedup-and-stream-sagas.md) for the full flow.
 
@@ -557,7 +557,7 @@ const executor = createCommitMessageExecutor({
 Model selection for background agents is configurable per-type via `backgroundAgentSettingsStore`:
 
 ```typescript
-import { backgroundAgentSettingsStore } from '$lib/stores/background-agent-settings.store.svelte';
+import { backgroundAgentSettingsStore } from '$store/renderers/background-agent-settings.store.svelte';
 
 // Get model for specific type
 const model = backgroundAgentSettingsStore.getModelForType('commit');

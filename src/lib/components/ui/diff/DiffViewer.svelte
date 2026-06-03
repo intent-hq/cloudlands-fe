@@ -45,8 +45,8 @@
   getDiffWorkerPool,
   getSafeDiffLanguage,
 } from '$lib/utils/diff-highlighter-preloader';
-  import { selectCodeFontFamilyCSS } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { hashContent } from './diff-content-hash.js';

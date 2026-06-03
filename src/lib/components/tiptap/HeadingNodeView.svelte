@@ -14,9 +14,9 @@
   import {
   selectNoteById,
   selectNotesVersion,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   // Props from SvelteNodeViewRenderer
   let { node, editor }: NodeViewProps = $props();

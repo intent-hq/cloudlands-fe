@@ -10,7 +10,7 @@ import { invoke } from '$lib/electron-bridge';
 import { batchedGitDiff } from '../diff-ipc-batcher';
 
 vi.mock('$lib/electron-bridge', async () =>
-  await import('$lib/store/utils/test-helpers/electron-bridge-mock'),
+  await import('$store/renderer/utils/test-helpers/electron-bridge-mock'),
 );
 
 describe('diff-ipc-batcher', () => {

@@ -35,7 +35,7 @@
   addSearchedItem,
   type PanelContextItem,
   type SelectionContextItem,
-} from '$lib/store/slices/multi-panel-context/multi-panel-context-slice';
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
 
   import {
   getMentionSystem,
@@ -44,7 +44,7 @@
 } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import Input from '$lib/components/ui/input/input.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     panels: PanelContextItem[];

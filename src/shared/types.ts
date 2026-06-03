@@ -305,12 +305,12 @@ export interface FirstVisitState {
   lastUpdated: string;
 }
 
-// FileChange is now defined in lib/store/slices/workspace/utils/change-detector.types.ts
+// FileChange is now defined in shared/types/change-detector.types.ts
 // Re-export for convenience
 import type {
   FileChange,
   FileChangeAction,
-} from '../lib/store/slices/workspace/utils/change-detector.types';
+} from './types/change-detector.types';
 export type { FileChange, FileChangeAction };
 
 export interface ChangeSet {

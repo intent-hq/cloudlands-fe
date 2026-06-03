@@ -35,7 +35,7 @@ class RefreshScenarioTester {
 
     try {
       // Check Redux agent-session slice for proper state preservation
-      const storeFile = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+      const storeFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
       const storeContent = fs.readFileSync(storeFile, 'utf-8');
 
       // Check if messages are preserved when session updates
@@ -44,7 +44,7 @@ class RefreshScenarioTester {
       }
 
       // Check stream saga for proper message handling
-      const sessionFile = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
+      const sessionFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
       const sessionContent = fs.readFileSync(sessionFile, 'utf-8');
 
       // Check if updateMessage creates new objects for reactivity
@@ -210,7 +210,7 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const unifiedStoreFile = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+      const unifiedStoreFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
       const content = fs.readFileSync(unifiedStoreFile, 'utf-8');
 
       // Check for idempotent operations

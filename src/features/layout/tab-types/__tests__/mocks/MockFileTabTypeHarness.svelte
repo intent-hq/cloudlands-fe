@@ -1,7 +1,7 @@
 <script lang="ts">
   import FileTabType from '../../FileTabType.svelte';
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import type { PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
   let {
     tab,

@@ -10,12 +10,12 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
-import { workspaceMounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   emptyWorkspaceAgentState,
   setInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
 const { dispatchMock, openMock, selectWorkspaceByIdMock, selectActiveWorkspaceMock, storeStateRef } = vi.hoisted(() => {
@@ -28,7 +28,7 @@ const { dispatchMock, openMock, selectWorkspaceByIdMock, selectActiveWorkspaceMo
   return { dispatchMock, openMock, selectWorkspaceByIdMock, selectActiveWorkspaceMock, storeStateRef };
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, workspaceId: string) => selectWorkspaceByIdMock(workspaceId),
   },
@@ -37,12 +37,12 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { open: openMock },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => storeStateRef.current,
     dispatch: dispatchMock,

@@ -607,7 +607,7 @@ const token = toPromptToken(mention);
 ```svelte
 <script lang="ts">
   import RichTextarea from '$lib/components/chat/input/RichTextarea.svelte';
-  import { workspace } from '$lib/stores/workspace';
+  import { workspace } from '$store/renderers/workspace';
 
   let value = '';
   let textarea;

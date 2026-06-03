@@ -25,8 +25,8 @@
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { fetchEditors } from '$lib/store/slices/external-editors/external-editors-slice';
-  import { selectInstalledEditorsFiltered } from '$lib/store/slices/external-editors/external-editors-selectors';
+  import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
+  import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -50,7 +50,7 @@
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import Button from './button/button.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   /** Icon mapping from editor ID to Svelte component */
   const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {

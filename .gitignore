@@ -87,7 +87,7 @@ playwright-report
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
 # Simpler pattern for UUID directories
 *-*-*-*-*/
-!.agents/skills/migrate-to-svelte-redux-toolkit/
+!.agents/skills/ag-redux-toolkit/
 trace.json
 
 native/IntentDynamicIsland/.build

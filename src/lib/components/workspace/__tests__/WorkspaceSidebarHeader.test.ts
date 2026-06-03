@@ -33,8 +33,8 @@ const mocks = vi.hoisted(() => {
   return { dispatch, update, selector };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -42,26 +42,26 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/ui-layout/ui-layout-selectors', () => ({
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectSidebarSide: mocks.selector('left'),
 }));
 
-vi.mock('$lib/store/slices/ui-layout/ui-layout-slice', () => ({
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
   })),
 }));
 
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mocks.update },
 }));
 
-vi.mock('$lib/store/slices/workspace-operations/workspace-operations-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
   requestDeleteWorkspace: vi.fn((id: string) => ({
     type: 'workspaceOperations/delete',
     payload: [id],

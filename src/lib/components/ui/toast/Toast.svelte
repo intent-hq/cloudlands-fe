@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Toaster as Sonner } from 'svelte-sonner';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   const isDarkTheme = selectIsDarkTheme();
 </script>

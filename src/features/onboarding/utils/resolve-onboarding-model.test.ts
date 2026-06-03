@@ -5,7 +5,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import type { StoreState } from '$lib/store/types';
+import type { StoreState } from '$store/renderer/types';
 import type { ProviderAvailabilityResult } from '$features/providers/provider-availability.client';
 
 const mockState = vi.hoisted(() => ({
@@ -53,11 +53,11 @@ function makeSelector<R, A extends unknown[]>(fn: (...args: A) => R) {
   return s;
 }
 
-vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: makeSelector(() => mockState.activeProviderId),
 }));
 
-vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: makeSelector(() => mockState.specialists),
   selectEffectiveBehaviorPrompt: makeSelector((_specialistId: string) =>
     mockState.specialists[0]?.defaultBehaviorPrompt ?? '',
@@ -65,23 +65,23 @@ vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: makeSelector(() => mockState.userOverrides),
 }));
 
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: makeSelector((_providerId?: string) => mockState.selectedModel),
   selectAvailableModels: makeSelector(() => mockState.availableModels),
 }));
 
-vi.mock('$lib/store/slices/model/model-utils', () => ({
+vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn((providerId: string) =>
     Promise.resolve(mockState.modelsByProvider[providerId] ?? []),
   ),
 }));
 
-vi.mock('$lib/store/slices/model/model-slice', () => ({
+vi.mock('$store/renderer/slices/model/model-slice', () => ({
   reloadModelsForProvider: vi.fn(() => ({ type: 'model/reloadModelsForProvider' })),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => {},

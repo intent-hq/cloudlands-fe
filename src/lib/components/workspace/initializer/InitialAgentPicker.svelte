@@ -9,12 +9,12 @@
   selectEffectiveModel,
   selectEffectiveCodingAgent,
   filterSpecialistsByGitHubAuth,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
 
   import {
   selectSelectedModel,
   selectAvailableModels,
-} from '$lib/store/slices/model/model-selectors';
+} from '$store/renderer/slices/model/model-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
   faPlus,
@@ -34,12 +34,12 @@
   parseCompoundModelId,
 } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('InitialAgentPicker');
   const specialists$ = selectSpecialists();

@@ -7,7 +7,7 @@
 
   import type { TabTypeComponentProps } from './registry';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
 
   let { tab, workspaceId }: TabTypeComponentProps = $props();

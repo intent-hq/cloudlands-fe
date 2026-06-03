@@ -285,7 +285,7 @@ class StreamingEdgeCaseTester {
     logger.info('Testing for duplicate message prevention...');
 
     try {
-      const agentServicePath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
+      const agentServicePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
       const content = fs.readFileSync(agentServicePath, 'utf-8');
 
       // Check for duplicate prevention

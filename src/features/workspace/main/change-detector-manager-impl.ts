@@ -6,7 +6,7 @@ import { ChangeDetectorRefactored as ChangeDetector } from './change-detector-re
 import {
   DiffChunk,
   FileChange,
-} from '../../../lib/store/slices/workspace/utils/change-detector.types';
+} from '$shared/types/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
 import { RemoteChangeDetector } from './remote-change-detector';
 import { EventEmitter } from 'events';

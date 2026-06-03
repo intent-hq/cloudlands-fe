@@ -13,23 +13,23 @@
   selectFileTrackingCommits,
   selectFileTrackingOlderCommits,
   selectFileTrackingLoading,
-} from '$lib/store/slices/changes/changes-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import {
   selectLineWrapping,
   selectFoldUnchanged,
   selectDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   toggleLineWrapping,
   toggleFoldUnchanged,
   toggleDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { openWorkspaceNote } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import Fa from 'svelte-fa';
   import {
   faTextWidth,
@@ -38,7 +38,7 @@
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();

@@ -1,16 +1,16 @@
 <script lang="ts">
 /* eslint-disable max-lines */
   import { goto } from '$app/navigation';
-  import { addContextItem } from '$lib/store/slices/context/context-slice';
+  import { addContextItem } from '$store/renderer/slices/context/context-slice';
   import { v4 as uuidv4 } from 'uuid';
   import {
   selectCurrentWorkspaceId,
   selectCurrentStagedWorkingChanges,
   selectCurrentUnstagedWorkingChanges,
   selectCurrentCommits,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectActiveTab } from '$lib/store/slices/panel-layout/panel-layout-selectors';
+  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
   type AvatarState,
   getAvatarState,
@@ -26,22 +26,22 @@
   import {
   markNoteRead,
   refreshUnreadNotes,
-} from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+} from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import {
   selectAllWorkspaceAgents,
   selectForegroundWorkspaceAgents,
   selectIsLoadingAgents,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
 
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { loadWorkspacesRequested } from '$lib/store/slices/workspace/workspace-slice';
-  import { locateItemInSidebarConsumed } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { selectPendingLocateInSidebar } from '$lib/store/slices/app-layout/app-layout-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { locateItemInSidebarConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import {
   faAsterisk,
@@ -81,23 +81,23 @@
   type WorkspacePhaseStats,
 } from './workspace-phase';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
-  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceLocalChanges,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
   setMultiSelectSidebarSelectedTabs,
   setMultiSelectSidebarTabOrder,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
   selectMultiSelectSidebarSelectedTabIds,
   selectMultiSelectSidebarTabOrder,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

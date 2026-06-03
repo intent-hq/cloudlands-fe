@@ -1,4 +1,4 @@
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 /**
  * Parse RichTextarea mentions into structured context references
  * for workspace creation.
@@ -162,7 +162,7 @@ export async function parseRuntimeMentions(
     if (mention.type === 'script') {
       try {
                 const { selectScriptOutput, selectScriptById, selectScriptRuntime } = await import(
-          '$lib/store/slices/scripts/scripts-selectors'
+          '$store/renderer/slices/scripts/scripts-selectors'
         );
         const scriptId = mention.id ?? '';
         const state = appStore.state;

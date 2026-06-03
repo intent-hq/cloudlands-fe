@@ -26,7 +26,7 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { selectUnreadNoteIds } from '$lib/store/slices/note-read-tracking/note-read-tracking-selectors';
+  import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import {
@@ -37,17 +37,17 @@
   selectAgentIsResponding,
   selectAgentIsWaiting,
   selectAgentSessionsByIds,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { writable } from 'svelte/store';
   import {
   setWorkspaceNoteOrder,
   toggleWorkspaceCollapsedNote,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
   selectWorkspaceCollapsedNoteIds,
   selectWorkspaceNoteOrder,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -60,9 +60,9 @@
   deleteNote,
   createNote,
   updateNoteTitle,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { toast } from 'svelte-sonner';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

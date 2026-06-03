@@ -31,8 +31,8 @@ vi.mock('svelte/store', () => ({
   get: vi.fn(),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -40,11 +40,11 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/tab-state/tab-state-slice', () => ({
+vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   closeWorkspaceTab: (...args: unknown[]) => mockCloseTab(...args),
 }));
 
-vi.mock('$lib/store/slices/tab-state/tab-state-selectors', () => ({
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: {
     select: () => mockCurrentTabId.value,
   },
@@ -58,7 +58,7 @@ import {
   openWorkspaceDrawer,
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 describe('workspace-navigation', () => {
   const mockPage = {

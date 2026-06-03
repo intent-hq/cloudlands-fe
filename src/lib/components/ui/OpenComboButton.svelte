@@ -19,11 +19,11 @@
   setOpenAction,
   type InstalledEditor,
   type OpenAction,
-} from '$lib/store/slices/external-editors/external-editors-slice';
+} from '$store/renderer/slices/external-editors/external-editors-slice';
   import {
   selectInstalledEditorsFiltered,
   selectOpenAction,
-} from '$lib/store/slices/external-editors/external-editors-selectors';
+} from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -38,7 +38,7 @@
   faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('OpenComboButton');
   /** Icon mapping from editor ID to Svelte component */

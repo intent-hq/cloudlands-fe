@@ -50,8 +50,8 @@ const testState = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -59,12 +59,12 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => testState.activeWorkspaceStore,
   selectActiveWorkspaceId: () => testState.activeWorkspaceIdStore,
 }));
 
-vi.mock('$lib/store/slices/files/files-selectors', () => ({
+vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectOriginalFileContent: Object.assign(vi.fn(() => testState.originalContentStore), {
     select: vi.fn(() => testState.originalContentStore.value),
   }),

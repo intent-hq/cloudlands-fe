@@ -5,12 +5,12 @@
  * Extracted from +page.svelte to reduce file size and improve maintainability.
  */
 
-import { openWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
-import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { selectWorkspacePendingCreations } from '$store/renderer/slices/workspace/workspace-selectors';
 
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspacePageStateManager } from './workspace-page-state.svelte';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('tab-management');
 

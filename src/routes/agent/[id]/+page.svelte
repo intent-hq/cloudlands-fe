@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { logger } from '$shared/logger';
 
   import { page } from '$app/state';
@@ -11,12 +11,12 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   followBottom,
   scrollToBottom,
 } from '$lib/utils/smartScroll';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import type { AgentSession } from '$shared/types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspace = selectActiveWorkspace();
 

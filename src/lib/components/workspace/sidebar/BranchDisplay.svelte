@@ -3,9 +3,9 @@
    * BranchDisplay - Branch display/edit with trunk branch picker
    * Shows working branch (editable) and trunk branch (selectable).
    */
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -19,7 +19,7 @@
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

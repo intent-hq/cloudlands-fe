@@ -15,7 +15,7 @@
   type SvelteErrorInfo,
 } from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 

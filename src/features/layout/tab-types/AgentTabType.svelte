@@ -7,32 +7,32 @@
 
   import { untrack } from 'svelte';
   import type { TabTypeComponentProps } from './registry';
-  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import {
   selectInitialAgentId,
   selectWorkspaceAgentSession,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { cycleFontStyle } from '$lib/store/slices/user-preferences/user-preferences-slice';
+  import { cycleFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectAgentFontStyleLabel,
   selectIsAgentMonospace,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
-  import { selectWorkspaceDefaultModel } from '$lib/store/slices/model/model-selectors';
+  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
   import {
   selectSpecialistName,
   selectSpecialists,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
   import {
   faCheck,
@@ -52,11 +52,11 @@
   selectAgentStats,
   selectIsLoadingAgentStats,
   selectAgentStatsError,
-} from '$lib/store/slices/session-stats/session-stats-selectors';
-  import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
+} from '$store/renderer/slices/session-stats/session-stats-selectors';
+  import { fetchAgentStats } from '$store/renderer/slices/session-stats/session-stats-slice';
   import { isAuggieSession } from '$shared/types/agent-session';
-  import { deleteAgentWithUndoRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentTabType');
 

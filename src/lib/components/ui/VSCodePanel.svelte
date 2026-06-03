@@ -7,12 +7,12 @@
   import {
   requestCollapsiblePanelCollapsed,
   setCollapsiblePanelCollapsed,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { selectCollapsiblePanelCollapsed } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { selectCollapsiblePanelCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
 
   import { slide } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     title: string;

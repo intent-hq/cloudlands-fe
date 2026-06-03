@@ -17,7 +17,7 @@ import {
   memoize,
 } from '../performance-utils';
 
-vi.mock('$lib/utils/client-logger', async () => await import('$lib/store/utils/test-helpers/client-logger-mock'));
+vi.mock('$lib/utils/client-logger', async () => await import('$store/renderer/utils/test-helpers/client-logger-mock'));
 
 describe('performance-utils', () => {
   beforeEach(() => {

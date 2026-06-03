@@ -17,28 +17,28 @@
   selectFileTrackingBoundarySha as selectFtBoundarySha,
   selectFileTrackingOlderCommits as selectFtOlderCommits,
   selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import {
   clearOlderCommits as ftClearOlderCommits,
   refreshRequested,
   loadOlderCommitsRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
   import {
   loadGitStatus,
   setGitOperationFlag,
-} from '$lib/store/slices/git/git-slice';
+} from '$store/renderer/slices/git/git-slice';
   import {
   selectPostMergeState,
   selectGitOperationFlags,
-} from '$lib/store/slices/git/git-selectors';
+} from '$store/renderer/slices/git/git-selectors';
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import {
   addTerminal,
   openTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
 
 
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
@@ -76,7 +76,7 @@
   import {
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
   getCommitsToPushCount,
   getCommitsToUndoCount,
@@ -86,7 +86,7 @@
   getUndoCommitTooltip as getUndoCommitTooltipUtil,
   canAmendCommit as canAmendCommitUtil,
 } from './sidebar-changes-utils';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { selectWorkspaceStats } from '$lib/store/slices/session-stats/session-stats-selectors';
+  import { selectWorkspaceStats } from '$store/renderer/slices/session-stats/session-stats-selectors';
   import type { Readable } from 'svelte/store';
 
   interface Props {

@@ -24,7 +24,7 @@
     WalkthroughCategory,
   } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const activeWorkspace = selectActiveWorkspace();
 

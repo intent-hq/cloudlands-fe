@@ -28,7 +28,7 @@ const SOURCE_PATH = resolve(__dirname, '../agent-stream-lifecycle.ts');
 const source = readFileSync(SOURCE_PATH, 'utf-8');
 const SAGA_SOURCE_PATH = resolve(
   __dirname,
-  '../../../lib/store/slices/agent-session/sagas/agent-stream-saga.ts',
+  '../../../store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
 );
 const sagaSource = readFileSync(SAGA_SOURCE_PATH, 'utf-8');
 

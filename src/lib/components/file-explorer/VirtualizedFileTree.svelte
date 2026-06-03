@@ -9,7 +9,7 @@
   import type {
     FileExplorerDisplayNode as FileNode,
     FlattenedFileNode,
-  } from '$lib/store/slices/file-explorer/file-explorer-types';
+  } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
   import {
   faChevronDown,
@@ -37,7 +37,7 @@
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';

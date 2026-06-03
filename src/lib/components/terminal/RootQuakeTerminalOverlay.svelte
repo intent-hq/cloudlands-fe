@@ -25,7 +25,7 @@
   selectTerminalOverlayHeight,
   selectActiveTerminalIdForWorkspace,
   selectTerminalsForWorkspace,
-} from '$lib/store/slices/terminals/terminals-selectors';
+} from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   openTerminalOverlay,
   closeTerminalOverlay,
@@ -35,7 +35,7 @@
   setTerminalOverlayHeight,
   renameTerminal,
   type TerminalTab,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
   import Terminal from './Terminal.svelte';
@@ -54,7 +54,7 @@
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);

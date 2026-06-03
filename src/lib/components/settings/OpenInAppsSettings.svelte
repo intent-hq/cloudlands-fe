@@ -10,12 +10,12 @@
   import {
   selectHiddenEditorIds,
   selectInstalledEditors,
-} from '$lib/store/slices/external-editors/external-editors-selectors';
+} from '$store/renderer/slices/external-editors/external-editors-selectors';
   import {
   fetchEditors,
   toggleHiddenEditor,
   type InstalledEditor,
-} from '$lib/store/slices/external-editors/external-editors-slice';
+} from '$store/renderer/slices/external-editors/external-editors-slice';
 
   import {
   faCode,
@@ -24,7 +24,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   const installedEditors$ = selectInstalledEditors();
   const hiddenEditorIds$ = selectHiddenEditorIds();
 

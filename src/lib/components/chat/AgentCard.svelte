@@ -16,18 +16,18 @@
   selectAgentIsResponding,
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
   renameAgentSessionRequested,
   stopAgentSessionRequested,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
-  import { selectAgentLineStats } from '$lib/store/slices/changes/changes-selectors';
+  import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import AgentStatsTooltip from './AgentStatsTooltip.svelte';
@@ -36,15 +36,15 @@
   selectAgentStats,
   selectIsLoadingAgentStats,
   selectAgentStatsError,
-} from '$lib/store/slices/session-stats/session-stats-selectors';
-  import { fetchAgentStats } from '$lib/store/slices/session-stats/session-stats-slice';
+} from '$store/renderer/slices/session-stats/session-stats-selectors';
+  import { fetchAgentStats } from '$store/renderer/slices/session-stats/session-stats-slice';
   import { isAuggieSession } from '$shared/types/agent-session';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { selectPendingCount } from '$lib/store/slices/permission/permission-selectors';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { slide } from 'svelte/transition';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
+  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
   getPanelLayoutManager,
   hasPanelLayoutManager,
@@ -59,7 +59,7 @@
   faStop,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     agentId: string;

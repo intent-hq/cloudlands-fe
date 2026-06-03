@@ -4,13 +4,13 @@
   selectAgentIsResponding,
   selectAgentSessionStreamingContent,
   selectAgentSession,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   selectActiveWorkspaceId,
   selectWorkspaceById,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { restoreAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import {
   AgentStatus,
@@ -26,8 +26,8 @@
   import { taskAgentPollingManager } from './task-agent-polling-manager';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('TaskAgentStatus');
 

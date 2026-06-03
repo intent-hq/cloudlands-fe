@@ -18,13 +18,13 @@
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import {
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 

@@ -19,18 +19,18 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { slide } from 'svelte/transition';
   import { taskNoteUrl } from '$shared/constants/intent-links';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectSelectedNoteId,
     selectNoteById,
     selectNotesVersion,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 
   import {
     reloadNotes,
     updateTaskStatus,
-  } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { delegateExistingTaskRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
   import { notesIpc } from '$lib/utils/notes-ipc';
   import { NOTES_CHANNELS } from '$shared/ipc/channels';
@@ -39,7 +39,7 @@
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;

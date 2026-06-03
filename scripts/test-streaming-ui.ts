@@ -114,7 +114,7 @@ class StreamingUITester {
 
     try {
       // Check Redux agent-session slice preserves messages
-      const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+      const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
       const storeContent = fs.readFileSync(storePath, 'utf-8');
 
       // Check if messages are preserved when updating agent
@@ -128,7 +128,7 @@ class StreamingUITester {
       }
 
       // Check stream saga updateMessage triggers Redux state updates
-      const streamSagaPath = path.join(__dirname, '../src/lib/store/slices/agent-session/sagas/agent-stream-saga.ts');
+      const streamSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
       const streamSagaContent = fs.readFileSync(streamSagaPath, 'utf-8');
 
       const hasReactiveUpdate = streamSagaContent.includes('updateMessage(');

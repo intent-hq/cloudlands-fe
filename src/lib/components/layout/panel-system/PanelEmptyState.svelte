@@ -18,19 +18,19 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
 
-  import { openCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import {
   SHORTCUTS,
   formatShortcut,
 } from '$lib/utils/shortcuts';
-  import { openPalette } from '$lib/store/slices/palette/palette-slice';
+  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import {
   selectRecentlyClosed,
   selectFocusedPanelId,
-} from '$lib/store/slices/panel-layout/panel-layout-selectors';
+} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

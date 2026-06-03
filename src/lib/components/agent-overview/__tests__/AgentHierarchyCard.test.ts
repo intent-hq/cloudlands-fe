@@ -59,7 +59,7 @@ const {
   };
 });
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: selectAgentIsRespondingMock,
   selectAgentIsThinking: selectAgentIsThinkingMock,
   selectAgentIsWaiting: selectAgentIsWaitingMock,

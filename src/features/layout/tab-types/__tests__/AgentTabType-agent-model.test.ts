@@ -73,18 +73,18 @@ vi.mock('$features/agent/browser', () => ({
     return () => {};
   },
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({ agents: mockState.agents.get() }),
     dispatch: mockState.dispatch,
   });
 });
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectActiveAgentId: () => mockState.activeAgentId,
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
@@ -109,7 +109,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     },
   }),
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: (
     agentIdStore: { subscribe: (run: (value: string) => void) => () => void } | string,
   ) => ({
@@ -130,15 +130,15 @@ vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/store/slices/panel-layout/panel-layout-selectors', () => ({
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAgentTabInfoByTabId: () => ({
     subscribe: (run: (value: null) => void) => (run(null), () => {}),
   }),
 }));
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: () => mockState.defaultModel,
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectAgentFontStyleLabel: () => ({
     subscribe: (run: (value: string) => void) => (run('Default'), () => {}),
   }),
@@ -146,18 +146,18 @@ vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => (
     subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
   }),
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/user-preferences/user-preferences-slice')>()),
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/user-preferences/user-preferences-slice')>()),
   cycleFontStyle: () => ({ type: 'userPreferences/cycleFontStyle' }),
 }));
-vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => ({
     subscribe: (run: (value: unknown[]) => void) => (run([]), () => {}),
   }),
   selectSpecialistName: { select: () => undefined },
 }));
-vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/panel-layout/panel-layout-slice')>()),
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/panel-layout/panel-layout-slice')>()),
   closeTab: () => ({ type: 'panelLayout/closeTab' }),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: vi.fn() }));

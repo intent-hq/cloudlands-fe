@@ -5,8 +5,8 @@
    */
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
-  import { closeAll } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 </script>
 

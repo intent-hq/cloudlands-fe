@@ -15,13 +15,13 @@
   import { writable } from 'svelte/store';
   import { invoke } from '$lib/electron-bridge';
 
-  import { selectOriginalFileContent } from '$lib/store/slices/files/files-selectors';
-  import { loadFileContentRequested } from '$lib/store/slices/files/files-slice';
-  import type { FileReadResponse } from '$lib/store/slices/files/files-types';
+  import { selectOriginalFileContent } from '$store/renderer/slices/files/files-selectors';
+  import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
+  import type { FileReadResponse } from '$store/renderer/slices/files/files-types';
   import {
   selectActiveWorkspace,
   selectActiveWorkspaceId,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
@@ -38,7 +38,7 @@
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { track } from '$lib/services/analytics';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('TrackedChangeDiffViewer');
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB

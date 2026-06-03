@@ -7,12 +7,12 @@
 
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { createLogger } from '$lib/utils/client-logger';
-import { openTerminalOverlay } from '$lib/store/slices/terminals/terminals-slice';
-import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
+import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
+import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 
 import type { Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('panel-actions');
 

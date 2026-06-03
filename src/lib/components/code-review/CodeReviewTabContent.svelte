@@ -4,14 +4,14 @@
    * Includes its own executor and renders without a header wrapper
    */
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectCurrentStagedWorkingChanges } from '$lib/store/slices/changes/changes-selectors';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectCurrentStagedWorkingChanges } from '$store/renderer/slices/changes/changes-selectors';
 
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
   cancelExecution,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import type { ReviewStatus } from './types';
   import {
   CodeWalkthroughSection,
@@ -31,7 +31,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

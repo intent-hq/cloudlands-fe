@@ -21,7 +21,7 @@
   selectAgentIsThinking,
   selectAgentIsWaiting,
   selectAgentIsWaitingForOtherAgents,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import Fa from 'svelte-fa';
   import {
   faHourglass,

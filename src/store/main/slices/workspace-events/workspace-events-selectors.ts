@@ -1,27 +1,28 @@
 /**
  * Selectors for the workspace-events slice.
  *
- * All selectors use the main-process createSelector (typed to MainStoreState,
- * cached, no Svelte Readable). Passing RendererStoreState is a compile error.
+ * Selectors are created from the configured main-process StreamingStore.
+ * Passing RendererStoreState is a compile error.
  */
 
-import { createSelector } from "../../utils/create-selector";
-import type { MainStoreState } from "../../types";
+import { store } from "../../configured-store";
 import type { WorkspaceEventState } from "./types";
 import { emptyWorkspaceEventState } from "./types";
 import type { WorkspaceEvent } from "../../../../features/events/types";
+
+type MainSelectorState = typeof store.state;
 
 // ---------------------------------------------------------------------------
 // Workspace-level
 // ---------------------------------------------------------------------------
 
-const getSlice = (state: MainStoreState): Record<string, WorkspaceEventState> => {
+const getSlice = (state: MainSelectorState): Record<string, WorkspaceEventState> => {
   const slice = (state as any).workspaceEvents;
   if (!slice) return {};
   return slice.byWorkspaceId ?? {};
 };
 
-const getWs = (state: MainStoreState, wsId: string): WorkspaceEventState => {
+const getWs = (state: MainSelectorState, wsId: string): WorkspaceEventState => {
   return getSlice(state)[wsId] ?? emptyWorkspaceEventState;
 };
 
@@ -30,37 +31,37 @@ const getWs = (state: MainStoreState, wsId: string): WorkspaceEventState => {
 // ---------------------------------------------------------------------------
 
 /** Get the recent events buffer for a workspace */
-export const selectRecentEvents = createSelector(
-  (state: MainStoreState, workspaceId: string): WorkspaceEvent[] => {
+export const selectRecentEvents = store.createSelector(
+  (state, workspaceId: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents;
   },
 );
 
 /** Get total event count for a workspace */
-export const selectEventCount = createSelector(
-  (state: MainStoreState, workspaceId: string): number => {
+export const selectEventCount = store.createSelector(
+  (state, workspaceId: string): number => {
     return getWs(state, workspaceId).eventCount;
   },
 );
 
 /** Get the most recent event for a workspace */
-export const selectLastEvent = createSelector(
-  (state: MainStoreState, workspaceId: string): WorkspaceEvent | undefined => {
+export const selectLastEvent = store.createSelector(
+  (state, workspaceId: string): WorkspaceEvent | undefined => {
     const events = getWs(state, workspaceId).recentEvents;
     return events.length > 0 ? events[events.length - 1] : undefined;
   },
 );
 
 /** Filter events by type for a workspace */
-export const selectEventsByType = createSelector(
-  (state: MainStoreState, workspaceId: string, type: string): WorkspaceEvent[] => {
+export const selectEventsByType = store.createSelector(
+  (state, workspaceId: string, type: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents.filter((e) => e.type === type);
   },
 );
 
 /** Filter events by actor ID for a workspace */
-export const selectEventsByActor = createSelector(
-  (state: MainStoreState, workspaceId: string, actorId: string): WorkspaceEvent[] => {
+export const selectEventsByActor = store.createSelector(
+  (state, workspaceId: string, actorId: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents.filter((e) => e.actor.id === actorId);
   },
 );

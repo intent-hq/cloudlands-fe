@@ -26,6 +26,13 @@ import { messageAccumulatorReducer } from '../../../../../store/main/slices/mess
 
 let testStore: Store;
 
+const getTestBridgeStore = () => ({
+  get state() {
+    return testStore?.getState();
+  },
+  dispatch: (action: any) => testStore?.dispatch(action),
+});
+
 const fileEditMocks = vi.hoisted(() => ({
   readFile: vi.fn(),
   sendToWorkspaceWindows: vi.fn(),
@@ -33,9 +40,9 @@ const fileEditMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: (action: any) => testStore?.dispatch(action),
-  getMainState: () => testStore?.getState(),
-  getMainStore: () => testStore,
+  mainDispatch: (action: any) => getTestBridgeStore().dispatch(action),
+  getMainState: () => getTestBridgeStore().state,
+  getMainStore: () => getTestBridgeStore(),
   initMainStoreBridge: vi.fn(),
 }));
 

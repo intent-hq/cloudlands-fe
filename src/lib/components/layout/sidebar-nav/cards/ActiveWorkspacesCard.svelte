@@ -11,7 +11,7 @@
   import { goto } from '$app/navigation';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
   import WorkspaceListItem from '../WorkspaceListItem.svelte';
@@ -20,22 +20,22 @@
   import {
   selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   closeAll,
   togglePinWorkspace,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-  import { clearWorkspaceUnread } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+  import { clearWorkspaceUnread } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   isWorkspaceActivityWithin,
 } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();

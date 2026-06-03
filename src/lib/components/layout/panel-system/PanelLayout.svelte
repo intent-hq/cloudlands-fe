@@ -25,7 +25,7 @@
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { selectIsTerminalOverlayOpen } from '$lib/store/slices/terminals/terminals-selectors';
+  import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   get,
   writable,
@@ -39,16 +39,16 @@
   import {
   selectIsCollapsed,
   selectSidebarSide,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   flattenPanels,
   openTabFromConfig,
 } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
-  import { updateNoteTitle } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+  import { updateNoteTitle } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
-  import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-  import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   invoke,
   listenSync,
@@ -64,12 +64,12 @@
   selectAllTabs,
   selectPanelIds,
   selectRestoreStatus,
-} from '$lib/store/slices/panel-layout/panel-layout-selectors';
-  import { focusBrowserTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { closeActiveTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { renameAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { closeActiveTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('PanelLayout');
   const isCollapsed = selectIsCollapsed();

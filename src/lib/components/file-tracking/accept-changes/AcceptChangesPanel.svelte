@@ -20,13 +20,13 @@
 } from '@fortawesome/free-solid-svg-icons';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import {
   selectStagedWorkingChanges as selectFtStagedChanges,
   selectUnstagedWorkingChanges as selectFtUnstagedChanges,
   selectFileTrackingIsInitialized as selectFtIsInitialized,
   selectAcceptChangesState,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import {
   clearMainPanelView as ftClearMainPanelView,
   stageByPathRequested,
@@ -47,18 +47,18 @@
   setTargetBranch,
   startBackgroundOperation,
   updateBackgroundOperationPhase,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
 
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
   cancelExecution,
   reconnectAgent,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
-  import type { ExecutorStatus } from '$lib/store/slices/background-agent-executor/background-agent-executor-types';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+  import type { ExecutorStatus } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
   import type {
     WorkspaceGitStatus,
     PrepareAcceptResponse,
@@ -72,28 +72,28 @@
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { unifiedIdService } from '$shared/services/unified-id.service';
-  import { selectSelectedModel } from '$lib/store/slices/model/model-selectors';
-  import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import {
   parseAllReviewComments,
   getReviewStats,
   type ReviewStatus,
 } from '$lib/components/code-review/types';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { handleLink } from '$features/navigation/link-handler';
   import {
   openWorkspaceCodeReview,
   openWorkspaceDiff,
   openWorkspaceLocalChanges,
   updateWorkspaceCodeReview,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
   createWorkspaceForRepoRequested,
   openAgentTabRequested,
   openNewSpaceModalRequested,
-} from '$lib/store/slices/app-layout/app-layout-slice';
+} from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
   track,
@@ -102,15 +102,15 @@
   import {
   addTerminal,
   openTerminalOverlay,
-} from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-slice';
 
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   loadWorkspacesRequested,
   setWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace/workspace-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
 

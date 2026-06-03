@@ -15,7 +15,7 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToAgent: vi.fn(),
 }));
 
-vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
+vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
   selectIsDarkTheme: Object.assign(
     () => ({
       subscribe: (run: (value: boolean) => void) => {
@@ -27,7 +27,7 @@ vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsThinking: Object.assign(
     () => ({
       subscribe: (run: (value: boolean) => void) => {

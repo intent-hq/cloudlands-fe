@@ -48,6 +48,7 @@ const config = {
     // Alias configuration
     alias: {
       $lib: './src/lib',
+      $store: './src/store',
       $features: './src/features',
       $shared: './src/shared',
     },

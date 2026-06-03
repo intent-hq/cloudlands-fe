@@ -21,8 +21,8 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: '' }),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),

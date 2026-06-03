@@ -1,4 +1,4 @@
-import { createFileRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import { createFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
 type CreateFileWorkspace = {
   id?: string | null;

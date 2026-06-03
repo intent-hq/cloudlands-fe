@@ -22,12 +22,12 @@
   import {
   createNote as createNoteAction,
   initializeNotes,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
   selectNotesLoading,
   selectNotesError,
   selectAllNotes,
-} from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { thirdPartySourcesClient } from '$features/third-party-sources/third-party-sources.client';
   import type { ThirdPartySource } from '$shared/types';
   import {
@@ -43,7 +43,7 @@
   getNoteDepth,
   parseTaskStats,
 } from '../workspace/sidebar/utils';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const logger = createLogger('NotesPanel');

@@ -77,6 +77,7 @@ export default defineConfig(async () => {
       alias: {
         '@': path.resolve(__dirname, './src'),
         $lib: path.resolve(__dirname, './src/lib'),
+        $store: path.resolve(__dirname, './src/store'),
         $features: path.resolve(__dirname, './src/features'),
         $shared: path.resolve(__dirname, './src/shared'),
         $app: path.resolve(__dirname, './src/__mocks__/$app'),

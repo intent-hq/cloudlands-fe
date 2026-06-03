@@ -14,18 +14,18 @@
   import AgentHierarchyGraph from './AgentHierarchyGraph.svelte';
 
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { selectGraphState } from '$lib/store/slices/agent-overview/agent-overview-selectors';
-  import { selectWorkspaceEvents } from '$lib/store/slices/workspace-events/workspace-events-selectors';
-  import { loadEventsRequested } from '$lib/store/slices/workspace-events/workspace-events-slice';
+  import { selectGraphState } from '$store/renderer/slices/agent-overview/agent-overview-selectors';
+  import { selectWorkspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
+  import { loadEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import {
   processWorkspaceEvents,
   clearAgentOverview,
-} from '$lib/store/slices/agent-overview/agent-overview-slice';
+} from '$store/renderer/slices/agent-overview/agent-overview-slice';
   import { convertToInteractionEvent } from './graph-helpers';
   import type { InteractionEvent } from './types';
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

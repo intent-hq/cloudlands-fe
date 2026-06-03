@@ -42,8 +42,8 @@ const mocks = vi.hoisted(() => {
   return { dispatch, workspaceEntity, sidebarChanges, executorState, selector };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -51,17 +51,17 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectSidebarMergeWhenReady: mocks.selector(() => mocks.sidebarChanges.mergeWhenReady),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarMergeWhenReady', payload: args })),
   refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
   clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -73,28 +73,28 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((...args: unknown[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity }) },
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
+vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorState: mocks.selector(() => mocks.executorState),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-slice', () => ({
+vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', () => ({
   executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
   cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', () => ({
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
 }));
 
-vi.mock('$lib/store/slices/pr-status/pr-status-slice', () => ({
+vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
   refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
 }));
 

@@ -15,17 +15,17 @@
 
   import type { PanelLayoutNode } from '$features/layout/panel-layout-adapter';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectForegroundWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectForegroundWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   import { invoke } from '$lib/electron-bridge';
-  import { selectModelForType } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
+  import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
   import PanelMinimap from './PanelMinimap.svelte';
   import type { LayoutPresetId } from './types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('PanelLayoutControls');
   const fastModel$ = selectModelForType('fast');

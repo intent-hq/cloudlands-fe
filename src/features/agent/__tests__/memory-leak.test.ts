@@ -22,10 +22,17 @@ import { messageAccumulatorReducer } from '../../../store/main/slices/message-ac
 // Create per-test store for the API
 let testStore: Store;
 
+const getTestBridgeStore = () => ({
+  get state() {
+    return testStore.getState();
+  },
+  dispatch: (action: any) => testStore.dispatch(action),
+});
+
 vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: (action: any) => testStore.dispatch(action),
-  getMainState: () => testStore.getState(),
-  getMainStore: () => testStore,
+  mainDispatch: (action: any) => getTestBridgeStore().dispatch(action),
+  getMainState: () => getTestBridgeStore().state,
+  getMainStore: () => getTestBridgeStore(),
   initMainStoreBridge: vi.fn(),
 }));
 

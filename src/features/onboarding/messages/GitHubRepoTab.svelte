@@ -13,7 +13,7 @@
    *      typed-redux-saga's `debounce(300ms, ...)` effect so rapid keystrokes
    *      coalesce into a single network round-trip and the latest query wins.
    *
-   * Components never call IPC directly, per `src/lib/store/AGENTS.md`.
+   * Components never call IPC directly, per `src/store/renderer/AGENTS.md`.
    */
   import { onMount } from 'svelte';
   import { cn } from '$lib/utils';
@@ -22,25 +22,25 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
 
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import {
   loadGithubRepos,
   type GithubRepoItem,
-} from '$lib/store/slices/github-repos/github-repos-slice';
+} from '$store/renderer/slices/github-repos/github-repos-slice';
   import {
   selectGithubRepos,
   selectGithubReposError,
   selectGithubReposLoaded,
   selectGithubReposLoading,
-} from '$lib/store/slices/github-repos/github-repos-selectors';
-  import { searchGithubRepos } from '$lib/store/slices/github-repo-search/github-repo-search-slice';
+} from '$store/renderer/slices/github-repos/github-repos-selectors';
+  import { searchGithubRepos } from '$store/renderer/slices/github-repo-search/github-repo-search-slice';
   import {
   selectGithubRepoSearchLastQuery,
   selectGithubRepoSearchLoading,
   selectGithubRepoSearchResults,
-} from '$lib/store/slices/github-repo-search/github-repo-search-selectors';
-  import { selectWorkspaceInitializerDefaultParentPath } from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+} from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
+  import { selectWorkspaceInitializerDefaultParentPath } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
   faArrowUpRightFromSquare,
@@ -48,7 +48,7 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('GitHubRepoTab');
 

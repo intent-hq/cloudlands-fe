@@ -5,18 +5,18 @@
    * Shows list of Sentry issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import type { SentryIssueResult } from '$lib/store/slices/sentry-auth/sentry-auth-types';
+  import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import {
   selectSentryIsAuthenticated,
   selectSentryIssues,
   selectSentryIsLoadingIssues,
   selectSentryIsConnecting,
-} from '$lib/store/slices/sentry-auth/sentry-auth-selectors';
+} from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
   initializeSentryAuth,
   connectSentry,
   fetchSentryIssues,
-} from '$lib/store/slices/sentry-auth/sentry-auth-slice';
+} from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -27,7 +27,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

@@ -31,6 +31,8 @@ describe('fix-esm-imports', () => {
         ');',
         "const logger = await import('$shared/logger');",
         "const validator = await import('$lib/utils/workspace-validation');",
+        "import { store } from '$store/renderer/store';",
+        "const bridge = await import('$store/renderer/renderer-store-bridge');",
       ].join('\n'),
     );
 
@@ -40,10 +42,13 @@ describe('fix-esm-imports', () => {
     expect(rewritten).not.toContain('$features/');
     expect(rewritten).not.toContain('$shared/');
     expect(rewritten).not.toContain('$lib/');
+    expect(rewritten).not.toContain('$store/');
     expect(rewritten).toContain("from '../../../git/main/git.service.js'");
     expect(rewritten).toContain("import('../../../agent/main/agent-rename.js')");
     expect(rewritten).toContain("import('../../../agent/main/consolidated-backend.service.js')");
     expect(rewritten).toContain("import('../../../../shared/logger.js')");
     expect(rewritten).toContain("import('../../../../lib/utils/workspace-validation.js')");
+    expect(rewritten).toContain("from '../../../../store/renderer/store.js'");
+    expect(rewritten).toContain("import('../../../../store/renderer/renderer-store-bridge.js')");
   });
 });

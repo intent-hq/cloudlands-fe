@@ -208,7 +208,7 @@ class WorkspaceCreationTest {
       }
 
       // Initial-message dispatch is owned by the Redux chat-state slice and saga graph.
-      const chatStatePath = path.join(__dirname, '../src/lib/store/slices/chat-state/chat-state-slice.ts');
+      const chatStatePath = path.join(__dirname, '../src/store/renderer/slices/chat-state/chat-state-slice.ts');
       const chatStateContent = await fs.readFile(chatStatePath, 'utf-8');
 
       if (!chatStateContent.includes('sendInitialMessageRequested')) {
@@ -250,7 +250,7 @@ class WorkspaceCreationTest {
       }
 
       // Check Redux session store
-      const storePath = path.join(__dirname, '../src/lib/store/slices/agent-session/agent-session-slice.ts');
+      const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
       const storeContent = await fs.readFile(storePath, 'utf-8');
 
       // Check for state merging

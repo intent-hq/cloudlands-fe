@@ -1,8 +1,8 @@
 import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
-import { selectWorkspaceNavigationState } from '$lib/store/slices/workspace-navigation/workspace-navigation-selectors';
-import { selectWorkspacePendingCreations } from '$lib/store/slices/workspace/workspace-selectors';
+import { selectWorkspaceNavigationState } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
+import { selectWorkspacePendingCreations } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   closeWorkspaceDrawer,
   markWorkspaceNavigationInitialized,
@@ -17,12 +17,12 @@ import {
   type WorkspaceNavigationMainPanelState,
   type WorkspaceNavigationMainPanelType,
   type WorkspaceNavigationWorkspaceState,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('workspace-page-state');
 

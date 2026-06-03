@@ -204,17 +204,17 @@
   import {
   selectFoldUnchanged,
   selectLineWrapping,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
   import {
   selectActiveWorkspace,
   selectActiveWorkspaceId,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { selectCurrentCommits } from '$lib/store/slices/changes/changes-selectors';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { selectCurrentCommits } from '$store/renderer/slices/changes/changes-selectors';
   import {
   batchedGitBranchBaseDiff,
   batchedGitDiff,
@@ -223,7 +223,7 @@
 } from '$lib/components/ui/diff/diff-ipc-batcher';
   import { toast } from '$lib/components/ui/toast';
   import { type WorkspaceId } from '$shared/types/branded-ids';
-  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
 
@@ -231,13 +231,13 @@
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
 
 
-import { selectViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-selectors';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { setViewedFiles } from '$lib/store/slices/transient-ui/transient-ui-slice';
+import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 
   const foldUnchanged = selectFoldUnchanged();
   const lineWrapping = selectLineWrapping();
@@ -260,9 +260,9 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from '$lib/utils/file-utils';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
 
-  import { selectAgentFileRefreshes } from '$lib/store/slices/chat-changes/chat-changes-selectors';
+  import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   /**
    * Get the expand/collapse key for a change entry.

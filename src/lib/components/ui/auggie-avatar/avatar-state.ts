@@ -1,11 +1,11 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 import {
   selectAgentSession,
   selectAgentIsResponding,
   selectAgentIsWaiting,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
  * Avatar display states for AugieAvatarWithState component

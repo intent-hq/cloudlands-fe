@@ -109,8 +109,8 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({ sessions }),
@@ -118,7 +118,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => {
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => {
   const selectAgentSession = Object.assign(
     (agentIdOrStore: Parameters<typeof selectorForSession>[0]) =>
       selectorForSession(agentIdOrStore),
@@ -127,7 +127,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => {
   return { selectAgentSession };
 });
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => {
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   const selectAgentSession = Object.assign(
     (agentIdOrStore: Parameters<typeof selectorForSession>[0]) =>
       selectorForSession(agentIdOrStore),
@@ -136,14 +136,14 @@ vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => {
   return { selectAgentSession };
 });
 
-vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   updateSession: (agentId: string, updates: Partial<Session>) => ({
     type: 'agentSessions/updateSession',
     payload: [agentId, updates],
   }),
 }));
 
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => selectedModel$,
   selectAvailableModels: () => availableModels$,
   selectModelFallbackInfo: () => writable(null),
@@ -153,16 +153,16 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   selectAllProviderWarnings: () => providerWarnings$,
 }));
 
-vi.mock('$lib/store/slices/agent-availability/agent-availability-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => writable(null),
 }));
 
-vi.mock('$lib/store/slices/provider-settings/provider-settings-selectors', () => ({
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectEnabledProviderIds: () => enabledProviderIds$,
 }));
 
-vi.mock('$lib/store/slices/model/model-utils', () => ({
+vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn((providerId: string) => {
     if (providerId === 'anthropic') {
       return Promise.resolve([{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]);
@@ -211,9 +211,9 @@ vi.mock('$shared/types/agent-session', () => ({
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
-import { store as appStore } from '$lib/store/store';
-import { updateSession as updateAgentSessionFields } from '$lib/store/slices/agent-session/agent-session-slice';
-import { getModelsForProviderForLoadingState } from '$lib/store/slices/model/model-utils';
+import { store as appStore } from '$store/renderer/store';
+import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
 
 describe('ModelPicker trigger label regressions', () => {

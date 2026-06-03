@@ -11,8 +11,8 @@
  * - One-shot subscription tracking
  */
 
-import { createAction } from "svelte-redux-toolkit/utils/store/create-action";
-import { createReducer } from "svelte-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 

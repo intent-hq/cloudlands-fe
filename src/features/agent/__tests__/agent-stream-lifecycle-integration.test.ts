@@ -22,11 +22,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock(
   '$lib/electron-bridge',
-  async () => await import('$lib/store/utils/test-helpers/electron-bridge-mock'),
+  async () => await import('$store/renderer/utils/test-helpers/electron-bridge-mock'),
 );
 vi.mock(
   '$lib/utils/client-logger',
-  async () => await import('$lib/store/utils/test-helpers/client-logger-mock'),
+  async () => await import('$store/renderer/utils/test-helpers/client-logger-mock'),
 );
 vi.mock('$shared/types/branded-ids', () => ({
   createMessageId: (id: string) => id,
@@ -50,13 +50,13 @@ vi.mock('../browser', () => ({
   errorBoundary: { wrap: vi.fn((fn: any) => fn()) },
   persistenceService: { saveSession: vi.fn() },
 }));
-vi.mock('$lib/store/slices/chat-state/chat-state-slice', () => ({
+vi.mock('$store/renderer/slices/chat-state/chat-state-slice', () => ({
   streamStatusReceived: vi.fn((...payload: any[]) => ({
     type: 'chatState/streamStatusReceived',
     payload,
   })),
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   activateAgentRequested: vi.fn((...payload: any[]) => ({
     type: 'workspaceAgents/activateAgentRequested',
     payload,
@@ -86,7 +86,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
     payload,
   })),
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   addMessage: vi.fn((...payload: any[]) => ({ type: 'agentSession/addMessage', payload })),
   setAgentStreaming: vi.fn((...payload: any[]) => ({
     type: 'agentSession/setAgentStreaming',
@@ -99,8 +99,8 @@ vi.mock('../browser/services/error-recovery.service', () => ({
   DEFAULT_STRATEGIES: {},
 }));
 vi.mock('$shared/constants/agent-streaming', () => ({ AGENT_STREAMING_CONFIG: {} }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => vi.fn(),
@@ -119,7 +119,7 @@ vi.mock('../../observability/event-collector-client', () => ({
   eventCollector: { track: vi.fn() },
   AgentEventType: { MESSAGE_SENT: 'MESSAGE_SENT' },
 }));
-vi.mock('$lib/store/slices/workspace/utils/workspace-metrics', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace-metrics', () => ({
   workspaceMetrics: { incrementMessageSent: vi.fn() },
 }));
 vi.mock('../utils/streaming-invariants', () => ({

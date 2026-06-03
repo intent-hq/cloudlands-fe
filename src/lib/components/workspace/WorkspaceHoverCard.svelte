@@ -20,13 +20,13 @@
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { ensureAgentSessionLoaded } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspace: Workspace | null;

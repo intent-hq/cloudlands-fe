@@ -123,6 +123,9 @@ importers:
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
+      ag-redux-toolkit:
+        specifier: file:ag-redux-toolkit-0.0.1.tgz
+        version: file:ag-redux-toolkit-0.0.1.tgz(fast-equals@6.0.0)(redux-saga@1.4.2)(redux@5.0.1)(svelte@5.55.10(@typescript-eslint/types@8.50.0))(typed-redux-saga@1.5.0(redux-saga@1.4.2))
       async-mutex:
         specifier: ^0.5.0
         version: 0.5.0
@@ -240,9 +243,6 @@ importers:
       svelte-fa:
         specifier: ^4.0.4
         version: 4.0.4(svelte@5.55.10(@typescript-eslint/types@8.50.0))
-      svelte-redux-toolkit:
-        specifier: file:svelte-redux-toolkit-0.1.2.tgz
-        version: file:svelte-redux-toolkit-0.1.2.tgz(fast-equals@6.0.0)(redux-saga@1.4.2)(redux@5.0.1)(svelte@5.55.10(@typescript-eslint/types@8.50.0))(typed-redux-saga@1.5.0(redux-saga@1.4.2))
       svelte-sonner:
         specifier: ^1.0.5
         version: 1.0.7(svelte@5.55.10(@typescript-eslint/types@8.50.0))
@@ -2137,10 +2137,6 @@ packages:
     peerDependencies:
       tailwindcss: '>=3.0.0 || insiders || >=4.0.0-alpha.20 || >=4.0.0-beta.1'
 
-  '@tanstack/intent@0.0.36':
-    resolution: {integrity: sha512-rtHHeZN+JwnDzPKE++CSwrljNxmJg8Pu5rnZeAB/enxcQrBiUmVthqMqEmJ27sa3Rf/sqE9cPA/7IlNc4ApXKw==}
-    hasBin: true
-
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -2795,6 +2791,17 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  ag-redux-toolkit@file:ag-redux-toolkit-0.0.1.tgz:
+    resolution: {integrity: sha512-/MqB+IehggCPcZ27aGPU9WwI677GEsef35S7OV64Pp8iWxqu0/wcGXcEddLL5A4KI/hSLHv+yN3VJGqidhQ0/w==, tarball: file:ag-redux-toolkit-0.0.1.tgz}
+    version: 0.0.1
+    hasBin: true
+    peerDependencies:
+      fast-equals: ^6.0.0
+      redux: ^5.0.1
+      redux-saga: ^1.4.2
+      svelte: ^5.0.0
+      typed-redux-saga: ^1.5.0
+
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
@@ -3038,10 +3045,6 @@ packages:
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
     engines: {node: '>= 0.8'}
-
-  cac@6.7.14:
-    resolution: {integrity: sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ==}
-    engines: {node: '>=8'}
 
   cacache@19.0.1:
     resolution: {integrity: sha512-hdsUxulXCi5STId78vRVYEtDAjq99ICAUktLTeTYsLoTE6Z8dS0c8pWNCxwdrk9YfJeobDZc2Y186hD/5ZQgFQ==}
@@ -4400,6 +4403,9 @@ packages:
     resolution: {integrity: sha512-YHzO7721WbmAL6Ov1uzN/l5mY5WWWhJBSW+jq4tkfZfsxmo1hu6frS0EOswvjBUnWE6NtjEs48SFn5CQESRLZg==}
     hasBin: true
 
+  kefir@3.8.8:
+    resolution: {integrity: sha512-xWga7QCZsR2Wjy2vNL3Kq/irT+IwxwItEWycRRlT5yhqHZK2fmEhziP+LzcJBWSTAMranGKtGTQ6lFpyJS3+jA==}
+
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
@@ -5700,17 +5706,6 @@ packages:
     resolution: {integrity: sha512-85BomCGkTrH8kPDGvb8JrVwq9CqR9foprbKjxemP4Dtg3zPR7OXj5hD0xVYK0C+UCzFI1zooLoK/ndIX6aYXAw==}
     peerDependencies:
       svelte: ^4.0.0 || ^5.0.0
-
-  svelte-redux-toolkit@file:svelte-redux-toolkit-0.1.2.tgz:
-    resolution: {integrity: sha512-cPTUl2lPGIVnPGx+x3BkUGugJjkf/gp+kLvee95cM3IxRzcNlusiVE41ViCDdK9Jrt9IgVPtjicTM4u9n9e4kA==, tarball: file:svelte-redux-toolkit-0.1.2.tgz}
-    version: 0.1.2
-    hasBin: true
-    peerDependencies:
-      fast-equals: ^6.0.0
-      redux: ^5.0.1
-      redux-saga: ^1.4.2
-      svelte: ^5.0.0
-      typed-redux-saga: ^1.5.0
 
   svelte-sonner@1.0.7:
     resolution: {integrity: sha512-1EUFYmd7q/xfs2qCHwJzGPh9n5VJ3X6QjBN10fof2vxgy8fYE7kVfZ7uGnd7i6fQaWIr5KvXcwYXE/cmTEjk5A==}
@@ -7928,11 +7923,6 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 4.1.18
 
-  '@tanstack/intent@0.0.36':
-    dependencies:
-      cac: 6.7.14
-      yaml: 2.9.0
-
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.27.1
@@ -8681,6 +8671,15 @@ snapshots:
 
   acorn@8.15.0: {}
 
+  ag-redux-toolkit@file:ag-redux-toolkit-0.0.1.tgz(fast-equals@6.0.0)(redux-saga@1.4.2)(redux@5.0.1)(svelte@5.55.10(@typescript-eslint/types@8.50.0))(typed-redux-saga@1.5.0(redux-saga@1.4.2)):
+    dependencies:
+      fast-equals: 6.0.0
+      kefir: 3.8.8
+      redux: 5.0.1
+      redux-saga: 1.4.2
+      svelte: 5.55.10(@typescript-eslint/types@8.50.0)
+      typed-redux-saga: 1.5.0(redux-saga@1.4.2)
+
   agent-base@6.0.2:
     dependencies:
       debug: 4.4.3
@@ -9014,8 +9013,6 @@ snapshots:
       - supports-color
 
   bytes@3.1.2: {}
-
-  cac@6.7.14: {}
 
   cacache@19.0.1:
     dependencies:
@@ -10604,6 +10601,8 @@ snapshots:
     dependencies:
       commander: 8.3.0
 
+  kefir@3.8.8: {}
+
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
@@ -11995,15 +11994,6 @@ snapshots:
     dependencies:
       svelte: 5.55.10(@typescript-eslint/types@8.50.0)
 
-  svelte-redux-toolkit@file:svelte-redux-toolkit-0.1.2.tgz(fast-equals@6.0.0)(redux-saga@1.4.2)(redux@5.0.1)(svelte@5.55.10(@typescript-eslint/types@8.50.0))(typed-redux-saga@1.5.0(redux-saga@1.4.2)):
-    dependencies:
-      '@tanstack/intent': 0.0.36
-      fast-equals: 6.0.0
-      redux: 5.0.1
-      redux-saga: 1.4.2
-      svelte: 5.55.10(@typescript-eslint/types@8.50.0)
-      typed-redux-saga: 1.5.0(redux-saga@1.4.2)
-
   svelte-sonner@1.0.7(svelte@5.55.10(@typescript-eslint/types@8.50.0)):
     dependencies:
       runed: 0.28.0(svelte@5.55.10(@typescript-eslint/types@8.50.0))
@@ -12497,7 +12487,8 @@ snapshots:
 
   yaml@1.10.2: {}
 
-  yaml@2.9.0: {}
+  yaml@2.9.0:
+    optional: true
 
   yargs-parser@21.1.1: {}
 

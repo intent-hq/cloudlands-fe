@@ -5,12 +5,12 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
   import { gitCache } from '$features/git/git-cache';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { refreshFileExplorer } from '$lib/store/slices/file-explorer/file-explorer-slice';
-  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { refreshFileExplorer } from '$store/renderer/slices/file-explorer/file-explorer-slice';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('FilesPanel');
 

@@ -19,15 +19,15 @@
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
 
-  import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
+  import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import {
   setActiveProvider,
   setProviderEnabled,
-} from '$lib/store/slices/provider-settings/provider-settings-slice';
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
   reloadModelsForProvider,
   retryLoadModels,
-} from '$lib/store/slices/model/model-slice';
+} from '$store/renderer/slices/model/model-slice';
 
 
   import { identifyUser } from '$lib/services/analytics';
@@ -37,18 +37,18 @@
   selectProviderStatusMap,
   selectProviderLoadingMap,
   selectHasCheckedOnce,
-} from '$lib/store/slices/agent-availability/agent-availability-selectors';
+} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   checkSingleProviderSuccess,
   checkSingleProviderFailure,
   checkAllProvidersRequested,
   ensureProvidersChecked as ensureProvidersCheckedAction,
-} from '$lib/store/slices/agent-availability/agent-availability-slice';
-  import type { ProviderStatus } from '$lib/store/slices/agent-availability/agent-availability-types';
+} from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
 
   import { fly } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     /** Called when user selects a provider to start using */

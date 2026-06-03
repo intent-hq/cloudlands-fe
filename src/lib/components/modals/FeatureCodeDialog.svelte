@@ -6,12 +6,12 @@
   import {
   selectActiveFeatures,
   selectHasActiveFeatures,
-} from '$lib/store/slices/feature-codes/feature-codes-selectors';
+} from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import {
   fetchFeatures,
   deactivateFeature,
-} from '$lib/store/slices/feature-codes/feature-codes-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/feature-codes/feature-codes-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

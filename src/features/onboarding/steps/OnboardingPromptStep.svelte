@@ -32,13 +32,13 @@
   import {
   checkClonePreflight,
   clearClonePreflight,
-} from '$lib/store/slices/clone-preflight/clone-preflight-slice';
+} from '$store/renderer/slices/clone-preflight/clone-preflight-slice';
   import {
   selectClonePreflightStatus,
   selectClonePreflightError,
   selectClonePreflightUrl,
-} from '$lib/store/slices/clone-preflight/clone-preflight-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/clone-preflight/clone-preflight-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     // Input state

@@ -4,7 +4,7 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
-import { full as svelteReduxToolkitFullConfig } from 'svelte-redux-toolkit/eslint-plugins';
+import { full as agReduxToolkitFullConfig } from 'ag-redux-toolkit/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 
@@ -40,60 +40,60 @@ const productionModuleIgnores = [
   'src/preload/generated-channels.ts',
 ];
 
-const svelteReduxToolkitSourceFiles = ['src/**/*.{js,jsx,mjs,ts,tsx}'];
-const svelteReduxToolkitSelectorFiles = [
+const agReduxToolkitSourceFiles = ['src/**/*.{js,jsx,mjs,ts,tsx}'];
+const agReduxToolkitSelectorFiles = [
   'src/**/*-selector.{js,jsx,mjs,ts,tsx}',
   'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
 ];
-const svelteReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
-const svelteReduxToolkitSelectorRuleIgnores = [
+const agReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
+const agReduxToolkitSelectorRuleIgnores = [
   '**/__tests__/**/*.{js,jsx,mjs,ts,tsx}',
   '**/tests/**/*.{js,jsx,mjs,ts,tsx}',
   '**/*.{test,spec}.{js,jsx,mjs,ts,tsx}',
   '**/*.manual-test.{js,jsx,mjs,ts,tsx}',
 ];
 
-const svelteReduxToolkitSourceSelectorRules = {
-  'svelte-redux-toolkit/duplicate-selector-export': 'error',
-  'svelte-redux-toolkit/duplicate-selector-implementation': 'error',
-  'svelte-redux-toolkit/inline-saga-selector': 'error',
-  'svelte-redux-toolkit/direct-selector-call-mode': 'error',
-  'svelte-redux-toolkit/wait-for-named-selector': 'error',
+const agReduxToolkitSourceSelectorRules = {
+  'ag-redux-toolkit/duplicate-selector-export': 'error',
+  'ag-redux-toolkit/duplicate-selector-implementation': 'error',
+  'ag-redux-toolkit/inline-saga-selector': 'error',
+  'ag-redux-toolkit/direct-selector-call-mode': 'error',
+  'ag-redux-toolkit/wait-for-named-selector': 'error',
 };
-const svelteReduxToolkitTestSelectorRuleOverrides = {
-  'svelte-redux-toolkit/duplicate-selector-export': 'off',
-  'svelte-redux-toolkit/duplicate-selector-implementation': 'off',
-  'svelte-redux-toolkit/inline-saga-selector': 'off',
-  'svelte-redux-toolkit/direct-selector-call-mode': 'off',
-  'svelte-redux-toolkit/wait-for-named-selector': 'off',
-  'svelte-redux-toolkit/selector-file-name': 'off',
-  'svelte-redux-toolkit/selector-export-name': 'off',
+const agReduxToolkitTestSelectorRuleOverrides = {
+  'ag-redux-toolkit/duplicate-selector-export': 'off',
+  'ag-redux-toolkit/duplicate-selector-implementation': 'off',
+  'ag-redux-toolkit/inline-saga-selector': 'off',
+  'ag-redux-toolkit/direct-selector-call-mode': 'off',
+  'ag-redux-toolkit/wait-for-named-selector': 'off',
+  'ag-redux-toolkit/selector-file-name': 'off',
+  'ag-redux-toolkit/selector-export-name': 'off',
 };
-const svelteReduxToolkitTestArchitectureRuleOverrides = {
-  'svelte-redux-toolkit/collection-internal-mutation': 'off',
-  'svelte-redux-toolkit/create-action-owner': 'off',
-  'svelte-redux-toolkit/duplicate-saga-name': 'off',
+const agReduxToolkitTestArchitectureRuleOverrides = {
+  'ag-redux-toolkit/collection-internal-mutation': 'off',
+  'ag-redux-toolkit/create-action-owner': 'off',
+  'ag-redux-toolkit/duplicate-saga-name': 'off',
 };
-const svelteReduxToolkitArchitectureRules = {
-  'svelte-redux-toolkit/duplicate-action-type': 'error',
-  'svelte-redux-toolkit/duplicate-selector-export': 'error',
-  'svelte-redux-toolkit/duplicate-selector-implementation': 'error',
-  'svelte-redux-toolkit/duplicate-saga-registration': 'error',
-  'svelte-redux-toolkit/pass-through-wrapper': 'error',
-  'svelte-redux-toolkit/non-serializable-state-type': 'error',
-  'svelte-redux-toolkit/non-serializable-initial-state': 'error',
-  'svelte-redux-toolkit/nondeterministic-reducer-state': 'error',
-  'svelte-redux-toolkit/reducer-side-effect': 'error',
-  'svelte-redux-toolkit/async-reducer-handler': 'error',
-  'svelte-redux-toolkit/collection-internal-mutation': 'error',
-  'svelte-redux-toolkit/inline-saga-selector': 'error',
-  'svelte-redux-toolkit/raw-channel-cleanup': 'error',
-  'svelte-redux-toolkit/forbidden-redux-api': 'error',
-  'svelte-redux-toolkit/create-action-owner': 'error',
-  'svelte-redux-toolkit/saga-watcher-action-type': 'error',
-  'svelte-redux-toolkit/unnamespaced-action-type': 'error',
-  'svelte-redux-toolkit/action-type-shape': 'error',
-  'svelte-redux-toolkit/forbidden-component-import': 'error',
+const agReduxToolkitArchitectureRules = {
+  'ag-redux-toolkit/duplicate-action-type': 'error',
+  'ag-redux-toolkit/duplicate-selector-export': 'error',
+  'ag-redux-toolkit/duplicate-selector-implementation': 'error',
+  'ag-redux-toolkit/duplicate-saga-registration': 'error',
+  'ag-redux-toolkit/pass-through-wrapper': 'error',
+  'ag-redux-toolkit/non-serializable-state-type': 'error',
+  'ag-redux-toolkit/non-serializable-initial-state': 'error',
+  'ag-redux-toolkit/nondeterministic-reducer-state': 'error',
+  'ag-redux-toolkit/reducer-side-effect': 'error',
+  'ag-redux-toolkit/async-reducer-handler': 'error',
+  'ag-redux-toolkit/collection-internal-mutation': 'error',
+  'ag-redux-toolkit/inline-saga-selector': 'error',
+  'ag-redux-toolkit/raw-channel-cleanup': 'error',
+  'ag-redux-toolkit/forbidden-redux-api': 'error',
+  'ag-redux-toolkit/create-action-owner': 'error',
+  'ag-redux-toolkit/saga-watcher-action-type': 'error',
+  'ag-redux-toolkit/unnamespaced-action-type': 'error',
+  'ag-redux-toolkit/action-type-shape': 'error',
+  'ag-redux-toolkit/forbidden-component-import': 'error',
 };
 
 // Staged rollout: existing components with direct async data loads are baselined
@@ -481,50 +481,50 @@ export default [
       'max-lines': ['error', { max: 1200 }],
     },
   },
-  ...svelteReduxToolkitFullConfig,
+  ...agReduxToolkitFullConfig,
   {
-    files: svelteReduxToolkitSourceFiles,
+    files: agReduxToolkitSourceFiles,
     ignores: productionModuleIgnores,
-    rules: svelteReduxToolkitArchitectureRules,
+    rules: agReduxToolkitArchitectureRules,
   },
   {
     files: ['src/**/*.svelte'],
     ignores: productionModuleIgnores,
     rules: {
-      'svelte-redux-toolkit/forbidden-component-import': 'error',
+      'ag-redux-toolkit/forbidden-component-import': 'error',
     },
   },
   {
-    files: svelteReduxToolkitSourceFiles,
-    ignores: svelteReduxToolkitSelectorRuleIgnores,
-    rules: svelteReduxToolkitSourceSelectorRules,
+    files: agReduxToolkitSourceFiles,
+    ignores: agReduxToolkitSelectorRuleIgnores,
+    rules: agReduxToolkitSourceSelectorRules,
   },
   {
-    files: svelteReduxToolkitSourceFiles,
-    ignores: [...svelteReduxToolkitSelectorFiles, ...svelteReduxToolkitSelectorRuleIgnores],
+    files: agReduxToolkitSourceFiles,
+    ignores: [...agReduxToolkitSelectorFiles, ...agReduxToolkitSelectorRuleIgnores],
     rules: {
-      'svelte-redux-toolkit/selector-file-name': 'error',
+      'ag-redux-toolkit/selector-file-name': 'error',
     },
   },
   {
-    files: svelteReduxToolkitSelectorFiles,
-    ignores: svelteReduxToolkitSelectorRuleIgnores,
+    files: agReduxToolkitSelectorFiles,
+    ignores: agReduxToolkitSelectorRuleIgnores,
     rules: {
-      'svelte-redux-toolkit/selector-export-name': 'error',
+      'ag-redux-toolkit/selector-export-name': 'error',
     },
   },
   {
-    files: svelteReduxToolkitSelectorRuleIgnores,
-    rules: svelteReduxToolkitTestSelectorRuleOverrides,
+    files: agReduxToolkitSelectorRuleIgnores,
+    rules: agReduxToolkitTestSelectorRuleOverrides,
   },
   {
-    files: svelteReduxToolkitSelectorRuleIgnores,
-    rules: svelteReduxToolkitTestArchitectureRuleOverrides,
+    files: agReduxToolkitSelectorRuleIgnores,
+    rules: agReduxToolkitTestArchitectureRuleOverrides,
   },
   {
-    files: svelteReduxToolkitTestFiles,
+    files: agReduxToolkitTestFiles,
     rules: {
-      'svelte-redux-toolkit/test-selector-select': 'error',
+      'ag-redux-toolkit/test-selector-select': 'error',
     },
   },
   {

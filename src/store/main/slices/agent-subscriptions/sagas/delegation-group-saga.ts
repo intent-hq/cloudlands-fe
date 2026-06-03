@@ -11,7 +11,6 @@
 import {
   call,
   put,
-  select,
   take,
   takeEvery,
   delay,
@@ -31,9 +30,9 @@ import {
 } from "../agent-subscriptions-slice";
 import {
   selectAgentStatus,
-  selectDelegationGroupRaw,
-  selectIsDelegationGroupCompleteRaw,
-  selectSubscriptionRaw,
+  selectDelegationGroup,
+  selectIsDelegationGroupComplete,
+  selectSubscription,
 } from "../agent-subscriptions-selectors";
 import { handleDeliverEvents } from "./delivery-saga";
 
@@ -69,12 +68,7 @@ export function* handleDelegationGroupDelivery(
 
   logger.warn(`[subscriptions] delegation-group-delivery-entry workspaceId=${wsId} groupId=${groupId} step=entry`);
 
-  // Use raw (uncached) selector to avoid stale reads from createCachedSelector
-  const tracker = yield* select(
-    selectDelegationGroupRaw,
-    wsId,
-    groupId,
-  );
+  const tracker = yield* selectDelegationGroup.effect(wsId, groupId);
   if (!tracker) {
     logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=tracker-not-found step=early-return`);
     return;
@@ -86,11 +80,7 @@ export function* handleDelegationGroupDelivery(
   // last-writer-wins race fixed in commit 0e0a985c8) and the saga will never
   // deliver events from the missing agents. Logging-only — deduplicated per
   // (groupId, missingIds) pair to avoid flooding.
-  const subscription = yield* select(
-    selectSubscriptionRaw,
-    wsId,
-    tracker.subscriptionId,
-  );
+  const subscription = yield* selectSubscription.effect(wsId, tracker.subscriptionId);
   if (subscription) {
     const actorIds = subscription.filter.actorIds ?? [];
     const actorIdSet = new Set(actorIds);
@@ -112,12 +102,7 @@ export function* handleDelegationGroupDelivery(
     return;
   }
 
-  // Check if all agents have completed — use raw (uncached) selector
-  const isComplete: boolean = yield* select(
-    selectIsDelegationGroupCompleteRaw,
-    wsId,
-    groupId,
-  );
+  const isComplete: boolean = yield* selectIsDelegationGroupComplete.effect(wsId, groupId);
   if (!isComplete) {
     logger.warn(`[subscriptions] delegation-group-delivery-skip workspaceId=${wsId} groupId=${groupId} reason=not-complete subscriptionId=${tracker.subscriptionId} parentAgentId=${tracker.parentAgentId} expectedAgents=${tracker.expectedAgentIds.length} completedAgents=${tracker.completedAgentIds.length} deletedAgents=${tracker.deletedAgentIds.length} step=early-return`);
     return;

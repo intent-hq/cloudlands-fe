@@ -19,7 +19,7 @@ Every Svelte component's `<script>` block should follow this ordering. Separate 
 <script lang="ts">
   // 1. Imports
   import { onDestroy, onMount } from 'svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   import { someAction } from './some-slice';
   import { selectSomeItem } from './selectors';
   import ChildComponent from './ChildComponent.svelte';

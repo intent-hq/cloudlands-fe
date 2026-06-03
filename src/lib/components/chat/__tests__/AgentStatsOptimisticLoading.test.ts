@@ -67,8 +67,8 @@ vi.mock('$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte', asy
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -76,18 +76,18 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 vi.mock('$features/agent/browser', () => ({ subscribeToAgent: mocks.subscribeToAgent }));
-vi.mock('$lib/store/slices/session-stats/session-stats-slice', () => ({
+vi.mock('$store/renderer/slices/session-stats/session-stats-slice', () => ({
   fetchAgentStats: vi.fn((agentId: string, sessionId: string) => ({
     type: 'sessionStats/fetchAgentStats',
     payload: [agentId, sessionId],
   })),
 }));
-vi.mock('$lib/store/slices/session-stats/session-stats-selectors', () => ({
+vi.mock('$store/renderer/slices/session-stats/session-stats-selectors', () => ({
   selectAgentStats: () => mocks.readable(() => mocks.statsState.stats),
   selectIsLoadingAgentStats: () => mocks.readable(() => mocks.statsState.loading),
   selectAgentStatsError: () => mocks.readable(() => mocks.statsState.error),
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
     select: (_state: unknown, agentId: string) => mocks.agents[agentId],
   }),
@@ -95,7 +95,7 @@ vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsWaiting: () => mocks.readable(() => false),
   selectAgentSessionStreamingContent: () => mocks.readable(() => ''),
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAgentSession: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
     select: (_state: unknown, agentId: string) => mocks.agents[agentId],
   }),
@@ -104,49 +104,49 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
   },
   selectInitialAgentId: () => mocks.readable(() => undefined),
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   ensureAgentSessionLoaded: vi.fn((wsId: string, agentId: string) => ({
     type: 'ensure',
     payload: [wsId, agentId],
   })),
 }));
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => mocks.readable(() => null),
 }));
-vi.mock('$lib/store/slices/permission/permission-selectors', () => ({
+vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => mocks.readable(() => 0),
 }));
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: { select: () => 'ws-1' },
   selectWorkspaceById: () => mocks.readable(() => ({ id: 'ws-1', name: 'Workspace' })),
 }));
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: () => mocks.readable(() => 'auggie:opus'),
 }));
-vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => mocks.readable(() => []),
   selectSpecialistName: { select: () => null },
 }));
-vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', () => ({
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: vi.fn((workspaceId: string, tabId: string) => ({
     type: 'closeTab',
     payload: [workspaceId, tabId],
   })),
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-slice', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
   cycleFontStyle: vi.fn(() => ({ type: 'cycleFontStyle' })),
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectAgentFontStyleLabel: () => mocks.readable(() => 'Sans'),
   selectIsAgentMonospace: () => mocks.readable(() => false),
 }));
-vi.mock('$lib/store/slices/app-layout/app-layout-slice', () => ({
+vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
   openAgentTabRequested: vi.fn((workspaceId: string, payload: unknown) => ({
     type: 'openAgent',
     payload: [workspaceId, payload],
   })),
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   updateSession: vi.fn((agentId: string, update: unknown) => ({
     type: 'updateSession',
     payload: [agentId, update],

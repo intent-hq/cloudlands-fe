@@ -5,7 +5,7 @@ import {
   track,
   identifyUser,
 } from '$lib/services/analytics';
-import { flushReduxActionBreadcrumbs } from '$lib/store/middlewares/sentry-breadcrumbs';
+import { flushReduxActionBreadcrumbs } from '$store/renderer/middlewares/sentry-breadcrumbs';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
 
 // In browser-only mode (no Electron), @sentry/electron/renderer is unavailable.

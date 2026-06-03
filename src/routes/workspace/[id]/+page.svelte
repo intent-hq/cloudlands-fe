@@ -37,8 +37,8 @@
   import {
   commandPaletteActionConsumed,
   showAgentRequested,
-} from '$lib/store/slices/app-layout/app-layout-slice';
-  import { selectPendingCommandPaletteAction } from '$lib/store/slices/app-layout/app-layout-selectors';
+} from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
 
 
   // Performance optimization
@@ -47,43 +47,43 @@
   import {
   selectGitBranch,
   selectGitAhead,
-} from '$lib/store/slices/git/git-selectors';
+} from '$store/renderer/slices/git/git-selectors';
   import {
   selectMainPanelView,
   selectCurrentIsInitialized,
   selectCurrentLoading,
   selectSidebarCommits,
-} from '$lib/store/slices/changes/changes-selectors';
-  import { clearMainPanelView as ftClearMainPanelView } from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-selectors';
+  import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
   selectActiveWorkspaceId,
   selectWorkspaceById,
   selectWorkspaceIsEmpty,
   selectWorkspaceActivePullRequest,
   selectIsNewWorkspaceSession,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   selectPanelVisibilityFlag,
   selectSidebarSide,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   clearActiveWorkspace,
   loadWorkspacesRequested,
   setActiveWorkspaceId,
   setWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
   import {
   setPanelVisibility,
   type PanelVisibilityState,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { workspaceStorageManager } from '$lib/store/slices/workspace/utils/workspace-storage-manager';
+  import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 
   import {
   markNoteRead,
   createNoteRequested,
-} from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
-  import { workspaceUnmounted } from '$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice';
+} from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
   import {
   track,
   setAnalyticsContextProvider,
@@ -91,7 +91,7 @@
 } from '$lib/services/analytics';
 
 
-  import { setOnboardingActive } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+  import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
@@ -111,8 +111,8 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { selectSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-selectors';
-  import { setSidebarActiveTab } from '$lib/store/slices/transient-ui/transient-ui-slice';
+  import { selectSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { setSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -123,15 +123,15 @@
   flushPendingAgentDeletionsRequested,
   setInitialAgentConfigProcessed,
   setInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   selectInitialAgentConfig,
   selectInitialAgentConfigProcessed,
   selectInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('workspace-page');
 

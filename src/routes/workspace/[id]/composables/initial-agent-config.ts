@@ -6,9 +6,9 @@
  * and ensures Redux is hydrated accordingly.
  */
 
-import { store as appStore } from '$lib/store/store';
-import { selectInitialAgentConfig } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-import { setInitialAgentConfig } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { store as appStore } from '$store/renderer/store';
+import { selectInitialAgentConfig } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import { setInitialAgentConfig } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 /**
  * Hydrate the initial agent config for a workspace.

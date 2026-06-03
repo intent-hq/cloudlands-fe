@@ -13,7 +13,7 @@
   import {
   selectIsDownloading,
   selectAutoUpdateProgress,
-} from '$lib/store/slices/auto-update/auto-update-selectors';
+} from '$store/renderer/slices/auto-update/auto-update-selectors';
 
   interface Props {
     class?: string;

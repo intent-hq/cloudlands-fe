@@ -2,7 +2,7 @@
   import { slide } from 'svelte/transition';
   import ResponsiveCommentThread from './comments/ResponsiveCommentThread.svelte';
   import type { CommentV2 } from '$features/comments/comment-types-v2';
-  import { selectSelectedComment } from '$lib/store/slices/comments/comments-selectors';
+  import { selectSelectedComment } from '$store/renderer/slices/comments/comments-selectors';
   import type { Editor } from '@tiptap/core';
   import { createLogger } from '$lib/utils/client-logger';
   import { findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';

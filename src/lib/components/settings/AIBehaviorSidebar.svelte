@@ -13,13 +13,13 @@
   selectHasOverrides,
   selectSpecialistSourceLabel,
   selectUserOverrides,
-} from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
-  import { openSpecialistsFolder } from '$lib/store/slices/specialists/specialists-slice';
+} from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { openSpecialistsFolder } from '$store/renderer/slices/specialists/specialists-slice';
 
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   // View type definition
   export type AIBehaviorView =

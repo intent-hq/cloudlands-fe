@@ -8,15 +8,15 @@ import {
   afterEach,
 } from 'vitest';
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
   });
 });
 
-vi.mock('$lib/store/slices/comments/comments-selectors', () => ({
+vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectCommentById: { select: vi.fn(() => null) },
 }));
 

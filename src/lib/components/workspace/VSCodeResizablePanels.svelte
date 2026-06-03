@@ -10,13 +10,13 @@
   import {
   selectPanelVisibilityFlag,
   selectWorkspaceSidebarPanelLayout,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   setWorkspaceSidebarPanelLayout,
   type WorkspaceSidebarPanelLayoutState,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

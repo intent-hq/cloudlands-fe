@@ -20,21 +20,21 @@
   selectCurrentLoading as selectFtCurrentLoading,
   selectMainPanelView as selectFtMainPanelView,
   selectAcceptChangesState,
-} from '$lib/store/slices/changes/changes-selectors';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   setMainPanelView as ftSetMainPanelView,
   stageChangesRequested,
   unstageChangesRequested,
   revertChangeRequested,
   loadWorkspaceDataRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
 
 
   import {
   openWorkspaceAcceptChanges,
   openWorkspaceDiff,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import FileChangesList from './FileChangesList.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
   import {
@@ -45,14 +45,14 @@
   import { Tooltip } from '../ui/tooltip';
   import { Button } from '../ui/button';
   import { Skeleton } from '../ui/skeleton';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
 
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { Switch } from '../ui/switch';
-  import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
-  import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
+  import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
 

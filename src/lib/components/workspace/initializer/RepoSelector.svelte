@@ -1,6 +1,6 @@
 <script lang="ts">
 /* eslint-disable max-lines */
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -17,19 +17,19 @@
   import type { KnownRepo } from '$shared/types/known-repo';
 
 
-  import { replaceWorkspaceList } from '$lib/store/slices/workspace/workspace-slice';
+  import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
   setWorkspaceInitializerDefaultParentPath,
   setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
   selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerRecentRepos,
   selectWorkspaceInitializerRemoteSetups,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRemoteSetup } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
   faFolder,
@@ -41,8 +41,8 @@
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
-  import { selectIsFeatureEnabled } from '$lib/store/slices/feature-codes/feature-codes-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('RepoSelector');
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();

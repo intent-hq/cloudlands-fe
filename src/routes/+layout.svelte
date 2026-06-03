@@ -10,23 +10,23 @@
   import {
     initializeReleaseNotes,
     closeReleaseNotesModal,
-  } from '$lib/store/slices/release-notes/release-notes-slice';
+  } from '$store/renderer/slices/release-notes/release-notes-slice';
   import {
     selectShowReleaseNotesModal,
     selectReleaseNotes,
-  } from '$lib/store/slices/release-notes/release-notes-selectors';
-  import { initializeGitHubAuth } from '$lib/store/slices/github-auth/github-auth-slice';
+  } from '$store/renderer/slices/release-notes/release-notes-selectors';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { globalCleanupService } from '$features/memory/browser/global-cleanup.service';
   import {
     openPalette,
     closePalette,
     togglePalette,
     openGoToLine,
-  } from '$lib/store/slices/palette/palette-slice';
+  } from '$store/renderer/slices/palette/palette-slice';
   import {
     selectIsPaletteOpen,
     selectPaletteQuery,
-  } from '$lib/store/slices/palette/palette-selectors';
+  } from '$store/renderer/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -41,50 +41,50 @@
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { openWorkspaceFile } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
 
   import {
     closeGitCredentialsModal,
     closeGitHubAuthModal,
-  } from '$lib/store/slices/global-modals/global-modals-slice';
+  } from '$store/renderer/slices/global-modals/global-modals-slice';
   import {
     selectGitCredentialsError,
     selectGlobalModals,
     selectPendingGitHubAuth,
-  } from '$lib/store/slices/global-modals/global-modals-selectors';
-  import { selectFeatureCodeDialogOpen } from '$lib/store/slices/feature-codes/feature-codes-selectors';
-  import { toggleFeatureCodeDialog } from '$lib/store/slices/feature-codes/feature-codes-slice';
-  import { toggleCheatSheet } from '$lib/store/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import { toggleLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  } from '$store/renderer/slices/global-modals/global-modals-selectors';
+  import { selectFeatureCodeDialogOpen } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+  import { toggleFeatureCodeDialog } from '$store/renderer/slices/feature-codes/feature-codes-slice';
+  import { toggleCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { toggleLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
     cleanupInvalidWorkspaceTabs,
     openWorkspaceTab,
-  } from '$lib/store/slices/tab-state/tab-state-slice';
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
-  } from '$lib/store/slices/tab-state/tab-state-selectors';
+  } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
-  } from '$lib/store/slices/terminals/terminals-slice';
+  } from '$store/renderer/slices/terminals/terminals-slice';
   import {
     selectActiveWorkspaceId,
     selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
-  } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectHasCompletedProviderSetup } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
     recordWorkspaceView,
     setActiveWorkspaceId,
-  } from '$lib/store/slices/workspace/workspace-slice';
-  import { createAgentWithSpecialistRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { createAgentWithSpecialistRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
@@ -99,11 +99,11 @@
   import { ROOT_WORKSPACE_ID, isValidWorkspaceId } from '$shared/types/branded-ids';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { SidebarNav, SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import { togglePanel, setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+  import { togglePanel, setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
-  import { initAppStore, store as appStore } from '$lib/store/store';
-  import { startAllAppSagas } from '$lib/store/sagas';
+  import { initAppStore, store as appStore } from '$store/renderer/store';
+  import { startAllAppSagas } from '$store/renderer/sagas';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {

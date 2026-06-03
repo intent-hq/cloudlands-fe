@@ -21,10 +21,10 @@
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import Header from '../ui/Header.svelte';
   import { getWorkspaceAgentsVisibilitySummary } from './workspace-agents-list-utils';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     agents?: AgentSession[];

@@ -1,18 +1,18 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory,
   ScriptMode,
   ScriptWithState } from '$features/scripts/types';
 
-  import { selectScriptEntries } from '$lib/store/slices/scripts/scripts-selectors';
+  import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
   refreshScripts,
   removeScript,
   upsertScript,
-} from '$lib/store/slices/scripts/scripts-slice';
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/scripts/scripts-slice';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -27,16 +27,16 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import {
   selectExecutorIsRunning,
   selectExecutorAgentId,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   selectActiveTerminalId as selectActiveTerminalIdSelector,
   selectUserTerminals as selectTerminalsSelector,
-} from '$lib/store/slices/terminals/terminals-selectors';
-  import { removeTerminal } from '$lib/store/slices/terminals/terminals-slice';
+} from '$store/renderer/slices/terminals/terminals-selectors';
+  import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 
   const activeWorkspace = selectActiveWorkspace();
 
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -53,7 +53,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

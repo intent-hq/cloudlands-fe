@@ -16,8 +16,8 @@
   ChangeStage,
   type TrackedChange,
 } from '$features/file-tracking/types';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectDiffSideBySide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';

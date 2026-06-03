@@ -25,15 +25,15 @@ import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { track } from '$lib/services/analytics';
 import { dispatchWindowEvent } from './window-events';
-import { closeWorkspaceTab } from '$lib/store/slices/tab-state/tab-state-slice';
-import { selectCurrentWorkspaceTabId } from '$lib/store/slices/tab-state/tab-state-selectors';
+import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = new Logger('WorkspaceNavigation');
 

@@ -43,7 +43,7 @@ describe('selector active-workspace hygiene gate', () => {
       {
         'example-selectors.ts': `
           import { selectActiveWorkspaceId } from '../workspace/workspace-selectors';
-          import { store } from '$lib/store/store';
+          import { store } from '$store/renderer/store';
 
           export const selectThing = store.createSelector((state) => state.thing);
         `,
@@ -62,7 +62,7 @@ describe('selector active-workspace hygiene gate', () => {
       {
         'example-selectors.ts': `
           import { selectCurrentWorkspace as selectWorkspace } from '../workspace/workspace-selectors';
-          import { store } from '$lib/store/store';
+          import { store } from '$store/renderer/store';
 
           export const selectTitle = store.createSelector((state) => {
             return selectWorkspace.select(state)?.title ?? '';
@@ -87,7 +87,7 @@ describe('selector active-workspace hygiene gate', () => {
       {
         'example-selectors.ts': `
           import * as workspaceSelectors from '../workspace/workspace-selectors';
-          import { store } from '$lib/store/store';
+          import { store } from '$store/renderer/store';
 
           export const selectTitle = store.createSelector((state) => {
             return workspaceSelectors.selectActiveWorkspaceId.select(state) ?? '';
@@ -111,7 +111,7 @@ describe('selector active-workspace hygiene gate', () => {
     withFixture(
       {
         'example-selectors.ts': `
-          import { store } from '$lib/store/store';
+          import { store } from '$store/renderer/store';
 
           export const selectWorkspaceThing = store.createSelector((state, workspaceId: string) => {
             return state.things.byWorkspaceId[workspaceId] ?? null;

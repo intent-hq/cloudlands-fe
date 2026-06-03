@@ -47,7 +47,7 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$lib/store/slices/scripts/scripts-selectors', () => ({
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectScriptEntries: Object.assign(
     () => ({
       subscribe: (fn: (value: any) => void) => {
@@ -58,14 +58,14 @@ vi.mock('$lib/store/slices/scripts/scripts-selectors', () => ({
     { select: () => scriptEntries.value },
   ),
 }));
-vi.mock('$lib/store/slices/scripts/scripts-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/scripts/scripts-slice')>()),
+vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-slice')>()),
   refreshScripts: vi.fn((...args: any[]) => ({ type: 'scripts/refreshScripts', payload: args })),
   removeScript: vi.fn((...args: any[]) => ({ type: 'scripts/removeScript', payload: args })),
   upsertScript: vi.fn((...args: any[]) => ({ type: 'scripts/upsertScript', payload: args })),
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({
@@ -84,7 +84,7 @@ vi.mock('$lib/store/store', async () => {
     dispatch: mockDispatch,
   });
 });
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => ({
     subscribe: (fn: (value: any) => void) => {
       fn(activeWorkspaceState.value);
@@ -92,7 +92,7 @@ vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/stores/terminal-overlay.store.svelte', () => ({
+vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
 }));
 vi.mock('$lib/components/ui/toast', () => ({ toast }));
@@ -107,7 +107,7 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
   }),
 }));
 
-vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-selectors', () => ({
+vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
   selectExecutorIsRunning: Object.assign(
     () => ({ subscribe: (fn: any) => { fn(false); return () => { }; } }),
     { select: () => false },
@@ -117,13 +117,13 @@ vi.mock('$lib/store/slices/background-agent-executor/background-agent-executor-s
     { select: () => null },
   ),
 }));
-vi.mock('$lib/store/slices/terminals/terminals-selectors', () => ({
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
   selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
   selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
   selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
 }));
-vi.mock('$lib/store/slices/terminals/terminals-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/terminals/terminals-slice')>()),
+vi.mock('$store/renderer/slices/terminals/terminals-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/terminals/terminals-slice')>()),
   removeTerminal: vi.fn(),
 }));
 

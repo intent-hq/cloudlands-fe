@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { writable } from "svelte/store";
-  import type { Store } from "svelte-redux-toolkit/store";
-  import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
-  import { loadWorkspaceNotesSucceeded } from "$lib/store/slices/workspace-notes/workspace-notes-slice";
+  import type { Store } from "ag-redux-toolkit/svelte-store";
+  import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+  import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
   import type { Note } from "$shared/types";
 
   let {

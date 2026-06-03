@@ -6,7 +6,7 @@ import {
 } from 'vitest';
 
 import AgentStatsTooltip from '../AgentStatsTooltip.svelte';
-import type { AgentSessionStats } from '$lib/store/slices/session-stats/session-stats-types';
+import type { AgentSessionStats } from '$store/renderer/slices/session-stats/session-stats-types';
 
 const stats: AgentSessionStats = {
   sessionId: 'sess-1',

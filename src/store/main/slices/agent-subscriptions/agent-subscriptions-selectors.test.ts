@@ -4,7 +4,7 @@ import {
   it,
 } from "vitest";
 
-import type { StoreState } from "$lib/store/types";
+import type { StoreState } from "$store/renderer/types";
 import type { MainStoreState } from "../../types";
 import type {
   WorkspaceSubscriptionState,
@@ -95,6 +95,12 @@ describe("agent-subscriptions selectors", () => {
   });
 
   describe("selectWorkspaceSubscriptionState", () => {
+    it("exposes the StreamingStore direct-call lifecycle helpers", () => {
+      expect(typeof selectWorkspaceSubscriptionState).toBe("function");
+      expect(typeof selectWorkspaceSubscriptionState.withStore).toBe("function");
+      expect(() => selectWorkspaceSubscriptionState("ws-1")).toThrow();
+    });
+
     it("returns emptyWorkspaceSubscriptionState for missing workspace", () => {
       expect(selectWorkspaceSubscriptionState.select(emptyState(), "ws-missing")).toBe(
         emptyWorkspaceSubscriptionState,
@@ -290,13 +296,13 @@ describe("agent-subscriptions selectors", () => {
     });
   });
 
-  describe("caching behavior", () => {
-    it("returns the same reference for identical state and args", () => {
+  describe("synchronous select behavior", () => {
+    it("returns equivalent values for identical state and args", () => {
       const sub = makeSub({ id: "s1" });
       const state = makeState("ws-1", makeWsState({ subscriptions: { s1: sub } }));
       const r1 = selectAllSubscriptions.select(state, "ws-1");
       const r2 = selectAllSubscriptions.select(state, "ws-1");
-      expect(r1).toBe(r2);
+      expect(r1).toEqual(r2);
     });
 
     it("returns a new reference when state changes", () => {

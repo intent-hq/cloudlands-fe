@@ -11,7 +11,7 @@
 //
 // This gate flags any import of `panel-layout-adapter` (or direct use of
 // `getPanelLayoutManager` / `hasPanelLayoutManager`) inside a saga file
-// under `src/lib/store/slices/**/sagas/**`. Test files (`*.test.ts`) are
+// under `src/store/renderer/slices/**/sagas/**`. Test files (`*.test.ts`) are
 // excluded so historical mocks can be cleaned up incrementally.
 //
 // Usage:

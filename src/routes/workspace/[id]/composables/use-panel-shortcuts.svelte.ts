@@ -30,8 +30,8 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { toggleSidebar } from '$lib/store/slices/ui-layout/ui-layout-slice';
-  import { store as appStore } from '$lib/store/store';
+import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
 const logger = createLogger('PanelShortcuts');

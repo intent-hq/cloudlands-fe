@@ -25,18 +25,18 @@ const mockReadable = (value: unknown) => ({
   },
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => mockReadable(null),
 }));
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockReadable(undefined), { select: () => undefined }),
   selectSelectedNoteId: Object.assign(() => mockReadable(null), { select: () => null }),
   selectNotesVersion: () => mockReadable(0),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -44,8 +44,8 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/store/slices/workspace-notes/workspace-notes-slice')>()),
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
   updateTaskStatus: vi.fn(),
   handleExternalNoteUpdate: vi.fn(),
   reloadNotes: vi.fn(),

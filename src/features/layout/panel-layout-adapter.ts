@@ -8,7 +8,7 @@
  * New code should dispatch actions / read selectors directly.
  */
 
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -51,21 +51,21 @@ import {
   createDefaultLayout,
   applyPreset,
   createGridLayout,
-} from '$lib/store/slices/panel-layout/panel-layout-slice';
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   selectFocusedPanelId,
   selectPanels,
   selectAllTabs,
   selectPanelIds,
   selectPanel,
-} from '$lib/store/slices/panel-layout/panel-layout-selectors';
+} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import type {
   PanelTab,
   PanelTabType,
   PanelState,
   PanelLayoutNode,
   WorkspacePanelLayout,
-} from '$lib/store/slices/panel-layout/panel-layout-types';
+} from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 // Re-export types for backward compatibility
 export type { PanelTab, PanelTabType, PanelState, PanelLayoutNode, WorkspacePanelLayout };

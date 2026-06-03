@@ -2,7 +2,7 @@
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type Props = {

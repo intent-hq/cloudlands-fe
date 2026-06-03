@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { Note,
   AgentMessage,
   AgentSession } from '$shared/types';
@@ -16,18 +16,18 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { selectActiveWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { openWorkspaceChatChanges } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openWorkspaceChatChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
   ensureAgentSessionLoaded,
   restoreAgentSessionRequested,
   runAgentForNoteRequested,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { toStore } from 'svelte/store';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteMetadataBar');
 

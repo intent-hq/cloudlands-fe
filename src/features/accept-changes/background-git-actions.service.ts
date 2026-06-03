@@ -7,13 +7,13 @@
  */
 
 import { AcceptChangesClient } from './accept-changes.client';
-import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-import { refreshRequested } from '$lib/store/slices/changes/changes-slice';
+import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { updateWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-import { store as appStore } from '$lib/store/store';
+import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('BackgroundGitActionsService');
 

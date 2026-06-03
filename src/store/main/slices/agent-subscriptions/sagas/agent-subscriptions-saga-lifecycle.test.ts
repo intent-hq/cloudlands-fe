@@ -28,7 +28,7 @@ import {
 } from "../agent-subscriptions-slice";
 import {
   selectAgentStatus,
-  selectAllSubscriptionsRaw,
+  selectAllSubscriptions,
   selectDelegationGroup,
   selectIsAgentDeleted,
   selectIsOneShotFired,
@@ -396,7 +396,7 @@ describe("handleMatchEvent — multi-round oneShot lifecycle", () => {
 
     await expectSaga(handleMatchEvent, actionB)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub1]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub1]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT_PARENT), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-1"), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT_PARENT), "idle"],
@@ -418,7 +418,7 @@ describe("handleMatchEvent — multi-round oneShot lifecycle", () => {
     await expectSaga(handleMatchEvent, actionC)
       .provide([
         // sub-1 is gone — only sub-2 is in the subscription list
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub2]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub2]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT_PARENT), false],
         [matchers.select(selectIsOneShotFired.select, WS, "sub-2"), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT_PARENT), "idle"],
@@ -444,7 +444,7 @@ describe("handleMatchEvent — multi-round oneShot lifecycle", () => {
     await expectSaga(handleMatchEvent, action)
       .provide([
         // Both subs in subscriptions list
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub1, sub2]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub1, sub2]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT_PARENT), false],
         // sub-1 already fired
         [matchers.select(selectIsOneShotFired.select, WS, "sub-1"), true],

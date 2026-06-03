@@ -8,18 +8,18 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
   import {
   selectLinearIsAuthenticated,
   selectLinearIsAuthenticating,
   selectLinearError,
   selectLinearRequiresAugmentAuth,
-} from '$lib/store/slices/linear-auth/linear-auth-selectors';
+} from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
   initializeLinearAuth,
   startLinearAuth,
   logoutLinear,
-} from '$lib/store/slices/linear-auth/linear-auth-slice';
+} from '$store/renderer/slices/linear-auth/linear-auth-slice';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */

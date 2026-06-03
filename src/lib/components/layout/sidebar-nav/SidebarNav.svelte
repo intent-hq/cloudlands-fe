@@ -28,10 +28,10 @@
   faBell,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import type { SidebarNavItem } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+  import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
 
   import {
@@ -42,7 +42,7 @@
   selectExpandedItem,
   selectIsCardPinned,
   selectContextMenuOpen,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   closeAll,
   togglePanel,
@@ -51,14 +51,14 @@
   setDeferredLeave,
   clearDeferredLeave,
   setShowCreateModal,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { isWorkspaceActivityWithin } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();

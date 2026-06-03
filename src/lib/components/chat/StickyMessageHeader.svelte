@@ -17,9 +17,9 @@
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
 
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     message: AgentMessage;

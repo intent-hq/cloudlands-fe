@@ -30,14 +30,14 @@
   removeScriptFromUI,
   restoreScriptToUI,
   deleteScript,
-} from '$lib/store/slices/setup-scripts/setup-scripts-slice';
+} from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import {
   selectScripts,
   selectScriptById,
   selectLastUsedScriptForRepo,
-} from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
-  import type { SetupScript } from '$lib/store/slices/setup-scripts/setup-scripts-types';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
+  import type { SetupScript } from '$store/renderer/slices/setup-scripts/setup-scripts-types';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     repoPath?: string;

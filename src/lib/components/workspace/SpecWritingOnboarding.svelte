@@ -7,8 +7,8 @@
    */
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const logger = createLogger('SpecWritingOnboarding');

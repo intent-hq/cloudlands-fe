@@ -1,4 +1,4 @@
-import type { StoreState } from "$lib/store/types";
+import type { StoreState } from "$store/renderer/types";
 
 import type { MainStoreState } from "./types";
 

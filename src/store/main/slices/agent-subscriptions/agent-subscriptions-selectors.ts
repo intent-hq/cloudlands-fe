@@ -1,12 +1,11 @@
 /**
  * Selectors for the agent-subscriptions slice.
  *
- * All selectors use the main-process createSelector (typed to MainStoreState,
- * cached, no Svelte Readable). Passing RendererStoreState is a compile error.
+ * Selectors are created from the configured main-process StreamingStore.
+ * Passing RendererStoreState is a compile error.
  */
 
-import { createSelector } from "../../utils/create-selector";
-import type { MainStoreState } from "../../types";
+import { store } from "../../configured-store";
 import type {
   WorkspaceSubscriptionState,
   AgentSubscriptionRecord,
@@ -16,14 +15,13 @@ import type {
   DeliveryStats,
 } from "./types";
 import { emptyWorkspaceSubscriptionState } from "./types";
-import { getRawValue } from "../../../utils/create-cached-selector";
 
 // ---------------------------------------------------------------------------
 // Workspace-level
 // ---------------------------------------------------------------------------
 
-export const selectWorkspaceSubscriptionState = createSelector(
-  (state: MainStoreState, wsId: string): WorkspaceSubscriptionState => {
+export const selectWorkspaceSubscriptionState = store.createSelector(
+  (state, wsId: string): WorkspaceSubscriptionState => {
     const slice = state?.agentSubscriptions;
     return slice.byWorkspaceId[wsId] ?? emptyWorkspaceSubscriptionState;
   },
@@ -33,22 +31,22 @@ export const selectWorkspaceSubscriptionState = createSelector(
 // Subscriptions
 // ---------------------------------------------------------------------------
 
-export const selectSubscription = createSelector(
-  (state: MainStoreState, wsId: string, subId: string): AgentSubscriptionRecord | undefined => {
+export const selectSubscription = store.createSelector(
+  (state, wsId: string, subId: string): AgentSubscriptionRecord | undefined => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.subscriptions[subId];
   },
 );
 
-export const selectAgentSubscriptions = createSelector(
-  (state: MainStoreState, wsId: string, agentId: string): AgentSubscriptionRecord[] => {
+export const selectAgentSubscriptions = store.createSelector(
+  (state, wsId: string, agentId: string): AgentSubscriptionRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return Object.values(ws.subscriptions).filter((sub) => sub.agentId === agentId);
   },
 );
 
-export const selectAllSubscriptions = createSelector(
-  (state: MainStoreState, wsId: string): AgentSubscriptionRecord[] => {
+export const selectAllSubscriptions = store.createSelector(
+  (state, wsId: string): AgentSubscriptionRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return Object.values(ws.subscriptions);
   },
@@ -58,8 +56,8 @@ export const selectAllSubscriptions = createSelector(
 // Agent status
 // ---------------------------------------------------------------------------
 
-export const selectAgentStatus = createSelector(
-  (state: MainStoreState, wsId: string, agentId: string): AgentStatus => {
+export const selectAgentStatus = store.createSelector(
+  (state, wsId: string, agentId: string): AgentStatus => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.agentStatuses[agentId] ?? "idle";
   },
@@ -69,15 +67,15 @@ export const selectAgentStatus = createSelector(
 // Queues
 // ---------------------------------------------------------------------------
 
-export const selectAgentQueue = createSelector(
-  (state: MainStoreState, wsId: string, agentId: string): QueuedEventRecord[] => {
+export const selectAgentQueue = store.createSelector(
+  (state, wsId: string, agentId: string): QueuedEventRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.agentQueues[agentId] ?? [];
   },
 );
 
-export const selectAgentQueueLength = createSelector(
-  (state: MainStoreState, wsId: string, agentId: string): number => {
+export const selectAgentQueueLength = store.createSelector(
+  (state, wsId: string, agentId: string): number => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return (ws.agentQueues[agentId] ?? []).length;
   },
@@ -87,9 +85,9 @@ export const selectAgentQueueLength = createSelector(
 // Delegation groups
 // ---------------------------------------------------------------------------
 
-export const selectDelegationGroup = createSelector(
+export const selectDelegationGroup = store.createSelector(
   (
-    state: MainStoreState,
+    state,
     wsId: string,
     groupId: string,
   ): DelegationGroupTrackerRecord | undefined => {
@@ -98,9 +96,9 @@ export const selectDelegationGroup = createSelector(
   },
 );
 
-export const selectDelegationGroupsForParent = createSelector(
+export const selectDelegationGroupsForParent = store.createSelector(
   (
-    state: MainStoreState,
+    state,
     wsId: string,
     parentAgentId: string,
   ): DelegationGroupTrackerRecord[] => {
@@ -111,8 +109,8 @@ export const selectDelegationGroupsForParent = createSelector(
   },
 );
 
-export const selectIsDelegationGroupComplete = createSelector(
-  (state: MainStoreState, wsId: string, groupId: string): boolean => {
+export const selectIsDelegationGroupComplete = store.createSelector(
+  (state, wsId: string, groupId: string): boolean => {
     const group = selectDelegationGroup.select(state, wsId, groupId);
     if (!group) return false;
     const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
@@ -127,8 +125,8 @@ export const selectIsDelegationGroupComplete = createSelector(
 // One-shot guards
 // ---------------------------------------------------------------------------
 
-export const selectIsOneShotFired = createSelector(
-  (state: MainStoreState, wsId: string, subscriptionId: string): boolean => {
+export const selectIsOneShotFired = store.createSelector(
+  (state, wsId: string, subscriptionId: string): boolean => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.firedOneShotSubscriptions.includes(subscriptionId);
   },
@@ -138,8 +136,8 @@ export const selectIsOneShotFired = createSelector(
 // Deleted agents
 // ---------------------------------------------------------------------------
 
-export const selectIsAgentDeleted = createSelector(
-  (state: MainStoreState, wsId: string, agentId: string): boolean => {
+export const selectIsAgentDeleted = store.createSelector(
+  (state, wsId: string, agentId: string): boolean => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return agentId in ws.deletedAgents;
   },
@@ -149,8 +147,8 @@ export const selectIsAgentDeleted = createSelector(
 // All workspace IDs (for periodic sweeps)
 // ---------------------------------------------------------------------------
 
-export const selectAllWorkspaceIds = createSelector(
-  (state: MainStoreState): string[] => {
+export const selectAllWorkspaceIds = store.createSelector(
+  (state): string[] => {
     const slice = state?.agentSubscriptions;
     if (!slice) return [];
     return Object.keys(slice.byWorkspaceId);
@@ -158,72 +156,11 @@ export const selectAllWorkspaceIds = createSelector(
 );
 
 // ---------------------------------------------------------------------------
-// Raw (uncached) subscription read — used by matching saga to avoid stale
-// reads caused by createCachedSelector proxy interactions.
-// ---------------------------------------------------------------------------
-
-export function selectAllSubscriptionsRaw(state: MainStoreState, wsId: string): AgentSubscriptionRecord[] {
-  const slice = state?.agentSubscriptions;
-  if (!slice) return [];
-  const ws = slice.byWorkspaceId[wsId];
-  if (!ws) return [];
-  return Object.values(ws.subscriptions);
-}
-
-/**
- * Raw (uncached) subscription read — used by delegation-group-saga to
- * avoid stale reads caused by createCachedSelector proxy interactions.
- */
-export function selectSubscriptionRaw(
-  state: MainStoreState,
-  wsId: string,
-  subId: string,
-): AgentSubscriptionRecord | undefined {
-  const slice = state.agentSubscriptions;
-  const ws = slice.byWorkspaceId[wsId];
-  if (!ws) return undefined;
-  return ws.subscriptions[subId];
-}
-
-/**
- * Raw (uncached) delegation group read — used by delegation-group-saga to
- * avoid stale reads caused by createCachedSelector proxy interactions.
- */
-export function selectDelegationGroupRaw(
-  state: MainStoreState,
-  wsId: string,
-  groupId: string,
-): DelegationGroupTrackerRecord | undefined {
-  const slice = state.agentSubscriptions;
-  const ws = slice.byWorkspaceId[wsId];
-  if (!ws) return undefined;
-  return ws.delegationGroups[groupId];
-}
-
-/**
- * Raw (uncached) delegation group completion check — used by delegation-group-saga
- * to avoid stale reads caused by createCachedSelector proxy interactions.
- */
-export function selectIsDelegationGroupCompleteRaw(
-  state: MainStoreState,
-  wsId: string,
-  groupId: string,
-): boolean {
-  const group = selectDelegationGroupRaw(state, wsId, groupId);
-  if (!group) return false;
-  const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
-  if (group.awaitMode === "any") {
-    return doneCount >= 1;
-  }
-  return doneCount >= group.expectedAgentIds.length;
-}
-
-// ---------------------------------------------------------------------------
 // Delivery stats
 // ---------------------------------------------------------------------------
 
-export const selectDeliveryStats = createSelector(
-  (state: MainStoreState, wsId: string): DeliveryStats => {
+export const selectDeliveryStats = store.createSelector(
+  (state, wsId: string): DeliveryStats => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.deliveryStats;
   },
@@ -264,8 +201,8 @@ export interface SubscriptionsSignature {
   firedOneShotSubscriptions: string[];
 }
 
-export const selectSubscriptionsSignature = createSelector(
-  (state: MainStoreState, wsId: string): SubscriptionsSignature | null => {
+export const selectSubscriptionsSignature = store.createSelector(
+  (state, wsId: string): SubscriptionsSignature | null => {
     const slice = state.agentSubscriptions;
     const ws = slice.byWorkspaceId[wsId];
     if (!ws) return null;
@@ -273,16 +210,16 @@ export const selectSubscriptionsSignature = createSelector(
     for (const [id, tracker] of Object.entries(
       ws.delegationGroups as Record<string, DelegationGroupTrackerRecord>,
     )) {
-      const { events: _events, ...core } = getRawValue(tracker);
+      const { events: _events, ...core } = tracker;
       delegationGroups[id] = core;
     }
     return {
-      subscriptions: getRawValue(ws.subscriptions),
+      subscriptions: ws.subscriptions,
       delegationGroups,
-      agentStatuses: getRawValue(ws.agentStatuses),
-      deliveryStats: getRawValue(ws.deliveryStats),
-      deletedAgents: getRawValue(ws.deletedAgents),
-      firedOneShotSubscriptions: getRawValue(ws.firedOneShotSubscriptions),
+      agentStatuses: ws.agentStatuses,
+      deliveryStats: ws.deliveryStats,
+      deletedAgents: ws.deletedAgents,
+      firedOneShotSubscriptions: ws.firedOneShotSubscriptions,
     };
   },
 );

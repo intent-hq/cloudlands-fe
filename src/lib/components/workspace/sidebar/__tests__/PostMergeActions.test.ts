@@ -35,8 +35,8 @@ const mocks = vi.hoisted(() => {
 });
 
 const reduxDispatch = vi.fn();
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   const dispatch = (...args: any[]) => {
     mocks.dispatch(...args);
     return reduxDispatch(...args);
@@ -48,11 +48,11 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
-vi.mock('$lib/store/slices/git/git-selectors', () => ({
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
   selectPostMergeState: Object.assign(
     () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.postMerge); return () => {}; } }),
@@ -60,24 +60,24 @@ vi.mock('$lib/store/slices/git/git-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', () => ({
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((wsId: string, force: boolean) => ({ type: 'git/loadStatus', payload: [wsId, force] })),
   setPostMergeState: vi.fn((wsId: string, state: unknown) => ({ type: 'git/setPostMergeState', payload: [wsId, state] })),
   setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'git/setGitOperationFlag', payload: [wsId, flag, val] })),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   refreshAcceptChangesStatus: vi.fn((wsId: string) => ({ type: 'changes/refreshAcceptChangesStatus', payload: wsId })),
   clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
   refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: wsId })),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((entity: unknown) => ({ type: 'workspace/setWorkspaceEntity', payload: entity })),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
 }));
 
-vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', () => ({
+vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   setShowCreateModal: vi.fn((val: boolean) => ({ type: 'sidebarNav/setShowCreateModal', payload: val })),
 }));
 
@@ -89,7 +89,7 @@ vi.mock('$features/accept-changes/accept-changes.client', () => ({
 const mockWorkspaceUpdate = vi.fn();
 const mockArchive = vi.fn();
 const mockUnarchive = vi.fn();
-vi.mock('$lib/store/slices/workspace/utils/workspace.client', () => ({
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mockWorkspaceUpdate, archive: mockArchive, unarchive: mockUnarchive },
 }));
 

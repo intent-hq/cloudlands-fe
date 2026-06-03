@@ -18,14 +18,14 @@
     faChevronDown,
     faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
-  import type { FileExplorerTreeNode } from '$lib/store/slices/file-explorer/file-explorer-types';
+  import type { FileExplorerTreeNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { filterFileExplorerChildPaths } from './file-explorer-sidebar-utils';
 
   import {
     initializeFileExplorer,
     toggleDirectoryRequested,
     refreshFileExplorer,
-  } from '$lib/store/slices/file-explorer/file-explorer-slice';
+  } from '$store/renderer/slices/file-explorer/file-explorer-slice';
   import {
     selectFileExplorerRootNode,
     selectFileExplorerIsLoading,
@@ -36,8 +36,8 @@
     selectIsPathExpanded,
     selectIsPathLoading,
     selectShouldInitializeFileExplorerForWorkspace,
-  } from '$lib/store/slices/file-explorer/file-explorer-selectors';
-  import { store as appStore } from '$lib/store/store';
+  } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

@@ -12,7 +12,7 @@
   import WorkspaceActionsMenu, {
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import {
   WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
   type Workspace,
@@ -24,13 +24,13 @@
   hasRunningAgents,
   getRunningAgentNames,
 } from '$lib/utils/delete-warning-utils';
-  import { selectSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { toggleSidebarSide } from '$lib/store/slices/ui-layout/ui-layout-slice';
+  import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
 
-  import { requestDeleteWorkspace } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

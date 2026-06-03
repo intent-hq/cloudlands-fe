@@ -19,7 +19,7 @@
   import { browser } from '$app/environment';
   import { colors } from '$lib/components/ui/auggie-avatar/avatar-constants';
   import { stringToSeededRandom } from '$lib/utils/hash';
-  import { selectIsDarkTheme } from '$lib/store/slices/theme/theme-selectors';
+  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   interface Props {
     agentId?: string;

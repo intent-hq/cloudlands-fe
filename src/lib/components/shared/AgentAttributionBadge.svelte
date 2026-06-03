@@ -9,9 +9,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import type { AgentAttribution } from '$features/file-tracking/types';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const logger = createLogger('AgentAttributionBadge');

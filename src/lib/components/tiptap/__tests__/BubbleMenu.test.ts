@@ -45,7 +45,7 @@ vi.mock('$features/agent/instruction-registry', () => ({
 }));
 
 // Mock model selectors
-vi.mock('$lib/store/slices/model/model-selectors', () => ({
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectWorkspaceDefaultModel: Object.assign(
     () => ({
       subscribe: (fn: (v: string) => void) => {
@@ -63,8 +63,8 @@ vi.mock('$lib/store/slices/model/model-selectors', () => ({
   }),
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),

@@ -5,8 +5,8 @@
   faFolder,
   faKey,
 } from '@fortawesome/free-solid-svg-icons';
-  import { refreshAutoCommitSettings } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+  import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
   import {
   validateBranchPrefix,

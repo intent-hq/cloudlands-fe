@@ -14,9 +14,9 @@ export { errorBoundary, ErrorBoundaryService } from './error-boundary.service';
 export type { ContextItem } from '$lib/components/chat/input/context-api';
 
 import { createLogger } from '$lib/utils/client-logger';
-import { store as appStore } from '$lib/store/store';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+import { store as appStore } from '$store/renderer/store';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
 
 

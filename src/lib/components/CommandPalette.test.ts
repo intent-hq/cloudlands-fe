@@ -57,7 +57,7 @@ const {
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
-vi.mock('$lib/store/slices/browser/browser-selectors', () => ({
+vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
   selectBrowserRecentUrls: Object.assign(
     vi.fn((workspaceIdArg: any) =>
       createSelectorReadable(workspaceIdArg, () => browserRecentUrls.value),
@@ -65,13 +65,13 @@ vi.mock('$lib/store/slices/browser/browser-selectors', () => ({
     { select: vi.fn(() => browserRecentUrls.value) },
   ),
 }));
-vi.mock('$lib/store/slices/browser/browser-slice', () => ({
+vi.mock('$store/renderer/slices/browser/browser-slice', () => ({
   initBrowserWorkspace: vi.fn((...args: any[]) => ({
     type: 'browser/initBrowserWorkspace',
     payload: args,
   })),
 }));
-vi.mock('$lib/store/slices/palette/palette-selectors', () => ({
+vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
   selectPaletteMruEntries: () => ({
     subscribe: (fn: (value: any[]) => void) => {
       fn(paletteMruEntries.value);
@@ -85,7 +85,7 @@ vi.mock('$lib/store/slices/palette/palette-selectors', () => ({
     },
   }),
 }));
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
     subscribe: (fn: (value: any[]) => void) => {
       fn(workspaceItemsState.value);
@@ -108,8 +108,8 @@ vi.mock('$lib/services/analytics', () => ({ track: trackMock }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({
@@ -120,7 +120,7 @@ vi.mock('$lib/store/store', async () => {
     dispatch: reduxDispatchMock,
   });
 });
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   createAgentRequested: vi.fn((...args: any[]) => ({
     type: 'workspaceAgents/createAgentRequested',
     payload: args,
@@ -133,7 +133,7 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
     initialAgentConfigProcessed: false,
   },
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
     vi.fn((workspaceIdArg: any) =>
       createSelectorReadable(workspaceIdArg, (wsId) =>
@@ -147,25 +147,25 @@ vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => (
     },
   ),
 }));
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: Object.assign(
     vi.fn((workspaceIdArg: any) => createSelectorReadable(workspaceIdArg, () => [])),
     { select: vi.fn(() => []) },
   ),
 }));
-vi.mock('$lib/store/slices/terminals/terminals-slice', () => ({
+vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   createTerminalRequested: vi.fn((...args: any[]) => ({
     type: 'terminals/createTerminalRequested',
     payload: args,
   })),
 }));
-vi.mock('$lib/store/slices/note-read-tracking/note-read-tracking-slice', () => ({
+vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: vi.fn((...args: any[]) => ({
     type: 'noteReadTracking/createNoteRequested',
     payload: args,
   })),
 }));
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentChanges: () => ({
     subscribe: (fn: (value: any[]) => void) => {
       fn([]);
@@ -206,10 +206,10 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 }));
 
 import CommandPalette from './CommandPalette.svelte';
-import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
-import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
-import { commandPaletteNewFileRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [

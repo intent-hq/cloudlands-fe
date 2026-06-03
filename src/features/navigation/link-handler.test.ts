@@ -11,7 +11,7 @@ import {
   createGlobalLinkClickHandler,
   createLinkClickHandler,
 } from './link-handler';
-import { openTerminalTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
@@ -34,8 +34,8 @@ vi.mock('$lib/components/ui/tooltip/link-tooltip-state.svelte', () => ({
 }));
 
 const reduxDispatchMock = vi.hoisted(() => vi.fn());
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),

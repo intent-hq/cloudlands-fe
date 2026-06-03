@@ -27,7 +27,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
-  import { locateItemInSidebarRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -38,45 +38,45 @@
   type Snippet,
 } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { selectIsDragging } from '$lib/store/slices/tab-state/tab-state-selectors';
+  import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
   startDrag,
   endDrag,
-} from '$lib/store/slices/tab-state/tab-state-slice';
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';
 
-  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   filterSpecialistsByGitHubAuth,
   selectSpecialistName,
   selectSpecialists,
-} from '$lib/store/slices/specialists/specialists-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$lib/store/slices/github-auth/github-auth-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import {
   type AvatarState,
   getAvatarState,
 } from '$lib/components/ui/auggie-avatar/avatar-state';
-  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
+  import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
-  import { store as appStore } from '$lib/store/store';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');

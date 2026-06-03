@@ -10,14 +10,14 @@
   setResizablePanelSize,
   setSidebarExpandedWidth,
   setWidth as setSidebarWidth,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
   selectIsCollapsed,
   selectResizablePanelSize,
   selectSidebarExpandedWidth,
   selectSidebarWidth,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
 
   let {

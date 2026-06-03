@@ -5,7 +5,7 @@
 -->
 
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { WorkspaceEvent } from '../../events/types';
   import Fa from 'svelte-fa';
   import {
@@ -30,7 +30,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import {
   selectWorkspaceEvents,
   selectEventsLoading,
-} from '$lib/store/slices/workspace-events/workspace-events-selectors';
+} from '$store/renderer/slices/workspace-events/workspace-events-selectors';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
@@ -46,9 +46,9 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { faNote } from '$lib/icons/faNote';
 
 
-  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

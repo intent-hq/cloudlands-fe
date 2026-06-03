@@ -11,9 +11,9 @@ import {
   removeTerminal,
   saveTerminalMetadata as saveTerminalMetadataAction,
   type TerminalMetadata,
-} from '$lib/store/slices/terminals/terminals-slice';
-import { selectTerminalsForWorkspace } from '$lib/store/slices/terminals/terminals-selectors';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
 const logger = new Logger('TerminalManager');
 

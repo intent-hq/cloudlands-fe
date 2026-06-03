@@ -16,13 +16,13 @@
   selectPanelWidth,
   selectIsCardPinned,
   selectOnboardingActive,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-selectors';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   toggleCardPinned,
   closePanel,
   setPanelWidth as setPanelWidthAction,
-} from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();

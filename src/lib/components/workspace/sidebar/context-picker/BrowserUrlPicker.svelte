@@ -14,12 +14,12 @@
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
 
-  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
+  import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import {
   addRecentUrl,
   initBrowserWorkspace,
-} from '$lib/store/slices/browser/browser-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/browser/browser-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

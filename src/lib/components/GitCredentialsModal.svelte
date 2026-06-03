@@ -1,6 +1,6 @@
 <script lang="ts">
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {

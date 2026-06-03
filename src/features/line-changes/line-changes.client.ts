@@ -8,7 +8,7 @@ import { invoke } from '$lib/electron-bridge';
 import type { AgentId } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceId } from '$shared/types';
-import type { LineChangeStats } from '$lib/store/slices/changes/changes-types';
+import type { LineChangeStats } from '$store/renderer/slices/changes/changes-types';
 
 const logger = createLogger('LineChangesClient');
 

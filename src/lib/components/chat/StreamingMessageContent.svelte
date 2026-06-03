@@ -37,8 +37,8 @@
   import {
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('StreamingMessageContent');
 

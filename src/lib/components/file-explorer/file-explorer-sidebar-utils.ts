@@ -1,4 +1,4 @@
-import type { FileExplorerTreeNode } from '$lib/store/slices/file-explorer/file-explorer-types';
+import type { FileExplorerTreeNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
 
 export type FileExplorerTreeNodeMap = Record<string, FileExplorerTreeNode>;
 

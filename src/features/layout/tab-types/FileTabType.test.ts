@@ -15,7 +15,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/svelte';
-import type { PanelTab } from '$lib/store/slices/panel-layout/panel-layout-types';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 const {
   actionMocks,
@@ -176,8 +176,8 @@ const {
   };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -185,7 +185,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/files/files-selectors', () => ({
+vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.localContent ?? null) : null,
   ),
@@ -210,36 +210,36 @@ vi.mock('$lib/store/slices/files/files-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/store/slices/files/files-slice', () => actionMocks);
+vi.mock('$store/renderer/slices/files/files-slice', () => actionMocks);
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: createMockSelector((wsId: string) =>
     wsId === mockReduxState.workspace.id ? mockReduxState.workspace : undefined,
   ),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectFileTrackingChanges: createMockSelector(() => mockReduxState.fileTrackingChanges),
 }));
 
-vi.mock('$lib/store/slices/ui-layout/ui-layout-selectors', () => ({
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: createMockSelector(() => mockReduxState.lineWrapping),
   selectDiffIndicators: createMockSelector(() => mockReduxState.diffIndicators),
 }));
 
-vi.mock('$lib/store/slices/ui-layout/ui-layout-slice', () => ({
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
   toggleLineWrapping: () => ({ type: 'uiLayout/toggleLineWrapping', payload: [] }),
   toggleDiffIndicators: () => ({ type: 'uiLayout/toggleDiffIndicators', payload: [] }),
 }));
 
-vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', () => ({
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: (workspaceId: string, tabId: string) => ({
     type: 'panelLayout/closeTab',
     payload: [workspaceId, tabId],
   }),
 }));
 
-vi.mock('$lib/store/slices/workspace-navigation/workspace-navigation-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
   openWorkspaceDiff: (...args: unknown[]) => ({
     type: 'workspaceNavigation/openWorkspaceDiff',
     payload: args,

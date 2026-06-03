@@ -13,26 +13,26 @@
   selectFileTrackingChanges,
   selectFileTrackingCommits,
   selectFileTrackingLoading,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import {
   stageByPathRequested,
   unstageByPathRequested,
   revertByPathRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
 
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import {
   selectLineWrapping,
   selectFoldUnchanged,
   selectDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-selectors';
+} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
   toggleLineWrapping,
   toggleFoldUnchanged,
   toggleDiffSideBySide,
-} from '$lib/store/slices/ui-layout/ui-layout-slice';
+} from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import Fa from 'svelte-fa';
   import {
@@ -41,7 +41,7 @@
   faColumns,
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();

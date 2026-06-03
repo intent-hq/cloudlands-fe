@@ -73,6 +73,21 @@ function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
   return found;
 }
 
+function findFunctionByName(sf: ts.SourceFile, name: string): ts.FunctionLikeDeclaration {
+  let found: ts.FunctionLikeDeclaration | undefined;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(n) && n.name?.text === name && n.body) {
+      found = n;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (!found) throw new Error(`${name} function not found in src/main/index.ts`);
+  return found;
+}
+
 function findWindowAllClosedHandler(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
   let found: ts.FunctionLikeDeclaration | undefined;
   const visit = (n: ts.Node) => {
@@ -98,6 +113,26 @@ function findWindowAllClosedHandler(sf: ts.SourceFile): ts.FunctionLikeDeclarati
 }
 
 describe('gracefulShutdown call ordering (AST)', () => {
+  it('stores initMainStore() context and disposes it once during gracefulShutdown', () => {
+    const src = fs.readFileSync(INDEX_PATH, 'utf8');
+    const sf = ts.createSourceFile(INDEX_PATH, src, ts.ScriptTarget.Latest, true);
+    const gs = findGracefulShutdown(sf);
+    const allCalls = callsitesIn(sf);
+    const shutdownCalls = callsitesIn(gs.body!);
+
+    expect(src).toContain('mainStoreContext = initMainStore();');
+    expect(shutdownCalls.filter((c) => c.text === 'disposeMainStoreIfInitialized')).toHaveLength(1);
+    expect(allCalls.filter((c) => c.text === 'disposeMainStoreIfInitialized')).toHaveLength(1);
+
+    const disposer = findFunctionByName(sf, 'disposeMainStoreIfInitialized');
+    const disposerBody = disposer.body!.getText();
+    const clearIdx = disposerBody.indexOf('mainStoreContext = null');
+    const disposeIdx = disposerBody.indexOf('dispose();');
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(disposeIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeLessThan(disposeIdx);
+  });
+
   it('calls persistShutdownState() BEFORE shutdownUnifiedBackend() inside gracefulShutdown', () => {
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);

@@ -10,22 +10,22 @@
   refreshRequested,
   clearOlderCommits as ftClearOlderCommits,
   setSidebarMergeWhenReady,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
 
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { selectExecutorState } from '$lib/store/slices/background-agent-executor/background-agent-executor-selectors';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   cancelExecution,
   executeBackgroundAgent,
-} from '$lib/store/slices/background-agent-executor/background-agent-executor-slice';
+} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
 
-  import { refreshPRStatusRequested } from '$lib/store/slices/pr-status/pr-status-slice';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { setWorkspaceEntity } from '$lib/store/slices/workspace/workspace-slice';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
 
-  import { selectSidebarMergeWhenReady } from '$lib/store/slices/changes/changes-selectors';
+  import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
   import Switch from '$lib/components/ui/switch/switch.svelte';
@@ -47,7 +47,7 @@
   writable,
 } from 'svelte/store';
   import Fa from 'svelte-fa';
-	import { store as appStore } from '$lib/store/store';
+	import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {
@@ -109,7 +109,7 @@
   // Auto-update defaults when reactive conditions change
   import { untrack } from 'svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { openAgentTabRequested } from '$lib/store/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   $effect(() => {
     const shouldMergeViaPR = hasOpenPR && hasRemote;
     const shouldPush = hasRemote;

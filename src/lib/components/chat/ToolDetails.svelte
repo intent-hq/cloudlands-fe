@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { ParsedToolResult } from './tool-result-parser';
   import Fa from 'svelte-fa';
   import {
@@ -14,19 +14,19 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
 
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import {
   focusBrowserTabRequested,
   openAgentTabRequested,
-} from '$lib/store/slices/app-layout/app-layout-slice';
+} from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     input: Record<string, any>;

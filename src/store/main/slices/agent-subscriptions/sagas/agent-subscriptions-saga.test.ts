@@ -68,12 +68,12 @@ import {
   selectAgentQueue,
   selectAgentQueueLength,
   selectAgentStatus,
-  selectAllSubscriptionsRaw,
+  selectAllSubscriptions,
   selectIsAgentDeleted,
   selectIsOneShotFired,
-  selectDelegationGroupRaw,
-  selectIsDelegationGroupCompleteRaw,
-  selectSubscriptionRaw,
+  selectDelegationGroup,
+  selectIsDelegationGroupComplete,
+  selectSubscription,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
@@ -623,8 +623,8 @@ describe("handleDelegationGroupDelivery", () => {
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return tracker;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return tracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -669,8 +669,8 @@ describe("handleDelegationGroupDelivery", () => {
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return trackerWithEvents;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return trackerWithEvents;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -715,8 +715,8 @@ describe("handleDelegationGroupDelivery", () => {
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return trackerWithEvents;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return trackerWithEvents;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -752,7 +752,7 @@ describe("handleDelegationGroupDelivery", () => {
     return expectSaga(handleDelegationGroupDelivery, action)
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide([
-        [matchers.select(selectDelegationGroupRaw, WS, "group-1"), deliveredTracker],
+        [matchers.select(selectDelegationGroup.select, WS, "group-1"), deliveredTracker],
       ])
       .not.call.fn(handleDeliverEvents)
       .run();
@@ -764,8 +764,8 @@ describe("handleDelegationGroupDelivery", () => {
     return expectSaga(handleDelegationGroupDelivery, action)
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide([
-        [matchers.select(selectDelegationGroupRaw, WS, "group-1"), tracker],
-        [matchers.select(selectIsDelegationGroupCompleteRaw, WS, "group-1"), false],
+        [matchers.select(selectDelegationGroup.select, WS, "group-1"), tracker],
+        [matchers.select(selectIsDelegationGroupComplete.select, WS, "group-1"), false],
       ])
       .not.call.fn(handleDeliverEvents)
       .run();
@@ -781,8 +781,8 @@ describe("handleDelegationGroupDelivery", () => {
       .withState({ agentSubscriptions: { byWorkspaceId: {} } })
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return tracker;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return tracker;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           // Always return "busy" so polling never resolves
           if (effect.selector === selectAgentStatus.select) return "responding";
           return next();
@@ -836,9 +836,9 @@ describe("handleDelegationGroupDelivery", () => {
     await expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return desyncedTracker;
-          if (effect.selector === selectSubscriptionRaw) return desyncedSubscription;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return desyncedTracker;
+          if (effect.selector === selectSubscription.select) return desyncedSubscription;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -889,9 +889,9 @@ describe("handleDelegationGroupDelivery", () => {
     await expectSaga(handleDelegationGroupDelivery, action)
       .provide({
         select(effect, next) {
-          if (effect.selector === selectDelegationGroupRaw) return tracker;
-          if (effect.selector === selectSubscriptionRaw) return healthySubscription;
-          if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+          if (effect.selector === selectDelegationGroup.select) return tracker;
+          if (effect.selector === selectSubscription.select) return healthySubscription;
+          if (effect.selector === selectIsDelegationGroupComplete.select) return true;
           if (effect.selector === selectAgentStatus.select) return "idle";
           if (effect.selector === selectIsAgentDeleted.select) return false;
           return next();
@@ -940,9 +940,9 @@ describe("handleDelegationGroupDelivery", () => {
       expectSaga(handleDelegationGroupDelivery, requestDelegationGroupDelivery(WS, "group-1"))
         .provide({
           select(effect, next) {
-            if (effect.selector === selectDelegationGroupRaw) return desyncedTracker;
-            if (effect.selector === selectSubscriptionRaw) return desyncedSubscription;
-            if (effect.selector === selectIsDelegationGroupCompleteRaw) return true;
+            if (effect.selector === selectDelegationGroup.select) return desyncedTracker;
+            if (effect.selector === selectSubscription.select) return desyncedSubscription;
+            if (effect.selector === selectIsDelegationGroupComplete.select) return true;
             if (effect.selector === selectAgentStatus.select) return "idle";
             if (effect.selector === selectIsAgentDeleted.select) return false;
             return next();
@@ -1125,7 +1125,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1142,7 +1142,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "responding"],
       ])
@@ -1169,7 +1169,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
       ])
       // Should NOT enqueue because delivery-confirmed is internal
       .not.put.actionType("agentSubscriptions/enqueueEvent")
@@ -1187,7 +1187,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
       ])
       .not.put.actionType("agentSubscriptions/enqueueEvent")
       .run();
@@ -1204,7 +1204,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1233,7 +1233,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
       ])
       .not.put.actionType("agentSubscriptions/enqueueEvent")
       .not.put(requestDeliverQueuedEvents(WS, AGENT))
@@ -1258,7 +1258,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action1)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectIsOneShotFired.select, WS, sub.id), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
@@ -1311,8 +1311,8 @@ describe("handleMatchEvent", () => {
     return expectSaga(handleMatchEvent, action)
       .provide({
         select(effect, next) {
-          // selectAllSubscriptionsRaw
-          if (effect.args?.length === 2 && effect.args[0] === selectAllSubscriptionsRaw && effect.args[1] === WS) {
+          // selectAllSubscriptions
+          if (effect.selector === selectAllSubscriptions.select && effect.args?.[0] === WS) {
             return [sub];
           }
           // selectIsAgentDeleted
@@ -1355,7 +1355,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1377,7 +1377,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1399,7 +1399,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1421,7 +1421,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1443,7 +1443,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1471,7 +1471,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1499,7 +1499,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1524,7 +1524,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1546,7 +1546,7 @@ describe("handleMatchEvent", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1565,7 +1565,7 @@ describe("handleMatchEvent", () => {
     // 3. The next event should match sub2, but a cached selector would return
     //    stale empty results because it tracked paths for sub1 (now removed).
     //
-    // With the uncached selectAllSubscriptionsRaw, each call re-reads the
+    // With the configured selectAllSubscriptions.select, each call re-reads the
     // slice state, so sub2 is always visible.
 
     const COORDINATOR = "agent-coordinator";
@@ -1593,7 +1593,7 @@ describe("handleMatchEvent", () => {
 
     await expectSaga(handleMatchEvent, action1)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub1]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub1]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, sub1.id), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -1625,10 +1625,10 @@ describe("handleMatchEvent", () => {
     const action2 = workspaceEventAccepted(event2);
 
     // With a cached selector this would return [] (stale cache from sub1's
-    // removal). With selectAllSubscriptionsRaw it correctly returns [sub2].
+    // removal). With selectAllSubscriptions.select it correctly returns [sub2].
     await expectSaga(handleMatchEvent, action2)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub2]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub2]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectIsOneShotFired.select, WS, sub2.id), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
@@ -1672,7 +1672,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1692,7 +1692,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 3],
@@ -1712,7 +1712,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 2],
@@ -1732,7 +1732,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 2],
@@ -1753,7 +1753,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
         [matchers.select(selectAgentQueueLength.select, WS, AGENT), 3],
@@ -1771,7 +1771,7 @@ describe("handleMatchEvent — batching", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
         [matchers.select(selectAgentStatus.select, WS, AGENT), "idle"],
       ])
@@ -1976,16 +1976,16 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
       select(effect: any, next: () => any) {
         if (effect.args?.length === 0) return [WS];
         if (effect.args?.[0] === WS && effect.args?.length === 1) return wsState;
-        // Handle raw selectors used by handleDelegationGroupDelivery
-        if (effect.selector === selectDelegationGroupRaw && effect.args?.[0] === WS) {
+        // Handle selectors used by handleDelegationGroupDelivery
+        if (effect.selector === selectDelegationGroup.select && effect.args?.[0] === WS) {
           const groupId = effect.args[1];
           return wsState.delegationGroups[groupId];
         }
-        if (effect.selector === selectSubscriptionRaw && effect.args?.[0] === WS) {
+        if (effect.selector === selectSubscription.select && effect.args?.[0] === WS) {
           const subId = effect.args[1];
           return wsState.subscriptions[subId];
         }
-        if (effect.selector === selectIsDelegationGroupCompleteRaw && effect.args?.[0] === WS) {
+        if (effect.selector === selectIsDelegationGroupComplete.select && effect.args?.[0] === WS) {
           const groupId = effect.args[1];
           const group = wsState.delegationGroups[groupId];
           if (!group) return false;
@@ -2183,7 +2183,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])
@@ -2216,7 +2216,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])
@@ -2254,7 +2254,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])
@@ -2290,7 +2290,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     return expectSaga(handleMatchEvent, action)
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])
@@ -2329,7 +2329,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(firstIdle))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])
@@ -2348,7 +2348,7 @@ describe("sweep catch-up double-delivery prevention", () => {
 
     await expectSaga(handleMatchEvent, workspaceEventAccepted(secondIdle))
       .provide([
-        [matchers.select(selectAllSubscriptionsRaw, WS), [sub]],
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
         [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
         [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
       ])

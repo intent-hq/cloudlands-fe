@@ -9,8 +9,8 @@
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectKnownRepos } from '$lib/store/slices/known-repos/known-repos-selectors';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
   import { invoke } from '$lib/electron-bridge';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

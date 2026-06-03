@@ -14,20 +14,20 @@
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
   selectNotificationVolume,
-} from '$lib/store/slices/user-preferences/user-preferences-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
   setNotificationEnabled,
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setVolume,
-} from '$lib/store/slices/user-preferences/user-preferences-slice';
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const notificationEnabled = selectNotificationEnabled();
   const soundEnabled = selectSoundEnabled();

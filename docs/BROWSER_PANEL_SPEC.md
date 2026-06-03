@@ -20,7 +20,7 @@ Add an embedded browser feature to the Intent app that allows users to:
 - `browser.store.svelte.ts` - State management for recent URLs
 - Browser sidebar and main-panel integration are wired into the workspace layout
 
-> Note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
+> Note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/store/renderer/`.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ src/lib/components/browser/
 
 ### 1.1 Browser Store (`src/features/browser/browser.store.svelte.ts`)
 
-> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
+> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `.store.svelte.ts` modules are transitional; new shared state should use Redux slices in `src/store/renderer/`.
 
 ```typescript
 interface RecentUrl {

@@ -8,8 +8,8 @@
   shell,
 } from '$lib/electron-bridge';
   import { identifyUser } from '$lib/services/analytics';
-  import { selectManagedInstallStatusByProvider } from '$lib/store/slices/agent-availability/agent-availability-selectors';
-  import { retryLoadModels } from '$lib/store/slices/model/model-slice';
+  import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { retryLoadModels } from '$store/renderer/slices/model/model-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -33,7 +33,7 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fade } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AuggieSetupGate');
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');

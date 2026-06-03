@@ -19,52 +19,52 @@
   getTemplateContent,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
-  import { saveScript } from '$lib/store/slices/setup-scripts/setup-scripts-slice';
-  import { selectLastUsedScriptForRepo } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+  import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerLastSubmittedAgent,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-slice';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
   selectCompactWorkspaceInitializerFormState,
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
-} from '$lib/store/slices/workspace-initializer/workspace-initializer-selectors';
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
     WorkspaceInitializerRepoSelection,
-  } from '$lib/store/slices/workspace-initializer/workspace-initializer-types';
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import {
   hydrateWorkspaceNavigation,
   type WorkspaceNavigationWorkspaceState,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { workspaceClient } from '$lib/store/slices/workspace/utils/workspace.client';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
   import {
   selectSelectedModel,
   selectAvailableModels,
-} from '$lib/store/slices/model/model-selectors';
-  import { setWorkspaceModel } from '$lib/store/slices/model/model-slice';
+} from '$store/renderer/slices/model/model-selectors';
+  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import {
   activateInitialAgentRequested,
   setInitialAgentConfig,
   setInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
   updateWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
 
 
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
   selectUserOverrides,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
   getGitErrorMessage,
@@ -102,7 +102,7 @@
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   getDefaultModelForProvider,
   getDefaultProviderId,
@@ -110,7 +110,7 @@
   parseCompoundModelId,
 } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
@@ -1588,7 +1588,7 @@
         if (mention.type === 'script') {
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
-              await import('$lib/store/slices/scripts/scripts-selectors');
+              await import('$store/renderer/slices/scripts/scripts-selectors');
             const scriptId = mention.id;
             const state = appStore.state;
             const outputLines = selectScriptOutput.select(state, scriptId);
@@ -1810,7 +1810,7 @@
       // workspace, leading to spurious agent creation.
       try {
         const { workspaceStorageManager } =
-          await import('$lib/store/slices/workspace/utils/workspace-storage-manager');
+          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });

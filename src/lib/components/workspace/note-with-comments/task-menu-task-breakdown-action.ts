@@ -1,7 +1,7 @@
 import type { Workspace } from '$shared/types';
 import { createAgentTypeId } from '$shared/types/agent.types';
-import { store as appStore } from '$lib/store/store';
-import { agentSessionLaunchAgentRequested } from '$lib/store/slices/agent-session/agent-session-slice';
+import { store as appStore } from '$store/renderer/store';
+import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 
 import type { AgentContext } from '$features/agent/agent-context';
 

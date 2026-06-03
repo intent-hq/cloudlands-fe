@@ -25,8 +25,8 @@
   addRecentUrl,
   clearBrowserTabZoomRequest,
   updateUrlMetadata,
-} from '$lib/store/slices/browser/browser-slice';
-  import { selectPendingBrowserZoom } from '$lib/store/slices/browser/browser-selectors';
+} from '$store/renderer/slices/browser/browser-slice';
+  import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import {
   createEmbeddedBrowserNavigationSyncState,
   reconcileEmbeddedBrowserUrlProp,
@@ -44,7 +44,7 @@
   faCode,
 } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('EmbeddedBrowser');
 

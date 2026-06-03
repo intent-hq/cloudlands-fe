@@ -21,11 +21,11 @@ const { selectAgentIsThinkingMock, getRandomColorsWithSeedMock } = vi.hoisted(()
   getRandomColorsWithSeedMock: vi.fn(() => ['#111111', '#222222'] as const),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsThinking: selectAgentIsThinkingMock,
 }));
 
-vi.mock('$lib/store/slices/theme/theme-selectors', () => ({
+vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
   selectIsDarkTheme: vi.fn(() => ({
     subscribe: (run: (value: boolean) => void) => {
       run(false);

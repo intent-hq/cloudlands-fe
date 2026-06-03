@@ -9,7 +9,7 @@ import {
   beforeEach,
 } from 'vitest';
 import { terminalHistoryTracker } from '../terminal-history-tracker';
-import { installLocalStorageMock } from '$lib/store/utils/test-helpers/local-storage-mock';
+import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
 const localStorageMock = installLocalStorageMock();
 

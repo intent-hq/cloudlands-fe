@@ -64,7 +64,7 @@ import * as messageAccumulator from '../../../store/main/slices/message-accumula
 import {
   resolveStreamingConfig,
   DEFAULT_PROFILE,
-} from '$lib/store/slices/streaming-config/streaming-config-types';
+} from '$store/renderer/slices/streaming-config/streaming-config-types';
 import {
   agentPersistence,
   UnifiedPersistence,

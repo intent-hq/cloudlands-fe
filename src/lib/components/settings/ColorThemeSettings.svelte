@@ -11,14 +11,14 @@
   selectHasCustomTheme,
   selectIsDarkTheme,
   selectThemeError,
-} from '$lib/store/slices/theme/theme-selectors';
+} from '$store/renderer/slices/theme/theme-selectors';
   import {
   clearThemeCustomization,
   importCustomTheme,
   selectThemePreset,
   setThemeError,
-} from '$lib/store/slices/theme/theme-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/theme/theme-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   const isDarkTheme = selectIsDarkTheme();

@@ -19,12 +19,12 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { Store } from "svelte-redux-toolkit/store";
+import { Store } from "ag-redux-toolkit/svelte-store";
 import {
   get,
 } from "svelte/store";
-import { reducers } from "$lib/store/reducer";
-import { selectNoteById } from "$lib/store/slices/workspace-notes/workspace-notes-selectors";
+import { reducers } from "$store/renderer/reducer";
+import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import {
   ContentType,
   NoteVisibility,

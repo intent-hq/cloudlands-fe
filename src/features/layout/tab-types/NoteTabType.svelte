@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * Note Tab Type Component
    *
@@ -10,21 +10,21 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { closeTab } from '$lib/store/slices/panel-layout/panel-layout-slice';
+  import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
   selectIsInitialSpecWriteInProgress,
   selectInitialAgentId,
-} from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
-  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   createNote,
   deleteNote,
-} from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { selectIsRawNoteViewEnabled } from '$lib/store/slices/transient-ui/transient-ui-selectors';
-  import { toggleRawNoteView } from '$lib/store/slices/transient-ui/transient-ui-slice';
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { toggleRawNoteView } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { isSpecNote } from '$shared/constants/notes';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -35,10 +35,10 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import NoteFontStyleButton from '$lib/components/notes/NoteFontStyleButton.svelte';
-  import { selectSpellcheckEnabled } from '$lib/store/slices/user-preferences/user-preferences-selectors';
-  import { toggleSpellcheck } from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { selectScrollPosition } from '$lib/store/slices/tab-state/tab-state-selectors';
-  import { saveScrollPosition } from '$lib/store/slices/tab-state/tab-state-slice';
+  import { selectSpellcheckEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { toggleSpellcheck } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
   import {
@@ -50,7 +50,7 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { track } from '$lib/services/analytics';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteTabType');
 

@@ -14,9 +14,9 @@ import {
 import type { CommentV2 } from '../comment-types-v2';
 import {
   store as appStore,
-} from '$lib/store/store';
-import { loadCommentsAction } from '$lib/store/slices/comments/comments-slice';
-import { selectCommentById } from '$lib/store/slices/comments/comments-selectors';
+} from '$store/renderer/store';
+import { loadCommentsAction } from '$store/renderer/slices/comments/comments-slice';
+import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Logger } from '../../../shared/logger';
 

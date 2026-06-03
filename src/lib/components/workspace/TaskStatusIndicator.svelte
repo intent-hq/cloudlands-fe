@@ -5,8 +5,8 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
 
-  import { updateTaskStatus } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { updateTaskStatus } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   let {

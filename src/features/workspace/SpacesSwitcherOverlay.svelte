@@ -24,34 +24,34 @@
   selectAgentIsResponding,
   selectAgentIsWaiting,
   selectAgentSession,
-} from '$lib/store/slices/agent-session/agent-session-selectors';
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
   selectUnreadAgentIds,
   selectUnreadAgentIdsForWorkspace,
-} from '$lib/store/slices/unread-tracking/unread-tracking-selectors';
+} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
 
-  import { selectPermissionRequests } from '$lib/store/slices/permission/permission-selectors';
+  import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import {
   closeSwitcher,
   confirmSelection,
-} from '$lib/store/slices/workspace-switcher/workspace-switcher-slice';
+} from '$store/renderer/slices/workspace-switcher/workspace-switcher-slice';
   import {
   selectSwitcherState,
   selectSwitcherWorkspaceIds,
-} from '$lib/store/slices/workspace-switcher/workspace-switcher-selectors';
+} from '$store/renderer/slices/workspace-switcher/workspace-switcher-selectors';
   import {
   selectActiveWorkspaceId,
   selectWorkspaceItems,
-} from '$lib/store/slices/workspace/workspace-selectors';
+} from '$store/renderer/slices/workspace/workspace-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const switcherState = selectSwitcherState();
   const switcherWorkspaceIds = selectSwitcherWorkspaceIds();

@@ -11,7 +11,7 @@
   import {
   selectSpecialists,
   selectUserOverrides,
-} from '$lib/store/slices/specialists/specialists-selectors';
+} from '$store/renderer/slices/specialists/specialists-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';

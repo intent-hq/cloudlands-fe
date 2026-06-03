@@ -19,6 +19,7 @@
     "baseUrl": ".",
     "paths": {
       "$lib/*": ["src/lib/*"],
+      "$store/*": ["src/store/*"],
       "$shared/*": ["src/shared/*"],
       "$features/*": ["src/features/*"]
     },
@@ -27,7 +28,8 @@
   "include": [
     "src/types/**/*.d.ts",
     "src/main/**/*.ts",
-    "src/store/**/*.ts",
+    "src/store/main/**/*.ts",
+    "src/store/utils/**/*.ts",
     "src/shared/**/*.ts",
     "src/features/**/*.ipc.ts",
     "src/features/**/*.service.ts",

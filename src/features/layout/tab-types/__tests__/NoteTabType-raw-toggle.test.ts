@@ -92,51 +92,51 @@ vi.mock('$lib/services/analytics', () => ({ track: vi.fn() }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: mockState.dispatch,
   });
 });
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
 }));
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
 }));
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   createNote: () => ({ type: 'workspaceNotes/createNote' }),
   deleteNote: () => ({ type: 'workspaceNotes/deleteNote' }),
 }));
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
   selectInitialAgentId: { select: () => null },
   selectAgentSession: { select: () => null },
 }));
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => null },
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-selectors', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectSpellcheckEnabled: () => mockState.spellcheckEnabled,
 }));
-vi.mock('$lib/store/slices/user-preferences/user-preferences-slice', () => ({
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
   toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
 }));
-vi.mock('$lib/store/slices/tab-state/tab-state-selectors', () => ({
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectScrollPosition: () => mockState.scrollPosition,
 }));
-vi.mock('$lib/store/slices/tab-state/tab-state-slice', () => ({
+vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   saveScrollPosition: () => ({ type: 'tabState/saveScrollPosition' }),
 }));
-vi.mock('$lib/store/slices/panel-layout/panel-layout-slice', () => ({
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: () => ({ type: 'panelLayout/closeTab' }),
 }));
-vi.mock('$lib/store/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectIsRawNoteViewEnabled: () => mockState.rawViewEnabled,
 }));
-vi.mock('$lib/store/slices/transient-ui/transient-ui-slice', () => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
   toggleRawNoteView: (workspaceId: string, noteId: string) => ({
     type: 'transientUi/toggleRawNoteView',
     payload: [workspaceId, noteId],

@@ -2,10 +2,10 @@
   import { onDestroy } from 'svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
-  import { selectNoteById } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$lib/store/slices/workspace-notes/workspace-notes-slice';
-  import { selectLineWrapping } from '$lib/store/slices/ui-layout/ui-layout-selectors';
-  import { store as appStore } from '$lib/store/store';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

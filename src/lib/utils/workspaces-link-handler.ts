@@ -11,9 +11,9 @@
  */
 
 import { toast } from 'svelte-sonner';
-import { selectCurrentWorkspace } from '$lib/store/slices/workspace/workspace-selectors';
+import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { noteUrl } from '$shared/constants/intent-links';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 
 export interface WorkspacesLinkInfo {
   type: 'note' | 'task' | 'unknown';

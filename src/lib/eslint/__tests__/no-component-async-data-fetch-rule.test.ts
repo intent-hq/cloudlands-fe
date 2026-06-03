@@ -50,9 +50,9 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   onMount,
   tick,
 } from 'svelte';
-        import { loadThings } from '$lib/store/slices/example/example-slice';
-        import { selectThings } from '$lib/store/slices/example/example-selectors';
-        import { store as appStore } from '$lib/store/store';
+        import { loadThings } from '$store/renderer/slices/example/example-slice';
+        import { selectThings } from '$store/renderer/slices/example/example-selectors';
+        import { store as appStore } from '$store/renderer/store';
 
         const things = selectThings();
 

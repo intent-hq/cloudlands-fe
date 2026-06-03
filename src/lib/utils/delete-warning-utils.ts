@@ -3,8 +3,8 @@
  */
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-import { store as appStore } from '$lib/store/store';
+import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import { store as appStore } from '$store/renderer/store';
 
 /**
  * Get the names of agents currently running in a workspace

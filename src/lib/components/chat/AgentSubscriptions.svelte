@@ -31,7 +31,7 @@
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import {
   selectAgentSubscriptions,
@@ -39,13 +39,13 @@
   selectWokenUpInfo,
   selectCompletionStatus,
   selectWaitingState,
-} from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import {
   resetSubscriptionUI,
   requestSubscriptionFetch,
-} from '$lib/store/slices/agent-subscription-ui/agent-subscription-ui-slice';
-  import { stopAgentSessionRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { store as appStore } from '$lib/store/store';
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentSubscriptions');
 

@@ -27,7 +27,7 @@ import type {
   DiffChunk,
   FileChange,
   FileChangeAction,
-} from '../../../lib/store/slices/workspace/utils/change-detector.types';
+} from '$shared/types/change-detector.types';
 import {
   partitionDefaultFileTrackingExcludes,
   shouldExcludeFromDefaultFileTracking,

@@ -5,9 +5,9 @@
    * Shows skills discovered from project and user directories.
    * Modeled after McpServersSection.svelte (collapsible, hidden when empty).
    */
-  import type { SkillInfo } from '$lib/store/slices/skills/skills-types';
-  import { selectSkills } from '$lib/store/slices/skills/skills-selectors';
-  import { loadSkillsRequested } from '$lib/store/slices/skills/skills-slice';
+  import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+  import { selectSkills } from '$store/renderer/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
 
   import { slide } from 'svelte/transition';
   import {
@@ -17,7 +17,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspaceId: string;

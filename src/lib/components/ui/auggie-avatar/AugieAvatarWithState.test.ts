@@ -21,7 +21,7 @@ const { selectAgentIsThinkingMock } = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsThinking: selectAgentIsThinkingMock,
 }));
 

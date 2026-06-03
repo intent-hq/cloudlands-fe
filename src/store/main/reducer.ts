@@ -1,7 +1,7 @@
 /**
  * Main-process root reducer map.
  *
- * combineReducers({}) would throw, so init.ts handles the empty case.
+ * StreamingStore owns root reducer assembly and internal reducer registration.
  */
 
 import { agentSubscriptionsReducer } from "./slices/agent-subscriptions/agent-subscriptions-slice";

@@ -32,7 +32,7 @@ import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
 import {
   openWorkspaceFile,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { dispatchWindowEvent } from './window-events';
 import { MermaidBlock } from '$lib/components/tiptap/MermaidBlock';
 import { DiffBlock } from '$lib/components/tiptap/DiffBlock';
@@ -40,7 +40,7 @@ import { safeLowlight } from './safe-lowlight';
 import {
   selectComments,
   selectCommentById,
-} from '$lib/store/slices/comments/comments-selectors';
+} from '$store/renderer/slices/comments/comments-selectors';
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import {
   getMentionSystem,
@@ -72,7 +72,7 @@ import { handleLink } from '$features/navigation/link-handler';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
-import { store as appStore } from '$lib/store/store';
+import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
 
 // Extend Mention to parse our span[data-mention] chips back into nodes

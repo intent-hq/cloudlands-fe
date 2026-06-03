@@ -28,19 +28,19 @@ import { createAppMessageId } from '$shared/utils/app-message-id';
 import { memoryManager } from './memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
-import { newAssistantMessage } from '$lib/store/slices/unread-tracking/unread-tracking-slice';
-import { removeWorkspaceAgentState } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
+import { newAssistantMessage } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+import { removeWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
   setAgentStreaming,
   updateAgentDigest,
-} from '$lib/store/slices/agent-session/agent-session-slice';
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   setWorkspaceEntity,
   removeWorkspaceEntity,
-} from '$lib/store/slices/workspace/workspace-slice';
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
-import { getRendererStore } from '$lib/store/renderer-store-bridge';
+import { getRendererStore } from '$store/renderer/renderer-store-bridge';
 
 /** Shorthand – keeps call-site diffs minimal after bridge migration. */
 const appStore = {
@@ -52,7 +52,7 @@ const appStore = {
 // Inline selector helpers.
 //
 // The canonical selector modules (`workspace-selectors`, `agent-session-selectors`)
-// statically import the configured Store which chains to `svelte-redux-toolkit/store`
+// statically import the configured Store which chains to `ag-redux-toolkit/svelte-store`
 // → `svelte`. Since stream-manager.ts is transitively loaded by the main process
 // (where svelte is absent in packaged builds), we cannot import those modules.
 // The logic below mirrors the selectors without the Store dependency.

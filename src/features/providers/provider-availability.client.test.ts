@@ -24,8 +24,8 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: mocks.invoke,
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => {},
@@ -33,7 +33,7 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/provider-settings/provider-settings-slice', () => ({
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () => ({
   validateActiveProvider: mocks.validateActiveProvider,
 }));
 

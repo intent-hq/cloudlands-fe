@@ -43,8 +43,8 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
   },
 }));
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -52,22 +52,22 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/workspace-switcher/workspace-switcher-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-switcher/workspace-switcher-selectors', () => ({
   selectSwitcherState: () => mocks.readable(() => mocks.switcherState),
   selectSwitcherWorkspaceIds: () => mocks.readable(() => mocks.workspaceIds),
 }));
 
-vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => mocks.readable(() => 'ws-current'),
   selectWorkspaceItems: () => mocks.readable(() => mocks.workspaces),
 }));
 
-vi.mock('$lib/store/slices/unread-tracking/unread-tracking-selectors', () => ({
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
   selectUnreadAgentIds: () => mocks.readable(() => []),
   selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => []) },
 }));
 
-vi.mock('$lib/store/slices/permission/permission-selectors', () => ({
+vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => mocks.readable(() => []),
 }));
 

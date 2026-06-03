@@ -43,24 +43,24 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
     .default,
 }));
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: mockState.dispatch,
   });
 });
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: { select: mockState.noteSelect },
 }));
-vi.mock('$lib/store/slices/workspace-notes/workspace-notes-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   updateNoteContent: (workspaceId: string, noteId: string, content: string) => ({
     type: 'workspaceNotes/updateNoteContent',
     payload: [workspaceId, noteId, content],
   }),
 }));
-vi.mock('$lib/store/slices/ui-layout/ui-layout-selectors', () => ({
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: () => mockState.lineWrapping,
 }));
 

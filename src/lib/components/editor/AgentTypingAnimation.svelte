@@ -9,7 +9,7 @@
   import {
   selectIsFollowing,
   selectAgentColor,
-} from '$lib/store/slices/agent-follow/agent-follow-selectors';
+} from '$store/renderer/slices/agent-follow/agent-follow-selectors';
 
   const isFollowing$ = selectIsFollowing();
   const agentColor$ = selectAgentColor();

@@ -2,8 +2,8 @@
   import { page } from '$app/stores';
   import FileExplorerLayout from '$lib/components/file-explorer/file-explorer-layout.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { selectEffectiveFileExplorerWorkspacePath } from '$lib/store/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$lib/store/slices/agent-session/agent-session-selectors';
+import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * FileChangesSection - Unstaged/Staged file changes with agent grouping
    * Handles file staging,
@@ -9,22 +9,22 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
   and group commits.
    */
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { selectLockedAgentIds } from '$lib/store/slices/agent-lock/agent-lock-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
   import {
   selectStagedWorkingChanges as selectFtStagedChanges,
   selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-} from '$lib/store/slices/changes/changes-selectors';
+} from '$store/renderer/slices/changes/changes-selectors';
   import {
   stageByPathRequested,
   unstageByPathRequested,
   revertByPathRequested,
   refreshRequested,
-} from '$lib/store/slices/changes/changes-slice';
+} from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { loadGitStatus } from '$lib/store/slices/git/git-slice';
-  import { selectAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-selectors';
-  import { setAutoCommitEnabled } from '$lib/store/slices/workspace-settings/workspace-settings-slice';
+  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
+  import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
 
@@ -71,8 +71,8 @@ import { selectAgentSession } from '$lib/store/slices/agent-session/agent-sessio
 } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
-  import { openWorkspaceDiff } from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
-  import { store as appStore } from '$lib/store/store';
+  import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
 
 
   interface Props {

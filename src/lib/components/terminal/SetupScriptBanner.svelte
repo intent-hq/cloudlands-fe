@@ -31,14 +31,14 @@
   import {
   dismissSetupScriptBannerGlobally,
   saveScript,
-} from '$lib/store/slices/setup-scripts/setup-scripts-slice';
-  import { selectIsSetupScriptBannerDismissed } from '$lib/store/slices/setup-scripts/setup-scripts-selectors';
+} from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import { selectIsSetupScriptBannerDismissed } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { selectWorkspaceHasSetupTerminal } from '$lib/store/slices/terminals/terminals-selectors';
-  import { selectWorkspaceById } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectWorkspaceHasSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('SetupScriptBanner');
 

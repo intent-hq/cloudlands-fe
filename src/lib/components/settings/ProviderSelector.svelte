@@ -15,15 +15,15 @@
   import {
   selectActiveProviderId,
   selectEnabledProviders,
-} from '$lib/store/slices/provider-settings/provider-settings-selectors';
+} from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   setActiveProvider,
   setProviderEnabled,
-} from '$lib/store/slices/provider-settings/provider-settings-slice';
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
   retryLoadModels,
   reloadModelsForProvider,
-} from '$lib/store/slices/model/model-slice';
+} from '$store/renderer/slices/model/model-slice';
 
   import {
   ACP_PROVIDERS,
@@ -56,10 +56,10 @@
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$lib/store/slices/workspace/workspace-selectors';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Button from '../ui/button/button.svelte';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();

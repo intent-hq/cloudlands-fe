@@ -49,8 +49,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/store/store', async () => {
-  const { createAppStoreMockModule } = await import('$lib/store/utils/test-helpers/store-mock');
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   const dispatch = (...args: any[]) => {
     mocks.dispatch(...args);
     return mocks.reduxDispatch(...args);
@@ -62,12 +62,12 @@ vi.mock('$lib/store/store', async () => {
   });
 });
 
-vi.mock('$lib/store/slices/changes/changes-selectors', () => ({
+vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectStagedWorkingChanges: mocks.selector(() => mocks.staged),
   selectUnstagedWorkingChanges: mocks.selector(() => mocks.unstaged),
 }));
 
-vi.mock('$lib/store/slices/changes/changes-slice', () => ({
+vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
     type: 'changes/stageByPathRequested',
     payload: [wsId, paths],
@@ -86,36 +86,36 @@ vi.mock('$lib/store/slices/changes/changes-slice', () => ({
   })),
 }));
 
-vi.mock('$lib/store/slices/git/git-slice', () => ({
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((wsId: string, force: boolean) => ({
     type: 'git/loadGitStatus',
     payload: [wsId, force],
   })),
 }));
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors', () => ({
   selectAutoCommitEnabled: mocks.selector(() => mocks.getAutoCommit()),
 }));
 
-vi.mock('$lib/store/slices/workspace-settings/workspace-settings-slice', () => ({
+vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
   setAutoCommitEnabled: vi.fn((wsId: string, enabled: boolean) => ({
     type: 'workspaceSettings/setAutoCommitEnabled',
     payload: [wsId, enabled],
   })),
 }));
 
-vi.mock('$lib/store/slices/agent-lock/agent-lock-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: mocks.selector(() => mocks.getLockedAgentIds()),
 }));
 
-vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
     () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.getAgents()); return () => {}; } }),
     { select: (_state: unknown, _wsId: string) => mocks.getAgents() },
   ),
 }));
 
-vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign(
     () => ({ subscribe: (run: (v: unknown) => void) => { run(undefined); return () => {}; } }),
     { select: (_state: unknown, _agentId: string) => undefined },

@@ -97,7 +97,7 @@ Add a new IPC endpoint to load notes for multiple workspaces in one call. This h
 
 Create a store to manage notes across workspaces on the homepage. The current implementation uses a reactive record rather than a `Map`:
 
-> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `WorkspaceNotesStore` and other `.store.svelte.ts` shared-state modules are transitional; new shared state should use Redux slices in `src/lib/store/`.
+> Transitional note: Per `docs/STATE_MANAGEMENT.md`, `WorkspaceNotesStore` and other `.store.svelte.ts` shared-state modules are transitional; new shared state should use Redux slices in `src/store/renderer/`.
 
 ```typescript
 // src/features/workspace/workspace-notes.store.svelte.ts

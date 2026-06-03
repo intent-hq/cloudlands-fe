@@ -31,24 +31,24 @@
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
 
-  import { selectBrowserRecentUrls } from '$lib/store/slices/browser/browser-selectors';
-  import { initBrowserWorkspace } from '$lib/store/slices/browser/browser-slice';
-  import { selectWorkspaceItems } from '$lib/store/slices/workspace/workspace-selectors';
-  import { createAgentRequested } from '$lib/store/slices/workspace-agents/workspace-agents-slice';
-  import { createTerminalRequested } from '$lib/store/slices/terminals/terminals-slice';
-  import { createNoteRequested } from '$lib/store/slices/note-read-tracking/note-read-tracking-slice';
+  import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
   openWorkspaceBrowser,
   openWorkspaceNote,
-} from '$lib/store/slices/workspace-navigation/workspace-navigation-slice';
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
   commandPaletteNewFileRequested,
   openAgentTabRequested,
   openTerminalTabRequested,
-} from '$lib/store/slices/app-layout/app-layout-slice';
-  import { resetOnboarding } from '$lib/store/slices/onboarding/onboarding-slice';
-  import { setShowCreateModal } from '$lib/store/slices/sidebar-nav/sidebar-nav-slice';
+} from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
   type WorkspaceObject,
   type WorkspaceObjectType,
@@ -58,20 +58,20 @@
   parseQueryFilter,
   buildNoteBreadcrumbs,
   buildRecentItems,
-} from '$lib/store/slices/command-palette/command-palette-utils';
+} from '$store/renderer/slices/command-palette/command-palette-utils';
   import {
   recordPaletteFileMru,
   recordPaletteMruItem,
-} from '$lib/store/slices/palette/palette-slice';
+} from '$store/renderer/slices/palette/palette-slice';
   import {
   selectPaletteFileMru,
   selectPaletteMruEntries,
-} from '$lib/store/slices/palette/palette-selectors';
-  import { computeResults } from '$lib/store/slices/command-palette/command-palette-results';
+} from '$store/renderer/slices/palette/palette-selectors';
+  import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
-  import { selectAllWorkspaceAgents } from '$lib/store/slices/workspace-agents/workspace-agents-selectors';
-  import { selectAllNotes } from '$lib/store/slices/workspace-notes/workspace-notes-selectors';
-  import { selectCurrentChanges } from '$lib/store/slices/changes/changes-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -81,7 +81,7 @@
   compareWorkspaceActivityDisplayTimeDesc,
   getWorkspaceActivityDisplayTime,
 } from '$shared/utils/workspace-activity-time';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CommandPalette');
 
@@ -249,7 +249,7 @@
 
   // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
   // FILTER_PREFIXES, and WorkspaceObject types are now imported from
-  // '$lib/store/slices/command-palette/command-palette-utils'
+  // '$store/renderer/slices/command-palette/command-palette-utils'
 
   // Load workspace objects when workspace changes
   $effect(() => {

@@ -2,16 +2,16 @@
   import { Button } from '$lib/components/ui/button';
   import { invoke } from '$lib/electron-bridge';
   import { fetchPromotionalBanners } from '$lib/services/promotional-banner';
-  import { selectActiveProviderId } from '$lib/store/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$lib/store/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$lib/store/slices/model/model-slice';
-  import { selectAvailableModels } from '$lib/store/slices/model/model-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+  import { selectAvailableModels } from '$store/renderer/slices/model/model-selectors';
   import {
   dismissPromoBanner,
   recordPromoBannerInteraction,
   type PromoBannerInteraction,
-} from '$lib/store/slices/user-preferences/user-preferences-slice';
-  import { selectPromoBannerInteractions } from '$lib/store/slices/user-preferences/user-preferences-selectors';
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { selectPromoBannerInteractions } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import type {
     PromotionalBanner as PromotionalBannerData,
@@ -27,7 +27,7 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
-  import { store as appStore } from '$lib/store/store';
+  import { store as appStore } from '$store/renderer/store';
 
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
