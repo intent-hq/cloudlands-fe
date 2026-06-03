@@ -332,6 +332,10 @@
     "yjs": "^13.6.27",
     "zod": "^3.25.76"
   },
+  "overrides": {
+    "node-gyp": "^11.5.0",
+    "entities": "7.0.0"
+  },
   "pnpm": {
     "overrides": {
       "node-gyp": "^11.5.0",
