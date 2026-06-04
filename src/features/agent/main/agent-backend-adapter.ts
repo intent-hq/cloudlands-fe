@@ -109,6 +109,11 @@ class AgentBackendAdapter implements IAgentBackendService {
       throw new Error(result.error || 'Failed to send message');
     }
 
+    // NOTE: The adapter intentionally does NOT emit `agent:user-message:sent` itself —
+    // `handleSendMessage` (the canonical site) is responsible for both the workspace
+    // event dispatch and the cross-client renderer IPC broadcast. See Audit 4 /
+    // Track F Bundle 3 (single-emit invariant).
+
     return {
       messageId: BrandedIds.MessageId(messageId),
       streamId: BrandedIds.AgentId(streamId),
@@ -573,6 +578,30 @@ class AgentBackendAdapter implements IAgentBackendService {
       messageId: request.messageId,
     });
     return await (this.handler as any).handleRemoveQueuedMessage(null, request);
+  }
+
+  async forceMessage(request: {
+    agentId: string;
+    messageId: string;
+    content: string;
+    workspaceId: string;
+    imageBlocks?: any[];
+    noteIds?: string[];
+  }): Promise<{ success: boolean; error?: string }> {
+    logger.debug('Adapter: forceMessage', {
+      agentId: request.agentId,
+      messageId: request.messageId,
+    });
+    // Stop the current stream, then send the new message
+    await this.handler.stopAgent(request.agentId, 'force_message');
+    return await this.handler.sendMessage(null as any, {
+      sessionId: request.agentId,
+      message: request.content,
+      workspaceId: request.workspaceId,
+      imageBlocks: request.imageBlocks,
+      noteIds: request.noteIds,
+      queuedMessageId: request.messageId,
+    });
   }
 
   async getQueue(request: {

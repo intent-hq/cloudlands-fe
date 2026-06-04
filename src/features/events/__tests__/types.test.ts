@@ -24,9 +24,11 @@ import {
   normalizeActor,
   createWorkspaceEvent,
   generateEventId,
+  WorkspaceEventType,
   type AgentStatusPayload,
   type WorkspaceEvent,
 } from '../types';
+import { WORKSPACE_EVENT_TYPE_LITERALS } from '../../../main/ipc-schemas';
 
 describe('event types', () => {
   const requiredCanonicalStatusFields = {
@@ -184,6 +186,49 @@ describe('event types', () => {
       const id2 = generateEventId();
       expect(id1).not.toBe(id2);
       expect(id1).toMatch(/^evt_/);
+    });
+  });
+
+  // ==========================================================================
+  // Audit 2 — C1 / C2 / C3 / C6 regression tests
+  // ==========================================================================
+  describe('Audit 2 — type catalogue', () => {
+    it('C1: declares WorkspaceEventType.AgentRenamed constant', () => {
+      // C1 — `agent:renamed` was previously emitted via `'agent:renamed' as any`
+      // because no constant existed. The cast is now removed from
+      // `agent-rename.ts` and `websocket-protocol-handler.ts` because the
+      // constant exists in the union.
+      expect(WorkspaceEventType.AgentRenamed).toBe('agent:renamed');
+    });
+
+    it('C2: declares AgentStarted / AgentRestored constants', () => {
+      expect(WorkspaceEventType.AgentStarted).toBe('agent:started');
+      expect(WorkspaceEventType.AgentRestored).toBe('agent:restored');
+    });
+
+    it('C3: declares all AgentQueue* constants including stale-message', () => {
+      expect(WorkspaceEventType.AgentQueueUpdated).toBe('agent:queue:updated');
+      expect(WorkspaceEventType.AgentQueueProcessing).toBe('agent:queue:processing');
+      expect(WorkspaceEventType.AgentQueueProcessingCancelled).toBe(
+        'agent:queue:processing-cancelled',
+      );
+      expect(WorkspaceEventType.AgentQueueStaleMessage).toBe('agent:queue:stale-message');
+    });
+
+    it('C6: IPC allow-list mirrors every WorkspaceEventType value', () => {
+      // The IPC `EventsEmitSchema` / `EventsGetLastEventSchema` enums are
+      // constructed from `WORKSPACE_EVENT_TYPE_LITERALS`. This snapshot test
+      // guards against drift: every runtime constant value must appear in the
+      // allow-list, so renderers / external clients cannot subscribe-or-emit
+      // a type the catalogue has forgotten about (Audit 2 C6).
+      const catalogueValues = new Set<string>(Object.values(WorkspaceEventType));
+      const allowList = new Set<string>(WORKSPACE_EVENT_TYPE_LITERALS);
+
+      const missingFromAllowList = [...catalogueValues].filter((v) => !allowList.has(v));
+      const extraInAllowList = [...allowList].filter((v) => !catalogueValues.has(v));
+
+      expect(missingFromAllowList).toEqual([]);
+      expect(extraInAllowList).toEqual([]);
     });
   });
 });

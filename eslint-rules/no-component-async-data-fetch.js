@@ -28,7 +28,7 @@ const DOMAIN_API_OBJECT_NAME_PATTERN = /(?:api|client|provider|repository|reposi
 const DOMAIN_DATA_OBJECT_NAME_PATTERN = /(?:service|source|sources|system|electronAPI|ipc)$/i;
 const DOMAIN_LOADER_NAME_PATTERN = /^(?:fetch|load|get|list|read|query|search|request|invoke)(?:[A-Z0-9_]|$)/;
 const LOCAL_IMPORT_SOURCE_PATTERN = /^(?:\.{1,2}\/|\$lib\/|\$features\/|\$shared\/)/;
-const STORE_IMPORT_SOURCE_PATTERN = /^\$lib\/store\//;
+const STORE_IMPORT_SOURCE_PATTERN = /^(?:\$lib\/store\/|\$store\/)/;
 const WRAPPER_IMPORT_SOURCE_PATTERN = /(?:^|[./-])(?:commands?|electron|ipc)(?:[./-]|$)|choose-parent-folder|patch-block-commands|rtk-settings-commands/i;
 const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN = /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
 
@@ -104,7 +104,11 @@ function getFilename(context) {
 function isLocalWrapperImportSource(source) {
   return typeof source === 'string'
     && LOCAL_IMPORT_SOURCE_PATTERN.test(source)
-    && !STORE_IMPORT_SOURCE_PATTERN.test(source);
+    && !isStoreImportSource(source);
+}
+
+function isStoreImportSource(source) {
+  return typeof source === 'string' && STORE_IMPORT_SOURCE_PATTERN.test(source);
 }
 
 function resolveImportBase(filename, source) {
@@ -264,7 +268,9 @@ function isAwaitedStandaloneLoaderCall(node, domainImportNames) {
 }
 
 function isDomainImportSource(source) {
-  return typeof source === 'string' && DOMAIN_IMPORT_SOURCE_PATTERN.test(source);
+  return typeof source === 'string'
+    && !isStoreImportSource(source)
+    && DOMAIN_IMPORT_SOURCE_PATTERN.test(source);
 }
 
 function isImportedAsyncWrapperCall(callee, asyncWrapperImportNames) {

@@ -3,20 +3,21 @@
  *
  * Holds the set of active renderer event subscriptions and provides a
  * `deliverEventToSubscriptions` function that the saga can call on each
- * `emitWorkspaceEvent` action.
+ * accepted workspace event.
  *
  * Extracted from events.ipc.ts so both the IPC handler (add/remove) and
  * the saga (deliver) can share the same data without circular imports.
+ * The maps in this module are transport-local runtime state only; Redux owns
+ * accepted workspace events and `renderer-subscription-saga` is the sole
+ * downstream delivery owner.
  */
 
 import { BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceEvent, EventFilter } from '../types';
-import { EventFilterEngine } from '../event-filter-engine';
+import { eventMatchesSubscription } from '../event-filter-engine';
 
 const logger = new Logger('RendererSubscriptionRegistry');
-
-export const filterEngine = new EventFilterEngine();
 
 export interface RendererSubscription {
   windowId: number;
@@ -35,7 +36,7 @@ export const windowCloseListeners = new Map<
 /**
  * Deliver a single event to all matching renderer subscriptions.
  *
- * Called by the renderer-subscription saga on each `emitWorkspaceEvent`.
+ * Called by the renderer-subscription saga on each `workspaceEventAccepted`.
  * Performance is O(S) where S = number of active subscriptions, and only
  * fires when an event is actually emitted — not on every Redux action.
  */
@@ -45,7 +46,7 @@ export function deliverEventToSubscriptions(event: WorkspaceEvent): void {
       const window = BrowserWindow.fromId(sub.windowId);
       if (!window || window.isDestroyed()) continue;
 
-      if (filterEngine.matches(event, sub.filters)) {
+      if (eventMatchesSubscription(event, sub.filters)) {
         window.webContents.send('workspace:event', event);
       }
     } catch (error) {

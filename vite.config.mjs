@@ -298,6 +298,8 @@ export default defineConfig({
         '**/dist-electron/**',
         '**/.git/**',
         '**/.worktrees/**',
+        // Ignore iOS/Xcode project files to prevent Electron app reloads during Xcode builds
+        '**/ios/**',
         '**/.augment/**',
         '**/playwright-report/**',
         '**/test-results/**',

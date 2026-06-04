@@ -98,6 +98,8 @@ export default defineConfig(async () => {
         'lru_map': path.resolve(__dirname, './src/__mocks__/lru_map'),
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues
         '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
+        // Test-only stub: avoid loading bonjour-service during mDNS discovery imports
+        'bonjour-service': path.resolve(__dirname, './src/__mocks__/bonjour-service'),
       },
       conditions: ['import', 'module', 'browser', 'default'],
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],

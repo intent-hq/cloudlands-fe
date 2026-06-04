@@ -6,12 +6,28 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import ElectronStore from 'electron-store';
 
 const logger = new Logger({ category: 'AppSettingsService' });
 
- 
 let settingsStore: any = null;
 let initPromise: Promise<void> | null = null;
+
+const WEBSOCKET_API_TOKEN_KEY = 'websocketApiToken';
+const WEBSOCKET_API_ENABLED_KEY = 'websocketApiEnabled';
+const WEBSOCKET_API_DISCOVERY_ENABLED_KEY = 'websocketApiDiscoveryEnabled';
+
+function getStore(): any {
+  if (!settingsStore) {
+    try {
+      settingsStore = new ElectronStore({ name: 'settings' });
+      logger.info('App settings service initialized');
+    } catch (error) {
+      logger.error('Failed to initialize app settings service', error as Error);
+    }
+  }
+  return settingsStore;
+}
 
 /**
  * Initialize the settings store (call once during app startup)
@@ -24,13 +40,7 @@ export async function initAppSettingsService(): Promise<void> {
     return initPromise;
   }
   initPromise = (async () => {
-    try {
-      const ElectronStore = (await import('electron-store')).default;
-      settingsStore = new ElectronStore({ name: 'settings' });
-      logger.info('App settings service initialized');
-    } catch (error) {
-      logger.error('Failed to initialize app settings service', error as Error);
-    }
+    getStore();
   })();
   return initPromise;
 }
@@ -39,11 +49,12 @@ export async function initAppSettingsService(): Promise<void> {
  * Get a setting value by key
  */
 export function getSetting<T>(key: string, defaultValue?: T): T | undefined {
-  if (!settingsStore) {
+  const store = getStore();
+  if (!store) {
     logger.warn('Settings store not initialized, returning default', { key });
     return defaultValue;
   }
-  const value = settingsStore.get(key);
+  const value = store.get(key);
   return value !== undefined ? value : defaultValue;
 }
 
@@ -51,11 +62,12 @@ export function getSetting<T>(key: string, defaultValue?: T): T | undefined {
  * Set a setting value
  */
 export function setSetting<T>(key: string, value: T): void {
-  if (!settingsStore) {
+  const store = getStore();
+  if (!store) {
     logger.warn('Settings store not initialized, cannot set', { key });
     return;
   }
-  settingsStore.set(key, value);
+  store.set(key, value);
 }
 
 /**
@@ -80,4 +92,52 @@ export function getWorktreesLocation(): string {
  */
 export function getSshKeyPath(): string {
   return getSetting<string>('sshKeyPath', '') || '';
+}
+
+/**
+ * Whether the WebSocket API is enabled.
+ * Defaults to false (opt-in).
+ */
+export function isWebSocketApiEnabled(): boolean {
+  return getSetting<boolean>(WEBSOCKET_API_ENABLED_KEY, false) === true;
+}
+
+export function setWebSocketApiEnabled(enabled: boolean): void {
+  setSetting(WEBSOCKET_API_ENABLED_KEY, enabled);
+  logger.info('WebSocket API enabled state changed', { enabled });
+}
+
+/**
+ * Get the WebSocket API token.
+ * Returns undefined if not set. Call ensureWebSocketApiToken() for the explicit
+ * create-on-missing path.
+ */
+export function getWebSocketApiToken(): string | undefined {
+  return getSetting<string>(WEBSOCKET_API_TOKEN_KEY);
+}
+
+export function setWebSocketApiToken(token: string): void {
+  setSetting(WEBSOCKET_API_TOKEN_KEY, token);
+}
+
+/**
+ * Return the persisted WebSocket API token, creating one only when explicitly requested.
+ */
+export function ensureWebSocketApiToken(createToken: () => string): string {
+  const existing = getWebSocketApiToken();
+  if (existing && typeof existing === 'string' && existing.length > 0) {
+    return existing;
+  }
+  const token = createToken();
+  setWebSocketApiToken(token);
+  return token;
+}
+
+export function isWebSocketApiDiscoveryEnabled(): boolean {
+  return getSetting<boolean>(WEBSOCKET_API_DISCOVERY_ENABLED_KEY, false) === true;
+}
+
+export function setWebSocketApiDiscoveryEnabled(enabled: boolean): void {
+  setSetting(WEBSOCKET_API_DISCOVERY_ENABLED_KEY, enabled);
+  logger.info('Network discovery enabled state changed', { enabled });
 }

@@ -417,6 +417,7 @@ export const EVENT_CHANNELS = [
   'window:blur',
   'window:fullscreen',
   'mcp:server-error',
+  'websocket-api:discovery-auto-disabled',
 ];
 
 /**

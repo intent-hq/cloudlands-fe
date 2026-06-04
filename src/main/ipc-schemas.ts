@@ -11,6 +11,97 @@ import {
   WorkspaceStatusMessageSchema,
 } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
+// IPC allow-list of workspace event-type strings.
+//
+// Mirrors the runtime values declared in `features/events/types.ts`
+// (`WorkspaceEventType`). A snapshot test
+// (`src/features/events/__tests__/types.test.ts`) keeps the two lists in sync
+// so the IPC allow-list cannot silently drift behind the catalogue. Per Audit 2
+// C6 — see the WebSocket API Drift Audit Findings note.
+//
+// IMPORTANT: Keep this list aligned with `WorkspaceEventType`. Add new event
+// types here as well as in `features/events/types.ts`.
+export const WORKSPACE_EVENT_TYPE_LITERALS = [
+  // File events
+  'file:changed',
+  'file:created',
+  'file:deleted',
+  'file:renamed',
+  // Agent lifecycle events
+  'agent:started',
+  'agent:completed',
+  'agent:failed',
+  'agent:tool:call',
+  'agent:message',
+  // Agent interaction events
+  'agent:created',
+  'agent:deleted',
+  'agent:restored',
+  'agent:renamed',
+  'agent:idle',
+  'agent:status-changed',
+  'agent:message:sent',
+  'agent:message:received',
+  'agent:subscribed',
+  'agent:unsubscribed',
+  'agent:woken-by-subscription',
+  'agent:delivery-confirmed',
+  'agent:event-delivery-failed',
+  'agent:event-delivery-timeout',
+  'agent:subscriptions-restored',
+  'agent:subscriptions-changed',
+  'agent:message:delivery-failed',
+  // Agent streaming events
+  'agent:stream:start',
+  'agent:stream:chunk',
+  'agent:stream:content-blocks',
+  'agent:stream:end',
+  'agent:stream:message',
+  'agent:stream:tool_use',
+  'agent:stream:tool_result',
+  // Agent queue events
+  'agent:queue:updated',
+  'agent:queue:processing',
+  'agent:queue:processing-cancelled',
+  'agent:queue:stale-message',
+  // Agent user message events
+  'agent:user-message:sent',
+  // Git events
+  'git:commit',
+  'git:push',
+  'git:pull',
+  'git:branch',
+  'git:merge',
+  // Note events
+  'note:created',
+  'note:updated',
+  'note:deleted',
+  // Task events
+  'task:status-changed',
+  'task:ready-tasks-changed',
+  // Terminal events
+  'terminal:command',
+  // Test events
+  'test:started',
+  'test:completed',
+  // Build events
+  'build:started',
+  'build:completed',
+  // Workspace events
+  'workspace:created',
+  'workspace:updated',
+  'workspace:deleted',
+  'workspace:opened',
+  'workspace:closed',
+  'workspace:activity',
+  // Spec/goal events
+  'spec:updated',
+  'goal:updated',
+  // Comment events
+  'comment:added',
+  // MCP events
+  'mcp:notification',
+] as const;
 
 // ============================================================================
 // Common Schemas
@@ -697,6 +788,15 @@ export const AgentRemoveQueuedMessageSchema = z.object({
   messageId: z.string().min(1, 'Message ID is required'),
 });
 
+export const AgentForceMessageSchema = z.object({
+  agentId: z.string().min(1, 'Agent ID is required'),
+  messageId: z.string().min(1, 'Message ID is required'),
+  content: z.string().min(1, 'Message content is required'),
+  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  imageBlocks: z.array(z.any()).optional(),
+  noteIds: z.array(z.string()).optional(),
+});
+
 export const AgentGetQueueSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
 });
@@ -918,39 +1018,10 @@ const EventFilterSchema = z.object({
 export const EventsEmitSchema = z.object({
   event: z.object({
     id: z.string().min(1, 'Event ID is required'),
-    type: z.enum([
-      'file:changed',
-      'file:created',
-      'file:deleted',
-      'file:renamed',
-      'agent:started',
-      'agent:completed',
-      'agent:failed',
-      'agent:tool:call',
-      'agent:message',
-      'git:commit',
-      'git:push',
-      'git:pull',
-      'git:branch',
-      'git:merge',
-      'note:created',
-      'note:updated',
-      'note:deleted',
-      'terminal:command',
-      'test:started',
-      'test:completed',
-      'build:started',
-      'build:completed',
-      'workspace:created',
-      'workspace:updated',
-      'workspace:deleted',
-      'workspace:opened',
-      'workspace:closed',
-      'workspace:activity',
-      'spec:updated',
-      'goal:updated',
-      'comment:added',
-    ]),
+    // Allow any declared `WorkspaceEventType`; derived from the canonical
+    // constants in `features/events/types.ts` so the IPC allow-list stays in
+    // lock-step with the catalogue (Audit 2 C6).
+    type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
     workspaceId: WorkspaceIdSchema,
     actor: EventActorSchema,
     timestamp: z.string().min(1, 'Timestamp is required'),
@@ -986,39 +1057,11 @@ export const EventsQuerySchema = z.object({
 });
 
 export const EventsGetLastEventSchema = z.object({
-  type: z.enum([
-    'file:changed',
-    'file:created',
-    'file:deleted',
-    'file:renamed',
-    'agent:started',
-    'agent:completed',
-    'agent:failed',
-    'agent:tool:call',
-    'agent:message',
-    'git:commit',
-    'git:push',
-    'git:pull',
-    'git:branch',
-    'git:merge',
-    'note:created',
-    'note:updated',
-    'note:deleted',
-    'terminal:command',
-    'test:started',
-    'test:completed',
-    'build:started',
-    'build:completed',
-    'workspace:created',
-    'workspace:updated',
-    'workspace:deleted',
-    'workspace:opened',
-    'workspace:closed',
-    'workspace:activity',
-    'spec:updated',
-    'goal:updated',
-    'comment:added',
-  ]),
+  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
+  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
+  // still accepted as query inputs and simply return `null` if no such event
+  // has ever been recorded.
+  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
   workspaceId: WorkspaceIdSchema.optional(),
 });
 
@@ -1760,6 +1803,11 @@ export const SettingsSetSchema = z.object({
 
 export const SettingsUpdateSchema = z.object({
   settings: z.record(z.any()),
+});
+
+// WEBSOCKET_API_CHANNELS schemas
+export const WebSocketApiSetEnabledSchema = z.object({
+  enabled: z.boolean(),
 });
 
 // USER_MCP_CHANNELS schemas

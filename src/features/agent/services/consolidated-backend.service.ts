@@ -80,6 +80,25 @@ export const unifiedOrchestrator = {
     return unwrapIpcResponse(result) as QueueOperationResult;
   },
 
+  async forceMessage(
+    agentId: string,
+    messageId: string,
+    content: string,
+    workspaceId: string,
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    noteIds?: string[],
+  ): Promise<QueueOperationResult> {
+    const result = (await invoke(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE, {
+      agentId,
+      messageId,
+      content,
+      workspaceId,
+      imageBlocks,
+      noteIds,
+    })) as { success: boolean; data?: QueueOperationResult; error?: { message?: string } };
+    return unwrapIpcResponse(result) as QueueOperationResult;
+  },
+
   async getQueue(agentId: string): Promise<QueueOperationResult> {
     const rawResult = await invoke(AGENT_BACKEND_CHANNELS.GET_QUEUE, { agentId });
     logger.debug('[getQueue] Raw IPC result', { rawResult });

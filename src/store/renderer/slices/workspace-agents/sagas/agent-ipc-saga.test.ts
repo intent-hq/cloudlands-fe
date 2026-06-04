@@ -23,6 +23,7 @@ import {
 import * as sagaEffects from "redux-saga/effects";
 import {
   AgentStatus,
+  type AgentMessage,
   type AgentSession,
 } from "$shared/types";
 
@@ -40,6 +41,7 @@ const {
   selectState,
   streamingSessionsState,
   diskCountState,
+  capturedElectronHandlers,
 } = vi.hoisted(() => ({
   sendMock: vi.fn(),
   saveSessionMock: vi.fn(async () => {}),
@@ -54,6 +56,7 @@ const {
   selectState: { results: [] as any[], index: 0 },
   streamingSessionsState: { results: [] as any[] },
   diskCountState: { value: 0 },
+  capturedElectronHandlers: {} as Record<string, GeneratorFunction>,
 }));
 
 // Mock window + electronAPI
@@ -203,9 +206,20 @@ vi.mock("../../agent-session/agent-session-selectors", () => ({
   },
 }));
 
-vi.mock("../../workspace/workspace-selectors", () => ({
-  selectActiveWorkspaceId: { select: () => "active-ws-id" },
-}));
+vi.mock("../../workspace/workspace-selectors", () => {
+  const selectActiveWorkspaceIdImpl = (state: any) => {
+    // If state has workspace.activeWorkspaceId, use it; otherwise fallback
+    return state?.workspace?.activeWorkspaceId ?? "active-ws-id";
+  };
+  return {
+    selectActiveWorkspaceId: {
+      select: selectActiveWorkspaceIdImpl,
+      effect: function* () {
+        return yield sagaEffects.select(selectActiveWorkspaceIdImpl);
+      },
+    },
+  };
+});
 
 vi.mock("../../agent-session/agent-session-slice", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
@@ -218,7 +232,9 @@ vi.mock("../../agent-session/agent-session-slice", async (importOriginal) => {
 });
 
 vi.mock("$store/renderer/utils/ipc-channel", () => ({
-  takeEveryFromElectronChannel: vi.fn(function* () {}),
+  takeEveryFromElectronChannel: vi.fn(function* (channelName: string, handler: GeneratorFunction) {
+    capturedElectronHandlers[channelName] = handler;
+  }),
   takeEveryFromWindowEvent: vi.fn(function* () {}),
 }));
 
@@ -275,7 +291,7 @@ import {
   AGENT_CHANNELS,
 } from "$shared/ipc/channels";
 
-const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
+const makeQueueSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   id: "agent-1",
   name: "Test Agent",
   workspaceId: "ws-agent-1",
@@ -283,6 +299,8 @@ const makeSession = (overrides: Partial<AgentSession> = {}): AgentSession => ({
   isStreaming: false,
   ...overrides,
 } as AgentSession);
+
+const makeSession = makeQueueSession;
 
 const queueData = {
   agentId: "agent-1",
@@ -373,7 +391,7 @@ describe("handleQueueProcessing", () => {
   });
 
   it("preserves queued user app ID and passes assistant app ID to stream handler", async () => {
-    const session = makeSession();
+    const session = makeQueueSession();
     selectState.results = [session];
     const data = {
       ...queueData,

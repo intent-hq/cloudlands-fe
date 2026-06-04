@@ -127,10 +127,10 @@ export class ProtocolAdapter {
     return result as Result<any[], string>;
   }
 
-  async listAllWorkspaces(options?: { lite?: boolean }): Promise<Result<any[], string>> {
-    // Include archived workspaces - frontend handles filtering via "Show archived" toggle
+  async listAllWorkspaces(options?: { includeArchived?: boolean; lite?: boolean }): Promise<Result<any[], string>> {
+    // Include archived workspaces by default - frontend handles filtering via "Show archived" toggle
     const result = await this.workspaceService.listWorkspaces({
-      includeArchived: true,
+      includeArchived: options?.includeArchived ?? true,
       lite: options?.lite,
     });
     if (result.ok) {

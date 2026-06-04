@@ -1,8 +1,13 @@
 /**
  * Renderer subscription delivery saga.
  *
- * Watches `workspaceEventAccepted` and delivers matching events to renderer
- * subscriptions via `deliverEventToSubscriptions`.
+ * Watches `workspaceEventAccepted` and delivers matching events to filtered
+ * subscription transports:
+ * 1. renderer subscription IPC (`workspace:event`)
+ * 2. external WebSocket API JSON-RPC subscriptions (`events.event`)
+ *
+ * This saga is the sole downstream owner for filtered subscription delivery;
+ * both adapters keep only transport-local runtime subscription maps.
  *
  * Replaces the previous `store.subscribe()` pattern in events.ipc.ts which
  * fired on every Redux action (O(N×M×K) for N subscriptions × M workspaces
@@ -29,6 +34,13 @@ export function* handleDeliverToRendererSubscriptions(
       "../../../../../features/events/main/renderer-subscription-registry"
     );
     deliverEventToSubscriptions(event);
+  });
+  // Also deliver to external WebSocket API clients (replaces old UnifiedEventBus callback).
+  yield* call(async () => {
+    const { deliverEventToWebSocketSubscriptions } = await import(
+      "../../../../../main/websocket-event-bridge"
+    );
+    deliverEventToWebSocketSubscriptions(event);
   });
 }
 

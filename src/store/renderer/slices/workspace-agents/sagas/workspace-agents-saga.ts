@@ -76,9 +76,32 @@ type AgentDeletedEventPayload = MaybeWrappedPayload<AgentDeletedPayload | Worksp
 
 const workspaceAgentTasks = new Map<string, Task[]>();
 
+/**
+ * Unwrap a payload that may be wrapped in different formats:
+ * 1. Direct payload: { agentId, workspaceId, ... }
+ * 2. Wrapped in `payload`: { payload: { agentId, workspaceId, ... } }
+ * 3. WorkspaceEvent format: { type, workspaceId, data: { agentId, ... }, ... }
+ */
 function unwrapPayload<T>(event: MaybeWrappedPayload<T>): T {
-  if (event && typeof event === "object" && "payload" in event) {
-    return event.payload;
+  if (!event || typeof event !== "object") {
+    return event;
+  }
+
+  // Check for { payload: T } wrapper
+  if ("payload" in event) {
+    return (event as { payload: T }).payload;
+  }
+
+  // Check for WorkspaceEvent format: { type, data, id, timestamp, ... }
+  // If it has type, data, id, and timestamp, extract the data field
+  if (
+    "type" in event &&
+    "data" in event &&
+    "id" in event &&
+    "timestamp" in event &&
+    typeof (event as any).data === "object"
+  ) {
+    return (event as any).data as T;
   }
 
   return event;

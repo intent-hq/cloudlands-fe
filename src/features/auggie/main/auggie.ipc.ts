@@ -370,7 +370,7 @@ const requireNode = createRequire(import.meta.url);
  *    - Default Model [model-id]  (default)
  *        Description text on next line
  */
-function parseModelListOutput(
+export function parseModelListOutput(
   stdout: string,
 ): Array<{ value: string; label: string; description?: string }> {
   const models: Array<{ value: string; label: string; description?: string }> = [];

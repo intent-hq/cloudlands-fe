@@ -70,11 +70,11 @@ describe("broadcastEvent global routing", () => {
     });
   }
 
+  // Events that broadcast on both events:new AND specific type channel
   const WORKSPACE_SCOPED_EVENT_TYPES = [
     "file:changed",
     "agent:started",
     "agent:completed",
-    "note:created",
     "task:status-changed",
   ];
 
@@ -90,6 +90,26 @@ describe("broadcastEvent global routing", () => {
       const [secondCallWsId] = sendToWorkspaceWindowsMock.mock.calls[1];
       expect(firstCallWsId).toBe("ws-1");
       expect(secondCallWsId).toBe("ws-1");
+    });
+  }
+
+  // Note events only broadcast on events:new channel (NOT on specific type channel)
+  // because the domain event system (note-events-saga) already handles IPC delivery
+  // for note:created/updated/deleted to prevent duplicate IPC
+  const NOTE_EVENT_TYPES = ["note:created", "note:updated", "note:deleted"];
+
+  for (const eventType of NOTE_EVENT_TYPES) {
+    it(`broadcasts ${eventType} only on events:new (skips specific channel to avoid duplicate IPC)`, async () => {
+      const { broadcastEvent } = await import("./broadcast-saga");
+      const event = makeEvent("e1", eventType);
+      await broadcastEvent(event);
+
+      // Only one call (events:new) — specific channel is skipped
+      expect(sendToWorkspaceWindowsMock).toHaveBeenCalledTimes(1);
+
+      const [wsId, channel] = sendToWorkspaceWindowsMock.mock.calls[0];
+      expect(wsId).toBe("ws-1");
+      expect(channel).toBe("events:new");
     });
   }
 

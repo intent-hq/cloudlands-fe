@@ -1054,6 +1054,7 @@ export const IPC_CHANNELS = {
     EDIT_QUEUED: 'agent:backend:edit-queued',
     REMOVE_QUEUED: 'agent:backend:remove-queued',
     GET_QUEUE: 'agent:backend:get-queue',
+    FORCE_MESSAGE: 'agent:backend:force-message',
   },
 
   // Storage
@@ -1111,6 +1112,14 @@ export const IPC_CHANNELS = {
   // Agent Skills
   SKILLS: {
     LIST: 'skills:list',
+  },
+
+  // WebSocket API
+  WEBSOCKET_API: {
+    GET_STATUS: 'websocket-api:get-status',
+    SET_ENABLED: 'websocket-api:set-enabled',
+    REGENERATE_TOKEN: 'websocket-api:regenerate-token',
+    SET_DISCOVERY: 'websocket-api:set-discovery',
   },
 
   // Workspace Scripts
@@ -1199,6 +1208,7 @@ export const EVENT_CHANNELS = [
   'agent:message:error',
   // NOTE: 'agent:message:chunk' removed - legacy channel, all streaming uses session-specific channels
   'agent:message:received',
+  'agent:user-message:sent',
   'agent:message:content-blocks',
   'agent:prepare-handler', // Backend requests frontend to prepare stream handler
   'agent:handler-ready', // Frontend signals stream handler is ready
@@ -1304,6 +1314,8 @@ export const EVENT_CHANNELS = [
   'script:url-detected',
   // Specialist file watcher events (main → renderer)
   'specialists:files-changed',
+  // WebSocket API events (main → renderer)
+  'websocket-api:discovery-auto-disabled',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

@@ -46,15 +46,16 @@ export function hasChatServiceStateChanged(
   const modelUnavailableChanged = incomingState.modelUnavailable !== currentState.modelUnavailable;
   const statusEventsChanged = incomingState.statusEvents !== currentState.statusEvents;
 
-  return (
+  const changed =
     messagesChanged ||
     streamingChanged ||
     sessionChanged ||
     errorChanged ||
     retryChanged ||
     modelUnavailableChanged ||
-    statusEventsChanged
-  );
+    statusEventsChanged;
+
+  return changed;
 }
 
 export function syncChatStateFromService(

@@ -55,7 +55,9 @@ type LegacyOrphanWindowEventName =
   | 'workspace:file-resolved'
   | 'workspace:post-merge-update';
 
-type DynamicWindowEventName = `panelVisibility:${string}` | `window:${string}`;
+type DynamicWindowEventName =
+  | `panelVisibility:${string}`
+  | `window:${string}`;
 
 export type WindowEventName = KnownWindowEventName | DynamicWindowEventName;
 

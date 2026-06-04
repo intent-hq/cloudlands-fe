@@ -35,24 +35,31 @@ const mockPersistence = {
   saveAgent: vi.fn(),
 };
 
-const { mockOnHttpBridgeUnrecoverable } = vi.hoisted(() => {
-  const registered: Array<(info: unknown) => void> = [];
-  const fn = vi.fn((handler: (info: unknown) => void) => {
-    registered.push(handler);
-    return () => {
-      const idx = registered.indexOf(handler);
-      if (idx >= 0) registered.splice(idx, 1);
+const { mockOnHttpBridgeUnrecoverable, mockBroadcastToBrowserIpcClients } = vi.hoisted(
+  () => {
+    const registered: Array<(info: unknown) => void> = [];
+    const fn = vi.fn((handler: (info: unknown) => void) => {
+      registered.push(handler);
+      return () => {
+        const idx = registered.indexOf(handler);
+        if (idx >= 0) registered.splice(idx, 1);
+      };
+    });
+    return {
+      mockOnHttpBridgeUnrecoverable: Object.assign(fn, {
+        __registered: registered,
+      }),
+      mockBroadcastToBrowserIpcClients: vi.fn(() => true),
     };
-  });
-  return {
-    mockOnHttpBridgeUnrecoverable: Object.assign(fn, {
-      __registered: registered,
-    }),
-  };
-});
+  },
+);
 
 vi.mock('../../../../main/http-mcp-bridge', () => ({
   onHttpBridgeUnrecoverable: mockOnHttpBridgeUnrecoverable,
+}));
+
+vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
+  broadcastToBrowserIpcClients: mockBroadcastToBrowserIpcClients,
 }));
 
 vi.mock('electron', () => ({
@@ -105,6 +112,8 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
   beforeEach(() => {
     mockOnHttpBridgeUnrecoverable.mockClear();
     mockOnHttpBridgeUnrecoverable.__registered.length = 0;
+    mockBroadcastToBrowserIpcClients.mockClear();
+    mockBroadcastToBrowserIpcClients.mockReturnValue(true);
     mockPersistence.loadAgent.mockReset();
     mockPersistence.saveAgent.mockReset();
     mockPersistence.saveAgent.mockResolvedValue({ success: true });
@@ -113,38 +122,31 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
   it('passes stream workspace id to browser IPC broadcasts', () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
     handler.streamWorkspaceIds = new Map([['agent-1', 'ws-1']]);
-    const previousBroadcast = (global as any).__browserIpcBroadcast;
-    const broadcast = vi.fn();
-    (global as any).__browserIpcBroadcast = broadcast;
 
-    try {
-      const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
-        handler,
-        'agent-1',
-        'agent:stream:agent-1',
-        { type: 'chunk', data: 'secret' },
-      );
+    const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
+      handler,
+      'agent-1',
+      'agent:stream:agent-1',
+      { type: 'chunk', data: 'secret' },
+    );
 
-      expect(sent).toBe(true);
-      expect(broadcast).toHaveBeenCalledWith(
-        'agent:stream:agent-1',
-        {
-          type: 'chunk',
-          data: 'secret',
-          status: 'responding',
-          activationState: 'active',
-          isActive: true,
-          isStreaming: true,
-          isProcessing: true,
-          isResponding: true,
-          stopReason: null,
-          workspaceId: 'ws-1',
-        },
-        'ws-1',
-      );
-    } finally {
-      (global as any).__browserIpcBroadcast = previousBroadcast;
-    }
+    expect(sent).toBe(true);
+    expect(mockBroadcastToBrowserIpcClients).toHaveBeenCalledWith(
+      'agent:stream:agent-1',
+      {
+        type: 'chunk',
+        data: 'secret',
+        status: 'responding',
+        activationState: 'active',
+        isActive: true,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+        stopReason: null,
+        workspaceId: 'ws-1',
+      },
+      'ws-1',
+    );
   });
 
   it('subscribes via onHttpBridgeUnrecoverable and the registered handler fires side effects on emit', async () => {

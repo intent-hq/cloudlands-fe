@@ -17,8 +17,33 @@ import {
   beforeEach,
 } from 'vitest';
 
-vi.mock('$features/system/main/system.ipc', () => ({
-  sendToWorkspaceWindows: vi.fn(),
+const { mainDispatch, emitWorkspaceEvent, createWorkspaceEvent } = vi.hoisted(() => ({
+  mainDispatch: vi.fn(),
+  emitWorkspaceEvent: vi.fn((payload: unknown) => ({
+    type: 'workspaceEvents/emitWorkspaceEvent',
+    payload,
+  })),
+  createWorkspaceEvent: vi.fn(
+    (eventType: string, workspaceId: string, actor: unknown, data: unknown) => ({
+      eventType,
+      workspaceId,
+      actor,
+      data,
+    }),
+  ),
+}));
+
+vi.mock('../../../../store/main/redux-store-bridge', () => ({
+  mainDispatch,
+}));
+
+vi.mock('../../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
+  emitWorkspaceEvent,
+}));
+
+vi.mock('$features/events/types', () => ({
+  createWorkspaceEvent,
+  WorkspaceEventType: { AgentRenamed: 'agent:renamed' },
 }));
 
 const renameAgent = vi.fn<
@@ -48,6 +73,7 @@ describe('renameAgentOnDisk', () => {
   const agentId = 'agent-rename-1';
 
   beforeEach(() => {
+    vi.clearAllMocks();
     renameAgent.mockReset();
     invalidateLoadCache.mockReset();
     getSession.mockReset();
@@ -59,7 +85,6 @@ describe('renameAgentOnDisk', () => {
     getSession.mockReturnValue(session);
 
     const { renameAgentOnDisk } = await import('../agent-rename');
-    const { sendToWorkspaceWindows } = await import('$features/system/main/system.ipc');
 
     const result = await renameAgentOnDisk({ workspaceId, agentId, name: 'New Name' });
 
@@ -70,10 +95,28 @@ describe('renameAgentOnDisk', () => {
     expect(invalidateLoadCache).toHaveBeenCalledTimes(1);
     expect(session.name).toBe('New Name');
     expect(session.nameExplicitlySet).toBe(true);
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(workspaceId, 'agent:renamed', {
+    expect(createWorkspaceEvent).toHaveBeenCalledWith('agent:renamed', workspaceId, {
+      type: 'user',
+      id: 'user',
+    }, {
       agentId,
       workspaceId,
       name: 'New Name',
+    });
+    expect(emitWorkspaceEvent).toHaveBeenCalledWith({
+      eventType: 'agent:renamed',
+      workspaceId,
+      actor: { type: 'user', id: 'user' },
+      data: { agentId, workspaceId, name: 'New Name' },
+    });
+    expect(mainDispatch).toHaveBeenCalledWith({
+      type: 'workspaceEvents/emitWorkspaceEvent',
+      payload: {
+        eventType: 'agent:renamed',
+        workspaceId,
+        actor: { type: 'user', id: 'user' },
+        data: { agentId, workspaceId, name: 'New Name' },
+      },
     });
   });
 
@@ -83,8 +126,6 @@ describe('renameAgentOnDisk', () => {
     getSession.mockReturnValue(session);
 
     const { renameAgentOnDisk } = await import('../agent-rename');
-    const { sendToWorkspaceWindows } = await import('$features/system/main/system.ipc');
-    (sendToWorkspaceWindows as unknown as { mockClear?: () => void }).mockClear?.();
 
     const result = await renameAgentOnDisk({
       workspaceId,
@@ -101,7 +142,7 @@ describe('renameAgentOnDisk', () => {
     expect(session.name).toBe('User Chosen');
     expect(session.nameExplicitlySet).toBe(true);
     // No broadcast on skip — other windows already have the correct name.
-    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+    expect(mainDispatch).not.toHaveBeenCalled();
     // Skipped path must not invalidate the cache (nothing changed on disk).
     expect(invalidateLoadCache).not.toHaveBeenCalled();
   });
@@ -110,13 +151,11 @@ describe('renameAgentOnDisk', () => {
     renameAgent.mockResolvedValue({ ok: false, name: 'New', error: 'disk full' });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
-    const { sendToWorkspaceWindows } = await import('$features/system/main/system.ipc');
-    (sendToWorkspaceWindows as unknown as { mockClear?: () => void }).mockClear?.();
 
     await expect(
       renameAgentOnDisk({ workspaceId, agentId, name: 'New' }),
     ).rejects.toThrow('disk full');
-    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+    expect(mainDispatch).not.toHaveBeenCalled();
   });
 
   it('rejects empty and whitespace-only names before touching persistence', async () => {

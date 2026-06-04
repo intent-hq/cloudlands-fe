@@ -31,6 +31,11 @@ const {
   createdWssInstances,
   createdHttpServers,
   makeMockHttpServer,
+  mockIsWebSocketApiEnabled,
+  mockIsDiscoveryEnabled,
+  mockStartDiscovery,
+  mockStopDiscovery,
+  wsApiServerNextStart,
 } = vi.hoisted(() => {
   const mockFromWebContents = vi.fn().mockReturnValue(null);
   const mockExpressApp: any = {
@@ -106,6 +111,16 @@ const {
     createdWssInstances,
     createdHttpServers,
     makeMockHttpServer,
+    // WS API + discovery defaults: disabled so existing bridge tests are
+    // unaffected. Tests that exercise the WS API path opt in by configuring
+    // these mocks before starting / updating the bridge.
+    mockIsWebSocketApiEnabled: vi.fn().mockReturnValue(false),
+    mockIsDiscoveryEnabled: vi.fn().mockReturnValue(false),
+    mockStartDiscovery: vi.fn(),
+    mockStopDiscovery: vi.fn(),
+    // Per-test override for what the next `new WebSocketApiServer().start()`
+    // returns. Default: a resolved Promise (no-op).
+    wsApiServerNextStart: { value: () => Promise.resolve() as Promise<void> },
   };
 });
 
@@ -131,7 +146,8 @@ vi.mock('http', async (importOriginal) => {
 
 // Track every WebSocketServer instance created so tests can inspect them
 // (created by the mock factory; hoisted so the factory can reference it).
-vi.mock('ws', () => {
+vi.mock('../utils/ws-runtime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/ws-runtime')>();
   // Must use function (not arrow) so it can be called with `new`
   function MockWebSocketServer(this: any, options?: any) {
     const handlers: Record<string, Function[]> = {};
@@ -154,10 +170,19 @@ vi.mock('ws', () => {
     createdWssInstances.push(self);
     return self;
   }
+  class MockWebSocket {
+    static OPEN = 1;
+    static CLOSED = 3;
+
+    close() {}
+    send() {}
+    addEventListener() {}
+    removeEventListener() {}
+  }
   return {
-    WebSocketServer: MockWebSocketServer,
-    WebSocket: { OPEN: 1, CLOSED: 3 },
-    default: class WebSocket { close() {} send() {} addEventListener() {} removeEventListener() {} },
+    ...actual,
+    getWebSocketClass: () => MockWebSocket,
+    getWebSocketServerClass: () => MockWebSocketServer,
   };
 });
 
@@ -195,8 +220,52 @@ vi.mock('../../shared/services/mcp-tool-params-cache', () => ({
   storeMcpToolParams: mockStoreMcpToolParams,
 }));
 
+// WS API server: a controllable stub. Tests can swap `wsApiServerNextStart.value`
+// to make `start()` reject and exercise the unrecoverable hook (L8).
+vi.mock('../websocket-api-server', () => {
+  function MockWebSocketApiServer(this: any, port: number) {
+    let running = false;
+    const startFn = wsApiServerNextStart.value;
+    const self: any = {
+      start: vi.fn(async () => {
+        const result = startFn();
+        await result;
+        running = true;
+      }),
+      stop: vi.fn(async () => {
+        running = false;
+      }),
+      isRunning: () => running,
+      getPort: () => port,
+      getCertFingerprint: () => 'AA:BB',
+    };
+    return self;
+  }
+  return { WebSocketApiServer: MockWebSocketApiServer };
+});
+
+vi.mock('../websocket-auth', () => ({
+  isWebSocketApiEnabled: mockIsWebSocketApiEnabled,
+  isDiscoveryEnabled: mockIsDiscoveryEnabled,
+  // Re-export the rest as no-ops so any incidental imports keep working.
+  generateToken: vi.fn().mockReturnValue('tok'),
+  getToken: vi.fn().mockReturnValue('tok'),
+  validateToken: vi.fn().mockReturnValue(true),
+  setWebSocketApiEnabled: vi.fn(),
+  setDiscoveryEnabled: vi.fn(),
+  extractBearerToken: vi.fn().mockReturnValue(null),
+  getWssCertFingerprint: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock('../websocket-discovery', () => ({
+  startDiscovery: mockStartDiscovery,
+  stopDiscovery: mockStopDiscovery,
+  isDiscoveryActive: vi.fn().mockReturnValue(false),
+}));
+
 // ── Import after mocks ──────────────────────────────────────────────
-import { HttpMcpBridge, __resolveWsModuleForTests } from '../http-mcp-bridge';
+import { __resolveWsModuleForTests } from '../utils/ws-runtime';
+import { HttpMcpBridge } from '../http-mcp-bridge';
 
 const originalNodeEnv = process.env.NODE_ENV;
 
@@ -305,6 +374,12 @@ describe('HttpMcpBridge', () => {
     mockHttpServer.close.mockImplementation((cb?: Function) => cb?.());
     mockElectronApp.isPackaged = false;
     setNodeEnv(originalNodeEnv);
+  });
+
+  afterEach(async () => {
+    // HttpMcpBridge starts a setInterval in its constructor (startCacheCleanupInterval).
+    // Always call stop() to clear it and prevent leaked timers / flaky hangs.
+    await bridge?.stop();
   });
 
   afterEach(async () => {
@@ -841,6 +916,15 @@ describe('HttpMcpBridge', () => {
       expect((bridge as any).wss).toBeNull();
     });
 
+    it('unregisters the browser IPC broadcast adapter on stop', async () => {
+      await startBridge(bridge);
+      expect((global as any).__browserIpcBroadcast).toEqual(expect.any(Function));
+
+      await bridge.stop();
+
+      expect((global as any).__browserIpcBroadcast).toBeUndefined();
+    });
+
     it('terminates any connected WebSocket clients before closing WSS', async () => {
       await startBridge(bridge);
       const wssInstance = (bridge as any).wss;
@@ -1061,6 +1145,36 @@ describe('HttpMcpBridge', () => {
         off();
         fetchSpy.mockRestore();
         restartSpy.mockRestore();
+      }
+    });
+
+    // L8: dynamic WS API server start failures bubble into the same
+    // unrecoverable hook with reason 'ws-api-start-failed'.
+    it('updateWebSocketApiServer() emits ws-api-start-failed on dynamic start failure', async () => {
+      await startBridge(bridge);
+
+      // Arrange: WS API is now enabled, but the next start() will reject.
+      mockIsWebSocketApiEnabled.mockReturnValue(true);
+      const wsBoom = new Error('ws listen EADDRINUSE');
+      wsApiServerNextStart.value = () => Promise.reject(wsBoom);
+
+      const { onHttpBridgeUnrecoverable } = await import('../http-mcp-bridge');
+      const handler = vi.fn();
+      const off = onHttpBridgeUnrecoverable(handler);
+      try {
+        await expect(bridge.updateWebSocketApiServer()).rejects.toBe(wsBoom);
+        expect(handler).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reason: 'ws-api-start-failed',
+            error: wsBoom,
+            port: expect.any(Number),
+            timestamp: expect.any(Number),
+          }),
+        );
+      } finally {
+        off();
+        mockIsWebSocketApiEnabled.mockReturnValue(false);
+        wsApiServerNextStart.value = () => Promise.resolve();
       }
     });
   });

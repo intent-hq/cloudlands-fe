@@ -78,6 +78,7 @@ export const WorkspaceEventType = {
   AgentCreated: 'agent:created',
   AgentDeleted: 'agent:deleted',
   AgentRestored: 'agent:restored',
+  AgentRenamed: 'agent:renamed',
   AgentIdle: 'agent:idle',
   AgentStatusChanged: 'agent:status-changed',
   AgentMessageSent: 'agent:message:sent',
@@ -91,6 +92,24 @@ export const WorkspaceEventType = {
   AgentSubscriptionsRestored: 'agent:subscriptions-restored',
   AgentSubscriptionsChanged: 'agent:subscriptions-changed',
   AgentMessageDeliveryFailed: 'agent:message:delivery-failed',
+
+  // Agent streaming events (for WebSocket API)
+  AgentStreamStart: 'agent:stream:start',
+  AgentStreamChunk: 'agent:stream:chunk',
+  AgentStreamContentBlocks: 'agent:stream:content-blocks',
+  AgentStreamEnd: 'agent:stream:end',
+  AgentStreamMessage: 'agent:stream:message',
+  AgentStreamToolUse: 'agent:stream:tool_use',
+  AgentStreamToolResult: 'agent:stream:tool_result',
+
+  // Agent queue events (for WebSocket API)
+  AgentQueueUpdated: 'agent:queue:updated',
+  AgentQueueProcessing: 'agent:queue:processing',
+  AgentQueueProcessingCancelled: 'agent:queue:processing-cancelled',
+  AgentQueueStaleMessage: 'agent:queue:stale-message',
+
+  // Agent user message events (for cross-client sync)
+  AgentUserMessageSent: 'agent:user-message:sent',
 
   // Git events
   GitCommit: 'git:commit',
@@ -163,6 +182,18 @@ export interface WorkspaceEventBase {
 // Specific Event Types
 // ============================================================================
 
+/**
+ * File mutation event.
+ *
+ * NOTE: The canonical file event taxonomy lives on `data.action`
+ * (`'create' | 'modify' | 'delete' | 'rename'`). All file mutations — including
+ * creates, deletes, and renames — are emitted as `file:changed` events with the
+ * appropriate `action` value. The sibling string types `file:created`,
+ * `file:deleted`, and `file:renamed` are reserved-but-unused: no production code
+ * emits them, and external clients subscribing to those types will silently
+ * receive zero events. Subscribe to `file:changed` and discriminate on
+ * `data.action`.
+ */
 export interface FileChangedEvent extends WorkspaceEventBase {
   type: 'file:changed';
   data: {
@@ -182,34 +213,6 @@ export interface FileChangedEvent extends WorkspaceEventBase {
   };
 }
 
-export interface FileCreatedEvent extends WorkspaceEventBase {
-  type: 'file:created';
-  data: {
-    path: string;
-    relativePath: string;
-    content?: string;
-    size?: number;
-    language?: string;
-  };
-}
-
-export interface FileDeletedEvent extends WorkspaceEventBase {
-  type: 'file:deleted';
-  data: {
-    path: string;
-    relativePath: string;
-  };
-}
-
-export interface FileRenamedEvent extends WorkspaceEventBase {
-  type: 'file:renamed';
-  data: {
-    oldPath: string;
-    newPath: string;
-    relativePath: string;
-  };
-}
-
 export interface AgentToolCallEvent extends WorkspaceEventBase {
   type: 'agent:tool:call';
   data: {
@@ -224,6 +227,10 @@ export interface AgentToolCallEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * @deprecated Reserved — not currently emitted.
+ * Production code uses `AgentMessageSentEvent` / `AgentMessageReceivedEvent` instead.
+ */
 export interface AgentMessageEvent extends WorkspaceEventBase {
   type: 'agent:message';
   data: {
@@ -236,6 +243,12 @@ export interface AgentMessageEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * @deprecated Reserved — not currently emitted.
+ * No production code emits `git:commit` / `git:push` / `git:pull` / `git:branch` /
+ * `git:merge` workspace events. Background git operations use the
+ * `'git:op-*'` domain events instead.
+ */
 export interface GitOperationEvent extends WorkspaceEventBase {
   type: 'git:commit' | 'git:push' | 'git:pull' | 'git:branch' | 'git:merge';
   data: {
@@ -301,6 +314,7 @@ export interface ReadyTasksChangedEvent extends WorkspaceEventBase {
   };
 }
 
+/** @deprecated Reserved — not currently emitted. */
 export interface TestEvent extends WorkspaceEventBase {
   type: 'test:started' | 'test:completed';
   data: {
@@ -313,6 +327,7 @@ export interface TestEvent extends WorkspaceEventBase {
   };
 }
 
+/** @deprecated Reserved — not currently emitted. */
 export interface BuildEvent extends WorkspaceEventBase {
   type: 'build:started' | 'build:completed';
   data: {
@@ -334,6 +349,7 @@ export interface AgentFailedEvent extends WorkspaceEventBase {
   };
 }
 
+/** @deprecated Reserved — not currently emitted. */
 export interface TerminalCommandEvent extends WorkspaceEventBase {
   type: 'terminal:command';
   data: {
@@ -474,7 +490,11 @@ export interface AgentMessageSentEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent receives a message from another agent
+ * @deprecated Reserved — not currently emitted.
+ * No production code emits `agent:message:received` as a workspace event;
+ * the notification formatter still type-narrows on it but no upstream emitter
+ * has been wired. New code should use `AgentMessageSentEvent` for both halves
+ * of agent-to-agent messaging or wait for a real emission site to be added.
  */
 export interface AgentMessageReceivedEvent extends WorkspaceEventBase {
   type: 'agent:message:received';
@@ -630,12 +650,140 @@ export interface McpNotificationEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * Emitted when an agent starts responding to a message.
+ */
+export interface AgentStartedEvent extends WorkspaceEventBase {
+  type: 'agent:started';
+  data: {
+    agentId: string;
+    agentName: string;
+    model?: string;
+    /** Reason the agent started (e.g., 'message_received') */
+    reason?: string;
+  };
+}
+
+/**
+ * Emitted when an agent is renamed (via user action or MCP tool).
+ * Carries enough context for renderers to update agent labels without a refetch.
+ */
+export interface AgentRenamedEvent extends WorkspaceEventBase {
+  type: 'agent:renamed';
+  data: {
+    agentId: string;
+    workspaceId: string;
+    name: string;
+  };
+}
+
+/**
+ * Emitted when an agent's queue is updated (message queued, edited, or removed).
+ * `data` mirrors the raw IPC payload sent to renderers — `queue` is the current
+ * queue snapshot.
+ */
+export interface AgentQueueUpdatedEvent extends WorkspaceEventBase {
+  type: 'agent:queue:updated';
+  data: {
+    agentId: string;
+    queue: any[];
+  };
+}
+
+/**
+ * Emitted when the backend starts processing a queued message for an agent.
+ */
+export interface AgentQueueProcessingEvent extends WorkspaceEventBase {
+  type: 'agent:queue:processing';
+  data: {
+    agentId: string;
+    messageId: string;
+    /** Optional content of the message being processed (for UI display) */
+    content?: string;
+    [key: string]: any;
+  };
+}
+
+/**
+ * Emitted when queue processing is cancelled (e.g., agent stopped).
+ */
+export interface AgentQueueProcessingCancelledEvent extends WorkspaceEventBase {
+  type: 'agent:queue:processing-cancelled';
+  data: {
+    agentId: string;
+    messageId?: string;
+    [key: string]: any;
+  };
+}
+
+/**
+ * Emitted when the backend processes a queued message that has aged past the
+ * staleness threshold. WebSocket subscribers receive this alongside the IPC
+ * channel used by renderer windows.
+ */
+export interface AgentQueueStaleMessageEvent extends WorkspaceEventBase {
+  type: 'agent:queue:stale-message';
+  data: {
+    agentId: string;
+    messageId: string;
+    ageMinutes: number;
+    queuedAt: string;
+  };
+}
+
+/**
+ * Emitted when an agent streams a text chunk (token-by-token)
+ */
+export interface AgentStreamChunkEvent extends WorkspaceEventBase {
+  type: 'agent:stream:chunk';
+  data: {
+    agentId: string;
+    content: any;
+    streamId?: string;
+  };
+}
+
+/**
+ * Emitted when an agent streams content blocks (tool calls, structured content)
+ */
+export interface AgentStreamContentBlocksEvent extends WorkspaceEventBase {
+  type: 'agent:stream:content-blocks';
+  data: {
+    agentId: string;
+    content: any;
+    streamId?: string;
+  };
+}
+
+/**
+ * Emitted when an agent's stream completes
+ */
+export interface AgentStreamEndEvent extends WorkspaceEventBase {
+  type: 'agent:stream:end';
+  data: {
+    agentId: string;
+    streamId?: string;
+  };
+}
+
+/**
+ * Emitted when a user sends a message to an agent (for cross-client sync).
+ * Other clients viewing the same conversation can use this to display the
+ * user message without waiting for the agent to respond.
+ */
+export interface AgentUserMessageSentEvent extends WorkspaceEventBase {
+  type: 'agent:user-message:sent';
+  data: {
+    agentId: string;
+    messageId: string;
+    content: string;
+    imageBlocks?: any[];
+  };
+}
+
 // Union type for all specific events
 export type SpecificWorkspaceEvent =
   | FileChangedEvent
-  | FileCreatedEvent
-  | FileDeletedEvent
-  | FileRenamedEvent
   | AgentToolCallEvent
   | AgentMessageEvent
   | AgentFailedEvent
@@ -649,6 +797,9 @@ export type SpecificWorkspaceEvent =
   // Agent interaction events
   | AgentCreatedEvent
   | AgentDeletedEvent
+  | AgentRestoredEvent
+  | AgentRenamedEvent
+  | AgentStartedEvent
   | AgentIdleEvent
   | AgentStatusChangedEvent
   | AgentMessageSentEvent
@@ -662,8 +813,19 @@ export type SpecificWorkspaceEvent =
   | AgentSubscriptionsRestoredEvent
   | AgentSubscriptionsChangedEvent
   | AgentMessageDeliveryFailedEvent
+  // Agent queue events (for WebSocket API)
+  | AgentQueueUpdatedEvent
+  | AgentQueueProcessingEvent
+  | AgentQueueProcessingCancelledEvent
+  | AgentQueueStaleMessageEvent
   // MCP events
-  | McpNotificationEvent;
+  | McpNotificationEvent
+  // Agent streaming events
+  | AgentStreamChunkEvent
+  | AgentStreamContentBlocksEvent
+  | AgentStreamEndEvent
+  // Agent user message events (cross-client sync)
+  | AgentUserMessageSentEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
 export interface WorkspaceEvent extends WorkspaceEventBase {

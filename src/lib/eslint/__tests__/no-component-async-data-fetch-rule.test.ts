@@ -50,14 +50,14 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   onMount,
   tick,
 } from 'svelte';
-        import { loadThings } from '$store/renderer/slices/example/example-slice';
-        import { selectThings } from '$store/renderer/slices/example/example-selectors';
+        import { loadWebSocketApiStatus } from '$store/renderer/slices/websocket-api/websocket-api-slice';
+        import { selectWebSocketApiEnabled } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
         import { store as appStore } from '$store/renderer/store';
 
-        const things = selectThings();
+        const enabled$ = selectWebSocketApiEnabled();
 
         onMount(() => {
-          appStore.dispatch(loadThings());
+          appStore.dispatch(loadWebSocketApiStatus());
         });
       </script>
     `);

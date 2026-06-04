@@ -68,6 +68,7 @@ import { appLayoutReducer } from "./slices/app-layout/app-layout-slice";
 import { sessionStatsReducer } from "./slices/session-stats/session-stats-slice";
 import { workspaceInitializerReducer } from "./slices/workspace-initializer/workspace-initializer-slice";
 import { themeReducer } from "./slices/theme/theme-slice";
+import { websocketApiReducer } from "./slices/websocket-api/websocket-api-slice";
 import { uiHighlightReducer } from "./slices/ui-highlight/ui-highlight-slice";
 import { settingsProposalHistoryReducer } from "./slices/settings-proposal-history/settings-proposal-history-slice";
 import { specialistProposalHistoryReducer } from "./slices/specialist-proposal-history/specialist-proposal-history-slice";
@@ -145,6 +146,7 @@ export const reducers = {
   appLayout: appLayoutReducer,
   sessionStats: sessionStatsReducer,
   theme: themeReducer,
+  websocketApi: websocketApiReducer,
   uiHighlight: uiHighlightReducer,
   settingsProposalHistory: settingsProposalHistoryReducer,
   specialistProposalHistory: specialistProposalHistoryReducer,

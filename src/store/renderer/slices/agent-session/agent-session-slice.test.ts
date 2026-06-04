@@ -605,6 +605,101 @@ describe('agent-session-slice reducer', () => {
       });
     });
 
+    it('adds cross-client user messages from canonical workspace events', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg-user-1',
+            content: 'Hello from iOS',
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toMatchObject([
+        {
+          id: 'msg-user-1',
+          role: 'user',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          contentBlocks: [{ type: 'text', text: 'Hello from iOS' }],
+        },
+      ]);
+    });
+
+    it('preserves image blocks from canonical cross-client user message events', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const imageBlocks = [{ type: 'image' as const, data: 'base64data', mimeType: 'image/png' }];
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-user-message-image',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg-user-image',
+            content: 'Screenshot',
+            imageBlocks,
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')[0].contentBlocks).toEqual([
+        { type: 'text', text: 'Screenshot' },
+        { type: 'image', data: 'base64data', mimeType: 'image/png' },
+      ]);
+    });
+
+    it('does not duplicate a user message already persisted before workspace event delivery', () => {
+      const existingMessage = makeUniqueMessage('msg-existing', 'user');
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [existingMessage] })),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-duplicate-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:03.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg-existing',
+            content: 'content-msg-existing',
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toHaveLength(1);
+      expect(getMsgs(state, 'a1')[0].id).toBe('msg-existing');
+    });
+
+    it('ignores malformed cross-client user message workspace events', () => {
+      const state = agentSessionReducer(
+        agentSessionReducer(initialState, upsertSession(makeSession('a1'))),
+        eventReceived('ws-1', {
+          id: 'evt-malformed-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:04.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', content: 'Missing messageId' },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toHaveLength(0);
+    });
+
     it('clears runtime flags from terminal session-completed events', () => {
       let state = agentSessionReducer(
         initialState,

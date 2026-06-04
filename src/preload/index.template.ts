@@ -720,6 +720,7 @@ const EVENT_CHANNELS = [
   'agent:message:error',
   // NOTE: 'agent:message:chunk' removed - legacy channel, all streaming uses session-specific channels
   'agent:message:received',
+  'agent:user-message:sent',
   'agent:message:content-blocks',
   'agent:prepare-handler',
   'agent:handler-ready',
@@ -750,6 +751,7 @@ const EVENT_CHANNELS = [
   'setup-scripts:stream-complete',
   'setup-scripts:stream-error',
   'notification:navigate',
+  'websocket-api:discovery-auto-disabled',
 ];
 
 /**

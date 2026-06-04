@@ -271,8 +271,70 @@ export class WorkspaceService {
 
   private async getWorkspaceDiffSummary(
     workspaceId: WorkspaceId,
+    worktreePath?: string,
   ): Promise<WorkspaceDiffSummary | undefined> {
     try {
+      // Try to get real-time file count from git status first
+      if (worktreePath) {
+        try {
+          // Get changed files from git (both staged and unstaged vs HEAD)
+          const { stdout } = await execFileAsync('git', [
+            'diff', '--name-only', 'HEAD'
+          ], {
+            cwd: worktreePath,
+            timeout: 5000,
+          });
+
+          // Also get untracked files
+          const { stdout: untrackedStdout } = await execFileAsync('git', [
+            'ls-files', '--others', '--exclude-standard'
+          ], {
+            cwd: worktreePath,
+            timeout: 5000,
+          });
+
+          const changedFiles = stdout.trim().split('\n').filter(Boolean);
+          const untrackedFiles = untrackedStdout.trim().split('\n').filter(Boolean);
+          const totalFiles = new Set([...changedFiles, ...untrackedFiles]).size;
+
+          if (totalFiles > 0) {
+            // Get line stats too
+            let totalAdditions = 0;
+            let totalDeletions = 0;
+            try {
+              const { stdout: numstatStdout } = await execFileAsync('git', [
+                'diff', '--numstat', 'HEAD'
+              ], {
+                cwd: worktreePath,
+                timeout: 5000,
+              });
+              for (const line of numstatStdout.trim().split('\n').filter(Boolean)) {
+                const [additions, deletions] = line.split('\t');
+                if (additions !== '-') totalAdditions += parseInt(additions, 10) || 0;
+                if (deletions !== '-') totalDeletions += parseInt(deletions, 10) || 0;
+              }
+            } catch {
+              // Non-fatal, just won't have line stats
+            }
+
+            return {
+              schemaVersion: 1,
+              updatedAt: new Date().toISOString(),
+              totalFiles,
+              totalAdditions,
+              totalDeletions,
+              files: [],
+            };
+          }
+
+          // If git reports 0 changes, return undefined (no changes)
+          return undefined;
+        } catch {
+          // Git command failed, fall back to persisted summary
+        }
+      }
+
+      // Fall back to persisted summary
       const summary = await this.diffSummaryRepository.load(workspaceId);
       return summary ?? undefined;
     } catch (error) {
@@ -2246,14 +2308,53 @@ task:
           ),
         );
 
-        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) => ({
-          ...workspace,
-          diffs: undefined,
-          diffSummary: undefined,
-          agentSummary: undefined,
-          taskStats: taskStatsResults[i],
-          gitSummary: undefined,
-        }));
+        // Also compute agentSummary in lite mode — it's relatively cheap (reads agent JSON files)
+        // and is needed for agent status dots in the workspace list.
+        const AGENT_SUMMARY_CONCURRENCY = 10;
+        const agentSummaryResults = new Array<WorkspaceAgentSummary | undefined>(
+          paginatedWorkspaces.length,
+        );
+        let agentSummaryNextIndex = 0;
+        await Promise.all(
+          Array.from(
+            { length: Math.min(AGENT_SUMMARY_CONCURRENCY, paginatedWorkspaces.length) },
+            async () => {
+              while (true) {
+                const idx = agentSummaryNextIndex++;
+                if (idx >= paginatedWorkspaces.length) return;
+                try {
+                  agentSummaryResults[idx] = await this.getWorkspaceAgentSummary(
+                    paginatedWorkspaces[idx]!.id,
+                  );
+                } catch {
+                  agentSummaryResults[idx] = undefined;
+                }
+              }
+            },
+          ),
+        );
+
+        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) => {
+          const agentSummary = agentSummaryResults[i];
+          // Use the most recent agent activity as workspace lastActivity if newer
+          let lastActivity = workspace.lastActivity;
+          if (agentSummary?.agents) {
+            for (const agent of agentSummary.agents) {
+              if (agent.lastActivity && (!lastActivity || agent.lastActivity > lastActivity)) {
+                lastActivity = agent.lastActivity;
+              }
+            }
+          }
+          return {
+            ...workspace,
+            diffs: undefined,
+            diffSummary: undefined,
+            agentSummary,
+            taskStats: taskStatsResults[i],
+            gitSummary: undefined,
+            lastActivity,
+          };
+        });
       } else {
         sanitizedWorkspaces = await this.buildListWorkspacesWithConcurrency(
           paginatedWorkspaces,
@@ -2299,11 +2400,21 @@ task:
   private async buildListWorkspace(workspace: Workspace): Promise<Workspace> {
     // Load diff summary, agent summary, task stats, and git summary in parallel for performance
     const [diffSummary, agentSummary, taskStats, gitSummary] = await Promise.all([
-      this.getWorkspaceDiffSummary(workspace.id),
+      this.getWorkspaceDiffSummary(workspace.id, workspace.worktreePath),
       this.getWorkspaceAgentSummary(workspace.id),
       this.getWorkspaceTaskStats(workspace.id),
       this.getWorkspaceGitSummary(workspace),
     ]);
+
+    // Use the most recent agent activity as workspace lastActivity if newer
+    let lastActivity = workspace.lastActivity;
+    if (agentSummary?.agents) {
+      for (const agent of agentSummary.agents) {
+        if (agent.lastActivity && (!lastActivity || agent.lastActivity > lastActivity)) {
+          lastActivity = agent.lastActivity;
+        }
+      }
+    }
 
     return {
       ...workspace,
@@ -2312,6 +2423,7 @@ task:
       agentSummary: agentSummary ?? undefined,
       taskStats: taskStats ?? undefined,
       gitSummary: gitSummary ?? undefined,
+      lastActivity,
     };
   }
 
@@ -2375,6 +2487,36 @@ task:
         }),
       );
 
+      // Build a map of in-memory agent states for real-time overlay.
+      // Persisted status can be stale (e.g., "idle", "completed") while the agent
+      // is actually "streaming" or "responding" in memory.
+      let inMemoryStateMap: Map<string, { status: string; isStreaming: boolean; isResponding: boolean }> | undefined;
+      try {
+        const { AgentBackendHandler } = await import(
+          '../../agent/main/agent-backend-handler.service'
+        );
+        const handler = AgentBackendHandler.getInstance();
+        const activeStreamAgentIds = new Set(handler.getActiveStreams().map(s => s.agentId));
+        const inMemorySessions = await handler.listAgents(workspaceId as string);
+        if (inMemorySessions.length > 0) {
+          inMemoryStateMap = new Map();
+          for (const session of inMemorySessions) {
+            if (session.id) {
+              const agentId = String(session.id);
+              // Check active streams for real-time streaming state
+              const isCurrentlyStreaming = activeStreamAgentIds.has(agentId);
+              inMemoryStateMap.set(agentId, {
+                status: isCurrentlyStreaming ? 'streaming' : String(session.status || 'active'),
+                isStreaming: isCurrentlyStreaming || !!session.isStreaming,
+                isResponding: isCurrentlyStreaming || !!(session as any).isResponding,
+              });
+            }
+          }
+        }
+      } catch {
+        // AgentBackendHandler may not be available yet, use persisted status
+      }
+
       for (const agentData of loadResults) {
         if (agentData) {
           // Convert Date to string if needed
@@ -2386,12 +2528,31 @@ task:
                 ? lastActivityRaw
                 : undefined;
 
+          // Overlay in-memory state if available (more current than disk)
+          const inMemoryState = inMemoryStateMap?.get(String(agentData.id));
+          const status = inMemoryState?.status || agentData.status || 'ready';
+
+          // Debug: log agent status resolution for WebSocket clients
+          if (inMemoryState) {
+            logger.debug('Agent summary status resolution', {
+              agentId: agentData.id,
+              workspaceId,
+              resolvedStatus: status,
+              inMemoryStatus: inMemoryState.status,
+              persistedStatus: agentData.status,
+              isStreaming: inMemoryState.isStreaming,
+              isResponding: inMemoryState.isResponding,
+            });
+          }
+
           agents.push({
             id: agentData.id,
             name: agentData.name || 'Agent',
-            status: agentData.status || 'ready',
+            status,
             specialist: agentData.metadata?.specialist as WorkspaceAgentInfo['specialist'],
             lastActivity,
+            isStreaming: inMemoryState?.isStreaming ?? false,
+            isResponding: inMemoryState?.isResponding ?? false,
           });
         }
       }
@@ -3328,7 +3489,7 @@ task:
         await this.saveWorkspace(workspace);
       }
 
-      const diffSummary = await this.getWorkspaceDiffSummary(workspace.id);
+      const diffSummary = await this.getWorkspaceDiffSummary(workspace.id, workspace.worktreePath);
       const workspaceWithSummary = {
         ...workspace,
         diffSummary: diffSummary ?? undefined,

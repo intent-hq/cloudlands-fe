@@ -208,6 +208,14 @@ export class NotesService {
         actor: currentActor,
       }));
 
+      // Also emit workspace event for WebSocket API subscribers
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'note:created',
+        request.workspaceId,
+        currentActor ? { type: currentActor.type as 'user' | 'agent' | 'system', id: currentActor.id, name: currentActor.name } : { type: 'system', id: 'system', name: 'System' },
+        { noteId: id, title: note.title, action: 'create' },
+      )));
+
       logger.info('Note created successfully', {
         workspaceId: request.workspaceId,
         noteId: id,
@@ -628,6 +636,14 @@ export class NotesService {
         sessionId: provenanceManager.getCurrentSessionId(),
       }));
 
+      // Also emit workspace event for WebSocket API subscribers
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'note:updated',
+        note.workspaceId,
+        currentActor ? { type: currentActor.type as 'user' | 'agent' | 'system', id: currentActor.id, name: currentActor.name } : { type: 'system', id: 'system', name: 'System' },
+        { noteId: note.id, title: note.title, action: 'update' },
+      )));
+
       // Track note edit
       trackMain('Edited Note', {
         note_type: responseNote.metadata?.task ? 'task' : 'regular',
@@ -704,6 +720,14 @@ export class NotesService {
         noteId,
         actor: currentActor,
       }));
+
+      // Also emit workspace event for WebSocket API subscribers
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'note:deleted',
+        workspaceId,
+        currentActor ? { type: currentActor.type as 'user' | 'agent' | 'system', id: currentActor.id, name: currentActor.name } : { type: 'system', id: 'system', name: 'System' },
+        { noteId, title: note?.title, action: 'delete' },
+      )));
 
       // Track note deletion
       const ageInDays = Math.floor(

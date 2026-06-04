@@ -721,6 +721,7 @@ const ALLOWED_CHANNELS = [
   "agent:backend:edit-queued",
   "agent:backend:remove-queued",
   "agent:backend:get-queue",
+  "agent:backend:force-message",
   "storage:save",
   "storage:delete",
   "sandbox:get-agent-rules",
@@ -745,6 +746,10 @@ const ALLOWED_CHANNELS = [
   "ssh:get-agent-status",
   "ssh:test-connection",
   "skills:list",
+  "websocket-api:get-status",
+  "websocket-api:set-enabled",
+  "websocket-api:regenerate-token",
+  "websocket-api:set-discovery",
   "scripts:list",
   "scripts:create",
   "scripts:update",
@@ -819,6 +824,7 @@ const ALLOWED_CHANNELS = [
   "agent:queue:processing-cancelled",
   "agent:message:error",
   "agent:message:received",
+  "agent:user-message:sent",
   "agent:message:content-blocks",
   "agent:prepare-handler",
   "agent:handler-ready",
@@ -907,7 +913,8 @@ const ALLOWED_CHANNELS = [
   "script:output",
   "script:error",
   "script:url-detected",
-  "specialists:files-changed"
+  "specialists:files-changed",
+  "websocket-api:discovery-auto-disabled"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -993,6 +1000,7 @@ const EVENT_CHANNELS = [
   "agent:queue:processing-cancelled",
   "agent:message:error",
   "agent:message:received",
+  "agent:user-message:sent",
   "agent:message:content-blocks",
   "agent:prepare-handler",
   "agent:handler-ready",
@@ -1081,7 +1089,8 @@ const EVENT_CHANNELS = [
   "script:output",
   "script:error",
   "script:url-detected",
-  "specialists:files-changed"
+  "specialists:files-changed",
+  "websocket-api:discovery-auto-disabled"
 ];
 
 /**

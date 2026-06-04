@@ -58,6 +58,16 @@ export function isDuplicateEvent(
   event: WorkspaceEvent,
   eventTimestampMs: number,
 ): boolean {
+  // Streaming events should never be deduplicated — each chunk carries unique content
+  // and the dedup key fields (type, workspaceId, actor.id) are identical across chunks.
+  // Also skip dedup for user-message:sent since rapid messages from the same user are valid.
+  if (
+    event.type.startsWith("agent:stream:") ||
+    event.type === "agent:user-message:sent"
+  ) {
+    return false;
+  }
+
   const wsId = event.workspaceId;
   const eventKey = getEventKey(event);
 

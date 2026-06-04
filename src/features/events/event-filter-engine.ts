@@ -15,6 +15,12 @@ import { Logger } from '../../shared/logger';
 
 const logger = new Logger('EventFilterEngine');
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
+function escapeRegexLiteral(value: string): string {
+  return value.replace(REGEX_SPECIAL_CHARS, '\\$&');
+}
+
 export class EventFilterEngine {
   /**
    * Check if an event matches all filters
@@ -229,6 +235,83 @@ export class EventFilterEngine {
 
     return filteredEvents;
   }
+}
+
+const subscriptionFilterEngine = new EventFilterEngine();
+
+export interface EventTypeSubscriptionFilterOptions {
+  eventTypes: string[];
+  workspaceId?: string;
+}
+
+/**
+ * Build subscription filters from event type patterns.
+ *
+ * This dependency-light helper is shared by external WebSocket subscriptions
+ * and renderer subscription handling so both transports use the same exact,
+ * wildcard, mixed wildcard/exact, and workspace scoping semantics.
+ */
+export function createEventTypeSubscriptionFilters({
+  eventTypes,
+  workspaceId,
+}: EventTypeSubscriptionFilterOptions): EventFilter[] {
+  const filters: EventFilter[] = [];
+  const wildcardPatterns = eventTypes.filter((type) => type.endsWith(':*'));
+  const exactTypes = eventTypes.filter((type) => !type.endsWith(':*'));
+
+  if (wildcardPatterns.length === 0) {
+    if (exactTypes.length === 1) {
+      filters.push({ field: 'type', operator: 'equals', value: exactTypes[0] });
+    } else if (exactTypes.length > 1) {
+      filters.push({ field: 'type', operator: 'in', value: exactTypes });
+    }
+  } else if (exactTypes.length === 0) {
+    if (wildcardPatterns.length === 1) {
+      filters.push({
+        field: 'type',
+        operator: 'starts_with',
+        value: wildcardPatterns[0].slice(0, -1),
+      });
+    } else {
+      const prefixes = wildcardPatterns.map((pattern) =>
+        escapeRegexLiteral(pattern.slice(0, -1)),
+      );
+      filters.push({
+        field: 'type',
+        operator: 'matches',
+        value: `^(${prefixes.join('|')})`,
+      });
+    }
+  } else {
+    const parts = [
+      ...wildcardPatterns.map(
+        (pattern) => `${escapeRegexLiteral(pattern.slice(0, -1))}.+`,
+      ),
+      ...exactTypes.map(escapeRegexLiteral),
+    ];
+    filters.push({
+      field: 'type',
+      operator: 'matches',
+      value: `^(${parts.join('|')})$`,
+    });
+  }
+
+  if (workspaceId) {
+    filters.push({ field: 'workspaceId', operator: 'equals', value: workspaceId });
+  }
+
+  return filters;
+}
+
+export function eventMatchesSubscription(event: WorkspaceEvent, filters: EventFilter[]): boolean {
+  return subscriptionFilterEngine.matches(event, filters);
+}
+
+export function filterEventsForSubscription(
+  events: WorkspaceEvent[],
+  filters: EventFilter[],
+): WorkspaceEvent[] {
+  return subscriptionFilterEngine.filterEvents(events, filters);
 }
 
 

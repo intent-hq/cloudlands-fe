@@ -140,6 +140,9 @@ export const LIMITS = {
   /** Maximum workspaces */
   MAX_WORKSPACES: 100,
 
+  /** Maximum conversation messages returned via WebSocket API */
+  MAX_WEBSOCKET_CONVERSATION_MESSAGES: 200,
+
   /** Maximum notes per workspace */
   MAX_NOTES_PER_WORKSPACE: 1000,
 

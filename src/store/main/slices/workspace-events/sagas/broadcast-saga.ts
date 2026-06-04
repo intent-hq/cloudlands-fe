@@ -3,7 +3,11 @@
  *
  * On `workspaceEventAccepted`, broadcasts to:
  * 1. Renderer windows via IPC (`events:new` channel) — workspace-scoped or global
- * 2. STDIO connection for MCP clients
+ * 2. Browser-mode IPC WebSocket clients via `sendToWorkspaceWindows`'s named adapter
+ * 3. STDIO connection for MCP clients
+ *
+ * This saga owns unfiltered accepted-event broadcast transports. Filtered
+ * renderer/WebSocket subscriptions are owned by `renderer-subscription-saga`.
  *
  * Uses dynamic imports to keep Electron deps out of test bundles.
  */
@@ -59,8 +63,18 @@ export async function broadcastEvent(event: WorkspaceEvent): Promise<void> {
     event,
   });
 
-  // Also send on the specific event type channel for backwards compatibility
-  sendToWorkspaceWindows(targetWorkspaceId, event.type, event);
+  // Skip specific-channel IPC broadcast for note events — the domain event
+  // saga (note-events-saga.ts) already broadcasts these via IPC.
+  // We still broadcast on 'events:new' (above) for ActivityTimeline,
+  // and the WebSocket/STDIO delivery happens through renderer-subscription-saga.
+  const DOMAIN_EVENT_IPC_CHANNELS = new Set(['note:created', 'note:updated', 'note:deleted']);
+  if (!DOMAIN_EVENT_IPC_CHANNELS.has(event.type)) {
+    // Send on the specific event type channel for backwards compatibility.
+    // Browser-mode clients receive this through `sendToWorkspaceWindows`'s
+    // browser IPC adapter; do not call that adapter directly here or the same
+    // accepted event would be delivered twice on the same channel.
+    sendToWorkspaceWindows(targetWorkspaceId, event.type, event);
+  }
 
   // Broadcast to STDIO for MCP clients
   await broadcastToStdio(event);

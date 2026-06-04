@@ -46,7 +46,10 @@ import {
   AgentId as createAgentId,
   WorkspaceId as createWorkspaceId,
 } from '$shared/types/branded-ids';
-import type { CanonicalAgentStatusFields } from '../../events/types';
+import {
+  createWorkspaceEvent,
+  type CanonicalAgentStatusFields,
+} from '../../events/types';
 import type { IpcMainInvokeEvent } from 'electron';
 import {
   BrowserWindow,
@@ -64,7 +67,7 @@ import * as messageAccumulator from '../../../store/main/slices/message-accumula
 import {
   resolveStreamingConfig,
   DEFAULT_PROFILE,
-} from '$store/renderer/slices/streaming-config/streaming-config-types';
+} from '../../../shared/streaming-config';
 import {
   agentPersistence,
   UnifiedPersistence,
@@ -82,6 +85,7 @@ import {
   onHttpBridgeUnrecoverable,
   type HttpBridgeUnrecoverableHandler,
 } from '../../../main/http-mcp-bridge';
+import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import {
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
@@ -2747,6 +2751,14 @@ export class AgentBackendHandler {
       if (userMessage) {
         messages.push(userMessage);
 
+        // Emit user message to workspace events so other clients can show it immediately.
+        if (request.workspaceId) {
+          this.emitStreamEventToWorkspaceEvents(request.agentId, request.workspaceId, {
+            type: 'message',
+            message: userMessage,
+          });
+        }
+
         // CRITICAL: Also update the backend session's messages
         const backend = await this.getBackend();
         const backendSession = backend.getSession(request.agentId);
@@ -2799,6 +2811,28 @@ export class AgentBackendHandler {
           agentId: request.agentId,
           reason: messagesFromFrontend ? 'messagesFromFrontend' : 'skipUserMessage flag',
         });
+      }
+
+      // Emit workspace event so WebSocket API subscribers learn about the user message.
+      // This is the SINGLE canonical emission site for `agent:user-message:sent` on the
+      // send (non-queued) path — the WebSocket protocol handler and the Electron adapter
+      // intentionally do NOT emit this event themselves. See Audit 4 / Track F Bundle 3.
+      if (userMessage && request.workspaceId) {
+        try {
+          mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+            'agent:user-message:sent' as any,
+            request.workspaceId,
+            { type: 'user' as const, id: 'user' },
+            {
+              agentId: request.agentId,
+              messageId: userMessage.id,
+              content: request.content,
+              ...(request.imageBlocks && { imageBlocks: request.imageBlocks }),
+            },
+          )));
+        } catch {
+          // Fire-and-forget — never let event emission break the send path.
+        }
       }
 
       // Create a separate messages array for the agent that includes injected prompts
@@ -2972,6 +3006,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         },
         workspaceWindowIds,
       );
+
+      // Emit stream start event to workspace events for WebSocket API clients.
+      this.emitStreamEventToWorkspaceEvents(request.agentId, request.workspaceId, { type: 'start' });
 
       // Update provider last used time (prevents idle cleanup during active use)
       this.touchProvider(request.agentId);
@@ -5615,6 +5652,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       );
     }
 
+    if (data?.type) {
+      this.emitStreamEventToWorkspaceEvents(agentId, workspaceId, data);
+    }
+
     const payloadWithWorkspaceId =
       payload && typeof payload === 'object' && !Array.isArray(payload)
         ? { ...payload, workspaceId }
@@ -5658,6 +5699,93 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       });
     }
     return broadcastWindowIds;
+  }
+
+  /**
+   * Emit a stream event through Redux workspace events for WebSocket API consumers.
+   */
+  private emitStreamEventToWorkspaceEvents(agentId: string, workspaceId: string, data: any): void {
+    let eventType: 'agent:stream:start' | 'agent:stream:chunk' | 'agent:stream:content-blocks' | 'agent:stream:end' | 'agent:stream:message' | 'agent:stream:tool_use' | 'agent:stream:tool_result';
+    switch (data.type) {
+      case 'start':
+        eventType = 'agent:stream:start';
+        break;
+      case 'chunk':
+        eventType = 'agent:stream:chunk';
+        break;
+      case 'content-blocks':
+        eventType = 'agent:stream:content-blocks';
+        break;
+      // NOTE: 'complete' and 'error' are mutually exclusive terminal signals from the
+      // streaming provider — a stream ends with exactly one of them, never both, never
+      // neither. Both intentionally map to `agent:stream:end` so subscribers see a single
+      // canonical terminal event and can branch on payload metadata if they need to
+      // distinguish success vs failure (today the payload is identical by design).
+      case 'complete':
+        eventType = 'agent:stream:end';
+        break;
+      case 'message':
+        eventType = 'agent:stream:message';
+        break;
+      case 'tool_use':
+        eventType = 'agent:stream:tool_use';
+        break;
+      case 'tool_result':
+        eventType = 'agent:stream:tool_result';
+        break;
+      default:
+        return;
+    }
+
+    try {
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        eventType,
+        workspaceId,
+        { type: 'agent' as const, id: agentId },
+        {
+          agentId,
+          content: data.data ?? data.message ?? null,
+          streamId: data.streamId,
+          ...(data.type === 'message' && data.message && { message: data.message }),
+          ...(data.type === 'tool_use' && { toolUse: data.data || data }),
+          ...(data.type === 'tool_result' && { toolResult: data.data || data }),
+        },
+      )));
+    } catch (err) {
+      logger.error('Failed to emit stream event to workspace events', { agentId, error: err });
+    }
+  }
+
+  /**
+   * Emit a queue event through Redux workspace events for WebSocket API consumers.
+   */
+  private emitQueueWorkspaceEvent(
+    eventType:
+      | 'agent:queue:updated'
+      | 'agent:queue:processing'
+      | 'agent:queue:processing-cancelled'
+      | 'agent:queue:stale-message',
+    agentId: string,
+    workspaceId: string,
+    data: any,
+  ): void {
+    try {
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        eventType,
+        workspaceId,
+        { type: 'agent' as const, id: agentId },
+        {
+          ...data,
+          agentId,
+        },
+      )));
+    } catch (err) {
+      logger.error('Failed to emit queue event to workspace events', {
+        eventType,
+        agentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -5753,9 +5881,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // Also broadcast untargeted/global renderer events to browser-mode WebSocket clients (HTTP bridge).
     // Workspace-targeted events must include browserWorkspaceId so browser clients can filter safely.
     if (targetWindowIds === undefined || browserWorkspaceId !== undefined) {
-      const broadcast = (global as any).__browserIpcBroadcast;
-      if (typeof broadcast === 'function') {
-        broadcast(channel, data, browserWorkspaceId);
+      if (broadcastToBrowserIpcClients(channel, data, browserWorkspaceId)) {
         sentToAtLeastOne = true;
       }
     }
@@ -5876,6 +6002,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       logger.error('Error resuming agent', error as Error);
       return null;
     }
+  }
+
+  /**
+   * Check if an agent is currently streaming
+   */
+  public isAgentStreaming(agentId: string): boolean {
+    return this.streamStartTimes.has(agentId);
   }
 
   /**
@@ -8244,17 +8377,36 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       workspaceId?: string;
       contextItems?: any[];
       imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+      messageId?: string;
     },
   ): Promise<{ success: boolean; queuedMessage?: QueuedMessage; error?: string }> {
-    const { agentId, content, workspaceId: queuedWorkspaceId, contextItems, imageBlocks } = params;
+    const { agentId, content, workspaceId: queuedWorkspaceId, contextItems, imageBlocks, messageId } = params;
+
+    // Ensure we have a workspace ID for event bus emission
+    // Try to populate from the agent's backend session if not already set
+    if (!this.streamWorkspaceIds.has(agentId)) {
+      const backend = await this.getBackend();
+      const session = backend.getSession(agentId);
+      if (session?.workspaceId) {
+        this.streamWorkspaceIds.set(agentId, session.workspaceId);
+      }
+    }
 
     try {
       const queue = this.messageQueues.get(agentId) || [];
-      // Use msg_ prefix for message IDs to match MessageIdSchema validation
-      // The schema requires either 'msg_' prefix OR a valid UUID, but using
-      // the prefix is more consistent with the rest of the codebase
+      // Validate messageId format: must be a UUID, msg_ prefix, or user-msg- prefix.
+      // If a non-conforming ID is passed, generate a new one to avoid downstream
+      // MessageIdSchema validation failures.
+      const isValidMessageId =
+        messageId &&
+        typeof messageId === 'string' &&
+        (messageId.startsWith('msg_') ||
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId) ||
+          messageId.startsWith('user-msg-'));
+      const validId = isValidMessageId ? messageId : `msg_${uuidv4()}`;
+
       const queuedMessage: QueuedMessage = {
-        id: `msg_${uuidv4()}`,
+        id: validId,
         appMessageId: createAppMessageId(),
         content,
         queuedAt: new Date().toISOString(),
@@ -8298,6 +8450,32 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         queueTargetWindowIds,
         workspaceId,
       );
+      // Emit to workspace events for WebSocket clients
+      if (workspaceId) {
+        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, { queue });
+      }
+
+      // Canonical emission of `agent:user-message:sent` for the queued path. The
+      // WebSocket protocol handler no longer emits this event itself for the streaming
+      // queue branch — Audit 4 / Track F Bundle 3 consolidates the emit here so a single
+      // `agent.sendMessage` produces exactly one workspace-event dispatch.
+      if (workspaceId) {
+        try {
+          mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+            'agent:user-message:sent' as any,
+            workspaceId,
+            { type: 'user' as const, id: 'user' },
+            {
+              agentId,
+              messageId: queuedMessage.id,
+              content,
+              ...(imageBlocks && { imageBlocks }),
+            },
+          )));
+        } catch {
+          // Fire-and-forget — never let event emission break the queue path.
+        }
+      }
 
       return { success: true, queuedMessage };
     } catch (error) {
@@ -8314,6 +8492,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     params: { agentId: string; messageId: string; content: string },
   ): Promise<{ success: boolean; error?: string }> {
     const { agentId, messageId, content } = params;
+
+    // Ensure we have a workspace ID for event bus emission
+    if (!this.streamWorkspaceIds.has(agentId)) {
+      const backend = await this.getBackend();
+      const session = backend.getSession(agentId);
+      if (session?.workspaceId) {
+        this.streamWorkspaceIds.set(agentId, session.workspaceId);
+      }
+    }
 
     try {
       const queue = this.messageQueues.get(agentId);
@@ -8335,6 +8522,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         { agentId, queue },
         this.getWorkspaceWindowsForAgent(agentId),
       );
+      // Emit to workspace events for WebSocket clients
+      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+      if (wsId) {
+        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
+      }
 
       return { success: true };
     } catch (error) {
@@ -8351,6 +8543,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     params: { agentId: string; messageId: string },
   ): Promise<{ success: boolean; error?: string }> {
     const { agentId, messageId } = params;
+
+    // Ensure we have a workspace ID for event bus emission
+    if (!this.streamWorkspaceIds.has(agentId)) {
+      const backend = await this.getBackend();
+      const session = backend.getSession(agentId);
+      if (session?.workspaceId) {
+        this.streamWorkspaceIds.set(agentId, session.workspaceId);
+      }
+    }
 
     try {
       const queue = this.messageQueues.get(agentId);
@@ -8378,6 +8579,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         { agentId, queue },
         this.getWorkspaceWindowsForAgent(agentId),
       );
+      // Emit to workspace events for WebSocket clients
+      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+      if (wsId) {
+        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
+      }
 
       // Stop the watchdog if all queues are now empty
       this.stopQueueWatchdogIfEmpty();
@@ -8386,6 +8592,73 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     } catch (error) {
       logger.error('Failed to remove queued message', { agentId, messageId, error });
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Force-send a queued message: atomically remove from queue, stop the agent, and send.
+   * This is the server-side implementation of "Send Now" that works for both IPC and WebSocket clients.
+   */
+  public async handleForceMessage(
+    _event: any,
+    params: {
+      agentId: string;
+      messageId: string;
+      content: string;
+      workspaceId: string;
+      imageBlocks?: any[];
+      noteIds?: string[];
+    },
+  ): Promise<{ success: boolean; error?: string }> {
+    const { agentId, messageId, content, workspaceId, imageBlocks, noteIds } = params;
+
+    // 1. Remove from queue
+    const removeResult = await this.handleRemoveQueuedMessage(_event, { agentId, messageId });
+    if (!removeResult.success) {
+      logger.warn('handleForceMessage: failed to remove queued message, aborting force-send', {
+        agentId, messageId, error: removeResult.error
+      });
+      return { success: false, error: 'Failed to remove queued message: ' + (removeResult.error || 'unknown error') };
+    }
+
+    try {
+      // 2. Stop the agent and wait for it to actually stop
+      await this.stopAgent(agentId, 'force_message');
+
+      // 3. Clear the interrupted flag so the message can be sent
+      // stopAgent sets interruptedAgents.add(agentId) which would block the subsequent send
+      this.clearInterruptedFlag(agentId);
+
+      // 4. Brief delay for cleanup
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // 5. Send the message directly using handleBackendStreamMessage (bypass auto-queue guards)
+      // sendBackendInitiatedMessage has guards that incorrectly reject after stop
+      const result = await this.handleBackendStreamMessage(null as any, {
+        agentId,
+        sessionId: agentId,
+        streamId: `${agentId}:${Date.now()}`,
+        content,
+        workspaceId,
+        imageBlocks,
+        noteIds,
+        queuedMessageId: messageId,
+      });
+
+      // If send returned failure without throwing, re-queue the message
+      // so it is not permanently lost (catch block only handles thrown errors)
+      if (!result.success) {
+        logger.warn('Force message send returned failure, re-queuing message', { agentId, messageId });
+        await this.handleQueueMessage(null, { agentId, content, imageBlocks, messageId });
+        return { success: false, error: 'Failed to send message, re-queued' };
+      }
+
+      return result;
+    } catch (error) {
+      // Re-queue the message if send failed so it is not permanently lost
+      logger.error('Force message send failed, re-queuing message', { agentId, messageId, error });
+      await this.handleQueueMessage(null, { agentId, content, imageBlocks, messageId });
+      return { success: false, error: `Force send failed: ${error}` };
     }
   }
 
@@ -8508,15 +8781,26 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         });
         // Notify frontend about stale message so it can optionally show a warning (workspace-scoped)
         const wsWindows = getWindowIdsForWorkspace(workspaceId);
+        const staleMessagePayload = {
+          agentId,
+          messageId: nextMessage.id,
+          ageMinutes,
+          queuedAt: nextMessage.queuedAt,
+        };
         this.sendToRenderer(
           'agent:queue:stale-message',
-          {
-            agentId,
-            messageId: nextMessage.id,
-            ageMinutes,
-            queuedAt: nextMessage.queuedAt,
-          },
+          staleMessagePayload,
           wsWindows,
+        );
+        // Also emit as a workspace event so WebSocket API subscribers
+        // (which never see the raw IPC `sendToRenderer` channel) receive
+        // stale-message notifications alongside the three sibling queue
+        // events (`updated`, `processing`, `processing-cancelled`).
+        this.emitQueueWorkspaceEvent(
+          'agent:queue:stale-message',
+          agentId,
+          workspaceId,
+          staleMessagePayload,
         );
       }
 
@@ -8539,19 +8823,22 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         hasActiveWindow,
       });
       const queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
+      const processingData = {
+        agentId,
+        messageId: nextMessage.id,
+        appMessageId: nextMessage.appMessageId,
+        assistantAppMessageId,
+        content: nextMessage.content,
+        contextItems: nextMessage.contextItems,
+        imageBlocks: nextMessage.imageBlocks,
+      };
       this.sendToRenderer(
         'agent:queue:processing',
-        {
-          agentId,
-          messageId: nextMessage.id,
-          appMessageId: nextMessage.appMessageId,
-          assistantAppMessageId,
-          content: nextMessage.content,
-          contextItems: nextMessage.contextItems,
-          imageBlocks: nextMessage.imageBlocks,
-        },
+        processingData,
         queueTargetWindows,
       );
+      // Emit to workspace events for WebSocket clients
+      this.emitQueueWorkspaceEvent('agent:queue:processing', agentId, workspaceId, processingData);
       // Don't send queue:updated yet — message is still in the queue until send succeeds
 
       // Wait for frontend to re-register stream handler before starting new stream.
@@ -8595,14 +8882,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           },
         );
         // Notify frontend to clean up the orphaned handler from agent:queue:processing
+        const cancelledData = {
+          agentId,
+          messageId: nextMessage.id,
+        };
         this.sendToRenderer(
           'agent:queue:processing-cancelled',
-          {
-            agentId,
-            messageId: nextMessage.id,
-          },
+          cancelledData,
           queueTargetWindows,
         );
+        // Emit to workspace events for WebSocket clients
+        this.emitQueueWorkspaceEvent('agent:queue:processing-cancelled', agentId, workspaceId, cancelledData);
         return;
       }
 
@@ -8616,6 +8906,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         m.position = i;
       });
       this.sendToRenderer('agent:queue:updated', { agentId, queue }, queueTargetWindows);
+      // Emit to workspace events for WebSocket clients
+      this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, { queue });
       logger.info('Removed message from internal queue and sent queue:updated to frontend', {
         agentId,
         messageId: nextMessage.id,
@@ -8660,6 +8952,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // Emit queue:updated so the UI shows the message back in the queue
         const wsWindows = getWindowIdsForWorkspace(workspaceId);
         this.sendToRenderer('agent:queue:updated', { agentId, queue: currentQueue }, wsWindows);
+        // Emit to workspace events for WebSocket clients
+        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, { queue: currentQueue });
         logger.info('Re-added message to queue after send failure', {
           agentId,
           messageId: nextMessage.id,
@@ -8970,18 +9264,21 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         logger.debug('Could not fetch agent summary for idle event', { agentId, error: err });
       }
 
+      // Check if agent is waiting on sub-agents (delegation subscriptions)
+      let isWaitingForAgents = false;
+      try {
+        const subscriptions = selectAgentSubscriptions.select(getMainState(), workspaceId, agentId);
+        isWaitingForAgents = subscriptions.length > 0;
+      } catch (err) {
+        logger.debug('Could not check delegation subscriptions for idle event', { agentId, error: err });
+      }
+
       // Emit the agent:idle event with summary data via Redux
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-idle-${agentId}-${uuidv4()}`,
-        type: 'agent:idle',
-        timestamp: new Date().toISOString(),
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:idle',
         workspaceId,
-        actor: {
-          type: 'agent',
-          id: agentId,
-          name: agentName,
-        },
-        data: {
+        { type: 'agent', id: agentId, name: agentName },
+        {
           agentId,
           agentName,
           reason: 'stream_complete',
@@ -9001,8 +9298,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isProcessing: false,
           isResponding: false,
           stopReason: finishReason,
+          isWaitingForAgents,
         },
-      }));
+      )));
 
       logger.info('Emitted agent:idle event via Redux', {
         agentId,
@@ -9047,21 +9345,16 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   ): void {
     try {
       // Emit through Redux (which handles persistence and broadcast via sagas)
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-created-${agentId}-${uuidv4()}`,
-        type: 'agent:created',
-        timestamp: new Date().toISOString(),
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:created',
         workspaceId,
-        actor: {
-          type: 'user',
-          name: 'User',
-        },
-        data: {
+        { type: 'user', name: 'User' },
+        {
           agentId,
           agentName,
           model,
         },
-      }));
+      )));
       logger.debug('Emitted agent:created event via Redux', {
         agentId,
         workspaceId,
@@ -9118,19 +9411,13 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     // NOTE: isBackground and parentAgentId are pre-captured by the caller (handleDeleteAgent)
     // BEFORE persistence deletion, since the agent file is already gone by the time this runs.
     try {
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-deleted-${agentId}-${uuidv4()}`,
-        type: 'agent:deleted',
-        timestamp: new Date().toISOString(),
+      // CRITICAL: Use the deleted agent as the actor so that subscription
+      // filters with actorIds: [agentId] will match.
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:deleted',
         workspaceId,
-        actor: {
-          // CRITICAL: Use the deleted agent as the actor so that
-          // subscription filters with actorIds: [agentId] will match.
-          type: 'agent',
-          id: agentId,
-          name: agentName,
-        },
-        data: {
+        { type: 'agent', id: agentId, name: agentName },
+        {
           agentId,
           agentName,
           taskNoteId,
@@ -9138,7 +9425,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isBackground,
           parentAgentId,
         },
-      }));
+      )));
       logger.info('Emitted agent:deleted event via Redux', {
         agentId,
         workspaceId,
@@ -9244,17 +9531,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     error?: string,
   ): Promise<void> {
     try {
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-restored-${agentId}-${uuidv4()}`,
-        type: 'agent:restored',
-        timestamp: new Date().toISOString(),
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:restored',
         workspaceId,
-        actor: {
-          type: 'agent',
-          id: agentId,
-          name: agentName,
-        },
-        data: {
+        { type: 'agent', id: agentId, name: agentName },
+        {
           agentId,
           agentName,
           workspaceId,
@@ -9265,7 +9546,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           reason: 'delete_failed',
           error,
         },
-      }));
+      )));
       logger.info('Emitted agent:restored event via Redux', {
         agentId,
         workspaceId,
@@ -9290,23 +9571,17 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   ): void {
     try {
       // Emit through Redux (which handles persistence and broadcast via sagas)
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-started-${agentId}-${uuidv4()}`,
-        type: 'agent:started',
-        timestamp: new Date().toISOString(),
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:started',
         workspaceId,
-        actor: {
-          type: 'agent',
-          id: agentId,
-          name: agentName,
-        },
-        data: {
+        { type: 'agent', id: agentId, name: agentName },
+        {
           agentId,
           agentName,
           model,
           reason: 'message_received',
         },
-      }));
+      )));
       logger.debug('Emitted agent:started event via Redux', {
         agentId,
         workspaceId,
@@ -9382,17 +9657,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Step 3: Emit the agent:failed event
     try {
-      mainDispatch(reduxEmitWorkspaceEvent({
-        id: `agent-failed-${agentId}-${uuidv4()}`,
-        type: 'agent:failed',
-        timestamp: new Date().toISOString(),
+      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
+        'agent:failed',
         workspaceId,
-        actor: {
-          type: 'agent',
-          id: agentId,
-          name: agentName,
-        },
-        data: {
+        { type: 'agent', id: agentId, name: agentName },
+        {
           agentId,
           agentName,
           error,
@@ -9406,7 +9675,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           isResponding: false,
           stopReason: error,
         },
-      }));
+      )));
       logger.debug('Emitted agent:failed event via Redux', {
         agentId,
         workspaceId,

@@ -33,7 +33,6 @@
  * ---------------------------------------------------------------------------
  */
 
-import { createRequire } from 'module';
 import * as os from 'os';
 import * as path from 'path';
 import express, { Request, Response } from 'express';
@@ -55,93 +54,17 @@ import { getProvenanceContextManager } from '$features/workspace/main/provenance
 import { findAvailablePort } from '../utils/port-utils';
 import ElectronStore from 'electron-store';
 import { storeMcpToolParams } from '../shared/services/mcp-tool-params-cache';
+import { WebSocketApiServer } from './websocket-api-server';
+import { isWebSocketApiEnabled, isDiscoveryEnabled } from './websocket-auth';
+import { startDiscovery, stopDiscovery } from './websocket-discovery';
+import {
+  broadcastToBrowserIpcClients,
+  registerBrowserIpcBroadcast,
+} from './browser-ipc-broadcast-adapter';
+import { getWebSocketClass, getWebSocketServerClass } from './utils/ws-runtime';
 
-const require = createRequire(import.meta.url);
-
-// Import types for ws (ESM named import fails inside Electron's asar archive at runtime)
-import type { WebSocket as WebSocketType, WebSocketServer as WebSocketServerType } from 'ws';
-// Use require() for the runtime value to avoid ESM/CJS resolution issues inside asar
-const wsImport = require('ws');
-
-type WebSocketConstructor = typeof WebSocketType;
-type WebSocketServerConstructor = typeof WebSocketServerType;
-
-interface ResolvedWsModule {
-  WebSocket: WebSocketConstructor;
-  WebSocketServer: WebSocketServerConstructor;
-}
-
-function isObjectLike(value: unknown): value is Record<string, unknown> {
-  return (typeof value === 'object' || typeof value === 'function') && value !== null;
-}
-
-function getProperty(value: unknown, key: string): unknown {
-  return isObjectLike(value) ? value[key] : undefined;
-}
-
-function isConstructable(value: unknown): boolean {
-  if (typeof value !== 'function') return false;
-  try {
-    Reflect.construct(Object, [], value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function firstConstructable<T>(candidates: unknown[]): T | undefined {
-  return candidates.find(isConstructable) as T | undefined;
-}
-
-function describeValueShape(value: unknown): string {
-  if (!isObjectLike(value)) return value === null ? 'null' : typeof value;
-
-  const keys = Object.keys(value);
-  const visibleKeys = keys.slice(0, 20);
-  const keySummary = visibleKeys
-    .map((key) => `${key}:${typeof getProperty(value, key)}`)
-    .join(', ');
-  const suffix = keys.length > visibleKeys.length ? ', …' : '';
-  return `${typeof value}{${keySummary}${suffix}}`;
-}
-
-function describeWsModuleShape(moduleValue: unknown): string {
-  const defaultValue = getProperty(moduleValue, 'default');
-  return `module=${describeValueShape(moduleValue)}; default=${describeValueShape(defaultValue)}`;
-}
-
-function resolveWsModule(moduleValue: unknown): ResolvedWsModule {
-  const defaultValue = getProperty(moduleValue, 'default');
-  const moduleShape = describeWsModuleShape(moduleValue);
-
-  const WebSocketServer = firstConstructable<WebSocketServerConstructor>([
-    getProperty(moduleValue, 'WebSocketServer'),
-    getProperty(moduleValue, 'Server'),
-    getProperty(defaultValue, 'WebSocketServer'),
-    getProperty(defaultValue, 'Server'),
-  ]);
-
-  if (!WebSocketServer) {
-    throw new Error(`Unable to resolve ws WebSocketServer constructor; module shape: ${moduleShape}`);
-  }
-
-  const WebSocket = firstConstructable<WebSocketConstructor>([
-    getProperty(moduleValue, 'WebSocket'),
-    getProperty(defaultValue, 'WebSocket'),
-    moduleValue,
-    defaultValue,
-  ]);
-
-  if (!WebSocket) {
-    throw new Error(`Unable to resolve ws WebSocket constructor; module shape: ${moduleShape}`);
-  }
-
-  return { WebSocket, WebSocketServer };
-}
-
-export const __resolveWsModuleForTests = resolveWsModule;
-
-const { WebSocket, WebSocketServer } = resolveWsModule(wsImport);
+const WebSocket = getWebSocketClass();
+const WebSocketServer = getWebSocketServerClass();
 
 // Cross-platform dummy workspace path (Windows doesn't have /tmp/)
 const DUMMY_WORKSPACE_PATH = process.platform === 'win32'
@@ -303,7 +226,7 @@ export function __resetCriticalMemoryPressureForTests(): void {
 // See file-header for the handler signature and consumer contract.
 // ---------------------------------------------------------------------------
 export interface HttpBridgeUnrecoverableInfo {
-  reason: 'restart-failed' | 'still-unhealthy-after-restart';
+  reason: 'restart-failed' | 'still-unhealthy-after-restart' | 'ws-api-start-failed';
   error?: Error;
   port: number;
   timestamp: number;
@@ -358,6 +281,12 @@ export class HttpMcpBridge {
   private port: number;
   private cleanupIntervalId: NodeJS.Timeout | null = null;
   private readonly mcpServerTtlMs: number = DEFAULT_MCP_SERVER_TTL_MS;
+  private wsApiServer: WebSocketApiServer | null = null;
+  private unregisterBrowserIpcBroadcast: (() => void) | null = null;
+  // In-flight WebSocket API server start() promise. Used so callers of
+  // updateWebSocketApiServer() can await the initial fire-and-forget start
+  // before deciding whether to construct a replacement instance.
+  private wsApiServerStarting: Promise<void> | null = null;
   private readonly browserClientWorkspaceIds = new WeakMap<object, string>();
   // In-flight restart promise — concurrent callers share it (DoD #2).
   private restartPromise: Promise<void> | null = null;
@@ -706,14 +635,17 @@ export class HttpMcpBridge {
         // IMPORTANT: Many handlers call BrowserWindow.fromWebContents(event.sender)
         // which throws if sender is not a real WebContents. We mark the event with
         // __isBrowserBridge so handlers can detect this and skip native Electron calls.
-        const broadcast = (global as any).__browserIpcBroadcast;
         const syntheticSender = {
           id: -1,
           __isBrowserBridge: true,
           // Route streaming sends through WebSocket
           send: (ch: string, ...args: any[]) => {
-            if (typeof broadcast === 'function' && requestWorkspaceId) {
-              broadcast(ch, args.length === 1 ? args[0] : args, requestWorkspaceId);
+            if (requestWorkspaceId) {
+              broadcastToBrowserIpcClients(
+                ch,
+                args.length === 1 ? args[0] : args,
+                requestWorkspaceId,
+              );
             }
           },
           // Stubs for properties that some handlers may access
@@ -1409,9 +1341,11 @@ export class HttpMcpBridge {
     this.wss = boundWss;
     this.port = boundPort;
 
-    // Expose a global broadcast function so any code that does webContents.send
-    // can also push events to browser-mode clients.
-    (global as any).__browserIpcBroadcast = (
+    // Register the named adapter for browser-mode IPC WebSocket clients. The
+    // adapter owns the legacy global hook for compatibility; callers should use
+    // broadcastToBrowserIpcClients() instead of touching the global directly.
+    this.unregisterBrowserIpcBroadcast?.();
+    this.unregisterBrowserIpcBroadcast = registerBrowserIpcBroadcast((
       channel: string,
       data: any,
       workspaceId?: string,
@@ -1434,7 +1368,7 @@ export class HttpMcpBridge {
           client.send(message);
         }
       }
-    };
+    });
 
     // Keep references to prevent garbage collection and for sibling modules.
     (global as any).__httpMcpBridgeServer = this.server;
@@ -1474,6 +1408,113 @@ export class HttpMcpBridge {
           this.logger.error(`Self-test failed: ${err.message}`);
         });
     }, 100);
+
+    // Start WebSocket API server if enabled (on its own port for LAN access)
+    if (isWebSocketApiEnabled()) {
+      const wsPort = this.port + 1;
+      this.wsApiServer = new WebSocketApiServer(wsPort);
+      // Track the in-flight start promise so updateWebSocketApiServer() can
+      // await it before checking isRunning() and avoid orphaning this
+      // instance with a duplicate replacement.
+      this.wsApiServerStarting = this.wsApiServer.start()
+        .then(() => {
+          this.logger.info('WebSocket API server started', { port: this.wsApiServer!.getPort() });
+          this.logger.info('WebSocket API cert fingerprint', {
+            fingerprint: this.wsApiServer!.getCertFingerprint(),
+            port: this.wsApiServer!.getPort(),
+          });
+
+          if (isDiscoveryEnabled()) {
+            startDiscovery(this.wsApiServer!.getPort(), this.wsApiServer!.getCertFingerprint() ?? undefined);
+          }
+        })
+        .catch((wsError) => {
+          this.logger.error('Failed to start WebSocket API server', wsError as Error);
+          // L8: bubble WS API start failures into the same unrecoverable hook
+          // so the renderer can surface a single unrecoverable-state UI.
+          emitHttpBridgeUnrecoverable(
+            {
+              reason: 'ws-api-start-failed',
+              error: wsError instanceof Error ? wsError : new Error(String(wsError)),
+              port: wsPort,
+              timestamp: Date.now(),
+            },
+            this.logger,
+          );
+        })
+        .finally(() => {
+          this.wsApiServerStarting = null;
+        });
+    }
+  }
+
+  /**
+   * Start or stop the WebSocket API server dynamically based on settings.
+   * Call this when the `websocketApiEnabled` setting changes at runtime.
+   */
+  async updateWebSocketApiServer(): Promise<void> {
+    const enabled = isWebSocketApiEnabled();
+
+    // If the initial fire-and-forget start() from this.start() is still in
+    // flight, wait for it to settle before evaluating isRunning(); otherwise
+    // we may construct a duplicate WebSocketApiServer and orphan the first.
+    if (this.wsApiServerStarting) {
+      try {
+        await this.wsApiServerStarting;
+      } catch {
+        /* start failures are already logged / emitted by the start handler */
+      }
+    }
+
+    if (enabled && !this.wsApiServer?.isRunning()) {
+      const wsPort = this.port + 1;
+      this.wsApiServer = new WebSocketApiServer(wsPort);
+      // Track the in-flight dynamic start promise so concurrent
+      // updateWebSocketApiServer() calls await it at the top of the method
+      // and skip constructing a duplicate WebSocketApiServer instance.
+      const startPromise = this.wsApiServer.start()
+        .then(() => {
+          this.logger.info('WebSocket API server started dynamically', {
+            port: this.wsApiServer!.getPort(),
+          });
+        })
+        .catch((wsError) => {
+          // L8: bubble dynamic WS API start failures into the unrecoverable hook.
+          this.logger.error('Failed to start WebSocket API server dynamically', wsError as Error);
+          emitHttpBridgeUnrecoverable(
+            {
+              reason: 'ws-api-start-failed',
+              error: wsError instanceof Error ? wsError : new Error(String(wsError)),
+              port: wsPort,
+              timestamp: Date.now(),
+            },
+            this.logger,
+          );
+          throw wsError;
+        })
+        .finally(() => {
+          this.wsApiServerStarting = null;
+        });
+      this.wsApiServerStarting = startPromise;
+      await startPromise;
+    } else if (!enabled && this.wsApiServer?.isRunning()) {
+      await this.wsApiServer.stop();
+      this.logger.info('WebSocket API server stopped dynamically');
+    }
+
+    // Start or stop Bonjour/mDNS discovery based on both settings
+    if (enabled && isDiscoveryEnabled() && this.wsApiServer) {
+      startDiscovery(this.wsApiServer.getPort(), this.wsApiServer.getCertFingerprint() ?? undefined);
+    } else {
+      stopDiscovery();
+    }
+  }
+
+  /**
+   * Get the WebSocket API server instance (if running).
+   */
+  getWebSocketApiServer(): WebSocketApiServer | null {
+    return this.wsApiServer;
   }
 
   /**
@@ -1517,6 +1558,21 @@ export class HttpMcpBridge {
       this.shuttingDown = true;
     }
 
+    // Stop Bonjour/mDNS discovery
+    stopDiscovery();
+
+    // Stop WebSocket API server
+    if (this.wsApiServer) {
+      try {
+        await this.wsApiServer.stop();
+      } catch (err) {
+        this.logger.warn('Error stopping WebSocket API server', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      this.wsApiServer = null;
+    }
+
     // Stop the cache cleanup interval
     if (this.cleanupIntervalId) {
       clearInterval(this.cleanupIntervalId);
@@ -1526,6 +1582,9 @@ export class HttpMcpBridge {
 
     // Clear all cached MCP servers
     this.clearAllMcpServers();
+
+    this.unregisterBrowserIpcBroadcast?.();
+    this.unregisterBrowserIpcBroadcast = null;
 
     // Close WSS first: terminate all connected clients, then close the WSS.
     // If we close the HTTP server first, the WSS can linger holding refs.

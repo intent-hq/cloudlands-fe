@@ -9,6 +9,7 @@ dist-electron
 
 # Include build resources (icons, entitlements) - override parent gitignore
 !build/
+build/ios/
 
 # Generated icon files in build/ (regenerated from src/assets/icons/)
 # Source of truth for icons is src/assets/icons/

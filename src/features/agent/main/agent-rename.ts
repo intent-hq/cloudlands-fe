@@ -5,15 +5,17 @@
  * through `UnifiedPersistence.renameAgent`, which acquires the same per-agent
  * write lock that `saveAgent` uses and writes atomically with the `.checksum`
  * sidecar updated. Also invalidates the persistence load cache, syncs the
- * in-memory backend session, and broadcasts `agent:renamed` to all windows
- * scoped to the workspace. It is the implementation used by both the MCP
+ * in-memory backend session, and emits `agent:renamed` through Redux workspace
+ * events. It is the implementation used by both the MCP
  * `setAgentName` tool and the user-triggered rename IPC handler.
  */
 
 import { Logger } from '$shared/logger';
 import type { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { createWorkspaceEvent, WorkspaceEventType } from '../../events/types';
+import { mainDispatch } from '../../../store/main/redux-store-bridge';
+import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 const logger = new Logger('AgentRename');
 
@@ -81,11 +83,16 @@ export async function renameAgentOnDisk(
   await invalidatePersistenceCache(agentId, workspaceId);
   await syncInMemorySession(agentId, result.name, true);
 
-  sendToWorkspaceWindows(workspaceId, 'agent:renamed', {
-    agentId,
-    workspaceId,
-    name: result.name,
-  });
+  mainDispatch(
+    emitWorkspaceEvent(
+      createWorkspaceEvent(
+        WorkspaceEventType.AgentRenamed,
+        workspaceId,
+        { type: 'user' as const, id: 'user' },
+        { agentId, workspaceId, name: result.name },
+      ),
+    ),
+  );
 
   return { ok: true, name: result.name };
 }

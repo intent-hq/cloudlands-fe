@@ -476,6 +476,8 @@ export interface WorkspaceAgentInfo {
   status: string; // AgentStatus as string for serialization
   specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
   lastActivity?: string;
+  isStreaming?: boolean;
+  isResponding?: boolean;
 }
 
 /**

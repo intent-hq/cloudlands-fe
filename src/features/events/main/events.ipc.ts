@@ -14,6 +14,7 @@ import {
 import { Logger } from '../../../shared/logger';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
 import type { WorkspaceEvent } from '../types';
+import { filterEventsForSubscription } from '../event-filter-engine';
 import {
   mainDispatch,
   getMainState,
@@ -36,7 +37,6 @@ import { getBlob } from '../../../shared/git/git-blob-storage';
 import {
   rendererSubscriptions,
   windowCloseListeners,
-  filterEngine,
 } from './renderer-subscription-registry';
 
 const logger = new Logger('EventsIPC');
@@ -91,8 +91,7 @@ export function setupEventsIPC(): void {
             for (const wsId of Object.keys(initWsSlice)) {
               allEvents.push(...selectRecentEvents.select(initState, wsId));
             }
-            const matching = allEvents
-              .filter((e) => filterEngine.matches(e, validated.filters))
+            const matching = filterEventsForSubscription(allEvents, validated.filters)
               .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
               .slice(-(validated.historicalLimit ?? 50));
 
@@ -213,7 +212,7 @@ export function setupEventsIPC(): void {
           await store.initialize();
 
           const allEvents: WorkspaceEvent[] = store.getAll();
-          const filtered = filterEngine.filterEvents(allEvents, validated.filters);
+          const filtered = filterEventsForSubscription(allEvents, validated.filters);
           // Sort most-recent-first (consistent with previous behaviour)
           filtered.sort((a: WorkspaceEvent, b: WorkspaceEvent) => b.timestamp.localeCompare(a.timestamp));
           const limitedEvents = validated.limit ? filtered.slice(0, validated.limit) : filtered;

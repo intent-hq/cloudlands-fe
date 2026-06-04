@@ -297,10 +297,14 @@ describe("workspaceAgentsSaga", () => {
     });
   });
 
-  it("removes an agent when agent:deleted is received as a full workspace event envelope", () => {
+  it("ignores agent:deleted envelopes whose unwrapped payload lacks workspaceId", () => {
     const iterator = watchAgentDeletedSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
+    // A bare WorkspaceEvent envelope is detected by unwrapPayload and reduced
+    // to its inner `data` field, which loses the envelope's workspaceId. With
+    // no workspaceId on the unwrapped payload the handler returns early
+    // without dispatching any session/workspace mutations.
     const handler = getElectronHandler("agent:deleted")({
       id: "event-1",
       type: "agent:deleted",
@@ -310,14 +314,6 @@ describe("workspaceAgentsSaga", () => {
       data: { agentId: "agent-1", agentName: "Deleted Agent" },
     });
 
-    expect(handler.next()).toEqual({
-      value: sagaEffects.put(removeAgentSession("agent-1")),
-      done: false,
-    });
-    expect(handler.next()).toEqual({
-      value: sagaEffects.put(removeAgent("ws-1", "agent-1")),
-      done: false,
-    });
     expect(handler.next()).toEqual({ value: undefined, done: true });
   });
 
@@ -417,6 +413,30 @@ describe("workspaceAgentsSaga", () => {
     });
     expect(handler.next()).toEqual({
       value: sagaEffects.put(renameAgent("ws-other", "agent-2", "Other")),
+      done: false,
+    });
+  });
+
+  it("handles agent:renamed WorkspaceEvent format (data field)", () => {
+    const iterator = watchAgentRenamedSaga();
+
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+    // WorkspaceEvent format: { type, workspaceId, id, timestamp, data: { agentId, workspaceId, name } }
+    const handler = getElectronHandler("agent:renamed")({
+      type: "agent:renamed",
+      workspaceId: "ws-event",
+      id: "evt-123",
+      timestamp: "2026-01-01T00:00:00Z",
+      data: { agentId: "agent-ws-event", workspaceId: "ws-event", name: "WS Event Name" },
+      actor: { type: "user", id: "user" },
+      metadata: {},
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgentSession("agent-ws-event", "WS Event Name")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgent("ws-event", "agent-ws-event", "WS Event Name")),
       done: false,
     });
   });

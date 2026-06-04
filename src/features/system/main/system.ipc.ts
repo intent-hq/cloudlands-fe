@@ -17,6 +17,7 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
 } from './window-workspace-tracking';
+import * as os from 'os';
 import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
@@ -59,8 +60,10 @@ import {
   WindowSetOpenWorkspaceTabsSchema,
   WindowSetBrowserFocusedSchema,
   XcodeOpenSchema,
+  WebSocketApiSetEnabledSchema,
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
+import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
@@ -77,6 +80,7 @@ import {
   VSCODE_CHANNELS,
   WINDOW_CHANNELS,
   XCODE_CHANNELS,
+  WEBSOCKET_API_CHANNELS,
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
@@ -315,12 +319,14 @@ export function sendToWorkspaceWindows(
     }
   }
 
-  // Also broadcast to browser-mode WebSocket clients (if any are connected)
+  // Also broadcast to browser-mode WebSocket clients (if any are connected).
+  // The named adapter owns the legacy global hook used by the HTTP MCP bridge.
   try {
-    const broadcast = (global as any).__browserIpcBroadcast;
-    if (typeof broadcast === 'function') {
-      broadcast(channel, data, isContentBearing ? effectiveWorkspaceId : undefined);
-    }
+    broadcastToBrowserIpcClients(
+      channel,
+      data,
+      isContentBearing ? effectiveWorkspaceId : undefined,
+    );
   } catch {
     // Ignore — WebSocket bridge may not be initialized yet
   }
@@ -3041,4 +3047,238 @@ export function setupSystemIPC() {
   );
 
   // Note: File operations (file:read, file:write, etc.) are handled in file.ipc.ts
+
+  // ============================================================================
+  // WebSocket API Settings
+  // ============================================================================
+
+  function getAllLocalIps(): string[] {
+    const ips: string[] = [];
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      // Skip known virtual/container interfaces (VMware, Docker, bridges, etc.)
+      if (/^(vmnet|bridge|veth|docker|br-)/.test(name)) continue;
+      for (const iface of interfaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          ips.push(iface.address);
+        }
+      }
+    }
+    return ips.length > 0 ? ips : ['127.0.0.1'];
+  }
+
+  ipcMain.handle(
+    WEBSOCKET_API_CHANNELS.GET_STATUS,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        try {
+          const { getWssCertFingerprint } = await import(
+            '../../../main/websocket-auth'
+          );
+          const {
+            getWebSocketApiToken,
+            isWebSocketApiDiscoveryEnabled,
+            isWebSocketApiEnabled,
+          } = await import(
+            '../../workspace/main/app-settings.service'
+          );
+          const enabled = isWebSocketApiEnabled();
+          const bridge = (globalThis as any).__httpMcpBridgeInstance;
+          const wsServer = bridge?.getWebSocketApiServer?.();
+          const token = getWebSocketApiToken() ?? null;
+
+          // If discovery is enabled (from persisted settings) but discoveryEnabledAt
+          // was never initialized (e.g. after app restart), start the auto-disable timer
+          // so discovery doesn't stay enabled indefinitely.
+          const discoveryCurrentlyEnabled = isWebSocketApiDiscoveryEnabled();
+          if (discoveryCurrentlyEnabled && discoveryEnabledAt === null) {
+            discoveryEnabledAt = Date.now();
+            if (discoveryAutoOffTimer) {
+              clearTimeout(discoveryAutoOffTimer);
+            }
+            discoveryAutoOffTimer = setTimeout(async () => {
+              try {
+                discoveryAutoOffTimer = null;
+                discoveryEnabledAt = null;
+
+                const { setWebSocketApiDiscoveryEnabled } = await import(
+                  '../../workspace/main/app-settings.service'
+                );
+                setWebSocketApiDiscoveryEnabled(false);
+
+                const b = (globalThis as any).__httpMcpBridgeInstance;
+                if (b?.updateWebSocketApiServer) {
+                  await b.updateWebSocketApiServer();
+                }
+
+                const { BrowserWindow } = await import('electron');
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+                    win.webContents.send('websocket-api:discovery-auto-disabled');
+                  }
+                }
+              } catch (error) {
+                logger.warn('Failed to auto-disable discovery after restart recovery', { error: (error as Error).message });
+              }
+            }, DISCOVERY_TIMEOUT_MS);
+          }
+
+          return {
+            success: true,
+            data: {
+              enabled,
+              token,
+              port: wsServer?.getPort?.() || null,
+              connectedClients: wsServer?.connectedClients ?? 0,
+              discoveryEnabled: discoveryCurrentlyEnabled,
+              localIps: getAllLocalIps(),
+              certFingerprint: getWssCertFingerprint() ?? null,
+              discoveryExpiresAt: discoveryEnabledAt ? discoveryEnabledAt + DISCOVERY_TIMEOUT_MS : null,
+            },
+          };
+        } catch (error) {
+          logger.error('Failed to get WebSocket API status', error as Error);
+          return { success: false, error: 'Failed to get WebSocket API status' };
+        }
+      },
+      WEBSOCKET_API_CHANNELS.GET_STATUS,
+    ),
+  );
+
+  ipcMain.handle(
+    WEBSOCKET_API_CHANNELS.SET_ENABLED,
+    createSafeValidatedHandler(
+      WebSocketApiSetEnabledSchema,
+      async (_event, validated) => {
+        try {
+          const { getOrCreateToken } = await import('../../../main/websocket-auth');
+          const { setWebSocketApiEnabled } = await import(
+            '../../workspace/main/app-settings.service'
+          );
+          setWebSocketApiEnabled(validated.enabled);
+          if (validated.enabled) {
+            getOrCreateToken();
+          }
+
+          // Start or stop the WebSocket server dynamically
+          const bridge = (globalThis as any).__httpMcpBridgeInstance;
+          if (bridge?.updateWebSocketApiServer) {
+            await bridge.updateWebSocketApiServer();
+          }
+
+          return { success: true };
+        } catch (error) {
+          logger.error('Failed to set WebSocket API enabled', error as Error);
+          return { success: false, error: 'Failed to update WebSocket API setting' };
+        }
+      },
+      WEBSOCKET_API_CHANNELS.SET_ENABLED,
+    ),
+  );
+
+  ipcMain.handle(
+    WEBSOCKET_API_CHANNELS.REGENERATE_TOKEN,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        try {
+          const { generateToken } = await import('../../../main/websocket-auth');
+          const newToken = generateToken();
+
+          // Disconnect existing clients since their token is now invalid
+          const bridge = (globalThis as any).__httpMcpBridgeInstance;
+          const wsServer = bridge?.getWebSocketApiServer?.();
+          if (wsServer) {
+            await wsServer.stop();
+            // Restart if enabled
+            if (bridge?.updateWebSocketApiServer) {
+              await bridge.updateWebSocketApiServer();
+            }
+          }
+
+          return { success: true, data: { token: newToken } };
+        } catch (error) {
+          logger.error('Failed to regenerate WebSocket API token', error as Error);
+          return { success: false, error: 'Failed to regenerate token' };
+        }
+      },
+      WEBSOCKET_API_CHANNELS.REGENERATE_TOKEN,
+    ),
+  );
+
+  // Discovery auto-timeout: automatically disable after 5 minutes
+  let discoveryAutoOffTimer: ReturnType<typeof setTimeout> | null = null;
+  const DISCOVERY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  let discoveryEnabledAt: number | null = null;
+
+  ipcMain.handle(
+    WEBSOCKET_API_CHANNELS.SET_DISCOVERY,
+    createSafeValidatedHandler(
+      WebSocketApiSetEnabledSchema,
+      async (_event, validated) => {
+        try {
+          const { setWebSocketApiDiscoveryEnabled } = await import(
+            '../../workspace/main/app-settings.service'
+          );
+          setWebSocketApiDiscoveryEnabled(validated.enabled);
+
+          // Clear any existing auto-off timer
+          if (discoveryAutoOffTimer) {
+            clearTimeout(discoveryAutoOffTimer);
+            discoveryAutoOffTimer = null;
+          }
+
+          if (validated.enabled) {
+            discoveryEnabledAt = Date.now();
+            // Auto-disable discovery after 5 minutes
+            discoveryAutoOffTimer = setTimeout(async () => {
+              try {
+                discoveryAutoOffTimer = null;
+                discoveryEnabledAt = null;
+
+                const { setWebSocketApiDiscoveryEnabled: setDisc } = await import(
+                  '../../workspace/main/app-settings.service'
+                );
+                setDisc(false);
+
+                // Stop the actual Bonjour service
+                const b = (globalThis as any).__httpMcpBridgeInstance;
+                if (b?.updateWebSocketApiServer) {
+                  await b.updateWebSocketApiServer();
+                }
+
+                // Notify all renderer windows that discovery was auto-disabled
+                const { BrowserWindow } = await import('electron');
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+                    win.webContents.send('websocket-api:discovery-auto-disabled');
+                  }
+                }
+              } catch (error) {
+                logger.warn('Failed to auto-disable discovery in setTimeout callback', { error: (error as Error).message });
+              }
+            }, DISCOVERY_TIMEOUT_MS);
+          } else {
+            discoveryEnabledAt = null;
+          }
+
+          // Trigger discovery start/stop
+          const bridge = (globalThis as any).__httpMcpBridgeInstance;
+          if (bridge?.updateWebSocketApiServer) {
+            await bridge.updateWebSocketApiServer();
+          }
+
+          return {
+            success: true,
+            data: { discoveryEnabled: validated.enabled },
+          };
+        } catch (error) {
+          logger.error('Failed to set discovery enabled', error as Error);
+          return { success: false, error: 'Failed to update network discovery setting' };
+        }
+      },
+      WEBSOCKET_API_CHANNELS.SET_DISCOVERY,
+    ),
+  );
 }

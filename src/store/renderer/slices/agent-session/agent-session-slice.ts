@@ -1,7 +1,7 @@
 import { shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
-import type { CanonicalAgentStatusFields } from '$features/events/types';
+import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
 import {
   createAction,
   createAsyncAction,
@@ -298,6 +298,33 @@ function canonicalFieldsFromWorkspaceEvent(
     return [agentId, data];
   }
   return null;
+}
+
+function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMessage] | null {
+  if (event.type !== 'agent:user-message:sent') return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const { agentId, messageId, content } = data;
+  if (
+    typeof agentId !== 'string' ||
+    typeof messageId !== 'string' ||
+    typeof content !== 'string' ||
+    typeof event.timestamp !== 'string'
+  ) {
+    return null;
+  }
+
+  const contentBlocks: NonNullable<AgentMessage['contentBlocks']> = [{ type: 'text', text: content }];
+  if (Array.isArray(data.imageBlocks)) {
+    contentBlocks.push(...data.imageBlocks);
+  }
+
+  return [agentId, {
+    id: messageId,
+    role: 'user',
+    contentBlocks,
+    timestamp: event.timestamp,
+  }];
 }
 
 function registerInWorkspaceIndex(
@@ -680,6 +707,11 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
   })
   .with(eventReceived, (state, { payload: [, event] }) => {
+    const userMessage = userMessageFromWorkspaceEvent(event);
+    if (userMessage) {
+      return addMessageToSession(state, userMessage[0], userMessage[1]);
+    }
+
     const canonical = canonicalFieldsFromWorkspaceEvent(event);
     if (!canonical) return state;
     const [agentId, fields] = canonical;

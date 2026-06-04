@@ -251,3 +251,216 @@ describe('Stream Window Targeting (Cross-Stream Prevention)', () => {
     expect(mockWindow2.webContents.send).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Workspace Event Emission from Stream Data Tests
+ *
+ * Tests the emitStreamEventToWorkspaceEvents logic from agent-backend-handler.service.ts
+ * which maps streaming data types to workspace events for WebSocket API clients.
+ *
+ * The production code uses fire-and-forget dynamic imports, so we replicate
+ * the mapping logic in a testable helper (same pattern as createStreamSender above).
+ */
+describe('Stream Event → Workspace Event Emission', () => {
+  let mockMainDispatch: ReturnType<typeof vi.fn>;
+  let mockEmitWorkspaceEvent: ReturnType<typeof vi.fn>;
+  let mockCreateWorkspaceEvent: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMainDispatch = vi.fn();
+    mockEmitWorkspaceEvent = vi.fn((event: any) => ({ type: 'EMIT_WORKSPACE_EVENT', payload: event }));
+    mockCreateWorkspaceEvent = vi.fn((type: string, workspaceId: string, actor: any, data: any) => ({
+      id: 'evt_test',
+      type,
+      workspaceId,
+      actor,
+      data,
+      timestamp: new Date().toISOString(),
+    }));
+  });
+
+  /**
+   * Replicates the emitStreamEventToWorkspaceEvents logic from
+   * agent-backend-handler.service.ts (line ~4896).
+   * Instead of dynamic imports, it takes the dependencies as parameters.
+   */
+  function emitStreamEventToWorkspaceEvents(
+    agentId: string,
+    workspaceId: string,
+    data: any,
+    deps: {
+      mainDispatch: typeof mockMainDispatch;
+      emitWorkspaceEvent: typeof mockEmitWorkspaceEvent;
+      createWorkspaceEvent: typeof mockCreateWorkspaceEvent;
+    },
+  ): void {
+    let eventType: string | undefined;
+    let eventData: any;
+
+    switch (data.type) {
+      case 'chunk':
+        eventType = 'agent:stream:chunk';
+        eventData = { agentId, content: data.data, streamId: data.streamId };
+        break;
+      case 'content-blocks':
+        eventType = 'agent:stream:content-blocks';
+        eventData = { agentId, content: data.data, streamId: data.streamId };
+        break;
+      case 'complete':
+        eventType = 'agent:stream:end';
+        eventData = { agentId, streamId: data.streamId };
+        break;
+      case 'error':
+        eventType = 'agent:stream:end';
+        eventData = { agentId, streamId: data.streamId };
+        break;
+      default:
+        return;
+    }
+
+    deps.mainDispatch(deps.emitWorkspaceEvent(deps.createWorkspaceEvent(
+      eventType as any,
+      workspaceId,
+      { type: 'system' as const, id: agentId },
+      eventData,
+    )));
+  }
+
+  it('should emit agent:stream:chunk for chunk data type', () => {
+    emitStreamEventToWorkspaceEvents('agent-1', 'ws-1', {
+      type: 'chunk',
+      data: 'Hello world',
+      streamId: 'stream-1',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).toHaveBeenCalledWith(
+      'agent:stream:chunk',
+      'ws-1',
+      { type: 'system', id: 'agent-1' },
+      { agentId: 'agent-1', content: 'Hello world', streamId: 'stream-1' },
+    );
+    expect(mockMainDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should emit agent:stream:content-blocks for content-blocks data type', () => {
+    const blocks = [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }];
+    emitStreamEventToWorkspaceEvents('agent-2', 'ws-2', {
+      type: 'content-blocks',
+      data: blocks,
+      streamId: 'stream-2',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).toHaveBeenCalledWith(
+      'agent:stream:content-blocks',
+      'ws-2',
+      { type: 'system', id: 'agent-2' },
+      { agentId: 'agent-2', content: blocks, streamId: 'stream-2' },
+    );
+    expect(mockMainDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should emit agent:stream:end for complete data type', () => {
+    emitStreamEventToWorkspaceEvents('agent-3', 'ws-3', {
+      type: 'complete',
+      streamId: 'stream-3',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).toHaveBeenCalledWith(
+      'agent:stream:end',
+      'ws-3',
+      { type: 'system', id: 'agent-3' },
+      { agentId: 'agent-3', streamId: 'stream-3' },
+    );
+    expect(mockMainDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should emit agent:stream:end for error data type', () => {
+    emitStreamEventToWorkspaceEvents('agent-4', 'ws-4', {
+      type: 'error',
+      error: 'Something went wrong',
+      streamId: 'stream-4',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).toHaveBeenCalledWith(
+      'agent:stream:end',
+      'ws-4',
+      { type: 'system', id: 'agent-4' },
+      { agentId: 'agent-4', streamId: 'stream-4' },
+    );
+    expect(mockMainDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should NOT emit events for status data type', () => {
+    emitStreamEventToWorkspaceEvents('agent-5', 'ws-5', {
+      type: 'status',
+      data: { phase: 'thinking', message: 'Processing...', level: 'info', timestamp: Date.now() },
+      streamId: 'stream-5',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).not.toHaveBeenCalled();
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it('should NOT emit events for ping data type', () => {
+    emitStreamEventToWorkspaceEvents('agent-6', 'ws-6', {
+      type: 'ping',
+      timestamp: Date.now(),
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).not.toHaveBeenCalled();
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it('should NOT emit events for unknown data types', () => {
+    emitStreamEventToWorkspaceEvents('agent-7', 'ws-7', {
+      type: 'some-unknown-type',
+      data: 'whatever',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    expect(mockCreateWorkspaceEvent).not.toHaveBeenCalled();
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it('should include correct agentId and streamId in event data for chunk', () => {
+    emitStreamEventToWorkspaceEvents('my-agent-id', 'my-workspace', {
+      type: 'chunk',
+      data: 'token',
+      streamId: 'my-stream',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    const eventData = mockCreateWorkspaceEvent.mock.calls[0][3];
+    expect(eventData).toEqual({
+      agentId: 'my-agent-id',
+      content: 'token',
+      streamId: 'my-stream',
+    });
+  });
+
+  it('should use system actor type with agentId as actor id', () => {
+    emitStreamEventToWorkspaceEvents('agent-actor-test', 'ws-actor', {
+      type: 'chunk',
+      data: 'test',
+      streamId: 'stream-actor',
+    }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+
+    const actor = mockCreateWorkspaceEvent.mock.calls[0][2];
+    expect(actor).toEqual({ type: 'system', id: 'agent-actor-test' });
+  });
+
+  it('should not throw when dependencies fail (fire-and-forget pattern)', () => {
+    // Simulate the fire-and-forget pattern where the .catch(() => {}) swallows errors
+    // In the real code, the dynamic import chain has .catch(() => {})
+    // Here we verify the mapping itself doesn't throw for edge cases
+    expect(() => {
+      emitStreamEventToWorkspaceEvents('agent-x', 'ws-x', {
+        type: 'chunk',
+        data: undefined,
+        streamId: undefined,
+      }, { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent });
+    }).not.toThrow();
+
+    // Verify it still emits even with undefined data
+    expect(mockMainDispatch).toHaveBeenCalledTimes(1);
+  });
+});

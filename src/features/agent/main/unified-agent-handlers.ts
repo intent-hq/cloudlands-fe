@@ -57,6 +57,7 @@ import {
   AgentQueueMessageSchema,
   AgentEditQueuedMessageSchema,
   AgentRemoveQueuedMessageSchema,
+  AgentForceMessageSchema,
   AgentGetQueueSchema,
   EmptySchema,
 } from '../../../main/ipc-schemas';
@@ -133,6 +134,14 @@ export interface IAgentBackendService {
   removeQueuedMessage(request: {
     agentId: string;
     messageId: string;
+  }): Promise<{ success: boolean; error?: string }>;
+  forceMessage(request: {
+    agentId: string;
+    messageId: string;
+    content: string;
+    workspaceId: string;
+    imageBlocks?: any[];
+    noteIds?: string[];
   }): Promise<{ success: boolean; error?: string }>;
   getQueue(request: {
     agentId: string;
@@ -1177,6 +1186,19 @@ function registerQueueHandlers(backend: IAgentBackendService): void {
         return formatIpcSuccess(response);
       },
       AGENT_BACKEND_CHANNELS.REMOVE_QUEUED,
+    ),
+  );
+
+  // Force-send a queued message (stop + remove + send atomically)
+  ipcMain.handle(
+    AGENT_BACKEND_CHANNELS.FORCE_MESSAGE,
+    createSafeValidatedHandler(
+      AgentForceMessageSchema,
+      async (_event, validated) => {
+        const response = await backend.forceMessage(validated as any);
+        return formatIpcSuccess(response);
+      },
+      AGENT_BACKEND_CHANNELS.FORCE_MESSAGE,
     ),
   );
 

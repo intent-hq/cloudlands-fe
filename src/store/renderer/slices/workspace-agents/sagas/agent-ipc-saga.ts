@@ -1177,7 +1177,7 @@ export function* watchPagehideSaga() {
 }
 
 // ============================================================================
-// 10. Backend stream reconnect — debounced via takeLatest + delay
+// 9. Backend stream reconnect — debounced via takeLatest + delay
 // ============================================================================
 
 function* handleBackendStreamReconnect(): SagaGenerator<void> {

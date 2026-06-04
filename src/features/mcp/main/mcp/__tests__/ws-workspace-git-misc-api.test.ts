@@ -35,6 +35,15 @@ vi.mock('$features/system/main/system.ipc', () => ({
 
 vi.mock('$features/events/types', () => ({
   createWorkspaceEvent: vi.fn().mockReturnValue({ id: 'evt-1' }),
+  WorkspaceEventType: { AgentRenamed: 'agent:renamed' },
+}));
+
+vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn(),
+}));
+
+vi.mock('../../../../../store/main/slices/workspace-events/workspace-events-slice', () => ({
+  emitWorkspaceEvent: vi.fn().mockReturnValue({ type: 'workspaceEvents/emitWorkspaceEvent', payload: [] }),
 }));
 
 vi.mock('$lib/utils/workspace-validation', () => ({
@@ -239,7 +248,7 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('delegates to UnifiedPersistence.renameAgent and sends IPC event', async () => {
+  it('delegates to UnifiedPersistence.renameAgent and emits a workspace event', async () => {
     const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'My Custom Name' });
     const invalidateLoadCache = vi.fn();
     vi.doMock('$features/agent/main/agent-persistence', () => ({
@@ -266,15 +275,22 @@ describe('buildWorkspaceApi – setAgentName', () => {
       skipIfExplicitlySet: true,
     });
 
-    // IPC event
-    const { sendToWorkspaceWindows: mockSend } = await import(
-      '$features/system/main/system.ipc'
+    // Verify workspace event is emitted (replaced direct IPC call)
+    const { createWorkspaceEvent: mockCreate } = await import('$features/events/types');
+    const { emitWorkspaceEvent: mockEmit } = await import(
+      '../../../../../store/main/slices/workspace-events/workspace-events-slice'
     );
-    expect(mockSend).toHaveBeenCalledWith(workspaceId, 'agent:renamed', {
-      agentId,
+    const { mainDispatch: mockDispatch } = await import(
+      '../../../../../store/main/redux-store-bridge'
+    );
+    expect(mockCreate).toHaveBeenCalledWith(
+      'agent:renamed',
       workspaceId,
-      name: 'My Custom Name',
-    });
+      { type: 'user', id: 'user' },
+      { agentId, workspaceId, name: 'My Custom Name' },
+    );
+    expect(mockEmit).toHaveBeenCalled();
+    expect(mockDispatch).toHaveBeenCalled();
 
     vi.doUnmock('$features/agent/main/agent-persistence');
   });

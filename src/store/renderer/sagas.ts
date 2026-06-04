@@ -85,6 +85,7 @@ import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/ag
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
 import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
+import { websocketApiSaga } from "./slices/websocket-api/sagas/websocket-api-saga";
 import { uiHighlightSaga } from "./slices/ui-highlight/sagas/ui-highlight-saga";
 import { settingsProposalHistorySaga } from "./slices/settings-proposal-history/sagas/settings-proposal-history-saga";
 import { specialistProposalHistorySaga } from "./slices/specialist-proposal-history/sagas/specialist-proposal-history-saga";
@@ -174,6 +175,7 @@ export const sagas = [
   agentSubscriptionUISaga,
   agentAvailabilitySaga,
   sessionStatsSaga,
+  websocketApiSaga,
   sagaCrashSentrySaga,
   uiHighlightSaga,
   settingsProposalHistorySaga,

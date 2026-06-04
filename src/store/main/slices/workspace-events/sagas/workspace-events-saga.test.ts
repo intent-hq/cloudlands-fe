@@ -73,6 +73,39 @@ describe("handleBroadcastEvent", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Filtered subscription delivery saga
+// ---------------------------------------------------------------------------
+
+describe("handleDeliverToRendererSubscriptions", () => {
+  it("delivers accepted events to renderer and WebSocket subscription adapters", async () => {
+    vi.resetModules();
+    const deliverEventToSubscriptions = vi.fn();
+    const deliverEventToWebSocketSubscriptions = vi.fn();
+
+    vi.doMock("../../../../../features/events/main/renderer-subscription-registry", () => ({
+      deliverEventToSubscriptions,
+    }));
+    vi.doMock("../../../../../main/websocket-event-bridge", () => ({
+      deliverEventToWebSocketSubscriptions,
+    }));
+
+    const { handleDeliverToRendererSubscriptions } = await import(
+      "./renderer-subscription-saga"
+    );
+    const event = makeEvent("e-subscriptions");
+
+    await expectSaga(handleDeliverToRendererSubscriptions, workspaceEventAccepted(event))
+      .run();
+
+    expect(deliverEventToSubscriptions).toHaveBeenCalledWith(event);
+    expect(deliverEventToWebSocketSubscriptions).toHaveBeenCalledWith(event);
+
+    vi.doUnmock("../../../../../features/events/main/renderer-subscription-registry");
+    vi.doUnmock("../../../../../main/websocket-event-bridge");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // broadcastToStdio
 // ---------------------------------------------------------------------------
 
@@ -169,6 +202,47 @@ describe("dedup cache", () => {
     const later = makeEvent("e2");
     const laterTs = ts + 3000; // 3s later, outside 2s window
     expect(isDuplicateEvent(later, laterTs)).toBe(false);
+  });
+
+  it("never deduplicates agent:stream:chunk events", () => {
+    const e1 = makeEvent("s1", "agent:stream:chunk");
+    const e2 = makeEvent("s2", "agent:stream:chunk");
+    const ts = Date.now();
+    expect(isDuplicateEvent(e1, ts)).toBe(false);
+    expect(isDuplicateEvent(e2, ts + 50)).toBe(false);
+  });
+
+  it("never deduplicates agent:stream:content-blocks events", () => {
+    const e1 = makeEvent("s1", "agent:stream:content-blocks");
+    const e2 = makeEvent("s2", "agent:stream:content-blocks");
+    const ts = Date.now();
+    expect(isDuplicateEvent(e1, ts)).toBe(false);
+    expect(isDuplicateEvent(e2, ts + 50)).toBe(false);
+  });
+
+  it("never deduplicates agent:stream:end events", () => {
+    const e1 = makeEvent("s1", "agent:stream:end");
+    const e2 = makeEvent("s2", "agent:stream:end");
+    const ts = Date.now();
+    expect(isDuplicateEvent(e1, ts)).toBe(false);
+    expect(isDuplicateEvent(e2, ts + 50)).toBe(false);
+  });
+
+  it("never deduplicates agent:user-message:sent events", () => {
+    const e1 = makeEvent("m1", "agent:user-message:sent");
+    const e2 = makeEvent("m2", "agent:user-message:sent");
+    const ts = Date.now();
+    expect(isDuplicateEvent(e1, ts)).toBe(false);
+    expect(isDuplicateEvent(e2, ts + 50)).toBe(false);
+  });
+
+  it("still deduplicates regular events like file:changed", () => {
+    const e1 = makeEvent("f1", "file:changed");
+    const e2 = makeEvent("f2", "file:changed");
+    const ts = Date.now();
+    isDuplicateEvent(e1, ts);
+    // Same dedup key (same type, workspaceId, data.path, actor.id)
+    expect(isDuplicateEvent(e2, ts + 500)).toBe(true);
   });
 
   it("clearAllCaches resets dedup state", () => {
