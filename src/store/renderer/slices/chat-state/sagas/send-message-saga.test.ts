@@ -254,6 +254,10 @@ import {
   chatSendStarted,
   chatSendFailed,
 } from "../chat-state-slice";
+import {
+  removeQueuedMessageFromAgentQueue,
+  setAgentQueueError,
+} from "../../agent-queue/agent-queue-slice";
 
 
 // ============================================================================
@@ -1127,24 +1131,35 @@ describe("send-message-saga", () => {
     });
 
     it("removes a queued message in the saga before replaying it", async () => {
-      await runSendMessageSaga({
+      const { dispatched } = await runSendMessageSaga({
         queuedMessageId: "queued-1",
         skipQueueCheck: true,
       });
 
       expect(mockRemoveQueuedMessage).toHaveBeenCalledWith(AGENT_ID, "queued-1");
+      const removeIdx = dispatched.findIndex(
+        (a) => a.type === removeQueuedMessageFromAgentQueue.type,
+      );
+      const sendStartedIdx = dispatched.findIndex((a) => a.type === chatSendStarted.type);
+      expect(dispatched[removeIdx]).toEqual(
+        removeQueuedMessageFromAgentQueue(AGENT_ID, "queued-1"),
+      );
+      expect(sendStartedIdx).toBeGreaterThan(removeIdx);
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
     });
 
     it("does not replay a queued message when saga-owned queue removal fails", async () => {
       mockRemoveQueuedMessage.mockResolvedValueOnce({ success: false, error: "remove failed" });
 
-      await runSendMessageSaga({
+      const { dispatched } = await runSendMessageSaga({
         queuedMessageId: "queued-1",
         skipQueueCheck: true,
       });
 
       expect(mockRemoveQueuedMessage).toHaveBeenCalledWith(AGENT_ID, "queued-1");
+      expect(dispatched).toContainEqual(setAgentQueueError(AGENT_ID, "remove failed"));
+      expect(dispatched.find((a) => a.type === removeQueuedMessageFromAgentQueue.type)).toBeUndefined();
+      expect(dispatched.find((a) => a.type === chatSendStarted.type)).toBeUndefined();
       expect(mockSendMessage).not.toHaveBeenCalled();
     });
 

@@ -40,12 +40,15 @@ async function flushMicrotasks() {
 
 // typed-redux-saga not used directly in tests but needed for type context
 import {
+  addSubscription,
+  appendDelegationGroupEvent,
   clearAgentQueue,
   enqueueEvent,
   recordDeliveryFailure,
   recordDeliverySuccess,
   recordDeliveryTimeout,
   recordDroppedEvents,
+  markDelegationAgentCompleted,
   markDelegationDelivered,
   markOneShotFired,
   removeDelegationGroup,
@@ -104,6 +107,7 @@ import {
 } from "./cleanup-saga";
 import {
   handleMatchEvent,
+  handleNewSubscriptionCatchUp,
   activeBatchTimers,
   batchFlushWorker,
   processingOneShots,
@@ -2232,6 +2236,125 @@ describe("sweep catch-up double-delivery prevention", () => {
         const filtered = filterAlreadyDelivered(COORDINATOR, [syntheticEvent]);
         expect(filtered).toHaveLength(0); // should be filtered out
       });
+  });
+
+  it("subscription catch-up uses deterministic ID and suppresses overlapping live event once", async () => {
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-catchup-overlap",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    const deterministicId = buildSweepCatchUpEventId(
+      sub.id,
+      WATCHED_AGENT,
+      "agent:idle",
+    );
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      agentStatuses: { [WATCHED_AGENT]: "idle" },
+    };
+    let capturedEventId: string | undefined;
+
+    await expectSaga(handleNewSubscriptionCatchUp, addSubscription(WS, sub))
+      .provide({
+        select(effect: any, next: () => any) {
+          if (effect.selector === selectWorkspaceSubscriptionState.select) {
+            return wsState;
+          }
+          return next();
+        },
+        call(effect: any, next: () => any) {
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+        put(effect: any, next: () => any) {
+          if (effect.action?.type === enqueueEvent.type) {
+            capturedEventId = effect.action.payload?.[2]?.event?.id;
+          }
+          return next();
+        },
+      })
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+
+    expect(capturedEventId).toBe(deterministicId);
+    expect(sweepCatchUpSeen.has(dedupeKey)).toBe(true);
+
+    const liveEvent = makeEvent("live-idle-overlap", "agent:idle");
+    (liveEvent as any).workspaceId = WS;
+    (liveEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(liveEvent))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+        [matchers.select(selectAgentStatus.select, WS, COORDINATOR), "idle"],
+      ])
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+
+    expect(sweepCatchUpSeen.has(dedupeKey)).toBe(false);
+  });
+
+  it("catch-up suppression also applies before delegation-group delivery", async () => {
+    const groupId = "group-catchup-overlap";
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-deleg-catchup-overlap",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        delegationGroup: {
+          groupId,
+          awaitMode: "all",
+          expectedAgentIds: [WATCHED_AGENT],
+        },
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    sweepCatchUpSeen.add(dedupeKey);
+
+    const liveEvent = makeEvent("deleg-live-idle-overlap", "agent:idle");
+    (liveEvent as any).workspaceId = WS;
+    (liveEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(liveEvent))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      .not.put(appendDelegationGroupEvent(WS, groupId, liveEvent))
+      .not.put(markDelegationAgentCompleted(WS, groupId, WATCHED_AGENT))
+      .run();
+
+    expect(sweepCatchUpSeen.has(dedupeKey)).toBe(false);
+
+    const laterEvent = makeEvent("deleg-live-idle-later", "agent:idle");
+    (laterEvent as any).workspaceId = WS;
+    (laterEvent as any).actor = { type: "agent", id: WATCHED_AGENT };
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(laterEvent))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, COORDINATOR), false],
+      ])
+      .put(appendDelegationGroupEvent(WS, groupId, laterEvent))
+      .put(markDelegationAgentCompleted(WS, groupId, WATCHED_AGENT))
+      .run();
   });
 
   it("sweep dedup guard does NOT suppress handleMatchEvent for events without actorIds in filter", () => {

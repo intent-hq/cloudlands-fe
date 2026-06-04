@@ -3066,6 +3066,60 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
     const msgs = getMsgs(state, 'a1');
     expect(msgs.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
+
+  it('keeps a user reply before a near-simultaneous assistant reply on replaceMessages', () => {
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    const user = makeUniqueMessage('msg_user', 'user', '2024-01-01T00:00:01.010Z');
+    const assistant = makeUniqueMessage(
+      'msg_assistant',
+      'assistant',
+      '2024-01-01T00:00:01.000Z',
+    );
+
+    state = agentSessionReducer(state, replaceMessages('a1', [user, assistant]));
+
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_user', 'msg_assistant']);
+  });
+
+  it('orders an out-of-order orphan assistant append after its user reply', () => {
+    const assistant = {
+      ...makeUniqueMessage('msg_assistant', 'assistant', '2024-01-01T00:00:01.000Z'),
+      isStreaming: true,
+      streamingComplete: false,
+    };
+    const user = makeUniqueMessage('msg_user', 'user', '2024-01-01T00:00:01.010Z');
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { messages: [assistant] })),
+    );
+
+    state = agentSessionReducer(state, addMessage('a1', user));
+
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_user', 'msg_assistant']);
+  });
+
+  it('does not move a new user reply above the previous assistant turn', () => {
+    const previousUser = makeUniqueMessage('msg_user_1', 'user', '2024-01-01T00:00:01.000Z');
+    const previousAssistant = makeUniqueMessage(
+      'msg_assistant_1',
+      'assistant',
+      '2024-01-01T00:00:01.500Z',
+    );
+    const nextUser = makeUniqueMessage('msg_user_2', 'user', '2024-01-01T00:00:01.510Z');
+
+    const state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', { messages: [previousUser, previousAssistant, nextUser] }),
+      ),
+    );
+
+    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual([
+      'msg_user_1',
+      'msg_assistant_1',
+      'msg_user_2',
+    ]);
+  });
 });
 
 describe('fixture regression: agent-b93c1222-corrupted.json', () => {

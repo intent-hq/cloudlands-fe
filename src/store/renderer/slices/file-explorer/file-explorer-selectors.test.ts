@@ -839,6 +839,27 @@ describe("selectFlattenedNodes — compacted directory expansion", () => {
     expect(findByPath(flat, "/a/repo/src/lib/components/utils.ts")).toBeDefined();
   });
 
+  it("keeps an auto-expanded single-directory chain as one expanded compacted row", () => {
+    const flat = selectFlattenedNodes.select(
+      compactedState(
+        [WORKSPACE_PATH, "/a/repo/src", "/a/repo/src/lib", "/a/repo/src/lib/components"],
+        {},
+        makeDeepCompactedTree(),
+      ),
+      WS_ID,
+    );
+
+    const compactedRow = findByPath(flat, "/a/repo/src/lib/components");
+    expect(compactedRow?.displayPath).toBe("src/lib/components");
+    expect(compactedRow?.isExpanded).toBe(true);
+    expect(compactedRow?.compactedExpandedPaths).toEqual([
+      "/a/repo/src",
+      "/a/repo/src/lib",
+      "/a/repo/src/lib/components",
+    ]);
+    expect(findByPath(flat, "/a/repo/src/lib/components/utils.ts")?.depth).toBe(1);
+  });
+
   it("keeps metadata enrichment on descendants below an expanded compacted row", () => {
     const flat = selectFlattenedNodes.select(
       compactedState([WORKSPACE_PATH, "/a/repo/src"], {

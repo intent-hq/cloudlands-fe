@@ -14,6 +14,7 @@ import {
   clearAgentQueue,
   hydrateAgentQueueRequested,
   initialState,
+  removeQueuedMessageFromAgentQueue,
   replaceAgentQueue,
   setAgentQueueError,
   setAgentQueueHydrating,
@@ -73,6 +74,124 @@ describe("agentQueueReducer", () => {
 
     expect(cleared.byAgentId[AGENT_ID]).toBeUndefined();
     expect(unchanged).toBe(cleared);
+  });
+
+  it("removes one queued message and repositions remaining messages", () => {
+    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
+      message("m1", 0),
+      message("m2", 1),
+      message("m3", 2),
+    ]));
+    const next = agentQueueReducer(state, removeQueuedMessageFromAgentQueue(AGENT_ID, "m2"));
+    const unchanged = agentQueueReducer(next, removeQueuedMessageFromAgentQueue(AGENT_ID, "m2"));
+
+    expect(getItems(next.byAgentId[AGENT_ID].messages).map((item) => [item.id, item.position])).toEqual([
+      ["m1", 0],
+      ["m3", 1],
+    ]);
+    expect(getItem(next.byAgentId[AGENT_ID].messages, "m2")).toBeUndefined();
+    expect(unchanged).toBe(next);
+  });
+
+  it("records removal tombstones without a local queued message and suppresses stale snapshots", () => {
+    const removedBeforeHydration = agentQueueReducer(
+      initialState,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "sent-before-hydration"),
+    );
+    const staleAfterMissingEntry = agentQueueReducer(
+      removedBeforeHydration,
+      replaceAgentQueue(AGENT_ID, [
+        message("sent-before-hydration", 0),
+        message("still-queued", 1),
+      ]),
+    );
+    const hydrated = agentQueueReducer(
+      initialState,
+      replaceAgentQueue(AGENT_ID, [message("still-local", 0)]),
+    );
+    const removedMissingMessage = agentQueueReducer(
+      hydrated,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "sent-missing-locally"),
+    );
+    const staleAfterMissingMessage = agentQueueReducer(
+      removedMissingMessage,
+      replaceAgentQueue(AGENT_ID, [
+        message("sent-missing-locally", 0),
+        message("still-local", 1),
+      ]),
+    );
+
+    expect(removedBeforeHydration.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([
+      "sent-before-hydration",
+    ]);
+    expect(getItems(staleAfterMissingEntry.byAgentId[AGENT_ID].messages).map((item) => [
+      item.id,
+      item.position,
+    ])).toEqual([["still-queued", 0]]);
+    expect(removedMissingMessage.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([
+      "sent-missing-locally",
+    ]);
+    expect(getItems(staleAfterMissingMessage.byAgentId[AGENT_ID].messages).map((item) => [
+      item.id,
+      item.position,
+    ])).toEqual([["still-local", 0]]);
+  });
+
+  it("does not reintroduce a removed queued message from a stale queue snapshot", () => {
+    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
+      message("sent-now", 0),
+      message("still-queued", 1),
+    ]));
+    const removed = agentQueueReducer(
+      state,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "sent-now"),
+    );
+    const staleReplacement = agentQueueReducer(
+      removed,
+      replaceAgentQueue(AGENT_ID, [
+        message("sent-now", 0),
+        message("still-queued", 1),
+        message("newer", 2),
+      ]),
+    );
+
+    expect(getItems(staleReplacement.byAgentId[AGENT_ID].messages).map((item) => [
+      item.id,
+      item.position,
+    ])).toEqual([
+      ["still-queued", 0],
+      ["newer", 1],
+    ]);
+    expect(getItem(staleReplacement.byAgentId[AGENT_ID].messages, "sent-now")).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(staleReplacement))).toEqual(staleReplacement);
+  });
+
+  it("keeps stale suppression bounded so old removed IDs can appear in future snapshots", () => {
+    let state = initialState;
+    for (let index = 0; index < 101; index++) {
+      state = agentQueueReducer(
+        state,
+        replaceAgentQueue(AGENT_ID, [message(`removed-${index}`, 0)]),
+      );
+      state = agentQueueReducer(
+        state,
+        removeQueuedMessageFromAgentQueue(AGENT_ID, `removed-${index}`),
+      );
+    }
+
+    const next = agentQueueReducer(
+      state,
+      replaceAgentQueue(AGENT_ID, [
+        message("removed-0", 0),
+        message("removed-100", 1),
+        message("unrelated", 2),
+      ]),
+    );
+
+    expect(getItems(next.byAgentId[AGENT_ID].messages).map((item) => item.id)).toEqual([
+      "removed-0",
+      "unrelated",
+    ]);
   });
 
   it("sets and clears hydration without creating an idle unknown queue", () => {

@@ -1430,7 +1430,10 @@ export class AgentBackendHandler {
     try {
       inFlightPromptKey = await this.tryBeginSessionPrompt(request);
       if (!inFlightPromptKey) {
-        return { success: true };
+        return {
+          success: false,
+          error: 'Agent already has an in-flight prompt. Message was not delivered.',
+        };
       }
 
       // Log the full request to debug behaviorPrompt passing
@@ -7332,6 +7335,38 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     });
   }
 
+  private hasCompletedAssistantResponseAfterWakeMessage(
+    messages: AgentMessage[] | undefined,
+    existingWakeMessage: AgentMessage,
+  ): boolean {
+    if (!messages?.length) return false;
+
+    const wakeMessageIndex = messages.findIndex(
+      (message) => message.id === existingWakeMessage.id,
+    );
+    if (wakeMessageIndex < 0) return false;
+
+    for (const message of messages.slice(wakeMessageIndex + 1)) {
+      if (message?.role === 'user') return false;
+      if (message?.role !== 'assistant') continue;
+      if (message.isStreaming === true || message.streamingComplete === false) continue;
+      if (message.error || message.errorCode) continue;
+
+      const metadata = message.metadata ?? {};
+      if (metadata.interrupted || metadata.timedOut || metadata.isError) continue;
+
+      if (
+        message.streamingComplete === true ||
+        typeof message.appMessageId === 'string' ||
+        typeof metadata.stopReason === 'string'
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private truncateMessagesAfterExistingWakeMessage(
     messages: AgentMessage[],
     existingWakeMessage: AgentMessage,
@@ -7601,6 +7636,25 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           ? this.findExistingEventNotificationWakeMessage(loadedMessages, eventNotificationKey)
           : undefined;
 
+        if (
+          existingWakeMessage &&
+          this.hasCompletedAssistantResponseAfterWakeMessage(loadedMessages, existingWakeMessage)
+        ) {
+          // Exact duplicate event notifications can be retried after the agent
+          // already answered the wake. Skip only in that completed state so
+          // interrupted/in-flight retries and distinct later lifecycle events
+          // still deliver normally.
+          logger.info(
+            'Backend-initiated message: duplicate event notification already completed, skipping delivery (no-provider path)',
+            {
+              agentId: sessionId,
+              wakeMessageId: existingWakeMessage.id,
+              eventNotificationKey,
+            },
+          );
+          return { success: true };
+        }
+
         // Construct the wake message to include in agent:created
         // This ensures the frontend sessionStore has the message from the beginning
         const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
@@ -7868,6 +7922,28 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
             eventNotificationKey,
           )
         : undefined;
+
+      if (
+        existingWakeMessage &&
+        this.hasCompletedAssistantResponseAfterWakeMessage(
+          existingSession?.messages,
+          existingWakeMessage,
+        )
+      ) {
+        // Exact duplicate event notifications can be retried after the agent
+        // already answered the wake. Skip only in that completed state so
+        // interrupted/in-flight retries and distinct later lifecycle events
+        // still deliver normally.
+        logger.info(
+          'Backend-initiated message: duplicate event notification already completed, skipping delivery',
+          {
+            agentId: sessionId,
+            wakeMessageId: existingWakeMessage.id,
+            eventNotificationKey,
+          },
+        );
+        return { success: true };
+      }
 
       // Create the wake message with metadata so frontend can display it
       // This is critical for showing the EventWakeupBanner in the chat history
@@ -8752,6 +8828,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Declare nextMessage outside the try block so it's accessible in the catch block
     let nextMessage: QueuedMessage | undefined;
+    let queueProcessingNotified = false;
+    let removedFromQueue = false;
+    let queueTargetWindows: number[] = [];
 
     // CRITICAL FIX: Peek at the next message WITHOUT removing it from the queue.
     // We only remove it after handleBackendStreamMessage succeeds.
@@ -8822,7 +8901,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         messageId: nextMessage.id,
         hasActiveWindow,
       });
-      const queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
+      queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
       const processingData = {
         agentId,
         messageId: nextMessage.id,
@@ -8839,6 +8918,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       );
       // Emit to workspace events for WebSocket clients
       this.emitQueueWorkspaceEvent('agent:queue:processing', agentId, workspaceId, processingData);
+      queueProcessingNotified = true;
       // Don't send queue:updated yet — message is still in the queue until send succeeds
 
       // Wait for frontend to re-register stream handler before starting new stream.
@@ -8902,6 +8982,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // By removing the message from the source-of-truth queue immediately, the UI
       // stays in sync. If send fails, we re-add the message in the catch block.
       queue.shift(); // Remove nextMessage from the internal queue
+      removedFromQueue = true;
       queue.forEach((m, i) => {
         m.position = i;
       });
@@ -8916,7 +8997,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       // Send the message using the existing handler
       // Pass the queue message ID so the backend uses the same ID as the frontend
-      await this.handleBackendStreamMessage(null as any, {
+      const sendResult = await this.handleBackendStreamMessage(null as any, {
         agentId,
         sessionId: agentId,
         streamId: agentId,
@@ -8928,6 +9009,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         queuedMessageAppMessageId: nextMessage.appMessageId,
         assistantAppMessageId,
       });
+
+      if (!sendResult.success) {
+        throw new Error(sendResult.error || 'Queued message backend stream did not start');
+      }
 
       // SUCCESS: Message was already removed from the queue above.
       // Just log success — no additional removal needed.
@@ -8944,8 +9029,14 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // The message was removed above before attempting to send, so we must restore it.
       const currentQueue = this.messageQueues.get(agentId);
       if (currentQueue) {
-        // Re-add to front of queue for retry on next onComplete cycle
-        currentQueue.unshift(nextMessage);
+        // Re-add to front of queue for retry on next onComplete cycle if it was
+        // already removed from the source-of-truth queue. If the failure happened
+        // before removal, avoid duplicating the queued message.
+        if (removedFromQueue) {
+          currentQueue.unshift(nextMessage);
+        } else if (!currentQueue.some((message) => message.id === nextMessage?.id)) {
+          currentQueue.unshift(nextMessage);
+        }
         currentQueue.forEach((m, i) => {
           m.position = i;
         });
@@ -8959,6 +9050,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           messageId: nextMessage.id,
           queueLength: currentQueue.length,
         });
+      }
+
+      if (queueProcessingNotified) {
+        const cancelledData = {
+          agentId,
+          messageId: nextMessage.id,
+        };
+        this.sendToRenderer(
+          'agent:queue:processing-cancelled',
+          cancelledData,
+          queueTargetWindows,
+        );
+        // Emit to workspace events for WebSocket clients
+        this.emitQueueWorkspaceEvent('agent:queue:processing-cancelled', agentId, workspaceId, cancelledData);
       }
 
       // SAFETY: Clean up streamStartTimes if it was set during the failed

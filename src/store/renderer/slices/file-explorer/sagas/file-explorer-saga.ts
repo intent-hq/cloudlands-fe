@@ -58,6 +58,7 @@ import {
   refreshAgentFileEditsRequested,
   syncGitStatusFromStoresRequested,
   debouncedFileTrackingSync,
+  debouncedDirectoryRefresh,
   debouncedAgentFileEditsRefresh,
   setFileExplorerLoading,
   setFileExplorerInitialized,
@@ -161,6 +162,13 @@ function hasLoadedDirectoryChildren(
 ): boolean {
   const node = getTreeNode(ws, path);
   return node?.type === "directory" && node.children.length > 0;
+}
+
+type SingleDirectoryChild = { path: string };
+
+function getOnlyDirectoryChild(children: readonly FileNode[]): SingleDirectoryChild | null {
+  if (children.length !== 1) return null;
+  return children[0].type === "directory" ? children[0] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -594,14 +602,29 @@ export function* handleToggleDirectory(
     return;
   }
 
-  // Expand – load children if needed
+  // Expand – always reload this directory so cached children cannot go stale.
   yield* put(addExpandedPath(wsId, nodePath));
 
-  if (!hasLoadedDirectoryChildren(ws, nodePath)) {
-    yield* put(addLoadingPath(wsId, nodePath));
-    const children = yield* call(loadDirectoryCore, wsId, nodePath);
-    yield* put(setChildrenAtPathAction(wsId, nodePath, children));
-    yield* put(removeLoadingPath(wsId, nodePath));
+  const expandedPaths = new Set(ws.expandedPaths);
+  expandedPaths.add(nodePath);
+  const visitedPaths = new Set<string>([nodePath]);
+  let currentPath = nodePath;
+
+  while (true) {
+    yield* put(addLoadingPath(wsId, currentPath));
+    const children = yield* call(loadDirectoryCore, wsId, currentPath);
+    yield* put(setChildrenAtPathAction(wsId, currentPath, children));
+    yield* put(removeLoadingPath(wsId, currentPath));
+    const onlyDirectoryChild = getOnlyDirectoryChild(children);
+
+    if (!onlyDirectoryChild || visitedPaths.has(onlyDirectoryChild.path)) return;
+
+    currentPath = onlyDirectoryChild.path;
+    visitedPaths.add(currentPath);
+    if (!expandedPaths.has(currentPath)) {
+      expandedPaths.add(currentPath);
+      yield* put(addExpandedPath(wsId, currentPath));
+    }
   }
 }
 
@@ -764,26 +787,23 @@ export function* handleRootNodeReplaced(
 }
 
 // ---------------------------------------------------------------------------
-// Targeted directory refresh (create/delete of a single file)
+// Targeted directory refresh (create/delete of a file or directory)
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the parent directory of a file path.
- * - Trailing "/" → treat the path itself as the directory.
+ * Compute the parent directory of a changed path.
+ * - Trailing "/" → treat the path as a directory and refresh its parent.
  * - Equal to the workspace root → the directory IS the workspace root.
  * - Otherwise strip the final segment.
  * Returns null when the path has no usable separator.
  */
-function computeParentDir(filePath: string, workspacePath: string): string | null {
-  if (!filePath) return null;
-  if (filePath === workspacePath) return workspacePath;
-  if (filePath.endsWith("/")) {
-    const trimmed = filePath.slice(0, -1);
-    return trimmed || null;
-  }
-  const lastSlash = filePath.lastIndexOf("/");
+function computeParentDir(changedPath: string, workspacePath: string): string | null {
+  if (!changedPath) return null;
+  const normalizedPath = changedPath.replace(/\/+$/, "") || changedPath;
+  if (normalizedPath === workspacePath) return workspacePath;
+  const lastSlash = normalizedPath.lastIndexOf("/");
   if (lastSlash <= 0) return null;
-  return filePath.slice(0, lastSlash);
+  return normalizedPath.slice(0, lastSlash);
 }
 
 export function* handleRefreshDirectory(
@@ -1025,7 +1045,40 @@ type FileChangedDetail = {
   files?: string[];
 };
 
+type WatcherFileChangedEvent = {
+  workspaceId?: string;
+  type?: "change" | "add" | "unlink" | string;
+  path?: string;
+  relativePath?: string;
+};
+
 const FILE_CHANGED_REFRESH_DELAY_MS = 300;
+
+function directoryRefreshAction(wsId: string, filePath: string) {
+  return debouncedDirectoryRefresh(refreshDirectoryRequested(wsId, filePath));
+}
+
+function computeParentDirFromActionFilePath(filePath: string): string {
+  if (!filePath) return "";
+  const normalizedPath = filePath.replace(/\/+$/, "") || filePath;
+  const lastSlash = normalizedPath.lastIndexOf("/");
+  return lastSlash > 0 ? normalizedPath.slice(0, lastSlash) : normalizedPath;
+}
+
+function normalizeFileChangeType(type?: string): string | undefined {
+  if (type === "add" || type === "addDir") return "create";
+  if (type === "unlink" || type === "unlinkDir") return "delete";
+  if (type === "modify") return "change";
+  return type;
+}
+
+function getDirectoryRefreshDebounceKey(action: StoreAction<any>): string {
+  const [wsId, filePath] = action.payload ?? [];
+  const parentDir = typeof filePath === "string" ? computeParentDirFromActionFilePath(filePath) : "";
+  return typeof wsId === "string" && wsId.length > 0
+    ? `${action.type}:${wsId}:${parentDir}`
+    : action.type;
+}
 
 /**
  * Pick the first concrete file path from a file:changed event payload.
@@ -1037,21 +1090,35 @@ function extractFilePath(detail: FileChangedDetail): string | undefined {
   return detail.filePath;
 }
 
+function normalizeFilePathForWorkspace(
+  filePath: string,
+  workspacePath: string,
+): string {
+  if (!workspacePath || filePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(filePath)) {
+    return filePath;
+  }
+  const normalizedRelative = filePath.replace(/^\.\/+/, "").replace(/^\/+/, "");
+  if (!normalizedRelative || normalizedRelative === ".") return workspacePath;
+  return `${workspacePath.replace(/\/+$/, "")}/${normalizedRelative}`;
+}
+
 export function* handleFileChangedWindowEvent(detail: FileChangedDetail): SagaGenerator<void> {
   const eventWsId = detail?.workspaceId;
   if (!eventWsId) return;
   const activeWsId = yield* selectActiveWorkspaceId.effect();
   if (eventWsId !== activeWsId) return;
 
-  const changeType = detail?.type;
+  const changeType = normalizeFileChangeType(detail?.type);
   if (changeType === "create" || changeType === "add" || changeType === "delete") {
-    yield* delay(FILE_CHANGED_REFRESH_DELAY_MS);
-    const filePath = extractFilePath(detail);
+    const rawFilePath = extractFilePath(detail);
+    const ws = yield* selectFileExplorerState.effect(eventWsId);
+    const filePath = rawFilePath && normalizeFilePathForWorkspace(rawFilePath, ws.workspacePath);
     if (filePath) {
-      yield* put(refreshDirectoryRequested(eventWsId, filePath));
+      yield* put(directoryRefreshAction(eventWsId, filePath));
     } else {
       // Defensive fallback: emitter didn't include a path, fall back to the
       // full-tree reload so the change doesn't get dropped.
+      yield* delay(FILE_CHANGED_REFRESH_DELAY_MS);
       yield* put(refreshFileExplorer(eventWsId));
     }
     yield* put(agentFileEditsRefreshAction(eventWsId));
@@ -1059,6 +1126,23 @@ export function* handleFileChangedWindowEvent(detail: FileChangedDetail): SagaGe
     yield* put(refreshGitStatusRequested(eventWsId));
     yield* put(agentFileEditsRefreshAction(eventWsId));
   }
+}
+
+export function* handleWatcherFileChangedIPCEvent(
+  event: WatcherFileChangedEvent,
+): SagaGenerator<void> {
+  yield* call(handleFileChangedWindowEvent, {
+    workspaceId: event.workspaceId,
+    type: normalizeFileChangeType(event.type),
+    filePath: event.path ?? event.relativePath,
+  });
+}
+
+function* watchWatcherFileChangedIPC() {
+  yield* takeEveryFromElectronChannel<WatcherFileChangedEvent>(
+    "watcher:file-changed",
+    handleWatcherFileChangedIPCEvent,
+  );
 }
 
 function* watchFileChangedWindowEvent() {
@@ -1079,19 +1163,40 @@ function* watchFileChangedWindowEvent() {
  * from the window CustomEvent shape emitted by Svelte components.
  */
 type MainProcessFileChangedEvent = {
+  type?: "file:changed" | "file:created" | "file:deleted" | string;
   workspaceId?: string;
   data?: {
     path?: string;
     relativePath?: string;
     action?: "create" | "modify" | "delete" | "rename" | string;
     oldPath?: string;
+    files?: Array<
+      string | { path?: string; relativePath?: string; action?: string }
+    >;
   };
 };
+
+function extractMainProcessFilePath(event: MainProcessFileChangedEvent): string | undefined {
+  if (event.data?.path) return event.data.path;
+  if (event.data?.relativePath) return event.data.relativePath;
+  const firstFile = event.data?.files?.[0];
+  if (typeof firstFile === "string") return firstFile;
+  return firstFile?.path ?? firstFile?.relativePath;
+}
+
+function extractMainProcessAction(event: MainProcessFileChangedEvent): string | undefined {
+  if (event.data?.action) return event.data.action;
+  const firstFile = event.data?.files?.[0];
+  if (typeof firstFile === "object" && firstFile?.action) return firstFile.action;
+  if (event.type === "file:created") return "create";
+  if (event.type === "file:deleted") return "delete";
+  return undefined;
+}
 
 function normalizeMainProcessFileChanged(
   event: MainProcessFileChangedEvent,
 ): FileChangedDetail | null {
-  const action = event?.data?.action;
+  const action = extractMainProcessAction(event);
   if (!action) return null;
   // Map the main-process action vocabulary onto the window-event type vocabulary
   // so the shared handler handles both flows identically. 'rename' has no direct
@@ -1105,7 +1210,7 @@ function normalizeMainProcessFileChanged(
   return {
     workspaceId: event.workspaceId,
     type,
-    filePath: event?.data?.path,
+    filePath: extractMainProcessFilePath(event),
   };
 }
 
@@ -1126,6 +1231,20 @@ function* watchFileChangedIPC() {
   );
 }
 
+function* watchFileCreatedIPC() {
+  yield* takeEveryFromElectronChannel<MainProcessFileChangedEvent>(
+    "file:created",
+    handleFileChangedIPCEvent,
+  );
+}
+
+function* watchFileDeletedIPC() {
+  yield* takeEveryFromElectronChannel<MainProcessFileChangedEvent>(
+    "file:deleted",
+    handleFileChangedIPCEvent,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
@@ -1140,9 +1259,18 @@ export function* fileExplorerSaga(): SagaGenerator<void> {
   yield* fork(watchAgentFileChangedIPC);
   yield* fork(watchFileTrackingListenerReadyIPC);
   yield* fork(watchFileChangedWindowEvent);
+  yield* fork(watchWatcherFileChangedIPC);
   yield* fork(watchFileChangedIPC);
+  yield* fork(watchFileCreatedIPC);
+  yield* fork(watchFileDeletedIPC);
   yield* fork(watchWorkspaceEnvironmentConfigForFileExplorer);
   yield* fork(debounceSaga, debouncedFileTrackingSync, 300);
+  yield* fork(
+    debounceWithKeySaga,
+    debouncedDirectoryRefresh,
+    FILE_CHANGED_REFRESH_DELAY_MS,
+    getDirectoryRefreshDebounceKey,
+  );
   yield* fork(
     debounceWithKeySaga,
     debouncedAgentFileEditsRefresh,

@@ -346,15 +346,15 @@ export function* handleMatchEvent(
     logMatch(`[subscriptions] match subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} eventType=${event.type} step=match`);
     const filter = sub.filter;
 
-    // --- Sweep catch-up dedup guard (consume-once) ---
-    // If the periodic sweep already delivered a catch-up for this exact
-    // subscription+actor+eventType combo, skip delivery of the real event
-    // to prevent double-waking the subscriber.  The sweepCatchUpSeen set
-    // is populated by periodicQueueSweep after it enqueues a synthetic
-    // catch-up.  The entry is consumed (deleted) here so that only the
-    // immediate real event is suppressed — future state transitions for
-    // the same agent (e.g. idle → busy → idle) will be delivered normally.
-    if (!filter.delegationGroup && filter.actorIds?.length && event.actor?.id) {
+    // --- Catch-up dedup guard (consume-once) ---
+    // If subscription catch-up or the periodic sweep already delivered a
+    // catch-up for this exact subscription+actor+eventType combo, skip delivery
+    // of the real event to prevent double-waking the subscriber.
+    // sweepCatchUpSeen is populated by handleNewSubscriptionCatchUp and
+    // periodicQueueSweep after they enqueue a synthetic catch-up. The entry is
+    // consumed here so only the immediate real event is suppressed — future
+    // transitions for the same agent (e.g. idle → busy → idle) deliver normally.
+    if (filter.actorIds?.length && event.actor?.id) {
       const sweepDedupeKey = `${sub.id}:${event.actor.id}:${event.type}`;
       if (sweepCatchUpSeen.has(sweepDedupeKey)) {
         sweepCatchUpSeen.delete(sweepDedupeKey); // consume-once: allow future transitions
@@ -515,11 +515,12 @@ const STATUS_TO_EVENT_TYPE: Partial<Record<AgentStatus, string>> = {
  */
 function synthesizeCatchUpEvent(
   wsId: string,
+  subscriptionId: string,
   actorId: string,
   eventType: string,
 ): WorkspaceEvent {
   return {
-    id: `catchup_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+    id: buildSweepCatchUpEventId(subscriptionId, actorId, eventType),
     workspaceId: wsId,
     timestamp: new Date().toISOString(),
     type: eventType,
@@ -586,8 +587,13 @@ export function* handleNewSubscriptionCatchUp(
     });
     if (!typeMatches) continue;
 
-    // Agent already matches — synthesize a catch-up event
-    const catchUpEvent = synthesizeCatchUpEvent(wsId, actorId, matchingEventType);
+    const dedupeKey = `${record.id}:${actorId}:${matchingEventType}`;
+    if (sweepCatchUpSeen.has(dedupeKey)) continue;
+
+    // Agent already matches — synthesize a catch-up event with a deterministic
+    // ID that links subscription catch-up, sweep catch-up, and live-event fallback
+    // delivery for this subscription+actor+eventType combo.
+    const catchUpEvent = synthesizeCatchUpEvent(wsId, record.id, actorId, matchingEventType);
 
     // Route through delegation group or direct queue
     if (filter.delegationGroup) {
@@ -598,6 +604,7 @@ export function* handleNewSubscriptionCatchUp(
       if (!group) continue;
 
       yield* put(appendDelegationGroupEvent(wsId, groupId, catchUpEvent));
+      sweepCatchUpSeen.add(dedupeKey);
 
       // Give the renderer time to observe the subscription before resolving
       yield* delay(1500);
@@ -619,6 +626,7 @@ export function* handleNewSubscriptionCatchUp(
         oneShot: filter.oneShot ?? false,
       };
       yield* put(enqueueEvent(wsId, record.agentId, queuedEvent));
+      sweepCatchUpSeen.add(dedupeKey);
 
       // Give the renderer time to observe the subscription before resolving
       yield* delay(1500);
@@ -631,6 +639,7 @@ export function* handleNewSubscriptionCatchUp(
       if (filter.oneShot) {
         yield* put(markOneShotFired(wsId, record.id));
         yield* put(removeSubscription(wsId, record.id));
+        sweepCatchUpSeen.delete(dedupeKey);
       }
     }
   }

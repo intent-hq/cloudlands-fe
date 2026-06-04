@@ -112,6 +112,10 @@ export const debouncedFileTrackingSync = createAction<[inner: StoreAction<any>]>
   "fileExplorer/debouncedFileTrackingSync",
 );
 
+export const debouncedDirectoryRefresh = createAction<[inner: StoreAction<any>]>(
+  "fileExplorer/debouncedDirectoryRefresh",
+);
+
 export const debouncedAgentFileEditsRefresh = createAction<[inner: StoreAction<any>]>(
   "fileExplorer/debouncedAgentFileEditsRefresh",
 );

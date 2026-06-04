@@ -482,15 +482,15 @@ export const stuckGroupFirstSeen = new Map<string, number>();
 
 /**
  * Tracks which subscription+actor+eventType combos have already had catch-up
- * events enqueued by the subscription-aware sweep.
+ * events enqueued by subscription catch-up or the subscription-aware sweep.
  *
  * **Consume-once semantics**: when the matching saga's dedup guard in
- * `handleMatchEvent` suppresses a real event because a sweep catch-up was
+ * `handleMatchEvent` suppresses a real event because a catch-up was
  * already delivered, it *deletes* the entry from this set.  This ensures
  * only the immediate real event is suppressed — future state transitions
  * for the same agent (e.g. idle → busy → idle) are delivered normally.
- * The sweep re-adds the key on each cycle if the condition still holds,
- * so the sweep's own duplicate check remains unaffected.
+ * Later catch-up passes re-add the key if the condition still holds, so the
+ * catch-up duplicate check remains unaffected.
  *
  * Key format: `${subscriptionId}:${actorId}:${eventType}`
  *

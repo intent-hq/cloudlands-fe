@@ -73,7 +73,10 @@ import {
   undoAgentDeletionRequested,
   type BackendActiveStreamPayload,
 } from '../workspace-agents-slice';
-import { streamCompleted } from '../../chat-state/chat-state-slice';
+import {
+  chatSendStarted,
+  streamCompleted,
+} from '../../chat-state/chat-state-slice';
 import type { AgentIdlePayload } from '$features/events/types';
 import {
   selectDiskMessageCount,
@@ -975,6 +978,12 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
     return;
   }
 
+  // Start the queued turn through the same canonical Redux transition as a
+  // normal send. setAgentStreaming alone only flips one session flag; it does
+  // not start chat-state timers/watchdogs or set isProcessing for completed
+  // coordinator turns that were waiting for user input.
+  yield* put(chatSendStarted(agentId, wsId));
+
   // Add user message to session
   const userMessage: AgentMessage = {
     id: messageId,
@@ -986,7 +995,8 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   };
   yield* put(addAgentSessionMessage(agentId, userMessage));
 
-  // Set streaming state
+  // Keep the existing session-level streaming signal for compatibility with
+  // stream-handler setup paths; chatSendStarted owns the full turn-start state.
   yield* put(setAgentStreaming(agentId, true));
 
   // Persist the queued user message immediately

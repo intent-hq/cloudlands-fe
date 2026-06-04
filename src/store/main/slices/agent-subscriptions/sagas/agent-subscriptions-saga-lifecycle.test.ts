@@ -1,4 +1,5 @@
 import {
+  beforeEach,
   describe,
   it,
 } from "vitest";
@@ -35,6 +36,7 @@ import {
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
+  sweepCatchUpSeen,
   watchAgentIdleForDelivery,
   periodicQueueSweep,
 } from "./delivery-saga";
@@ -49,6 +51,10 @@ import type { AgentSubscriptionRecord } from "../types";
 
 const WS = "ws-1";
 const AGENT = "agent-1";
+
+beforeEach(() => {
+  sweepCatchUpSeen.clear();
+});
 
 const makeEvent = (id: string, type = "file:changed"): WorkspaceEvent =>
   ({

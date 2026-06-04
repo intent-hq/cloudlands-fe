@@ -75,6 +75,7 @@ import {
   handleFileTrackingListenerReadyEvent,
   handleFileChangedWindowEvent,
   handleFileChangedIPCEvent,
+  handleWatcherFileChangedIPCEvent,
   handleRootNodeReplaced,
   handleWorkspaceEnvironmentConfigChange,
   fileExplorerSaga,
@@ -83,6 +84,7 @@ import {
   resetAgentFileEditsRefreshState,
 } from "./file-explorer-saga";
 import {
+  debouncedDirectoryRefresh,
   debouncedAgentFileEditsRefresh,
   emptyFileExplorerWorkspaceState,
   fileExplorerReducer,
@@ -105,6 +107,7 @@ import {
   setIsRemoteInitializedAction,
   refreshFileExplorer,
   addExpandedPath,
+  removeExpandedPath,
   toggleDirectoryRequested,
 } from "../file-explorer-slice";
 import { emptyWorkspaceState as emptyChangesWorkspaceState } from "../../changes/changes-slice";
@@ -353,24 +356,56 @@ describe("handleToggleDirectory", () => {
     return { fileExplorer: fileExplorerState } as any;
   }
 
-  it("expands without fetching when normalized slice children are already loaded", async () => {
+  function stateWithExpandedPath(root: FileNode, path: string) {
+    const state = stateWithRoot(root);
+    return {
+      fileExplorer: fileExplorerReducer(state.fileExplorer, addExpandedPath(WS_ID, path)),
+    } as any;
+  }
+
+  it("reloads and applies children when normalized slice children are already loaded", async () => {
     const srcPath = `${WORKSPACE_PATH}/src`;
     const loadedRoot = directory(WORKSPACE_PATH, [
       directory(srcPath, [file(`${srcPath}/index.ts`)]),
     ]);
+    const fetchedChildren = [file(`${srcPath}/fresh.ts`)];
+    const loadedPaths: string[] = [];
+
+    await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(loadedRoot))
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName !== "loadDirectoryCore") return next();
+          const [, dirPath] = effect.args as [string, string];
+          loadedPaths.push(dirPath);
+          return fetchedChildren;
+        },
+      })
+      .put(addExpandedPath(WS_ID, srcPath))
+      .put(setChildrenAtPathAction(WS_ID, srcPath, fetchedChildren))
+      .silentRun(100);
+
+    expect(loadedPaths).toEqual([srcPath]);
+  });
+
+  it("collapses without reloading when the directory is already expanded", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const loadedRoot = directory(WORKSPACE_PATH, [directory(srcPath, [file(`${srcPath}/index.ts`)])]);
 
     const result = await expectSaga(
       handleToggleDirectory,
       toggleDirectoryRequested(WS_ID, srcPath),
     )
-      .withState(stateWithRoot(loadedRoot))
-      .put(addExpandedPath(WS_ID, srcPath))
+      .withState(stateWithExpandedPath(loadedRoot, srcPath))
+      .put(removeExpandedPath(WS_ID, srcPath))
       .silentRun(50);
 
     const callEffects = result.effects.call ?? [];
-    expect(
-      callEffects.some((effect: any) => effect.payload.fn?.name === "loadDirectoryCore"),
-    ).toBe(false);
+    expect(callEffects.some((effect: any) => effect.payload.fn?.name === "loadDirectoryCore")).toBe(false);
   });
 
   it("fetches and applies children when normalized slice children are not available", async () => {
@@ -392,6 +427,102 @@ describe("handleToggleDirectory", () => {
       .put(addExpandedPath(WS_ID, srcPath))
       .put(setChildrenAtPathAction(WS_ID, srcPath, fetchedChildren))
       .silentRun(100);
+  });
+
+  it("loads and expands a lazy single-directory chain until a terminal file is visible", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const libPath = `${srcPath}/lib`;
+    const loadedPaths: string[] = [];
+    const srcChildren = [directory(libPath)];
+    const libChildren = [file(`${libPath}/index.ts`)];
+
+    await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(directory(WORKSPACE_PATH, [directory(srcPath)])))
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName !== "loadDirectoryCore") return next();
+          const [, dirPath] = effect.args as [string, string];
+          loadedPaths.push(dirPath);
+          if (dirPath === srcPath) return srcChildren;
+          if (dirPath === libPath) return libChildren;
+          return [];
+        },
+      })
+      .put(addExpandedPath(WS_ID, srcPath))
+      .put(setChildrenAtPathAction(WS_ID, srcPath, srcChildren))
+      .put(addExpandedPath(WS_ID, libPath))
+      .put(setChildrenAtPathAction(WS_ID, libPath, libChildren))
+      .silentRun(100);
+
+    expect(loadedPaths).toEqual([srcPath, libPath]);
+  });
+
+  it("stops auto-expanding after loading a single-directory chain branch point", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const libPath = `${srcPath}/lib`;
+    const loadedPaths: string[] = [];
+    const srcChildren = [directory(libPath)];
+    const libChildren = [file(`${libPath}/a.ts`), file(`${libPath}/b.ts`)];
+
+    await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(directory(WORKSPACE_PATH, [directory(srcPath)])))
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName !== "loadDirectoryCore") return next();
+          const [, dirPath] = effect.args as [string, string];
+          loadedPaths.push(dirPath);
+          if (dirPath === srcPath) return srcChildren;
+          if (dirPath === libPath) return libChildren;
+          return [];
+        },
+      })
+      .put(addExpandedPath(WS_ID, srcPath))
+      .put(setChildrenAtPathAction(WS_ID, srcPath, srcChildren))
+      .put(addExpandedPath(WS_ID, libPath))
+      .put(setChildrenAtPathAction(WS_ID, libPath, libChildren))
+      .silentRun(100);
+
+    expect(loadedPaths).toEqual([srcPath, libPath]);
+  });
+
+  it("reloads an already-loaded single-directory descendant before loading the chain tip", async () => {
+    const srcPath = `${WORKSPACE_PATH}/src`;
+    const libPath = `${srcPath}/lib`;
+    const srcChildren = [directory(libPath)];
+    const libChildren = [file(`${libPath}/index.ts`)];
+    const loadedPaths: string[] = [];
+
+    await expectSaga(
+      handleToggleDirectory,
+      toggleDirectoryRequested(WS_ID, srcPath),
+    )
+      .withState(stateWithRoot(directory(WORKSPACE_PATH, [directory(srcPath, [directory(libPath)])])))
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName !== "loadDirectoryCore") return next();
+          const [, dirPath] = effect.args as [string, string];
+          loadedPaths.push(dirPath);
+          if (dirPath === srcPath) return srcChildren;
+          if (dirPath === libPath) return libChildren;
+          return [];
+        },
+      })
+      .put(addExpandedPath(WS_ID, srcPath))
+      .put(setChildrenAtPathAction(WS_ID, srcPath, srcChildren))
+      .put(addExpandedPath(WS_ID, libPath))
+      .put(setChildrenAtPathAction(WS_ID, libPath, libChildren))
+      .silentRun(100);
+
+    expect(loadedPaths).toEqual([srcPath, libPath]);
   });
 });
 
@@ -650,7 +781,10 @@ describe("agentFileEdits refresh pipeline", () => {
 
     for (let i = 0; i < 20; i += 1) {
       const effect = saga.next().value as any;
-      if (effect?.payload?.fn === debounceWithKeySaga) {
+      if (
+        effect?.payload?.fn === debounceWithKeySaga
+        && effect.payload.args[0] === debouncedAgentFileEditsRefresh
+      ) {
         debounceEffect = effect;
         break;
       }
@@ -664,6 +798,36 @@ describe("agentFileEdits refresh pipeline", () => {
     const wsAKey = keyExtractor(refreshAgentFileEditsRequested("ws-a"));
     expect(wsAKey).toBe(keyExtractor(refreshAgentFileEditsRequested("ws-a")));
     expect(wsAKey).not.toBe(keyExtractor(refreshAgentFileEditsRequested("ws-b")));
+  });
+
+  it("debounces directory refresh events independently per workspace and parent directory", () => {
+    const saga = fileExplorerSaga();
+    let debounceEffect: any;
+
+    for (let i = 0; i < 20; i += 1) {
+      const effect = saga.next().value as any;
+      if (
+        effect?.payload?.fn === debounceWithKeySaga
+        && effect.payload.args[0] === debouncedDirectoryRefresh
+      ) {
+        debounceEffect = effect;
+        break;
+      }
+    }
+
+    expect(debounceEffect?.type).toBe("FORK");
+    expect(debounceEffect.payload.args[0]).toBe(debouncedDirectoryRefresh);
+    expect(debounceEffect.payload.args[1]).toBe(300);
+
+    const keyExtractor = debounceEffect.payload.args[2] as (action: any) => string;
+    const srcNew = refreshDirectoryRequested("ws-a", "/a/repo/src/new.ts");
+    const srcGone = refreshDirectoryRequested("ws-a", "/a/repo/src/gone.ts");
+    const docsNew = refreshDirectoryRequested("ws-a", "/a/repo/docs/new.ts");
+    const otherWsSrcNew = refreshDirectoryRequested("ws-b", "/a/repo/src/new.ts");
+
+    expect(keyExtractor(srcNew)).toBe(keyExtractor(srcGone));
+    expect(keyExtractor(srcNew)).not.toBe(keyExtractor(docsNew));
+    expect(keyExtractor(srcNew)).not.toBe(keyExtractor(otherWsSrcNew));
   });
 
   it("agent-file-changed events request a debounced agent edit refresh", async () => {
@@ -745,6 +909,22 @@ describe("Wave 1 IPC + window watcher handlers", () => {
     workspace: { activeWorkspaceId: id },
     fileExplorer: { byWorkspaceId: {} },
   });
+  const stateWithActiveWsAndWorkspacePath = (
+    id: string | null,
+    workspacePath = "/a/repo",
+  ) => ({
+    workspace: { activeWorkspaceId: id },
+    fileExplorer: {
+      byWorkspaceId: id
+        ? {
+            [id]: {
+              ...emptyFileExplorerWorkspaceState,
+              workspacePath,
+            },
+          }
+        : {},
+    },
+  });
 
   it("handleWorkspaceChangesEvent dispatches sync when event workspaceId matches active", async () => {
     await expectSaga(handleWorkspaceChangesEvent, { workspaceId: activeWs })
@@ -806,8 +986,8 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       filePath,
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
     const putActions = result.effects.put ?? [];
     for (const effectDescriptor of putActions) {
       const action = (effectDescriptor as any).payload.action;
@@ -823,8 +1003,8 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       filePath,
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
   });
 
   it("handleFileChangedWindowEvent 'add' with files[] uses the first entry", async () => {
@@ -835,8 +1015,8 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       files: [filePath],
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
   });
 
   it("handleFileChangedWindowEvent 'create' with files[] uses the first entry", async () => {
@@ -847,8 +1027,19 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       files: [filePath],
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
+  });
+
+  it("handleFileChangedWindowEvent 'create' normalizes relative paths against the workspace root", async () => {
+    await expectSaga(handleFileChangedWindowEvent, {
+      workspaceId: activeWs,
+      type: "create",
+      filePath: "src/restored.ts",
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/restored.ts")))
+      .silentRun(50);
   });
 
   it("handleFileChangedWindowEvent 'delete' without a filePath falls back to refreshFileExplorer", async () => {
@@ -887,8 +1078,41 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       data: { path: filePath, action: "create" },
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
+  });
+
+  it("handleFileChangedIPCEvent handles file:created workspace events without data.action", async () => {
+    await expectSaga(handleFileChangedIPCEvent, {
+      type: "file:created",
+      workspaceId: activeWs,
+      data: { path: "src/ipc-new.ts", relativePath: "src/ipc-new.ts" },
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/ipc-new.ts")))
+      .silentRun(50);
+  });
+
+  it("handleFileChangedIPCEvent handles file:deleted workspace events without data.action", async () => {
+    await expectSaga(handleFileChangedIPCEvent, {
+      type: "file:deleted",
+      workspaceId: activeWs,
+      data: { path: "src/ipc-gone.ts", relativePath: "src/ipc-gone.ts" },
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/ipc-gone.ts")))
+      .silentRun(50);
+  });
+
+  it("handleFileChangedIPCEvent uses the first file entry from batched payloads", async () => {
+    await expectSaga(handleFileChangedIPCEvent, {
+      type: "file:changed",
+      workspaceId: activeWs,
+      data: { files: [{ path: "src/batched-new.ts", action: "create" }] },
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/batched-new.ts")))
+      .silentRun(50);
   });
 
   it("handleFileChangedIPCEvent (main-process action='delete') dispatches refreshDirectoryRequested", async () => {
@@ -898,8 +1122,56 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       data: { path: filePath, action: "delete" },
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
+  });
+
+  it("handleWatcherFileChangedIPCEvent maps watcher add events to directory refresh", async () => {
+    await expectSaga(handleWatcherFileChangedIPCEvent, {
+      workspaceId: activeWs,
+      type: "add",
+      path: "src/watcher-new.ts",
+      relativePath: "src/watcher-new.ts",
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/watcher-new.ts")))
+      .silentRun(50);
+  });
+
+  it("handleWatcherFileChangedIPCEvent maps watcher unlink events to directory refresh", async () => {
+    await expectSaga(handleWatcherFileChangedIPCEvent, {
+      workspaceId: activeWs,
+      type: "unlink",
+      path: "src/watcher-gone.ts",
+      relativePath: "src/watcher-gone.ts",
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/watcher-gone.ts")))
+      .silentRun(50);
+  });
+
+  it("handleWatcherFileChangedIPCEvent maps watcher unlinkDir events to directory refresh", async () => {
+    await expectSaga(handleWatcherFileChangedIPCEvent, {
+      workspaceId: activeWs,
+      type: "unlinkDir",
+      path: "src/stale-dir/",
+      relativePath: "src/stale-dir/",
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/stale-dir/")))
+      .silentRun(50);
+  });
+
+  it("handleWatcherFileChangedIPCEvent maps watcher addDir events to directory refresh", async () => {
+    await expectSaga(handleWatcherFileChangedIPCEvent, {
+      workspaceId: activeWs,
+      type: "addDir",
+      path: "src/new-dir",
+      relativePath: "src/new-dir",
+    })
+      .withState(stateWithActiveWsAndWorkspacePath(activeWs))
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, "/a/repo/src/new-dir")))
+      .silentRun(50);
   });
 
   it("handleFileChangedIPCEvent (main-process action='modify') dispatches refreshGitStatusRequested", async () => {
@@ -919,8 +1191,8 @@ describe("Wave 1 IPC + window watcher handlers", () => {
       data: { path: filePath, oldPath: "/a/repo/src/old.ts", action: "rename" },
     })
       .withState(stateWithActiveWs(activeWs))
-      .put(refreshDirectoryRequested(activeWs, filePath))
-      .silentRun(500);
+      .put(debouncedDirectoryRefresh(refreshDirectoryRequested(activeWs, filePath)))
+      .silentRun(50);
   });
 
   it("handleFileChangedIPCEvent is a no-op when event targets a different workspace", async () => {
@@ -958,15 +1230,14 @@ describe("Wave 1 IPC + window watcher handlers", () => {
 
 describe("handleRefreshDirectory", () => {
   const WORKSPACE_PATH = "/a/repo";
+  const fooFile: FileNode = { name: "foo.ts", path: "/a/repo/src/foo.ts", type: "file" };
 
-  function makeTree(): FileNode {
+  function makeTree(srcChildren: FileNode[] = [fooFile]): FileNode {
     const srcDir: FileNode = {
       name: "src",
       path: "/a/repo/src",
       type: "directory",
-      children: [
-        { name: "foo.ts", path: "/a/repo/src/foo.ts", type: "file" },
-      ],
+      children: srcChildren,
     };
     return {
       name: "repo",
@@ -976,14 +1247,14 @@ describe("handleRefreshDirectory", () => {
     };
   }
 
-  function stateWithTree(workspacePath = WORKSPACE_PATH) {
+  function stateWithTree(workspacePath = WORKSPACE_PATH, srcChildren?: FileNode[]) {
     let fileExplorerState = fileExplorerReducer(
       fileExplorerInitialState,
       setFileExplorerWorkspacePath(WS_ID, workspacePath),
     );
     fileExplorerState = fileExplorerReducer(
       fileExplorerState,
-      setRootNode(WS_ID, makeTree()),
+      setRootNode(WS_ID, makeTree(srcChildren)),
     );
     return {
       fileExplorer: fileExplorerState,
@@ -1018,6 +1289,61 @@ describe("handleRefreshDirectory", () => {
       const action = (effectDescriptor as any).payload.action;
       expect(action.type).not.toBe(setRootNode.type);
     }
+  });
+
+  it("refreshes the parent and removes a stale deleted directory subtree for trailing-slash paths", async () => {
+    const parentDir = "/a/repo/src";
+    const deletedDir: FileNode = {
+      name: "deleted",
+      path: "/a/repo/src/deleted",
+      type: "directory",
+      children: [{ name: "nested.ts", path: "/a/repo/src/deleted/nested.ts", type: "file" }],
+    };
+    const refreshedChildren: FileNode[] = [fooFile];
+    const initialState = stateWithTree(WORKSPACE_PATH, [fooFile, deletedDir]);
+
+    await expectSaga(
+      handleRefreshDirectory,
+      refreshDirectoryRequested(WS_ID, `${deletedDir.path}/`),
+    )
+      .withState(initialState)
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName === "loadDirectoryCore") return refreshedChildren;
+          return next();
+        },
+      })
+      .put(setChildrenAtPathAction(WS_ID, parentDir, refreshedChildren))
+      .silentRun(100);
+
+    const nextState = fileExplorerReducer(
+      initialState.fileExplorer,
+      setChildrenAtPathAction(WS_ID, parentDir, refreshedChildren),
+    );
+    const nextWs = nextState.byWorkspaceId[WS_ID];
+    expect(nextWs.nodes.map[deletedDir.path]).toBeUndefined();
+    expect(nextWs.nodes.map["/a/repo/src/deleted/nested.ts"]).toBeUndefined();
+    expect(nextWs.nodes.map[parentDir]?.children).toEqual([fooFile.path]);
+  });
+
+  it("refreshes the parent for deleted directory paths without a trailing slash", async () => {
+    const parentDir = "/a/repo/src";
+
+    await expectSaga(
+      handleRefreshDirectory,
+      refreshDirectoryRequested(WS_ID, "/a/repo/src/deleted"),
+    )
+      .withState(stateWithTree())
+      .provide({
+        call: (effect, next) => {
+          const fnName = (effect.fn as any)?.name;
+          if (fnName === "loadDirectoryCore") return [fooFile];
+          return next();
+        },
+      })
+      .put(setChildrenAtPathAction(WS_ID, parentDir, [fooFile]))
+      .silentRun(100);
   });
 
   it("no-ops when workspacePath is unset", async () => {

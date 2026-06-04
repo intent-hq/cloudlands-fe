@@ -270,7 +270,10 @@ import {
   updateMessage,
   upsertSession,
 } from "../../agent-session/agent-session-slice";
-import { streamCompleted } from "../../chat-state/chat-state-slice";
+import {
+  chatSendStarted,
+  streamCompleted,
+} from "../../chat-state/chat-state-slice";
 import { clearAgentUnread } from "../../unread-tracking/unread-tracking-slice";
 import {
   commitPendingAgentDeletionRequested,
@@ -386,8 +389,47 @@ describe("handleQueueProcessing", () => {
     ).toPromise();
 
     expect(sendMock).toHaveBeenCalledWith("agent:handler-ready", { agentId: "agent-1" });
+    const sendStartedAction = dispatched.find((a) => a.type === chatSendStarted.type);
+    expect(sendStartedAction?.payload).toMatchObject({
+      agentId: "agent-1",
+      wsId: "ws-agent-1",
+    });
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
     expect(streamingAction?.payload).toEqual(["agent-1", true]);
+  });
+
+  it("starts a new queued turn from completed waiting-for-user-action state", async () => {
+    const session = makeSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: "end_turn",
+    } as Partial<AgentSession>);
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueProcessing,
+      queueData,
+    ).toPromise();
+
+    const sendStartedIndex = dispatched.findIndex((a) => a.type === chatSendStarted.type);
+    const userMessageIndex = dispatched.findIndex((a) => a.type === "agentSessions/addMessage");
+    const streamingIndex = dispatched.findIndex((a) => a.type === setAgentStreaming.type);
+
+    expect(sendStartedIndex).toBeGreaterThanOrEqual(0);
+    expect(userMessageIndex).toBeGreaterThan(sendStartedIndex);
+    expect(streamingIndex).toBeGreaterThan(userMessageIndex);
+    expect(dispatched[sendStartedIndex].payload).toMatchObject({
+      agentId: "agent-1",
+      wsId: "ws-agent-1",
+    });
+    expect(dispatched[userMessageIndex].payload[1]).toMatchObject({
+      id: queueData.messageId,
+      role: "user",
+    });
   });
 
   it("preserves queued user app ID and passes assistant app ID to stream handler", async () => {

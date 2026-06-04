@@ -4,6 +4,8 @@ import type { Collection } from "ag-redux-toolkit/utils/collections/collection-u
 /** Queue metadata and messages for a single agent. */
 export interface AgentQueueEntryState {
   messages: Collection<QueuedMessage, "id">;
+  /** Bounded tombstone list for locally removed queued messages. */
+  recentlyRemovedMessageIds: string[];
   isHydrating: boolean;
   error: string | null;
 }

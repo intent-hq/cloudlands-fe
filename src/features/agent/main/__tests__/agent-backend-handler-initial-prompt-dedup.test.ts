@@ -201,7 +201,10 @@ describe('AgentBackendHandler initial prompt deduplication', () => {
       ...request,
       streamId: 'stream-duplicate',
     });
-    expect(duplicate).toEqual({ success: true });
+    expect(duplicate).toEqual({
+      success: false,
+      error: 'Agent already has an in-flight prompt. Message was not delivered.',
+    });
     expect(provider.streamMessage).toHaveBeenCalledTimes(1);
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'agent.session-prompt.duplicate.dropped',

@@ -44,6 +44,7 @@ export { computeMessageContentHash, hasCanonicalId, isTimestampClose } from '$sh
 // ============================================================================
 
 const MAX_MESSAGES_PER_AGENT = 500;
+const USER_REPLY_ORDER_WINDOW_MS = 1_000;
 
 // ============================================================================
 // Normalization helpers (copied from workspace-agents-slice)
@@ -81,14 +82,53 @@ function pruneMessages(messages: AgentMessage[]): AgentMessage[] {
   return messages.slice(messages.length - MAX_MESSAGES_PER_AGENT);
 }
 
+function getTimestampMs(message: AgentMessage): number | null {
+  const timestamp = message.timestamp;
+  const ms = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp?.getTime?.();
+  return typeof ms === 'number' && !Number.isNaN(ms) ? ms : null;
+}
+
+function areMessagesWithinUserReplyOrderWindow(a: AgentMessage, b: AgentMessage): boolean {
+  const aMs = getTimestampMs(a);
+  const bMs = getTimestampMs(b);
+  if (aMs === null || bMs === null) return false;
+  return Math.abs(aMs - bMs) <= USER_REPLY_ORDER_WINDOW_MS;
+}
+
+function repairNearSimultaneousOrphanAssistantOrdering(messages: AgentMessage[]): AgentMessage[] {
+  let ordered = messages;
+  for (let userIndex = 1; userIndex < ordered.length; userIndex++) {
+    const userMessage = ordered[userIndex];
+    if (userMessage.role !== 'user') continue;
+
+    let runStart = userIndex;
+    while (
+      runStart > 0 &&
+      ordered[runStart - 1].role === 'assistant' &&
+      areMessagesWithinUserReplyOrderWindow(ordered[runStart - 1], userMessage)
+    ) {
+      runStart--;
+    }
+
+    if (runStart === userIndex || ordered[runStart - 1]?.role === 'user') continue;
+
+    ordered = [
+      ...ordered.slice(0, runStart),
+      userMessage,
+      ...ordered.slice(runStart, userIndex),
+      ...ordered.slice(userIndex + 1),
+    ];
+  }
+  return ordered;
+}
+
 /**
- * Stable sort by timestamp ascending. Normalized timestamps are ISO strings,
- * so lexicographic comparison is correct. Messages with equal timestamps
- * preserve their original relative order (V8 Array.sort is stable).
+ * Stable sort by timestamp ascending, then repair the close event-race case
+ * where a subsequent assistant reply sorts immediately above its user reply.
  */
-function sortMessagesByTimestamp(messages: AgentMessage[]): AgentMessage[] {
+function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] {
   if (messages.length <= 1) return messages;
-  return [...messages].sort((a, b) => {
+  const sorted = [...messages].sort((a, b) => {
     const tsA =
       typeof a.timestamp === 'string' ? a.timestamp : (a.timestamp?.toISOString?.() ?? '');
     const tsB =
@@ -97,10 +137,11 @@ function sortMessagesByTimestamp(messages: AgentMessage[]): AgentMessage[] {
     if (tsA > tsB) return 1;
     return 0;
   });
+  return repairNearSimultaneousOrphanAssistantOrdering(sorted);
 }
 
 function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
-  return pruneMessages(sortMessagesByTimestamp(deduplicateAgentMessages(messages.map(normalizeAgentMessage))));
+  return pruneMessages(orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))));
 }
 
 // ============================================================================
@@ -137,8 +178,9 @@ function addMessageToSession(
   const session = getSession(state, agentId);
   if (!session) return state;
   const currentList = session.messages;
-  const nextMessages = pruneMessages(insertAgentMessageWithDedup(currentList, message));
-  if (nextMessages === currentList) return state;
+  const insertedMessages = insertAgentMessageWithDedup(currentList, message);
+  if (insertedMessages === currentList) return state;
+  const nextMessages = pruneMessages(orderMessagesForConversation(insertedMessages));
   return setSession(state, agentId, {
     ...session,
     messages: nextMessages,

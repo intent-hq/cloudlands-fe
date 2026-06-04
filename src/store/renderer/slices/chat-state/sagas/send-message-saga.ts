@@ -31,6 +31,10 @@ import {
   agentSessionSendMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import type { AgentSessionSendMessageOptions } from '$store/renderer/slices/agent-session/agent-session-types';
+import {
+  removeQueuedMessageFromAgentQueue,
+  setAgentQueueError,
+} from '$store/renderer/slices/agent-queue/agent-queue-slice';
 
 import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
 import { clearChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
@@ -199,10 +203,14 @@ function* removeQueuedMessageBeforeSend(
     payload.queuedMessageId,
   );
   if (!result.success) {
-    logger.error('Failed to remove queued message before sending', result.error, {
+    const error = result.error || 'Failed to remove queued message before sending';
+    logger.error('Failed to remove queued message before sending', error, {
       agentId,
       messageId: payload.queuedMessageId,
     });
+    yield* put(setAgentQueueError(agentId, error));
+  } else {
+    yield* put(removeQueuedMessageFromAgentQueue(agentId, payload.queuedMessageId));
   }
   return result.success;
 }
