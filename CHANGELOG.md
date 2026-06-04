@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Diffs in agent responses now render with the full diff viewer instead of plain code blocks.
+- MCP tools that went missing after workspace recovery are now restored automatically, with new stopped/restart status indicators so you can see when a tool server needs attention.
+- Agents start more reliably when opening a workspace, even when the backend is slow to respond.
+- Spec panel auto-opens in a split pane when a coordinator starts writing to it.
+- Improved error reporting for background process failures.
+- Fixes: file tree rendering inconsistencies, changes tab not populating after workspace open, commit message auto-fill from idle agent summaries, external file edits not reloading in the editor, changes list flickering, merged PR status not updating in the sidebar, and agent messages occasionally targeting the wrong conversation.
+
 ## 0.3.12
 
 - Notes now have a raw view toggle so you can see and edit the underlying Markdown source.
