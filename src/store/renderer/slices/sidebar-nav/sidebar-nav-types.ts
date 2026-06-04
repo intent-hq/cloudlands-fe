@@ -5,8 +5,25 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type SidebarNavItem = 'home' | 'new-workspace' | 'active' | 'all-workspaces' | 'settings';
+export const CHIEF_WORKSPACE_ID = '__chief__';
+
+export type SidebarNavItem =
+  | 'home'
+  | 'new-workspace'
+  | 'active'
+  | 'chief'
+  | 'all-workspaces'
+  | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
+
+export type ChiefThreadPreview = {
+  agentId: string;
+  title: string;
+  preview: string;
+  updatedAt?: string;
+  isActive: boolean;
+  messageCount: number;
+};
 
 export type SidebarNavState = {
   /** Bumped whenever active-streams data changes */
@@ -41,9 +58,10 @@ export type SidebarNavState = {
   noteOrderByWorkspaceId: Record<string, string[]>;
   /** Collapsed note IDs by workspace ID (persisted) */
   collapsedNoteIdsByWorkspaceId: Record<string, string[]>;
+  /** Persisted current Chief of Staff thread. */
+  chiefActiveAgentId: string | null;
   /** Counter for open context menus (prevents hover card auto-close) */
   contextMenuOpenCount: number;
   /** Deferred leave type when context menu prevented auto-close */
   deferredLeave: 'card' | 'nav' | null;
 };
-

@@ -27,23 +27,23 @@ src/
 
 ## Where to look
 
-| Working on… | Open |
-| --- | --- |
-| agents | docs/AGENT_ARCHITECTURE.md |
-| state/store | docs/STATE_MANAGEMENT.md, src/store/renderer/docs/ |
-| UI components | docs/COMPONENT_RESPONSIBILITIES.md |
-| component design | docs/COMPONENTS_DESIGN.md |
-| panels/layout | docs/panel-system-refactoring.md, docs/proposals/PANEL_TAB_UX_SPEC.md |
-| PR descriptions | docs/PR_DESCRIPTION_GUIDE.md |
-| browser/CDP | docs/BROWSER_PANEL_SPEC.md, docs/CDP_MCP_TOOLS.md |
-| module boundaries | docs/MODULE_BOUNDARY_GUIDE.md |
-| debugging | docs/TROUBLESHOOTING_GUIDE.md, docs/IPC_DEBUG_GUIDE.md |
-| error handling | docs/ERROR_HANDLING_SYSTEM.md |
-| TypeScript/types | docs/TYPE_SYSTEM_GUIDE.md |
-| events/IPC | docs/EVENT_SYSTEM.md |
-| keybindings | docs/KEYBINDINGS.md |
-| deploying/releasing | docs/real/DEPLOYING.md |
-| parallel runner | parallel-runner/docs/ |
+| Working on…         | Open                                                                  |
+| ------------------- | --------------------------------------------------------------------- |
+| agents              | docs/AGENT_ARCHITECTURE.md                                            |
+| state/store         | docs/STATE_MANAGEMENT.md, src/store/renderer/docs/                    |
+| UI components       | docs/COMPONENT_RESPONSIBILITIES.md                                    |
+| component design    | docs/COMPONENTS_DESIGN.md                                             |
+| panels/layout       | docs/panel-system-refactoring.md, docs/proposals/PANEL_TAB_UX_SPEC.md |
+| PR descriptions     | docs/PR_DESCRIPTION_GUIDE.md                                          |
+| browser/CDP         | docs/BROWSER_PANEL_SPEC.md, docs/CDP_MCP_TOOLS.md                     |
+| module boundaries   | docs/MODULE_BOUNDARY_GUIDE.md                                         |
+| debugging           | docs/TROUBLESHOOTING_GUIDE.md, docs/IPC_DEBUG_GUIDE.md                |
+| error handling      | docs/ERROR_HANDLING_SYSTEM.md                                         |
+| TypeScript/types    | docs/TYPE_SYSTEM_GUIDE.md                                             |
+| events/IPC          | docs/EVENT_SYSTEM.md                                                  |
+| keybindings         | docs/KEYBINDINGS.md                                                   |
+| deploying/releasing | docs/real/DEPLOYING.md                                                |
+| parallel runner     | parallel-runner/docs/                                                 |
 
 ## Key conventions
 
@@ -76,9 +76,10 @@ After any structural change (moving files, changing imports, extracting modules)
 
 ```bash
 pnpm vitest run <targeted-test-files>
+pnpm run check                              # Svelte + TypeScript consumers
 pnpm tsc -p tsconfig.json --noEmit          # renderer
 pnpm tsc -p tsconfig.main.json --noEmit     # main process
 pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 ```
 
-All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.
+`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.

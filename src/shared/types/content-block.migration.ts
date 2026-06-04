@@ -9,6 +9,8 @@
 
 import type { ContentBlock } from './content-block';
 import { normalizeContentBlock } from './content-block';
+import { isProposalKind } from './proposal';
+import { getProposalFromResourceBlock } from './proposal-resource';
 
 /**
  * Convert legacy ContentBlock format to normalized format
@@ -17,6 +19,50 @@ import { normalizeContentBlock } from './content-block';
 export function migrateFromLegacy(block: any): ContentBlock {
   if (!block || typeof block !== 'object') {
     throw new Error('Invalid block: must be an object');
+  }
+
+  const proposalFromResource = getProposalFromResourceBlock(block);
+  if (proposalFromResource) {
+    return {
+      type: 'proposal',
+      kind: proposalFromResource.kind,
+      payload: proposalFromResource.payload,
+      preview: proposalFromResource.preview,
+      applyToolCallId: proposalFromResource.applyToolCallId,
+      proposal: proposalFromResource,
+      id: block.id,
+      metadata: block.metadata,
+    };
+  }
+
+  if (block.kind === 'nav-link' && typeof block.target === 'string') {
+    return {
+      type: 'nav-link',
+      kind: 'nav-link',
+      target: block.target,
+      label: block.label,
+      id: block.id,
+      metadata: block.metadata,
+    };
+  }
+
+  if ((block.type === 'proposal' || isProposalKind(block.kind)) && block.preview) {
+    const proposal = block.proposal ?? {
+      kind: block.kind,
+      payload: block.payload ?? {},
+      preview: block.preview,
+      applyToolCallId: block.applyToolCallId,
+    };
+    return {
+      type: 'proposal',
+      kind: proposal.kind,
+      payload: proposal.payload,
+      preview: proposal.preview,
+      applyToolCallId: proposal.applyToolCallId,
+      proposal,
+      id: block.id,
+      metadata: block.metadata,
+    };
   }
 
   const normalized: ContentBlock = {
@@ -67,6 +113,18 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     throw new Error('Invalid ACP block: must be an object');
   }
 
+  const proposal = getProposalFromResourceBlock(acpBlock);
+  if (proposal) {
+    return {
+      type: 'proposal',
+      kind: proposal.kind,
+      payload: proposal.payload,
+      preview: proposal.preview,
+      applyToolCallId: proposal.applyToolCallId,
+      proposal,
+    };
+  }
+
   const block: ContentBlock = {
     type: acpBlock.type || 'text',
   };
@@ -113,6 +171,19 @@ export function convertToACP(block: ContentBlock): any {
   // Text content
   if (normalized.text) {
     acpBlock.text = normalized.text;
+  }
+
+  if (normalized.kind === 'nav-link' || normalized.type === 'nav-link') {
+    acpBlock.kind = 'nav-link';
+    acpBlock.target = normalized.target;
+    acpBlock.label = normalized.label;
+  }
+
+  if (normalized.type === 'proposal' && normalized.preview && isProposalKind(normalized.kind)) {
+    acpBlock.kind = normalized.kind;
+    acpBlock.payload = normalized.payload ?? {};
+    acpBlock.preview = normalized.preview;
+    acpBlock.applyToolCallId = normalized.applyToolCallId;
   }
 
   // Media

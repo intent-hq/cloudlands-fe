@@ -10,7 +10,8 @@ import { resizeImageForAgent } from '$lib/utils/image-resize';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { AgentStatus } from '$shared/types';
-import { WorkspaceId as createWorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, WorkspaceId as createWorkspaceId } from '$shared/types/branded-ids';
+import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { parseCompoundModelId } from '$shared/config/provider-config';
 import { unifiedIdService } from '$shared/services/unified-id.service';
@@ -217,7 +218,11 @@ function* waitForInterruptToFinish(agentId: string): SagaGenerator<void> {
   );
 }
 
-function* resolveSendWorkspace(wsId: string, sessionWorkspaceId: string): SagaGenerator<Workspace> {
+export function* resolveSendWorkspace(wsId: string, sessionWorkspaceId: string): SagaGenerator<Workspace> {
+  if (wsId === CHIEF_WORKSPACE_ID || sessionWorkspaceId === CHIEF_WORKSPACE_ID) {
+    return createChiefVirtualWorkspace();
+  }
+
   const requestedWorkspace = yield* selectWorkspaceById.effect(wsId);
   if (sessionWorkspaceId === wsId && requestedWorkspace) return requestedWorkspace;
 
@@ -268,14 +273,14 @@ function* buildBackendBlocks(
         const resized = yield* call(resizeImageForAgent, data, mimeType);
         imageBlocks.push({ type: 'image', data: resized.base64, mimeType: resized.mimeType });
       } catch (error) {
-        logger.error('Failed to convert image to base64', { fileName: item.label, error });
+        logger.error('Failed to convert image to base64', error, { fileName: item.label });
       }
     } else if (item.file) {
       try {
         const { data, mimeType } = yield* call(fileToBase64, item.file);
         fileBlocks.push({ type: 'file', data, mimeType, fileName: item.label || item.file.name });
       } catch (error) {
-        logger.error('Failed to convert file to base64', { fileName: item.label, error });
+        logger.error('Failed to convert file to base64', error, { fileName: item.label });
       }
     } else if (item.imageData && item.imageMimeType) {
       try {
@@ -714,7 +719,7 @@ export function* handleAgentSessionSendMessageRequested(
       return;
     }
 
-    logger.error('Failed to send message', { agentId, error });
+    logger.error('Failed to send message', error, { agentId });
     yield* put(chatSendFailed(agentId, cleanMessage));
     yield* call(showErrorToast, cleanMessage);
     yield* put(action.failure(cleanMessage));

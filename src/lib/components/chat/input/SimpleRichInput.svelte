@@ -983,9 +983,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   <!-- Hidden file input - accepts any file type -->
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
-  <!-- Action Bar - hides when panel is not focused -->
+  <!-- Action Bar -->
   <div
-    class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto transition-opacity duration-150"
+    class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 transition-opacity duration-150"
   >
     <div class="flex items-end gap-1 min-w-0 mb-0.5">
       <ModelPicker

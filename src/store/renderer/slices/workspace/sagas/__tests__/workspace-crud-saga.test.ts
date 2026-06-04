@@ -331,8 +331,10 @@ describe("workspace-crud-saga", () => {
       iterator.next({ id: "ws-1", title: "X" } as any); // markWorkspacePendingDeletion
       iterator.next(); // call delete
 
-      // backend failure — saga returns early, but finally still runs
-      const step = iterator.next({ ok: false });
+      // backend failure — saga executes error handling before finally
+      iterator.next({ ok: false, error: "Delete failed" }); // put(setWorkspaceError)
+      iterator.next(); // call(toast.error)
+      const step = iterator.next(); // return triggers finally
       // finally: clearWorkspacePendingDeletion
       expect(step.value).toEqual(
         sagaEffects.put(clearWorkspacePendingDeletion("ws-1")),

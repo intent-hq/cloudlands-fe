@@ -27,6 +27,9 @@ vi.mock("typed-redux-saga", () => ({
   select: function* (selector: any, ...args: any[]) {
     return yield sagaEffects.select(selector, ...args);
   },
+  fork: function* (fn: any, ...args: any[]) {
+    return yield sagaEffects.fork(fn, ...args);
+  },
   spawn: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.spawn(fn, ...args);
   },
@@ -77,6 +80,7 @@ vi.mock("svelte-sonner", () => ({
 
 vi.mock("$lib/electron-bridge", () => ({
   invoke: vi.fn(),
+  listenSync: vi.fn(() => () => {}),
 }));
 
 vi.mock("$app/navigation", () => ({

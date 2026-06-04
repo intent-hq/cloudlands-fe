@@ -2,6 +2,7 @@
   import HomeCard from './cards/HomeCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
+  import ChiefCard from './cards/ChiefCard.svelte';
   import SettingsCard from './cards/SettingsCard.svelte';
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
@@ -39,6 +40,8 @@
         return { title: 'Home', description: 'Your workspace dashboard' };
       case 'active':
         return { title: 'Active workspaces', description: '' };
+      case 'chief':
+        return { title: 'Chief of Staff', description: 'App-level assistant' };
       case 'all-workspaces':
         return { title: 'All workspaces', description: '' };
       case 'settings':
@@ -84,7 +87,8 @@
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
     <div class="sidebar-panel h-full flex flex-col relative" style="width: {liveWidth}px;" aria-label="Sidebar panel">
-      <!-- Header -->
+      <!-- Header (Chief has its own header) -->
+      {#if $panelItem$ !== 'chief'}
       <div class="panel-header shrink-0">
         <div class="min-w-0 flex-1">
           <h2 class="panel-title text-sm font-semibold text-foreground truncate">{panelMeta.title}</h2>
@@ -112,6 +116,7 @@
           </button>
         </div>
       </div>
+      {/if}
 
       <!-- Content -->
       <div class="sidebar-panel-content flex-1 min-h-0 overflow-y-auto">
@@ -119,6 +124,8 @@
           <HomeCard />
         {:else if $panelItem$ === 'active'}
           <ActiveWorkspacesCard expanded={true} />
+        {:else if $panelItem$ === 'chief'}
+          <ChiefCard expanded={true} />
         {:else if $panelItem$ === 'all-workspaces'}
           <AllWorkspacesCard expanded={true} />
         {:else if $panelItem$ === 'settings'}

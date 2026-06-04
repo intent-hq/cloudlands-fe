@@ -31,6 +31,7 @@ import { gitService } from '../../git/main/git.service';
 import { storeBlob } from '../../../shared/git/git-blob-storage';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
+import { WorkspaceConfig } from '../../../shared/main/config';
 import type { TrackedChange } from '../types';
 import type { ChangeFilter } from './types';
 import { syncGitIntegrationForWorkspace } from './file-tracking-sync';
@@ -40,6 +41,16 @@ const logger = new Logger({ category: 'FileTrackingIPC' });
 // Cache of services per workspace
 const services = new Map<string, FileTrackingService>();
 // Git integrations are now managed in workspace.ipc.ts
+
+const emptyChangesResult = { changes: [], truncated: false, totalCount: 0 };
+
+function isVirtualFileTrackingWorkspace(workspaceId: string): boolean {
+  return WorkspaceConfig.isVirtualWorkspace(workspaceId);
+}
+
+function logVirtualWorkspaceSkip(operation: string, workspaceId: string): void {
+  logger.debug('Skipping file tracking for virtual workspace', { operation, workspaceId });
+}
 
 /**
  * Get or create a service for a workspace
@@ -98,6 +109,11 @@ export async function getServiceForWorkspace(
   workspaceId: string,
 ): Promise<FileTrackingService | null> {
   try {
+    if (isVirtualFileTrackingWorkspace(workspaceId)) {
+      logVirtualWorkspaceSkip('getServiceForWorkspace', workspaceId);
+      return null;
+    }
+
     const { path: workspacePath, isRemote } = await getWorkspaceInfo(workspaceId);
     return getService(workspaceId, workspacePath, isRemote);
   } catch (error) {
@@ -147,6 +163,11 @@ export function setupFileTrackingIPC() {
       z.object({ workspaceId: z.string().min(1) }),
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('clear', validated.workspaceId);
+            return { ok: true };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -211,6 +232,11 @@ export function setupFileTrackingIPC() {
       FileTrackingLoadSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('load', validated.workspaceId);
+            return emptyChangesResult;
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -238,6 +264,11 @@ export function setupFileTrackingIPC() {
       async (_event, validated) => {
         try {
           const { workspaceId, limit } = validated;
+
+          if (isVirtualFileTrackingWorkspace(workspaceId)) {
+            logVirtualWorkspaceSkip('loadCommits', workspaceId);
+            return { commits: [], boundarySha: undefined };
+          }
 
           // Check if this is a remote workspace
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(workspaceId);
@@ -509,6 +540,11 @@ export function setupFileTrackingIPC() {
           const { workspaceId, beforeSha, limit } = validated;
           const maxCount = limit ?? 10;
 
+          if (isVirtualFileTrackingWorkspace(workspaceId)) {
+            logVirtualWorkspaceSkip('loadOlderCommits', workspaceId);
+            return { commits: [] };
+          }
+
           // Get workspace info for the worktree path and remote status
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(workspaceId);
 
@@ -603,6 +639,11 @@ export function setupFileTrackingIPC() {
       FileTrackingLoadTransitionsSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('loadTransitions', validated.workspaceId);
+            return [];
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -627,6 +668,11 @@ export function setupFileTrackingIPC() {
       FileTrackingTrackChangeSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('trackChange', validated.workspaceId);
+            return { ok: true, change: null };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -721,6 +767,11 @@ export function setupFileTrackingIPC() {
       FileTrackingStageChangesSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('stageChanges', validated.workspaceId);
+            return { ok: true };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -782,6 +833,11 @@ export function setupFileTrackingIPC() {
       FileTrackingUnstageChangesSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('unstageChanges', validated.workspaceId);
+            return { ok: true };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -840,6 +896,11 @@ export function setupFileTrackingIPC() {
       FileTrackingGetChangesSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('getChanges', validated.workspaceId);
+            return { ok: true, changes: emptyChangesResult };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );
@@ -874,6 +935,14 @@ export function setupFileTrackingIPC() {
       lineStatsSchema,
       async (_event, validated) => {
         try {
+          if (isVirtualFileTrackingWorkspace(validated.workspaceId)) {
+            logVirtualWorkspaceSkip('getLineStats', validated.workspaceId);
+            return {
+              ok: true,
+              data: { additions: 0, deletions: 0 },
+            };
+          }
+
           const { path: workspacePath, isRemote } = await getWorkspaceInfo(
             validated.workspaceId,
           );

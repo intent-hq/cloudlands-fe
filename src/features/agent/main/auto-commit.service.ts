@@ -15,6 +15,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { WorkspaceConfig } from '../../../shared/main/config';
 import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.service';
 import { commitAgentChanges } from './agent-commit.service';
 import { getServiceForWorkspace } from '../../file-tracking/main/file-tracking.ipc';
@@ -427,6 +428,11 @@ ${combinedDiff}
 export async function handleAgentIdleAutoCommit(event: AgentIdleEvent): Promise<void> {
   const { workspaceId, data } = event;
   const { agentId, agentName, taskNoteId, taskTitle, finishReason } = data;
+
+  if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+    logger.info('[AUTO-COMMIT] Skipped: virtual workspace', { workspaceId, agentId });
+    return;
+  }
 
   logger.info('[AUTO-COMMIT] Agent idle, checking for auto-commit', {
     workspaceId,

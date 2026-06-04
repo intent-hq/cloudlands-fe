@@ -24,7 +24,10 @@ import {
   getModelTierFromModel,
   getDefaultProviderId,
 } from '../../src/shared/config/provider-config';
-import { writeSpecialistFile, ensureSpecialistsDirectory } from '../../src/features/specialists/main/specialist-file-loader';
+import {
+  writeSpecialistFile,
+  ensureSpecialistsDirectory,
+} from '../../src/features/specialists/main/specialist-file-loader';
 import {
   initSpecialistsService,
   refreshSpecialistsFromFiles,
@@ -207,7 +210,17 @@ describe('Specialist Configuration', () => {
 
   describe('Specialist ID Validation', () => {
     it('all specialists have valid IDs matching type constraints', () => {
-      const validIds = ['spec-writer', 'implementor', 'verifier', 'pr-reviewer', 'ui-designer', 'developer', 'pr-shepherd', 'ralph'];
+      const validIds = [
+        'spec-writer',
+        'implementor',
+        'verifier',
+        'pr-reviewer',
+        'ui-designer',
+        'developer',
+        'chief-of-staff',
+        'pr-shepherd',
+        'ralph',
+      ];
 
       for (const specialist of SPECIALISTS) {
         expect(validIds).toContain(specialist.id);
@@ -219,11 +232,15 @@ describe('Specialist Configuration', () => {
         expect(specialist.id).toBeDefined();
         expect(specialist.name).toBeDefined();
         expect(specialist.description).toBeDefined();
-        // Specialists use either defaultModelTier (provider-aware) or defaultModel (hardcoded)
-        expect(
-          specialist.defaultModelTier || specialist.defaultModel,
-          `Specialist ${specialist.id} must have either defaultModelTier or defaultModel`,
-        ).toBeDefined();
+        // Most specialists pin a model tier/model. Chief intentionally uses the user's default model.
+        if (specialist.id === 'chief-of-staff') {
+          expect(specialist.defaultModelTier || specialist.defaultModel).toBeUndefined();
+        } else {
+          expect(
+            specialist.defaultModelTier || specialist.defaultModel,
+            `Specialist ${specialist.id} must have either defaultModelTier or defaultModel`,
+          ).toBeDefined();
+        }
         expect(specialist.defaultBehaviorPrompt).toBeDefined();
       }
     });

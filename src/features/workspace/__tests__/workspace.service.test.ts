@@ -20,6 +20,7 @@ import {
   workspaceDeleted,
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
+import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
 // Mock mainDispatch
 vi.mock('../../../store/main/redux-store-bridge', () => ({
@@ -412,6 +413,21 @@ describe('WorkspaceService', () => {
   });
 
   describe('getWorkspace', () => {
+    it('should return the synthetic chief workspace without repository lookup', async () => {
+      const findByIdSpy = vi.spyOn(workspaceRepository, 'findById');
+
+      const result = await service.getWorkspace(CHIEF_WORKSPACE_ID);
+
+      expect(result.ok).toBe(true);
+      expect(findByIdSpy).not.toHaveBeenCalled();
+      if (result.ok) {
+        expect(result.data.id).toBe(CHIEF_WORKSPACE_ID);
+        expect(result.data.title).toBe('Chief of Staff');
+        expect(result.data.repositoryPath).toBeUndefined();
+        expect(result.data.worktreePath).toBeUndefined();
+      }
+    });
+
     it('should get workspace by id', async () => {
       const created = await service.createWorkspace({ title: 'Test Workspace' });
 

@@ -14,6 +14,7 @@
   import NewWorkspaceCard from './cards/NewWorkspaceCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
+  import ChiefCard from './cards/ChiefCard.svelte';
   import { fly } from 'svelte/transition';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -43,6 +44,7 @@
   const cardMeta: Partial<Record<SidebarNavItem, { title: string; description: string }>> = {
     'new-workspace': { title: 'Create new workspace', description: '' },
     active: { title: 'Active workspaces', description: '' },
+    chief: { title: 'Chief of Staff', description: 'App-level assistant' },
     'all-workspaces': { title: 'All workspaces', description: '' },
   };
 
@@ -186,6 +188,8 @@
           <NewWorkspaceCard expanded={isExpanded} />
         {:else if $activeCard$ === 'active'}
           <ActiveWorkspacesCard expanded={isExpanded} />
+        {:else if $activeCard$ === 'chief'}
+          <ChiefCard expanded={isExpanded} />
         {:else if $activeCard$ === 'all-workspaces'}
           <AllWorkspacesCard expanded={isExpanded} />
         {/if}

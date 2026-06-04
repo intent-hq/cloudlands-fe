@@ -61,7 +61,11 @@ import {
   PullRequestStatus,
   WorkspaceStatus,
 } from '../../../shared/types';
-import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
+import {
+  CHIEF_WORKSPACE_ID,
+  type AgentId,
+  type WorkspaceId,
+} from '../../../shared/types/branded-ids';
 import { agentPersistence } from '../../agent/main/agent-persistence';
 import {
   refreshSpecialistsFromFiles,
@@ -103,7 +107,7 @@ import {
   validateRepositoryPath,
 } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
-import { FileSystemWorkspaceRepository } from './workspace.repository';
+import { FileSystemWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
 import {
   getBranchPrefix,
   getWorktreesLocation,
@@ -163,6 +167,16 @@ type BackgroundEnrichmentWorkspaceUpdates = Partial<
   >
 >;
 
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+    .join(',')}}`;
+}
+
 export class WorkspaceService {
   private readonly store: any;
   private lastContextCache: Map<string, WorkspaceUIContext> = new Map();
@@ -194,6 +208,7 @@ export class WorkspaceService {
   // This prevents heavy list operations from blocking workspace:create IPC responses
   // Using a counter instead of boolean to handle concurrent creations properly
   private creationInProgressCount = 0;
+  private pendingWorkspaceCreates = new Map<string, Promise<Result<Workspace, string>>>();
 
   // FIX: Serialize git worktree operations per repository to prevent corruption
   // Git worktree add/remove operations on the same repo must not run concurrently
@@ -956,6 +971,56 @@ export class WorkspaceService {
    * Create a new workspace
    */
   async createWorkspace(request: CreateWorkspaceRequest): Promise<Result<Workspace, string>> {
+    const inFlightKey = this.getWorkspaceCreateInFlightKey(request);
+    if (!inFlightKey) return this.createWorkspaceUntracked(request);
+
+    const pending = this.pendingWorkspaceCreates.get(inFlightKey);
+    if (pending) {
+      logger.info('Reusing pending workspace creation', {
+        hasRepositoryPath: !!request.repositoryPath,
+        hasGithubUrl: !!request.githubUrl,
+        hasInitialAgent: !!request.initialAgent,
+      });
+      return pending;
+    }
+
+    const promise = this.createWorkspaceUntracked(request);
+    this.pendingWorkspaceCreates.set(inFlightKey, promise);
+    try {
+      return await promise;
+    } finally {
+      if (this.pendingWorkspaceCreates.get(inFlightKey) === promise) {
+        this.pendingWorkspaceCreates.delete(inFlightKey);
+      }
+    }
+  }
+
+  private getWorkspaceCreateInFlightKey(request: CreateWorkspaceRequest): string | undefined {
+    const prompt = request.initialAgent?.prompt?.trim();
+    const promptSlug = prompt ? generateLocalSlug(prompt) : null;
+    const title = request.title?.trim().toLowerCase();
+    const slug = promptSlug ?? title;
+    if (!slug) return undefined;
+
+    return stableStringify({
+      slug,
+      repositoryPath: request.repositoryPath ?? '',
+      githubUrl: request.githubUrl ?? '',
+      clonePath: request.clonePath ?? '',
+      branch: request.baseRef ?? request.branch ?? '',
+      remote: request.remote ?? '',
+      scope: request.scope ?? '',
+      isNewRepo: request.isNewRepo ?? false,
+      skipWorktree: request.skipWorktree ?? false,
+      environmentConfig: request.environmentConfig ?? null,
+      linearIssueId: request.linearIssue?.id ?? request.linearIssue?.identifier ?? '',
+      sentryIssueId: request.sentryIssue?.id ?? request.sentryIssue?.shortId ?? '',
+    });
+  }
+
+  private async createWorkspaceUntracked(
+    request: CreateWorkspaceRequest,
+  ): Promise<Result<Workspace, string>> {
     // PERF: Increment counter to enable lite mode in concurrent listWorkspaces calls
     // This prevents heavy list operations from blocking this IPC response
     this.creationInProgressCount++;
@@ -3159,6 +3224,12 @@ task:
           ok: false,
           error: 'Invalid workspace ID format',
         };
+      }
+
+      if (id === CHIEF_WORKSPACE_ID) {
+        const workspace = getChiefWorkspace();
+        this.workspaceCache.set(id, { workspace, timestamp: Date.now() });
+        return { ok: true, data: workspace };
       }
 
       // Check short-lived cache first (for bulk operations like task delegation)

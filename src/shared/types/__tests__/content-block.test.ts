@@ -2,11 +2,7 @@
  * Tests for ContentBlock type and utilities
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   isContentBlock,
   normalizeContentBlock,
@@ -55,6 +51,16 @@ describe('ContentBlock Type', () => {
       expect(isContentBlock(null)).toBe(false);
       expect(isContentBlock('not a block')).toBe(false);
     });
+
+    it('should identify proposal blocks', () => {
+      expect(
+        isContentBlock({
+          kind: 'settings-change',
+          payload: { theme: 'dark' },
+          preview: { title: 'Change theme' },
+        }),
+      ).toBe(true);
+    });
   });
 
   describe('normalizeContentBlock', () => {
@@ -78,6 +84,16 @@ describe('ContentBlock Type', () => {
 
     it('should throw on invalid block', () => {
       expect(() => normalizeContentBlock({ type: 'invalid' })).toThrow();
+    });
+
+    it('should normalize proposal kind blocks to proposal type', () => {
+      const normalized = normalizeContentBlock({
+        kind: 'workspace-create',
+        payload: { name: 'Docs' },
+        preview: { title: 'Create workspace' },
+      });
+      expect(normalized.type).toBe('proposal');
+      expect(normalized.kind).toBe('workspace-create');
     });
   });
 
@@ -308,6 +324,24 @@ describe('Migration Utilities', () => {
     expect(converted.text).toBe('hello');
   });
 
+  it('convertFromACP should convert proposal resources to proposal blocks', () => {
+    const converted = convertFromACP({
+      type: 'resource',
+      resource: {
+        uri: 'intent-proposal://settings-change/test',
+        mimeType: 'application/vnd.intent.proposal+json',
+        text: JSON.stringify({
+          kind: 'settings-change',
+          payload: { changes: [] },
+          preview: { title: 'Change settings' },
+        }),
+      },
+    });
+
+    expect(converted.type).toBe('proposal');
+    expect(converted.kind).toBe('settings-change');
+  });
+
   it('convertToACP should convert to ACP format', () => {
     const block: ContentBlock = { type: 'text', text: 'hello' };
     const acp = convertToACP(block);
@@ -324,5 +358,18 @@ describe('Migration Utilities', () => {
     expect(migrated).toHaveLength(2);
     expect(migrated[0].text).toBe('hello');
     expect(migrated[1].name).toBe('test');
+  });
+
+  it('migrateFromLegacy should preserve proposal fields', () => {
+    const migrated = migrateFromLegacy({
+      kind: 'bulk-op',
+      payload: { action: 'archive' },
+      preview: { title: 'Archive workspaces', bulkItems: [{ id: '1', title: 'One' }] },
+      applyToolCallId: 'tool-1',
+    });
+
+    expect(migrated.type).toBe('proposal');
+    expect(migrated.kind).toBe('bulk-op');
+    expect(migrated.applyToolCallId).toBe('tool-1');
   });
 });

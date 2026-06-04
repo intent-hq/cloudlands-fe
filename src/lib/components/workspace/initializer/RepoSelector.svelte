@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -19,24 +19,25 @@
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
-  setWorkspaceInitializerDefaultParentPath,
-  setWorkspaceInitializerLastSelectedRepo,
-  setWorkspaceInitializerRecentRepos,
-  setWorkspaceInitializerRemoteSetups,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+    setWorkspaceInitializerDefaultParentPath,
+    setWorkspaceInitializerLastSelectedRepo,
+    setWorkspaceInitializerRecentRepos,
+    setWorkspaceInitializerRemoteSetups,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
-  selectWorkspaceInitializerDefaultParentPath,
-  selectWorkspaceInitializerRecentRepos,
-  selectWorkspaceInitializerRemoteSetups,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+    selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerRemoteSetups,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import {
-  faFolder,
-  faXmark,
-  faPlus,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+    faFolder,
+    faXmark,
+    faPlus,
+    faSpinner,
+    faChevronDown,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -76,8 +77,13 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
+    displayValue?: string;
+    triggerValueClass?: string;
+    triggerContentClass?: string;
     emptyLabel?: string;
     showEmptyIcon?: boolean;
+    showTriggerChevron?: boolean;
+    triggerChevronClass?: string;
     onClear?: () => void;
   }
 
@@ -86,8 +92,13 @@
     value = '',
     onchange,
     triggerClass,
+    displayValue,
+    triggerValueClass = 'text-subtle',
+    triggerContentClass = 'gap-0.75',
     emptyLabel = 'Select a repository',
     showEmptyIcon = false,
+    showTriggerChevron = false,
+    triggerChevronClass = 'ml-2 opacity-50',
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClear,
   }: Props = $props();
@@ -1169,12 +1180,14 @@
     const parts = selectedValue.split(/[\/\\]/);
     return parts[parts.length - 1] || selectedValue;
   }
+
+  const triggerDisplayValue = $derived(displayValue ?? formatDisplayValue());
 </script>
 
 <div class="relative">
   <Select.Root bind:value={selectedValue} bind:open={isOpen}>
-    <Select.Trigger {variant} class={`w-full text-subtle ${triggerClass}`}>
-      <div class="flex items-center gap-0.75 truncate">
+    <Select.Trigger {variant} class={`w-full ${triggerClass}`}>
+      <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
         <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
@@ -1185,14 +1198,17 @@
         {/if}
         <span class="flex-1 text-left truncate">
           {#if selectedValue}
-            <span class="">{formatDisplayValue()}</span>
-            {#if isNewRepo}
+            <span class={triggerValueClass}>{triggerDisplayValue}</span>
+            {#if isNewRepo && !displayValue}
               <span class="text-sm text-subtle ml-1">(new)</span>
             {/if}
           {:else}
-            <span>{emptyLabel}</span>
+            <span class={triggerValueClass}>{emptyLabel}</span>
           {/if}
         </span>
+        {#if showTriggerChevron}
+          <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
+        {/if}
       </div>
     </Select.Trigger>
     <Select.Content

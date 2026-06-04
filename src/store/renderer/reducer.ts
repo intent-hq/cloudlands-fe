@@ -68,6 +68,11 @@ import { appLayoutReducer } from "./slices/app-layout/app-layout-slice";
 import { sessionStatsReducer } from "./slices/session-stats/session-stats-slice";
 import { workspaceInitializerReducer } from "./slices/workspace-initializer/workspace-initializer-slice";
 import { themeReducer } from "./slices/theme/theme-slice";
+import { uiHighlightReducer } from "./slices/ui-highlight/ui-highlight-slice";
+import { settingsProposalHistoryReducer } from "./slices/settings-proposal-history/settings-proposal-history-slice";
+import { specialistProposalHistoryReducer } from "./slices/specialist-proposal-history/specialist-proposal-history-slice";
+import { proposalLifecycleReducer } from "./slices/proposal-lifecycle/proposal-lifecycle-slice";
+import { prBranchLookupReducer } from "./slices/pr-branch-lookup/pr-branch-lookup-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -140,5 +145,9 @@ export const reducers = {
   appLayout: appLayoutReducer,
   sessionStats: sessionStatsReducer,
   theme: themeReducer,
+  uiHighlight: uiHighlightReducer,
+  settingsProposalHistory: settingsProposalHistoryReducer,
+  specialistProposalHistory: specialistProposalHistoryReducer,
+  proposalLifecycle: proposalLifecycleReducer,
+  prBranchLookup: prBranchLookupReducer,
 } as const;
-

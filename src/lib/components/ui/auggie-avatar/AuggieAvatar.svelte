@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  stringToHash,
-  SeededRandom,
-} from '$lib/utils/hash';
+  import { stringToHash, SeededRandom } from '$lib/utils/hash';
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
@@ -32,6 +29,7 @@
 
   // Ensure seeds are always strings to prevent flickering from undefined -> string transitions
   // Agent avatars use agentId for deterministic colors/faces; seed remains for non-agent previews.
+  const hasIdentity = $derived(Boolean(agentId) || Boolean(seed));
   let stableColorSource = $derived(agentId || seed || 'default-color');
   let stableFaceSource = $derived(agentId || seed || 'default-face');
 
@@ -46,6 +44,10 @@
   // Generate selections based on seeds - always use the consistent color system
   // Use darker colors in dark mode for better contrast
   let [selectedColor, selectedColor2] = $derived.by(() => {
+    if (!hasIdentity) {
+      return $isDarkTheme ? ['#4B5563', '#374151'] : ['#D1D5DB', '#9CA3AF'];
+    }
+
     const colorSource =
       typeof stableColorSource === 'string' ? stableColorSource : String(stableColorSource);
     return getRandomColorsWithSeed(colorSource, $isDarkTheme);

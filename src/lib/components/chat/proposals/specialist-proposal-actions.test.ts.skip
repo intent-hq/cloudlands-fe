@@ -1,0 +1,284 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
+import { createCollection } from '$lib/store/utils/collection-utils';
+import {
+  deleteFileSpecialist,
+  initialState as specialistsInitialState,
+  saveFileSpecialist,
+  type FileSpecialist,
+} from '$lib/store/slices/specialists/specialists-slice';
+import {
+  applyProposalRequested,
+  undoProposalRequested,
+} from '$lib/store/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as modelInitialState } from '$lib/store/slices/model/model-slice';
+import { initialState as providerSettingsInitialState } from '$lib/store/slices/provider-settings/provider-settings-slice';
+import type { StoreState } from '$lib/store/types';
+
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  getState: vi.fn(),
+  navigateToSettings: vi.fn(),
+}));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({ dispatch: mocks.dispatch, getState: mocks.getState }),
+}));
+
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: mocks.navigateToSettings,
+}));
+
+import {
+  applySpecialistProposal,
+  applySpecialistProposalWork,
+  undoSpecialistProposal,
+  undoSpecialistProposalWork,
+} from './specialist-proposal-actions';
+
+function makeState(overrides: Partial<StoreState> = {}): StoreState {
+  return {
+    specialists: specialistsInitialState,
+    model: { ...modelInitialState, providerModels: { auggie: 'auggie:sonnet4.5' } },
+    providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
+    workspace: { activeWorkspaceId: null, workspaces: createCollection('id') },
+    specialistProposalHistory: { entries: {} },
+    githubAuth: { status: 'unauthenticated' },
+    agentSessions: { byAgentId: {} },
+    ...overrides,
+  } as StoreState;
+}
+
+function makeDetail(proposal: Proposal): ProposalActionDetail {
+  return { proposal, editedFields: {}, selectedBulkItemIds: [] };
+}
+
+function makeCreateProposal(): Proposal {
+  return {
+    kind: 'specialist-edit',
+    applyToolCallId: 'tool-create-specialist',
+    payload: {
+      operation: 'create',
+      id: 'review-buddy',
+      name: 'Review Buddy',
+      description: 'Reviews changes',
+      model: 'auggie:opus4.5',
+      prompt: 'Review carefully.',
+      scope: 'user',
+    },
+    preview: { title: 'Create specialist: Review Buddy' },
+  };
+}
+
+function existingFileSpecialist(): FileSpecialist {
+  return {
+    id: 'review-buddy',
+    name: 'Review Buddy',
+    description: 'Old description',
+    codingAgent: 'auggie',
+    model: 'auggie:sonnet4.5',
+    behaviorPrompt: 'Old prompt',
+    roleReminder: 'Stay focused.',
+    filePath: '/tmp/review-buddy.md',
+    source: 'user',
+  };
+}
+
+function makeEditProposal(): Proposal {
+  return {
+    kind: 'specialist-edit',
+    applyToolCallId: 'tool-edit-specialist',
+    payload: {
+      operation: 'edit',
+      id: 'review-buddy',
+      description: 'New description',
+      prompt: 'New prompt',
+    },
+    preview: { title: 'Edit specialist: Review Buddy' },
+  };
+}
+
+function makeDeleteProposal(): Proposal {
+  return {
+    kind: 'specialist-edit',
+    applyToolCallId: 'tool-delete-specialist',
+    payload: { operation: 'delete', id: 'review-buddy' },
+    preview: { title: 'Delete specialist: Review Buddy' },
+  };
+}
+
+describe('specialist-proposal-actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getState.mockReturnValue(makeState());
+  });
+
+  it('dispatches lifecycle apply requests for specialist proposals', () => {
+    const proposal = makeCreateProposal();
+
+    expect(applySpecialistProposal(makeDetail(proposal))).toBe(true);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      applyProposalRequested({
+        proposalId: 'tool-create-specialist',
+        kind: 'specialist-edit',
+        detail: makeDetail(proposal),
+      }),
+    );
+  });
+
+  it('applies create proposals with a delete reverse action and focuses the new specialist', async () => {
+    const proposal = makeCreateProposal();
+
+    const result = await applySpecialistProposalWork(makeDetail(proposal), {
+      dispatch: mocks.dispatch,
+      readState: mocks.getState,
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      saveFileSpecialist({
+        id: 'review-buddy',
+        name: 'Review Buddy',
+        description: 'Reviews changes',
+        codingAgent: 'auggie',
+        model: 'auggie:opus4.5',
+        modelTier: undefined,
+        roleReminder: undefined,
+        behaviorPrompt: 'Review carefully.',
+        scope: 'user',
+        workspacePath: undefined,
+      }),
+    );
+    expect(result.reverse).toEqual({
+      kind: 'delete',
+      id: 'review-buddy',
+      scope: 'user',
+      workspacePath: undefined,
+    });
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith({
+      tab: 'agents',
+      specialist: 'review-buddy',
+    });
+  });
+
+  it('returns edit proposal reverse action from current specialist values', async () => {
+    const fileSpecialist = existingFileSpecialist();
+    mocks.getState.mockReturnValue(
+      makeState({
+        specialists: {
+          ...specialistsInitialState,
+          fileSpecialists: createCollection<FileSpecialist, 'id'>('id', [fileSpecialist]),
+        },
+      }),
+    );
+
+    const result = await applySpecialistProposalWork(makeDetail(makeEditProposal()), {
+      dispatch: mocks.dispatch,
+      readState: mocks.getState,
+    });
+
+    expect(result.reverse).toEqual({
+      kind: 'save',
+      specialist: {
+        id: 'review-buddy',
+        name: 'Review Buddy',
+        description: 'Old description',
+        codingAgent: 'auggie',
+        model: 'auggie:sonnet4.5',
+        modelTier: undefined,
+        roleReminder: 'Stay focused.',
+        behaviorPrompt: 'Old prompt',
+        scope: 'user',
+        workspacePath: undefined,
+      },
+    });
+  });
+
+  it('applies delete proposals with a save reverse action from current specialist values', async () => {
+    const fileSpecialist = existingFileSpecialist();
+    mocks.getState.mockReturnValue(
+      makeState({
+        specialists: {
+          ...specialistsInitialState,
+          fileSpecialists: createCollection<FileSpecialist, 'id'>('id', [fileSpecialist]),
+        },
+      }),
+    );
+
+    const result = await applySpecialistProposalWork(makeDetail(makeDeleteProposal()), {
+      dispatch: mocks.dispatch,
+      readState: mocks.getState,
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      deleteFileSpecialist({
+        id: 'review-buddy',
+        scope: 'user',
+        workspacePath: undefined,
+      }),
+    );
+    expect(result.reverse).toEqual(expect.objectContaining({ kind: 'save' }));
+  });
+
+  it('undo work dispatches delete reverse actions', async () => {
+    await undoSpecialistProposalWork(
+      { kind: 'delete', id: 'review-buddy', scope: 'user' },
+      { dispatch: mocks.dispatch, readState: mocks.getState },
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      deleteFileSpecialist({
+        id: 'review-buddy',
+        scope: 'user',
+        workspacePath: undefined,
+      }),
+    );
+  });
+
+  it('undo work dispatches save reverse actions', async () => {
+    const specialist = {
+      id: 'review-buddy',
+      name: 'Review Buddy',
+      description: 'Restored',
+      model: 'auggie:sonnet4.5',
+      behaviorPrompt: 'Restored prompt',
+      scope: 'user' as const,
+    };
+
+    await undoSpecialistProposalWork(
+      { kind: 'save', specialist },
+      { dispatch: mocks.dispatch, readState: mocks.getState },
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(saveFileSpecialist(specialist));
+  });
+
+  it('undo dispatches lifecycle requests when history exists', () => {
+    mocks.getState.mockReturnValue(
+      makeState({
+        specialistProposalHistory: {
+          entries: {
+            'proposal-1': {
+              appliedAt: 123,
+              reverse: { kind: 'delete', id: 'review-buddy', scope: 'user' },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(undoSpecialistProposal('proposal-1')).toBe(true);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      undoProposalRequested({
+        proposalId: 'proposal-1',
+        kind: 'specialist-edit',
+      }),
+    );
+  });
+
+  it('undo returns false when no specialist history entry exists', () => {
+    expect(undoSpecialistProposal('missing')).toBe(false);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+});

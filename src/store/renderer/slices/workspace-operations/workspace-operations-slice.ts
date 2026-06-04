@@ -1,5 +1,6 @@
 import { createAction } from "ag-redux-toolkit/utils/store/create-action";
 import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import type { WorkspaceProposalApplyPayload } from "$shared/app-workspace-operations";
 
 export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;
@@ -47,6 +48,22 @@ export const requestArchiveWorkspace = createAction<[workspaceId: string]>(
 
 export const requestUnarchiveWorkspace = createAction<[workspaceId: string]>(
   "workspaceOperations/requestUnarchiveWorkspace"
+);
+
+export const requestBulkArchiveWorkspaces = createAction<[workspaceIds: string[]]>(
+  "workspaceOperations/requestBulkArchiveWorkspaces"
+);
+
+export const undoBulkArchiveWorkspaces = createAction<[workspaceIds: string[]]>(
+  "workspaceOperations/undoBulkArchiveWorkspaces"
+);
+
+export const requestBulkDeleteWorkspaces = createAction<[workspaceIds: string[]]>(
+  "workspaceOperations/requestBulkDeleteWorkspaces"
+);
+
+export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalApplyPayload]>(
+  "workspaceOperations/applyWorkspaceProposal"
 );
 
 export const openDeleteWarning = createAction<

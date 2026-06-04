@@ -1,3 +1,6 @@
+import type { Proposal } from './proposal';
+import { isProposalKind } from './proposal';
+
 /**
  * Unified ContentBlock Type Definition
  *
@@ -20,13 +23,41 @@
  */
 export interface ContentBlock {
   /** Type of content block */
-  type: 'text' | 'code' | 'tool_use' | 'tool_result' | 'thinking' | 'image' | 'audio' | 'file';
+  type:
+    | 'text'
+    | 'code'
+    | 'tool_use'
+    | 'tool_result'
+    | 'thinking'
+    | 'image'
+    | 'audio'
+    | 'file'
+    | 'nav-link'
+    | 'proposal';
 
   // Common fields
   /** Unique identifier for this block */
   id?: string;
   /** Arbitrary metadata associated with this block */
   metadata?: Record<string, any>;
+
+  // Navigation link fields
+  /** Structured block kind for app navigation links */
+  kind?: 'nav-link' | Proposal['kind'];
+  /** Internal route/hash target for nav-link blocks */
+  target?: string;
+  /** User-facing label for nav-link blocks */
+  label?: string;
+
+  // Proposal block fields
+  /** Structured proposal payload for chat-embedded proposal cards */
+  proposal?: Proposal;
+  /** Proposal payload when the block itself is a Proposal */
+  payload?: Proposal['payload'];
+  /** Proposal preview when the block itself is a Proposal */
+  preview?: Proposal['preview'];
+  /** Tool call ID to invoke when applying this proposal */
+  applyToolCallId?: string;
 
   // Text content fields
   /** Text content (primary field) */
@@ -76,10 +107,21 @@ export function isContentBlock(value: any): value is ContentBlock {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof value.type === 'string' &&
-    ['text', 'code', 'tool_use', 'tool_result', 'thinking', 'image', 'audio', 'file'].includes(
-      value.type,
-    )
+    ((typeof value.type === 'string' &&
+      [
+        'text',
+        'code',
+        'tool_use',
+        'tool_result',
+        'thinking',
+        'image',
+        'audio',
+        'file',
+        'nav-link',
+        'proposal',
+      ].includes(value.type)) ||
+      (value.kind === 'nav-link' && typeof value.target === 'string') ||
+      (isProposalKind(value.kind) && !!value.preview))
   );
 }
 
@@ -93,6 +135,22 @@ export function normalizeContentBlock(block: any): ContentBlock {
   }
 
   const normalized: ContentBlock = { ...block };
+
+  if (block.kind === 'nav-link' && !block.type) {
+    normalized.type = 'nav-link';
+  }
+
+  if (isProposalKind(block.kind) && !block.type) {
+    normalized.type = 'proposal';
+  }
+
+  if (block.proposal) {
+    normalized.proposal = block.proposal;
+    normalized.kind = block.proposal.kind;
+    normalized.payload = block.proposal.payload;
+    normalized.preview = block.proposal.preview;
+    normalized.applyToolCallId = block.proposal.applyToolCallId;
+  }
 
   // Normalize text field
   if (block.content && !block.text) {
@@ -139,7 +197,7 @@ export function normalizeContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
     const last = result[result.length - 1];
     if (block.type === 'text' && last?.type === 'text') {
       // Merge adjacent text blocks, stripping stale legacy `content` field
-       
+
       const { content: _lastContent, ...lastWithoutContent } = last;
       result[result.length - 1] = {
         ...lastWithoutContent,

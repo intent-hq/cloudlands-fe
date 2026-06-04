@@ -15,6 +15,7 @@ export const VIEW_MODE_KEY = "intent:all-spaces-view-mode";
 export const PANEL_WIDTH_KEY = "intent:sidebar-panel-width";
 export const PANEL_ITEM_KEY = "intent:sidebar-panel-item";
 export const CARD_PINNED_KEY = "intent:sidebar-card-pinned";
+export const CHIEF_ACTIVE_AGENT_ID_KEY = "intent:chief-active-agent-id";
 export const MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX = "multiselect-sidebar-";
 export const MULTISELECT_SIDEBAR_TAB_ORDER_KEY = "multiselect-sidebar-tab-order";
 export const WORKSPACE_NOTE_ORDER_PREFIX = "workspace-note-order-";
@@ -38,6 +39,7 @@ export const initialState: SidebarNavState = {
   multiSelectSelectedTabIdsByWorkspaceId: {},
   noteOrderByWorkspaceId: {},
   collapsedNoteIdsByWorkspaceId: {},
+  chiefActiveAgentId: null,
   contextMenuOpenCount: 0,
   deferredLeave: null,
 };
@@ -101,6 +103,9 @@ export const setWorkspaceCollapsedNoteIds = createAction<[
   workspaceId: string,
   noteIds: string[],
 ]>("sidebarNav/setWorkspaceCollapsedNoteIds");
+export const setChiefActiveAgentId = createAction<[agentId: string | null]>(
+  "sidebarNav/setChiefActiveAgentId"
+);
 export const toggleWorkspaceCollapsedNote = createAction<[workspaceId: string, noteId: string]>(
   "sidebarNav/toggleWorkspaceCollapsedNote"
 );
@@ -121,7 +126,7 @@ export const closeAll = createAction<[force: boolean]>("sidebarNav/closeAll");
 // Hydration from localStorage
 export const hydrateSidebarNav = createAction(
   "sidebarNav/hydrate",
-  (data: Partial<Pick<SidebarNavState, "isCardPinned" | "panelItem" | "panelWidth" | "allSpacesViewMode" | "pinnedWorkspaceIds" | "multiSelectTabOrder">>) => data,
+  (data: Partial<Pick<SidebarNavState, "isCardPinned" | "panelItem" | "panelWidth" | "allSpacesViewMode" | "pinnedWorkspaceIds" | "multiSelectTabOrder" | "chiefActiveAgentId">>) => data,
 );
 
 // ── Reducer ──
@@ -231,6 +236,10 @@ export const sidebarNavReducer = cardPinnedPreference.register(
       ...state.collapsedNoteIdsByWorkspaceId,
       [workspaceId]: noteIds,
     },
+  }))
+  .with(setChiefActiveAgentId, (state, { payload: [agentId] }) => ({
+    ...state,
+    chiefActiveAgentId: agentId,
   }))
   .with(toggleWorkspaceCollapsedNote, (state, { payload: [workspaceId, noteId] }) => {
     const current = state.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [];

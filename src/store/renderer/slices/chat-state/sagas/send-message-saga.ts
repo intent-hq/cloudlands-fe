@@ -175,9 +175,8 @@ function* serializeContextItemsForQueue(
           : { ...rest, fileData: data, fileMimeType: mimeType },
       );
     } catch (error) {
-      logger.error('Failed to serialize context item for queued send', {
+      logger.error('Failed to serialize context item for queued send', error, {
         label: item.label,
-        error,
       });
     }
   }
@@ -200,10 +199,9 @@ function* removeQueuedMessageBeforeSend(
     payload.queuedMessageId,
   );
   if (!result.success) {
-    logger.error('Failed to remove queued message before sending', {
+    logger.error('Failed to remove queued message before sending', result.error, {
       agentId,
       messageId: payload.queuedMessageId,
-      error: result.error,
     });
   }
   return result.success;
@@ -274,7 +272,7 @@ function* handleQueuePath(
       hasImages: !!imageBlocks?.length,
     });
   } else {
-    logger.error('Failed to queue message', { agentId, error: result.error });
+    logger.error('Failed to queue message', result.error, { agentId });
   }
 }
 

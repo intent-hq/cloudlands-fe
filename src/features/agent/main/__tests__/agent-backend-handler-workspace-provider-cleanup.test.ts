@@ -1,11 +1,5 @@
-import {
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getOrphanedProviderCleanupPlan } from '../orphaned-provider-cleanup';
 
 vi.mock('electron', () => ({
   app: {
@@ -57,8 +51,9 @@ let AgentBackendHandlerClass: typeof import('../agent-backend-handler.service').
 
 describe('AgentBackendHandler getWorkspaceIdsWithProviders', () => {
   beforeAll(async () => {
-    ({ AgentBackendHandler: AgentBackendHandlerClass } =
-      await vi.importActual('../agent-backend-handler.service'));
+    ({ AgentBackendHandler: AgentBackendHandlerClass } = await vi.importActual(
+      '../agent-backend-handler.service',
+    ));
   });
 
   beforeEach(() => {
@@ -112,8 +107,9 @@ describe('AgentBackendHandler getWorkspaceIdsWithProviders', () => {
 
 describe('AgentBackendHandler hasActiveAgentsInWorkspace', () => {
   beforeAll(async () => {
-    ({ AgentBackendHandler: AgentBackendHandlerClass } =
-      await vi.importActual('../agent-backend-handler.service'));
+    ({ AgentBackendHandler: AgentBackendHandlerClass } = await vi.importActual(
+      '../agent-backend-handler.service',
+    ));
   });
 
   beforeEach(() => {
@@ -220,7 +216,8 @@ describe('AgentBackendHandler hasActiveAgentsInWorkspace', () => {
   it('returns true when agent has active subscriptions', async () => {
     // Mock selectAgentSubscriptions to return subscriptions for the specific agent
     const { getMainState } = await import('../../../../store/main/redux-store-bridge');
-    const { selectAgentSubscriptions } = await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+    const { selectAgentSubscriptions } =
+      await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
 
     vi.mocked(getMainState).mockReturnValue({
       agentSubscriptions: {
@@ -256,14 +253,16 @@ describe('AgentBackendHandler hasActiveAgentsInWorkspace', () => {
 
 describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
   beforeAll(async () => {
-    ({ AgentBackendHandler: AgentBackendHandlerClass } =
-      await vi.importActual('../agent-backend-handler.service'));
+    ({ AgentBackendHandler: AgentBackendHandlerClass } = await vi.importActual(
+      '../agent-backend-handler.service',
+    ));
   });
 
   beforeEach(async () => {
     vi.clearAllMocks();
     // Reset the subscription selector mock to return empty array (no active subscriptions)
-    const { selectAgentSubscriptions } = await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
+    const { selectAgentSubscriptions } =
+      await import('../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors');
     vi.mocked(selectAgentSubscriptions.select).mockReturnValue([]);
   });
 
@@ -284,25 +283,14 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     openWorkspaceIds: Set<string>,
     onStopProviders: (wsId: string) => void,
   ): { orphanedWorkspaceIds: string[]; safeToCleanup: string[]; skipped: string[] } {
-    const providerWorkspaceIds = handler.getWorkspaceIdsWithProviders();
-    const orphanedWorkspaceIds = [...providerWorkspaceIds].filter(
-      (wsId: string) => !openWorkspaceIds.has(wsId),
-    );
-
-    const safeToCleanup = orphanedWorkspaceIds.filter((wsId: string) => {
-      const hasActive = handler.hasActiveAgentsInWorkspace(wsId);
-      return !hasActive;
-    });
-
-    const skipped = orphanedWorkspaceIds.filter((wsId: string) =>
-      handler.hasActiveAgentsInWorkspace(wsId),
-    );
+    const { orphanedWorkspaceIds, safeToCleanup, skippedWithActiveAgents } =
+      getOrphanedProviderCleanupPlan(handler, openWorkspaceIds);
 
     for (const wsId of safeToCleanup) {
       onStopProviders(wsId);
     }
 
-    return { orphanedWorkspaceIds, safeToCleanup, skipped };
+    return { orphanedWorkspaceIds, safeToCleanup, skipped: skippedWithActiveAgents };
   }
 
   it('stops providers for orphaned workspace when all agents are idle', () => {
@@ -318,16 +306,34 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     const stoppedWorkspaces: string[] = [];
     const openWorkspaceIds = new Set<string>(); // ws-orphaned has no open window
 
-    const result = simulateOrphanedWorkspaceCleanup(
-      handler,
-      openWorkspaceIds,
-      (wsId) => stoppedWorkspaces.push(wsId),
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
     );
 
     expect(result.orphanedWorkspaceIds).toEqual(['ws-orphaned']);
     expect(result.safeToCleanup).toEqual(['ws-orphaned']);
     expect(result.skipped).toEqual([]);
     expect(stoppedWorkspaces).toEqual(['ws-orphaned']);
+  });
+
+  it('does NOT include virtual workspaces in safeToCleanup when no window is open', () => {
+    const handler = createHandler();
+    handler.streamWorkspaceIds.set('agent-chief', '__chief__');
+    handler.providers.set('agent-chief', {
+      config: { workspaceId: '__chief__' },
+      streamingCallbacks: new Map(),
+      pendingRequests: new Map(),
+    });
+
+    const stoppedWorkspaces: string[] = [];
+    const openWorkspaceIds = new Set<string>();
+
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
+    );
+
+    expect(result.safeToCleanup).not.toContain('__chief__');
+    expect(stoppedWorkspaces).not.toContain('__chief__');
   });
 
   it('does NOT stop providers for orphaned workspace with active streaming agent', () => {
@@ -345,10 +351,8 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     const stoppedWorkspaces: string[] = [];
     const openWorkspaceIds = new Set<string>(); // ws-orphaned-active has no open window
 
-    const result = simulateOrphanedWorkspaceCleanup(
-      handler,
-      openWorkspaceIds,
-      (wsId) => stoppedWorkspaces.push(wsId),
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
     );
 
     expect(result.orphanedWorkspaceIds).toEqual(['ws-orphaned-active']);
@@ -389,10 +393,8 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     const stoppedWorkspaces: string[] = [];
     const openWorkspaceIds = new Set(['ws-open']); // Only ws-open has a window
 
-    const result = simulateOrphanedWorkspaceCleanup(
-      handler,
-      openWorkspaceIds,
-      (wsId) => stoppedWorkspaces.push(wsId),
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
     );
 
     // Only ws-orphaned-idle and ws-orphaned-active are orphaned (no open window)
@@ -422,10 +424,8 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     const stoppedWorkspaces: string[] = [];
     const openWorkspaceIds = new Set<string>();
 
-    const result = simulateOrphanedWorkspaceCleanup(
-      handler,
-      openWorkspaceIds,
-      (wsId) => stoppedWorkspaces.push(wsId),
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
     );
 
     expect(result.orphanedWorkspaceIds).toEqual(['ws-orphaned-pending']);
@@ -456,10 +456,8 @@ describe('AgentBackendHandler orphaned workspace cleanup integration', () => {
     const stoppedWorkspaces: string[] = [];
     const openWorkspaceIds = new Set<string>();
 
-    const result = simulateOrphanedWorkspaceCleanup(
-      handler,
-      openWorkspaceIds,
-      (wsId) => stoppedWorkspaces.push(wsId),
+    const result = simulateOrphanedWorkspaceCleanup(handler, openWorkspaceIds, (wsId) =>
+      stoppedWorkspaces.push(wsId),
     );
 
     expect(result.orphanedWorkspaceIds).toEqual(['ws-mixed']);

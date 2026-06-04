@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
@@ -14,14 +14,14 @@
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
-  faCheck,
-  faChevronDown,
-  faChevronRight,
-  faCloud,
-  faExclamationTriangle,
-  faRotate,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+    faCheck,
+    faChevronDown,
+    faChevronRight,
+    faCloud,
+    faExclamationTriangle,
+    faRotate,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -69,6 +69,9 @@
     onchange?: (event: CustomEvent<{ branch: string }>) => void;
     /** Whether to show the uncommitted changes indicator (default: false) */
     showUncommittedIndicator?: boolean;
+    showTriggerChevron?: boolean;
+    triggerChevronClass?: string;
+    triggerContentClass?: string;
   }
 
   let {
@@ -90,6 +93,9 @@
     onBranchStatusChange,
     onchange,
     showUncommittedIndicator = false,
+    showTriggerChevron = false,
+    triggerChevronClass = 'ml-2 opacity-50',
+    triggerContentClass = 'gap-0.75',
   }: Props = $props();
 
   // State
@@ -153,7 +159,13 @@
   // Use a previous-value guard to avoid re-notifying when the callback prop
   // reference changes but the status values are identical (prevents
   // effect_update_depth_exceeded when inline function props are recreated).
-  let lastNotifiedBranchStatus: { behind: number; hasUncommittedChanges: boolean; currentBranch: string; isCurrentBranch: boolean; isLoading: boolean } | null = null;
+  let lastNotifiedBranchStatus: {
+    behind: number;
+    hasUncommittedChanges: boolean;
+    currentBranch: string;
+    isCurrentBranch: boolean;
+    isLoading: boolean;
+  } | null = null;
   $effect(() => {
     if (typeof onBranchStatusChange === 'function' && selectedBranch) {
       const behind = branchStatusBehind;
@@ -1281,7 +1293,7 @@
         {variant}
         class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary rounded-sm' : ''}`}
       >
-        <div class="flex items-center gap-0.75 truncate min-w-0">
+        <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
           {#if githubAuthNeeded === 'not-authenticated'}
             <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
           {:else if hasTriggerIcon}
@@ -1314,6 +1326,9 @@
                 <span class="w-1.5 h-1.5 ml-0.5 rounded-full bg-amber-500 cursor-help"></span>
               </Tooltip>
             </div>
+          {/if}
+          {#if showTriggerChevron}
+            <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
           {/if}
         </div>
       </Select.Trigger>

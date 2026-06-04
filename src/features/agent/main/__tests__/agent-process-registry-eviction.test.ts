@@ -5,13 +5,7 @@
  * and count-limited eviction.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   registerProcess,
   deregisterProcess,
@@ -109,6 +103,20 @@ describe('evictIdleProcesses', () => {
     expect(getRegistrySize()).toBe(1);
   });
 
+  it('never evicts virtual workspace processes', async () => {
+    const chief = makeEntry({ pid: 1, workspaceId: '__chief__', lastActiveTimestamp: 1 });
+    const idle = makeEntry({ pid: 2, workspaceId: 'ws-idle', lastActiveTimestamp: 2 });
+    registerProcess(chief);
+    registerProcess(idle);
+
+    const evicted = await evictIdleProcesses();
+
+    expect(evicted).toBe(1);
+    expect(chief.kill).not.toHaveBeenCalled();
+    expect(idle.kill).toHaveBeenCalled();
+    expect(getRegistrySize()).toBe(1);
+  });
+
   it('returns 0 when no idle processes exist', async () => {
     registerProcess(makeEntry({ pid: 1, isActive: true }));
     registerProcess(makeEntry({ pid: 2, hasPendingWork: () => true }));
@@ -201,4 +209,3 @@ describe('evictIdleProcesses', () => {
     expect(getRegistrySize()).toBe(0);
   });
 });
-

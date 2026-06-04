@@ -7,11 +7,7 @@
  * Uses actual prompts from the codebase to ensure tests stay in sync.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   loadInstruction,
   getSpecialists,
@@ -31,7 +27,7 @@ describe('Specialist Prompts', () => {
   describe('Prompt Loading', () => {
     it('should load all specialist prompts', () => {
       const specialists = getSpecialists();
-      expect(specialists).toHaveLength(8);
+      expect(specialists).toHaveLength(9);
       expect(specialists.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
@@ -40,6 +36,7 @@ describe('Specialist Prompts', () => {
         'pr-shepherd',
         'ui-designer',
         'developer',
+        'chief-of-staff',
         'ralph',
       ]);
     });

@@ -7,10 +7,17 @@ import {
   it,
   expect,
   beforeEach,
+  vi,
 } from 'vitest';
-import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
+import {
+  FileSystemWorkspaceRepository,
+  getChiefWorkspace,
+  InMemoryWorkspaceRepository,
+} from '../main/workspace.repository';
 import type { Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
+import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { promises as fs } from 'fs';
 
 import { randomUUID } from 'crypto';
 
@@ -36,6 +43,15 @@ describe('InMemoryWorkspaceRepository', () => {
   });
 
   describe('save and findById', () => {
+    it('should return the synthetic chief workspace by fixed id', async () => {
+      const chiefWorkspace = await repository.findById(CHIEF_WORKSPACE_ID);
+
+      expect(chiefWorkspace).toEqual(getChiefWorkspace());
+      expect(chiefWorkspace?.title).toBe('Chief of Staff');
+      expect(chiefWorkspace?.repositoryPath).toBeUndefined();
+      expect(chiefWorkspace?.worktreePath).toBeUndefined();
+    });
+
     it('should save and retrieve a workspace', async () => {
       const workspace = createTestWorkspace();
 
@@ -64,6 +80,11 @@ describe('InMemoryWorkspaceRepository', () => {
   });
 
   describe('findAll', () => {
+    it('should not include the synthetic chief workspace in workspace scans', async () => {
+      const workspaces = await repository.findAll();
+      expect(workspaces.map((w) => w.id)).not.toContain(CHIEF_WORKSPACE_ID);
+    });
+
     it('should return empty array when no workspaces', async () => {
       const workspaces = await repository.findAll();
       expect(workspaces).toEqual([]);
@@ -100,6 +121,10 @@ describe('InMemoryWorkspaceRepository', () => {
   });
 
   describe('exists', () => {
+    it('should return true for the synthetic chief workspace', async () => {
+      await expect(repository.exists(CHIEF_WORKSPACE_ID)).resolves.toBe(true);
+    });
+
     it('should return true for existing workspace', async () => {
       const workspace = createTestWorkspace();
 
@@ -148,5 +173,28 @@ describe('InMemoryWorkspaceRepository', () => {
       const workspaces = await repository.findAll();
       expect(workspaces).toEqual([]);
     });
+  });
+});
+
+describe('FileSystemWorkspaceRepository virtual workspaces', () => {
+  it('should resolve chief workspace without reading workspace metadata from disk', async () => {
+    const repository = new FileSystemWorkspaceRepository();
+    const accessSpy = vi.spyOn(fs, 'access');
+
+    const chiefWorkspace = await repository.findById(CHIEF_WORKSPACE_ID);
+
+    expect(chiefWorkspace).toEqual(getChiefWorkspace());
+    expect(accessSpy).not.toHaveBeenCalled();
+    accessSpy.mockRestore();
+  });
+
+  it('should not create directories when asked to save chief workspace', async () => {
+    const repository = new FileSystemWorkspaceRepository();
+    const mkdirSpy = vi.spyOn(fs, 'mkdir');
+
+    await repository.save(getChiefWorkspace());
+
+    expect(mkdirSpy).not.toHaveBeenCalled();
+    mkdirSpy.mockRestore();
   });
 });

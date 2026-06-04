@@ -12,7 +12,7 @@ import {
   type AgentSession,
 } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
-import { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-stream-lifecycle';
 import {
   emptyChatAgentState,
@@ -59,6 +59,7 @@ import {
   handleAgentSessionRetryLastMessageRequested,
   handleAgentSessionRetryWithModelRequested,
   handleAgentSessionSendMessageRequested,
+  resolveSendWorkspace,
 } from './agent-chat-effects-saga';
 import {
   selectAgentActivationWaitComplete,
@@ -413,6 +414,24 @@ describe('agent-chat-effects saga migrated flows', () => {
     expect(await rejection).toBe('Network failure');
   });
 
+  it('logs the underlying error object so message and stack are not swallowed', async () => {
+    const sendError = new Error('Backend exploded');
+    vi.mocked(sendAgentMessage).mockRejectedValueOnce(sendError);
+    const action = agentSessionSendMessageRequested(AGENT, WS, 'boom');
+    action.promise.catch(() => undefined);
+
+    await runHandler(
+      handleAgentSessionSendMessageRequested,
+      action,
+      makeState([textMessage('u1', 'user', 'Hello')]),
+    );
+    await vi.dynamicImportSettled();
+
+    expect(loggerMock.error).toHaveBeenCalledWith('Failed to send message', sendError, {
+      agentId: AGENT,
+    });
+  });
+
   it('clears send state without a toast when the message guard blocks a send', async () => {
     const guardError = new Error('Duplicate message detected');
     guardError.name = 'MessageGuardError';
@@ -704,5 +723,48 @@ describe('agent-chat-effects saga migrated flows', () => {
     });
     expect(forkPayload[1].messages).toEqual(messages.slice(0, 2));
     expect(forkPayload[1].messages).not.toBe(messages);
+  });
+});
+
+describe('resolveSendWorkspace', () => {
+  async function runResolve(wsId: string, sessionWorkspaceId: string) {
+    const state = makeState([]);
+    return runSaga(
+      {
+        getState: () => state,
+        dispatch: () => {},
+        context: {
+          readableStoreState: {
+            subscribe: (subscriber: (value: any) => void) => {
+              subscriber(state);
+              return () => {};
+            },
+          },
+        },
+      },
+      resolveSendWorkspace,
+      wsId,
+      sessionWorkspaceId,
+    ).toPromise();
+  }
+
+  it('returns the Chief virtual workspace when wsId is the Chief id and the slice has no entry', async () => {
+    const resolved = await runResolve(CHIEF_WORKSPACE_ID, CHIEF_WORKSPACE_ID);
+
+    expect(resolved.id).toBe('__chief__');
+    expect(resolved.title).toBe('Chief of Staff');
+  });
+
+  it('returns the Chief virtual workspace when only the session workspace is the Chief id', async () => {
+    const resolved = await runResolve(WS, CHIEF_WORKSPACE_ID);
+
+    expect(resolved.id).toBe('__chief__');
+    expect(resolved.title).toBe('Chief of Staff');
+  });
+
+  it('throws for an unknown non-Chief workspace id', async () => {
+    await expect(runResolve('ws-missing', 'ws-missing')).rejects.toThrow(
+      'Workspace not found. Please try again.',
+    );
   });
 });

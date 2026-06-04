@@ -7,7 +7,8 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { Workspace, WorkspaceId } from '../../../shared/types';
+import { type Workspace, type WorkspaceId, WorkspaceStatus } from '../../../shared/types';
+import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import {
   validateWorkspace,
@@ -27,6 +28,23 @@ const { FileNotFoundError, FileReadError, FileWriteError, WorkspaceNotFoundError
 const { Logger } = LoggerModule;
 
 const logger = new Logger('WorkspaceRepository');
+
+const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
+
+export function getChiefWorkspace(): Workspace {
+  return {
+    id: CHIEF_WORKSPACE_ID,
+    title: 'Chief of Staff',
+    branch: '',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: CHIEF_WORKSPACE_TIMESTAMP,
+    updatedAt: CHIEF_WORKSPACE_TIMESTAMP,
+    lastActivity: CHIEF_WORKSPACE_TIMESTAMP,
+  };
+}
 
 /**
  * Repository interface for workspace persistence
@@ -65,6 +83,14 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       // Validate id parameter
       if (!id) {
         logger.error('findById called with undefined or null id');
+        return null;
+      }
+
+      if (id === CHIEF_WORKSPACE_ID) {
+        return getChiefWorkspace();
+      }
+
+      if (WorkspaceConfig.isVirtualWorkspace(id)) {
         return null;
       }
 
@@ -234,6 +260,12 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async save(workspace: Workspace): Promise<void> {
     try {
+      if (WorkspaceConfig.isVirtualWorkspace(workspace.id)) {
+        this.cache.delete(workspace.id);
+        this.listCache = null;
+        return;
+      }
+
       // Validate workspace before saving
       validateWorkspace(workspace);
 
@@ -346,6 +378,12 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async delete(id: WorkspaceId): Promise<void> {
     try {
+      if (WorkspaceConfig.isVirtualWorkspace(id)) {
+        this.cache.delete(id);
+        this.listCache = null;
+        return;
+      }
+
       const workspacePath = WorkspaceConfig.paths.workspace(id);
 
       // Check if workspace exists
@@ -380,6 +418,14 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    * Check if workspace exists
    */
   async exists(id: WorkspaceId): Promise<boolean> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return true;
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return false;
+    }
+
     try {
       const metadataPath = WorkspaceConfig.paths.workspaceMetadata(id);
       await fs.access(metadataPath);
@@ -393,6 +439,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    * Clean up workspace directory (for failed creation)
    */
   async cleanup(id: WorkspaceId): Promise<void> {
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      logger.debug('Virtual workspace cleanup skipped', { workspaceId: id });
+      return;
+    }
+
     try {
       const workspacePath = WorkspaceConfig.paths.workspace(id);
       await fs.rm(workspacePath, { recursive: true, force: true });
@@ -408,6 +459,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
     try {
+      if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+        logger.debug('Virtual workspace context save skipped', { workspaceId });
+        return;
+      }
+
       const metadataPath = WorkspaceConfig.paths.metadata(workspaceId);
       const contextPath = path.join(metadataPath, 'current-context.json');
 
@@ -432,6 +488,10 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async readContext(workspaceId: WorkspaceId): Promise<any | null> {
     try {
+      if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+        return null;
+      }
+
       const metadataPath = WorkspaceConfig.paths.metadata(workspaceId);
       const contextPath = path.join(metadataPath, 'current-context.json');
 
@@ -525,6 +585,12 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    * Clean cache directory
    */
   async cleanCache(id: WorkspaceId): Promise<void> {
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      this.cache.delete(id);
+      logger.debug('Virtual workspace cache cleanup skipped', { workspaceId: id });
+      return;
+    }
+
     try {
       const cachePath = WorkspaceConfig.paths.cache(id);
       await fs.rm(cachePath, { recursive: true, force: true });
@@ -553,6 +619,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   private workspaces = new Map<WorkspaceId, Workspace>();
 
   async findById(id: WorkspaceId): Promise<Workspace | null> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return getChiefWorkspace();
+    }
+
     return this.workspaces.get(id) || null;
   }
 
@@ -561,6 +631,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   }
 
   async save(workspace: Workspace): Promise<void> {
+    if (WorkspaceConfig.isVirtualWorkspace(workspace.id)) {
+      return;
+    }
+
     // Validate before saving
     validateWorkspace(workspace);
     this.workspaces.set(workspace.id, workspace);
@@ -568,6 +642,10 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   }
 
   async delete(id: WorkspaceId): Promise<void> {
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return;
+    }
+
     if (!this.workspaces.has(id)) {
       throw new WorkspaceNotFoundError(id);
     }
@@ -576,6 +654,14 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   }
 
   async exists(id: WorkspaceId): Promise<boolean> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return true;
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return false;
+    }
+
     return this.workspaces.has(id);
   }
 

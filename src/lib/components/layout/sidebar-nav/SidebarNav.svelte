@@ -26,9 +26,11 @@
   faLayerGroup,
   faCog,
   faBell,
+  faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -105,6 +107,7 @@
     { id: 'new-workspace', icon: faPlus, label: 'New' },
     { id: 'active', icon: faBell, label: 'Active', badge: () => unreadCount },
     { id: 'all-workspaces', icon: faLayerGroup, label: 'All' },
+    { id: 'chief', icon: faWandMagicSparkles, label: 'Chief of Staff' },
     { id: 'settings', icon: faCog, label: 'Settings' },
   ];
 
@@ -236,7 +239,7 @@
 <nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label="Global navigation">
   <!-- Top nav items -->
   <div class="flex flex-col items-center gap-1 w-full px-1.5">
-    {#each navItems.slice(0, 4) as item (item.id)}
+    {#each navItems.slice(0, 5) as item (item.id)}
       {@const active = isItemActive(item.id)}
       {@const isHovered = $activeCard$ === item.id}
       {@const badgeCount = item.badge?.() ?? 0}
@@ -254,7 +257,11 @@
           class="relative flex items-center justify-center w-10 h-10 rounded-lg transition-colors duration-150
           {active ? 'bg-foreground/10' : isHovered ? 'bg-foreground/8' : 'hover:bg-foreground/5'}"
         >
-          <Fa icon={item.icon} size={16} />
+          {#if item.id === 'chief'}
+              <AuggieAvatar size={24} />
+            {:else}
+              <Fa icon={item.icon} size={16} />
+            {/if}
           {#if badgeCount > 0}
             <span
               class="absolute -top-0.25 -right-0.25 min-w-3 h-3 flex items-center justify-center rounded-full bg-blue-500 text-app-background text-[0.55rem] font-black px-0.5"
@@ -272,7 +279,7 @@
 
   <!-- Bottom nav items (settings) -->
   <div class="flex flex-col items-center gap-2 w-full px-1.5 pb-1">
-    {#each navItems.slice(4) as item (item.id)}
+    {#each navItems.slice(5) as item (item.id)}
       {@const active = isItemActive(item.id)}
       <button
         bind:this={iconRefs[item.id]}
@@ -288,7 +295,11 @@
           class="relative flex items-center justify-center w-10 h-10 rounded-lg transition-colors duration-150
           {active ? 'bg-foreground/10' : 'hover:bg-foreground/5'}"
         >
-          <Fa icon={item.icon} size={16} />
+          {#if item.id === 'chief'}
+              <AuggieAvatar size={24} />
+            {:else}
+              <Fa icon={item.icon} size={16} />
+            {/if}
         </div>
       </button>
     {/each}

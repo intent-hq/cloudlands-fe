@@ -645,6 +645,138 @@ describe('AgentBackendHandler orphan recovery', () => {
     ]);
   });
 
+  // Regression for proposal-block persistence race:
+  // emitProposalToChat adds a block to the message accumulator and fires the
+  // same content-block callback the LLM stream uses, but inside the
+  // synchronous tail of a fast tool execution. The previous closure dropped
+  // the second persist request entirely if the first persist's saveAgent was
+  // still in flight, so the proposal block was never written to disk and was
+  // missing from history after reload. The closure must queue a single
+  // follow-up persist so the latest accumulator state always reaches disk.
+  it('queues a follow-up persist when a content-block fires while an earlier save is still flushing', async () => {
+    const handler = makeHandler();
+    const agentId = 'agent-followup-persist';
+    const workspaceId = 'ws-followup-persist';
+
+    let capturedOptions: any = null;
+    const mockProvider: any = {
+      isHealthy: vi.fn(() => true),
+      sessionId: 'sess-followup',
+      on: vi.fn(),
+      streamMessage: vi.fn(async (_messages: any, options: any) => {
+        capturedOptions = options;
+      }),
+    };
+    handler.providers.set(agentId, mockProvider);
+    handler.providerLastUsed.set(agentId, Date.now());
+
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({
+      getSession: vi.fn(() => backendSession),
+    }));
+    handler.sendToRenderer = vi.fn();
+    handler.sendStreamToRenderer = vi.fn();
+    handler.emitAgentStartedEvent = vi.fn();
+    handler.startStreamHealthCheck = vi.fn();
+    handler.touchProvider = vi.fn();
+    handler.estimateSessionSizeKB = vi.fn(() => 0);
+
+    handler.streamStartTimes.set(agentId, Date.now());
+    handler.streamSessionIds.set(agentId, 'sess-followup');
+    handler.streamWorkspaceIds.set(agentId, workspaceId);
+
+    await handler.handleSendMessage(null, {
+      agentId,
+      sessionId: 'sess-followup',
+      streamId: 'stream-followup',
+      workspaceId,
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          contentBlocks: [{ type: 'text', text: 'archive ability-add' }],
+        },
+      ],
+    });
+    expect(typeof capturedOptions?.onContentBlocks).toBe('function');
+
+    // Gate the first saveAgent: it will hang until we resolve `releaseFirst`,
+    // simulating the disk-write delay during which the proposal's persist
+    // request arrives.
+    let releaseFirst!: () => void;
+    const firstSavePending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    mockPersistence.saveAgent.mockReset();
+    mockPersistence.saveAgent
+      .mockImplementationOnce(async () => {
+        await firstSavePending;
+        return { success: true };
+      })
+      .mockImplementation(async () => ({ success: true }));
+
+    // First content-block: tool_use streamed by the LLM. getPartialContent
+    // returns just the tool_use because that's all the accumulator has so far.
+    const toolUseBlock = {
+      type: 'tool_use' as const,
+      id: 'tool-1',
+      name: 'Propose archive of ability-add',
+      input: { code: 'return await ws.app.workspaces.archive("ability-add")' },
+    };
+    mockGetPartialContent.mockReturnValue({ contentBlocks: [toolUseBlock] });
+    capturedOptions.onContentBlocks([toolUseBlock]);
+
+    // Let the closure start the first save and hit `await saveAgent`.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+
+    // Second content-block fires while the first save is still pending —
+    // this is the proposal block emitProposalToChat would add. The
+    // accumulator now contains both blocks.
+    const proposalBlock = {
+      type: 'proposal' as const,
+      kind: 'bulk-op',
+      payload: { operation: 'workspace.bulkArchive', ids: ['ability-add'] },
+      preview: { title: 'Archive 1 workspace' },
+      applyToolCallId: 'tool-1',
+      proposal: {
+        kind: 'bulk-op',
+        payload: { operation: 'workspace.bulkArchive', ids: ['ability-add'] },
+        preview: { title: 'Archive 1 workspace' },
+        applyToolCallId: 'tool-1',
+      },
+    };
+    mockGetPartialContent.mockReturnValue({
+      contentBlocks: [toolUseBlock, proposalBlock],
+    });
+    capturedOptions.onContentBlocks([proposalBlock]);
+
+    // The second persist must NOT have started yet — the guard is still set.
+    await new Promise((r) => setImmediate(r));
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+
+    // Release the first save. The follow-up persist must then run with the
+    // latest accumulator state (both blocks).
+    releaseFirst();
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(2);
+    const secondSaved = mockPersistence.saveAgent.mock.calls[1][0];
+    const streamingMsg = secondSaved.messages.find(
+      (m: any) => m.role === 'assistant' && m.isStreaming,
+    );
+    expect(streamingMsg).toBeDefined();
+    expect(streamingMsg.contentBlocks).toEqual([toolUseBlock, proposalBlock]);
+  });
+
   it('persists interrupted active-provider streams as non-streaming before completion emission', async () => {
     const handler = makeHandler();
     const agentId = 'agent-active-interrupted';
@@ -794,6 +926,94 @@ describe('AgentBackendHandler orphan recovery', () => {
     expect(savedAssistant.appMessageId).toBe(assistantAppMessageId);
     expect(savedAssistant.contentBlocks).toEqual(finalBlocks);
     expect(saved.messages.filter((m: any) => m.appMessageId === assistantAppMessageId)).toHaveLength(1);
+  });
+
+  it('end_turn with only a proposal block does NOT trigger auto-continue retry', async () => {
+    // Regression: the empty-end_turn detector treats `proposal` (and `nav-link`)
+    // as meaningful non-text content. Without this, an MCP tool that emits only
+    // a proposal block (e.g. ws.app.workspaces.archive) would be mistaken for an
+    // empty response and the agent would be re-prompted ("please continue"),
+    // duplicating the proposal.
+    const handler = makeHandler();
+    const agentId = 'agent-proposal-end-turn';
+    const workspaceId = 'ws-proposal-end-turn';
+    const assistantMessageId = 'assistant-proposal-active';
+    const assistantAppMessageId = 'app-assistant-proposal-active';
+    const proposalBlock = {
+      type: 'proposal' as const,
+      kind: 'bulk-op',
+      proposal: {
+        id: 'proposal-archive-1',
+        kind: 'workspace.archive',
+        items: [{ id: 'ws-target', title: 'ability-add' }],
+      },
+      previewTitle: 'Archive 1 workspace',
+    };
+    const finalBlocks = [proposalBlock];
+
+    const backendSession: any = {
+      id: agentId,
+      workspaceId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'archive ability-add' }] },
+        {
+          id: 'assistant-stale-placeholder',
+          appMessageId: assistantAppMessageId,
+          role: 'assistant',
+          isStreaming: false,
+          contentBlocks: [],
+        },
+      ],
+      updatedAt: new Date(0),
+    };
+    handler.getBackend = vi.fn(async () => ({ getSession: vi.fn(() => backendSession) }));
+    handler.emitAgentStartedEvent = vi.fn();
+    handler.startStreamHealthCheck = vi.fn();
+    handler.sendToRenderer = vi.fn();
+    handler.finalizeStream = vi.fn();
+    handler.emitAgentIdleEvent = vi.fn();
+    handler.estimateSessionSizeKB = vi.fn(() => 0);
+    handler.estimateContentSizeKB = vi.fn(() => 0);
+
+    const mockProvider: any = {
+      isHealthy: vi.fn(() => true),
+      getConfig: vi.fn(() => ({ model: 'test-model' })),
+      streamMessage: vi.fn(async (_messages: any, options: any) => {
+        await options.onComplete({
+          id: 'provider-proposal-id',
+          contentBlocks: finalBlocks,
+          // stopReason: 'end_turn' is the trigger condition for the empty-response
+          // detector. With the fix, the proposal block satisfies `hasNonTextContent`
+          // and auto-continue is skipped.
+          metadata: { stopReason: 'end_turn' },
+        });
+      }),
+    };
+    handler.providers.set(agentId, mockProvider);
+    handler.providerLastUsed.set(agentId, Date.now());
+
+    await handler.handleSendMessage(null, {
+      agentId,
+      sessionId: agentId,
+      streamId: 'stream-proposal-end-turn',
+      workspaceId,
+      assistantMessageId,
+      assistantAppMessageId,
+      messages: [
+        { id: 'u-1', role: 'user', contentBlocks: [{ type: 'text', text: 'archive ability-add' }] },
+      ],
+    });
+
+    // Persistence should complete normally with the proposal preserved.
+    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
+    const saved = mockPersistence.saveAgent.mock.calls[0][0];
+    const savedAssistant = saved.messages.find((m: any) => m.role === 'assistant');
+    expect(savedAssistant.contentBlocks).toEqual(finalBlocks);
+
+    // Auto-continue must NOT have been triggered: the retry counter stays at 0
+    // (or absent) and the provider's streamMessage was called exactly once.
+    expect(handler.emptyResponseRetries.get(agentId) || 0).toBe(0);
+    expect(mockProvider.streamMessage).toHaveBeenCalledTimes(1);
   });
 
   it('streaming persistence adopts the active request app ID from a stale streaming placeholder', async () => {

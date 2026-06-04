@@ -47,6 +47,16 @@ import { isAgentSession as isNewAgentSession } from './types/agent-session.guard
 
 // Import consolidated ContentBlock type
 import type { ContentBlock } from './types/content-block';
+import type {
+  BulkProposalItem,
+  Proposal,
+  ProposalActionDetail,
+  ProposalDiffPreview,
+  ProposalEditableField,
+  ProposalKind,
+  ProposalPreview,
+} from './types/proposal';
+import { isProposal, isProposalKind, PROPOSAL_KINDS } from './types/proposal';
 import {
   isContentBlock,
   normalizeContentBlock,
@@ -141,6 +151,16 @@ export {
   normalizeContentBlocks,
 };
 export type { ContentBlock };
+export { isProposal, isProposalKind, PROPOSAL_KINDS };
+export type {
+  BulkProposalItem,
+  Proposal,
+  ProposalActionDetail,
+  ProposalDiffPreview,
+  ProposalEditableField,
+  ProposalKind,
+  ProposalPreview,
+};
 
 // Re-export AgentMessage and utilities
 export {

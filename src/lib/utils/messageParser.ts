@@ -21,6 +21,7 @@
 import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
+import { isValidWorkspaceId } from '$shared/types/branded-ids';
 
 const logger = new Logger('MessageParser');
 
@@ -38,6 +39,8 @@ export interface ParsedContent {
     | 'diagram'
     | 'digest'
     | 'mermaid'
+    | 'workspace_card'
+    | 'nav_link'
     | 'patch'
     | 'reference'
     | 'cli'
@@ -54,6 +57,8 @@ export interface ParsedContent {
     path?: string;
     mode?: string;
     diagramData?: unknown; // Parsed DiagramPrimitive data
+    workspaceCardData?: { workspaceIds: string[] };
+    navLinkData?: { target: string; label?: string };
     patchData?: { filePath: string; diff: string; description?: string }; // Parsed patch data
     referenceData?: {
       semanticId?: string;
@@ -96,17 +101,27 @@ const SPECIAL_BLOCK_PATTERNS = {
   // Commit messages
   commit: /<COMMIT_MESSAGE>([\s\S]*?)<\/COMMIT_MESSAGE>/g,
   // Diagram blocks - separate patterns for backtick vs tilde
-  diagram: /(?:(`{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  diagram:
+    /(?:(`{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Patch blocks - separate patterns for backtick vs tilde
-  patch: /(?:(`{3,})ws-block:patch\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:patch\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  patch:
+    /(?:(`{3,})ws-block:patch\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:patch\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Reference blocks - separate patterns for backtick vs tilde
-  reference: /(?:(`{3,})ws-block:reference\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:reference\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  reference:
+    /(?:(`{3,})ws-block:reference\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:reference\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // CLI blocks - separate patterns for backtick vs tilde
   cli: /(?:(`{3,})ws-block:cli\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:cli\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Agent action blocks - separate patterns for backtick vs tilde
-  agentAction: /(?:(`{3,})ws-block:agent_action\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:agent_action\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  agentAction:
+    /(?:(`{3,})ws-block:agent_action\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:agent_action\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Mermaid diagram blocks - separate patterns for backtick vs tilde
   mermaid: /(?:(`{3,})mermaid\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})mermaid\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Workspace card blocks - separate patterns for backtick vs tilde
+  workspace:
+    /(?:(`{3,})workspace\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})workspace\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Nav-link blocks - separate patterns for backtick vs tilde
+  navLink:
+    /(?:(`{3,})nav-link\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})nav-link\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Agent digest - short summary for display
   agentDigest: /<agent_digest>([\s\S]*?)<\/agent_digest>/g,
   // Detected scripts from background agent
@@ -118,7 +133,152 @@ const SPECIAL_BLOCK_PATTERNS = {
 // Closing fences are line-anchored (^) with multiline flag to prevent matching within content.
 // Separate branches for backtick vs tilde fences to prevent mismatched fence types.
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}workspace\s*\n[\s\S]*?^`{3,}\s*$|~{3,}workspace\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
+
+const WORKSPACE_LINK_PREFIX = 'intent://local/workspace/';
+
+function parseWorkspaceCardIds(body: string): string[] {
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[-*]\s+/, '').trim())
+    .map((line) => {
+      const backtickMatch = line.match(/^`+([\s\S]*?)`+$/);
+      return (backtickMatch?.[1] ?? line).trim();
+    })
+    .map((line) => {
+      if (line.startsWith(WORKSPACE_LINK_PREFIX)) {
+        return line.slice(WORKSPACE_LINK_PREFIX.length).trim();
+      }
+      return line;
+    })
+    .filter(Boolean);
+}
+
+function parseNavLinkBody(body: string): { target: string; label?: string } | null {
+  const trimmed = body.trim();
+  if (!trimmed) return null;
+
+  // JSON form: {"target":"...", "label":"..."}
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const target = typeof parsed?.target === 'string' ? parsed.target.trim() : '';
+      if (!target) return null;
+      const label = typeof parsed?.label === 'string' ? parsed.label.trim() : undefined;
+      return label ? { target, label } : { target };
+    } catch {
+      return null;
+    }
+  }
+
+  // Shorthand form: "target | label" or just "target" (one per line, first line wins)
+  const firstLine = trimmed.split('\n')[0].trim();
+  if (!firstLine) return null;
+  const pipeIdx = firstLine.indexOf('|');
+  if (pipeIdx === -1) return { target: firstLine };
+  const target = firstLine.slice(0, pipeIdx).trim();
+  const label = firstLine.slice(pipeIdx + 1).trim();
+  if (!target) return null;
+  return label ? { target, label } : { target };
+}
+
+function tryExtractWorkspaceIdFromLine(line: string): string | null {
+  let stripped = line.trim();
+  if (!stripped) return null;
+  stripped = stripped.replace(/^(?:[-*+•]|\d+[.)])\s+/, '').trim();
+  const emphasisMatch = stripped.match(/^\*+([^*]+)\*+$/);
+  if (emphasisMatch) stripped = emphasisMatch[1].trim();
+  const backtickMatch = stripped.match(/^`+([\s\S]*?)`+$/);
+  if (backtickMatch) stripped = backtickMatch[1].trim();
+  if (stripped.startsWith(WORKSPACE_LINK_PREFIX)) {
+    stripped = stripped.slice(WORKSPACE_LINK_PREFIX.length).trim();
+  }
+  stripped = stripped.replace(/[.,;:!?]+$/, '').trim();
+  if (!stripped) return null;
+  return isValidWorkspaceId(stripped) ? stripped : null;
+}
+
+type ClassifiedLine =
+  | { kind: 'id'; id: string; raw: string }
+  | { kind: 'prose'; raw: string }
+  | { kind: 'blank'; raw: string };
+
+function classifyLineForWorkspaceCard(line: string): ClassifiedLine {
+  if (!line.trim()) return { kind: 'blank', raw: line };
+  const id = tryExtractWorkspaceIdFromLine(line);
+  if (id !== null) return { kind: 'id', id, raw: line };
+  return { kind: 'prose', raw: line };
+}
+
+function promoteWorkspaceIdListsInTextBlock(content: string): ParsedContent[] {
+  const classified = content.split('\n').map(classifyLineForWorkspaceCard);
+  if (!classified.some((entry) => entry.kind === 'id')) {
+    return [{ type: 'text', content }];
+  }
+
+  const result: ParsedContent[] = [];
+  let proseBuf: string[] = [];
+
+  function flushProse() {
+    if (proseBuf.length === 0) return;
+    const text = proseBuf.join('\n').replace(/^\s+|\s+$/g, '');
+    if (text) result.push({ type: 'text', content: text });
+    proseBuf = [];
+  }
+
+  let i = 0;
+  while (i < classified.length) {
+    const cur = classified[i];
+    if (cur.kind === 'id') {
+      flushProse();
+      const ids: string[] = [];
+      const rawLines: string[] = [];
+      while (i < classified.length) {
+        const c = classified[i];
+        if (c.kind === 'id') {
+          ids.push(c.id);
+          rawLines.push(c.raw);
+          i++;
+          continue;
+        }
+        if (c.kind === 'blank') {
+          let j = i + 1;
+          while (j < classified.length && classified[j].kind === 'blank') j++;
+          if (j < classified.length && classified[j].kind === 'id') {
+            i = j;
+            continue;
+          }
+        }
+        break;
+      }
+      result.push({
+        type: 'workspace_card',
+        content: rawLines.join('\n'),
+        metadata: { workspaceCardData: { workspaceIds: ids } },
+      });
+    } else {
+      proseBuf.push(cur.raw);
+      i++;
+    }
+  }
+  flushProse();
+  return result;
+}
+
+function promoteWorkspaceIdLists(blocks: ParsedContent[]): ParsedContent[] {
+  const result: ParsedContent[] = [];
+  for (const block of blocks) {
+    if (block.type !== 'text') {
+      result.push(block);
+      continue;
+    }
+    const promoted = promoteWorkspaceIdListsInTextBlock(block.content);
+    result.push(...promoted);
+  }
+  return result;
+}
 
 /**
  * Parse a single special block match into a ParsedContent
@@ -161,8 +321,11 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check 3+ backtick markdown with path (but not diff, diagram, ws-block, or mermaid)
-  if (/^`{3,}/.test(blockText) && !/^`{3,}(?:diff|diagram|ws-block:|mermaid)/.test(blockText)) {
+  // Check 3+ backtick markdown with path (but not diff, diagram, ws-block, workspace, nav-link, or mermaid)
+  if (
+    /^`{3,}/.test(blockText) &&
+    !/^`{3,}(?:diff|diagram|ws-block:|workspace|nav-link|mermaid)/.test(blockText)
+  ) {
     const match = blockText.match(
       /(`{3,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{3,}\s*$/m,
     );
@@ -538,6 +701,68 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
+  // Check workspace card block - separate patterns for backtick vs tilde
+  if (/^`{3,}workspace/.test(blockText)) {
+    const match = blockText.match(/`{3,}workspace\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      const workspaceIds = parseWorkspaceCardIds(match[1]);
+      if (workspaceIds.length === 0) {
+        return { type: 'text', content: blockText };
+      }
+
+      return {
+        type: 'workspace_card',
+        content: match[1],
+        metadata: {
+          workspaceCardData: { workspaceIds },
+        },
+      };
+    }
+  }
+  if (/^~{3,}workspace/.test(blockText)) {
+    const match = blockText.match(/~{3,}workspace\s*\n([\s\S]*?)^~{3,}\s*$/m);
+    if (match) {
+      const workspaceIds = parseWorkspaceCardIds(match[1]);
+      if (workspaceIds.length === 0) {
+        return { type: 'text', content: blockText };
+      }
+
+      return {
+        type: 'workspace_card',
+        content: match[1],
+        metadata: {
+          workspaceCardData: { workspaceIds },
+        },
+      };
+    }
+  }
+
+  // Check nav-link block - separate patterns for backtick vs tilde
+  if (/^`{3,}nav-link/.test(blockText)) {
+    const match = blockText.match(/`{3,}nav-link\s*\n([\s\S]*?)^`{3,}\s*$/m);
+    if (match) {
+      const parsed = parseNavLinkBody(match[1]);
+      if (!parsed) return { type: 'text', content: blockText };
+      return {
+        type: 'nav_link',
+        content: parsed.label ?? parsed.target,
+        metadata: { navLinkData: parsed },
+      };
+    }
+  }
+  if (/^~{3,}nav-link/.test(blockText)) {
+    const match = blockText.match(/~{3,}nav-link\s*\n([\s\S]*?)^~{3,}\s*$/m);
+    if (match) {
+      const parsed = parseNavLinkBody(match[1]);
+      if (!parsed) return { type: 'text', content: blockText };
+      return {
+        type: 'nav_link',
+        content: parsed.label ?? parsed.target,
+        metadata: { navLinkData: parsed },
+      };
+    }
+  }
+
   // Check diagram block - separate patterns for backtick vs tilde
   if (/^`{3,}(?:diagram|ws-block:diagram)/.test(blockText)) {
     const match = blockText.match(/`{3,}(?:diagram|ws-block:diagram)\s*\n([\s\S]*?)^`{3,}\s*$/m);
@@ -678,8 +903,8 @@ export function parseAgentMessage(content: string): ParsedContent[] {
   // PERF: Build result array directly without placeholder replacement
   // This avoids multiple string.replace() calls which are O(n) each
   if (specialBlocks.length === 0) {
-    // No special blocks - process as regular content
-    return processRegularContent(content);
+    // No special blocks - process as regular content, then run workspace-ID promotion.
+    return promoteWorkspaceIdLists(processRegularContent(content));
   }
 
   // Sort by position (should already be sorted, but ensure)
@@ -711,7 +936,11 @@ export function parseAgentMessage(content: string): ParsedContent[] {
   // Merge consecutive text blocks
   const merged = mergeConsecutiveTextBlocks(result);
 
-  return merged;
+  // Promote paragraphs that consist purely of valid workspace IDs to workspace_card blocks.
+  // This handles models that emit bare ID lists without the fenced ```workspace block.
+  const promoted = promoteWorkspaceIdLists(merged);
+
+  return promoted;
 }
 
 /**
@@ -825,7 +1054,11 @@ function processRegularContent(content: string): ParsedContent[] {
       i++;
       while (i < lines.length) {
         const closingMatch = lines[i].match(/^(\s*)(`{3,}|~{3,})\s*$/);
-        if (closingMatch && closingMatch[2][0] === fenceChar && closingMatch[2].length >= openFenceLength) {
+        if (
+          closingMatch &&
+          closingMatch[2][0] === fenceChar &&
+          closingMatch[2].length >= openFenceLength
+        ) {
           // Found closing fence with matching fence character and sufficient length
           break;
         }
@@ -971,6 +1204,40 @@ export function groupParsedBlocks(blocks: ParsedContent[]): RenderBlock[] {
     }
   }
 
+  return result;
+}
+
+function workspaceCardIsCoveredByIds(block: ParsedContent, ids: ReadonlySet<string>): boolean {
+  if (block.type !== 'workspace_card') return false;
+  const workspaceIds = block.metadata?.workspaceCardData?.workspaceIds ?? [];
+  return workspaceIds.length > 0 && workspaceIds.every((workspaceId) => ids.has(workspaceId));
+}
+
+/**
+ * Remove workspace cards that would duplicate a proposal card in the same message.
+ * Workspace proposals already include the affected workspace titles and IDs, so rendering a
+ * second workspace summary card immediately below them is redundant.
+ */
+export function filterWorkspaceCardsCoveredByIds(
+  blocks: RenderBlock[],
+  ids: ReadonlySet<string>,
+): RenderBlock[] {
+  if (ids.size === 0) return blocks;
+
+  const result: RenderBlock[] = [];
+  blocks.forEach((block) => {
+    if (block.type === 'workspace_card' && workspaceCardIsCoveredByIds(block, ids)) {
+      return;
+    }
+
+    if (block.type === 'group') {
+      const children = block.children.filter((child) => !workspaceCardIsCoveredByIds(child, ids));
+      if (children.length > 0) result.push({ ...block, children });
+      return;
+    }
+
+    result.push(block);
+  });
   return result;
 }
 

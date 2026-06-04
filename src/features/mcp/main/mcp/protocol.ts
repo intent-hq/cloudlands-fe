@@ -98,7 +98,19 @@ export interface ToolResult {
 export type ContentItem =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string }
-  | { type: 'resource'; uri: string; mimeType?: string };
+  | { type: 'audio'; data: string; mimeType: string; transcript?: string | null }
+  | { type: 'resource_link'; uri: string; name?: string; mimeType?: string }
+  | {
+      type: 'resource';
+      resource: {
+        uri: string;
+        name?: string;
+        mimeType?: string | null;
+        text?: string;
+        blob?: string;
+        _meta?: Record<string, any>;
+      };
+    };
 
 /**
  * Server capabilities

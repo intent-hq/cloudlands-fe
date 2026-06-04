@@ -9,6 +9,8 @@
  * variables, plus terminal ANSI colors for a complete experience.
  */
 
+import { THEME_PRESET_MANIFEST } from '../../shared/theme-presets-manifest';
+
 export interface ThemeJSON {
   name: string;
   type: 'dark' | 'light';
@@ -25,7 +27,10 @@ export interface ThemePresetSet {
   /** Human-readable label shown in the picker */
   label: string;
   /** Four hex preview colors for the dark variant: [bg, fg, accent, secondary] */
-  previewColors: { dark: [string, string, string, string]; light: [string, string, string, string] };
+  previewColors: {
+    dark: [string, string, string, string];
+    light: [string, string, string, string];
+  };
   /** Dark variant theme JSON */
   dark: ThemeJSON;
   /** Light variant theme JSON */
@@ -132,7 +137,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#f8f8f2',
         'dropdown.background': '#282a36',
         'dropdown.foreground': '#f8f8f2',
-        'focusBorder': '#6272a4',
+        focusBorder: '#6272a4',
         'input.background': '#21222c',
         'panel.border': '#44475a',
         'button.background': '#bd93f9',
@@ -142,8 +147,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#44475a',
         'list.activeSelectionForeground': '#f8f8f2',
         'tab.inactiveBackground': '#21222c',
-        'descriptionForeground': '#6272a4',
-        'errorForeground': '#ff5555',
+        descriptionForeground: '#6272a4',
+        errorForeground: '#ff5555',
         'terminal.background': '#282a36',
         'terminal.foreground': '#f8f8f2',
         'terminal.ansiBlack': '#21222c',
@@ -168,7 +173,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#282a36',
         'dropdown.background': '#f8f8f2',
         'dropdown.foreground': '#282a36',
-        'focusBorder': '#9580ff',
+        focusBorder: '#9580ff',
         'input.background': '#eaeaeb',
         'panel.border': '#d4d4d6',
         'button.background': '#9580ff',
@@ -178,8 +183,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#d4d4d6',
         'list.activeSelectionForeground': '#282a36',
         'tab.inactiveBackground': '#eaeaeb',
-        'descriptionForeground': '#6272a4',
-        'errorForeground': '#ff5555',
+        descriptionForeground: '#6272a4',
+        errorForeground: '#ff5555',
         'terminal.background': '#f8f8f2',
         'terminal.foreground': '#282a36',
         'terminal.ansiBlack': '#282a36',
@@ -292,7 +297,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#d8dee9',
         'dropdown.background': '#3b4252',
         'dropdown.foreground': '#d8dee9',
-        'focusBorder': '#88c0d0',
+        focusBorder: '#88c0d0',
         'input.background': '#3b4252',
         'panel.border': '#3b4252',
         'button.background': '#88c0d0',
@@ -302,8 +307,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#3b4252',
         'list.activeSelectionForeground': '#d8dee9',
         'tab.inactiveBackground': '#2e3440',
-        'descriptionForeground': '#7b88a1',
-        'errorForeground': '#bf616a',
+        descriptionForeground: '#7b88a1',
+        errorForeground: '#bf616a',
         'terminal.background': '#2e3440',
         'terminal.foreground': '#d8dee9',
         'terminal.ansiBlack': '#3b4252',
@@ -328,7 +333,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#2e3440',
         'dropdown.background': '#eceff4',
         'dropdown.foreground': '#2e3440',
-        'focusBorder': '#5e81ac',
+        focusBorder: '#5e81ac',
         'input.background': '#e5e9f0',
         'panel.border': '#d8dee9',
         'button.background': '#5e81ac',
@@ -338,8 +343,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#d8dee9',
         'list.activeSelectionForeground': '#2e3440',
         'tab.inactiveBackground': '#e5e9f0',
-        'descriptionForeground': '#7b88a1',
-        'errorForeground': '#bf616a',
+        descriptionForeground: '#7b88a1',
+        errorForeground: '#bf616a',
         'terminal.background': '#eceff4',
         'terminal.foreground': '#2e3440',
         'terminal.ansiBlack': '#2e3440',
@@ -372,7 +377,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#e0def4',
         'dropdown.background': '#1f1d2e',
         'dropdown.foreground': '#e0def4',
-        'focusBorder': '#c4a7e7',
+        focusBorder: '#c4a7e7',
         'input.background': '#1f1d2e',
         'panel.border': '#26233a',
         'button.background': '#c4a7e7',
@@ -382,8 +387,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#26233a',
         'list.activeSelectionForeground': '#e0def4',
         'tab.inactiveBackground': '#1f1d2e',
-        'descriptionForeground': '#908caa',
-        'errorForeground': '#eb6f92',
+        descriptionForeground: '#908caa',
+        errorForeground: '#eb6f92',
         'terminal.background': '#191724',
         'terminal.foreground': '#e0def4',
         'terminal.ansiBlack': '#26233a',
@@ -408,7 +413,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#575279',
         'dropdown.background': '#faf4ed',
         'dropdown.foreground': '#575279',
-        'focusBorder': '#907aa9',
+        focusBorder: '#907aa9',
         'input.background': '#f2e9e1',
         'panel.border': '#dfdad9',
         'button.background': '#907aa9',
@@ -418,8 +423,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#dfdad9',
         'list.activeSelectionForeground': '#575279',
         'tab.inactiveBackground': '#f2e9e1',
-        'descriptionForeground': '#9893a5',
-        'errorForeground': '#b4637a',
+        descriptionForeground: '#9893a5',
+        errorForeground: '#b4637a',
         'terminal.background': '#faf4ed',
         'terminal.foreground': '#575279',
         'terminal.ansiBlack': '#575279',
@@ -453,7 +458,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#a9b1d6',
         'dropdown.background': '#1f2335',
         'dropdown.foreground': '#a9b1d6',
-        'focusBorder': '#7aa2f7',
+        focusBorder: '#7aa2f7',
         'input.background': '#1f2335',
         'panel.border': '#292e42',
         'button.background': '#7aa2f7',
@@ -463,8 +468,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#292e42',
         'list.activeSelectionForeground': '#a9b1d6',
         'tab.inactiveBackground': '#1f2335',
-        'descriptionForeground': '#565f89',
-        'errorForeground': '#f7768e',
+        descriptionForeground: '#565f89',
+        errorForeground: '#f7768e',
         'terminal.background': '#1a1b26',
         'terminal.foreground': '#a9b1d6',
         'terminal.ansiBlack': '#414868',
@@ -489,7 +494,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#343b58',
         'dropdown.background': '#d5d6db',
         'dropdown.foreground': '#343b58',
-        'focusBorder': '#34548a',
+        focusBorder: '#34548a',
         'input.background': '#cbccd1',
         'panel.border': '#c0c1c6',
         'button.background': '#34548a',
@@ -499,8 +504,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#c0c1c6',
         'list.activeSelectionForeground': '#343b58',
         'tab.inactiveBackground': '#cbccd1',
-        'descriptionForeground': '#6a6e82',
-        'errorForeground': '#8c4351',
+        descriptionForeground: '#6a6e82',
+        errorForeground: '#8c4351',
         'terminal.background': '#d5d6db',
         'terminal.foreground': '#343b58',
         'terminal.ansiBlack': '#343b58',
@@ -613,7 +618,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#839496',
         'dropdown.background': '#002b36',
         'dropdown.foreground': '#839496',
-        'focusBorder': '#268bd2',
+        focusBorder: '#268bd2',
         'input.background': '#001e26',
         'panel.border': '#073642',
         'button.background': '#268bd2',
@@ -623,8 +628,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#073642',
         'list.activeSelectionForeground': '#839496',
         'tab.inactiveBackground': '#001e26',
-        'descriptionForeground': '#586e75',
-        'errorForeground': '#dc322f',
+        descriptionForeground: '#586e75',
+        errorForeground: '#dc322f',
         'terminal.background': '#002b36',
         'terminal.foreground': '#839496',
         'terminal.ansiBlack': '#073642',
@@ -649,7 +654,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#657b83',
         'dropdown.background': '#fdf6e3',
         'dropdown.foreground': '#657b83',
-        'focusBorder': '#268bd2',
+        focusBorder: '#268bd2',
         'input.background': '#eee8d5',
         'panel.border': '#eee8d5',
         'button.background': '#268bd2',
@@ -659,8 +664,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#eee8d5',
         'list.activeSelectionForeground': '#657b83',
         'tab.inactiveBackground': '#eee8d5',
-        'descriptionForeground': '#93a1a1',
-        'errorForeground': '#dc322f',
+        descriptionForeground: '#93a1a1',
+        errorForeground: '#dc322f',
         'terminal.background': '#fdf6e3',
         'terminal.foreground': '#657b83',
         'terminal.ansiBlack': '#073642',
@@ -693,7 +698,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#e6edf3',
         'dropdown.background': '#0d1117',
         'dropdown.foreground': '#e6edf3',
-        'focusBorder': '#58a6ff',
+        focusBorder: '#58a6ff',
         'input.background': '#010409',
         'panel.border': '#21262d',
         'button.background': '#58a6ff',
@@ -703,8 +708,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#21262d',
         'list.activeSelectionForeground': '#e6edf3',
         'tab.inactiveBackground': '#010409',
-        'descriptionForeground': '#8b949e',
-        'errorForeground': '#f85149',
+        descriptionForeground: '#8b949e',
+        errorForeground: '#f85149',
         'terminal.background': '#0d1117',
         'terminal.foreground': '#e6edf3',
         'terminal.ansiBlack': '#484f58',
@@ -729,7 +734,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#24292f',
         'dropdown.background': '#ffffff',
         'dropdown.foreground': '#24292f',
-        'focusBorder': '#0969da',
+        focusBorder: '#0969da',
         'input.background': '#f6f8fa',
         'panel.border': '#d0d7de',
         'button.background': '#0969da',
@@ -739,8 +744,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#ddf4ff',
         'list.activeSelectionForeground': '#24292f',
         'tab.inactiveBackground': '#f6f8fa',
-        'descriptionForeground': '#57606a',
-        'errorForeground': '#cf222e',
+        descriptionForeground: '#57606a',
+        errorForeground: '#cf222e',
         'terminal.background': '#ffffff',
         'terminal.foreground': '#24292f',
         'terminal.ansiBlack': '#24292f',
@@ -773,7 +778,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#ffffff',
         'dropdown.background': '#000000',
         'dropdown.foreground': '#ffffff',
-        'focusBorder': '#60a5fa',
+        focusBorder: '#60a5fa',
         'input.background': '#0a0a0a',
         'panel.border': '#6b7280',
         'button.background': '#60a5fa',
@@ -783,8 +788,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#1e3a5f',
         'list.activeSelectionForeground': '#ffffff',
         'tab.inactiveBackground': '#111111',
-        'descriptionForeground': '#d1d5db',
-        'errorForeground': '#f87171',
+        descriptionForeground: '#d1d5db',
+        errorForeground: '#f87171',
         'terminal.background': '#000000',
         'terminal.foreground': '#ffffff',
         'terminal.ansiBlack': '#4b5563',
@@ -809,7 +814,7 @@ export const themePresets: ThemePresetSet[] = [
         'editorWidget.foreground': '#111111',
         'dropdown.background': '#ffffff',
         'dropdown.foreground': '#111111',
-        'focusBorder': '#2563eb',
+        focusBorder: '#2563eb',
         'input.background': '#f5f5f5',
         'panel.border': '#4b5563',
         'button.background': '#2563eb',
@@ -819,8 +824,8 @@ export const themePresets: ThemePresetSet[] = [
         'list.activeSelectionBackground': '#dbeafe',
         'list.activeSelectionForeground': '#111111',
         'tab.inactiveBackground': '#ededed',
-        'descriptionForeground': '#374151',
-        'errorForeground': '#dc2626',
+        descriptionForeground: '#374151',
+        errorForeground: '#dc2626',
         'terminal.background': '#ffffff',
         'terminal.foreground': '#111111',
         'terminal.ansiBlack': '#111111',
@@ -835,3 +840,28 @@ export const themePresets: ThemePresetSet[] = [
     },
   },
 ];
+
+function assertThemePresetManifestMatchesPresets(): void {
+  const manifestById = new Map<string, string>(
+    THEME_PRESET_MANIFEST.map((entry) => [entry.id, entry.label]),
+  );
+  const presetById = new Map<string, string>(
+    themePresets.map((preset) => [preset.id, preset.label]),
+  );
+
+  for (const { id, label } of themePresets) {
+    if (manifestById.get(id) !== label) {
+      throw new Error(`Theme preset ${id} (${label}) is missing from the shared manifest`);
+    }
+  }
+
+  for (const { id, label } of THEME_PRESET_MANIFEST) {
+    if (presetById.get(id) !== label) {
+      throw new Error(
+        `Theme preset manifest entry ${id} (${label}) is missing from renderer presets`,
+      );
+    }
+  }
+}
+
+assertThemePresetManifestMatchesPresets();

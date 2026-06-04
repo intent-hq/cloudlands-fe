@@ -38,6 +38,7 @@ vi.mock('../utils', () => ({
 }));
 
 import { WorkspaceConfig } from '../config';
+import { CHIEF_WORKSPACE_ID } from '../../types/branded-ids';
 
 describe('WorkspaceConfig', () => {
   beforeEach(() => {
@@ -81,6 +82,14 @@ describe('WorkspaceConfig', () => {
   });
 
   describe('resolveWorkspaceRoot', () => {
+    it('should treat the chief workspace as virtual and skip filesystem lookups', () => {
+      const root = WorkspaceConfig.resolveWorkspaceRoot(CHIEF_WORKSPACE_ID);
+
+      expect(root).toBe(toOsPath('/Users/testuser/intent/workspaces'));
+      expect(WorkspaceConfig.isVirtualWorkspace(CHIEF_WORKSPACE_ID)).toBe(true);
+      expect(mockExistsSync).not.toHaveBeenCalled();
+    });
+
     it('should return WORKSPACES_BASE when workspace exists in ~/intent/workspaces/', () => {
       mockExistsSync.mockImplementation((p: any) => {
         return p === toOsPath('/Users/testuser/intent/workspaces/my-workspace');

@@ -40,7 +40,6 @@
       role="presentation"
       onkeydown={handleKeydown}
       onclick={close}
-      aria-hidden="true"
     >
       <div
         class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
@@ -56,7 +55,7 @@
               <Fa icon={faExclamationTriangle} size="lg" />
             </div>
             <div>
-              <h2 class="text-lg font-semibold">Delete Space?</h2>
+              <h2 class="text-lg font-semibold">Stop agents and delete space?</h2>
               <p class="text-sm text-subtle mt-0.5">Agents are currently running</p>
             </div>
           </div>
@@ -81,15 +80,15 @@
             </ul>
           {/if}
           <p class="text-sm text-subtle">
-            Deleting will permanently remove this space from disk and stop these agents. This cannot
-            be undone.
+            To delete this space, Intent will stop these agents and permanently remove the space from
+            disk. This cannot be undone.
           </p>
         </div>
 
         <!-- Footer -->
         <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
           <Button variant="ghost" onclick={close}>Cancel</Button>
-          <Button variant="destructive" onclick={handleDeleteAnyway}>Delete anyway</Button>
+          <Button variant="destructive" onclick={handleDeleteAnyway}>Stop agents and delete</Button>
         </div>
       </div>
     </div>

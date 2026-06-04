@@ -208,3 +208,26 @@ export const selectRecentAgentCreatedEventsCount = store.createSelector(
     return Object.keys(getWorkspaceAgentState(state, wsId).recentAgentCreatedEvents).length;
   }
 );
+
+// --------------------------------------------------------------------------
+// Chief-specific selectors (stubbed - feature removed in main)
+// --------------------------------------------------------------------------
+
+/**
+ * Stub selector for Chief's initial agent activation status.
+ * TODO: This feature was removed in main and needs proper refactoring for Chief integration.
+ * The activation status field still exists in Chief branch state but was removed in main.
+ * This selector reads from the Chief state structure if it exists, otherwise returns default.
+ */
+export const selectInitialAgentActivationStatus = store.createSelector(
+  (state, wsId: string, agentId: string): {
+    status: 'idle' | 'activating' | 'active' | 'failed';
+    attempt: number;
+    error?: string;
+    lastErrorKind?: 'timeout' | 'factory' | 'unknown';
+  } => {
+    const wsState = getWorkspaceAgentState(state, wsId) as any;
+    const key = `${wsId}::${agentId}`;
+    return wsState?.activationStatus?.[key] ?? { status: 'idle', attempt: 0 };
+  }
+);

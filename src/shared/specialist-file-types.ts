@@ -150,7 +150,9 @@ export const SPECIALISTS_FOLDER = 'specialists';
 export const SPECIALIST_FILE_EXTENSIONS = ['.md'];
 
 /**
- * Default model for specialists that don't specify one
+ * Legacy default model constant. Runtime specialist resolution should prefer
+ * the user's selected default model when a specialist does not specify model
+ * or modelTier.
  */
 export const DEFAULT_SPECIALIST_MODEL = 'sonnet4.5';
 
@@ -219,13 +221,14 @@ export function filenameToSpecialistId(filename: string): string {
   return filename;
 }
 
-
 /**
  * Merge multiple specialist lists by priority (last list wins for duplicate IDs).
  * Used to combine bundled, user, and project specialist lists where higher-priority
  * sources should override lower-priority ones for the same specialist ID.
  */
-export function mergeSpecialistsByPriority<T extends { id: string }>(...specialistLists: T[][]): T[] {
+export function mergeSpecialistsByPriority<T extends { id: string }>(
+  ...specialistLists: T[][]
+): T[] {
   const specialistsById = new Map<string, T>();
   for (const specialists of specialistLists) {
     for (const specialist of specialists) {

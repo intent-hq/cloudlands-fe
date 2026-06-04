@@ -3,6 +3,25 @@
 @import '$lib/styles/chat-messages.css';
 @import '$lib/styles/comments.css';
 
+@keyframes ui-highlight-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+  }
+}
+
+.ui-highlight-pulse-ring {
+  animation: ui-highlight-pulse-ring 700ms ease-out 3;
+  border-radius: 0.5rem;
+  outline: 1px solid hsl(var(--primary) / 0.55);
+  outline-offset: 2px;
+}
+
 @theme {
   /* Map CSS variables to Tailwind color utilities */
   --color-background: hsl(var(--background));
@@ -282,9 +301,17 @@ body {
 }
 
 /* Bump text-xs from 12px to 13px for better readability of description text */
-.text-xs { font-size: 0.8125rem; /* 13px */ }
-.text-ui { font-size: 0.85rem; /* ~13.6px */ line-height: 1.4; }
-.text-ui-sm { font-size: 0.75rem; /* 12px */ line-height: 1.4; }
+.text-xs {
+  font-size: 0.8125rem; /* 13px */
+}
+.text-ui {
+  font-size: 0.85rem; /* ~13.6px */
+  line-height: 1.4;
+}
+.text-ui-sm {
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.4;
+}
 
 /* Vercel-style typography */
 /* h1, h2, h3, h4, h5, h6 {

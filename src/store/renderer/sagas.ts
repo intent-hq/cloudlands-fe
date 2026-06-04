@@ -85,6 +85,11 @@ import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/ag
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
 import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
 import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
+import { uiHighlightSaga } from "./slices/ui-highlight/sagas/ui-highlight-saga";
+import { settingsProposalHistorySaga } from "./slices/settings-proposal-history/sagas/settings-proposal-history-saga";
+import { specialistProposalHistorySaga } from "./slices/specialist-proposal-history/sagas/specialist-proposal-history-saga";
+import { proposalLifecycleSaga } from "./slices/proposal-lifecycle/sagas/proposal-lifecycle-saga";
+import { prBranchLookupSaga } from "./slices/pr-branch-lookup/sagas/pr-branch-lookup-saga";
 
 type AppSaga = Parameters<Store<any, any>["runSaga"]>[0];
 
@@ -170,6 +175,11 @@ export const sagas = [
   agentAvailabilitySaga,
   sessionStatsSaga,
   sagaCrashSentrySaga,
+  uiHighlightSaga,
+  settingsProposalHistorySaga,
+  specialistProposalHistorySaga,
+  proposalLifecycleSaga,
+  prBranchLookupSaga,
 ] as const satisfies readonly AppSaga[];
 
 export function startAllAppSagas(

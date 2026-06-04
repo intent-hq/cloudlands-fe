@@ -1,13 +1,11 @@
 // @vitest-environment node
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { agentPersistenceSaveAgentMock, setMetadataFSResolverMock } = vi.hoisted(() => ({
+  agentPersistenceSaveAgentMock: vi.fn(async () => ({ success: true })),
+  setMetadataFSResolverMock: vi.fn(),
+}));
 
 vi.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 vi.mock('$shared/services/unified-id.service', () => ({
@@ -36,12 +34,25 @@ vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE
 vi.mock('../services/memory-manager', () => ({
   memoryManager: { register: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
+vi.mock('../agent-persistence', () => ({
+  agentPersistence: { saveAgent: agentPersistenceSaveAgentMock },
+  unifiedPersistence: {
+    setMetadataFSResolver: setMetadataFSResolverMock,
+    markAgentPending: vi.fn(),
+  },
+}));
+vi.mock('../../metadata-fs/main/metadata-fs-factory', () => ({
+  getMetadataFS: vi.fn(),
+}));
 
 import { AgentStatus } from '$shared/types';
 
 describe('ConsolidatedBackendService.createAgent', () => {
   beforeEach(() => {
     process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS = '1';
+    agentPersistenceSaveAgentMock.mockClear();
+    agentPersistenceSaveAgentMock.mockResolvedValue({ success: true });
+    setMetadataFSResolverMock.mockClear();
   });
 
   afterEach(async () => {
@@ -72,5 +83,47 @@ describe('ConsolidatedBackendService.createAgent', () => {
       isProcessing: false,
       isResponding: false,
     });
+  });
+
+  it('does not persist zero-message sessions during create flow', async () => {
+    const { ConsolidatedBackendService } = await import('../consolidated-backend.service');
+    const backend = ConsolidatedBackendService.getInstance({
+      healthCheckInterval: 0,
+      persistenceEnabled: true,
+    });
+
+    const result = await backend.createAgent(
+      { id: 'ws-blank', path: '/tmp/ws-blank', title: 'Blank Workspace' } as any,
+      { id: 'agent-blank', name: 'Blank Agent', workspaceId: 'ws-blank' as any },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.agent?.messages).toEqual([]);
+    expect(agentPersistenceSaveAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('persists sessions with at least one message during create flow', async () => {
+    const { ConsolidatedBackendService } = await import('../consolidated-backend.service');
+    const backend = ConsolidatedBackendService.getInstance({
+      healthCheckInterval: 0,
+      persistenceEnabled: true,
+    });
+
+    const result = await backend.createAgent(
+      { id: 'amber-forest', path: '/tmp/amber-forest', title: 'Workspace' } as any,
+      {
+        id: 'agent-with-message',
+        name: 'Agent With Message',
+        workspaceId: 'amber-forest' as any,
+        initialMessage: 'Hello',
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.agent?.messages).toHaveLength(1);
+    expect(agentPersistenceSaveAgentMock).toHaveBeenCalledTimes(1);
+    expect(agentPersistenceSaveAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'agent-with-message', messages: expect.any(Array) }),
+    );
   });
 });

@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  extractAllContent,
-  type AgentMessage,
-} from '$shared/types';
+  import { extractAllContent, type AgentMessage } from '$shared/types';
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import { fade } from 'svelte/transition';
@@ -93,7 +90,7 @@
   {#each filteredMessages as message, index (message.id)}
     <div
       id="message-{message.id}"
-      class="message-wrapper"
+      class="message-wrapper group/message"
       class:highlighted={message.id === highlightedMessageId}
       class:user-message={message.role === 'user'}
       class:assistant-message={message.role === 'assistant'}

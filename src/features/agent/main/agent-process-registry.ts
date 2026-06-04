@@ -10,6 +10,7 @@
 import * as os from 'os';
 
 import { Logger } from '../../../shared/logger';
+import { WorkspaceConfig } from '../../../shared/main/config';
 
 const logger = new Logger('AgentProcessRegistry');
 
@@ -139,7 +140,11 @@ export async function acquireProcessSlot(): Promise<void> {
     // Try to evict the least-recently-used IDLE process
     let lru: ProcessEntry | undefined;
     for (const entry of registry.values()) {
-      if (!entry.isActive && !entry.hasPendingWork?.()) {
+      if (
+        !entry.isActive &&
+        !entry.hasPendingWork?.() &&
+        !WorkspaceConfig.isVirtualWorkspace(entry.workspaceId)
+      ) {
         if (!lru || entry.lastActiveTimestamp < lru.lastActiveTimestamp) {
           lru = entry;
         }
@@ -217,7 +222,10 @@ export async function evictIdleProcesses(count?: number): Promise<number> {
 
   // Collect idle processes sorted by lastActiveTimestamp ascending (oldest first = LRU)
   const idleEntries = Array.from(registry.values())
-    .filter((e) => !e.isActive && !e.hasPendingWork?.())
+    .filter(
+      (e) =>
+        !e.isActive && !e.hasPendingWork?.() && !WorkspaceConfig.isVirtualWorkspace(e.workspaceId),
+    )
     .sort((a, b) => a.lastActiveTimestamp - b.lastActiveTimestamp);
 
   for (const entry of idleEntries) {
@@ -268,4 +276,3 @@ export function _resetForTesting(): void {
   registry.clear();
   waitQueue.length = 0;
 }
-

@@ -8,24 +8,17 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import {
-  createMessageId,
-  createAgentId,
-} from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, createMessageId, createAgentId } from '$shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import { unifiedIdService } from '$shared/services/unified-id.service';
-import type { Workspace,
-  AgentSession } from '$shared/types';
+import type { Workspace, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
 import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
 import { typedInvoke } from '$shared/ipc/typed-invoke';
 import { agentValidator } from './agent-validator';
 import type { AgentIpc } from '$shared/ipc/contracts';
-import {
-  AGENT_CHANNELS,
-  AGENT_BACKEND_CHANNELS,
-} from '$shared/ipc/channels';
+import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { track } from '$lib/services/analytics';
@@ -106,10 +99,8 @@ async function getActiveProviderId(): Promise<string | null> {
  */
 
 // Re-export from shared for backward compatibility
-export type { UnifiedAgentConfig,
-  CreateAgentResult } from '$shared/types/agent.types';
-import type { UnifiedAgentConfig,
-  CreateAgentResult } from '$shared/types/agent.types';
+export type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
+import type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
@@ -373,7 +364,11 @@ export class UnifiedAgentFactory {
 
       // Step 6: Get workspace path for rules loading
       // Priority: worktreePath (git working directory) > path (workspace-specific) > repositoryPath (fallback)
-      const workspacePath = workspace.worktreePath || workspace.path || workspace.repositoryPath;
+      const workspacePath =
+        workspace.worktreePath ||
+        workspace.path ||
+        workspace.repositoryPath ||
+        (workspace.id === CHIEF_WORKSPACE_ID ? '/tmp' : undefined);
 
       // Step 6.5: Determine provider early (needed for model resolution)
       // Determine provider: use explicit config.provider, or get from Redux active-provider slice
@@ -541,10 +536,12 @@ export class UnifiedAgentFactory {
       if (!isBackend) {
         const store = appStore;
         if (store) {
-          store.dispatch(upsertSession({
-            ...agent,
-            workspaceId: agent.workspaceId,
-          }));
+          store.dispatch(
+            upsertSession({
+              ...agent,
+              workspaceId: agent.workspaceId,
+            }),
+          );
         }
       }
       metrics.stateUpdateTime = Date.now() - stateUpdateStart;

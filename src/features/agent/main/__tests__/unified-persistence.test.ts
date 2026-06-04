@@ -8,6 +8,7 @@ import {
   expect,
   beforeEach,
   afterEach,
+  vi,
 } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
@@ -63,6 +64,46 @@ describe('UnifiedPersistence', () => {
       expect(result.success).toBe(true);
       expect(result.path).toBeDefined();
       expect(result.duration).toBeDefined();
+    });
+
+    it('should round-trip a Chief agent with lowercase idle status without invalid data logs', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const agent: AgentSession = {
+        id: 'agent-chief-idle' as any,
+        workspaceId: '__chief__' as any,
+        name: 'Chief of Staff',
+        status: AgentStatus.RuntimeIdle,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+        metadata: { chiefThread: true },
+      };
+
+      try {
+        const saveResult = await persistence.saveAgent(agent, testDir);
+        expect(saveResult.success).toBe(true);
+
+        persistence.invalidateAllLoadCaches();
+        const loadResult = await persistence.loadAgent(
+          agent.id as any,
+          agent.workspaceId as any,
+          testDir,
+        );
+
+        expect(loadResult.success).toBe(true);
+        expect(loadResult.data?.status).toBe(AgentStatus.RuntimeIdle);
+        expect(
+          errorSpy.mock.calls.flat().some((arg) => String(arg).includes('Invalid agent data')),
+        ).toBe(false);
+        expect(
+          warnSpy.mock.calls.flat().some((arg) => String(arg).includes('Agent data validation failed')),
+        ).toBe(false);
+      } finally {
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
+      }
     });
 
     it('should reject invalid agent data', async () => {

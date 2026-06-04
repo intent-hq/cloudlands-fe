@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   cleanAgentMessage,
   parseAgentMessage,
@@ -691,6 +687,98 @@ not valid json
     expect(result[0].content).toBe('Deploy the app');
     expect(result[0].metadata?.agentActionData?.agentId).toBe('agent-789');
   });
+
+  describe('nav-link blocks', () => {
+    it('parses a JSON nav-link fence with target and label', () => {
+      const input = '```nav-link\n{"target":"/settings#mcp-servers","label":"MCP Servers"}\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('nav_link');
+      expect(result[0].metadata?.navLinkData).toEqual({
+        target: '/settings#mcp-servers',
+        label: 'MCP Servers',
+      });
+      expect(result[0].content).toBe('MCP Servers');
+    });
+
+    it('parses a JSON nav-link fence with only a target', () => {
+      const input = '```nav-link\n{"target":"/settings"}\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('nav_link');
+      expect(result[0].metadata?.navLinkData).toEqual({ target: '/settings' });
+      expect(result[0].content).toBe('/settings');
+    });
+
+    it('parses the shorthand "target | label" form', () => {
+      const input = '```nav-link\n/settings#theme | Theme settings\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('nav_link');
+      expect(result[0].metadata?.navLinkData).toEqual({
+        target: '/settings#theme',
+        label: 'Theme settings',
+      });
+    });
+
+    it('parses the shorthand single-target form', () => {
+      const input = '```nav-link\n/settings#theme\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('nav_link');
+      expect(result[0].metadata?.navLinkData).toEqual({ target: '/settings#theme' });
+    });
+
+    it('parses a nav-link fence with tilde fences', () => {
+      const input = '~~~nav-link\n{"target":"/specialists","label":"Specialists"}\n~~~';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('nav_link');
+      expect(result[0].metadata?.navLinkData).toEqual({
+        target: '/specialists',
+        label: 'Specialists',
+      });
+    });
+
+    it('falls back to text when the fence body is empty', () => {
+      const input = '```nav-link\n\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('text');
+    });
+
+    it('falls back to text when JSON is malformed', () => {
+      const input = '```nav-link\n{"target": missing-quote}\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('text');
+    });
+
+    it('falls back to text when JSON has no target', () => {
+      const input = '```nav-link\n{"label":"No target"}\n```';
+      const result = parseAgentMessage(input);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe('text');
+    });
+
+    it('coexists with surrounding prose', () => {
+      const input = [
+        'Look at the settings:',
+        '',
+        '```nav-link',
+        '{"target":"/settings#theme","label":"Theme"}',
+        '```',
+        '',
+        'and the workspaces.',
+      ].join('\n');
+      const result = parseAgentMessage(input);
+      expect(result.map((b) => b.type)).toEqual(['text', 'nav_link', 'text']);
+      expect(result[1].metadata?.navLinkData).toEqual({
+        target: '/settings#theme',
+        label: 'Theme',
+      });
+    });
+  });
 });
 
 describe('parseSuggestedPrompts', () => {
@@ -1285,7 +1373,9 @@ describe('groupContentBlocks', () => {
     expect(result.length).toBe(2);
     expect(result[0].type).toBe('content_group');
     expect(result[1].type).toBe('text');
-    expect((result[1] as ContentBlock).text).toBe('Some real text <!-- suggested-prompts\nRun tests\n-->');
+    expect((result[1] as ContentBlock).text).toBe(
+      'Some real text <!-- suggested-prompts\nRun tests\n-->',
+    );
   });
 });
 
@@ -1314,7 +1404,9 @@ describe('groupContentBlocks - think tag handling', () => {
 
   it('should handle <think> inside a <group> tag', () => {
     const blocks: ContentBlock[] = [
-      textBlock('<group:Prepping><think>Planning the approach</think>Here is my answer</group:Prepping>'),
+      textBlock(
+        '<group:Prepping><think>Planning the approach</think>Here is my answer</group:Prepping>',
+      ),
     ];
     const result = groupContentBlocks(blocks);
 
@@ -1393,7 +1485,9 @@ describe('groupContentBlocks - think tag handling', () => {
     // This is the exact pattern from the opencode provider bug:
     // <group:Prepping\n<think>thinking content</think>\nvisible text
     const blocks: ContentBlock[] = [
-      textBlock('<group:Prepping\n<think>I\'ll set the workspace title</think>\nHere is my answer</group:Prepping>'),
+      textBlock(
+        "<group:Prepping\n<think>I'll set the workspace title</think>\nHere is my answer</group:Prepping>",
+      ),
     ];
     const result = groupContentBlocks(blocks);
     expect(result.length).toBe(1);
@@ -1402,15 +1496,13 @@ describe('groupContentBlocks - think tag handling', () => {
     expect(group.name).toBe('Prepping');
     expect(group.children.length).toBe(2);
     expect(group.children[0].type).toBe('thinking');
-    expect((group.children[0] as ContentBlock).content).toBe('I\'ll set the workspace title');
+    expect((group.children[0] as ContentBlock).content).toBe("I'll set the workspace title");
     expect(group.children[1].type).toBe('text');
     expect((group.children[1] as ContentBlock).text).toContain('Here is my answer');
   });
 
   it('should handle malformed group tag during streaming (no close tag)', () => {
-    const blocks: ContentBlock[] = [
-      textBlock('<group:Prepping\n<think>Still thinking...'),
-    ];
+    const blocks: ContentBlock[] = [textBlock('<group:Prepping\n<think>Still thinking...')];
     const result = groupContentBlocks(blocks, true);
     expect(result.length).toBe(1);
     expect(result[0].type).toBe('content_group');

@@ -26,6 +26,7 @@ import {
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import {
+  CHIEF_WORKSPACE_ID,
   WorkspaceId,
   NoteId,
 } from '$shared/types/branded-ids';
@@ -45,6 +46,7 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { SPECIALISTS } from '$lib/constants/specialists';
+import { createChiefVirtualWorkspace } from '$store/renderer/slices/workspace-agents/chief-virtual-workspace';
 import {
   getAgentProvider,
   AgentActivationState,
@@ -201,6 +203,7 @@ function* openAgentInLayoutSaga(agentId: string, agentName: string, wsId: string
  * the workspace when valid; null when the workspace is missing or unusable.
  */
 function* validateWorkspace(wsId: string) {
+  if (wsId === CHIEF_WORKSPACE_ID) return createChiefVirtualWorkspace();
   const workspace = yield* selectWorkspaceById.effect(wsId);
   if (!workspace) return null;
   const workspacePath = resolveWorkspacePath(workspace);

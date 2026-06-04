@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import WorkspaceStatusCard from '$lib/components/workspace/WorkspaceStatusCard.svelte';
+  import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
   import WorkspaceTableView from '$lib/components/workspace/WorkspaceTableView.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import type {
@@ -340,7 +340,7 @@
     <h2 class="text-lg font-semibold mb-4">Interactive — click to advance</h2>
     <div class="grid grid-cols-[1fr_320px] gap-6 items-start">
       <button type="button" onclick={nextStep} class="cursor-pointer text-left w-full">
-        <WorkspaceStatusCard
+        <WorkspaceCard
           phase={currentInteractive.phase}
           stats={currentInteractive.stats}
           title="Add dark mode support"
@@ -436,7 +436,7 @@
     <h2 class="text-lg font-semibold mb-4">Card Variant (home page / overview)</h2>
     <div class="grid grid-cols-2 gap-4">
       {#each mainCards as item}
-        <WorkspaceStatusCard
+        <WorkspaceCard
           phase={item.phase}
           stats={item.stats}
           title={item.title}
@@ -455,7 +455,7 @@
       {#each edgeCases as item}
         <div>
           <div class="text-xs text-subtle mb-1.5 font-medium">{item.label}</div>
-          <WorkspaceStatusCard
+          <WorkspaceCard
             phase={item.phase}
             stats={item.stats}
             title={item.title}
@@ -474,7 +474,7 @@
       style="width: 320px;"
     >
       {#each mainCards as item}
-        <WorkspaceStatusCard phase={item.phase} stats={item.stats} variant="header" />
+        <WorkspaceCard phase={item.phase} stats={item.stats} variant="header" />
       {/each}
     </div>
   </section>
@@ -487,7 +487,7 @@
       style="width: 280px;"
     >
       {#each [...mainCards, ...edgeCases] as item}
-        <WorkspaceStatusCard
+        <WorkspaceCard
           phase={item.phase}
           stats={item.stats}
           variant="row"
@@ -505,7 +505,7 @@
       <div class="text-sm font-semibold mb-3 text-subtle">Your Workspaces</div>
       <div class="grid grid-cols-2 gap-4">
         {#each [...mainCards, ...edgeCases.slice(1, 3)] as item}
-          <WorkspaceStatusCard
+          <WorkspaceCard
             phase={item.phase}
             stats={item.stats}
             title={item.title}

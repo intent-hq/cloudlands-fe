@@ -13,6 +13,7 @@
 
 import { Logger } from '../../../shared/logger';
 import type { ContentBlock as UIContentBlock } from '../../../shared/types';
+import { getProposalFromResourceBlock } from '../../../shared/types/proposal-resource';
 import type {
   ContentBlock as ACPContentBlock,
   Message as ACPMessage,
@@ -102,6 +103,17 @@ function parseACPContentBlock(block: ACPContentBlock | any): UIContentBlock | nu
         } as UIContentBlock;
 
       case 'resource':
+        const proposal = getProposalFromResourceBlock(block);
+        if (proposal) {
+          return {
+            type: 'proposal',
+            kind: proposal.kind,
+            payload: proposal.payload,
+            preview: proposal.preview,
+            applyToolCallId: proposal.applyToolCallId,
+            proposal,
+          } as UIContentBlock;
+        }
         // Convert resource references to text with metadata
         const resource = block.resource;
         if (resource?.text) {

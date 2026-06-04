@@ -1,6 +1,6 @@
 import { store } from "../../store";
 import type { EnvironmentConfig, PullRequestInfo, Workspace } from "$shared/types";
-import type { WorkspaceId } from "$shared/types/branded-ids";
+import { CHIEF_WORKSPACE_ID, type WorkspaceId } from "$shared/types/branded-ids";
 import {
   getItem,
   getItems,
@@ -79,7 +79,9 @@ export const selectWorkspaceEnvironmentConfig = store.createSelector<
 >((state, wsId) => selectWorkspaceById.select(state, wsId)?.environmentConfig);
 
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
-  return getItems(state.workspace.workspaces);
+  return getItems(state.workspace.workspaces).filter(
+    (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
+  );
 });
 
 export const selectWorkspaceIsEmpty = store.createSelector((state) => {

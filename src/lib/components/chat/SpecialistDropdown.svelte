@@ -9,9 +9,9 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import {
-  selectSpecialists,
-  filterSpecialistsByGitHubAuth,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    filterSpecialistsByGitHubAuth,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   interface Props {
@@ -19,11 +19,13 @@
     value?: string | null;
     /** Callback when specialist changes */
     onchange?: (specialistId: string | null) => void;
+    /** Visual treatment for the trigger */
+    variant?: 'pill' | 'bare';
     /** Additional class */
     class?: string;
   }
 
-  let { value = null, onchange, class: className }: Props = $props();
+  let { value = null, onchange, variant = 'pill', class: className }: Props = $props();
 
   let dropdownOpen = $state(false);
 
@@ -31,13 +33,11 @@
   const allSpecialists = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($allSpecialists, $isGitHubAuth$)
+    filterSpecialistsByGitHubAuth($allSpecialists, $isGitHubAuth$),
   );
 
   // Get current specialist info
-  const currentSpecialist = $derived(
-    value ? $allSpecialists.find((s) => s.id === value) : null,
-  );
+  const currentSpecialist = $derived(value ? $allSpecialists.find((s) => s.id === value) : null);
 
   // Display label
   const displayLabel = $derived(currentSpecialist?.name ?? 'General');
@@ -56,14 +56,28 @@
       type="button"
       onclick={toggle}
       class={cn(
-        'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full',
-        'border border-border bg-background hover:bg-muted transition-colors cursor-pointer',
+        variant === 'bare'
+          ? 'group inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer'
+          : 'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border border-border bg-background hover:bg-muted transition-colors cursor-pointer',
         className,
       )}
     >
-      <AuggieAvatar seed="blank" size={16} specialist={value} />
-      <span class="text-subtle">{displayLabel}</span>
-      <Fa icon={faChevronDown} class="text-ghost h-2.5 w-2.5" />
+      {#if variant !== 'bare'}
+        <AuggieAvatar seed="blank" size={16} specialist={value} />
+      {/if}
+      <span
+        class={variant === 'bare'
+          ? 'min-w-0 flex-1 truncate text-left text-foreground font-normal'
+          : 'text-subtle'}
+      >
+        {displayLabel}
+      </span>
+      <Fa
+        icon={faChevronDown}
+        class={variant === 'bare'
+          ? 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70'
+          : 'text-ghost h-2.5 w-2.5'}
+      />
     </button>
   {/snippet}
 

@@ -406,6 +406,8 @@ export const IPC_CHANNELS = {
     ROOT: 'app:root',
     GET_MEMORY_USAGE: 'app:get-memory-usage',
     TRIGGER_MEMORY_CLEANUP: 'app:trigger-memory-cleanup',
+    UI_NAVIGATE: 'app:ui:navigate',
+    UI_HIGHLIGHT: 'app:ui:highlight',
   },
 
   // Window Management
@@ -1222,6 +1224,8 @@ export const EVENT_CHANNELS = [
   'observability:event',
   'permission:event',
   'app:ready',
+  'app:ui:navigate',
+  'app:ui:highlight',
   'window:ready',
   'window:focus',
   'window:blur',
@@ -1254,6 +1258,7 @@ export const EVENT_CHANNELS = [
   'agent:plan-required', // Agent plan upgrade required notification (enterprise users without Intent access)
   'notification:show', // Notification shown event for sound playback in renderer
   'notification:navigate', // Notification click navigates to workspace
+  'app:workspace-operation-requested', // App-level MCP workspace operation request (main → renderer saga)
   // Auto-update events
   'auto-update:status-changed',
   'auto-update:progress',

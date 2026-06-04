@@ -73,6 +73,38 @@ describe('Zod Schemas', () => {
     it('should reject invalid types', () => {
       expect(() => ContentBlockSchema.parse({ type: 'invalid' })).toThrow();
     });
+
+    // Regression: ws.app.workspaces.* tools emit chat-embedded proposal blocks
+    // via emitProposalToChat. Persistence runs ContentBlockSchema before
+    // saveAgent writes to disk — if 'proposal' is missing from the type enum
+    // the whole agent save is rejected and the proposal block never reaches
+    // disk (and disappears from history on reload).
+    it('should validate proposal blocks emitted by ws.app.workspaces.archive', () => {
+      const block = {
+        type: 'proposal',
+        kind: 'bulk-op',
+        payload: { operation: 'workspace.bulkArchive', ids: ['ability-add'] },
+        preview: { title: 'Archive 1 workspace' },
+        applyToolCallId: 'toolu_abc',
+        proposal: {
+          kind: 'bulk-op',
+          payload: { operation: 'workspace.bulkArchive', ids: ['ability-add'] },
+          preview: { title: 'Archive 1 workspace' },
+          applyToolCallId: 'toolu_abc',
+        },
+      };
+      expect(() => ContentBlockSchema.parse(block)).not.toThrow();
+    });
+
+    it('should validate nav-link blocks', () => {
+      const block = {
+        type: 'nav-link',
+        kind: 'nav-link',
+        target: '/settings#agents',
+        label: 'Open agents settings',
+      };
+      expect(() => ContentBlockSchema.parse(block)).not.toThrow();
+    });
   });
 
   describe('ToolCallSchema', () => {

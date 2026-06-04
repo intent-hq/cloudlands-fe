@@ -1,11 +1,11 @@
 <script lang="ts">
   import {
-  faFile,
-  faCodeCompare,
-  faNoteSticky,
-  faClipboard,
-  faSquare,
-} from '@fortawesome/free-solid-svg-icons';
+    faFile,
+    faCodeCompare,
+    faNoteSticky,
+    faClipboard,
+    faSquare,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -15,11 +15,7 @@
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
-  import {
-  navigateToFile,
-  navigateToNote,
-  navigateToSpec,
-} from '$lib/utils/workspace-navigation';
+  import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
@@ -870,7 +866,7 @@
 {:else}
   <div
     bind:this={messageElement}
-    class="group transition-transform duration-200 ease-out {role === 'user'
+    class="group group/message transition-transform duration-200 ease-out {role === 'user'
       ? 'user-message'
       : 'relative assistant-message px-2'}"
     data-message-id={message?.id}
@@ -1070,7 +1066,12 @@
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
       <div class="text-sm leading-relaxed text-foreground">
-        <StreamingMessageContent content={combinedContent} {isStreaming} {hideToolCalls} workspaceId={workspace?.id ? String(workspace.id) : undefined} />
+        <StreamingMessageContent
+          content={combinedContent}
+          {isStreaming}
+          {hideToolCalls}
+          workspaceId={workspace?.id ? String(workspace.id) : undefined}
+        />
 
         <!-- Stopped indicator for interrupted messages -->
         {#if message?.metadata?.interrupted && !isStreaming}

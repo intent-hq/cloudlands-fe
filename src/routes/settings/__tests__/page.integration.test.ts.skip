@@ -1,0 +1,118 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { STORE_CONTEXT } from '$lib/store/constants';
+import type { ReduxStoreContext } from '$lib/store/types';
+import { requestUiHighlight } from '$lib/store/slices/ui-highlight/ui-highlight-slice';
+import { resolveHashToTarget } from '$shared/app-ui-targets';
+
+const mocks = vi.hoisted(() => ({
+  page: { url: new URL('http://localhost/settings#default-model') },
+}));
+
+vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('svelte-fa', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
+}));
+
+vi.mock('$lib/components/settings/ProviderSelector.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/AIBehaviorEditor.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/AIBehaviorSidebar.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
+vi.mock('$lib/components/settings/ConnectionsSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/OpenInAppsSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/McpServersSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/BackgroundAgentSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/ColorThemeSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+
+import SettingsPage from '../+page.svelte';
+
+let storeContext: ReduxStoreContext | undefined;
+
+beforeEach(() => {
+  window.history.pushState({}, '', '/settings#default-model');
+  mocks.page.url = new URL(window.location.href);
+  (window as unknown as { intentFlags?: { enableReduxLogger: boolean } }).intentFlags = {
+    enableReduxLogger: false,
+  };
+  (
+    window.localStorage.getItem as unknown as { mockReturnValue(value: string | null): void }
+  ).mockReturnValue(null);
+  Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn(), configurable: true });
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    value: vi.fn(),
+    configurable: true,
+  });
+});
+
+afterEach(() => {
+  storeContext?.dispose();
+  storeContext = undefined;
+  cleanup();
+});
+
+describe('settings hash target integration', () => {
+  it.each([
+    ['default-model', 'backgroundAgents.defaultModel', 'Agents'],
+    ['color-theme', 'color-theme', 'Fonts & Colors'],
+    ['note-font', 'note-font', 'Fonts & Colors'],
+    ['agent-chat-font', 'agent-chat-font', 'Fonts & Colors'],
+    ['code-font', 'code-font', 'Fonts & Colors'],
+  ])(
+    'activates the registry tab and highlight target for /settings#%s',
+    async (hash, expectedId, tabLabel) => {
+      window.history.pushState({}, '', `/settings#${hash}`);
+      mocks.page.url = new URL(window.location.href);
+      const target = resolveHashToTarget(hash);
+      expect(target?.id).toBe(expectedId);
+
+      const { init } = await import('$lib/store/init');
+      storeContext = init();
+      render(SettingsPage, {
+        context: new Map([[STORE_CONTEXT, storeContext]]),
+      });
+
+      const expectedTab = screen.getByRole('button', { name: tabLabel });
+      await waitFor(() => expect(expectedTab.className).toContain('text-foreground'));
+
+      const targetElement = await waitFor(() => {
+        const element = document.querySelector<HTMLElement>(target?.highlightSelector ?? '');
+        expect(element).not.toBeNull();
+        return element as HTMLElement;
+      });
+
+      storeContext.store.dispatch(requestUiHighlight(target!.id));
+
+      await waitFor(() => {
+        expect(targetElement.classList.contains('ui-highlight-pulse-ring')).toBe(true);
+      });
+    },
+  );
+});

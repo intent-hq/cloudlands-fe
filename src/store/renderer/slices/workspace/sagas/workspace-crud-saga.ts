@@ -1,21 +1,24 @@
-import { removeWorkspaceAgentState } from "../../workspace-agents/workspace-agents-slice";
-import { cleanupPRStatusWorkspace } from "$store/renderer/slices/pr-status/pr-status-slice";
-import { clearWorkspaceTransientUi } from "$store/renderer/slices/transient-ui/transient-ui-slice";
-import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
-import { workspaceStorageManager } from "$store/renderer/slices/workspace/utils/workspace-storage-manager";
-import { track } from "$lib/services/analytics";
-import { invalidateAgentCache } from "$lib/utils/agent-loader";
-import type { CreateWorkspaceRequest } from "$shared/types";
-
-import { WorkspaceId } from "$shared/types/branded-ids";
 import {
-  call,
-  delay,
-  fork,
-  put,
-  takeEvery,
-} from "typed-redux-saga";
-import { workspaceUnmounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
+  activateInitialAgentRequested,
+  removeWorkspaceAgentState,
+} from '../../workspace-agents/workspace-agents-slice';
+import {
+  emptyWorkspaceNavigationState,
+  hydrateWorkspaceNavigation,
+} from '../../workspace-navigation/workspace-navigation-slice';
+import { cleanupPRStatusWorkspace } from '$store/renderer/slices/pr-status/pr-status-slice';
+import { clearWorkspaceTransientUi } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
+import { track } from '$lib/services/analytics';
+import { invalidateAgentCache } from '$lib/utils/agent-loader';
+import type { CreateWorkspaceRequest } from '$shared/types';
+import type { AgentTypeId } from '$shared/types/agent.types';
+import { toast } from 'svelte-sonner';
+
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { call, delay, fork, put, takeEvery } from 'typed-redux-saga';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearPendingCreation,
   clearWorkspacePendingDeletion,
@@ -33,8 +36,8 @@ import {
   setWorkspaceError,
   setWorkspaceLoading,
   updateWorkspaceRequested,
-} from "../workspace-slice";
-import { selectWorkspaceById as selectWorkspaceEntityById } from "../workspace-selectors";
+} from '../workspace-slice';
+import { selectWorkspaceById as selectWorkspaceEntityById } from '../workspace-selectors';
 
 export const WORKSPACE_REFRESH_DELAY_MS = 500;
 
@@ -44,7 +47,7 @@ function getErrorMessage(error: unknown): string {
 
 function getWorkspaceWorkMode(request: CreateWorkspaceRequest) {
   const workMode = request.initialAgent?.metadata?.workMode;
-  return workMode === "team" || workMode === "single" ? workMode : undefined;
+  return workMode === 'team' || workMode === 'single' ? workMode : undefined;
 }
 
 function* scheduleWorkspaceRefresh() {
@@ -70,15 +73,45 @@ export function* handleCreateWorkspace(action: ReturnType<typeof createWorkspace
     yield* put(setPendingCreation(result.data));
     yield* put(setWorkspaceEntity(result.data));
     yield* put(setActiveWorkspaceId(result.data.id));
+    const initialAgent = request.initialAgent;
+    if (initialAgent?.agentId) {
+      yield* put(
+        hydrateWorkspaceNavigation(result.data.id, {
+          ...emptyWorkspaceNavigationState,
+          workspace: { id: result.data.id, status: 'loading' },
+          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+          drawer: { open: true, type: 'agent', itemId: initialAgent.agentId },
+        }),
+      );
+      yield* put(
+        activateInitialAgentRequested(result.data.id, initialAgent.agentId, {
+          id: initialAgent.agentId,
+          name: initialAgent.name || 'Coordinator',
+          workspaceId: WorkspaceId(result.data.id),
+          model: initialAgent.model,
+          provider: initialAgent.provider ?? initialAgent.metadata?.provider,
+          agentType: initialAgent.agentType as AgentTypeId | undefined,
+          initialMessage: initialAgent.prompt,
+          contextReferences: initialAgent.contextReferences,
+          imageBlocks: initialAgent.imageBlocks,
+          behaviorPrompt: initialAgent.behaviorPrompt,
+          metadata: {
+            ...initialAgent.metadata,
+            isInitialAgent: true,
+            isFirstWorkspaceAgent: true,
+          },
+        }),
+      );
+    }
     yield* call(() =>
-      track("Created Workspace", {
+      track('Created Workspace', {
         workspace_id: result.data.id,
         workspace_title: result.data.title,
-        is_remote: request.environmentConfig?.type === "remote" || false,
+        is_remote: request.environmentConfig?.type === 'remote' || false,
         from_template: false,
         work_mode: getWorkspaceWorkMode(request),
-        has_initial_prompt: !!request.initialAgent?.prompt
-      })
+        has_initial_prompt: !!request.initialAgent?.prompt,
+      }),
     );
     succeeded = true;
   } catch (error) {
@@ -130,11 +163,11 @@ export function* handleUpdateWorkspace(action: ReturnType<typeof updateWorkspace
 
   if (
     existing &&
-    "title" in changes &&
+    'title' in changes &&
     changes.title !== undefined &&
     changes.title !== existing.title
   ) {
-    yield* call(() => track("Renamed Workspace", { workspace_id: wsId }));
+    yield* call(() => track('Renamed Workspace', { workspace_id: wsId }));
   }
 }
 
@@ -148,7 +181,7 @@ export function* handleDuplicateWorkspace(action: ReturnType<typeof duplicateWor
     const result = yield* call(
       [workspaceClient, workspaceClient.duplicate],
       WorkspaceId(wsId),
-      newTitle
+      newTitle,
     );
     if (!result.ok) {
       yield* put(setWorkspaceError(result.error));
@@ -175,6 +208,8 @@ export function* handleDeleteWorkspace(action: ReturnType<typeof deleteWorkspace
   try {
     const result = yield* call([workspaceClient, workspaceClient.delete], WorkspaceId(wsId));
     if (!result.ok) {
+      yield* put(setWorkspaceError(result.error));
+      yield* call(toast.error, 'Failed to delete space', { description: result.error });
       return;
     }
 
@@ -194,11 +229,15 @@ export function* handleDeleteWorkspace(action: ReturnType<typeof deleteWorkspace
     yield* put(removeWorkspaceEntity(wsId));
     yield* put(clearPendingCreation(wsId));
     yield* call(() =>
-      track("Deleted Workspace", {
+      track('Deleted Workspace', {
         workspace_id: wsId,
-        workspace_title: existing?.title ?? "Unknown",
-      })
+        workspace_title: existing?.title ?? 'Unknown',
+      }),
     );
+  } catch (error) {
+    const message = getErrorMessage(error);
+    yield* put(setWorkspaceError(message));
+    yield* call(toast.error, 'Failed to delete space', { description: message });
   } finally {
     yield* put(clearWorkspacePendingDeletion(wsId));
   }

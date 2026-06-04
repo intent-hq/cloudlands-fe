@@ -38,10 +38,7 @@ import { type UnifiedAgentConfig } from '$shared/types/agent.types';
 import { StreamManager } from '../services/stream-manager';
 import { agentValidator } from '../services/agent-validator';
 import { errorHandler } from '../services/error-handler';
-import {
-  AGENT_BACKEND_CHANNELS,
-  PERSISTENCE_CHANNELS,
-} from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
 import { memoryManager } from '../services/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -56,9 +53,9 @@ let WorkspaceConfig: typeof import('$shared/main/config').WorkspaceConfig | unde
 // Lazy-loaded invoke function for frontend context
 let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefined;
 let agentPersistence: any;
-let metadataFSFactory: ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS) | undefined;
-
-
+let metadataFSFactory:
+  | ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS)
+  | undefined;
 
 // Check if we're in the main process
 function isMainProcess(): boolean {
@@ -73,8 +70,6 @@ async function getInvoke(): Promise<(typeof import('$lib/electron-bridge'))['inv
   }
   return invokeFunction;
 }
-
-
 
 // Lazy load Node.js modules when needed
 async function getNodeModules() {
@@ -793,8 +788,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         isResponding: isActive,
         stopReason: isTerminal ? String(status) : null,
       });
-
-
     } catch (error) {
       logger.error('Failed to update agent status', { agentId, status, error });
       throw error;
@@ -911,6 +904,13 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       }
 
       if (this.config.persistenceEnabled) {
+        if ((record.session.messages?.length ?? 0) === 0) {
+          logger.debug('[saveAgent] Skipping persistence for session with no messages', {
+            agentId,
+          });
+          return { success: true };
+        }
+
         let result: { success: boolean; error?: string };
 
         // Check if we're in the main process
@@ -1125,7 +1125,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
             loadedCount++;
           }
         } catch (error) {
-          logger.warn('[loadPersistedSessions] Failed to load session file', { file: entry.name, error });
+          logger.warn('[loadPersistedSessions] Failed to load session file', {
+            file: entry.name,
+            error,
+          });
         }
       }
 
@@ -1501,7 +1504,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         getWindowIdsForWorkspaceFn = mod.getWindowIdsForWorkspace;
       })
       .catch(() => {
-        logger.warn('[setupEventForwarding] Could not load system.ipc module for workspace scoping');
+        logger.warn(
+          '[setupEventForwarding] Could not load system.ipc module for workspace scoping',
+        );
       });
 
     for (const event of events) {
@@ -1698,12 +1703,15 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         record.session?.isStreaming === true || record.session?.isProcessing === true;
       const messageStreaming = hasStreamingMessage(record.session);
       if (sessionStreaming || messageStreaming) {
-        logger.info('[shutdown] Skipping save for streaming session to preserve repaired on-disk state', {
-          agentId: agentId.toString(),
-          isStreaming: record.session?.isStreaming === true,
-          isProcessing: record.session?.isProcessing === true,
-          hasStreamingMessage: messageStreaming,
-        });
+        logger.info(
+          '[shutdown] Skipping save for streaming session to preserve repaired on-disk state',
+          {
+            agentId: agentId.toString(),
+            isStreaming: record.session?.isStreaming === true,
+            isProcessing: record.session?.isProcessing === true,
+            hasStreamingMessage: messageStreaming,
+          },
+        );
         continue;
       }
       savePromises.push(this.saveAgent(agentId.toString()));

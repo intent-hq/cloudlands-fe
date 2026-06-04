@@ -14,6 +14,7 @@ import {
   WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
   WorkspaceStatus,
 } from './types';
+import { CHIEF_WORKSPACE_ID } from './types/branded-ids';
 
 /**
  * Custom Validators
@@ -28,9 +29,14 @@ import {
  * - Legacy UUID v4 format
  * - Legacy slug format with alphanumeric suffix: word-word-xxxx (backward compatibility)
  * - Optimistic workspace IDs
+ * - Fixed virtual workspace IDs
  */
 export const workspaceIdSchema = z.string().refine(
   (id) => {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return true;
+    }
+
     // Check if it's an optimistic workspace ID
     if (id.startsWith('optimistic-')) {
       // Optimistic IDs have format: optimistic-{timestamp}-{random}
@@ -458,8 +464,23 @@ export const SessionIdSchema = z.string().startsWith('sess_').or(z.string().uuid
 export const MessageIdSchema = z.string().startsWith('msg_').or(z.string().uuid());
 
 // Content Block Schema
+// Mirrors the `type` union in src/shared/types/content-block.ts. Persistence
+// runs this schema before saveAgent writes to disk, so any block type the
+// streaming pipeline produces must be listed here — otherwise saves fail and
+// blocks like the proposal cards emitted by ws.app.workspaces.* are dropped.
 export const ContentBlockSchema = z.object({
-  type: z.enum(['text', 'code', 'tool_use', 'tool_result', 'thinking', 'image', 'audio', 'file']),
+  type: z.enum([
+    'text',
+    'code',
+    'tool_use',
+    'tool_result',
+    'thinking',
+    'image',
+    'audio',
+    'file',
+    'nav-link',
+    'proposal',
+  ]),
   text: z.string().optional(),
   content: z.string().optional(),
   language: z.string().optional(),
@@ -478,6 +499,15 @@ export const ContentBlockSchema = z.object({
   mimeType: z.string().optional(), // e.g., 'image/png', 'audio/mp3', 'text/plain'
   transcript: z.string().optional(), // For audio content
   fileName: z.string().optional(), // For file content
+  // Navigation-link fields
+  target: z.string().optional(), // Internal route/hash target for nav-link
+  label: z.string().optional(), // User-facing label for nav-link
+  // Proposal fields (chat-embedded ProposalCard blocks)
+  kind: z.string().optional(), // 'nav-link' | ProposalKind
+  proposal: z.any().optional(), // Structured Proposal payload
+  payload: z.any().optional(), // Proposal payload when block IS a Proposal
+  preview: z.any().optional(), // Proposal preview when block IS a Proposal
+  applyToolCallId: z.string().optional(), // Tool call ID to invoke on apply
 });
 
 // Tool Call Schema

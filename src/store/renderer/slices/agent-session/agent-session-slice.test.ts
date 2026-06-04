@@ -1096,6 +1096,45 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
       expect(selectAgentIsResponding.select(state, 'unknown')).toBe(false);
     });
+
+    it('ignores unresolved tool_use on terminal messages (interrupted)', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            isStreaming: false,
+            streamingComplete: true,
+            metadata: { interrupted: true, stopReason: 'interrupted' },
+            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+    });
+
+    it('ignores unresolved tool_use on messages with streamingComplete=true', () => {
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            isStreaming: false,
+            streamingComplete: true,
+            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+    });
   });
 
   it('selectAgentQueuedMessages returns agentQueue messages or empty array', () => {

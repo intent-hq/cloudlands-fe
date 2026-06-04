@@ -40,6 +40,12 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('../../src/features/github-auth/main/github-auth.service', () => ({
+  githubAuthService: {
+    isAuthenticated: vi.fn().mockResolvedValue(false),
+  },
+}));
+
 describe('Specialist Prompts Verification', () => {
   // Initialize the specialists service to populate the file cache with bundled specialists
   beforeAll(async () => {
@@ -47,8 +53,8 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('Specialist Definitions', () => {
-    it('should have exactly 7 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(8);
+    it('should have exactly 9 specialists defined', () => {
+      expect(SPECIALISTS).toHaveLength(9);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
@@ -57,6 +63,7 @@ describe('Specialist Prompts Verification', () => {
         'pr-shepherd',
         'ui-designer',
         'developer',
+        'chief-of-staff',
         'ralph',
       ]);
     });
@@ -109,6 +116,18 @@ describe('Specialist Prompts Verification', () => {
 
       // ui-designer uses smart model like other specialists
       expect(uiDesigner!.defaultModelTier).toBe('smart');
+    });
+
+    it('chief-of-staff should use the user default model and document app workflows', () => {
+      const chief = getSpecialistById('chief-of-staff');
+      expect(chief).toBeDefined();
+      expect(chief!.defaultModelTier).toBeUndefined();
+      expect(chief!.defaultModel).toBeUndefined();
+      expect(chief!.defaultBehaviorPrompt).toContain('Chief of Staff');
+      expect(chief!.defaultBehaviorPrompt).toContain('ws.app.workspaces.*');
+      expect(chief!.defaultBehaviorPrompt).toContain('proposal cards');
+      expect(chief!.defaultBehaviorPrompt).toContain('confirmation cards');
+      expect(chief!.defaultBehaviorPrompt).toContain('NavLink');
     });
   });
 

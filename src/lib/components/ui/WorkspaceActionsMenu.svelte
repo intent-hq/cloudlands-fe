@@ -714,7 +714,7 @@
       size="sm"
     >
       <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
-      <span>Delete Space</span>
+      <span>Delete Space…</span>
     </Button>
   {/if}
 

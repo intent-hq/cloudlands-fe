@@ -1,16 +1,14 @@
 import { runInNewContext } from 'node:vm';
 
 import { Logger } from '$shared/logger';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
-import {
-  BaseMCPTool,
-  createInputSchema,
-  stringProperty,
-} from './tool';
+import { BaseMCPTool, createInputSchema, stringProperty } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import type { PRContext } from './ws-pr-api';
 import { AVAILABLE_TOPICS } from './reference-docs';
 import { buildAgentApi } from './ws-agent-api';
+import { buildAppUiApi } from './ws-app-ui-api';
 import { buildWsEventApi } from './ws-event-api';
 import { buildWsGitApi } from './ws-git-api';
 import {
@@ -23,6 +21,9 @@ import { buildNoteApi } from './ws-note-api';
 import { buildWsPrApi } from './ws-pr-api';
 import { buildScriptApi } from './ws-script-api';
 import { buildWorkspaceApi } from './ws-workspace-api';
+import { buildWsAppSpecialistsApi } from './ws-app-specialists-api';
+import { buildWsAppSettingsApi } from './ws-app-settings-api';
+import { buildWsAppProposalApi, buildWsAppWorkspacesApi } from './ws-app-workspaces-api';
 
 const TIMEOUT_MS = 30_000;
 const logger = new Logger('WorkspaceJsApiTool');
@@ -52,6 +53,25 @@ const TOOL_DESCRIPTION = [
   '  ws.workspace.timeline(limit?, type?) → [{ timestamp, type, description }]  // Recent workspace timeline entries; default limit is 50.',
   `  ws.workspace.referenceDocs(topic) → string  // On-demand reference docs for long topics such as ${AVAILABLE_TOPICS.join(', ')}. Use this instead of guessing special block syntax.`,
   '  ws.workspace.emitNotification(topic, message, metadata?) → { ok, eventId }  // Emit a workspace-scoped notification event; useful for service/external-style notifications to subscribed agents.',
+  '',
+  '  ws.app.proposal.show(proposal) → ProposalCard  // Chief workspace only. Render an app-level proposal card in chat.',
+  '  ws.app.settings.list({ includeValues?, category? }?) → settings[]  // List schema-backed persisted user settings, optionally with current values.',
+  '  ws.app.settings.get(path) → setting  // Read a persisted user setting by schema path; sensitive values are redacted.',
+  '  ws.app.settings.propose(changes[] | { changes }) → ProposalCard  // Preview settings changes with a diff; never auto-applies.',
+  '  ws.app.specialists.list() → specialists[]  // List app-level specialists with id, name, description, model, prompt, and source metadata.',
+  '  ws.app.specialists.get(id) → specialist  // Get one app-level specialist by ID; throws a clear not-found error when missing.',
+  '  ws.app.specialists.propose({ action: "create"|"edit"|"delete", id?, name?, description?, model?, prompt?, scope? }) → ProposalCard  // Render a specialist-edit proposal with editable name/description/model/prompt fields.',
+  '  ws.app.ui.navigate(route, { highlightId?, durationMs? }?) → { ok, route, highlightId?, durationMs? }  // Navigate the app UI via the renderer router. If highlightId is omitted, the URL hash is used when present.',
+  '  ws.app.ui.highlight(id, { durationMs? }?) → { ok, id, durationMs? }  // Pulse a registered highlight target using the UI highlight system.',
+  '  ws.app.ui.targets() → [{ id, label, route, highlightId?, category, description, dynamic?, idPattern? }]  // Discover typed app UI targets and highlight ID patterns.',
+  '  ws.app.workspaces.archive(id) → ProposalCard  // Chief workspace only. Proposes archive of a single workspace via ws.app.proposal.show; the user confirms before applying.',
+  '  ws.app.workspaces.bulkArchive(ids) → ProposalCard  // Chief workspace only. Proposes bulk archive via ws.app.proposal.show.',
+  '  ws.app.workspaces.bulkDelete(ids) → ProposalCard  // Chief workspace only. Proposes bulk delete via ws.app.proposal.show.',
+  '  ws.app.workspaces.create(params) → ProposalCard  // Chief workspace only. Proposes workspace creation via ws.app.proposal.show; does not create directly.',
+  '  ws.app.workspaces.delete(id) → ProposalCard  // Chief workspace only. Proposes delete of a single workspace via ws.app.proposal.show; the user confirms before applying.',
+  '  ws.app.workspaces.get(id) → workspace  // Chief workspace only. Get one workspace metadata summary.',
+  '  ws.app.workspaces.list({ filter?, sort? }) → workspaces[]  // Chief workspace only. Cross-workspace metadata list with query/status/repository/tags filtering.',
+  '  ws.app.workspaces.open(id, { openInNewWindow? }?) → { ok, queued }  // Chief workspace only. Opens a workspace through workspace-operations-saga. Pass `{ openInNewWindow: true }` to open in a new window.',
   '',
   '  ws.note.read(id) → { id, title, content, tags, ... }  // Read a note. Use id=`spec` for the workspace spec. Content has line numbers like `   1 | text`.',
   '  ws.note.create(title, content, tags?) → { id, title, content, tags }  // Create a new note. DO NOT use this for the spec: the spec already exists as note ID `spec`; edit or add to it instead.',
@@ -142,7 +162,7 @@ const TOOL_DESCRIPTION = [
   '  ws.terminal.list() → [terminals]  // Active workspace terminal sessions.',
   '  ws.terminal.readOutput(terminalId, maxLines?) → string  // Read a terminal output buffer. Use `ws.terminal.list()` first to discover terminal IDs.',
   '',
-  '  ws.crossWorkspace.listSiblings() → [workspaces]  // Other workspaces sharing the same repository.',
+  '  ws.crossWorkspace.listSiblings() → [workspaces]  // Other workspaces sharing the same repository (repo-scoped; not usable in the Chief workspace — use ws.app.workspaces.list there).',
   '  ws.crossWorkspace.readNote(targetWorkspaceId, noteId) → note  // Read a note from another sibling workspace in the same repository. Use `listSiblings()` first to discover valid workspace IDs; use noteId=`spec` for its spec.',
   '  ws.crossWorkspace.listNotes(targetWorkspaceId) → [notes]  // List notes in another sibling workspace. Use this before `readNote()` if you do not know which note IDs exist there.',
   '',
@@ -217,7 +237,13 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
 
     const logs: string[] = [];
     const capture = (...args: any[]) => logs.push(args.map(String).join(' '));
-    const consoleMock = { log: capture, info: capture, warn: capture, error: capture, debug: capture };
+    const consoleMock = {
+      log: capture,
+      info: capture,
+      warn: capture,
+      error: capture,
+      debug: capture,
+    };
 
     const formatOutput = (logs: string[], body: string) =>
       logs.length > 0 ? `${logs.join('\n')}\n\n${body}` : body;
@@ -226,7 +252,9 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
     try {
       ws = await this.buildWs(call);
     } catch (err: any) {
-      return this.error(formatOutput(logs, `Error building workspace API: ${err?.message ?? String(err)}`));
+      return this.error(
+        formatOutput(logs, `Error building workspace API: ${err?.message ?? String(err)}`),
+      );
     }
 
     const wrapped = `(async () => { ${code} })()`;
@@ -275,12 +303,31 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         errorText = `Error: ${msg}`;
       }
 
-      return this.error(formatOutput(logs, errorText));
+      const metadata =
+        err?.code || err?.details
+          ? {
+              error:
+                typeof err.toJSON === 'function'
+                  ? err.toJSON()
+                  : { code: err.code, details: err.details },
+            }
+          : undefined;
+      return this.error(formatOutput(logs, errorText), metadata);
     }
   }
 
   private async buildWs(call: ToolCall) {
     const prContext = await this.resolvePrContext();
+    const app =
+      this.workspaceId === CHIEF_WORKSPACE_ID
+        ? {
+            proposal: buildWsAppProposalApi({ workspaceId: this.workspaceId, call }),
+            settings: buildWsAppSettingsApi(this.workspaceId, call),
+            specialists: buildWsAppSpecialistsApi(this.workspacePath, this.workspaceId, call),
+            ui: buildAppUiApi({ workspaceId: this.workspaceId }),
+            workspaces: buildWsAppWorkspacesApi(this.workspaceManager, call, this.workspaceId),
+          }
+        : undefined;
 
     return {
       workspace: buildWorkspaceApi({
@@ -289,6 +336,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         workspaceManager: this.workspaceManager,
         call,
       }),
+      ...(app ? { app } : {}),
       ...buildNoteApi(this.workspaceManager, this.workspaceId, call),
       agent: buildAgentApi(this.workspaceId, this.workspacePath, call),
       git: buildWsGitApi({ workspaceId: this.workspaceId, call }),
@@ -321,7 +369,8 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         workspace?.activePullRequest &&
         workspace.repositoryOwner &&
         workspace.repositoryName &&
-        (workspace.activePullRequest.status === 'Open' || workspace.activePullRequest.status === 'Draft')
+        (workspace.activePullRequest.status === 'Open' ||
+          workspace.activePullRequest.status === 'Draft')
       ) {
         return {
           owner: workspace.repositoryOwner,

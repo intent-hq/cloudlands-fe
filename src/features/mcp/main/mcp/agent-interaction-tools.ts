@@ -74,10 +74,7 @@ import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { notesService } from '$features/notes/main/notes.service';
 import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings.service';
 import { createWorkspaceEvent } from '$features/events/types';
-import {
-  getMainState,
-  mainDispatch,
-} from '../../../../store/main/redux-store-bridge';
+import { getMainState, mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import {
@@ -134,7 +131,9 @@ function getRequiredContext(call: ToolCall): {
   // agent-context-registry) over parsing the compound model ID, since bare model strings
   // like "default" would incorrectly resolve to the default provider (auggie).
   const parentModel = ctx.metadata?.model;
-  const provider = ctx.metadata?.provider || (parentModel ? parseCompoundModelId(parentModel).providerId : undefined);
+  const provider =
+    ctx.metadata?.provider ||
+    (parentModel ? parseCompoundModelId(parentModel).providerId : undefined);
   return {
     workspaceId: ctx.workspaceId,
     agentId: ctx.agentId || 'unknown-agent',
@@ -151,11 +150,7 @@ function getRequiredContext(call: ToolCall): {
  * - agent:failed - Agent encountered an error
  * - agent:deleted - Agent was deleted (cleanup subscription)
  */
-const AGENT_COMPLETION_EVENT_TYPES = [
-  'agent:idle',
-  'agent:failed',
-  'agent:deleted',
-] as const;
+const AGENT_COMPLETION_EVENT_TYPES = ['agent:idle', 'agent:failed', 'agent:deleted'] as const;
 
 /**
  * Subscribe a caller agent to be notified when a target agent completes.
@@ -259,10 +254,7 @@ If the user asks you to commit, use \`agent_commit_changes\` with \`userRequeste
  *     falls back to the specialist's default model on the specialist's
  *     provider — we do NOT silently rewrite the prefix.
  */
-export type ModelOverrideReason =
-  | 'provider_mismatch'
-  | 'unknown_model'
-  | 'unknown-provider';
+export type ModelOverrideReason = 'provider_mismatch' | 'unknown_model' | 'unknown-provider';
 
 export interface ModelOverrideWarning {
   requested: string;
@@ -296,10 +288,7 @@ function getExplicitRegisteredProvider(candidate: string | undefined): string | 
  * (or the default provider) get their `'fast'` tier model; dynamic-model
  * providers (for example opencode) get `'default'` so their CLI can pick.
  */
-function getProviderFallbackModel(
-  targetProvider: string,
-  defaultProviderId: string,
-): string {
+function getProviderFallbackModel(targetProvider: string, defaultProviderId: string): string {
   if (targetProvider !== defaultProviderId && !(targetProvider in PROVIDER_MODEL_TIERS)) {
     return 'default';
   }
@@ -307,10 +296,7 @@ function getProviderFallbackModel(
 }
 
 function formatUnknownProviderMessage(unknownProvider: string): string {
-  return (
-    `Unknown provider: ${unknownProvider}. ` +
-    `Falling back to specialist default model.`
-  );
+  return `Unknown provider: ${unknownProvider}. ` + `Falling back to specialist default model.`;
 }
 
 /** Maximum number of live model names to include in an `unknown_model` warning. */
@@ -609,15 +595,14 @@ async function resolveSpecialistConfig(
       logger.warn('Unknown specialist ID, falling back to parent model', {
         specialistId: effectiveSpecialistId,
       });
-      const fallbackProvider =
-        explicitOverrideProvider || inheritedProvider || defaultProviderId;
+      const fallbackProvider = explicitOverrideProvider || inheritedProvider || defaultProviderId;
       const validatedModelOverride = await runValidate(modelOverride, fallbackProvider);
       // When the caller supplied an explicit provider prefix, honor that
       // provider for the fallback model too — using `parentModel` here would
       // spawn a child on the explicit provider but with another provider's
       // model ID, which the child's CLI cannot resolve.
-      let fallbackModel = validatedModelOverride
-        || (explicitOverrideProvider ? undefined : parentModel);
+      let fallbackModel =
+        validatedModelOverride || (explicitOverrideProvider ? undefined : parentModel);
       if (!fallbackModel) {
         fallbackModel = getProviderFallbackModel(fallbackProvider, defaultProviderId);
       }
@@ -641,7 +626,9 @@ async function resolveSpecialistConfig(
     // Always inject commit instructions — either auto-commit or no-auto-commit guidance
     let behaviorPrompt = behaviorPromptOverride || resolved.behaviorPrompt;
     if (behaviorPrompt) {
-      const instructions = autoCommitEnabled ? AUTO_COMMIT_INSTRUCTIONS : NO_AUTO_COMMIT_INSTRUCTIONS;
+      const instructions = autoCommitEnabled
+        ? AUTO_COMMIT_INSTRUCTIONS
+        : NO_AUTO_COMMIT_INSTRUCTIONS;
       if (effectiveSpecialistId === 'spec-writer') {
         behaviorPrompt += instructions.coordinator;
       } else if (effectiveSpecialistId === 'implementor') {
@@ -657,10 +644,21 @@ async function resolveSpecialistConfig(
     const resolvedModelProvider = resolved.model?.includes(':')
       ? parseCompoundModelId(resolved.model).providerId
       : resolved.codingAgent || inheritedProvider || defaultProviderId;
-    let finalModel = validatedModelOverride
-      || (resolvedModelProvider === targetProvider ? resolved.model : undefined);
+    let finalModel =
+      validatedModelOverride ||
+      (resolvedModelProvider === targetProvider ? resolved.model : undefined);
     if (!finalModel) {
-      if (resolved.modelTier && targetProvider in PROVIDER_MODEL_TIERS) {
+      const parentModelProvider = parentModel?.includes(':')
+        ? parseCompoundModelId(parentModel).providerId
+        : inheritedProvider || defaultProviderId;
+      if (
+        !resolved.modelTier &&
+        !explicitOverrideProvider &&
+        parentModel &&
+        parentModelProvider === targetProvider
+      ) {
+        finalModel = parentModel;
+      } else if (resolved.modelTier && targetProvider in PROVIDER_MODEL_TIERS) {
         finalModel = getDefaultModelForProvider(targetProvider, resolved.modelTier);
       } else {
         finalModel = getProviderFallbackModel(targetProvider, defaultProviderId);
@@ -693,8 +691,7 @@ async function resolveSpecialistConfig(
   }
 
   // No specialist and not defaulting - use manual model/behaviorPrompt or inherit from parent
-  const fallbackProvider =
-    explicitOverrideProvider || inheritedProvider || defaultProviderId;
+  const fallbackProvider = explicitOverrideProvider || inheritedProvider || defaultProviderId;
   const validatedModelOverride = await runValidate(modelOverride, fallbackProvider);
   let fallbackModel = validatedModelOverride || parentModel;
   if (!fallbackModel) {
@@ -1859,14 +1856,12 @@ Use this for coordination, sharing information, or requesting help from other ag
         agentId,
       );
 
-      const deliveryMessage = priority === 'interrupt'
-        ? `Message sent to agent ${agentId}. If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.`
-        : `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.`;
+      const deliveryMessage =
+        priority === 'interrupt'
+          ? `Message sent to agent ${agentId}. If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.`
+          : `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.`;
 
-      return this.success(
-        deliveryMessage,
-        { sent: true, toAgentId: agentId, subscriptionId },
-      );
+      return this.success(deliveryMessage, { sent: true, toAgentId: agentId, subscriptionId });
     } catch (error) {
       logger.error('Error sending message to agent', error as Error);
       return this.error(`Failed to send message: ${(error as Error).message}`);
@@ -1980,23 +1975,21 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
         targetAgentId,
       );
 
-      const taskDeliveryMessage = priority === 'interrupt'
-        ? `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
-          'If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.'
-        : `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
-          'The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.';
+      const taskDeliveryMessage =
+        priority === 'interrupt'
+          ? `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
+            'If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.'
+          : `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
+            'The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.';
 
-      return this.success(
-        taskDeliveryMessage,
-        {
-          sent: true,
-          toAgentId: targetAgentId,
-          taskNoteId,
-          taskTitle: note.title,
-          totalAssignedAgents: assignedAgentIds.length,
-          subscriptionId,
-        },
-      );
+      return this.success(taskDeliveryMessage, {
+        sent: true,
+        toAgentId: targetAgentId,
+        taskNoteId,
+        taskTitle: note.title,
+        totalAssignedAgents: assignedAgentIds.length,
+        subscriptionId,
+      });
     } catch (error) {
       logger.error('Error sending message to task agent', error as Error);
       return this.error(`Failed to send message: ${(error as Error).message}`);
@@ -2060,9 +2053,18 @@ You must specify at least one category. Use category wildcards like "agent:*" or
    * Bare '*' is not allowed — agents must specify which categories they need.
    */
   private static readonly VALID_CATEGORY_WILDCARDS = [
-    'agent:*', 'file:*', 'task:*', 'git:*', 'note:*',
-    'terminal:*', 'test:*', 'build:*', 'workspace:*',
-    'spec:*', 'goal:*', 'comment:*',
+    'agent:*',
+    'file:*',
+    'task:*',
+    'git:*',
+    'note:*',
+    'terminal:*',
+    'test:*',
+    'build:*',
+    'workspace:*',
+    'spec:*',
+    'goal:*',
+    'comment:*',
   ];
 
   async execute(call: ToolCall): Promise<ToolResult> {
@@ -2511,16 +2513,19 @@ an agent is working on the task.`,
 
             // Auto-cleanup: unsubscribe after 5 minutes to prevent notification leak.
             // The queued message should be processed well within this window.
-            setTimeout(() => {
-              const didUnsubscribe = agentUnsubscribe(this.workspaceId, subscriptionId);
-              if (didUnsubscribe) {
-                logger.info('Auto-cleaned up queued message subscription after timeout', {
-                  subscriptionId,
-                  callerId: ctx.agentId,
-                  targetAgentId: agentToWake.id,
-                });
-              }
-            }, 5 * 60 * 1000);
+            setTimeout(
+              () => {
+                const didUnsubscribe = agentUnsubscribe(this.workspaceId, subscriptionId);
+                if (didUnsubscribe) {
+                  logger.info('Auto-cleaned up queued message subscription after timeout', {
+                    subscriptionId,
+                    callerId: ctx.agentId,
+                    targetAgentId: agentToWake.id,
+                  });
+                }
+              },
+              5 * 60 * 1000,
+            );
 
             logger.info('Subscribed caller to agent completion (non-oneShot for queued message)', {
               callerId: ctx.agentId,
@@ -3105,9 +3110,8 @@ If you were created directly by a user, this tool will return an error.`,
       let inMemorySyncSucceeded = false;
       try {
         inMemorySyncAttempted = true;
-        const { ConsolidatedBackendService } = await import(
-          '../../../agent/main/consolidated-backend.service'
-        );
+        const { ConsolidatedBackendService } =
+          await import('../../../agent/main/consolidated-backend.service');
         const backend = ConsolidatedBackendService.getInstance();
         const session = backend.getSession(ctx.agentId);
         if (session) {

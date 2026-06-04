@@ -173,18 +173,12 @@ setTimeout(() => {
 
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import {
-  dialog,
-  protocol,
-} from 'electron';
+import { dialog, protocol } from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
-import {
-  exportHandlerDebugInfo,
-  setupIPCInterceptor,
-} from './ipc-handler-wrapper';
+import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { setupWebviewSecurity } from './webview-security';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
@@ -306,10 +300,7 @@ import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupCommentsIPC } from '../features/comments/main/comments.ipc';
-import {
-  setupConfigIPC,
-  getConfigManager,
-} from '../features/config/main/config.ipc';
+import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEditorIPC } from '../features/editor/main/editor.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
@@ -368,10 +359,7 @@ import {
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
-import {
-  cleanupTerminals,
-  setupTerminalIPC,
-} from '../features/terminal/main/terminal.ipc';
+import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
 import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
@@ -385,16 +373,13 @@ import {
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
-import {
-  HttpMcpBridge,
-  setHttpMcpBridge,
-  notifyCriticalMemoryPressure,
-} from './http-mcp-bridge';
+import { HttpMcpBridge, setHttpMcpBridge, notifyCriticalMemoryPressure } from './http-mcp-bridge';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { agentPoolService } from '../features/agent/main/agent-pool.service';
 import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
+import { cleanupBlankAgentSessions } from '../features/agent/main/cleanup-blank-agent-sessions';
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -1141,7 +1126,7 @@ app.whenReady().then(async () => {
             // Clean up temp bundle
             try {
               await fs.promises.unlink(bundlePath);
-            } catch  {
+            } catch {
               // Ignore cleanup errors
             }
             return;
@@ -1545,8 +1530,7 @@ app.whenReady().then(async () => {
 
     // setupAutoUpdateIPC(); // Already called in critical IPC setup
     // Initialize auto-updater in production (not needed at startup, depends on mainWindow)
-    const { initializeAutoUpdater } =
-      await import('../features/auto-update/main/auto-update.ipc');
+    const { initializeAutoUpdater } = await import('../features/auto-update/main/auto-update.ipc');
     const mainWindow = getMainWindow();
     if (process.env.NODE_ENV !== 'development' && mainWindow) {
       initializeAutoUpdater(mainWindow);
@@ -1597,6 +1581,13 @@ app.whenReady().then(async () => {
       }
     } catch (error) {
       logger.debug('Error cleaning up stale temp files', { error });
+    }
+
+    // Clean up historical blank agent session files from workspace metadata
+    try {
+      await cleanupBlankAgentSessions();
+    } catch (error) {
+      logger.debug('Error cleaning up blank agent session files', { error });
     }
 
     // Auto-repair CLI symlink on startup (production only, silent)
@@ -1670,42 +1661,44 @@ app.whenReady().then(async () => {
       // to avoid killing agents that are doing real background work.
       Promise.all([
         import('../features/agent/main/agent-backend-handler.service'),
+        import('../features/agent/main/orphaned-provider-cleanup'),
         import('../features/system/main/system.ipc'),
       ])
-        .then(([{ agentBackendHandler }, { getAllOpenWorkspaceIds }]) => {
-          const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
-          const providerWorkspaceIds = agentBackendHandler.getWorkspaceIdsWithProviders();
-          const orphanedWorkspaceIds = [...providerWorkspaceIds].filter(
-            (wsId) => !openWorkspaceIds.has(wsId),
-          );
+        .then(
+          ([
+            { agentBackendHandler },
+            { getOrphanedProviderCleanupPlan },
+            { getAllOpenWorkspaceIds },
+          ]) => {
+            const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
+            const { safeToCleanup, skippedWithActiveAgents } = getOrphanedProviderCleanupPlan(
+              agentBackendHandler,
+              openWorkspaceIds,
+            );
 
-          // Filter out workspaces with active agents doing real work
-          const safeToCleanup = orphanedWorkspaceIds.filter((wsId) => {
-            const hasActive = agentBackendHandler.hasActiveAgentsInWorkspace(wsId);
-            if (hasActive) {
+            for (const wsId of skippedWithActiveAgents) {
               logger.info('Skipping orphaned workspace cleanup — has active agents', {
                 workspaceId: wsId,
               });
             }
-            return !hasActive;
-          });
 
-          if (safeToCleanup.length > 0) {
-            logger.info('Stopping orphaned agent providers (no open window, no active work)', {
-              safeToCleanup,
-              skippedWithActiveAgents: orphanedWorkspaceIds.length - safeToCleanup.length,
-              openWorkspaceIds: [...openWorkspaceIds],
-            });
-            for (const wsId of safeToCleanup) {
-              agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
-                logger.warn('Failed to stop orphaned providers', {
-                  workspaceId: wsId,
-                  error: err.message,
-                });
+            if (safeToCleanup.length > 0) {
+              logger.info('Stopping orphaned agent providers (no open window, no active work)', {
+                safeToCleanup,
+                skippedWithActiveAgents: skippedWithActiveAgents.length,
+                openWorkspaceIds: [...openWorkspaceIds],
               });
+              for (const wsId of safeToCleanup) {
+                agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
+                  logger.warn('Failed to stop orphaned providers', {
+                    workspaceId: wsId,
+                    error: err.message,
+                  });
+                });
+              }
             }
-          }
-        })
+          },
+        )
         .catch((err: unknown) => {
           logger.warn('Failed to run orphaned agent provider cleanup', {
             error: err instanceof Error ? err.message : String(err),
@@ -1749,7 +1742,10 @@ app.whenReady().then(async () => {
     memoryMonitor.onPressure((level) => {
       if (level === 'warning' || level === 'critical') {
         logger.warn('Memory pressure detected, triggering cleanup', { level });
-        performMemoryCleanup(`memory-pressure-${level}`, { forceGC: level === 'critical', skipStreamCleanup: true });
+        performMemoryCleanup(`memory-pressure-${level}`, {
+          forceGC: level === 'critical',
+          skipStreamCleanup: true,
+        });
       }
 
       // Inform the HTTP MCP Bridge so its health probe tolerates load.
@@ -1767,7 +1763,10 @@ app.whenReady().then(async () => {
           .then(({ evictIdleProcesses }) => evictIdleProcesses(maxEvict))
           .then((evicted) => {
             if (evicted > 0) {
-              logger.info('Evicted idle auggie processes due to memory pressure', { level, evicted });
+              logger.info('Evicted idle auggie processes due to memory pressure', {
+                level,
+                evicted,
+              });
             }
           })
           .catch((err) => logger.warn('Failed to evict idle processes on memory pressure', err));

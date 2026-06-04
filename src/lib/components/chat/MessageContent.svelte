@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, ToolResultBlock } from '$shared/types';
+  import type {
+    ContentBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    Proposal,
+    ProposalActionDetail,
+  } from '$shared/types';
+  import { isProposal } from '$shared/types';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
@@ -9,27 +16,37 @@
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
+  import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import {
-  parseAgentMessage,
-  parseSuggestedPrompts,
-  groupParsedBlocks,
-  groupContentBlocks,
-  type ParsedContent,
-  type RenderBlock,
-  type ContentBlockGroup,
-  type RenderContentBlock,
-} from '$lib/utils/messageParser';
+    parseAgentMessage,
+    parseSuggestedPrompts,
+    groupParsedBlocks,
+    groupContentBlocks,
+    filterWorkspaceCardsCoveredByIds,
+    type ParsedContent,
+    type RenderBlock,
+    type ContentBlockGroup,
+    type RenderContentBlock,
+  } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import NavLink from './NavLink.svelte';
+  import ProposalCard from './proposals/ProposalCard.svelte';
+  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
+  import {
+    applySettingsProposal,
+    undoSettingsProposal,
+  } from './proposals/settings-proposal-actions';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
 
   import {
-  openWorkspaceFile,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('MessageContent');
@@ -161,6 +178,8 @@
     return states;
   });
 
+  const bulkProposalWorkspaceIds = $derived.by(() => collectBulkProposalWorkspaceIds(groupedBlocks));
+
   // Pre-compute parsed content for all text blocks - memoized via $derived
   // This avoids calling parseAgentMessage in the template loop on every render
   // Keys are "blockIndex" for top-level text blocks and "blockIndex-childIndex" for children inside groups
@@ -174,7 +193,10 @@
         if (contentBlock.text) {
           const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
           const parsed = parseAgentMessage(cleanedContent);
-          map.set(String(index), groupParsedBlocks(parsed));
+          map.set(
+            String(index),
+            filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
+          );
         }
       } else if (block.type === 'content_group') {
         const group = block as ContentBlockGroup;
@@ -182,7 +204,10 @@
           if (child.type === 'text' && child.text) {
             const { cleanedContent } = parseSuggestedPrompts(child.text);
             const parsed = parseAgentMessage(cleanedContent);
-            map.set(`${index}-${childIndex}`, groupParsedBlocks(parsed));
+            map.set(
+              `${index}-${childIndex}`,
+              filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
+            );
           }
         });
       }
@@ -222,6 +247,77 @@
     }
   }
 
+  type NavLinkBlock = ContentBlock & {
+    kind?: 'nav-link';
+    target: string;
+    label?: string;
+  };
+
+  function isNavLinkBlock(block: ContentBlock): block is NavLinkBlock {
+    const candidate = block as NavLinkBlock;
+    return (
+      (candidate.kind === 'nav-link' || candidate.type === 'nav-link') &&
+      typeof candidate.target === 'string'
+    );
+  }
+
+  function getProposalFromBlock(block: ContentBlock): Proposal | null {
+    if (isProposal(block.proposal)) return block.proposal;
+    const candidate = {
+      kind: block.kind,
+      payload: block.payload ?? {},
+      preview: block.preview,
+      applyToolCallId: block.applyToolCallId,
+    };
+    return isProposal(candidate) ? candidate : null;
+  }
+
+  function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {
+    const proposal = getProposalFromBlock(block);
+    if (proposal?.kind !== 'bulk-op') return;
+    if (
+      proposal.payload.operation !== 'workspace.bulkArchive' &&
+      proposal.payload.operation !== 'workspace.bulkDelete'
+    ) {
+      return;
+    }
+
+    proposal.payload.ids.forEach((id: string) => ids.add(id));
+  }
+
+  function collectBulkProposalWorkspaceIds(blocks: RenderContentBlock[]): Set<string> {
+    const ids = new Set<string>();
+    blocks.forEach((block) => {
+      if (block.type === 'content_group') {
+        (block as ContentBlockGroup).children.forEach((child) => addBulkProposalWorkspaceIds(child, ids));
+      } else {
+        addBulkProposalWorkspaceIds(block as ContentBlock, ids);
+      }
+    });
+    return ids;
+  }
+
+  function handleProposalApply(detail: ProposalActionDetail) {
+    const { proposal } = detail;
+    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal,
+          editedFields: detail.editedFields,
+          selectedBulkItemIds: detail.selectedBulkItemIds,
+        }),
+      );
+      return;
+    }
+
+    if (applySpecialistProposal(detail)) return;
+    applySettingsProposal(detail);
+  }
+
+  function handleProposalUndo(proposalId: string) {
+    undoSettingsProposal(proposalId);
+  }
+
   /**
    * Generate a stable unique key for a render content block.
    * Handles both regular ContentBlocks and ContentBlockGroups.
@@ -232,6 +328,10 @@
       return `group-${index}-${group.name}`;
     }
     const contentBlock = block as ContentBlock;
+    if (isNavLinkBlock(contentBlock)) return `nav-link-${index}-${contentBlock.target}`;
+    const proposal = getProposalFromBlock(contentBlock);
+    if (proposal)
+      return `proposal-${index}-${proposal.kind}-${proposal.applyToolCallId ?? proposal.preview.title}`;
     if (contentBlock.id) return contentBlock.id;
     if (contentBlock.type === 'text') {
       const text = contentBlock.text || '';
@@ -285,6 +385,13 @@
     />
   {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
     <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
+  {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
+    <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
+  {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
+    <NavLink
+      target={parsedBlock.metadata.navLinkData.target}
+      label={parsedBlock.metadata.navLinkData.label}
+    />
   {:else if parsedBlock.type === 'digest'}
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}
@@ -307,7 +414,18 @@
 {/snippet}
 
 {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
-  {#if block.type === 'text' && block.text}
+  {#if isNavLinkBlock(block)}
+    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+      <NavLink target={block.target} label={block.label} />
+    </div>
+  {:else if getProposalFromBlock(block)}
+    {@const proposal = getProposalFromBlock(block)}
+    {#if proposal}
+      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+        <ProposalCard {proposal} onApply={handleProposalApply} onUndo={handleProposalUndo} />
+      </div>
+    {/if}
+  {:else if block.type === 'text' && block.text}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       {#if isStreaming}
@@ -369,6 +487,15 @@
                 result={nestedResultContent}
                 {workspaceId}
               />
+            {:else if getProposalFromBlock(nestedBlock)}
+              {@const nestedProposal = getProposalFromBlock(nestedBlock)}
+              {#if nestedProposal}
+                <ProposalCard
+                  proposal={nestedProposal}
+                  onApply={handleProposalApply}
+                  onUndo={handleProposalUndo}
+                />
+              {/if}
             {/if}
           {/each}
         {/if}

@@ -24,8 +24,14 @@ import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-even
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { consumeMcpToolParams } from '../../../../shared/services/mcp-tool-params-cache';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
+import type { Proposal } from '$shared/types/proposal';
+import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
 
 const logger = new Logger('ACPProviderStreaming');
+
+const MAX_PROPOSAL_DIAGNOSTIC_LOGS_PER_SESSION = 3;
+const proposalExtractionDiagnosticLogCounts = new WeakMap<object, number>();
+const toolCallUpdateDiagnosticLogCounts = new WeakMap<object, number>();
 
 /**
  * Patterns that match common dev server commands.
@@ -56,6 +62,16 @@ function getDevServerHint(command: string | undefined): string {
 
 function isNonArrayObject(value: unknown): value is Record<string, any> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function shouldLogSessionDiagnostic(session: any, counts: WeakMap<object, number>): boolean {
+  if (!session || typeof session !== 'object') return false;
+
+  const previousCount = counts.get(session) ?? 0;
+  if (previousCount >= MAX_PROPOSAL_DIAGNOSTIC_LOGS_PER_SESSION) return false;
+
+  counts.set(session, previousCount + 1);
+  return true;
 }
 
 function nonBlankString(value: unknown): string | undefined {
@@ -95,6 +111,136 @@ function extractContentArrayText(content: unknown): string {
       return nonBlankString(item.text) || nonBlankString(item.content) || '';
     })
     .join('');
+}
+
+interface ProposalExtractionDiagnostics {
+  nonExtractedCandidates: Array<{
+    path: string;
+    hasMimeTypeField: boolean;
+    mimeType: unknown;
+    hasTopLevelMimeTypeField: boolean;
+    topLevelMimeType: unknown;
+  }>;
+}
+
+function getProposalCandidateMimeTypeInfo(value: Record<string, any>): {
+  hasMimeTypeField: boolean;
+  mimeType: unknown;
+  hasTopLevelMimeTypeField: boolean;
+  topLevelMimeType: unknown;
+} {
+  const resource = value.resource ?? value.metadata?.resource ?? value;
+  const resourceObject = resource && typeof resource === 'object' ? (resource as Record<string, any>) : undefined;
+
+  return {
+    hasMimeTypeField: resourceObject ? 'mimeType' in resourceObject : false,
+    mimeType: resourceObject?.mimeType,
+    hasTopLevelMimeTypeField: 'mimeType' in value,
+    topLevelMimeType: value.mimeType,
+  };
+}
+
+function getContentItemTypes(content: unknown): unknown[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+
+  return content.map((item) => (isNonArrayObject(item) ? item.type : typeof item));
+}
+
+function extractProposalsFromValue(
+  value: unknown,
+  proposals: Proposal[],
+  seen: WeakSet<object>,
+  diagnostics?: ProposalExtractionDiagnostics,
+  path = 'value',
+): void {
+  if (!value || typeof value !== 'object') return;
+  if (seen.has(value)) return;
+  seen.add(value);
+
+  const proposal = getProposalFromResourceBlock(value);
+  if (proposal) {
+    proposals.push(proposal);
+    return;
+  }
+
+  if (diagnostics) {
+    diagnostics.nonExtractedCandidates.push({
+      path,
+      ...getProposalCandidateMimeTypeInfo(value as Record<string, any>),
+    });
+  }
+
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      extractProposalsFromValue(item, proposals, seen, diagnostics, `${path}[${index}]`);
+    }
+    return;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  for (const key of ['content', 'rawOutput', 'output', 'result', '__mcpContentItems']) {
+    extractProposalsFromValue(candidate[key], proposals, seen, diagnostics, `${path}.${key}`);
+  }
+}
+
+function extractProposalsFromUpdate(
+  update: any,
+  diagnostics?: ProposalExtractionDiagnostics,
+): Proposal[] {
+  const proposals: Proposal[] = [];
+  const seen = new WeakSet<object>();
+
+  extractProposalsFromValue(update?.content, proposals, seen, diagnostics, 'update.content');
+  extractProposalsFromValue(update?.rawOutput, proposals, seen, diagnostics, 'update.rawOutput');
+  extractProposalsFromValue(update?.result, proposals, seen, diagnostics, 'update.result');
+
+  return proposals;
+}
+
+function createProposalBlock(proposal: Proposal, fallbackToolCallId: string): ContentBlock {
+  const applyToolCallId = proposal.applyToolCallId || fallbackToolCallId;
+  const proposalWithApplyToolCallId =
+    proposal.applyToolCallId || !applyToolCallId ? proposal : { ...proposal, applyToolCallId };
+
+  return {
+    type: 'proposal',
+    kind: proposal.kind,
+    payload: proposal.payload,
+    preview: proposal.preview,
+    applyToolCallId,
+    proposal: proposalWithApplyToolCallId,
+  };
+}
+
+function emitProposalBlocksFromUpdate(update: any, session: any, toolCallId: string): void {
+  const shouldLogDiagnostics = shouldLogSessionDiagnostic(
+    session,
+    proposalExtractionDiagnosticLogCounts,
+  );
+  const diagnostics = shouldLogDiagnostics
+    ? ({ nonExtractedCandidates: [] } satisfies ProposalExtractionDiagnostics)
+    : undefined;
+  const proposals = extractProposalsFromUpdate(update, diagnostics);
+
+  if (diagnostics) {
+    logger.info('[ACPProviderStreaming] Proposal extraction diagnostic', {
+      toolCallId,
+      contentType: typeof update?.content,
+      contentIsArray: Array.isArray(update?.content),
+      contentItemTypes: getContentItemTypes(update?.content),
+      rawOutputType: typeof update?.rawOutput,
+      resultType: typeof update?.result,
+      extractedProposalCount: proposals.length,
+      nonExtractedCandidates: diagnostics.nonExtractedCandidates,
+    });
+  }
+
+  for (const proposal of proposals) {
+    streamSessionManager.addContentBlock(
+      session.agentId,
+      createProposalBlock(proposal, toolCallId),
+    );
+  }
 }
 
 // Track tool kinds for pending tool calls to know when file edits complete
@@ -1887,6 +2033,7 @@ export class ACPProviderStreaming {
         is_error: status === 'failed',
       };
       streamSessionManager.addContentBlock(session.agentId, resultBlock);
+      emitProposalBlocksFromUpdate(update, session, toolId);
       await this.processPendingFileEdit(toolId, status, Boolean(resultBlock.is_error), session);
       logger.debug('[ACPProviderStreaming] tool_call had terminal status, emitted tool_result', {
         toolId,
@@ -2043,6 +2190,14 @@ export class ACPProviderStreaming {
    * Handle a tool call update
    */
   private async handleToolCallUpdate(update: any, session: any): Promise<void> {
+    const initialToolCallId = extractToolCallId(update);
+    if (shouldLogSessionDiagnostic(session, toolCallUpdateDiagnosticLogCounts)) {
+      logger.info('[ACPProviderStreaming] tool_call_update diagnostic', {
+        toolCallId: initialToolCallId,
+        updateKeys: update && typeof update === 'object' ? Object.keys(update) : [],
+      });
+    }
+
     // The backend sends the result in different formats
     // Production format: update.rawOutput.output, update.result, or string content[]
     // Legacy test format: update.content.result (plain object only)
@@ -2051,7 +2206,7 @@ export class ACPProviderStreaming {
     if (!output && isLegacyToolCallUpdateContent(update?.content)) {
       output = update.content.result || '';
     }
-    let toolCallId = extractToolCallId(update);
+    let toolCallId = initialToolCallId;
 
     // When output is empty but the update carries an error (e.g., MCP connection lost,
     // timeout, bridge unavailable), extract the error message so the UI shows something
@@ -2206,6 +2361,7 @@ export class ACPProviderStreaming {
 
     // Use agentId as the canonical key
     streamSessionManager.addContentBlock(session.agentId, toolResultBlock);
+    emitProposalBlocksFromUpdate(update, session, toolCallId);
 
     // Check if this was a file edit tool and trigger immediate git check
     // This ensures the CodeChangesPanel updates immediately when agents edit files

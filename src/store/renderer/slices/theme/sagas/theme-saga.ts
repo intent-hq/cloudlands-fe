@@ -4,15 +4,15 @@ import {
   put,
   takeEvery,
   type SagaGenerator,
-} from "typed-redux-saga";
+} from 'typed-redux-saga';
 import {
   getLocalStorageItem,
   setLocalStorageItem,
-} from "$store/renderer/utils/safe-local-storage-saga";
-import { takeEveryFromWindowEvent } from "../../../utils/ipc-channel";
-import { ThemeManager } from "$lib/utils/theme";
-import { themePresets } from "$lib/utils/theme-presets";
-import { parseVSCodeTheme } from "$lib/utils/vscode-theme-parser";
+} from '$store/renderer/utils/safe-local-storage-saga';
+import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
+import { ThemeManager } from '$lib/utils/theme';
+import { themePresets } from '$lib/utils/theme-presets';
+import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
 import {
   clearThemeCustomization,
   importCustomTheme,
@@ -22,17 +22,17 @@ import {
   setThemeCustomization,
   setThemeName,
   setThemePreference,
-} from "../theme-slice";
+} from '../theme-slice';
 import {
   DEFAULT_THEME_NAME,
   DEFAULT_THEME_PREFERENCE,
   type ThemeCustomizationState,
   type ThemeName,
   type ThemePreference,
-} from "../theme-types";
+} from '../theme-types';
 
-const THEME_STORAGE_KEY = "theme";
-const DARK_MODE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
+const THEME_STORAGE_KEY = 'theme';
+const DARK_MODE_MEDIA_QUERY = '(prefers-color-scheme: dark)';
 
 export type ThemeChangedEventDetail = {
   theme?: ThemePreference;
@@ -49,29 +49,29 @@ export type ThemeManagerSnapshot = {
 };
 
 export function themeNameFromIsDark(isDark: boolean): ThemeName {
-  return isDark ? "dark" : "light";
+  return isDark ? 'dark' : 'light';
 }
 
 function isThemePreference(value: string | null | undefined): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
+  return value === 'light' || value === 'dark' || value === 'system';
 }
 
 function readDocumentThemeName(): ThemeName | null {
-  if (typeof document === "undefined") return null;
+  if (typeof document === 'undefined') return null;
 
   const root = document.documentElement;
-  if (root.classList.contains("dark")) return "dark";
-  if (root.classList.contains("light")) return "light";
+  if (root.classList.contains('dark')) return 'dark';
+  if (root.classList.contains('light')) return 'light';
 
-  const colorScheme = root.style.getPropertyValue("color-scheme").trim();
-  if (colorScheme === "dark" || colorScheme.startsWith("dark ")) return "dark";
-  if (colorScheme === "light" || colorScheme.startsWith("light ")) return "light";
+  const colorScheme = root.style.getPropertyValue('color-scheme').trim();
+  if (colorScheme === 'dark' || colorScheme.startsWith('dark ')) return 'dark';
+  if (colorScheme === 'light' || colorScheme.startsWith('light ')) return 'light';
 
   return null;
 }
 
 function readSystemThemeName(): ThemeName {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return DEFAULT_THEME_NAME;
   }
 
@@ -83,7 +83,7 @@ function readSystemThemeName(): ThemeName {
 }
 
 function resolveThemePreference(preference: ThemePreference): ThemeName {
-  if (preference === "system") return readSystemThemeName();
+  if (preference === 'system') return readSystemThemeName();
   return preference;
 }
 
@@ -111,9 +111,13 @@ export function applyThemePreferenceToManager(
   manager.setTheme(preference, { persist: false });
 }
 
-export function applyPresetThemeToManager(manager: ThemeManager, presetId: string): void {
+export function applyPresetThemeToManager(manager: ThemeManager, presetId: string | null): void {
+  if (presetId == null || presetId === '') {
+    manager.clearCustomTheme();
+    return;
+  }
   const preset = themePresets.find((item) => item.id === presetId);
-  if (!preset) throw new Error("Theme preset not found.");
+  if (!preset) throw new Error('Theme preset not found.');
   manager.setPresetTheme(preset.id, preset.dark, preset.light);
 }
 
@@ -164,7 +168,7 @@ export function* syncReduxFromThemeManager(manager: ThemeManager): SagaGenerator
 
 export function themeErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
+  if (typeof error === 'string' && error) return error;
   return fallback;
 }
 
@@ -182,7 +186,7 @@ export function* handleThemeChanged(detail: ThemeChangedEventDetail): SagaGenera
   }
 
   const themeName =
-    typeof detail?.isDark === "boolean"
+    typeof detail?.isDark === 'boolean'
       ? themeNameFromIsDark(detail.isDark)
       : yield* call(readThemeNameFromBrowserState, preference ?? DEFAULT_THEME_PREFERENCE);
 
@@ -191,7 +195,7 @@ export function* handleThemeChanged(detail: ThemeChangedEventDetail): SagaGenera
 }
 
 export function* handleThemePreferenceChangeRequested(
-  action: ReturnType<typeof requestThemePreferenceChange>
+  action: ReturnType<typeof requestThemePreferenceChange>,
 ): SagaGenerator<void> {
   try {
     const [preference] = action.payload;
@@ -201,7 +205,7 @@ export function* handleThemePreferenceChangeRequested(
     yield* call(syncReduxFromThemeManager, manager);
     yield* put(setThemeError(null));
   } catch (error) {
-    yield* put(setThemeError(themeErrorMessage(error, "Failed to apply theme preference.")));
+    yield* put(setThemeError(themeErrorMessage(error, 'Failed to apply theme preference.')));
   }
 }
 
@@ -215,7 +219,7 @@ export function* handleThemePresetSelected(
     yield* call(syncReduxFromThemeManager, manager);
     yield* put(setThemeError(null));
   } catch (error) {
-    yield* put(setThemeError(themeErrorMessage(error, "Failed to apply theme preset.")));
+    yield* put(setThemeError(themeErrorMessage(error, 'Failed to apply theme preset.')));
   }
 }
 
@@ -230,7 +234,7 @@ export function* handleCustomThemeImported(
     yield* call(syncReduxFromThemeManager, manager);
     yield* put(setThemeError(null));
   } catch (error) {
-    yield* put(setThemeError(themeErrorMessage(error, "Failed to import theme.")));
+    yield* put(setThemeError(themeErrorMessage(error, 'Failed to import theme.')));
   }
 }
 
@@ -241,12 +245,12 @@ export function* handleThemeCustomizationCleared(): SagaGenerator<void> {
     yield* call(syncReduxFromThemeManager, manager);
     yield* put(setThemeError(null));
   } catch (error) {
-    yield* put(setThemeError(themeErrorMessage(error, "Failed to clear custom theme.")));
+    yield* put(setThemeError(themeErrorMessage(error, 'Failed to clear custom theme.')));
   }
 }
 
 export function* watchThemeChangedSaga() {
-  yield* takeEveryFromWindowEvent<ThemeChangedEventDetail>("theme-changed", handleThemeChanged);
+  yield* takeEveryFromWindowEvent<ThemeChangedEventDetail>('theme-changed', handleThemeChanged);
 }
 
 export function* watchThemePreferencePersistenceSaga() {

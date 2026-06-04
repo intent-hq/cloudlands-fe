@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  faPaperPlane,
-  faPencil,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPaperPlane, faPencil } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SuggestedPrompt } from '$shared/types';
   import { fade } from 'svelte/transition';
@@ -15,9 +12,15 @@
     onSelect: (prompt: string) => void;
     /** Called when a suggestion is edited - loads into input without sending */
     onEdit?: (prompt: string) => void;
+    /**
+     * Whether to display the keyboard shortcut hints (⌃1 / Alt+1 etc.).
+     * Hidden by default so the hints only appear on the focused chat when multiple
+     * chats are visible at once — matches the shortcut's runtime gating.
+     */
+    showShortcutHints?: boolean;
   }
 
-  let { prompts, onSelect, onEdit }: Props = $props();
+  let { prompts, onSelect, onEdit, showShortcutHints = false }: Props = $props();
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -74,7 +77,7 @@
               {/snippet}
             </Tooltip>
           {/if}
-          {#if index < 3}
+          {#if index < 3 && showShortcutHints}
             <span
               class="shrink-0 text-ui font-medium text-ghost group-hover:text-muted-foreground/60 transition-colors duration-150"
             >

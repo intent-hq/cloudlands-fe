@@ -68,6 +68,26 @@ import {
   testStreamManager,
 } from '../acp-provider-streaming';
 import * as messageAccumulator from '../../../../../store/main/slices/message-accumulator/message-accumulator-api';
+import {
+  isProposal,
+  type Proposal,
+} from '../../../../../shared/types/proposal';
+import { PROPOSAL_RESOURCE_MIME_TYPE } from '../../../../../shared/types/proposal-resource';
+
+function proposalContentItems(proposal: Proposal, mimeType = PROPOSAL_RESOURCE_MIME_TYPE) {
+  return [
+    { type: 'text', text: JSON.stringify({ ok: true, proposal }) },
+    {
+      type: 'resource',
+      resource: {
+        uri: `intent-proposal://${proposal.kind}/test`,
+        name: proposal.preview.title,
+        mimeType,
+        text: JSON.stringify(proposal),
+      },
+    },
+  ];
+}
 
 describe('ACP Provider Streaming Handler Lifecycle', () => {
   const agentId = 'lifecycle-test-agent';
@@ -676,6 +696,111 @@ describe('ACP Provider Streaming Handler Lifecycle', () => {
           toolUses.some((toolUse) => (toolUse as any).id === (result as any).tool_use_id),
         ).toBe(true);
       }
+    });
+  });
+
+  describe('proposal resource blocks in streaming tool results', () => {
+    it('emits a proposal block alongside a content-array tool_call_update result', async () => {
+      const sessionId = 'ses_tool_update_proposal';
+      const onContentBlocks = vi.fn();
+      const proposal: Proposal = {
+        kind: 'workspace-create',
+        payload: { name: 'New workspace' },
+        preview: { title: 'Create workspace' },
+      };
+
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1', onContentBlocks });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_update_proposal',
+          status: 'completed',
+          content: proposalContentItems(proposal),
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      const proposalBlocks = partial.contentBlocks.filter((b) => b.type === 'proposal');
+
+      expect(toolResults).toHaveLength(1);
+      expect(proposalBlocks).toHaveLength(1);
+      expect((proposalBlocks[0] as any).applyToolCallId).toBe('tc_update_proposal');
+      expect(isProposal((proposalBlocks[0] as any).proposal)).toBe(true);
+      expect((proposalBlocks[0] as any).proposal.applyToolCallId).toBe('tc_update_proposal');
+      expect(onContentBlocks.mock.calls.flatMap((call) => call[0]).map((b) => b.type)).toEqual([
+        'tool_result',
+        'proposal',
+      ]);
+    });
+
+    it('emits a proposal block alongside a terminal tool_call result', async () => {
+      const sessionId = 'ses_terminal_tool_proposal';
+      const proposal: Proposal = {
+        kind: 'settings-change',
+        payload: { changes: [{ key: 'theme', value: 'dark' }] },
+        preview: { title: 'Change settings' },
+        applyToolCallId: 'tc_existing_apply',
+      };
+
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_terminal_proposal',
+          title: 'Show proposal',
+          name: 'ws.app.proposal.show',
+          kind: 'read',
+          status: 'completed',
+          rawInput: { kind: proposal.kind },
+          content: proposalContentItems(proposal),
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      const proposalBlocks = partial.contentBlocks.filter((b) => b.type === 'proposal');
+
+      expect(toolResults).toHaveLength(1);
+      expect(proposalBlocks).toHaveLength(1);
+      expect((proposalBlocks[0] as any).applyToolCallId).toBe('tc_existing_apply');
+      expect((proposalBlocks[0] as any).proposal.applyToolCallId).toBe('tc_existing_apply');
+      expect(isProposal((proposalBlocks[0] as any).proposal)).toBe(true);
+    });
+
+    it('does not emit proposal blocks for non-proposal resources', async () => {
+      const sessionId = 'ses_non_proposal_resource';
+      const proposal: Proposal = {
+        kind: 'workspace-create',
+        payload: { name: 'Ignored workspace' },
+        preview: { title: 'Ignored proposal' },
+      };
+
+      streaming.setInternalSessionId(sessionId);
+      streaming.startStreaming({ workspaceId: 'ws-1' });
+
+      await streaming.handleSessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_non_proposal',
+          status: 'completed',
+          content: proposalContentItems(proposal, 'text/plain'),
+        } as any,
+      });
+
+      const partial = messageAccumulator.getPartialContent(agentId);
+      const toolResults = partial.contentBlocks.filter((b) => b.type === 'tool_result');
+      const proposalBlocks = partial.contentBlocks.filter((b) => b.type === 'proposal');
+
+      expect(toolResults).toHaveLength(1);
+      expect(proposalBlocks).toHaveLength(0);
     });
   });
 });

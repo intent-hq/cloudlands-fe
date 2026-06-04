@@ -1,0 +1,387 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyMiddleware, legacy_createStore as createStore, type Middleware } from 'redux';
+import createSagaMiddleware from 'redux-saga';
+import { readable } from 'svelte/store';
+import type { Task } from 'redux-saga';
+import { STORE_CONTEXT } from '$lib/store/constants';
+import { createExtendedDefaultState, rootReducer } from '$lib/store/init';
+import { initReduxDispatchBridge, initReduxStoreBridge } from '$lib/store/redux-dispatch-bridge';
+import type {
+  GenericAction,
+  PreloadedStoreState,
+  ReduxStoreContext,
+  StoreState,
+} from '$lib/store/types';
+import { proposalLifecycleSaga } from '$lib/store/slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
+import { workspaceOperationsSaga } from '$lib/store/slices/workspace-operations/sagas/workspace-operations-saga';
+import { workspaceCrudSaga } from '$lib/store/slices/workspace/sagas/workspace-crud-saga';
+import { applyWorkspaceProposal } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+import { getProposalId } from './proposal-id';
+import { applySettingsProposal } from './settings-proposal-actions';
+import { applySpecialistProposal } from './specialist-proposal-actions';
+import { selectBgDefaultModel } from '$lib/store/slices/background-agent-settings/background-agent-settings-selectors';
+import { selectProposalLifecycleEntry } from '$lib/store/slices/proposal-lifecycle/proposal-lifecycle-selectors';
+import { selectProposalAppliedState } from '$lib/store/slices/settings-proposal-history/settings-proposal-history-selectors';
+import { resolveHashToTarget } from '$shared/app-ui-targets';
+import type {
+  Proposal,
+  SettingsChangeProposal,
+  SpecialistEditProposal,
+  WorkspaceCreateProposal,
+} from '$shared/types/proposal';
+import ProposalCard from './ProposalCard.svelte';
+
+const mocks = vi.hoisted(() => {
+  const storage: Record<string, string> = {};
+  function resetLocalStorage() {
+    for (const key of Object.keys(storage)) delete storage[key];
+    storage['intent:redux-debug'] = 'false';
+    storage['intent:proposal-lifecycle:v1'] = JSON.stringify({ entries: {} });
+
+    const localStorageMock = window.localStorage as unknown as {
+      getItem: ReturnType<typeof vi.fn>;
+      setItem: ReturnType<typeof vi.fn>;
+      removeItem: ReturnType<typeof vi.fn>;
+      clear: ReturnType<typeof vi.fn>;
+    };
+    localStorageMock.getItem.mockImplementation((key: string) => storage[key] ?? null);
+    localStorageMock.setItem.mockImplementation((key: string, value: string) => {
+      storage[key] = String(value);
+    });
+    localStorageMock.removeItem.mockImplementation((key: string) => {
+      delete storage[key];
+    });
+    localStorageMock.clear.mockImplementation(() => {
+      for (const key of Object.keys(storage)) delete storage[key];
+    });
+  }
+  resetLocalStorage();
+  return {
+    goto: vi.fn(() => Promise.resolve()),
+    invoke: vi.fn(),
+    workspaceCreate: vi.fn(),
+    toastError: vi.fn(),
+    track: vi.fn(),
+    resetLocalStorage,
+  };
+});
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$lib/electron-bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
+  invoke: mocks.invoke,
+  listenSync: vi.fn(() => vi.fn()),
+  listen: vi.fn(async () => vi.fn()),
+}));
+vi.mock('$lib/store/slices/workspace/utils/workspace.client', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$lib/store/slices/workspace/utils/workspace.client')>();
+  const workspaceClient = Object.assign(
+    Object.create(Object.getPrototypeOf(actual.workspaceClient)),
+    actual.workspaceClient,
+    { create: mocks.workspaceCreate },
+  );
+  return {
+    ...actual,
+    workspaceClient,
+  };
+});
+vi.mock('$lib/services/analytics', () => ({ track: mocks.track }));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('svelte-fa', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
+}));
+
+type TestStoreContext = ReduxStoreContext & { actions: GenericAction[] };
+
+function createIntegrationStore(preloadedState?: PreloadedStoreState): TestStoreContext {
+  const actions: GenericAction[] = [];
+  const actionLog: Middleware<unknown, StoreState> = () => (next) => (action) => {
+    actions.push(action as GenericAction);
+    return next(action);
+  };
+  const sagaMiddleware = createSagaMiddleware();
+  const store = createStore(
+    rootReducer,
+    createExtendedDefaultState<StoreState>(preloadedState),
+    applyMiddleware(actionLog, sagaMiddleware),
+  );
+  initReduxDispatchBridge(store.dispatch.bind(store));
+  initReduxStoreBridge(store);
+  const storeState = readable(store.getState(), (set) =>
+    store.subscribe(() => set(store.getState())),
+  );
+  const tasks: Task[] = [
+    sagaMiddleware.run(proposalLifecycleSaga),
+    sagaMiddleware.run(workspaceOperationsSaga),
+    sagaMiddleware.run(workspaceCrudSaga),
+  ];
+  return {
+    store,
+    storeState,
+    actions,
+    runSaga: (saga, ...args) => {
+      const task = sagaMiddleware.run(saga, ...args);
+      tasks.push(task);
+      return task;
+    },
+    dispose: () => tasks.forEach((task) => task.cancel()),
+  };
+}
+
+let storeContext: TestStoreContext;
+
+function renderProposal(proposal: Proposal, onApply: (detail: any) => unknown) {
+  return render(ProposalCard, {
+    props: { proposal, onApply },
+    context: new Map([[STORE_CONTEXT, storeContext]]),
+  });
+}
+
+function branchPrefixProposal(id: string): SettingsChangeProposal {
+  return {
+    kind: 'settings-change',
+    applyToolCallId: id,
+    payload: {
+      changes: [
+        {
+          path: 'workspace.branchPrefix',
+          value: 'feature/',
+          apply: { kind: 'settings-update-ipc', key: 'branchPrefix' },
+        },
+      ],
+    },
+    preview: {
+      title: 'Update branch prefix',
+      fields: [
+        { key: 'workspace.branchPrefix', label: 'Branch prefix', before: '', after: 'feature/' },
+      ],
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.resetLocalStorage();
+  window.history.pushState({}, '', '/');
+  storeContext = createIntegrationStore();
+  (window as any).electronAPI = {
+    invoke: mocks.invoke,
+    on: vi.fn(() => 'listener-id'),
+    offById: vi.fn(),
+  };
+  mocks.invoke.mockImplementation((channel: string) =>
+    channel === 'workspace:list'
+      ? Promise.resolve({ success: true, data: [] })
+      : Promise.resolve({ success: true, data: '' }),
+  );
+  mocks.workspaceCreate.mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'ws-created',
+      title: 'Created workspace',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+    },
+  });
+});
+
+afterEach(() => {
+  storeContext.dispose();
+  cleanup();
+});
+
+describe('Chief proposal integration scenarios', () => {
+  it('applies a settings proposal through the real lifecycle saga and persists Redux state', async () => {
+    const proposal: SettingsChangeProposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'settings-success',
+      payload: { changes: [{ path: 'backgroundAgents.defaultModel', value: 'sonnet4.5' }] },
+      preview: {
+        title: 'Use Sonnet',
+        fields: [
+          {
+            key: 'backgroundAgents.defaultModel',
+            label: 'Default model',
+            before: '',
+            after: 'sonnet4.5',
+          },
+        ],
+      },
+    };
+    const statuses: string[] = [];
+    storeContext.store.subscribe(() => {
+      const status = selectProposalLifecycleEntry.select(
+        storeContext.store.getState(),
+        getProposalId(proposal),
+      )?.status;
+      if (status && statuses.at(-1) !== status) statuses.push(status);
+    });
+
+    renderProposal(proposal, applySettingsProposal);
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() =>
+      expect(selectBgDefaultModel.select(storeContext.store.getState())).toBe('sonnet4.5'),
+    );
+    await waitFor(() =>
+      expect(
+        selectProposalLifecycleEntry.select(storeContext.store.getState(), 'settings-success')
+          ?.status,
+      ).toBe('applied'),
+    );
+    expect(statuses).toEqual(expect.arrayContaining(['applying', 'applied']));
+    expect(
+      selectProposalAppliedState.select(storeContext.store.getState(), 'settings-success'),
+    ).toBeTruthy();
+  });
+
+  it('applies a specialist-create proposal and navigates to the new specialist on the agents tab', async () => {
+    const proposal: SpecialistEditProposal = {
+      kind: 'specialist-edit',
+      applyToolCallId: 'specialist-create',
+      payload: {
+        operation: 'create',
+        id: 'review-buddy',
+        name: 'Review Buddy',
+        description: 'Reviews code',
+        model: 'sonnet4.5',
+        prompt: 'Review carefully.',
+      },
+      preview: {
+        title: 'Create specialist',
+        fields: [{ key: 'name', label: 'Name', value: 'Review Buddy' }],
+      },
+    };
+
+    renderProposal(proposal, applySpecialistProposal);
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() =>
+      expect(
+        selectProposalLifecycleEntry.select(storeContext.store.getState(), 'specialist-create')
+          ?.status,
+      ).toBe('applied'),
+    );
+    expect(storeContext.actions).toContainEqual(
+      expect.objectContaining({
+        type: 'specialists/saveFileSpecialist',
+        payload: [expect.objectContaining({ id: 'review-buddy', name: 'Review Buddy' })],
+      }),
+    );
+    expect(resolveHashToTarget('specialist-entry')?.tab).toBe('agents');
+    expect(mocks.goto).toHaveBeenCalledWith('/settings?tab=agents&specialist=review-buddy');
+  });
+
+  it('applies a workspace-create proposal through real workspace sagas and hydrates initial-agent navigation', async () => {
+    const proposal: WorkspaceCreateProposal = {
+      kind: 'workspace-create',
+      applyToolCallId: 'workspace-create',
+      payload: {
+        operation: 'workspace.create',
+        params: {
+          repositoryPath: '/repo/intent',
+          initialAgent: {
+            agentId: 'agent-initial',
+            prompt: 'Start here',
+            specialist: 'implementor',
+          },
+        },
+      },
+      preview: {
+        title: 'Create workspace',
+        workspaceCreate: {
+          repoPath: '/repo/intent',
+          repoType: 'local',
+          branch: 'main',
+          initialPrompt: 'Start here',
+          specialist: 'implementor',
+        },
+      },
+    };
+
+    renderProposal(proposal, (detail) =>
+      storeContext.store.dispatch(applyWorkspaceProposal(detail)),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        selectProposalLifecycleEntry.select(storeContext.store.getState(), 'workspace-create')
+          ?.status,
+      ).toBe('applied'),
+    );
+    const lifecycleEntry = selectProposalLifecycleEntry.select(
+      storeContext.store.getState(),
+      'workspace-create',
+    );
+    expect(lifecycleEntry?.result?.workspaceId).toBe('ws-created');
+
+    const actionTypes = storeContext.actions.map((action) => action.type);
+    expect(actionTypes).not.toContain('workspace/createWorkspaceRequested');
+    expect(actionTypes).toContain('workspaceNavigation/hydrateWorkspaceNavigation');
+    expect(actionTypes).toContain('workspaceAgents/activateInitialAgentRequested');
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open workspace' })).toBeTruthy());
+  });
+
+  it('shows a failed lifecycle state and records no history when a settings write rejects', async () => {
+    mocks.invoke.mockImplementation((channel: string) =>
+      channel === 'settings:update'
+        ? Promise.reject(new Error('write denied'))
+        : Promise.resolve({ success: true, data: '' }),
+    );
+    const proposal = branchPrefixProposal('settings-failure');
+
+    renderProposal(proposal, applySettingsProposal);
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() =>
+      expect(
+        selectProposalLifecycleEntry.select(storeContext.store.getState(), 'settings-failure')
+          ?.status,
+      ).toBe('failed'),
+    );
+    expect(
+      selectProposalAppliedState.select(storeContext.store.getState(), 'settings-failure'),
+    ).toBeNull();
+    expect(
+      await screen.findByText(/Action failed: Failed to apply settings change: write denied/),
+    ).toBeTruthy();
+  });
+
+  it('dedupes rapid double-clicks so only one underlying settings write runs', async () => {
+    let resolveUpdate: (value: unknown) => void = () => {};
+    mocks.invoke.mockImplementation((channel: string) =>
+      channel === 'settings:update'
+        ? new Promise((resolve) => {
+            resolveUpdate = resolve;
+          })
+        : Promise.resolve({ success: true, data: '' }),
+    );
+    const proposal = branchPrefixProposal('settings-double-click');
+
+    renderProposal(proposal, applySettingsProposal);
+    const apply = screen.getByRole('button', { name: 'Apply' });
+    await Promise.all([fireEvent.click(apply), fireEvent.click(apply)]);
+
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([channel]) => channel === 'settings:update'),
+      ).toHaveLength(1),
+    );
+    resolveUpdate({ success: true });
+    await waitFor(() =>
+      expect(
+        selectProposalLifecycleEntry.select(storeContext.store.getState(), 'settings-double-click')
+          ?.status,
+      ).toBe('applied'),
+    );
+  });
+});

@@ -66,6 +66,7 @@ const WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}(-[0-9]+)?$/;
 // Legacy workspace slug pattern: word-word-xxxx (e.g., "amber-forest-a7x2") for backward compatibility
 const LEGACY_WORKSPACE_SLUG_PATTERN = /^[a-z]{2,15}-[a-z]{2,15}-[a-z0-9]{4}$/;
 export const ROOT_WORKSPACE_ID = '__root__' as WorkspaceId;
+export const CHIEF_WORKSPACE_ID = '__chief__' as WorkspaceId;
 
 export function isValidAgentId(id: string): id is AgentId {
   return UUID_PATTERN.test(id) || /^agent-/.test(id) || /^terminal-/.test(id);
@@ -81,9 +82,10 @@ export function isValidMessageId(id: string): id is MessageId {
 
 export function isValidWorkspaceId(id: string): id is WorkspaceId {
   // Accept new slug format, legacy slug format, UUID format, and the
-  // special root terminal context used outside real workspaces.
+  // special virtual contexts used outside real workspaces.
   return (
     id === ROOT_WORKSPACE_ID ||
+    id === CHIEF_WORKSPACE_ID ||
     WORKSPACE_SLUG_PATTERN.test(id) ||
     LEGACY_WORKSPACE_SLUG_PATTERN.test(id) ||
     UUID_PATTERN.test(id)

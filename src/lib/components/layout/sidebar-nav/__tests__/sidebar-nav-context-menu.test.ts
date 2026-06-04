@@ -1,9 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   sidebarNavReducer,
   initialState,
@@ -14,6 +9,8 @@ import {
   setHoveredItem,
   setExpandedItem,
   setCardPinned,
+  setChiefActiveAgentId,
+  hydrateSidebarNav,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import type { SidebarNavState } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
 
@@ -87,6 +84,23 @@ describe('sidebar-nav context menu (Redux reducer)', () => {
     });
   });
 
+  describe('Chief active thread persistence state', () => {
+    it('stores the active Chief agent id', () => {
+      state = sidebarNavReducer(state, setChiefActiveAgentId('agent-chief-current'));
+
+      expect(state.chiefActiveAgentId).toBe('agent-chief-current');
+    });
+
+    it('hydrates the active Chief agent id', () => {
+      state = sidebarNavReducer(
+        state,
+        hydrateSidebarNav({ chiefActiveAgentId: 'agent-chief-saved' }),
+      );
+
+      expect(state.chiefActiveAgentId).toBe('agent-chief-saved');
+    });
+  });
+
   // ── Context menu interaction with hover state ──
 
   describe('context menu interaction with hover state', () => {
@@ -142,4 +156,3 @@ describe('sidebar-nav context menu (Redux reducer)', () => {
     });
   });
 });
-

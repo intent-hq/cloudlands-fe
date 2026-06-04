@@ -14,7 +14,6 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
-  import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
@@ -36,6 +35,7 @@
   isWorkspaceActivityWithin,
 } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
 
   const workspaceItems = selectWorkspaceItems();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
@@ -181,12 +181,12 @@
     goto(route);
   }
 
-  function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
+  function _handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(clearWorkspaceUnread(workspaceId));
   }
 
-  function handleTogglePin(e: MouseEvent, workspaceId: string) {
+  function _handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(togglePinWorkspace(workspaceId));
   }
@@ -197,6 +197,9 @@
     ...filteredRunning.map((r) => r.workspace.id),
     ...filteredPinned.map((p) => p.workspace.id),
   ]);
+
+  // Map from workspace ID to its position in the flat visible list (for highlighting)
+  const _visibleIdIndex = $derived(new Map(allVisibleIds.map((id, i) => [id, i])));
 
   let keyboardNavActive = $state(false);
   let hoveredIndex = $state(-1);
@@ -274,62 +277,57 @@
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
         <Header size={3} class="truncate">Unread</Header>
       </div>
-      {#each filteredUnread as { workspace, unreadIds }, i (workspace.id)}
-        <WorkspaceListItem
+      {#each filteredUnread as { workspace, unreadIds }, _i (workspace.id)}
+        <WorkspaceCard
           {workspace}
+          variant="compact"
           isUnread={true}
           unreadAgentIds={unreadIds}
-          isPinned={$pinnedIds$.includes(workspace.id)}
-          highlighted={keyboardNavActive && highlightedIndex === i}
+          highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
-          onHover={() => (hoveredIndex = i)}
-          onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
-          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+          onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />
       {/each}
     {/if}
 
     <!-- Running section -->
     {#if filteredRunning.length > 0}
-      {@const unreadOffset = filteredUnread.length}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
         <Header size={3} class="truncate">Running</Header>
         <span class="text-ui text-subtle shrink-0">{runningWorkspaces.length}</span>
       </div>
-      {#each filteredRunning as { workspace, streamingIds }, i (workspace.id)}
-        <WorkspaceListItem
+      {#each filteredRunning as { workspace, streamingIds }, _i (workspace.id)}
+        <WorkspaceCard
           {workspace}
+          variant="compact"
           isRunning={true}
           streamingAgentIds={streamingIds}
-          isPinned={$pinnedIds$.includes(workspace.id)}
-          highlighted={keyboardNavActive && highlightedIndex === unreadOffset + i}
+          highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
-          onHover={() => (hoveredIndex = unreadOffset + i)}
-          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+          onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />
       {/each}
     {/if}
 
     <!-- Pinned section -->
     {#if filteredPinned.length > 0}
-      {@const pinnedOffset = filteredUnread.length + filteredRunning.length}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
         <Header size={3} class="truncate">Pinned</Header>
       </div>
-      {#each filteredPinned as { workspace }, i (workspace.id)}
-        <WorkspaceListItem
+      {#each filteredPinned as { workspace }, _i (workspace.id)}
+        <WorkspaceCard
           {workspace}
+          variant="compact"
           isPinned={true}
-          highlighted={keyboardNavActive && highlightedIndex === pinnedOffset + i}
+          highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
-          onHover={() => (hoveredIndex = pinnedOffset + i)}
-          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onClick={(e) => handleClick(workspace.id, e)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+          onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />
       {/each}
     {/if}

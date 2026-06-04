@@ -2943,7 +2943,11 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       // Send to all windows viewing this workspace so they can all register stream handlers.
       // Since sendStreamToRenderer now targets all workspace windows (not just the initiator),
       // all windows will receive both chunks and the complete event, so no orphaned handlers.
-      const workspaceWindowIds = getWindowIdsForWorkspace(request.workspaceId);
+      const workspaceWindowIds = this.getStreamTargetWindowIds(
+        request.agentId,
+        request.workspaceId,
+        'agent:stream-starting',
+      );
       logger.info('agent:stream-starting emission', {
         agentId: request.agentId,
         workspaceId: request.workspaceId,
@@ -3032,15 +3036,27 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       let chunkCount = 0;
       const PERSIST_EVERY_N_CHUNKS = 50;
       let persistInProgress = false;
+      // When a persist is requested while one is already running, the most recent
+      // requested reason is captured here so a single follow-up persist can flush
+      // any state mutations that landed between the start of the in-flight save
+      // and the trigger that arrived during it. Without this follow-up, blocks
+      // added via `emitProposalToChat` (which runs synchronously inside a tool
+      // execution that finishes faster than the prior tool_use's disk write)
+      // would never be saved.
+      let pendingPersistReason: string | null = null;
 
       // Helper to persist current state during streaming using messageAccumulator.
       // The body lives on the prototype (`persistStreamingSessionState`) so the
       // guard + save behavior is covered by direct unit tests that cannot
       // easily drive the full streamMessage pipeline; this closure only owns
       // the per-turn `persistInProgress` mutex that serializes overlapping
-      // chunk/content-block callbacks.
-      const persistStreamingState = async (reason: string) => {
-        if (persistInProgress) return; // Don't overlap persistence calls
+      // chunk/content-block callbacks and queues a single follow-up so the
+      // latest accumulator state always reaches disk.
+      const persistStreamingState = async (reason: string): Promise<void> => {
+        if (persistInProgress) {
+          pendingPersistReason = reason;
+          return;
+        }
         persistInProgress = true;
         try {
           await this.persistStreamingSessionState(
@@ -3051,6 +3067,15 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           );
         } finally {
           persistInProgress = false;
+          if (pendingPersistReason !== null) {
+            const followUpReason = `${pendingPersistReason} (follow-up)`;
+            pendingPersistReason = null;
+            // Intentionally fire-and-forget: persistStreamingState is itself
+            // called fire-and-forget by chunk/content-block callbacks, so the
+            // follow-up runs on the next microtask without blocking the
+            // current callback. Errors are logged inside persistStreamingSessionState.
+            void persistStreamingState(followUpReason);
+          }
         }
       };
 
@@ -3296,8 +3321,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
               .trim();
 
             // Only consider the response "empty" if there are no meaningful content blocks.
-            // Responses with tool_use, tool_result, code, image, etc. are NOT empty even
-            // if they have no text — the LLM legitimately ended after tool execution.
+            // Responses with tool_use, tool_result, code, image, proposal, nav-link, etc.
+            // are NOT empty even if they have no text — the LLM legitimately ended after
+            // tool execution or after a user-actionable block (proposal/nav-link) was
+            // emitted by an MCP tool.
             const hasNonTextContent = finalContentBlocks.some(
               (b: ContentBlock) =>
                 b.type === 'tool_use' ||
@@ -3305,7 +3332,9 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
                 b.type === 'code' ||
                 b.type === 'image' ||
                 b.type === 'file' ||
-                b.type === 'audio',
+                b.type === 'audio' ||
+                b.type === 'proposal' ||
+                b.type === 'nav-link',
             );
 
             if (!allTextContent && !hasNonTextContent) {
@@ -5571,14 +5600,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       return false;
     }
 
-    // Send to ALL windows viewing this workspace
-    const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
+    // Send to ALL windows viewing this workspace. Virtual workspaces are app-level
+    // surfaces and may not appear in workspace-window tracking, so they fall back
+    // to the stream originator and finally every alive window.
+    const targetWindowIds = this.getStreamTargetWindowIds(agentId, workspaceId, channel);
     if (targetWindowIds.length === 0) {
-      logger.warn('sendStreamToRenderer: no windows found for workspace, using targeted browser delivery only', {
-        agentId,
-        workspaceId,
-        channel,
-      });
+      logger.warn(
+        'sendStreamToRenderer: no windows found for workspace, using targeted browser delivery only',
+        {
+          agentId,
+          workspaceId,
+          channel,
+        },
+      );
     }
 
     const payloadWithWorkspaceId =
@@ -5586,6 +5620,44 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         ? { ...payload, workspaceId }
         : payload;
     return this.sendToRenderer(channel, payloadWithWorkspaceId, targetWindowIds, workspaceId);
+  }
+
+  private getStreamTargetWindowIds(
+    agentId: string,
+    workspaceId: string,
+    channel: string,
+  ): number[] {
+    const workspaceWindowIds = getWindowIdsForWorkspace(workspaceId);
+    if (workspaceWindowIds.length > 0 || !WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+      return workspaceWindowIds;
+    }
+
+    const aliveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    const originWindowId = this.streamWindowIds.get(agentId);
+    if (
+      originWindowId !== undefined &&
+      aliveWindows.some((window) => window.id === originWindowId)
+    ) {
+      logger.info('Using originating window for virtual workspace stream delivery', {
+        agentId,
+        workspaceId,
+        channel,
+        windowId: originWindowId,
+      });
+      return [originWindowId];
+    }
+
+    const broadcastWindowIds = aliveWindows.map((window) => window.id);
+    if (broadcastWindowIds.length > 0) {
+      logger.info('Broadcasting virtual workspace stream event to all alive windows', {
+        agentId,
+        workspaceId,
+        channel,
+        windowIds: broadcastWindowIds,
+        windowCount: broadcastWindowIds.length,
+      });
+    }
+    return broadcastWindowIds;
   }
 
   /**

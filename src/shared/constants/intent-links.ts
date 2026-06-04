@@ -40,6 +40,12 @@ export const TASK_URL_BASE = `${INTENT_BASE_URL}/task/`;
  */
 export const NOTE_URL_BASE = `${INTENT_BASE_URL}/note/`;
 
+/**
+ * Workspace URL base path for constructing dynamic regexes
+ * Use this when you need to build a regex with variable content
+ */
+export const WORKSPACE_URL_BASE = `${INTENT_BASE_URL}/workspace/`;
+
 // ============================================================================
 // URL Template Functions
 // ============================================================================
@@ -73,6 +79,20 @@ export function taskNoteLink(text: string, noteId: string): string {
  */
 export function noteLink(text: string, noteId: string, workspaceId?: string): string {
   return `[${text}](${noteUrl(noteId, workspaceId)})`;
+}
+
+/**
+ * Generate an intent:// URL for a workspace
+ */
+export function workspaceUrl(workspaceId: string): string {
+  return `${INTENT_BASE_URL}/workspace/${workspaceId}`;
+}
+
+/**
+ * Generate a markdown link to a workspace
+ */
+export function workspaceLink(text: string, workspaceId: string): string {
+  return `[${text}](${workspaceUrl(workspaceId)})`;
 }
 
 // ============================================================================

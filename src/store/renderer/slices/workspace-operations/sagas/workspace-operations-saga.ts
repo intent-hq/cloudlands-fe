@@ -5,6 +5,7 @@ import { removeKnownRepo } from "$store/renderer/slices/known-repos/known-repos-
 import {
   clearActiveWorkspace,
   clearWorkspacePendingDeletion,
+  createWorkspaceRequested,
   loadWorkspacesRequested,
   markWorkspacePendingDeletion,
   openWorkspaceRequested,
@@ -23,6 +24,10 @@ import {
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import {
+  APP_WORKSPACE_OPERATION_CHANNEL,
+  type AppWorkspaceOperationRequest,
+} from "$shared/app-workspace-operations";
+import {
   WorkspaceStatusEnum,
   type Workspace,
 } from "$shared/types";
@@ -30,6 +35,7 @@ import type { WorkspaceId } from "$shared/types/branded-ids";
 import {
   call,
   delay,
+  fork,
   put,
   race,
   spawn,
@@ -37,6 +43,7 @@ import {
   takeLatest,
 } from "typed-redux-saga";
 import { buffers, channel, type Channel } from "redux-saga";
+import { takeEveryFromListenSync } from "$store/renderer/utils/ipc-channel";
 import {
   selectPendingBulkDeleteRepoKey,
   selectPendingBulkRepoKey,
@@ -57,6 +64,8 @@ import {
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
+  requestBulkArchiveWorkspaces,
+  requestBulkDeleteWorkspaces,
   requestDeleteWorkspace,
   requestOpenWorkspace,
   requestUnarchiveWorkspace,
@@ -463,7 +472,56 @@ export function* confirmRemoveRepoSaga() {
   }
 }
 
+// ── Chief / App-level workspace operation bridge ──
+// The main process emits `app:workspace-operation-requested` when the Chief
+// agent calls ws.app.workspaces.open/archive/delete/create. This saga
+// bridges those IPC events into the Redux action graph.
+
+export function* handleAppWorkspaceOperationRequestSaga(request: AppWorkspaceOperationRequest) {
+  if (request.operation === 'open' && request.workspaceId) {
+    yield* put(
+      requestOpenWorkspace({
+        workspaceId: request.workspaceId,
+        openInNewWindow: request.openInNewWindow ?? false,
+      }),
+    );
+    return;
+  }
+
+  if (request.operation === 'archive' && request.workspaceId) {
+    yield* put(requestArchiveWorkspace(request.workspaceId));
+    return;
+  }
+
+  if (request.operation === 'delete' && request.workspaceId) {
+    yield* put(requestDeleteWorkspace(request.workspaceId));
+    return;
+  }
+
+  if (request.operation === 'create' && request.params) {
+    yield* put(createWorkspaceRequested(request.params));
+    return;
+  }
+
+  if (request.operation === 'bulkArchive') {
+    yield* put(requestBulkArchiveWorkspaces(request.ids ?? []));
+    return;
+  }
+
+  if (request.operation === 'bulkDelete') {
+    yield* put(requestBulkDeleteWorkspaces(request.ids ?? []));
+  }
+}
+
+export function* watchAppWorkspaceOperationRequestsSaga() {
+  yield* takeEveryFromListenSync<AppWorkspaceOperationRequest>(
+    APP_WORKSPACE_OPERATION_CHANNEL,
+    handleAppWorkspaceOperationRequestSaga,
+  );
+}
+
 export function* workspaceOperationsSaga() {
+  yield* fork(watchAppWorkspaceOperationRequestsSaga);
   yield* takeLatest(requestOpenWorkspace, requestOpenWorkspaceSaga);
   yield* takeLatest(requestDeleteWorkspace, requestDeleteWorkspaceSaga);
   yield* takeLatest(confirmDeleteWorkspace, confirmDeleteWorkspaceSaga);

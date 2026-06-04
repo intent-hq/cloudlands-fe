@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, ToolResultBlock } from '$shared/types';
+  import type {
+    ContentBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    Proposal,
+    ProposalActionDetail,
+  } from '$shared/types';
+  import { isProposal } from '$shared/types';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -8,36 +15,42 @@
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatDiffViewer from './ChatDiffViewer.svelte';
+  import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import Fa from 'svelte-fa';
-  import {
-  faCode,
-  faTerminal,
-  faRobot,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
+  import ProposalCard from './proposals/ProposalCard.svelte';
+  import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
   import {
-  parseAgentMessage,
-  parseSuggestedPrompts,
-  groupParsedBlocks,
-  groupContentBlocks,
-  type RenderBlock,
-  type ParsedContent,
-  type ContentBlockGroup,
-  type RenderContentBlock,
-} from '$lib/utils/messageParser';
+    applySettingsProposal,
+    undoSettingsProposal,
+  } from './proposals/settings-proposal-actions';
+  import NavLink from './NavLink.svelte';
+  import {
+    parseAgentMessage,
+    parseSuggestedPrompts,
+    groupParsedBlocks,
+    groupContentBlocks,
+    filterWorkspaceCardsCoveredByIds,
+    type RenderBlock,
+    type ParsedContent,
+    type ContentBlockGroup,
+    type RenderContentBlock,
+  } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
 
   import {
-  openWorkspaceFile,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('StreamingMessageContent');
@@ -315,6 +328,79 @@
     }
   }
 
+  type NavLinkBlock = ContentBlock & {
+    kind?: 'nav-link';
+    target: string;
+    label?: string;
+  };
+
+  function isNavLinkBlock(block: ContentBlock): block is NavLinkBlock {
+    const candidate = block as NavLinkBlock;
+    return (
+      (candidate.kind === 'nav-link' || candidate.type === 'nav-link') &&
+      typeof candidate.target === 'string'
+    );
+  }
+
+  function getProposalFromBlock(block: ContentBlock): Proposal | null {
+    if (isProposal(block.proposal)) return block.proposal;
+    const candidate = {
+      kind: block.kind,
+      payload: block.payload ?? {},
+      preview: block.preview,
+      applyToolCallId: block.applyToolCallId,
+    };
+    return isProposal(candidate) ? candidate : null;
+  }
+
+  function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {
+    const proposal = getProposalFromBlock(block);
+    if (proposal?.kind !== 'bulk-op') return;
+    if (
+      proposal.payload.operation !== 'workspace.bulkArchive' &&
+      proposal.payload.operation !== 'workspace.bulkDelete'
+    ) {
+      return;
+    }
+
+    proposal.payload.ids.forEach((id: string) => ids.add(id));
+  }
+
+  function collectBulkProposalWorkspaceIds(blocks: RenderContentBlock[]): Set<string> {
+    const ids = new Set<string>();
+    blocks.forEach((block) => {
+      if (block.type === 'content_group') {
+        (block as ContentBlockGroup).children.forEach((child) => addBulkProposalWorkspaceIds(child, ids));
+      } else {
+        addBulkProposalWorkspaceIds(block as ContentBlock, ids);
+      }
+    });
+    return ids;
+  }
+
+  let bulkProposalWorkspaceIds = $derived.by(() => collectBulkProposalWorkspaceIds(groupedBlocks));
+
+  function handleProposalApply(detail: ProposalActionDetail) {
+    const { proposal } = detail;
+    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal,
+          editedFields: detail.editedFields,
+          selectedBulkItemIds: detail.selectedBulkItemIds,
+        }),
+      );
+      return;
+    }
+
+    if (applySpecialistProposal(detail)) return;
+    applySettingsProposal(detail);
+  }
+
+  function handleProposalUndo(proposalId: string) {
+    undoSettingsProposal(proposalId);
+  }
+
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render
   type ParsedTextResult = {
@@ -366,7 +452,11 @@
       if (block.type === 'text') {
         const textContent = (block as ContentBlock).text || (block as any).content || '';
         if (textContent) {
-          results.set(String(index), parseTextBlock(textContent));
+          const parsed = parseTextBlock(textContent);
+          results.set(String(index), {
+            ...parsed,
+            blocks: filterWorkspaceCardsCoveredByIds(parsed.blocks, bulkProposalWorkspaceIds),
+          });
         }
       } else if (block.type === 'content_group') {
         const group = block as ContentBlockGroup;
@@ -374,7 +464,11 @@
           if (child.type === 'text') {
             const textContent = child.text || (child as any).content || '';
             if (textContent) {
-              results.set(`${index}-${childIndex}`, parseTextBlock(textContent));
+              const parsed = parseTextBlock(textContent);
+              results.set(`${index}-${childIndex}`, {
+                ...parsed,
+                blocks: filterWorkspaceCardsCoveredByIds(parsed.blocks, bulkProposalWorkspaceIds),
+              });
             }
           }
         });
@@ -411,6 +505,15 @@
     }
 
     const contentBlock = block as ContentBlock;
+
+    if (isNavLinkBlock(contentBlock)) {
+      return `nav-link-${index}-${contentBlock.target}`;
+    }
+
+    const proposal = getProposalFromBlock(contentBlock);
+    if (proposal) {
+      return `proposal-${index}-${proposal.kind}-${proposal.applyToolCallId ?? proposal.preview.title}`;
+    }
 
     // If block has an explicit ID, use it (tool_use blocks typically have IDs)
     if (contentBlock.id) {
@@ -496,6 +599,13 @@
       />
     {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
       <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
+    {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
+      <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
+    {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
+      <NavLink
+        target={parsedBlock.metadata.navLinkData.target}
+        label={parsedBlock.metadata.navLinkData.label}
+      />
     {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
       {@const refData = parsedBlock.metadata.referenceData}
       {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
@@ -560,7 +670,18 @@
   {/snippet}
 
   {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
-    {#if block.type === 'text' && (block.text || (block as any).content)}
+    {#if isNavLinkBlock(block)}
+      <div class="w-full">
+        <NavLink target={block.target} label={block.label} />
+      </div>
+    {:else if getProposalFromBlock(block)}
+      {@const proposal = getProposalFromBlock(block)}
+      {#if proposal}
+        <div class="w-full">
+          <ProposalCard {proposal} onApply={handleProposalApply} onUndo={handleProposalUndo} />
+        </div>
+      {/if}
+    {:else if block.type === 'text' && (block.text || (block as any).content)}
       {@const textContent = block.text || (block as any).content || ''}
       {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
         blocks: [],
@@ -653,9 +774,13 @@
             {/snippet}
           </ResponseGroup>
         </div>
-      {:else if ['text', 'tool_use', 'thinking'].includes(block.type)}
+      {:else if isNavLinkBlock(block as ContentBlock) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
         <div
-          class="content-block content-block--{block.type} my-1.25"
+          class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
+            ? 'nav-link'
+            : getProposalFromBlock(block as ContentBlock)
+              ? 'proposal'
+              : block.type} my-1.25"
           use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
         >
           {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}

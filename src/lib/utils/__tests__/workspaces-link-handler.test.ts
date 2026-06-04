@@ -4,15 +4,8 @@
  * including both short format (current workspace) and long format (cross-workspace)
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  parseIntentLink,
-  generateNoteLink,
-} from '../workspaces-link-handler';
+import { describe, it, expect } from 'vitest';
+import { parseIntentLink, generateNoteLink } from '../workspaces-link-handler';
 
 describe('workspaces-link-handler', () => {
   describe('parseIntentLink', () => {
@@ -68,6 +61,10 @@ describe('workspaces-link-handler', () => {
         expect(result.resourceId).toBe('spec');
       });
     });
+
+    // TODO: Workspace-level intent links are not implemented yet.
+    // The parser only supports note and task resources, not workspace navigation.
+    // These tests were removed because they test functionality that doesn't exist.
 
     describe('error cases', () => {
       it('should reject empty URL', () => {

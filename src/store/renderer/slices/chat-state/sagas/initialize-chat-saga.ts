@@ -61,6 +61,11 @@ import { selectAgentSession } from '../../agent-session/agent-session-selectors'
 const logger = createLogger('InitializeChatSaga');
 type WaitForSelector<R, ARGS extends any[]> = PackageStoreSelector<R, ARGS, unknown>;
 
+type ActiveStreamsResult = {
+  success?: boolean;
+  data?: Array<{ agentId?: string }>;
+};
+
 // ============================================================================
 // Session Lookup
 // ============================================================================
@@ -106,6 +111,115 @@ function deduplicateMessages(messages: AgentMessage[]): AgentMessage[] {
     seen.add(m.id);
     return true;
   });
+}
+
+/**
+ * Threshold for treating a persisted streaming flag as stale. A session that
+ * was actively streaming would have its `updatedAt` refreshed on every chunk
+ * via the persistence debounce (typically sub-second). Anything older than
+ * this is from a previous app run that crashed or was closed mid-stream.
+ */
+const STALE_STREAMING_THRESHOLD_MS = 30_000;
+
+interface StaleStreamingReconciliation {
+  session: AgentSession;
+  messages: AgentMessage[];
+  reconciled: boolean;
+}
+
+function hasPersistedStreamingSignal(session: AgentSession, messages: AgentMessage[]): boolean {
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+  return Boolean(
+    session.isStreaming === true ||
+      lastAssistant?.isStreaming === true ||
+      lastAssistant?.streamingComplete === false,
+  );
+}
+
+async function getActiveStreamAgentIds(): Promise<Set<string> | null> {
+  try {
+    if (typeof window === 'undefined') return null;
+    const electronAPI = (
+      window as typeof window & {
+        electronAPI?: { invoke?: (channel: string, payload?: unknown) => Promise<unknown> };
+      }
+    ).electronAPI;
+    if (!electronAPI?.invoke) return null;
+
+    const result = (await electronAPI.invoke('agent:get-active-streams')) as ActiveStreamsResult;
+    const streams = result?.success !== false && Array.isArray(result?.data) ? result.data : [];
+    return new Set(
+      streams
+        .map((stream) => stream.agentId)
+        .filter((agentId): agentId is string => typeof agentId === 'string' && agentId.length > 0),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalize sessions/messages loaded from disk that were left mid-stream by a
+ * previous app run/crash. Without this, the chat UI would show a stuck
+ * "Thinking" indicator forever because the persisted message still carries
+ * `isStreaming: true` and a trailing unresolved `tool_use`.
+ */
+function reconcileStaleStreamingState(
+  session: AgentSession,
+  messages: AgentMessage[],
+): StaleStreamingReconciliation {
+  const sessionFlagSet = session.isStreaming === true;
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+  const messageFlagSet =
+    lastAssistant?.isStreaming === true || lastAssistant?.streamingComplete === false;
+  if (!sessionFlagSet && !messageFlagSet) {
+    return { session, messages, reconciled: false };
+  }
+
+  const updatedAt = session.updatedAt;
+  const updatedAtMs = updatedAt ? new Date(updatedAt as string | Date).getTime() : 0;
+  const ageMs = Number.isFinite(updatedAtMs) ? Date.now() - updatedAtMs : Number.POSITIVE_INFINITY;
+  if (ageMs < STALE_STREAMING_THRESHOLD_MS) {
+    return { session, messages, reconciled: false };
+  }
+
+  logger.warn(
+    'Detected stale streaming session left over from previous run; normalizing locally',
+    { agentId: session.id, updatedAt, ageMs },
+  );
+
+  const reconciledMessages = messages.map((message, index) => {
+    if (index !== messages.length - 1) return message;
+    if (message.role !== 'assistant') return message;
+    if (
+      message.isStreaming !== true &&
+      message.streamingComplete !== false &&
+      message.metadata?.interrupted === true
+    ) {
+      return message;
+    }
+    return {
+      ...message,
+      isStreaming: false,
+      streamingComplete: true,
+      metadata: {
+        ...(message.metadata || {}),
+        interrupted: true,
+        stopReason: message.metadata?.stopReason ?? 'interrupted',
+      },
+    };
+  });
+
+  return {
+    session: {
+      ...session,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    },
+    messages: reconciledMessages,
+    reconciled: true,
+  };
 }
 
 function getTextLength(blocks: ContentBlock[]): number {
@@ -465,7 +579,35 @@ function* handleInitializeChat(
     // selectAgentSessionStreamingContent, not stored in chat-state.
     const freshChatState = yield* selectChatStateOrDefault.effect(agentId);
     // Step 5: Deduplicate messages
-    const deduplicatedMessages = deduplicateMessages(messages);
+    let deduplicatedMessages = deduplicateMessages(messages);
+
+    // Step 5b: Reconcile stale streaming state left over from a previous
+    // app run or crash. Without this, a session persisted with
+    // `isStreaming: true` and a trailing unresolved `tool_use` (e.g. when
+    // the app was closed mid-stream after the model emitted a tool call but
+    // before the result came back) would leave the chat UI stuck in
+    // "Thinking" forever, since the streaming flag and the orphaned tool
+    // call both feed into `selectAgentIsResponding`.
+    const activeBackendStreamIds = hasPersistedStreamingSignal(session, deduplicatedMessages)
+      ? yield* call(getActiveStreamAgentIds)
+      : null;
+    const backendConfirmsActiveStream = activeBackendStreamIds?.has(agentId) === true;
+    if (backendConfirmsActiveStream) {
+      session = {
+        ...session,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+      };
+      isCurrentlyStreaming = true;
+    } else {
+      const staleReconciliation = reconcileStaleStreamingState(session, deduplicatedMessages);
+      if (staleReconciliation.reconciled) {
+        session = staleReconciliation.session;
+        deduplicatedMessages = staleReconciliation.messages;
+        isCurrentlyStreaming = false;
+      }
+    }
 
     // Step 6: Compute lastAttemptedMessage for retry support
     let restoredLastAttemptedMessage: LastAttemptedMessage | null = null;

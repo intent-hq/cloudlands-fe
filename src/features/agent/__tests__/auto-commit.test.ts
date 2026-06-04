@@ -22,13 +22,27 @@ import {
 } from 'vitest';
 import type { AgentIdleEvent } from '../../events/types';
 
+const loggerMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
+const backgroundGitOpsMocks = vi.hoisted(() => ({
+  registerOperation: vi.fn().mockReturnValue('test-op-id'),
+  completeOperation: vi.fn(),
+  failOperation: vi.fn(),
+  updateProgress: vi.fn(),
+}));
+
 // Mock the dependencies
 vi.mock('../../../shared/logger', () => ({
   Logger: class MockLogger {
-    info = vi.fn();
-    warn = vi.fn();
-    error = vi.fn();
-    debug = vi.fn();
+    info = loggerMocks.info;
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+    debug = loggerMocks.debug;
   },
 }));
 
@@ -49,6 +63,7 @@ vi.mock('../main/agent-persistence', () => ({
 vi.mock('$shared/types/branded-ids', () => ({
   AgentId: vi.fn((id: string) => id),
   WorkspaceId: vi.fn((id: string) => id),
+  CHIEF_WORKSPACE_ID: '__chief__',
 }));
 
 // event-handler-registry was deleted; auto-commit is now triggered by sagas
@@ -97,12 +112,7 @@ vi.mock('../../../store/main/slices/git-events/git-events-slice', () => ({
 }));
 
 vi.mock('../../git/main/background-git-ops.service', () => ({
-  backgroundGitOpsService: {
-    registerOperation: vi.fn().mockReturnValue('test-op-id'),
-    completeOperation: vi.fn(),
-    failOperation: vi.fn(),
-    updateProgress: vi.fn(),
-  },
+  backgroundGitOpsService: backgroundGitOpsMocks,
 }));
 
 vi.mock('../main/agent-backend-handler.service', () => ({
@@ -206,6 +216,22 @@ describe('Auto-Commit Service', () => {
   });
 
   describe('agent:idle auto-commit - basic behavior', () => {
+    it('should skip virtual workspaces before checking settings, file tracking, or background git ops', async () => {
+      const event = createAgentIdleEvent({ workspaceId: '__chief__' });
+      await handleAgentIdleAutoCommit(event);
+
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        '[AUTO-COMMIT] Skipped: virtual workspace',
+        { workspaceId: '__chief__', agentId: 'agent-1' },
+      );
+      expect(loggerMocks.warn).not.toHaveBeenCalled();
+      expect(mockIsAutoCommitEnabled).not.toHaveBeenCalled();
+      expect(mockGetServiceForWorkspace).not.toHaveBeenCalled();
+      expect(mockAgentPersistence.loadAgent).not.toHaveBeenCalled();
+      expect(backgroundGitOpsMocks.registerOperation).not.toHaveBeenCalled();
+      expect(mockCommitAgentChanges).not.toHaveBeenCalled();
+    });
+
     it('should trigger auto-commit when agent goes idle with changes', async () => {
       const event = createAgentIdleEvent();
       await handleAgentIdleAutoCommit(event);

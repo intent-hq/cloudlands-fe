@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { WorkspaceConfigConstants } from '../config-constants';
+import { CHIEF_WORKSPACE_ID } from '../types/branded-ids';
 import { getSafeHomeDir } from './utils';
 
 export class WorkspaceConfig extends WorkspaceConfigConstants {
@@ -42,6 +43,7 @@ export class WorkspaceConfig extends WorkspaceConfigConstants {
   private static readonly VIRTUAL_WORKSPACE_IDS = new Set([
     'background-request',
     'http-bridge-workspace',
+    CHIEF_WORKSPACE_ID,
   ]);
 
   /**

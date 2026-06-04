@@ -9,9 +9,182 @@ import {
   describe,
   it,
   expect,
+  vi,
+  beforeEach,
 } from 'vitest';
+import { FILE_TRACKING_CHANNELS } from '../../../shared/ipc/channels';
 import type { TrackedChange, CommitInfo } from '../types';
 import { ChangeStage } from '../types';
+
+const ipcMainMock = vi.hoisted(() => ({
+  handle: vi.fn(),
+}));
+
+const loggerMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
+const workspaceServiceMocks = vi.hoisted(() => ({
+  getWorkspace: vi.fn(),
+}));
+
+const fileTrackingServiceMocks = vi.hoisted(() => ({
+  constructor: vi.fn(),
+  getChanges: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  ipcMain: ipcMainMock,
+}));
+
+vi.mock('$lib/utils/logger', () => ({
+  Logger: class MockLogger {
+    info = loggerMocks.info;
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+    debug = loggerMocks.debug;
+  },
+}));
+
+vi.mock('../../../shared/logger', () => ({
+  Logger: class MockLogger {
+    info = loggerMocks.info;
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+    debug = loggerMocks.debug;
+  },
+}));
+
+vi.mock('../main/file-tracking.service', () => ({
+  FileTrackingService: class MockFileTrackingService {
+    getChanges = fileTrackingServiceMocks.getChanges;
+    clearAllChanges = vi.fn();
+    getTransitions = vi.fn();
+    trackChange = vi.fn();
+    stageChanges = vi.fn();
+    unstageChanges = vi.fn();
+    forceSave = vi.fn();
+    destroy = vi.fn();
+    isGitRepo = vi.fn(() => false);
+
+    constructor(...args: unknown[]) {
+      fileTrackingServiceMocks.constructor(...args);
+    }
+  },
+}));
+
+vi.mock('../../workspace/main/workspace.service', () => ({
+  workspaceService: workspaceServiceMocks,
+}));
+
+vi.mock('../../system/main/system.ipc', () => ({
+  sendToWorkspaceWindows: vi.fn(),
+}));
+
+vi.mock('../../../shared/git/git-env', () => ({
+  execFileAsync: vi.fn(),
+}));
+
+vi.mock('../../git/main/git.service', () => ({
+  gitService: {
+    getHistory: vi.fn(),
+    clearStatusCache: vi.fn(),
+  },
+}));
+
+vi.mock('../../../shared/git/git-blob-storage', () => ({
+  storeBlob: vi.fn(),
+}));
+
+vi.mock('../../protocol/main/protocol-adapter', () => ({
+  protocolAdapter: {
+    getWorkspace: vi.fn(),
+  },
+}));
+
+vi.mock('../../../shared/main/remote-rpc-manager', () => ({
+  remoteRPCManager: {
+    getClient: vi.fn(),
+  },
+}));
+
+type RegisteredHandler = (event: unknown, payload: unknown) => Promise<unknown>;
+
+describe('file-tracking IPC virtual workspace guards', () => {
+  let registeredHandlers: Map<string, RegisteredHandler>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    registeredHandlers = new Map();
+    ipcMainMock.handle.mockImplementation((channel: string, handler: RegisteredHandler) => {
+      registeredHandlers.set(channel, handler);
+    });
+    fileTrackingServiceMocks.getChanges.mockResolvedValue({
+      changes: [],
+      truncated: false,
+      totalCount: 0,
+    });
+
+    const { setupFileTrackingIPC } = await import('../main/file-tracking.ipc');
+    setupFileTrackingIPC();
+  });
+
+  it('should short-circuit Chief line stats without worktree lookup or error logging', async () => {
+    const handler = registeredHandlers.get(FILE_TRACKING_CHANNELS.GET_LINE_STATS);
+
+    const result = await handler?.({}, { workspaceId: '__chief__' });
+
+    expect(result).toEqual({ ok: true, data: { additions: 0, deletions: 0 } });
+    expect(workspaceServiceMocks.getWorkspace).not.toHaveBeenCalled();
+    expect(fileTrackingServiceMocks.constructor).not.toHaveBeenCalled();
+    expect(fileTrackingServiceMocks.getChanges).not.toHaveBeenCalled();
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('should short-circuit getServiceForWorkspace for virtual workspaces', async () => {
+    const { getServiceForWorkspace } = await import('../main/file-tracking.ipc');
+
+    const service = await getServiceForWorkspace('__chief__');
+
+    expect(service).toBeNull();
+    expect(workspaceServiceMocks.getWorkspace).not.toHaveBeenCalled();
+    expect(fileTrackingServiceMocks.constructor).not.toHaveBeenCalled();
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('should preserve non-virtual line stats behavior', async () => {
+    workspaceServiceMocks.getWorkspace.mockResolvedValue({
+      ok: true,
+      data: { path: '/tmp/file-tracking-workspace', isRemote: true },
+    });
+    fileTrackingServiceMocks.getChanges.mockResolvedValue({
+      changes: [
+        { stats: { additions: 7, deletions: 2 } },
+        { stats: { additions: 3, deletions: 5 } },
+      ],
+      truncated: false,
+      totalCount: 2,
+    });
+    const handler = registeredHandlers.get(FILE_TRACKING_CHANNELS.GET_LINE_STATS);
+
+    const result = await handler?.({}, { workspaceId: 'workspace-1' });
+
+    expect(result).toEqual({ ok: true, data: { additions: 10, deletions: 7 } });
+    expect(workspaceServiceMocks.getWorkspace).toHaveBeenCalledWith('workspace-1');
+    expect(fileTrackingServiceMocks.constructor).toHaveBeenCalledWith(
+      'workspace-1',
+      '/tmp/file-tracking-workspace',
+      true,
+    );
+    expect(fileTrackingServiceMocks.getChanges).toHaveBeenCalled();
+  });
+});
 
 /**
  * Helper to simulate the commit mapping logic from LOAD_COMMITS handler

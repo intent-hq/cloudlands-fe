@@ -11,6 +11,7 @@
 
 import { BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { WorkspaceConfig } from '../../../shared/main/config';
 import { gitService } from '../../git/main/git.service';
 import { getServiceForWorkspace } from '../../file-tracking/main/file-tracking.ipc';
 import { ChangeStage } from '../../file-tracking/types';
@@ -64,6 +65,11 @@ export async function commitAgentChanges(
   params: CommitAgentChangesParams,
 ): Promise<Result<CommitResult, string>> {
   const { workspaceId, agentId, message, files: requestedFiles, noteId } = params;
+
+  if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+    logger.info('[AGENT-COMMIT] Skipped: virtual workspace', { workspaceId, agentId });
+    return { ok: false, error: 'Skipped: virtual workspace' };
+  }
 
   logger.info('[AGENT-COMMIT] Starting commit', {
     workspaceId,
@@ -127,9 +133,14 @@ export async function commitAgentChanges(
 
     // Commit with retry support for pre-commit hooks
     // Pass filePaths so retry logic can re-stage the correct files if hooks modify them
-    const commitResult = await gitService.commit(workspaceId as WorkspaceId, fullMessage, undefined, {
-      filesToStage: filePaths,
-    });
+    const commitResult = await gitService.commit(
+      workspaceId as WorkspaceId,
+      fullMessage,
+      undefined,
+      {
+        filesToStage: filePaths,
+      },
+    );
 
     if (!commitResult.ok) {
       logger.error('[AGENT-COMMIT] Failed to commit', {
@@ -240,9 +251,11 @@ function notifyRendererOfCommit(workspaceId: string): void {
 
     // Emit git:status-changed via Redux to refresh gitStore
     // This broadcasts to all renderer windows
-    mainDispatch(gitStatusChanged({
-      workspaceId: workspaceId as WorkspaceId,
-    }));
+    mainDispatch(
+      gitStatusChanged({
+        workspaceId: workspaceId as WorkspaceId,
+      }),
+    );
 
     // Emit file-tracking:changes-updated directly to renderer windows
     // to refresh file tracking state in Redux

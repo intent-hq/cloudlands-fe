@@ -118,6 +118,7 @@
   import AgentCard from './AgentCard.svelte';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
+  import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
@@ -175,6 +176,7 @@
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
@@ -241,6 +243,8 @@
     initialPrompt?: string | null;
     /** Draft prompt to pre-fill the input without sending */
     draftPrompt?: string | null;
+    /** Focus the prompt once on mount after the input component is ready. */
+    autoFocus?: boolean;
     onClose?: () => void;
     onFocus?: () => void;
     onChatUpdate?: (update: {
@@ -264,12 +268,17 @@
     isNewWorkspace = false,
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
+    autoFocus = false,
 
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
     onChatUpdate,
     isPanelFocused = false,
   }: Props = $props();
+
+  // True when this panel is rendering the Chief of Staff workspace, which uses a
+  // dedicated empty state instead of the specialist picker welcome.
+  const isChiefWorkspace = $derived(workspace?.id === CHIEF_WORKSPACE_ID);
 
   // Writable store mirroring workspace.id so Redux selectors re-evaluate reactively
   const workspaceIdStore = writable(workspace?.id ?? '');
@@ -420,6 +429,20 @@
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
+
+  // Tracks DOM focus within the panel wrapper. Combined with the `isPanelFocused`
+  // prop (from the panel-system parent) so keyboard shortcuts that are scoped to a
+  // single chat — like the suggested-prompts shortcut — only fire for the focused
+  // chat when multiple chats are visible at once (split view, or Chief of Staff
+  // open alongside a workspace agent panel). Updated by focusin/focusout handlers
+  // on the panel wrapper plus an initial sync below.
+  let isInternallyFocused = $state(false);
+  const isChatFocused = $derived(isPanelFocused || isInternallyFocused);
+
+  $effect(() => {
+    if (!panelElement || typeof document === 'undefined') return;
+    isInternallyFocused = panelElement.contains(document.activeElement);
+  });
 
   // Build a search catalog that matches what's actually rendered in the DOM.
   // The rendered text for a message is the result of two transforms applied by
@@ -1597,6 +1620,32 @@
     });
   });
 
+  // ── Auto-focus on mount (used by Chief of Staff) ──
+  function isEditableElement(element: Element | null): boolean {
+    if (!element) return false;
+    if (!(element instanceof HTMLElement)) return false;
+    if (element.isContentEditable) return true;
+    return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
+  }
+
+  function shouldSkipPromptAutoFocus(): boolean {
+    if (typeof document === 'undefined') return true;
+    const activeElement = document.activeElement;
+    return isEditableElement(activeElement) && !panelElement?.contains(activeElement);
+  }
+
+  onMount(() => {
+    if (!autoFocus) return;
+
+    const autoFocusTimer = setTimeout(async () => {
+      await tick();
+      if (shouldSkipPromptAutoFocus()) return;
+      focusPrompt();
+    }, 100);
+
+    return () => clearTimeout(autoFocusTimer);
+  });
+
   // WORKSPACE REBIND FIX: Reactively re-initialize chat state when the workspace
   // changes underneath an already-mounted ChatPanel. Without this, the panel stays stuck
   // on the pre-send conversation snapshot because initializeChatRequested only runs on mount and
@@ -2675,9 +2724,9 @@
     // Suggested prompt shortcuts: Ctrl+1/2/3 (Mac) / Alt+1/2/3 (Win/Linux)
     // Mac uses Ctrl because ⌥+number produces special chars and ⌘+number is tab switching.
     // Win/Linux uses Alt because Ctrl+number is tab switching.
-    // Only fires for the active (visible) tab. If multiple visible ChatPanels have suggestions,
-    // both may fire — this is an acceptable edge case since it's extremely rare.
-    if (isActive && suggestedPrompts.length > 0) {
+    // Gated on `isChatFocused` so only the focused chat reacts when multiple chats are
+    // visible at once (split view, or Chief of Staff open alongside a workspace agent panel).
+    if (isActive && isChatFocused && suggestedPrompts.length > 0) {
       // On macOS, Alt+number produces special characters (e.g. Alt+7 → ¶), so e.key is NOT
       // the digit. Use e.code to get the physical key when a modifier is held.
       let num = parseInt(e.key, 10);
@@ -2704,6 +2753,15 @@
   bind:this={panelElement}
   class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
   data-agent-model={agentModel}
+  onfocusin={() => {
+    isInternallyFocused = true;
+  }}
+  onfocusout={(e) => {
+    const next = e.relatedTarget as Element | null;
+    if (!next || !panelElement?.contains(next)) {
+      isInternallyFocused = false;
+    }
+  }}
 >
   <!-- Search Bar -->
   {#if showSearch}
@@ -2763,8 +2821,12 @@
       {/if}
 
       {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt}
-        <div class="mt-16"></div>
-        <RegularAgentWelcome onSpecialistChange={handleSpecialistChange} session={$agentSession$} />
+        {#if isChiefWorkspace}
+          <ChiefChatEmptyState onSelect={handleSelectSuggestedPrompt} />
+        {:else}
+          <div class="mt-16"></div>
+          <RegularAgentWelcome onSpecialistChange={handleSpecialistChange} session={$agentSession$} />
+        {/if}
       {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
         <div class="pt-16 pb-6">
@@ -3415,6 +3477,7 @@
             prompts={suggestedPrompts}
             onSelect={handleSelectSuggestedPrompt}
             onEdit={handleEditSuggestedPrompt}
+            showShortcutHints={isChatFocused}
           />
         </div>
       {/if}

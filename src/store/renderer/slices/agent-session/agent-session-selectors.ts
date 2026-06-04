@@ -80,6 +80,15 @@ function getCurrentStreamingText(message: AgentMessage | undefined): string {
 }
 
 function hasUnresolvedToolUse(message: AgentMessage | undefined): boolean {
+  // Finalized messages cannot have "still running" tool calls. A persisted
+  // message whose stream completed or terminated (interrupted, stop reason,
+  // explicit streamingComplete) may still contain a trailing tool_use without
+  // a matching tool_result — that's a leftover from a crashed/interrupted
+  // stream, not an in-flight tool call. Treat it as resolved so the agent is
+  // not stuck in the "Thinking" state after reload.
+  if (hasTerminalMessageMetadata(message)) return false;
+  if (message?.streamingComplete === true) return false;
+
   const contentBlocks = message?.contentBlocks ?? [];
   const hasUnresolvedContentBlock = contentBlocks.some((block) => {
     if (block.type !== 'tool_use' || !(block.name || block.toolName)) return false;

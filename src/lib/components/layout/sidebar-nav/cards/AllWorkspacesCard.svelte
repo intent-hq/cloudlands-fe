@@ -16,7 +16,6 @@
   getGroupKey,
 } from '$lib/components/workspace/utils/workspace-grouping';
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
-  import WorkspaceListItem from '../WorkspaceListItem.svelte';
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
@@ -43,6 +42,7 @@
   getWorkspaceActivityDisplayTime,
 } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -200,12 +200,12 @@
       .map((s) => [statusLabels[s], groups.get(s)!] as [string, Workspace[]]);
   });
 
-  function isRunning(ws: Workspace): boolean {
+  function _isRunning(ws: Workspace): boolean {
     void $activeStreamsVersion$;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
   }
 
-  function getStreamingIds(ws: Workspace): string[] {
+  function _getStreamingIds(ws: Workspace): string[] {
     void $activeStreamsVersion$;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
@@ -215,7 +215,7 @@
     return selectUnreadAgentIdsForWorkspace.select(appStore.state, ws.id);
   }
 
-  function isUnread(ws: Workspace): boolean {
+  function _isUnread(ws: Workspace): boolean {
     void $activeStreamsVersion$;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
@@ -237,12 +237,12 @@
     goto(route);
   }
 
-  function handleTogglePin(e: MouseEvent, workspaceId: string) {
+  function _handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(togglePinWorkspace(workspaceId));
   }
 
-  function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
+  function _handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(clearWorkspaceUnread(workspaceId));
   }
@@ -258,7 +258,7 @@
   });
 
   // Map from workspace ID to its position in the flat visible list (for highlighting)
-  const visibleIdIndex = $derived(new Map(allVisibleIds.map((id, i) => [id, i])));
+  const _visibleIdIndex = $derived(new Map(allVisibleIds.map((id, i) => [id, i])));
 
   let keyboardNavActive = $state(false);
   let hoveredIndex = $state(-1);
@@ -348,22 +348,19 @@
           {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
             <div class="border-t border-border my-1 mx-2"></div>
           {/if}
-          <WorkspaceListItem
+          <WorkspaceCard
             {workspace}
-            isRunning={isRunning(workspace)}
-            streamingAgentIds={getStreamingIds(workspace)}
-            unreadAgentIds={getUnreadAgentIds(workspace)}
-            isUnread={isUnread(workspace)}
+            variant="compact"
+            isRunning={_isRunning(workspace)}
+            isUnread={_isUnread(workspace)}
             isPinned={$pinnedIds$.includes(workspace.id)}
-            highlighted={keyboardNavActive && highlightedIndex === i}
+            streamingAgentIds={_getStreamingIds(workspace)}
+            unreadAgentIds={getUnreadAgentIds(workspace)}
+            highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
             suppressHover={keyboardNavActive}
-            onHover={() => (hoveredIndex = i)}
-            onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-            onMarkAsRead={isUnread(workspace)
-              ? (e) => handleMarkAsRead(e, workspace.id)
-              : undefined}
             onClick={(e) => handleClick(workspace.id, e)}
             onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+            onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
           />
         {/each}
       {:else if $viewMode$ === 'repo'}
@@ -380,28 +377,21 @@
             {/if}
             <Header size={3} class="truncate">{group.label}</Header>
           </div>
-          {#each group.workspaces as workspace, i (workspace.id)}
-            {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(group.workspaces[i - 1].id)}
-              <div class="border-t border-border my-1 mx-2"></div>
-            {/if}
-            <WorkspaceListItem
+          {#each group.workspaces as workspace, _i (workspace.id)}
+            <WorkspaceCard
               {workspace}
-              hideRepoAvatar
-              isRunning={isRunning(workspace)}
-              streamingAgentIds={getStreamingIds(workspace)}
-              unreadAgentIds={getUnreadAgentIds(workspace)}
-              isUnread={isUnread(workspace)}
+              variant="compact"
+              isRunning={_isRunning(workspace)}
+              isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
-              highlighted={keyboardNavActive &&
-                highlightedIndex === visibleIdIndex.get(workspace.id)}
+              streamingAgentIds={_getStreamingIds(workspace)}
+              unreadAgentIds={getUnreadAgentIds(workspace)}
+              hideRepoAvatar={true}
+              highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
               suppressHover={keyboardNavActive}
-              onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
-              onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-              onMarkAsRead={isUnread(workspace)
-                ? (e) => handleMarkAsRead(e, workspace.id)
-                : undefined}
               onClick={(e) => handleClick(workspace.id, e)}
               onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+              onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
             />
           {/each}
         {/each}
@@ -410,27 +400,20 @@
           <div class="section-header px-3 pt-2 pb-1 mt-3 min-w-0">
             <Header size={3} class="truncate">{statusLabel}</Header>
           </div>
-          {#each workspaces as workspace, i (workspace.id)}
-            {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(workspaces[i - 1].id)}
-              <div class="border-t border-border my-1 mx-2"></div>
-            {/if}
-            <WorkspaceListItem
+          {#each workspaces as workspace, _i (workspace.id)}
+            <WorkspaceCard
               {workspace}
-              isRunning={isRunning(workspace)}
-              streamingAgentIds={getStreamingIds(workspace)}
-              unreadAgentIds={getUnreadAgentIds(workspace)}
-              isUnread={isUnread(workspace)}
+              variant="compact"
+              isRunning={_isRunning(workspace)}
+              isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
-              highlighted={keyboardNavActive &&
-                highlightedIndex === visibleIdIndex.get(workspace.id)}
+              streamingAgentIds={_getStreamingIds(workspace)}
+              unreadAgentIds={getUnreadAgentIds(workspace)}
+              highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
               suppressHover={keyboardNavActive}
-              onHover={() => (hoveredIndex = visibleIdIndex.get(workspace.id) ?? -1)}
-              onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-              onMarkAsRead={isUnread(workspace)
-                ? (e) => handleMarkAsRead(e, workspace.id)
-                : undefined}
               onClick={(e) => handleClick(workspace.id, e)}
               onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+              onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
             />
           {/each}
         {/each}

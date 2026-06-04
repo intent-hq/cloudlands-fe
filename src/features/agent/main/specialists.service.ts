@@ -107,10 +107,10 @@ function getFileCacheKey(workspacePath?: string): string {
 
 function getCachedFileSpecialists(workspacePath?: string): SpecialistFile[] {
   const cacheKey = getFileCacheKey(workspacePath);
-  return fileSpecialistsCache.get(cacheKey) ?? fileSpecialistsCache.get(DEFAULT_FILE_CACHE_KEY) ?? [];
+  return (
+    fileSpecialistsCache.get(cacheKey) ?? fileSpecialistsCache.get(DEFAULT_FILE_CACHE_KEY) ?? []
+  );
 }
-
-
 
 /**
  * Initialize the settings store (call once during app startup)
@@ -216,9 +216,12 @@ async function getFileSpecialists(workspacePath?: string): Promise<SpecialistFil
   const now = Date.now();
   if (now - cacheTime > FILE_CACHE_TTL_MS) {
     if (!refreshInFlight.has(cacheKey)) {
-      refreshInFlight.set(cacheKey, refreshFileSpecialistsCache(workspacePath).finally(() => {
-        refreshInFlight.delete(cacheKey);
-      }));
+      refreshInFlight.set(
+        cacheKey,
+        refreshFileSpecialistsCache(workspacePath).finally(() => {
+          refreshInFlight.delete(cacheKey);
+        }),
+      );
     }
     await refreshInFlight.get(cacheKey);
   }
@@ -290,15 +293,17 @@ export function getEffectiveSpecialist(
   // The cache already merges them with the correct priority.
   const fileSpecialist = findFileSpecialistSync(specialistId, workspacePath);
   if (fileSpecialist) {
-    const codingAgent = resolveSpecialistCodingAgent(fileSpecialist.frontmatter.codingAgent, providerId);
+    const codingAgent = resolveSpecialistCodingAgent(
+      fileSpecialist.frontmatter.codingAgent,
+      providerId,
+    );
     const hasExplicitModel = !!fileSpecialist.frontmatter.model;
     const hasExplicitTier = !!fileSpecialist.frontmatter.modelTier;
     let resolvedModel = fileSpecialist.frontmatter.model || '';
 
     const tier: ModelTier | undefined =
       fileSpecialist.frontmatter.modelTier ||
-      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
-      'balanced';
+      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
 
     if (hasExplicitTier || !hasExplicitModel) {
       if (tier) {
@@ -314,7 +319,7 @@ export function getEffectiveSpecialist(
       description: fileSpecialist.frontmatter.description,
       codingAgent,
       model: resolvedModel,
-      modelTier: hasExplicitTier || !hasExplicitModel ? tier : undefined,
+      modelTier: hasExplicitTier ? tier : undefined,
       behaviorPrompt: fileSpecialist.behaviorPrompt,
       isCustomized: fileSpecialist.source !== 'bundled',
       roleReminder: fileSpecialist.frontmatter.roleReminder,
@@ -330,10 +335,11 @@ export function getEffectiveSpecialist(
     const codingAgent = resolveSpecialistCodingAgent(hardcoded.codingAgent, providerId);
     const hardcodedTier: ModelTier | undefined =
       hardcoded.defaultModelTier ||
-      (hardcoded.defaultModel ? getModelTierFromModel(hardcoded.defaultModel, codingAgent) : undefined) ||
-      'balanced';
+      (hardcoded.defaultModel
+        ? getModelTierFromModel(hardcoded.defaultModel, codingAgent)
+        : undefined);
     let resolvedModel = hardcoded.defaultModel || '';
-    if (hardcodedTier) {
+    if (hardcoded.defaultModelTier && hardcodedTier) {
       if (codingAgent in PROVIDER_MODEL_TIERS) {
         resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
@@ -344,7 +350,7 @@ export function getEffectiveSpecialist(
       description: hardcoded.description,
       codingAgent,
       model: resolvedModel,
-      modelTier: hardcodedTier,
+      modelTier: hardcoded.defaultModelTier ? hardcodedTier : undefined,
       behaviorPrompt: hardcoded.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: hardcoded.roleReminder,
@@ -360,43 +366,47 @@ export function getEffectiveSpecialist(
  *
  * @param providerId - Optional fallback coding agent used when a specialist does not specify one.
  */
-export function getAllEffectiveSpecialists(providerId?: string, workspacePath?: string): EffectiveSpecialist[] {
+export function getAllEffectiveSpecialists(
+  providerId?: string,
+  workspacePath?: string,
+): EffectiveSpecialist[] {
   const seenIds = new Set<string>();
 
   // File-based specialists (project > user > bundled, already merged in cache)
-  const fileEffective: EffectiveSpecialist[] = getCachedFileSpecialists(workspacePath).map((file) => {
-    seenIds.add(file.id);
+  const fileEffective: EffectiveSpecialist[] = getCachedFileSpecialists(workspacePath).map(
+    (file) => {
+      seenIds.add(file.id);
 
-    const codingAgent = resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId);
-    const hasExplicitModel = !!file.frontmatter.model;
-    const hasExplicitTier = !!file.frontmatter.modelTier;
-    let resolvedModel = file.frontmatter.model || '';
+      const codingAgent = resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId);
+      const hasExplicitModel = !!file.frontmatter.model;
+      const hasExplicitTier = !!file.frontmatter.modelTier;
+      let resolvedModel = file.frontmatter.model || '';
 
-    const tier: ModelTier | undefined =
-      file.frontmatter.modelTier ||
-      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined) ||
-      'balanced';
+      const tier: ModelTier | undefined =
+        file.frontmatter.modelTier ||
+        (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
 
-    if (hasExplicitTier || !hasExplicitModel) {
-      if (tier) {
-        if (codingAgent in PROVIDER_MODEL_TIERS) {
-          resolvedModel = getDefaultModelForProvider(codingAgent, tier);
+      if (hasExplicitTier || !hasExplicitModel) {
+        if (tier) {
+          if (codingAgent in PROVIDER_MODEL_TIERS) {
+            resolvedModel = getDefaultModelForProvider(codingAgent, tier);
+          }
         }
       }
-    }
 
-    return {
-      id: file.id,
-      name: file.frontmatter.name,
-      description: file.frontmatter.description,
-      codingAgent,
-      model: resolvedModel,
-      modelTier: hasExplicitTier || !hasExplicitModel ? tier : undefined,
-      behaviorPrompt: file.behaviorPrompt,
-      isCustomized: file.source !== 'bundled',
-      roleReminder: file.frontmatter.roleReminder,
-    };
-  });
+      return {
+        id: file.id,
+        name: file.frontmatter.name,
+        description: file.frontmatter.description,
+        codingAgent,
+        model: resolvedModel,
+        modelTier: hasExplicitTier ? tier : undefined,
+        behaviorPrompt: file.behaviorPrompt,
+        isCustomized: file.source !== 'bundled',
+        roleReminder: file.frontmatter.roleReminder,
+      };
+    },
+  );
 
   // Last resort fallback: include any hardcoded SPECIALISTS not already covered
   const hardcodedFallback: EffectiveSpecialist[] = SPECIALISTS.filter(
@@ -405,10 +415,9 @@ export function getAllEffectiveSpecialists(providerId?: string, workspacePath?: 
     const codingAgent = resolveSpecialistCodingAgent(s.codingAgent, providerId);
     const hardcodedTier: ModelTier | undefined =
       s.defaultModelTier ||
-      (s.defaultModel ? getModelTierFromModel(s.defaultModel, codingAgent) : undefined) ||
-      'balanced';
+      (s.defaultModel ? getModelTierFromModel(s.defaultModel, codingAgent) : undefined);
     let resolvedModel = s.defaultModel || '';
-    if (hardcodedTier) {
+    if (s.defaultModelTier && hardcodedTier) {
       if (codingAgent in PROVIDER_MODEL_TIERS) {
         resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
       }
@@ -419,7 +428,7 @@ export function getAllEffectiveSpecialists(providerId?: string, workspacePath?: 
       description: s.description,
       codingAgent,
       model: resolvedModel,
-      modelTier: hardcodedTier,
+      modelTier: s.defaultModelTier ? hardcodedTier : undefined,
       behaviorPrompt: s.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: s.roleReminder,
@@ -614,10 +623,7 @@ export async function formatSpecialistsForPrompt(workspacePath?: string): Promis
   const specialists = getAllEffectiveSpecialists(undefined, workspacePath);
 
   const rows = specialists
-    .map(
-      (s) =>
-        `| **${s.name}** | \`${s.id}\` | ${s.modelTier || 'balanced'} | ${s.description} |`,
-    )
+    .map((s) => `| **${s.name}** | \`${s.id}\` | ${s.modelTier || 'default'} | ${s.description} |`)
     .join('\n');
 
   return `## Agent Specialists
