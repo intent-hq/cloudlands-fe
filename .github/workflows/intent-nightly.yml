@@ -1,9 +1,10 @@
 name: Intent - Nightly Alpha Build
 
 on:
-  schedule:
-    # Run daily at ~06:00 UTC
-    - cron: '0 6 * * *'
+  # Nightly schedule disabled — builds can still be triggered manually.
+  # schedule:
+  #   # Run daily at ~06:00 UTC
+  #   - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
