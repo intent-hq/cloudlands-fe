@@ -13,6 +13,10 @@ import yaml from 'js-yaml';
 import { Logger } from '../logger';
 
 const logger = new Logger('AugmentApiClient');
+const GITHUB_SEARCH_DEFAULT_PAGE_SIZE = 10;
+const GITHUB_SEARCH_PAGE_SIZE_CAP = 30;
+const GITHUB_PR_ACCUMULATION_PAGE_SIZE = 3;
+const GITHUB_PR_ACCUMULATION_MAX_CALLS = 10;
 
 /**
  * Normalize a value that might be a Date object (from js-yaml) to a string.
@@ -988,9 +992,6 @@ export class AugmentApiClient {
       per_page?: number;
     },
   ): Promise<GithubPullRequest[]> {
-    // Keep list responses below the github-api tool's truncation threshold.
-    // The list UI can render from the default compact github-api fields and
-    // converter defaults fill optional details that are omitted.
     const PR_LIST_DEFAULT_PAGE_SIZE = 10;
     const PR_LIST_PAGE_SIZE_CAP = 30;
     let effectivePerPage = options?.per_page ?? PR_LIST_DEFAULT_PAGE_SIZE;
@@ -1009,54 +1010,22 @@ export class AugmentApiClient {
     if (options?.base) params.set('base', options.base);
     if (options?.sort) params.set('sort', options.sort);
     if (options?.direction) params.set('direction', options.direction);
-    if (effectivePerPage) params.set('per_page', effectivePerPage.toString());
 
-    const queryString = params.toString();
-    const path = `/repos/${owner}/${repo}/pulls${queryString ? `?${queryString}` : ''}`;
-
-    const toolInput = {
-      summary: `List pull requests for ${owner}/${repo}`,
-      method: 'GET',
-      path,
-      details: false,
-    };
-
-    logger.info('Listing PRs via github-api remote tool', { path });
-
-    try {
-      const response = await this.callEndpoint<{
-        tool_output: string;
-        tool_result_message: string;
-        status: number;
-      }>('agents/run-remote-tool', {
-        tool_name: 'github-api',
-        tool_input_json: JSON.stringify(toolInput),
-        tool_id: 8, // GITHUB_API = 8
-      });
-
-      logger.debug('List PRs remote tool response', {
-        status: response.status,
-        message: response.tool_result_message,
-        outputLength: response.tool_output?.length,
-      });
-
-      // Status 1 = TOOL_EXECUTION_OK
-      if (response.status !== 1) {
-        const errorMessage =
-          response.tool_output || response.tool_result_message || 'Unknown error';
-        logger.error('List PRs remote tool failed', {
-          status: response.status,
-          output: errorMessage,
-        });
-        throw new Error(`GitHub API error: ${errorMessage}`);
-      }
-
-      // Parse the YAML response - it's a list of PRs
-      return this.parseYamlPullRequestList(response.tool_output);
-    } catch (error) {
-      logger.error('Failed to list pull requests via remote tool', error as Error);
-      throw error;
-    }
+    return this.paginateGitHubPullRequests({
+      operation: 'list',
+      targetCount: effectivePerPage,
+      buildPath: (page, pageSize) => {
+        const pageParams = new URLSearchParams(params);
+        pageParams.set('per_page', pageSize.toString());
+        pageParams.set('page', page.toString());
+        return `/repos/${owner}/${repo}/pulls?${pageParams.toString()}`;
+      },
+      summary: () => `List pull requests for ${owner}/${repo}`,
+      parse: (output) => this.parseYamlPullRequestList(output),
+      failureLogMessage: 'List PRs remote tool failed',
+      failureErrorPrefix: 'GitHub API error',
+      catchLogMessage: 'Failed to list pull requests via remote tool',
+    });
   }
 
   /**
@@ -1072,15 +1041,23 @@ export class AugmentApiClient {
       per_page?: number;
     },
   ): Promise<GithubPullRequest[]> {
+    const filter = options?.filter ?? 'all';
+    const state = options?.state ?? 'open';
+
+    if (filter === 'all' && state === 'open') {
+      return this.listGitHubPullRequests(owner, repo, {
+        state: 'open',
+        sort: 'updated',
+        direction: 'desc',
+        per_page: options?.per_page,
+      });
+    }
+
     // Build search query for GitHub search API
     // Format: q=is:pr repo:owner/repo is:open author:@me
     const queryParts = [`is:pr`, `repo:${owner}/${repo}`];
 
-    if (options?.state) {
-      queryParts.push(`is:${options.state}`);
-    } else {
-      queryParts.push('is:open');
-    }
+    queryParts.push(`is:${state}`);
 
     // Add author/assignee/review-requested/involves filter - @me is resolved by GitHub API for authenticated user
     if (options?.filter === 'assigned') {
@@ -1095,60 +1072,153 @@ export class AugmentApiClient {
 
     const params = new URLSearchParams();
     params.set('q', queryParts.join(' '));
-    if (options?.per_page) params.set('per_page', options.per_page.toString());
+    let effectivePerPage = options?.per_page ?? GITHUB_SEARCH_DEFAULT_PAGE_SIZE;
+    if (effectivePerPage > GITHUB_SEARCH_PAGE_SIZE_CAP) {
+      logger.debug('Clamping searchGitHubPullRequests per_page to cap', {
+        requested: effectivePerPage,
+        cap: GITHUB_SEARCH_PAGE_SIZE_CAP,
+      });
+      effectivePerPage = GITHUB_SEARCH_PAGE_SIZE_CAP;
+    }
     params.set('sort', 'updated');
     params.set('order', 'desc');
 
-    const path = `/search/issues?${params.toString()}`;
+    // Note: The search API doesn't return head_ref/base_ref, but we no longer fetch
+    // full PR details eagerly. The branch info is only used for display purposes
+    // and can be fetched lazily when a specific PR is selected.
+    // This avoids N+1 API calls when loading PR lists.
+    return this.paginateGitHubPullRequests({
+      operation: 'search',
+      targetCount: effectivePerPage,
+      buildPath: (page, pageSize) => {
+        const pageParams = new URLSearchParams(params);
+        pageParams.set('per_page', pageSize.toString());
+        pageParams.set('page', page.toString());
+        return `/search/issues?${pageParams.toString()}`;
+      },
+      summary: () => `Search pull requests for ${owner}/${repo} (${options?.filter || 'all'})`,
+      parse: (output) => this.parseYamlSearchResults(output),
+      failureLogMessage: 'Search PRs remote tool failed',
+      failureErrorPrefix: 'GitHub API error',
+      catchLogMessage: 'Failed to search pull requests via remote tool',
+    });
+  }
 
-    const toolInput = {
-      summary: `Search pull requests for ${owner}/${repo} (${options?.filter || 'all'})`,
-      method: 'GET',
-      path,
-      details: true,
-    };
-
-    logger.info('Searching PRs via github-api remote tool', { path, filter: options?.filter });
+  private async paginateGitHubPullRequests(options: {
+    operation: 'list' | 'search';
+    targetCount: number;
+    buildPath: (page: number, pageSize: number) => string;
+    summary: (page: number) => string;
+    parse: (output: string) => GithubPullRequest[];
+    failureLogMessage: string;
+    failureErrorPrefix: string;
+    catchLogMessage: string;
+  }): Promise<GithubPullRequest[]> {
+    const pageSize = Math.min(GITHUB_PR_ACCUMULATION_PAGE_SIZE, options.targetCount);
+    const accumulated: GithubPullRequest[] = [];
+    const seenNumbers = new Set<number>();
+    let pagesFetched = 0;
 
     try {
-      const response = await this.callEndpoint<{
-        tool_output: string;
-        tool_result_message: string;
-        status: number;
-      }>('agents/run-remote-tool', {
-        tool_name: 'github-api',
-        tool_input_json: JSON.stringify(toolInput),
-        tool_id: 8, // GITHUB_API = 8
-      });
+      for (
+        let page = 1;
+        page <= GITHUB_PR_ACCUMULATION_MAX_CALLS && accumulated.length < options.targetCount;
+        page += 1
+      ) {
+        const path = options.buildPath(page, pageSize);
+        const toolInput = {
+          summary: options.summary(page),
+          method: 'GET',
+          path,
+          details: false,
+        };
 
-      logger.debug('Search PRs remote tool response', {
-        status: response.status,
-        message: response.tool_result_message,
-        outputLength: response.tool_output?.length,
-      });
-
-      // Status 1 = TOOL_EXECUTION_OK
-      if (response.status !== 1) {
-        const errorMessage =
-          response.tool_output || response.tool_result_message || 'Unknown error';
-        logger.error('Search PRs remote tool failed', {
-          status: response.status,
-          output: errorMessage,
+        logger.info('Fetching GitHub PR page via remote tool', {
+          operation: options.operation,
+          path,
+          page,
+          pageSize,
+          targetCount: options.targetCount,
         });
-        throw new Error(`GitHub API error: ${errorMessage}`);
+
+        const response = await this.callEndpoint<{
+          tool_output: string;
+          tool_result_message: string;
+          status: number;
+        }>('agents/run-remote-tool', {
+          tool_name: 'github-api',
+          tool_input_json: JSON.stringify(toolInput),
+          tool_id: 8, // GITHUB_API = 8
+        });
+        pagesFetched += 1;
+
+        logger.debug('GitHub PR page remote tool response', {
+          operation: options.operation,
+          status: response.status,
+          message: response.tool_result_message,
+          outputLength: response.tool_output?.length,
+        });
+
+        // Status 1 = TOOL_EXECUTION_OK
+        if (response.status !== 1) {
+          const errorMessage =
+            response.tool_output || response.tool_result_message || 'Unknown error';
+          logger.error(options.failureLogMessage, {
+            status: response.status,
+            output: errorMessage,
+          });
+          throw new Error(`${options.failureErrorPrefix}: ${errorMessage}`);
+        }
+
+        const prs = options.parse(response.tool_output);
+        const wasTruncated =
+          this.isRemoteToolOutputTruncated(response.tool_output) ||
+          this.hasDroppedIncompletePullRequestItems(
+            response.tool_output,
+            prs.length,
+            options.operation,
+          );
+        for (const pr of prs) {
+          if (!seenNumbers.has(pr.number)) {
+            seenNumbers.add(pr.number);
+            accumulated.push(pr);
+          }
+          if (accumulated.length >= options.targetCount) break;
+        }
+
+        if (wasTruncated) {
+          logger.warn('GitHub PR page truncated during pagination; kept complete items', {
+            operation: options.operation,
+            page,
+            parsed: prs.length,
+            pageSize,
+            accumulated: accumulated.length,
+          });
+        }
+
+        // Use one fixed small per_page for every page in an accumulation run. If the
+        // remote tool still truncates, keep the complete items recovered by the
+        // existing parsers and continue with the same page size so GitHub's
+        // page-based offsets remain consistent; the hard call cap bounds bad cases.
+        if (!wasTruncated && prs.length < pageSize) {
+          break;
+        }
       }
 
-      // Parse the YAML response - search results format is slightly different
-      const searchResults = this.parseYamlSearchResults(response.tool_output);
+      logger.info('Paginated GitHub PR fetch complete', {
+        operation: options.operation,
+        pagesFetched,
+        itemsAccumulated: accumulated.length,
+        targetCount: options.targetCount,
+        pageSize,
+        hitCallCap:
+          pagesFetched >= GITHUB_PR_ACCUMULATION_MAX_CALLS &&
+          accumulated.length < options.targetCount,
+      });
 
-      // Note: The search API doesn't return head_ref/base_ref, but we no longer fetch
-      // full PR details eagerly. The branch info is only used for display purposes
-      // and can be fetched lazily when a specific PR is selected.
-      // This avoids N+1 API calls when loading PR lists.
-
-      return searchResults;
+      return accumulated;
     } catch (error) {
-      logger.error('Failed to search pull requests via remote tool', error as Error);
+      logger.error(options.catchLogMessage, error as Error);
       throw error;
     }
   }
@@ -1189,7 +1259,15 @@ export class AugmentApiClient {
 
     const params = new URLSearchParams();
     params.set('q', queryParts.join(' '));
-    if (options?.per_page) params.set('per_page', options.per_page.toString());
+    let effectivePerPage = options?.per_page ?? GITHUB_SEARCH_DEFAULT_PAGE_SIZE;
+    if (effectivePerPage > GITHUB_SEARCH_PAGE_SIZE_CAP) {
+      logger.debug('Clamping searchGitHubIssues per_page to cap', {
+        requested: effectivePerPage,
+        cap: GITHUB_SEARCH_PAGE_SIZE_CAP,
+      });
+      effectivePerPage = GITHUB_SEARCH_PAGE_SIZE_CAP;
+    }
+    params.set('per_page', effectivePerPage.toString());
     params.set('sort', 'updated');
     params.set('order', 'desc');
 
@@ -1199,7 +1277,7 @@ export class AugmentApiClient {
       summary: `Search issues for ${owner}/${repo} (${options?.filter || 'all'})`,
       method: 'GET',
       path,
-      details: true,
+      details: false,
     };
 
     logger.info('Searching issues via github-api remote tool', { path, filter: options?.filter });
@@ -1252,8 +1330,12 @@ export class AugmentApiClient {
 
     if (!yamlOutput) return issues;
 
+    const strippedYamlOutput = this.stripRemoteToolTruncationMarker(yamlOutput);
+    const wasTruncated = strippedYamlOutput !== yamlOutput;
+    const expectedCount = this.parseSearchTotalCount(strippedYamlOutput);
+
     // The search results have items array, parse each item
-    const lines = yamlOutput.split('\n');
+    const lines = strippedYamlOutput.split('\n');
     let currentItem: Record<string, unknown> = {};
     let inItems = false;
 
@@ -1319,9 +1401,18 @@ export class AugmentApiClient {
     }
 
     // Don't forget the last item
-    if (currentItem.number) {
+    const lastItemComplete = this.isRecoverableIssueSearchItem(currentItem);
+    if (currentItem.number && (!wasTruncated || lastItemComplete)) {
       const issue = this.normalizeSearchIssue(currentItem, owner, repo);
       if (issue) issues.push(issue);
+    }
+
+    if (wasTruncated) {
+      logger.warn('GitHub issue search results truncated; recovered complete items', {
+        parsed: issues.length,
+        expected: expectedCount,
+        droppedTrailingIncomplete: Boolean(currentItem.number && !lastItemComplete),
+      });
     }
 
     logger.info('Parsed issue search results', { count: issues.length });
@@ -1366,8 +1457,12 @@ export class AugmentApiClient {
 
     if (!yamlOutput) return prs;
 
+    const strippedYamlOutput = this.stripRemoteToolTruncationMarker(yamlOutput);
+    const wasTruncated = strippedYamlOutput !== yamlOutput;
+    const expectedCount = this.parseSearchTotalCount(strippedYamlOutput);
+
     // The search results have items array, parse each item
-    const lines = yamlOutput.split('\n');
+    const lines = strippedYamlOutput.split('\n');
     let currentItem: Partial<GithubPullRequest> = {};
     let inItems = false;
 
@@ -1429,8 +1524,19 @@ export class AugmentApiClient {
     }
 
     // Don't forget the last item
-    if (currentItem.number) {
+    const lastItemComplete = this.isRecoverablePullRequestListItem(
+      currentItem as Record<string, unknown>,
+    );
+    if (currentItem.number && (!wasTruncated || lastItemComplete)) {
       prs.push(this.normalizeSearchResult(currentItem));
+    }
+
+    if (wasTruncated) {
+      logger.warn('GitHub PR search results truncated; recovered complete items', {
+        parsed: prs.length,
+        expected: expectedCount,
+        droppedTrailingIncomplete: Boolean(currentItem.number && !lastItemComplete),
+      });
     }
 
     logger.info('Parsed search results', { count: prs.length });
@@ -2064,6 +2170,46 @@ export class AugmentApiClient {
     return lines.slice(0, markerLineIndex).join('\n').trimEnd();
   }
 
+  private isRemoteToolOutputTruncated(yamlOutput: string): boolean {
+    return this.stripRemoteToolTruncationMarker(yamlOutput) !== yamlOutput;
+  }
+
+  private hasDroppedIncompletePullRequestItems(
+    yamlOutput: string,
+    parsedCount: number,
+    operation: 'list' | 'search',
+  ): boolean {
+    const strippedYamlOutput = this.stripRemoteToolTruncationMarker(yamlOutput);
+    const itemCount =
+      operation === 'list'
+        ? this.splitTopLevelYamlListItems(strippedYamlOutput).length
+        : this.countSearchResultItemStarts(strippedYamlOutput);
+    return itemCount > parsedCount;
+  }
+
+  private countSearchResultItemStarts(yamlOutput: string): number {
+    let inItems = false;
+    let itemCount = 0;
+
+    for (const line of yamlOutput.split(/\r?\n/)) {
+      if (line.startsWith('items:')) {
+        inItems = true;
+        continue;
+      }
+
+      if (inItems && /^\s{2}-\s+\w+:/.test(line)) {
+        itemCount += 1;
+      }
+    }
+
+    return itemCount;
+  }
+
+  private parseSearchTotalCount(yamlOutput: string): number | undefined {
+    const match = /^total_count:\s*([0-9]+)/m.exec(yamlOutput);
+    return match ? Number(match[1]) : undefined;
+  }
+
   private dropTrailingIncompletePullRequestItems(items: unknown[]): unknown[] {
     let lastCompleteItemIndex = -1;
 
@@ -2095,6 +2241,18 @@ export class AugmentApiClient {
       hasNonEmptyString(item.title) &&
       hasNonEmptyString(item.state) &&
       hasNonEmptyString(url)
+    );
+  }
+
+  private isRecoverableIssueSearchItem(item: Record<string, unknown>): boolean {
+    const hasNonEmptyString = (value: unknown): boolean =>
+      typeof value === 'string' && value.trim().length > 0;
+
+    return (
+      this.normalizePullRequestNumber(item.number) !== null &&
+      hasNonEmptyString(item.title) &&
+      hasNonEmptyString(item.state) &&
+      hasNonEmptyString(item.html_url)
     );
   }
 
