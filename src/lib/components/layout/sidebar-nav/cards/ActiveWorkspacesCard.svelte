@@ -181,12 +181,12 @@
     goto(route);
   }
 
-  function _handleMarkAsRead(e: MouseEvent, workspaceId: string) {
+  function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(clearWorkspaceUnread(workspaceId));
   }
 
-  function _handleTogglePin(e: MouseEvent, workspaceId: string) {
+  function handleTogglePin(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
     appStore.dispatch(togglePinWorkspace(workspaceId));
   }
@@ -282,10 +282,13 @@
           {workspace}
           variant="compact"
           isUnread={true}
+          isPinned={$pinnedIds$.includes(workspace.id)}
           unreadAgentIds={unreadIds}
           highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
           onClick={(e) => handleClick(workspace.id, e)}
+          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+          onMarkAsRead={(e) => handleMarkAsRead(e, workspace.id)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
           onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />
@@ -303,10 +306,12 @@
           {workspace}
           variant="compact"
           isRunning={true}
+          isPinned={$pinnedIds$.includes(workspace.id)}
           streamingAgentIds={streamingIds}
           highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
           onClick={(e) => handleClick(workspace.id, e)}
+          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
           onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />
@@ -326,6 +331,7 @@
           highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
           suppressHover={keyboardNavActive}
           onClick={(e) => handleClick(workspace.id, e)}
+          onTogglePin={(e) => handleTogglePin(e, workspace.id)}
           onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
           onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
         />

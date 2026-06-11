@@ -13,7 +13,10 @@ import {
 } from "typed-redux-saga";
 import {
   hydrateAgentQueueRequested,
+  removeQueuedMessageFromAgentQueue,
+  removeQueuedMessageRequested,
   replaceAgentQueue,
+  restoreRecentlyRemovedMessageId,
   setAgentQueueError,
   setAgentQueueHydrating,
 } from "../agent-queue-slice";
@@ -99,6 +102,33 @@ export function* hydrateAgentQueue(
   }
 }
 
+export function* removeQueuedMessage(
+  action: ReturnType<typeof removeQueuedMessageRequested>,
+): SagaGenerator<void> {
+  const [agentId, messageId] = action.payload;
+  // Optimistic removal so the UI updates immediately; the tombstone in
+  // recentlyRemovedMessageIds suppresses stale queue:updated echoes.
+  yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
+  try {
+    const response = yield* call(
+      invoke<QueueOperationResult | WrappedQueueResponse>,
+      AGENT_BACKEND_CHANNELS.REMOVE_QUEUED,
+      { agentId, messageId },
+    );
+    const result = unwrapQueueResponse(response);
+    if (!result.success) {
+      const error = result.error || "Failed to remove queued message";
+      logger.error("Failed to remove queued message", { agentId, messageId, error });
+      yield* put(restoreRecentlyRemovedMessageId(agentId, messageId));
+      yield* put(hydrateAgentQueueRequested(agentId));
+    }
+  } catch (error) {
+    logger.error("Error removing queued message", { agentId, messageId, error });
+    yield* put(restoreRecentlyRemovedMessageId(agentId, messageId));
+    yield* put(hydrateAgentQueueRequested(agentId));
+  }
+}
+
 export function* watchQueueUpdatedSaga(): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<QueueUpdatedData>(
     "agent:queue:updated",
@@ -112,7 +142,12 @@ export function* watchQueueHydrationSaga(): SagaGenerator<void> {
   yield* takeEvery(hydrateAgentQueueRequested, hydrateAgentQueue);
 }
 
+export function* watchQueueRemovalSaga(): SagaGenerator<void> {
+  yield* takeEvery(removeQueuedMessageRequested, removeQueuedMessage);
+}
+
 export function* agentQueueSaga(): SagaGenerator<void> {
   yield* fork(watchQueueUpdatedSaga);
   yield* fork(watchQueueHydrationSaga);
+  yield* fork(watchQueueRemovalSaga);
 }

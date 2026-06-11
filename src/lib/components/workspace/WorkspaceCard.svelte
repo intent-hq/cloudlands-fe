@@ -3,8 +3,11 @@
   import {
     faArrowUpRightFromSquare,
     faBoxArchive,
+    faCheck,
+    faThumbtack,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import { onDestroy } from 'svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -74,6 +77,10 @@
     branch?: string;
     onClick?: (e?: MouseEvent | KeyboardEvent) => void;
     onAction?: (action: string) => void;
+    /** Called when the pin/unpin hover button is clicked (compact variant) */
+    onTogglePin?: (e: MouseEvent) => void;
+    /** Called when the mark-as-read hover button is clicked (compact variant, unread rows) */
+    onMarkAsRead?: (e: MouseEvent) => void;
     /** Called when "Open in New Window" is selected from the context menu */
     onOpenInNewWindow?: () => void;
     /** Called when the mouse enters this item */
@@ -97,7 +104,7 @@
     variant = 'compact',
     isRunning = false,
     isUnread = false,
-    isPinned: _isPinned = false,
+    isPinned = false,
     streamingAgentIds = [],
     unreadAgentIds = [],
     hideRepoAvatar = false,
@@ -109,6 +116,8 @@
     branch: _branch,
     onClick,
     onAction,
+    onTogglePin,
+    onMarkAsRead,
     onOpenInNewWindow,
     onHover,
     highlighted = false,
@@ -476,7 +485,7 @@
         {/if}
 
         <span
-          class="wc-secondary shrink-0 {actions
+          class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
             ? highlighted
               ? 'opacity-0'
               : suppressHover
@@ -501,7 +510,7 @@
       {/if}
     </div>
 
-    {#if actions}
+    {#if actions || onTogglePin || (isUnread && onMarkAsRead)}
       <div
         class="wc-actions absolute right-0 top-1.5 px-2 flex items-center gap-0.5
           {highlighted
@@ -510,7 +519,28 @@
             ? 'opacity-0'
             : 'opacity-0 group-hover:opacity-100'}"
       >
-        {@render actions()}
+        {@render actions?.()}
+        {#if isUnread && onMarkAsRead}
+          <button
+            class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground"
+            onclick={onMarkAsRead}
+            aria-label="Mark as read"
+            title="Mark as read"
+          >
+            <Fa icon={faCheck} size="xs" />
+          </button>
+        {/if}
+        {#if onTogglePin}
+          <button
+            class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
+              {isPinned ? 'text-primary/60' : 'text-ghost'}"
+            onclick={onTogglePin}
+            aria-label={isPinned ? 'Unpin' : 'Pin'}
+            title={isPinned ? 'Unpin from Active list' : 'Pin to Active list'}
+          >
+            <Fa icon={faThumbtack} size="xs" />
+          </button>
+        {/if}
       </div>
     {/if}
   </div>

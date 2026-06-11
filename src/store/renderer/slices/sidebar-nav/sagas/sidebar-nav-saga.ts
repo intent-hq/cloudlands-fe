@@ -364,7 +364,10 @@ function* watchOnboarding(): SagaGenerator<void> {
 
 export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* call(initSidebarNav);
-  yield* call(initSubscriptions);
+  // Must be forked, not called: initSubscriptions attaches the never-ending
+  // watchActiveStreamsTrackerSaga fork, so a blocking call would never return
+  // and the persistence/hydration watchers below would never be registered.
+  yield* fork(initSubscriptions);
   yield* fork(persistCardPinned);
   yield* fork(persistPanelItem);
   yield* fork(persistPanelWidth);

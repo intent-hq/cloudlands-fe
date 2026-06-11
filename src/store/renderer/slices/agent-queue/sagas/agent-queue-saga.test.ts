@@ -55,13 +55,17 @@ vi.mock("$lib/utils/client-logger", () => ({
 
 import {
   hydrateAgentQueueRequested,
+  removeQueuedMessageFromAgentQueue,
+  removeQueuedMessageRequested,
   replaceAgentQueue,
+  restoreRecentlyRemovedMessageId,
   setAgentQueueError,
   setAgentQueueHydrating,
 } from "../agent-queue-slice";
 import {
   handleQueueUpdated,
   hydrateAgentQueue,
+  removeQueuedMessage,
   watchQueueHydrationSaga,
 } from "./agent-queue-saga";
 
@@ -175,6 +179,57 @@ describe("agent queue IPC saga", () => {
 
     task.cancel();
     await task.toPromise();
+  });
+
+  it("optimistically removes a queued message and calls the backend remove channel", async () => {
+    invokeMock.mockResolvedValue({ success: true, data: { success: true } });
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      removeQueuedMessage,
+      removeQueuedMessageRequested("agent-1", "queue-1"),
+    ).toPromise();
+
+    expect(invokeMock).toHaveBeenCalledWith("agent:backend:remove-queued", {
+      agentId: "agent-1",
+      messageId: "queue-1",
+    });
+    expect(dispatched).toEqual([removeQueuedMessageFromAgentQueue("agent-1", "queue-1")]);
+  });
+
+  it("restores and rehydrates when the backend remove reports failure", async () => {
+    invokeMock.mockResolvedValue({ success: false, error: { message: "boom" } });
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      removeQueuedMessage,
+      removeQueuedMessageRequested("agent-1", "queue-1"),
+    ).toPromise();
+
+    expect(dispatched).toEqual([
+      removeQueuedMessageFromAgentQueue("agent-1", "queue-1"),
+      restoreRecentlyRemovedMessageId("agent-1", "queue-1"),
+      hydrateAgentQueueRequested("agent-1"),
+    ]);
+  });
+
+  it("restores and rehydrates when the backend remove call throws", async () => {
+    invokeMock.mockRejectedValue(new Error("ipc down"));
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
+      removeQueuedMessage,
+      removeQueuedMessageRequested("agent-1", "queue-1"),
+    ).toPromise();
+
+    expect(dispatched).toEqual([
+      removeQueuedMessageFromAgentQueue("agent-1", "queue-1"),
+      restoreRecentlyRemovedMessageId("agent-1", "queue-1"),
+      hydrateAgentQueueRequested("agent-1"),
+    ]);
   });
 
   it("clears hydration state when an in-flight hydration is cancelled", async () => {

@@ -18,7 +18,7 @@
     type DropdownOption,
   } from '$lib/components/ui/dropdown';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { store as appStore } from "$store/renderer/store";
+  import { store as appStore } from '$store/renderer/store';
   import {
     setChiefActiveAgentId,
     closePanel,
@@ -49,7 +49,6 @@
     selectEffectiveBehaviorPrompt,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-
 
   const CHIEF_SPECIALIST_ID = 'chief-of-staff';
 
@@ -341,7 +340,7 @@
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 p-2 pt-0">
+    <div class="min-h-0 flex-1 p-2 pb-4 pt-0">
       <section class="flex h-full min-h-0 flex-col overflow-hidden">
         {#if activeThread}
           {#key activeThread.agentId}

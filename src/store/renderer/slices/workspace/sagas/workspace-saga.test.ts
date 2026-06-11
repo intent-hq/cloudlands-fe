@@ -200,8 +200,11 @@ import {
 import {
   watchCoalescedWorkspaceUpdatesOnMountSaga,
   watchMountedWorkspaceInterestCleanupSaga,
+  watchWorkspaceArchivedSaga,
   watchWorkspaceBeforeUnloadSaga,
   watchWorkspaceBackgroundEnrichmentSaga,
+  watchWorkspaceCreatedSaga,
+  watchWorkspaceDeletedSaga,
   watchWorkspaceUpdatedSaga,
   WORKSPACE_BEFORE_UNLOAD_POLL_MS,
   workspaceIpcSaga,
@@ -303,6 +306,12 @@ describe("workspaceSaga", () => {
     testSaga(workspaceIpcSaga)
       .next()
       .fork(watchWorkspaceUpdatedSaga)
+      .next()
+      .fork(watchWorkspaceCreatedSaga)
+      .next()
+      .fork(watchWorkspaceDeletedSaga)
+      .next()
+      .fork(watchWorkspaceArchivedSaga)
       .next()
       .fork(watchWorkspaceBackgroundEnrichmentSaga)
       .next()

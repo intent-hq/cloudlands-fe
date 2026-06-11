@@ -62,10 +62,24 @@ vi.mock("$store/renderer/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: { delete: mockDelete },
 }));
 
-import { updateWorkspaceEntity } from "../../workspace-slice";
+import {
+  clearPendingCreation,
+  initialState,
+  removeWorkspaceEntity,
+  setPendingCreation,
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+  workspaceReducer,
+} from "../../workspace-slice";
 import { WorkspaceId } from "$shared/types/branded-ids";
+import type { Workspace } from "$shared/types";
+import { WorkspaceStatusEnum } from "$shared/types";
+import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
 import {
   watchWorkspaceUpdatedSaga,
+  watchWorkspaceCreatedSaga,
+  watchWorkspaceDeletedSaga,
+  watchWorkspaceArchivedSaga,
   watchWorkspaceBackgroundEnrichmentSaga,
   watchCoalescedWorkspaceUpdatesOnMountSaga,
   watchMountedWorkspaceInterestCleanupSaga,
@@ -80,6 +94,21 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../../workspace-lifecycle/workspace-lifecycle-slice";
+
+function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspace {
+  return {
+    title: "Test Workspace",
+    branch: "main",
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatusEnum.Active,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+    id: overrides.id as WorkspaceId,
+  };
+}
 
 function getListenSyncHandler(eventName: string) {
   const call = takeEveryFromListenSyncMock.mock.calls.find(([name]: any) => name === eventName);
@@ -108,6 +137,12 @@ describe("workspace-ipc-saga", () => {
     testSaga(workspaceIpcSaga)
       .next()
       .fork(watchWorkspaceUpdatedSaga)
+      .next()
+      .fork(watchWorkspaceCreatedSaga)
+      .next()
+      .fork(watchWorkspaceDeletedSaga)
+      .next()
+      .fork(watchWorkspaceArchivedSaga)
       .next()
       .fork(watchWorkspaceBackgroundEnrichmentSaga)
       .next()
@@ -195,6 +230,115 @@ describe("workspace-ipc-saga", () => {
       expect(effect.payload.action).toEqual(
         updateWorkspaceEntity("ws-tab", { title: "Open Tab" }),
       );
+    });
+  });
+
+  describe("watchWorkspaceCreatedSaga", () => {
+    it("dispatches setPendingCreation and setWorkspaceEntity on workspace:created", () => {
+      watchWorkspaceCreatedSaga().next();
+
+      const workspace = makeWorkspace({ id: "ws-new", title: "New Space" });
+      const handler = getListenSyncHandler("workspace:created");
+      const iterator = handler({ workspaceId: "ws-new", workspace });
+
+      const first = iterator.next().value as any;
+      expect(first.type).toBe("PUT");
+      expect(first.payload.action).toEqual(setPendingCreation(workspace));
+
+      const second = iterator.next().value as any;
+      expect(second.type).toBe("PUT");
+      expect(second.payload.action).toEqual(setWorkspaceEntity(workspace));
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it("is a no-op when workspaceId or workspace is missing", () => {
+      watchWorkspaceCreatedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:created");
+      expect(handler({ workspaceId: "ws-new" }).next().done).toBe(true);
+      expect(handler({ workspaceId: "", workspace: makeWorkspace({ id: "ws-new" }) }).next().done).toBe(true);
+    });
+
+    it("is idempotent for the originating window that already inserted the workspace", () => {
+      const workspace = makeWorkspace({ id: "ws-new", title: "New Space" });
+
+      // Originating window: workspace-crud-saga already dispatched these actions.
+      let state = workspaceReducer(initialState, setPendingCreation(workspace));
+      state = workspaceReducer(state, setWorkspaceEntity(workspace));
+
+      // The broadcast event replays the same actions.
+      let replayed = workspaceReducer(state, setPendingCreation(workspace));
+      replayed = workspaceReducer(replayed, setWorkspaceEntity(workspace));
+
+      expect(getItem(replayed.workspaces, "ws-new")).toEqual(getItem(state.workspaces, "ws-new"));
+      expect(replayed.workspaces.ids).toEqual(state.workspaces.ids);
+      expect(replayed.pendingCreations).toEqual(state.pendingCreations);
+    });
+  });
+
+  describe("watchWorkspaceDeletedSaga", () => {
+    it("removes the entity and clears pendingCreations on workspace:deleted", () => {
+      watchWorkspaceDeletedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:deleted");
+      const iterator = handler({ workspaceId: "ws-gone" });
+
+      const first = iterator.next().value as any;
+      expect(first.type).toBe("PUT");
+      expect(first.payload.action).toEqual(removeWorkspaceEntity("ws-gone"));
+
+      const second = iterator.next().value as any;
+      expect(second.type).toBe("PUT");
+      expect(second.payload.action).toEqual(clearPendingCreation("ws-gone"));
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it("is a no-op when workspaceId is missing", () => {
+      watchWorkspaceDeletedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:deleted");
+      expect(handler({ workspaceId: "" }).next().done).toBe(true);
+    });
+
+    it("is idempotent when the originating window already removed the entity", () => {
+      const workspace = makeWorkspace({ id: "ws-gone" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(workspace));
+      state = workspaceReducer(state, removeWorkspaceEntity("ws-gone"));
+      state = workspaceReducer(state, clearPendingCreation("ws-gone"));
+
+      let replayed = workspaceReducer(state, removeWorkspaceEntity("ws-gone"));
+      replayed = workspaceReducer(replayed, clearPendingCreation("ws-gone"));
+
+      expect(replayed).toBe(state);
+    });
+  });
+
+  describe("watchWorkspaceArchivedSaga", () => {
+    it("marks the workspace archived on workspace:archived", () => {
+      watchWorkspaceArchivedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:archived");
+      const iterator = handler({ workspaceId: "ws-arch" });
+
+      const effect = iterator.next().value as any;
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-arch", {
+          status: WorkspaceStatusEnum.Archived,
+          archived: true,
+        }),
+      );
+
+      expect(iterator.next().done).toBe(true);
+    });
+
+    it("is a no-op when workspaceId is missing", () => {
+      watchWorkspaceArchivedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:archived");
+      expect(handler({ workspaceId: "" }).next().done).toBe(true);
     });
   });
 

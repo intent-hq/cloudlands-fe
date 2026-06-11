@@ -1164,6 +1164,7 @@ export const EVENT_CHANNELS = [
   'workspace:created',
   'workspace:updated',
   'workspace:deleted',
+  'workspace:archived',
   'workspace:changes',
   'workspace:file-changes',
   'workspace:metadata-changed',

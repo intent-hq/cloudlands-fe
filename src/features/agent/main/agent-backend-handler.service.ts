@@ -8662,27 +8662,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, { queue });
       }
 
-      // Canonical emission of `agent:user-message:sent` for the queued path. The
-      // WebSocket protocol handler no longer emits this event itself for the streaming
-      // queue branch — Audit 4 / Track F Bundle 3 consolidates the emit here so a single
-      // `agent.sendMessage` produces exactly one workspace-event dispatch.
-      if (workspaceId) {
-        try {
-          mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-            'agent:user-message:sent' as any,
-            workspaceId,
-            { type: 'user' as const, id: 'user' },
-            {
-              agentId,
-              messageId: queuedMessage.id,
-              content,
-              ...(imageBlocks && { imageBlocks }),
-            },
-          )));
-        } catch {
-          // Fire-and-forget — never let event emission break the queue path.
-        }
-      }
+      // Note: `agent:user-message:sent` is intentionally NOT emitted here. The queued
+      // path defers the emission until the message is actually sent to the model
+      // (handleBackendStreamMessage on the send path), so the user bubble renders only
+      // at actual send time rather than at queue time.
 
       return { success: true, queuedMessage };
     } catch (error) {
@@ -8723,14 +8706,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       queue[messageIndex].content = content;
       logger.info('Queued message edited', { agentId, messageId });
 
-      // Notify frontend of queue update (workspace-scoped)
+      // Notify frontend of queue update (workspace-scoped). Resolve the workspace ID
+      // the same way handleQueueMessage does so the update reaches all windows
+      // viewing the workspace, falling back to agent-based targeting.
+      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+      const queueTargetWindowIds = wsId
+        ? getWindowIdsForWorkspace(wsId)
+        : this.getWorkspaceWindowsForAgent(agentId);
       this.sendToRenderer(
         'agent:queue:updated',
         { agentId, queue },
-        this.getWorkspaceWindowsForAgent(agentId),
+        queueTargetWindowIds,
+        wsId,
       );
       // Emit to workspace events for WebSocket clients
-      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
       if (wsId) {
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
       }
@@ -8780,14 +8769,20 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
       logger.info('Queued message removed', { agentId, messageId });
 
-      // Notify frontend of queue update (workspace-scoped)
+      // Notify frontend of queue update (workspace-scoped). Resolve the workspace ID
+      // the same way handleQueueMessage does so the update reaches all windows
+      // viewing the workspace, falling back to agent-based targeting.
+      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+      const queueTargetWindowIds = wsId
+        ? getWindowIdsForWorkspace(wsId)
+        : this.getWorkspaceWindowsForAgent(agentId);
       this.sendToRenderer(
         'agent:queue:updated',
         { agentId, queue },
-        this.getWorkspaceWindowsForAgent(agentId),
+        queueTargetWindowIds,
+        wsId,
       );
       // Emit to workspace events for WebSocket clients
-      const wsId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
       if (wsId) {
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
       }

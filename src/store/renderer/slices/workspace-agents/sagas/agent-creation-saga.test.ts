@@ -694,6 +694,27 @@ describe('new saga-owned agent creation request handlers', () => {
       initialMessage: 'hello',
       skipInitialPrompt: true,
     });
+
+    // The commit hook marks messageSent in sessionStorage at the moment the
+    // factory commits to the initial send (not after activation completes).
+    expect(typeof createConfig.onInitialSendCommit).toBe('function');
+    const storage = new Map<string, string>();
+    storage.set(
+      'workspace:ws-init:agent-config',
+      JSON.stringify({ agentId, prompt: 'hello' }),
+    );
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+    try {
+      createConfig.onInitialSendCommit();
+      expect(JSON.parse(storage.get('workspace:ws-init:agent-config')!).messageSent).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
     step = gen.next({
       result: {
         success: true,
@@ -705,8 +726,8 @@ describe('new saga-owned agent creation request handlers', () => {
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
     step = gen.next();
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
-    step = gen.next();
-    expect((step.value as any).type).toBe('CALL');
+    // No trailing markInitialMessageSentInSessionStorage call after activation
+    // completes — the messageSent flag is written via onInitialSendCommit.
     expect(gen.next().done).toBe(true);
   });
 
@@ -752,8 +773,6 @@ describe('new saga-owned agent creation request handlers', () => {
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/markAgentRecentlyCreated');
     step = gen.next();
     expect((step.value as any).payload.action.type).toBe('workspaceAgents/setActiveAgentId');
-    step = gen.next();
-    expect((step.value as any).type).toBe('CALL');
     expect(gen.next().done).toBe(true);
   });
 

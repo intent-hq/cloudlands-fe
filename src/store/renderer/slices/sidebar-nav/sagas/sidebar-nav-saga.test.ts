@@ -29,8 +29,12 @@ vi.mock("$features/agent/services/active-streams-tracker", () => ({
   },
 }));
 
+import { expectSaga } from "redux-saga-test-plan";
+import * as matchers from "redux-saga-test-plan/matchers";
+
 import {
   getLocalStorageJSON,
+  setLocalStorageItem,
   setLocalStorageJSON,
 } from "$store/renderer/utils/safe-local-storage-saga";
 import { workspaceMounted } from "../../workspace-lifecycle/workspace-lifecycle-slice";
@@ -39,16 +43,19 @@ import {
   hydrateWorkspaceSidebarUi,
   MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX,
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
+  PINNED_WORKSPACES_KEY,
   setMultiSelectSidebarSelectedTabs,
   setWorkspaceCollapsedNoteIds,
   setWorkspaceNoteOrder,
   bumpActiveStreamsVersion,
+  togglePinWorkspace,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
 } from "../sidebar-nav-slice";
 import {
   selectMultiSelectSidebarSelectedTabIds,
   selectMultiSelectSidebarTabOrder,
+  selectPinnedWorkspaceIds,
   selectWorkspaceCollapsedNoteIds,
   selectWorkspaceNoteOrder,
 } from "../sidebar-nav-selectors";
@@ -211,6 +218,21 @@ describe("sidebarNav persistence sagas", () => {
       type: "CALL",
       payload: { fn: hydrateActiveWorkspaceSidebarUiSaga },
     });
+  });
+
+  it("persists pinned workspaces from the full root saga despite long-running subscriptions (regression)", async () => {
+    // Regression: initSubscriptions attaches the never-ending active-streams
+    // watcher fork. When the root saga reached it via a blocking call() instead
+    // of fork(), the persistence watchers below were never registered, so
+    // pinned workspaces were never written to localStorage.
+    await expectSaga(sidebarNavSaga)
+      .provide([
+        [matchers.select(selectActiveWorkspaceId.select), null],
+        [matchers.select(selectPinnedWorkspaceIds.select), ["ws-1"]],
+      ])
+      .dispatch(togglePinWorkspace("ws-1"))
+      .call(setLocalStorageItem, PINNED_WORKSPACES_KEY, JSON.stringify(["ws-1"]))
+      .silentRun(100);
   });
 
   it("bridges active stream tracker callbacks through saga puts", async () => {

@@ -62,6 +62,7 @@
   selectAgentMessages,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+  import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -2251,12 +2252,10 @@
     }
   }
 
-  // Handle removing a queued message
-  async function handleRemoveQueuedMessage(messageId: string) {
-    const result = await unifiedOrchestrator.removeQueuedMessage(agentId, messageId);
-    if (!result.success) {
-      logger.error('Failed to remove queued message', { messageId, error: result.error });
-    }
+  // Handle removing a queued message — the saga removes it optimistically from
+  // Redux (immediate UI update) and restores it if the backend removal fails.
+  function handleRemoveQueuedMessage(messageId: string) {
+    appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
   // Handle sending a queued message immediately (interrupts current stream)

@@ -25,6 +25,19 @@ export type WorkspaceUpdatedEvent = {
   changes: Partial<Workspace>;
 };
 
+export type WorkspaceCreatedEvent = {
+  workspaceId: string;
+  workspace?: Workspace;
+};
+
+export type WorkspaceDeletedEvent = {
+  workspaceId: string;
+};
+
+export type WorkspaceArchivedEvent = {
+  workspaceId: string;
+};
+
 export type WorkspaceBackgroundEnrichmentEvent = {
   workspaceId: string;
   updates?: Partial<

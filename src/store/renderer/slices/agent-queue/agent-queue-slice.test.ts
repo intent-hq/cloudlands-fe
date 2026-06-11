@@ -15,7 +15,9 @@ import {
   hydrateAgentQueueRequested,
   initialState,
   removeQueuedMessageFromAgentQueue,
+  removeQueuedMessageRequested,
   replaceAgentQueue,
+  restoreRecentlyRemovedMessageId,
   setAgentQueueError,
   setAgentQueueHydrating,
 } from "./agent-queue-slice";
@@ -164,6 +166,53 @@ describe("agentQueueReducer", () => {
     ]);
     expect(getItem(staleReplacement.byAgentId[AGENT_ID].messages, "sent-now")).toBeUndefined();
     expect(JSON.parse(JSON.stringify(staleReplacement))).toEqual(staleReplacement);
+  });
+
+  it("restores a recently-removed ID so a later snapshot can bring the message back", () => {
+    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
+      message("m1", 0),
+      message("m2", 1),
+    ]));
+    const removed = agentQueueReducer(
+      state,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "m1"),
+    );
+    const restored = agentQueueReducer(
+      removed,
+      restoreRecentlyRemovedMessageId(AGENT_ID, "m1"),
+    );
+    const rehydrated = agentQueueReducer(
+      restored,
+      replaceAgentQueue(AGENT_ID, [message("m1", 0), message("m2", 1)]),
+    );
+
+    expect(removed.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual(["m1"]);
+    expect(restored.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([]);
+    expect(getItems(rehydrated.byAgentId[AGENT_ID].messages).map((item) => item.id)).toEqual([
+      "m1",
+      "m2",
+    ]);
+  });
+
+  it("returns same state when restoring unknown agents or IDs that are not marked removed", () => {
+    const state = agentQueueReducer(
+      initialState,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "m1"),
+    );
+
+    expect(agentQueueReducer(state, restoreRecentlyRemovedMessageId("unknown", "m1"))).toBe(
+      state,
+    );
+    expect(agentQueueReducer(state, restoreRecentlyRemovedMessageId(AGENT_ID, "other"))).toBe(
+      state,
+    );
+  });
+
+  it("does not change state for the removeQueuedMessageRequested saga trigger", () => {
+    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [message("m1", 0)]));
+    const next = agentQueueReducer(state, removeQueuedMessageRequested(AGENT_ID, "m1"));
+
+    expect(next).toBe(state);
   });
 
   it("keeps stale suppression bounded so old removed IDs can appear in future snapshots", () => {

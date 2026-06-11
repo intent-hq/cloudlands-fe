@@ -215,6 +215,7 @@ describe('WebSocket Event Bridge', () => {
       expect(sendFn).not.toHaveBeenCalled();
       expect(getTrackedClientCount()).toBe(0);
     });
+
   });
 
   describe('cleanupAllClients()', () => {

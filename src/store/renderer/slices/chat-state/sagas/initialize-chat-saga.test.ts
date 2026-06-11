@@ -240,6 +240,7 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     vi.clearAllMocks();
     mockSelectChatState.mockReturnValue(defaultChatState);
     mockSelectAgentById.mockReturnValue(undefined);
+    mockSelectAgentMessages.mockReturnValue([]);
     mockSelectWorkspaceAgentReadySession.mockReturnValue(null);
     mockSelectIsInitialSpecWriteInProgress.mockReturnValue(false);
     mockRestoreSessionFromDiskWithoutBackend.mockReturnValue(null);
@@ -315,6 +316,170 @@ describe('initialize-chat-saga: disk message merge regression', () => {
       imageMimeType: 'image/png',
     });
     expect(storage.has('workspace:ws-1:agent-config')).toBe(false);
+  });
+
+  it('skips duplicate send when activation marked messageSent before send time', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const session = {
+      id: 'agent-1',
+      backendSessionId: 'backend-session-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'idle',
+      isStreaming: false,
+      messages: [],
+    };
+    mockSelectAgentById.mockReturnValue(session);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(session);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      initializeChatSaga as any,
+    );
+
+    // Activation flow committed to the send while ChatPanel's fallback was
+    // in flight: messageSent is already true in sessionStorage.
+    const storage = new Map<string, string>();
+    storage.set(
+      'workspace:ws-1:agent-config',
+      JSON.stringify({ agentId: 'agent-1', prompt: 'Initial prompt', messageSent: true }),
+    );
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    // Payload carries the message directly, so the saga-start alreadySent
+    // check is bypassed and only the send-time re-check can catch the race.
+    channel.put(
+      sendInitialMessageRequested('agent-1', { wsId: 'ws-1', message: 'Initial prompt' }),
+    );
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAgentSessionSendMessageRequested).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(true);
+    const stored = JSON.parse(storage.get('workspace:ws-1:agent-config')!);
+    expect(stored.prompt).toBeNull();
+    expect(stored.messageSent).toBeNull();
+  });
+
+  it('skips duplicate send when the session is already streaming at send time', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const session = {
+      id: 'agent-1',
+      backendSessionId: 'backend-session-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'active',
+      isStreaming: true,
+      messages: [],
+    };
+    mockSelectAgentById.mockReturnValue(session);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(session);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      initializeChatSaga as any,
+    );
+
+    // messageSent not yet written, but the activation send already started
+    // streaming — the send-time re-check must catch it.
+    const storage = new Map<string, string>();
+    storage.set(
+      'workspace:ws-1:agent-config',
+      JSON.stringify({ agentId: 'agent-1', prompt: 'Initial prompt' }),
+    );
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1' }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAgentSessionSendMessageRequested).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(true);
+    const stored = JSON.parse(storage.get('workspace:ws-1:agent-config')!);
+    expect(stored.prompt).toBeNull();
+  });
+
+  it('skips duplicate send when a user message already exists at send time', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const session = {
+      id: 'agent-1',
+      backendSessionId: 'backend-session-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'idle',
+      isStreaming: false,
+      messages: [],
+    };
+    mockSelectAgentById.mockReturnValue(session);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(session);
+    // Activation's optimistic user message already landed in agent-session.
+    mockSelectAgentMessages.mockReturnValue([makeMsg('msg-1', 'user', 'Initial prompt')]);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      initializeChatSaga as any,
+    );
+
+    const storage = new Map<string, string>();
+    storage.set(
+      'workspace:ws-1:agent-config',
+      JSON.stringify({ agentId: 'agent-1', prompt: 'Initial prompt' }),
+    );
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1' }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAgentSessionSendMessageRequested).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(true);
+    const stored = JSON.parse(storage.get('workspace:ws-1:agent-config')!);
+    expect(stored.prompt).toBeNull();
   });
 
   it('fails initial message request when session readiness times out', async () => {

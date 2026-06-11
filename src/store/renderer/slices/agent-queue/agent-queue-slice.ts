@@ -34,6 +34,18 @@ export const removeQueuedMessageFromAgentQueue = createAction<[
   messageId: string,
 ]>("agentQueue/removeQueuedMessage");
 
+/** Saga trigger: optimistically remove a queued message and ask the backend to remove it. */
+export const removeQueuedMessageRequested = createAction<[
+  agentId: string,
+  messageId: string,
+]>("agentQueue/removeRequested");
+
+/** Un-mark a recently-removed ID so a later hydration can bring the message back. */
+export const restoreRecentlyRemovedMessageId = createAction<[
+  agentId: string,
+  messageId: string,
+]>("agentQueue/restoreRecentlyRemovedMessageId");
+
 export const clearAgentQueue = createAction<[agentId: string]>("agentQueue/clearQueue");
 
 export const setAgentQueueHydrating = createAction<[agentId: string, isHydrating: boolean]>(
@@ -132,6 +144,18 @@ export const agentQueueReducer = createReducer<AgentQueueState>(initialState)
       ...current,
       messages,
       recentlyRemovedMessageIds,
+    });
+  })
+  .with(restoreRecentlyRemovedMessageId, (state, { payload: [agentId, messageId] }) => {
+    const current = state.byAgentId[agentId];
+    if (!current) return state;
+    const currentRecentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
+    if (!currentRecentlyRemovedMessageIds.includes(messageId)) return state;
+    return setAgentQueueEntry(state, agentId, {
+      ...current,
+      recentlyRemovedMessageIds: currentRecentlyRemovedMessageIds.filter(
+        (id) => id !== messageId,
+      ),
     });
   })
   .with(clearAgentQueue, (state, { payload: [agentId] }) => {

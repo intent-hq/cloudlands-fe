@@ -70,6 +70,9 @@ const LOSSLESS_REQUIRED_IPC_EVENTS = new Set<ElectronEventName>([
   "task:status-changed",
   "terminal:created",
   "terminal:disposed",
+  "workspace:archived",
+  "workspace:created",
+  "workspace:deleted",
 ]);
 
 const LATEST_ONLY_IPC_EVENTS = new Set<ElectronEventName>([

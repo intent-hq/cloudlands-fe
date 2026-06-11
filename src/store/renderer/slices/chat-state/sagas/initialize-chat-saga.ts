@@ -382,6 +382,36 @@ function* handleSendInitialMessage(
     return;
   }
 
+  // Re-check at send time: the activation flow may have committed to sending
+  // the initial prompt while we waited for the session (it marks messageSent
+  // at its send-commit point). Skip the duplicate send if the flag is now
+  // set, the session is already streaming/responding, or a user message has
+  // already landed — and reconcile UI state like the alreadySent branch.
+  const refreshedConfig = yield* call(readInitialAgentConfig, wsId, agentId);
+  const liveSession = yield* selectAgentSession.effect(agentId);
+  const liveMessages = yield* selectAgentMessages.effect(agentId);
+  const hasUserMessage =
+    (liveMessages ?? []).some((m) => m.role === 'user') ||
+    (session.messages ?? []).some((m) => m.role === 'user');
+  const sentByActivation =
+    refreshedConfig?.alreadySent === true ||
+    liveSession?.isStreaming === true ||
+    liveSession?.isResponding === true ||
+    hasUserMessage;
+  if (sentByActivation) {
+    logger.info('Initial message already in flight at send time, skipping duplicate send', {
+      agentId,
+      wsId,
+      alreadySentFlag: refreshedConfig?.alreadySent === true,
+      isStreaming: liveSession?.isStreaming === true,
+      isResponding: liveSession?.isResponding === true,
+      hasUserMessage,
+    });
+    yield* put(chatSendStarted(agentId, wsId));
+    yield* call(clearInitialAgentConfigFields, wsId);
+    return;
+  }
+
   const workspace = yield* selectWorkspaceById.effect(wsId);
   if (!workspace) {
     logger.error('Workspace not found for initial message send', { agentId, wsId });

@@ -969,10 +969,11 @@ describe('WebSocket Protocol Handler', () => {
     //
     // The protocol handler MUST NOT dispatch `agent:user-message:sent` itself
     // — the canonical emit lives inside AgentBackendHandler.handleSendMessage
-    // (non-queued path) and AgentBackendHandler.handleQueueMessage (queued
-    // path). To verify the regression we configure the mocked handler methods
-    // to emit ONCE (simulating the canonical site) and assert the total
-    // workspace-event dispatch count is exactly one per send.
+    // (non-queued path). The queued path (handleQueueMessage) intentionally
+    // emits NOTHING at queue time; the event fires later when the queued
+    // message is actually sent to the model. To verify the regression we
+    // configure the mocked send handler to emit ONCE (simulating the
+    // canonical site) and assert the total workspace-event dispatch count.
     // ---------------------------------------------------------------------
     const simulateCanonicalEmitOnce = async () => {
       const { emitWorkspaceEvent } = await import('../../store/main/slices/workspace-events/workspace-events-slice');
@@ -1005,14 +1006,14 @@ describe('WebSocket Protocol Handler', () => {
       expect(emitWorkspaceEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('queues when streaming and emits exactly one user-message workspace event (queued path)', async () => {
+    it('queues when streaming and emits no user-message workspace event at queue time (queued path)', async () => {
       const { emitWorkspaceEvent } = await import('../../store/main/slices/workspace-events/workspace-events-slice');
       vi.mocked(emitWorkspaceEvent).mockClear();
 
       mockAgentHandler.getActiveStreams.mockReturnValue([{ agentId: 'agent-1' }]);
-      mockAgentHandler.handleQueueMessage.mockImplementationOnce(async () => {
-        await simulateCanonicalEmitOnce();
-        return { success: true, queuedMessage: { id: 'q-1' } };
+      mockAgentHandler.handleQueueMessage.mockResolvedValueOnce({
+        success: true,
+        queuedMessage: { id: 'q-1' },
       });
       const result = await handleWebSocketMessage(
         makeRequest('agent.sendMessage', { agentId: 'agent-1', content: 'hello', workspaceId: 'ws-1' }, 41),
@@ -1021,24 +1022,25 @@ describe('WebSocket Protocol Handler', () => {
       expect(parsed.result.success).toBe(true);
       expect(parsed.result.queued).toBe(true);
       expect(mockAgentHandler.handleQueueMessage).toHaveBeenCalled();
-      // handleQueueMessage emits once; protocol handler must not double-emit.
-      expect(emitWorkspaceEvent).toHaveBeenCalledTimes(1);
-      // The handler must propagate workspaceId so the canonical emit can fire.
+      // Neither handleQueueMessage nor the protocol handler emits at queue time —
+      // the event fires later when the queued message is actually sent to the model.
+      expect(emitWorkspaceEvent).not.toHaveBeenCalled();
+      // The handler must still propagate workspaceId for queue:updated events.
       expect(mockAgentHandler.handleQueueMessage).toHaveBeenCalledWith(
         null,
         expect.objectContaining({ workspaceId: 'ws-1' }),
       );
     });
 
-    it('falls back to queue on sendMessage failure with exactly one emit total (fallback path)', async () => {
+    it('falls back to queue on sendMessage failure with no emit at queue time (fallback path)', async () => {
       const { emitWorkspaceEvent } = await import('../../store/main/slices/workspace-events/workspace-events-slice');
       vi.mocked(emitWorkspaceEvent).mockClear();
 
       mockAgentHandler.getActiveStreams.mockReturnValue([]);
       mockAgentHandler.sendMessage.mockResolvedValueOnce({ success: false });
-      mockAgentHandler.handleQueueMessage.mockImplementationOnce(async () => {
-        await simulateCanonicalEmitOnce();
-        return { success: true, queuedMessage: { id: 'q-fallback' } };
+      mockAgentHandler.handleQueueMessage.mockResolvedValueOnce({
+        success: true,
+        queuedMessage: { id: 'q-fallback' },
       });
       const result = await handleWebSocketMessage(
         makeRequest('agent.sendMessage', { agentId: 'agent-1', content: 'hello', workspaceId: 'ws-1' }, 42),
@@ -1046,9 +1048,9 @@ describe('WebSocket Protocol Handler', () => {
       const parsed = JSON.parse(result!);
       expect(parsed.result.success).toBe(true);
       expect(parsed.result.queued).toBe(true);
-      // Only the fallback handleQueueMessage emits — sendMessage failed (so canonical
-      // emit was skipped) and the protocol handler must not emit on its own.
-      expect(emitWorkspaceEvent).toHaveBeenCalledTimes(1);
+      // sendMessage failed (canonical emit skipped), the queue path emits nothing
+      // at queue time, and the protocol handler must not emit on its own.
+      expect(emitWorkspaceEvent).not.toHaveBeenCalled();
     });
 
     it('returns INVALID_PARAMS when agentId is missing', async () => {

@@ -6,6 +6,7 @@ import {
 import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import type { Workspace } from "$shared/types";
+import { WorkspaceStatusEnum } from "$shared/types";
 import {
   call,
   delay,
@@ -17,10 +18,19 @@ import { selectAllRetainedAgentSessions } from "../../agent-session/agent-sessio
 import { selectWorkspaceHasActiveSubscriptions } from "../../agent-subscription-ui/agent-subscription-ui-selectors";
 import { selectIsWorkspaceTabOpen } from "../../tab-state/tab-state-selectors";
 import type {
+  WorkspaceArchivedEvent,
   WorkspaceBackgroundEnrichmentEvent,
+  WorkspaceCreatedEvent,
+  WorkspaceDeletedEvent,
   WorkspaceUpdatedEvent,
 } from "../workspace-slice";
-import { updateWorkspaceEntity } from "../workspace-slice";
+import {
+  clearPendingCreation,
+  removeWorkspaceEntity,
+  setPendingCreation,
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+} from "../workspace-slice";
 import {
   selectActiveWorkspaceId,
   selectWorkspacePendingDeletions,
@@ -111,6 +121,49 @@ export function* watchWorkspaceUpdatedSaga() {
   });
 }
 
+export function* watchWorkspaceCreatedSaga() {
+  yield* takeEveryFromListenSync<WorkspaceCreatedEvent>("workspace:created", function* (data) {
+    if (!data.workspaceId || !data.workspace) {
+      return;
+    }
+
+    // Mirror workspace-crud-saga: the pendingCreations entry protects the new
+    // entity from stale replaceWorkspaceList payloads and is cleared once a
+    // fetched list contains the workspace. Both actions are idempotent for the
+    // originating window, which already dispatched them.
+    yield* put(setPendingCreation(data.workspace));
+    yield* put(setWorkspaceEntity(data.workspace));
+  });
+}
+
+export function* watchWorkspaceDeletedSaga() {
+  yield* takeEveryFromListenSync<WorkspaceDeletedEvent>("workspace:deleted", function* (data) {
+    if (!data.workspaceId) {
+      return;
+    }
+
+    yield* put(removeWorkspaceEntity(data.workspaceId));
+    yield* put(clearPendingCreation(data.workspaceId));
+  });
+}
+
+export function* watchWorkspaceArchivedSaga() {
+  yield* takeEveryFromListenSync<WorkspaceArchivedEvent>("workspace:archived", function* (data) {
+    if (!data.workspaceId) {
+      return;
+    }
+
+    // Mark instead of remove, matching replaceWorkspaceList's pendingArchives
+    // handling; archived-aware views filter on status.
+    yield* put(
+      updateWorkspaceEntity(data.workspaceId, {
+        status: WorkspaceStatusEnum.Archived,
+        archived: true,
+      }),
+    );
+  });
+}
+
 export function* watchWorkspaceBackgroundEnrichmentSaga() {
   yield* takeEveryFromElectronChannel<WorkspaceBackgroundEnrichmentEvent>(
     "workspace:background-enrichment-complete",
@@ -164,6 +217,9 @@ export function* watchWorkspaceBeforeUnloadSaga() {
 
 export function* workspaceIpcSaga() {
   yield* fork(watchWorkspaceUpdatedSaga);
+  yield* fork(watchWorkspaceCreatedSaga);
+  yield* fork(watchWorkspaceDeletedSaga);
+  yield* fork(watchWorkspaceArchivedSaga);
   yield* fork(watchWorkspaceBackgroundEnrichmentSaga);
   yield* fork(watchCoalescedWorkspaceUpdatesOnMountSaga);
   yield* fork(watchMountedWorkspaceInterestCleanupSaga);

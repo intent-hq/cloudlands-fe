@@ -440,6 +440,10 @@ export function* handleActivateInitialAgentRequestedSaga(
         id: agentId,
         workspaceId: WorkspaceId(wsId),
         skipInitialPrompt: true,
+        // Mark messageSent at the moment the factory commits to the
+        // fire-and-forget initial send, not after activation completes.
+        // Closes the race with ChatPanel's mount-time fallback send.
+        onInitialSendCommit: () => markInitialMessageSentInSessionStorage(wsId),
         metadata: {
           ...config.metadata,
           isInitialAgent: true,
@@ -489,7 +493,6 @@ export function* handleActivateInitialAgentRequestedSaga(
     if (!session) return;
     yield* registerCreatedAgent(wsId, session, agents, { forceUpsert: true });
     yield* put(setActiveAgentId(wsId, session.id));
-    yield* call(markInitialMessageSentInSessionStorage, wsId);
   } catch (error) {
     const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
     const activationAttempts = (existing?.activationAttempts || 0) + 1;
